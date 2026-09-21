@@ -3183,6 +3183,7 @@
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${continueBtnHtml(s)}
+            ${batonStopBtnHtml(s)}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
     }
@@ -5699,6 +5700,10 @@
                 type: 'openTranscript', sessionId: s ? s.sessionId : ''
             }));
             byId('c-continue', 'click', () => vscode.postMessage({ type: 'continueFromHandover', id: DATA.selected }));
+            byId('c-baton-stop', 'click', () => {
+                const v = s && s.batonView;
+                if (v && v.chainId) { vscode.postMessage({ type: 'batonStopChain', chainId: v.chainId }); }
+            });
         }
     }
 
@@ -5830,6 +5835,21 @@
                     + 'straight back into the wall. The same door for an agent: '
                     + 'console.continueFromHandover id=' + (s.id || '') + ' open=true.'
             ]));
+    }
+
+    /** S-77 — the user's brake on this card's relay: beside Continue, never instead of it. */
+    function batonStopBtnHtml(s) {
+        const v = s.batonView;
+        if (!v || !v.stoppable || !v.chainId) { return ''; }
+        return cardTip('<button class="secondary" id="c-baton-stop">✕ Stop chain</button>',
+            v.head,
+            window.AFTip.lines([
+                'Stops every waiting or parked baton of chain ' + v.chainId + ' — no further leg opens. '
+                    + 'Nothing is deleted: baton.status keeps each one as stopped, with the reason. '
+                    + 'A run a baton already opened keeps running — end it on its own card.',
+                window.AFTip.GAP,
+                'The same brake for an agent: baton.stop chain=' + v.chainId + '.'
+            ]), 'tip-batonstop');
     }
 
     function chipsHtml() {

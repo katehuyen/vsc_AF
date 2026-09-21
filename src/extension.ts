@@ -298,8 +298,8 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { batonRelayOf } from './core/baton';
-import { registerBatonOps } from './core/batonBridge';
+import { batonRelayOf, isLive } from './core/baton';
+import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
@@ -27752,6 +27752,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         endLeftover: (sessionId: string, pid: number) => endLeftover(sessionId, pid),
         // S-64 (5/n) — the first message of the run that continues a handed-over card
         handoverContinue: (sessionId: string, projectId?: string) => handoverContinueFor(sessionId, projectId),
+        // S-77 — the card's ✕ runs the one body baton.stop chain= runs.
+        batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
+            'stopped by the user — ✕ on the Console card', Date.now()).length,
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
         estimateCost: (model: string, u: Usage) => pricing.costFor(model, u),
         projects: () => projectStore.all().map(p => ({

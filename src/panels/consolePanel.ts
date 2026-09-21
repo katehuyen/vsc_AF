@@ -480,6 +480,8 @@ export interface ConsoleDeps {
      * found, for the answer the bridge gives.
      */
     handoverContinue(sessionId: string, projectId?: string): { prompt: string; note?: string; pct?: number };
+    /** S-77 — the card's ✕: every live baton of the chain stops, recorded (`stopBatons`). Answers how many. */
+    batonStopChain(chainId: string): number;
     /**
      * What the tokens a running turn has spent are worth, at the rates the rest
      * of the extension prices everything else with.
@@ -2717,6 +2719,16 @@ export class ConsolePanel {
                 // note): the next run is a FRESH session, opened in the composer
                 // with this card's whole setup and the host's first message.
                 ConsolePanel.continueFromHandover(this.deps, str('id'));
+                break;
+            }
+            case 'batonStopChain': {
+                const chain = str('chainId');
+                if (!chain) { break; }
+                const n = this.deps.batonStopChain(chain);
+                void vscode.window.showInformationMessage(n
+                    ? `Agent Farm: baton chain ${chain} stopped — ${n} baton${n === 1 ? '' : 's'} recorded as stopped, no further leg opens.`
+                    : `Agent Farm: nothing in baton chain ${chain} was still waiting — it had already ended.`);
+                this.refresh();
                 break;
             }
             case 'openTranscript': {

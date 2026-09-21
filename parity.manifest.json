@@ -1315,6 +1315,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#batonStopChain",
+      "ui": [
+        "page:consolePanel.ts#batonStopChain"
+      ],
+      "ops": [
+        "baton.stop"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#forget",
       "ui": [
         "page:consolePanel.ts#forget"

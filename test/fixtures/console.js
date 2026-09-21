@@ -1236,6 +1236,12 @@ module.exports = {
             data: batonData()
         },
         {
+            id: 'console-baton-brake',
+            label: 'Console — a relay leg told to hand over: ✕ Stop chain BESIDE Continue from handover, the brake\'s panel open',
+            tip: 'tip-batonstop',
+            data: batonData(true)
+        },
+        {
             id: 'console-quotasig-undelivered',
             label: 'Console — a Codex run past the quota line: 5h 93% HANDOVER ✕, never silence',
             tip: 'tip-quota',
@@ -1357,9 +1363,9 @@ function ctxSignalData(state) {
 }
 
 /** S-77 — the host's own words (`batonCardView`) for a middle leg that has passed. */
-function batonData() {
+function batonData(handover) {
     const V = require('../../out/core/batonView.js');
-    const d = ctxSignalData('converge');
+    const d = ctxSignalData(handover ? 'handover' : 'converge');
     const sid = d.sessions[0].sessionId || 's-this';
     d.sessions[0].sessionId = sid;
     const mk = (id, state, hop, from, extra) => ({
@@ -1368,7 +1374,7 @@ function batonData() {
         inherit: { surface: 'console' }, want: { surface: 'inherit', account: '@emptiest' },
         createdAt: NOW, updatedAt: NOW, ...extra
     });
-    d.sessions[0].contextSignalView = null;
+    if (!handover) { d.sessions[0].contextSignalView = null; }
     d.sessions[0].batonView = V.batonCardView([
         mk('b1', 'started', 1, '22597c33-aaaa', { toSessionId: sid }),
         mk('b2', 'waiting-end', 2, sid, { note: 'S-77 surfaces, card chip done' })

@@ -1324,6 +1324,35 @@ const intentOf = (o) => Object.assign({
     push(sigged(null));
     ok('‼️ a quiet card has no handover to continue from — no button', !/id="c-continue"/.test(status()));
 
+    // S-77 — THE USER'S BRAKE ON A RELAY: beside Continue, never instead of it,
+    // and only while the chain still has a baton that could open a leg.
+    const relay = (stoppable) => ({
+        chainId: 'chn_muq2k1', leg: 2, chip: '⑂ 2',
+        head: stoppable ? 'Baton relay — leg 2 · successor waiting' : 'Baton relay — leg 2',
+        lines: ['Chain: chn_muq2k1 — leg 2 of 2 so far.'], stoppable
+    });
+    push(data(CONVO.slice(), {
+        contextTokens: 410000, contextWindowTokens: 1000000, batonView: relay(true),
+        contextSignalView: { state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: false,
+            lines: ['Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago.'] }
+    }));
+    ok('a relay with a live baton offers ✕ Stop chain — after Continue, before Open transcript',
+        /id="c-baton-stop">✕ Stop chain</.test(status())
+        && status().indexOf('id="c-continue"') < status().indexOf('id="c-baton-stop"')
+        && status().indexOf('id="c-baton-stop"') < status().indexOf('id="c-transcript"'));
+    ok('…MIRROR: its tooltip opens with the relay\'s state, then says what stops and what does not',
+        /Baton relay — leg 2 · successor waiting/.test(status())
+        && /Nothing is deleted/.test(status()) && /baton\.stop chain=chn_muq2k1/.test(status()));
+    posted.length = 0;
+    els['c-baton-stop'].listeners.click();
+    ok('…and the press names the chain to the host — nothing else',
+        posted.length === 1 && posted[0].type === 'batonStopChain' && posted[0].chainId === 'chn_muq2k1');
+    push(data(CONVO.slice(), { batonView: relay(false) }));
+    ok('‼️ a chain with nothing left to open keeps its chip and draws no brake',
+        /class="batonsig">⑂ 2</.test(status()) && !/id="c-baton-stop"/.test(status()));
+    push(data(CONVO.slice(), { batonView: null }));
+    ok('‼️ a run no baton touched has neither', !/batonsig|c-baton-stop/.test(status()));
+
     // A reading larger than the window is two moments, not a full bar.
     push(data(CONVO.slice(), { contextTokens: 300000, contextWindowTokens: 258400 }));
     ok('‼️ tokens > window draws no percentage and says why',
