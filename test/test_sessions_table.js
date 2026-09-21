@@ -337,6 +337,27 @@ const mkRow = (i, extra) => Object.assign({
         !containers.box.innerHTML.includes('Project · '));
 }
 
+// ---------- S-77: the ⑂ column — a relay leg, blank on every other row ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'box',
+        columns: ['origin', 'chain', 'title', 'when'], stateKey: 'box'
+    });
+    const leg = { chainId: 'chn_t', leg: 2, chip: '⑂ 2', head: 'Baton relay — leg 2',
+        lines: ['Chain: chn_t — leg 2 of 2 so far.', 'Predecessor: session aaaa1111 (developer · claude) passed the baton to this run.'], stoppable: false };
+    t.setRows([mkRow(1, { chain: leg }), mkRow(2, { chain: null })], 10);
+    const html = () => containers.box.innerHTML;
+    const cells = () => html().match(/<td class="chaincell[^"]*"[^>]*>[\s\S]*?<\/td>/g) || [];
+    ok('the heading is one glyph, its meaning on the heading', /<th class="chaincell" title="Baton relay: ⑂ n = this session ran leg n of a chain/.test(html()));
+    ok('…the heading sits right after the origin strip', html().indexOf('<th class="origcell"') < html().indexOf('<th class="chaincell"')
+        && html().indexOf('<th class="chaincell"') < html().indexOf('>Title</th>'));
+    ok('a relay row draws ⑂ 2 and opens the chain in the rich panel',
+        cells().length === 2 && /class="chaincell af-tipw"/.test(cells()[0]) && />⑂ 2</.test(cells()[0])
+        && cells()[0].includes('Baton relay — leg 2') && cells()[0].includes('Predecessor: session aaaa1111'));
+    ok('…and a row no baton touched is a blank cell, no panel', cells()[1] === '<td class="chaincell"></td>');
+}
+
 // ---------- S-17: the TURN rows are where the detail actually lives ----------
 {
     posted = []; state = {};

@@ -16,6 +16,8 @@ import { LaunchManifest, manifestOf } from '../core/launchManifest';
 import { billingReader, describeDrift, runDrift, sessionIdentity, turnRuntimes } from '../core/turnRuntime';
 import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
+import { Baton } from '../core/baton';
+import { batonCardView } from '../core/batonView';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -136,6 +138,11 @@ export const SESSION_TABLE_N = 12;
  *  The dashboard is a fleet-wide glance; the agent page is that agent's log. */
 export const DASHBOARD_SESSION_TABLE_N = 20;
 export const AGENT_SESSION_TABLE_N = 50;
+
+/** S-77 — the relay store, handed in once by the host: every sessions table's ⑂ column reads it. */
+let batonSource: (() => readonly Baton[]) | undefined;
+export function setBatonSource(fn: () => readonly Baton[]): void { batonSource = fn; }
+
 export function sessionRowPool(
     sessions: SessionInfo[],
     isActive?: (s: SessionInfo) => boolean,
@@ -309,6 +316,9 @@ export function sessionRowPool(
             breaks: v.breaks
         };
     };
+    const batons = (() => { try { return batonSource?.() ?? []; } catch { return []; } })();
+    const relayIds = new Set<string>();
+    for (const b of batons) { relayIds.add(b.from.sessionId); if (b.toSessionId) { relayIds.add(b.toSessionId); } }
     const rows = sessions.map(s => ({
         ...spanFields(s),
         file: s.file,
@@ -358,6 +368,8 @@ export function sessionRowPool(
         // and leaves them out by default: on a farm that runs missions they are
         // the majority of the log, and the log is first of all a person's own.
         mission: sessionMission(s) ?? null,
+        // S-77 — this run's leg of a baton relay (the card's own view); null off a relay
+        chain: s.sessionId && relayIds.has(s.sessionId) ? (batonCardView(batons, s.sessionId) ?? null) : null,
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,
         tags: s.tags ?? [],

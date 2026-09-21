@@ -333,6 +333,10 @@
            other automation runs: it is off by default, so a row that is on
            screen at all is one somebody asked to see. */
         .origcell.mission { opacity:1; }
+        /* S-77 - the relay leg: one narrow strip, blank on every row no baton touched. */
+        .chaincell { width:34px; text-align:center; font-size:11px; white-space:nowrap; cursor:default;
+            font-weight:600; color:var(--vscode-textLink-foreground); }
+        th.chaincell { color:inherit; }
         /* Pin: the shelf. One narrow always-present column — an outlined star
            on every row (click to shelve), filled on the ones you keep. */
         .pincell { width:20px; text-align:center; }
@@ -1198,6 +1202,7 @@
          */
         const HEAD = {
             origin: '<th class="origcell" title="Who started the session: 🧑 you · 🤖 automation · ' + MISSION_GLYPH + ' a mission (hover the cell for which one) · 🌙 beside the robot = headless, it ran with no terminal and nobody at it">By</th>',
+            chain: '<th class="chaincell" title="Baton relay: ⑂ n = this session ran leg n of a chain. Empty = no baton touched it.">⑂</th>',
             agent: '<th title="Agent whose folder the session ran in. ● running · sub = sub-agent · ⌨ terminal · ⎋ interrupt">Agent</th>',
             // ‼️ WHICH ENGINE RAN IT — the column this table never had. Four
             // engines write sessions now and the table listed them as if they
@@ -1261,6 +1266,10 @@
                 const moon = isHeadless(r) ? `<span class="hgl">${HLESS_GLYPH}</span>` : '';
                 return `<td class="origcell ${o.id}${moon ? ' hless' : ''}" title="${tipOf(TIP.origin(r))}">${o.glyph}${moon}</td>`;
             },
+            // S-77 — the host's own view of the leg (batonCardView), drawn only on a relay row
+            chain: r => (r.chain && r.chain.chip
+                ? window.AFTip.cell('chaincell', '', C.esc(r.chain.chip), r.chain.head, window.AFTip.lines(r.chain.lines || []))
+                : '<td class="chaincell"></td>'),
             agent: r => `<td title="${tipOf(TIP.agent(r))}"><span class="cellline">${dot(r)}<span class="ctext">${C.esc(r.agent)}</span>${subBadge(r)}${termBtn(r)}${stopBtn(r)}</span></td>`,
             // ‼️ X-110 — TWO AXES, TWO MARKS, ONE CELL. The engine is the CLI
             // that ran; the provider is who answered it, and a table where the

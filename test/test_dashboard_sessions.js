@@ -75,6 +75,28 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ok('custom n honored: mid rows stay out', !small.includes('f10') && small.length <= 12);
     // Show box "All" (n=0) and any n covering the list ship every session
     ok('n=0 ships every session (Show → All)', sessionRowPool(sessions, undefined, 0).length === 30);
+
+    // S-77 — the ⑂ column's data: the host's own leg view, on relay rows only.
+    {
+        const D = require(path.join(__dirname, '..', 'out', 'panels', 'dashboard.js'));
+        const mkB = (id, state, hop, from, extra) => ({
+            id, chainId: 'chn_t', hop, state, prompt: 'p', why: 'w',
+            from: { sessionId: from, agentId: 'dev', engine: 'claude', cwd: 'D:\\x', launchId: 'l' },
+            inherit: { surface: 'console' }, want: { surface: 'inherit', account: '@emptiest' },
+            createdAt: 1, updatedAt: 1, ...extra
+        });
+        const ofSid = (rows, sid) => rows.find(r => r.sessionId === sid);
+        ok('no relay store handed in: every row is off a relay', sessionRowPool(sessions, undefined, 0).every(r => r.chain === null));
+        D.setBatonSource(() => [mkB('b1', 'started', 1, 'sid1', { toSessionId: 'sid2' })]);
+        const rows = sessionRowPool(sessions, undefined, 0);
+        ok('S-77: the leg that passed carries ⑂ 1, the leg it opened ⑂ 2, an untouched run null',
+            ofSid(rows, 'sid1').chain.chip === '⑂ 1' && ofSid(rows, 'sid2').chain.chip === '⑂ 2' && ofSid(rows, 'sid3').chain === null
+            && /Predecessor: session sid1/.test(ofSid(rows, 'sid2').chain.lines.join('\n')));
+        D.setBatonSource(() => { throw new Error('store not up'); });
+        ok('…and a store that cannot answer leaves every row off a relay, never breaks the table',
+            sessionRowPool(sessions, undefined, 0).every(r => r.chain === null));
+        D.setBatonSource(() => []);
+    }
     ok('n beyond the list ships every session', sessionRowPool(sessions, undefined, 500).length === 30);
     ok('turns carried from userTurns', pool.find(r => r.file === 'f15').turns === 99);
     ok('active flag from callback', pool.find(r => r.file === 'f30').active === true && r1.active === false);

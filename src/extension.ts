@@ -547,7 +547,7 @@ import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
-import { DashboardPanel, sessionRowPool } from './panels/dashboard';
+import { DashboardPanel, sessionRowPool, setBatonSource } from './panels/dashboard';
 import { StudioPanel } from './panels/studioPanel';
 import { GuidePanel } from './panels/guide';
 import { AirtablePanel } from './panels/airtablePanel';
@@ -16348,6 +16348,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // S-66 — the batons, on disk beside the context guard's records.
     const batonStore = new BatonStore(path.join(context.globalStorageUri.fsPath, 'batons.json'));
     context.subscriptions.push({ dispose: () => batonStore.flush() });
+    setBatonSource(() => batonStore.all());
     registerBatonOps(bridge, {
         store: batonStore,
         caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,

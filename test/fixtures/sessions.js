@@ -189,8 +189,24 @@ const data = () => ({
 
 // X-33 — the filter panel is a surface of its own and had never been looked at:
 // its controls carried thin native tooltips, and three of them carried none.
+/** S-77 — two legs of one relay, in the host's own words (batonCardView); the other rows none. */
+function relayData() {
+    const V = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'batonView.js'));
+    const d = data();
+    const mk = (id, state, hop, from, extra) => Object.assign({
+        id, chainId: 'chn_muq2k1', hop, state, prompt: 'p', why: 'waiting for this session to end',
+        from: { sessionId: from, agentId: 'd:/zone/agent/ajanlar/developer', engine: 'claude', cwd: 'D:\\x', launchId: 'l' },
+        inherit: { surface: 'console' }, want: { surface: 'inherit', account: '@emptiest' },
+        createdAt: NOW, updatedAt: NOW
+    }, extra);
+    const list = [mk('b1', 'started', 1, 'session-3', { toSessionId: 'session-2' }), mk('b2', 'waiting-end', 2, 'session-2')];
+    for (const s of d.sessions) { s.chain = V.batonCardView(list, s.sessionId) || null; }
+    return d;
+}
+
 const variants = () => [
     { id: 'table', label: 'Sessions — the table', data: data() },
+    { id: 'relay', label: 'Sessions — two legs of one baton relay: ⑂ 1 and ⑂ 2 in the narrow column, blank everywhere else', data: relayData() },
     {
         id: 'filters', label: 'Sessions — the filter panel open', data: data(),
         act: (r) => { r.query('.af-filter')[0].click(); }
