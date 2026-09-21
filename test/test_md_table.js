@@ -109,6 +109,16 @@ const AT = Date.parse('2026-08-14T12:00:00Z');
     ok('…and so does the op, so the two cannot describe a table differently',
         /markdownTable\(t\)\.replace/.test(op) && /tasks\.analytics\.export/.test(op));
 
+    // ‼️ The runs board is ONE set of rows read two ways (tasks.list · the
+    // document tasks.export writes), never two ideas of what a row is.
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('tasks.list and tasks.export both read the board through taskRows()',
+        /const taskRows = \(\): Record<string, unknown>\[\] =>/.test(ext)
+        && (ext.match(/handler: \(\) => taskRows\(\)/g) || []).length === 1
+        && /const rows = taskRows\(\);/.test(ext));
+    ok('…and the document is markdownTable over columns derived from those rows',
+        /markdownTable\(tableOfRecords\('Agent Farm — runs', rows\)\)/.test(ext));
+
     // ‼️ …and the wire really carries it: press the page's own ⬇ MD and build
     // the document out of what it posted, exactly as the host does.
     const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));

@@ -516,6 +516,8 @@ import { SecretsPanel } from './panels/secretsPanel';
 import { AccountsPanel } from './panels/accountsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
+import { deliverDocument, exportStamp } from './core/exportDoc';
+import { markdownTable, tableOfRecords } from './core/mdTable';
 import {
     registerSuperpowersOps, superpowersBlock, superpowersDefaultFor,
     superpowersDefaultsKey, superpowersFallbackRoot, superpowersHealth,
@@ -7857,6 +7859,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         debounceSec: 10, cooldownSec: 60, maxPerHour: 6, enabled: true
     });
+    /**
+     * The board's rows, in one place: tasks.list answers with them and
+     * tasks.export (B-21) writes the same table as a document. Two readings
+     * of one board must not become two ideas of what a row is.
+     */
+    const taskRows = (): Record<string, unknown>[] => taskManager.tasks.map(t => ({
+        id: t.id, title: t.title, agent: t.agentName, status: t.status,
+        mode: t.mode, createdAt: t.createdAt, costUSD: t.costUSD,
+        tokens: t.tokens ?? 0,
+        engine: t.engine ?? 'claude',
+        reportsCost: engineOf(t.engine).reportsCost,
+        // ‼️ B-12 — WHOSE FIGURE `costUSD` IS. `reportsCost` alone says
+        // yes-or-no; this says where the number came from, which is what
+        // decides whether it may be added to a budget total.
+        costSource: engineOf(t.engine).costSource,
+        // …and what it runs on. A provider-qualified id (OpenCode names
+        // models `provider/model`) is the whole string or it is nothing,
+        // and a row that dropped it could not be read back as itself.
+        model: t.model ?? null,
+        resume: t.resumeSessionId ?? null,
+        resumedFrom: t.resumedFrom ?? null,
+        heldBy: t.deferredReason ?? null,
+        heldByCode: t.deferredCode ?? null,
+        parkEpisode: t.parkEpisode ?? 0,
+        // ‼️ M-12 — A `failed` ROW IS NOT ONE ANSWER. "It never started"
+        // and "it worked for 45 minutes and was cut off" have opposite
+        // consequences for whoever reads this, and the second one used
+        // to be reported as the first.
+        failurePhase: t.failurePhase ?? null,
+        didWork: t.failurePhase === 'interrupted' ? describeFailurePhase(t) : null,
+        // ‼️ S-31 — the conversation this run PRODUCED, which is what
+        // opens its transcript. Different from `resume`, which is the
+        // conversation it was told to continue.
+        runSession: t.runSessionId ?? null,
+        // ‼️ M-10 — a continuation is not a repeat; the chain says which.
+        continuationOf: t.continuationOf ?? null
+    }));
+
     bridge.register([
         {
             op: 'agents.list',
@@ -7888,38 +7928,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'total. ‼️ M-11 — `heldBy` is the sentence a parked row shows (live figures and all) and '
                 + '`heldByCode` is the stable name of the ceiling behind it: poll the CODE to tell "still '
                 + 'the same hold" from "held by something else now". args: none',
-            handler: () => taskManager.tasks.map(t => ({
-                id: t.id, title: t.title, agent: t.agentName, status: t.status,
-                mode: t.mode, createdAt: t.createdAt, costUSD: t.costUSD,
-                tokens: t.tokens ?? 0,
-                engine: t.engine ?? 'claude',
-                reportsCost: engineOf(t.engine).reportsCost,
-                // ‼️ B-12 — WHOSE FIGURE `costUSD` IS. `reportsCost` alone says
-                // yes-or-no; this says where the number came from, which is what
-                // decides whether it may be added to a budget total.
-                costSource: engineOf(t.engine).costSource,
-                // …and what it runs on. A provider-qualified id (OpenCode names
-                // models `provider/model`) is the whole string or it is nothing,
-                // and a row that dropped it could not be read back as itself.
-                model: t.model ?? null,
-                resume: t.resumeSessionId ?? null,
-                resumedFrom: t.resumedFrom ?? null,
-                heldBy: t.deferredReason ?? null,
-                heldByCode: t.deferredCode ?? null,
-                parkEpisode: t.parkEpisode ?? 0,
-                // ‼️ M-12 — A `failed` ROW IS NOT ONE ANSWER. "It never started"
-                // and "it worked for 45 minutes and was cut off" have opposite
-                // consequences for whoever reads this, and the second one used
-                // to be reported as the first.
-                failurePhase: t.failurePhase ?? null,
-                didWork: t.failurePhase === 'interrupted' ? describeFailurePhase(t) : null,
-                // ‼️ S-31 — the conversation this run PRODUCED, which is what
-                // opens its transcript. Different from `resume`, which is the
-                // conversation it was told to continue.
-                runSession: t.runSessionId ?? null,
-                // ‼️ M-10 — a continuation is not a repeat; the chain says which.
-                continuationOf: t.continuationOf ?? null
-            }))
+            handler: () => taskRows()
+        },
+        {
+            op: 'tasks.export',
+            describe: 'B-21 — THE RUNS BOARD AS A DOCUMENT. tasks.list hands back the rows to compute with; this hands back the same rows as a Markdown table, ready to be filed or pasted. Columns are DERIVED from the rows, so a field the board starts carrying appears here without anybody adding a column — and every caveat tasks.list states about `costUSD` (read `reportsCost` and `costSource` first) is true of this table too, because it IS that table. args: file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
+            handler: (args) => {
+                const rows = taskRows();
+                need(rows.length > 0, 'The board is empty — there is nothing to export.');
+                return {
+                    rows: rows.length,
+                    ...deliverDocument(args,
+                        markdownTable(tableOfRecords('Agent Farm — runs', rows)),
+                        `AgentFarm-Runs-${exportStamp()}.md`, defaultReportDir)
+                };
+            }
         },
         {
             op: 'tasks.add',

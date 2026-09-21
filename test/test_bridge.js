@@ -4965,13 +4965,22 @@ const { opencodeStatus, syncToOpencode } =
         // next: an agent polling `tasks.list` and seeing `failed` used to have
         // no way to tell "it never started" from "it was cut off half-way", and
         // resending the work is right for one and destructive for the other.
-        const list = at('tasks.list');
+        // ‼️ B-21 — the row is built ONCE (`taskRows`) and read twice: tasks.list
+        // answers with it and tasks.export writes it as a document. So what is
+        // pinned is the ROW, not whichever op happens to return it.
+        const list = (() => {
+            const start = src.indexOf('const taskRows = (): Record<string, unknown>[] =>');
+            const end = src.indexOf('\n    }));', start);
+            return start < 0 ? '' : src.slice(start, end < 0 ? src.length : end);
+        })();
         ok('‼️ tasks.list separates a run that never started from one that was cut off',
             /failurePhase: t\.failurePhase \?\? null/.test(list)
             && /didWork: t\.failurePhase === 'interrupted'/.test(list));
         ok('…and gives the conversation the run PRODUCED, not only the one it continued',
             /runSession: t\.runSessionId \?\? null/.test(list)
             && /continuationOf: t\.continuationOf \?\? null/.test(list));
+        ok('…and tasks.list is still the op that hands that row over',
+            /handler: \(\) => taskRows\(\)/.test(at('tasks.list')));
         const get2 = at('tasks.get');
         ok('‼️ tasks.get carries the evidence, not only the verdict',
             /progress: task\.progress \?\? null/.test(get2)
