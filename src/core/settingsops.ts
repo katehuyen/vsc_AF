@@ -191,9 +191,20 @@ const CATEGORY_OF: Record<string, string> = {
     // U-119 — what Allow/Reject type into a blocked session's terminal. It sits
     // with the live monitor because that is what notices the block.
     permissionAnswerKeys: 'live',
-    maxTranscriptMessages: 'live', contextWindowTokens: 'live',
-    // S-64 — the two context discipline lines ride beside the window ceiling.
-    contextConvergePct: 'live', contextHandoverPct: 'live', quotaConvergePct: 'live', quotaHandoverPct: 'live', bridgeGuard: 'live',
+    maxTranscriptMessages: 'live', contextWindowTokens: 'live', bridgeGuard: 'live',
+    /**
+     * ‼️ S-80 — THE HANDOVER RULE IS ITS OWN SECTION, and the words are the
+     * argument. The four percentages lived under Live Monitoring because each
+     * of them, one at a time, is "a threshold the monitor watches" — true about
+     * each and wrong about the set: they are not a monitor's sensitivity, they
+     * are the law a run is held to, and once the SENTENCE they deliver became
+     * editable too there was a subject here rather than four stray numbers.
+     * `contextWindowTokens` stays behind on purpose: it is the ceiling EVERY
+     * context figure is drawn against, not a line anybody is held to.
+     */
+    contextConvergePct: 'discipline', contextHandoverPct: 'discipline',
+    quotaConvergePct: 'discipline', quotaHandoverPct: 'discipline',
+    disciplineOrders: 'discipline',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.
@@ -327,6 +338,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['display', 'Display & Labels'],
     ['prompts', 'Saved prompts'],
     ['live', 'Live Monitoring & Alerts'],
+    ['discipline', 'Handover Discipline — the lines and their words'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
     ['sentry', 'Sentry — unattended campaigns'],

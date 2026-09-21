@@ -106,41 +106,81 @@ export function quotaLevelFor(pct: number | undefined, t: ContextThresholds): Co
  * figure (90 hand over, _REF/handover.md; converge only if the user sets one), read from the
  * session's OWN sign-in — never the home folder's.
  */
-export function quotaSignalText(level: ContextLevel, pct: number, account: string, relay?: BatonRelay): string {
+export function quotaSignalText(level: ContextLevel, pct: number, account: string, relay?: BatonRelay, orders?: Partial<DisciplineOrders>): string {
     const who = account ? ` (${account})` : '';
     return level === 'handover'
-        ? `${QUOTA_HANDOVER_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (handover line reached). ${orderFor('handover', relay)}`
-        : `${QUOTA_CONVERGE_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (converge line reached). ${orderFor('converge', relay)}`;
+        ? `${QUOTA_HANDOVER_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (handover line reached). ${orderFor('handover', relay, orders)}`
+        : `${QUOTA_CONVERGE_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (converge line reached). ${orderFor('converge', relay, orders)}`;
 }
 
-export function contextSignalText(level: ContextLevel, pct: number, relay?: BatonRelay): string {
+export function contextSignalText(level: ContextLevel, pct: number, relay?: BatonRelay, orders?: Partial<DisciplineOrders>): string {
     return level === 'handover'
-        ? `${CONTEXT_HANDOVER_WORD} ${pct}% — your context window is ${pct}% full (handover line reached). ${orderFor('handover', relay)}`
-        : `${CONTEXT_CONVERGE_WORD} ${pct}% — your context window is ${pct}% full (converge line reached). ${orderFor('converge', relay)}`;
+        ? `${CONTEXT_HANDOVER_WORD} ${pct}% — your context window is ${pct}% full (handover line reached). ${orderFor('handover', relay, orders)}`
+        : `${CONTEXT_CONVERGE_WORD} ${pct}% — your context window is ${pct}% full (converge line reached). ${orderFor('converge', relay, orders)}`;
 }
 
 /**
- * S-76 — THE ORDER, ONE TEXT WITH TWO BRANCHES. Outside a relay it is the
- * handover note, as the law always said; a runner of a baton relay passes the
- * baton instead (its successor's first message IS the handover), and one that
- * already passed is only told to end.
+ * ‼️ S-80 — THE ORDER IS DATA, NOT A STRING LITERAL.
+ *
+ * The thresholds were already settings; the SENTENCE those thresholds deliver
+ * was not, and a percentage nobody can retune is only half of a rule that has
+ * to survive a change of project, engine or fleet discipline. The six branches
+ * below are the whole vocabulary — outside a relay the order is the handover
+ * note, as the law always said; a runner of a baton relay passes the baton
+ * instead (its successor's first message IS the handover), and one that already
+ * passed is only told to end.
+ *
+ * The lead words (`CONTEXT HANDOVER`, `QUOTA CONVERGE`, …) and the reading are
+ * deliberately NOT here: `_REF/handover.md` waits for exactly those, so they
+ * are the protocol and this is the instruction that follows them.
  */
-function orderFor(level: ContextLevel, relay?: BatonRelay): string {
+export interface DisciplineOrders {
+    converge: string;
+    handover: string;
+    relayConverge: string;
+    relayHandover: string;
+    relayPassedConverge: string;
+    relayPassedHandover: string;
+}
+
+/** `{chain}` in any of the six is replaced by the relay's own chain and hop. */
+export const ORDER_CHAIN_TOKEN = '{chain}';
+
+export const DEFAULT_DISCIPLINE_ORDERS: DisciplineOrders = {
+    converge: 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
+        + 'then hand over (_REF/handover.md).',
+    handover: 'Stop here: finish nothing further, commit the clean progress, write the handover note '
+        + 'and end the run — the next run continues from the note (_REF/handover.md).',
+    relayConverge: 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
+        + `then pass the baton (${ORDER_CHAIN_TOKEN}; _REF/handover.md).`,
+    relayHandover: `You run in a ${ORDER_CHAIN_TOKEN}: stop here, finish nothing further, commit the clean progress and pass the baton `
+        + 'instead of writing a handover note — Write { "prompt": "<what your successor starts from>" } to a file, '
+        + 'run node af.js baton.pass "@<file>", then end the run; the next runner opens once this session has ended (_REF/handover.md).',
+    relayPassedConverge: `Your baton is already passed (${ORDER_CHAIN_TOKEN}): start nothing new, finish the step in flight and end the run `
+        + '— the successor opens once this session has ended (_REF/handover.md).',
+    relayPassedHandover: `Your baton is already passed (${ORDER_CHAIN_TOKEN}): commit anything left and end the run now `
+        + '— the successor opens once this session has ended (_REF/handover.md).'
+};
+
+/** A blank or missing branch is the built-in one: an empty box is "leave it alone". */
+export function normalizeOrders(o: Partial<DisciplineOrders> | undefined): DisciplineOrders {
+    const out = { ...DEFAULT_DISCIPLINE_ORDERS };
+    for (const k of Object.keys(DEFAULT_DISCIPLINE_ORDERS) as (keyof DisciplineOrders)[]) {
+        const v = o?.[k];
+        if (typeof v === 'string' && v.trim()) { out[k] = v.trim(); }
+    }
+    return out;
+}
+
+export function orderFor(level: ContextLevel, relay?: BatonRelay, orders?: Partial<DisciplineOrders>): string {
+    const o = normalizeOrders(orders);
     const chain = relay ? `baton relay — chain ${relay.chainId}, hop ${relay.hop}` : '';
-    if (relay?.passed) {
-        return `Your baton is already passed (${chain}): ${level === 'handover' ? 'commit anything left and end the run now' : 'start nothing new, finish the step in flight and end the run'} `
-            + '— the successor opens once this session has ended (_REF/handover.md).';
-    }
-    if (level === 'converge') {
-        return 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
-            + (relay ? `then pass the baton (${chain}; _REF/handover.md).` : 'then hand over (_REF/handover.md).');
-    }
-    return relay
-        ? `You run in a ${chain}: stop here, finish nothing further, commit the clean progress and pass the baton `
-            + 'instead of writing a handover note — Write { "prompt": "<what your successor starts from>" } to a file, '
-            + 'run node af.js baton.pass "@<file>", then end the run; the next runner opens once this session has ended (_REF/handover.md).'
-        : 'Stop here: finish nothing further, commit the clean progress, write the handover note '
-            + 'and end the run — the next run continues from the note (_REF/handover.md).';
+    const text = relay?.passed
+        ? (level === 'handover' ? o.relayPassedHandover : o.relayPassedConverge)
+        : relay
+            ? (level === 'handover' ? o.relayHandover : o.relayConverge)
+            : (level === 'handover' ? o.handover : o.converge);
+    return text.split(ORDER_CHAIN_TOKEN).join(chain);
 }
 
 /** Through what the signal reached the session. */
@@ -244,6 +284,8 @@ export interface ContextGuardDeps {
     quota?: (sessionId: string, hint: ContextReadHint) => QuotaSample | undefined;
     /** S-76 — the baton relay this session runs in, if any: the order becomes "pass the baton" */
     relay?: (sessionId: string) => BatonRelay | undefined;
+    /** S-80 — the words the lines deliver (agentFarm.disciplineOrders); a blank branch keeps its built-in sentence */
+    orders?: () => Partial<DisciplineOrders> | undefined;
     /** Records survive a reload here (JSON). Optional so a test stays in memory. */
     storeFile?: string;
     now?: () => number;
@@ -327,7 +369,7 @@ export class ContextGuard {
         // handover contains converge: a run told to stop was told to start nothing.
         if (level === 'handover' && !rec.converge) { rec.converge = { ...delivery }; }
         this.save();
-        return { level, pct, text: contextSignalText(level, pct, this.relayOf(id)), dimension: 'context' };
+        return { level, pct, text: contextSignalText(level, pct, this.relayOf(id), this.orders()), dimension: 'context' };
     }
 
     /**
@@ -367,12 +409,17 @@ export class ContextGuard {
         q[level] = delivery;
         if (level === 'handover' && !q.converge) { q.converge = { ...delivery }; }
         this.save();
-        return { level, pct, account: sample.account, text: quotaSignalText(level, pct, sample.account, this.relayOf(id)) };
+        return { level, pct, account: sample.account, text: quotaSignalText(level, pct, sample.account, this.relayOf(id), this.orders()) };
     }
 
     /** A relay that cannot be read is no relay — the order falls back to the note, never breaks the hook. */
     private relayOf(id: string): BatonRelay | undefined {
         try { return this.deps.relay?.(id); } catch { return undefined; }
+    }
+
+    /** S-80 — the same rule for the words: a setting that cannot be read leaves the built-in sentence. */
+    orders(): DisciplineOrders {
+        try { return normalizeOrders(this.deps.orders?.()); } catch { return { ...DEFAULT_DISCIPLINE_ORDERS }; }
     }
 
     /**

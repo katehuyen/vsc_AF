@@ -435,6 +435,16 @@
             return `<input type="text" ${a} value="${C.esc(text)}"
                 placeholder="${C.esc(f.type)} — as JSON">`;
         }
+        // ‼️ S-80 — A FIELD WHOSE OWN DEFAULT DOES NOT FIT THE BOX IS NOT A
+        // ONE-LINE FIELD. The row's input is 170px wide, which is right for a
+        // model id and absurd for a sentence: `disciplineOrders` holds orders
+        // of up to three lines and every one of them would have been edited
+        // through a keyhole. Derived from the schema's own declared default,
+        // never a list of keys — a long-text field added tomorrow gets the
+        // right box without this page being touched.
+        if (String(f.default || '').length > 80) {
+            return `<textarea rows="3" ${a} placeholder="${C.esc(f.default)}">${C.esc(text)}</textarea>`;
+        }
         return `<input type="text" ${a} value="${C.esc(text)}" placeholder="${
             C.esc(f.default !== undefined ? f.default : f.name)}">`;
     }
@@ -1822,6 +1832,25 @@
     ];
 
     /**
+     * ‼️ S-80 — THE HANDOVER RULE, AS TWO QUESTIONS. WHEN a running session is
+     * spoken to, and WHAT it is then told. They are one subject and two
+     * decisions, and filing them together is the point: a threshold nobody can
+     * retune and a sentence nobody can rewrite were each half a rule.
+     */
+    const DISCIPLINE_GROUPS = [
+        {
+            title: 'When a run is spoken to',
+            why: 'A run is held to whichever line it reaches first — its own context window, or the 5-hour quota of the account it is signed in as (read from that session\'s sign-in, never the home folder\'s). Converge is the earlier, quieter word; hand over is the end of the run. 0 switches a line off, and a converge line above its own handover line is folded down onto it.',
+            keys: ['contextConvergePct', 'contextHandoverPct', 'quotaConvergePct', 'quotaHandoverPct']
+        },
+        {
+            title: 'What it is told',
+            why: 'The lead words (CONTEXT HANDOVER, QUOTA CONVERGE…) and the reading in front of them are the law\'s and stay fixed — this is the order that follows them. Six branches, because a run carrying a baton passes it instead of writing a note. Leave a branch empty and its built-in sentence stays in charge; {chain} becomes the relay\'s own chain and hop.',
+            keys: ['disciplineOrders']
+        }
+    ];
+
+    /**
      * The variable dictionary, DRAWN from what the host sent rather than
      * repeated here — a variable added to core/pathVars.ts turns up in this
      * legend without this file being touched.
@@ -1854,11 +1883,18 @@
         </div>`;
     }
 
-    function sentrySection(cat) {
+    /**
+     * A category drawn as named groups rather than one alphabetical run. The
+     * grouping is this page's, not the manifest's — a section is only worth one
+     * when the reader's question ("which of these do I touch?") has an answer
+     * the key names do not give. A setting no group claims is still drawn: a
+     * category that hides a key is worse than one that files it loosely.
+     */
+    function groupedSection(cat, spec, lead) {
         const items = (cat && cat.items) || [];
         const short = (it) => String(it.key).replace(/^agentFarm\./, '');
         const taken = {};
-        const groups = SENTRY_GROUPS.map(g => {
+        const groups = spec.map(g => {
             const mine = g.keys
                 .map(k => items.find(it => short(it) === k))
                 .filter(Boolean);
@@ -1873,13 +1909,17 @@
                 items: left
             });
         }
-        return `${pathVarLegend()}
+        return `${lead || ''}
             ${groups.map(g => `<div class="setgroup">
                 <h3 class="setgrouph">${C.esc(g.title)}</h3>
                 <div class="setgroupwhy">${C.esc(g.why)}</div>
                 ${g.items.map(itemHtml).join('')}
             </div>`).join('')}`;
     }
+
+    function sentrySection(cat) { return groupedSection(cat, SENTRY_GROUPS, pathVarLegend()); }
+
+    function disciplineSection(cat) { return groupedSection(cat, DISCIPLINE_GROUPS, ''); }
 
     function wikiSection(cat) {
         const w = DATA.wiki;
@@ -2768,8 +2808,23 @@
                 .setform { display:flex; flex-direction:column; gap:4px; max-width:860px; }
                 .setfrow { display:flex; align-items:center; gap:8px; }
                 .setfname { font-family:var(--vscode-editor-font-family); font-size:11px;
-                    flex:0 0 168px; cursor:help; border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                    cursor:help; border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                /* ‼️ S-80 — THE BASIS BELONGS TO THE FLEX CHILD, and the flex
+                   child is the AFTip WRAPPER, not the name inside it: the
+                   width was set on the span one level down, so a long field
+                   name pushed its own box right and the form's boxes never
+                   lined up. Invisible while every box was 170px of the same
+                   grey; a ladder of long-text boxes draws it immediately. */
+                .setform .setfrow > .tip-field { flex:0 0 168px; min-width:0; }
                 .setfrow input, .setfrow select { flex:0 0 170px; min-width:0; }
+                /* S-80 — a row holding a long-text field is a COLUMN, not a
+                   row: the box takes the width it needs and the sentence about
+                   it moves underneath, aligned to the box rather than to the
+                   label, so the form still reads as one ladder. */
+                .setfrow:has(textarea) { align-items:flex-start; flex-wrap:wrap; }
+                .setfrow textarea { flex:1 1 320px; min-width:0; resize:vertical;
+                    font-family:inherit; font-size:12px; line-height:1.45; }
+                .setfrow:has(textarea) .setfdescw { flex:1 0 100%; margin-left:176px; }
                 /* X-196 — the WRAPPER is the flex child now (the panel lives on
                    it), so it takes the sizing; the line inside it still has to
                    be a block or text-overflow has nothing to clip. */
@@ -2997,7 +3052,8 @@
                             : c.id === 'live' ? alertsSection(c)
                                 : c.id === 'access' ? accessSection(c)
                                     : c.id === 'sentry' ? sentrySection(c)
-                                        : c.items.map(itemHtml).join('')}`).join('')
+                                        : c.id === 'discipline' ? disciplineSection(c)
+                                            : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;

@@ -89,7 +89,7 @@ import {
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
-import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, ContextThresholds, DEFAULT_CONTEXT_THRESHOLDS, QuotaSample, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds, quotaLevelFor } from './core/contextGuard';
+import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalText, contextSignalView, ContextThresholds, DEFAULT_CONTEXT_THRESHOLDS, DEFAULT_DISCIPLINE_ORDERS, DisciplineOrders, QuotaSample, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds, quotaLevelFor } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
@@ -1551,6 +1551,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         quota: sessionQuotaSample,
         // S-76 — a runner of a baton relay is told to pass the baton, not to write a note.
         relay: (sessionId: string) => batonRelayOf(batonStore.all(), sessionId),
+        // S-80 — the words those lines deliver, retunable from the settings page.
+        orders: () => cfg().get<Partial<DisciplineOrders>>('disciplineOrders', {}),
         // A real hook payload never names its engine (X-265); one that reaches
         // this listener without a `cli:<engine>:` namespace is Claude Code's,
         // and Claude's hooks are the ones whose stdout carries additionalContext.
@@ -10589,6 +10591,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const reading = contextReadingFor(id, { transcriptPath: s?.file });
                     return {
                         thresholds: t,
+                        orders: contextGuard.orders(),
                         id,
                         reading: reading
                             ? { tokens: reading.tokens, window: reading.window ?? null, pct: contextPercent(reading) ?? null, source: reading.source ?? null, stale: !!reading.stale }
@@ -10608,12 +10611,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const limit = Math.max(1, Math.min(500, optNum(args, 'limit', 50)));
                 const all = contextGuard.all();
-                return { thresholds: t, total: all.length, records: all.slice(0, limit) };
+                const o = contextGuard.orders();
+                return {
+                    thresholds: t,
+                    orders: o,
+                    // S-80 — the words as they actually arrive, so a reader of the
+                    // bridge never has to assemble the sentence in their head.
+                    sample: {
+                        converge: contextSignalText('converge', t.convergePct, undefined, o),
+                        handover: contextSignalText('handover', t.handoverPct, undefined, o)
+                    },
+                    total: all.length,
+                    records: all.slice(0, limit)
+                };
             }
         },
         {
             op: 'sessions.contextGuard.set',
-            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. Answers the thresholds in force after the write. args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?',
+            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. ‼️ S-80 — `orders` sets WHAT those lines say (agentFarm.disciplineOrders): an object with any of converge, handover, relayConverge, relayHandover, relayPassedConverge, relayPassedHandover; `{chain}` becomes the relay\'s chain and hop, and a branch set to "" goes back to its built-in sentence. The lead words and the reading in front of the order are the law\'s and are not settable. Answers the thresholds and the orders in force after the write. args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?, orders? (object, or its JSON)',
             handler: async (args) => {
                 const cur = contextGuard.thresholds();
                 const next = normalizeThresholds({
@@ -10630,7 +10645,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 for (const [k, setting] of keys) {
                     if (next[k] !== cur[k]) { changed = true; await cfg().update(setting, next[k], vscode.ConfigurationTarget.Global); }
                 }
-                return { thresholds: contextGuard.thresholds(), changed };
+                // S-80 — the words. Only the branches named are touched, and a
+                // branch named as "" is REMOVED rather than stored empty: the
+                // built-in sentence is the fallback, not a blank order.
+                const rawOrders = args['orders'];
+                const asked = typeof rawOrders === 'string' && rawOrders.trim()
+                    ? JSON.parse(rawOrders) as Record<string, unknown>
+                    : (rawOrders && typeof rawOrders === 'object' ? rawOrders as Record<string, unknown> : undefined);
+                if (asked) {
+                    const known = Object.keys(DEFAULT_DISCIPLINE_ORDERS);
+                    const bad = Object.keys(asked).filter(k => !known.includes(k));
+                    if (bad.length) { throw new BridgeRefusal(`no such order branch: ${bad.join(', ')} — the six are ${known.join(', ')}`); }
+                    const stored = { ...(cfg().get<Record<string, unknown>>('disciplineOrders', {}) ?? {}) };
+                    for (const [k, v] of Object.entries(asked)) {
+                        const text = v == null ? '' : String(v).trim();
+                        if (text) { stored[k] = text; } else { delete stored[k]; }
+                    }
+                    changed = true;
+                    await cfg().update('disciplineOrders', stored, vscode.ConfigurationTarget.Global);
+                }
+                return { thresholds: contextGuard.thresholds(), orders: contextGuard.orders(), changed };
             }
         },
         {

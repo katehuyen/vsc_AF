@@ -8671,6 +8671,44 @@
           "maximum": 100,
           "description": "Quota discipline (S-75): when the session's own account window is this full, it is told once — QUOTA HANDOVER — to stop, commit, write the handover note and end the run (the handover law's 90%). A converge line above this one is folded down onto it. 0 = off."
         },
+        "agentFarm.disciplineOrders": {
+          "type": "object",
+          "default": {},
+          "description": "Handover discipline (S-80): WHAT the two lines actually order the running session to do. The lead words (CONTEXT CONVERGE / CONTEXT HANDOVER / QUOTA CONVERGE / QUOTA HANDOVER) and the reading in front of them are fixed — the handover law waits for exactly those — and this is the instruction that follows. Six branches, because a run in a baton relay is told to pass the baton rather than to write a note. Leave a field empty and its built-in sentence stays in charge; {chain} is replaced by the relay's own chain and hop. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set orders=.",
+          "properties": {
+            "converge": {
+              "type": "string",
+              "default": "Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, then hand over (_REF/handover.md).",
+              "description": "The converge line, outside a relay: the run may still work but starts nothing new."
+            },
+            "handover": {
+              "type": "string",
+              "default": "Stop here: finish nothing further, commit the clean progress, write the handover note and end the run — the next run continues from the note (_REF/handover.md).",
+              "description": "The handover line, outside a relay: stop, commit, write the note, end the run."
+            },
+            "relayConverge": {
+              "type": "string",
+              "default": "Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, then pass the baton ({chain}; _REF/handover.md).",
+              "description": "The converge line for a run inside a baton relay — it ends by passing the baton, not by writing a note."
+            },
+            "relayHandover": {
+              "type": "string",
+              "default": "You run in a {chain}: stop here, finish nothing further, commit the clean progress and pass the baton instead of writing a handover note — Write { \"prompt\": \"<what your successor starts from>\" } to a file, run node af.js baton.pass \"@<file>\", then end the run; the next runner opens once this session has ended (_REF/handover.md).",
+              "description": "The handover line for a run inside a baton relay: the successor's first message IS the handover, so this names the command that writes it."
+            },
+            "relayPassedConverge": {
+              "type": "string",
+              "default": "Your baton is already passed ({chain}): start nothing new, finish the step in flight and end the run — the successor opens once this session has ended (_REF/handover.md).",
+              "description": "The converge line for a relay runner that has ALREADY passed its baton — there is nothing left to hand over, only to end."
+            },
+            "relayPassedHandover": {
+              "type": "string",
+              "default": "Your baton is already passed ({chain}): commit anything left and end the run now — the successor opens once this session has ended (_REF/handover.md).",
+              "description": "The handover line for a relay runner that has already passed its baton: commit and end, the successor is waiting on this session."
+            }
+          },
+          "additionalProperties": false
+        },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,

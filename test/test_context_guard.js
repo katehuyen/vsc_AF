@@ -277,6 +277,86 @@ console.log('\n== S-76 — in a baton relay the order is "pass the baton", outsi
     ok('the host hands the guard the baton store\'s answer', /relay: \(sessionId: string\) => batonRelayOf\(batonStore\.all\(\), sessionId\),/.test(ext));
 }
 
+console.log('\n== S-80 — the ORDER is a setting; the lead words are the law\'s and are not ==');
+{
+    const D = G.DEFAULT_DISCIPLINE_ORDERS;
+    eq('the six branches are the whole vocabulary', Object.keys(D).sort(),
+        ['converge', 'handover', 'relayConverge', 'relayHandover', 'relayPassedConverge', 'relayPassedHandover']);
+    eq('nothing set is the built-in set, unchanged', G.normalizeOrders(undefined), D);
+    eq('a blank branch — empty or spaces — keeps its own sentence', G.normalizeOrders({ converge: '   ', handover: '' }), D);
+    ok('a branch that IS set wins, trimmed', G.normalizeOrders({ converge: '  Park it.  ' }).converge === 'Park it.');
+    ok('a value that is not a string is not an order', G.normalizeOrders({ handover: 42 }).handover === D.handover);
+
+    const mine = { converge: 'Dur, yeni is baslatma.', handover: 'Bitir ve devret.' };
+    ok('‼️ THE LEAD WORD AND THE READING ARE UNTOUCHED — only the order changes',
+        G.contextSignalText('converge', 36, undefined, mine)
+        === 'CONTEXT CONVERGE 36% — your context window is 36% full (converge line reached). Dur, yeni is baslatma.');
+    ok('…and the quota line takes the same words through the same door',
+        G.quotaSignalText('handover', 91, 'kate', undefined, mine)
+        === 'QUOTA HANDOVER 91% — your account\'s 5-hour window (kate) is 91% used (handover line reached). Bitir ve devret.');
+    const run = { chainId: 'chn_a', hop: 2, passed: false };
+    ok('a branch left alone still speaks its built-in sentence', /pass the baton/.test(G.contextSignalText('handover', 41, run, mine)));
+    ok('{chain} is replaced wherever it stands, as often as it stands',
+        G.orderFor('handover', run, { relayHandover: 'In {chain}: stop. Name {chain} in the note.' })
+        === 'In baton relay — chain chn_a, hop 2: stop. Name baton relay — chain chn_a, hop 2 in the note.');
+    ok('…and outside a relay it is simply nothing, never the token left showing',
+        G.orderFor('handover', undefined, { handover: 'Stop.{chain}' }) === 'Stop.');
+    const passed = { chainId: 'chn_a', hop: 2, passed: true };
+    ok('the already-passed pair are two whole sentences, not one with a fork inside it',
+        G.orderFor('handover', passed, { relayPassedHandover: 'END.' }) === 'END.'
+        && G.orderFor('converge', passed, { relayPassedHandover: 'END.' })
+        === D.relayPassedConverge.replace('{chain}', 'baton relay — chain chn_a, hop 2'));
+
+    const guardWith = (orders) => new G.ContextGuard({
+        thresholds: () => ({ convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 }),
+        read: () => ({ tokens: 82_000, window: 200_000, source: 'test' }),
+        orders,
+        channelFor: () => ({ channel: 'claude-hook' }),
+        now: () => 1
+    });
+    ok('the guard delivers the SETTING\'s words, not the literal in its own source',
+        /Park it and go\.$/.test(guardWith(() => ({ handover: 'Park it and go.' })).check('w1', { event: 'PostToolUse' }).text));
+    ok('‼️ a setting that cannot be read leaves the built-in sentence — never a blank order',
+        /write the handover note/.test(guardWith(() => { throw new Error('settings not ready'); }).check('w2', { event: 'PostToolUse' }).text));
+
+    // ‼️ THE MANIFEST AND THE CONSTANT ARE ONE TEXT. The form's placeholder is
+    // the manifest's declared default and the sentence actually sent is the
+    // constant: let them drift and the page teaches an order nobody delivers.
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const props = pkg.contributes.configuration.properties || {};
+    const p = props['agentFarm.disciplineOrders'];
+    ok('the setting is contributed, as an object that ships EMPTY', !!p && p.type === 'object' && JSON.stringify(p.default) === '{}');
+    eq('‼️ every branch\'s declared default IS the sentence the code sends',
+        Object.keys(D).map(k => ((p.properties || {})[k] || {}).default === D[k]), Object.keys(D).map(() => true));
+    ok('…and each branch says what it is for', Object.keys(D).every(k => String(((p.properties || {})[k] || {}).description || '').length > 20));
+
+    const S = require(path.join(ROOT, 'out', 'core', 'settingsops.js'));
+    const five = ['agentFarm.contextConvergePct', 'agentFarm.contextHandoverPct',
+        'agentFarm.quotaConvergePct', 'agentFarm.quotaHandoverPct', 'agentFarm.disciplineOrders'];
+    const only = {};
+    for (const k of five) { only[k] = props[k]; }
+    const cats = S.buildSettingsModel(only, (k) => only[k].default);
+    eq('‼️ the five are ONE section of their own — not "Other", not scattered through Live Monitoring',
+        cats.map(c => `${c.id}:${c.items.length}`), ['discipline:5']);
+    ok('…and the words are a FORM of six boxes, derived from the schema rather than a JSON textarea',
+        ((cats[0].items.find(i => i.key === 'agentFarm.disciplineOrders') || {}).shape || {}).kind === 'form');
+
+    const setjs = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+    ok('the settings page gives the section its own two groups',
+        /c\.id === 'discipline' \? disciplineSection\(c\)/.test(setjs) && /const DISCIPLINE_GROUPS = \[/.test(setjs));
+    ok('‼️ a field whose own default is a SENTENCE gets a box it fits in, derived from the schema',
+        /String\(f\.default \|\| ''\)\.length > 80/.test(setjs) && /<textarea rows="3"/.test(setjs));
+
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('the host hands the guard the setting', /orders: \(\) => cfg\(\)\.get<Partial<DisciplineOrders>>\('disciplineOrders', \{\}\),/.test(ext));
+    const setBlock = ext.slice(ext.indexOf("op: 'sessions.contextGuard.set'"), ext.indexOf("op: 'sessions.recent'"));
+    ok('the bridge sets the words too — an unknown branch is refused by name, and "" REMOVES a branch rather than storing a blank order',
+        /cfg\(\)\.update\('disciplineOrders', stored/.test(setBlock) && /delete stored\[k\]/.test(setBlock)
+        && /no such order branch/.test(setBlock));
+    const guardBlock = ext.slice(ext.indexOf("op: 'sessions.contextGuard'"), ext.indexOf("op: 'sessions.contextGuard.set'"));
+    ok('…and reads them back, with the sentence as it actually arrives', /orders: contextGuard\.orders\(\)/.test(guardBlock) && /sample: \{/.test(guardBlock));
+}
+
 console.log('\n== the wiring — the host reads, the hook answers, the bridge reports and sets ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
