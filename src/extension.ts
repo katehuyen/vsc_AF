@@ -303,6 +303,7 @@ import { registerBatonOps } from './core/batonBridge';
 import { successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
+import { batonCardView } from './core/batonView';
 import { quotaBrake } from './core/quotaBrake';
 import { revealPath } from './core/reveal';
 import {
@@ -12155,6 +12156,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // ‼️ B-23 — the searches for a session id the bridge guard
                     // stopped on this session. Null while there were none.
                     bridgeGuardView: bridgeGuardView(bridgeGuardLog.forSession(s.sessionId), relTime) ?? null,
+                    // S-77 — this run's leg of a baton relay; the store may not
+                    // be up yet while the host is still activating.
+                    batonView: (() => {
+                        try { return (s.sessionId && batonCardView(batonStore.all(), s.sessionId)) || null; } catch { return null; }
+                    })(),
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     // ‼️ The turn is OPEN and standing still until this is
                     // answered — `status` alone still says "working", which is

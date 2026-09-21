@@ -333,6 +333,8 @@
         .ctxsig.stop, .ctxsig.bad { color:var(--vscode-errorForeground, #f14c4c); }
         /* An order that was obeyed is not a warning any more. */
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
+        /* S-77: the relay leg is information, not a warning. */
+        .batonsig { font-weight:600; color:var(--vscode-textLink-foreground); }
         /* B-23: searches the bridge guard stopped. A rule that held is not an
            alarm, so the warning colour and not the error one. */
         .bgsig { font-weight:600; color:var(--vscode-editorWarning-foreground, #cca700); }
@@ -1554,6 +1556,13 @@
         const cls = q.state === 'undelivered' ? 'ctxsig bad' : q.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
         return `${cardTip(`<span class="${cls}">${C.esc(q.chip)}</span>`, q.head,
             window.AFTip.lines(q.lines || []), 'tip-quota')} · `;
+    };
+    /** S-77 — this run's leg of a baton relay: `⑂ 3`, the chain in its panel. The words are the host's. */
+    const batonChip = (s) => {
+        const v = s.batonView;
+        if (!v || !v.chip) { return ''; }
+        return `${cardTip(`<span class="batonsig">${C.esc(v.chip)}</span>`, v.head,
+            window.AFTip.lines(v.lines || []), 'tip-baton')} · `;
     };
     /**
      * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this
@@ -3170,7 +3179,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${quotaChip(s)}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${batonChip(s)}${quotaChip(s)}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${continueBtnHtml(s)}
