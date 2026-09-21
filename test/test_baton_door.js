@@ -108,5 +108,23 @@ function baton(o = {}) {
     ok('a headless row parks the same way', head.mode === 'headless' && head.wakeAt === resetsAt);
 }
 
+// ‼️ X-355 — measured live (S-79): every leg met the per-agent lock for a
+// second and the generic "Task parked" line fired on each. The relay's own
+// hand-off is not news; anything else holding its row still is.
+{
+    const { relayHandoffHold } = require(path.join(OUT, 'batonDoor.js'));
+    const batons = [{ id: 'b1', taskId: 'task-2' }];
+    ok('X-355: a successor row on the per-agent lock is the hand-off — quiet',
+        relayHandoffHold({ id: 'task-2', deferredCode: 'concurrency:agent:basit' }, batons) === true);
+    ok('…the same row held by anything else still speaks',
+        relayHandoffHold({ id: 'task-2', deferredCode: 'concurrency:fleet' }, batons) === false
+        && relayHandoffHold({ id: 'task-2', deferredCode: 'budget:fleet' }, batons) === false
+        && relayHandoffHold({ id: 'task-2' }, batons) === false);
+    ok('…and a row no baton opened is never silenced', relayHandoffHold({ id: 'task-9', deferredCode: 'concurrency:agent:basit' }, batons) === false);
+    const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const scan = ext.slice(ext.indexOf("if (t.status !== 'queued' || !t.autoStart || !t.deferredReason) { continue; }"), ext.indexOf('postNewsOnce(parkNoticeKey(t)'));
+    ok('…and the farm-news park scan asks it before posting', /if \(relayHandoffHold\(t, batonStore\.all\(\)\)\) \{ continue; \}/.test(scan));
+}
+
 console.log(`test_baton_door: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

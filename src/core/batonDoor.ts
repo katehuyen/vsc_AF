@@ -83,6 +83,17 @@ const same = (a: string | undefined, b: string | undefined): boolean =>
     !!a && !!b && normPath(a).replace(/[\\/]+$/, '').toLowerCase() === normPath(b).replace(/[\\/]+$/, '').toLowerCase();
 
 /** The successor's task row, surface by surface — one door, `tasks.add`. */
+/**
+ * ‼️ X-355 — IS THIS HOLD THE RELAY'S OWN HAND-OFF? A successor row is added
+ * the moment its predecessor's SESSION ends, a beat before that run's own row
+ * closes, so on every leg it meets the per-agent lock for a second or two.
+ * That is the door working, not news: the relay speaks for its rows (S-77 —
+ * a park, a brake), so the generic "Task parked" line stays quiet for it.
+ */
+export function relayHandoffHold(t: { id: string; deferredCode?: string }, batons: readonly Baton[]): boolean {
+    return String(t.deferredCode ?? '').startsWith('concurrency:agent:') && batons.some(b => b.taskId === t.id);
+}
+
 export function successorRow(b: Baton, ctx: DoorContext = {}): DoorRow {
     const surface = successorSurface(b);
     const i = b.inherit;

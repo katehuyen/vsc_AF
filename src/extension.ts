@@ -300,7 +300,7 @@ import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, read
 import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeMaxLegs } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
-import { successorRow } from './core/batonDoor';
+import { relayHandoffHold, successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
 import { batonBarView, batonCardView } from './core/batonView';
@@ -18492,6 +18492,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (t.status !== 'queued' || !t.autoStart || !t.deferredReason) { continue; }
             // Its own retry clock is not a ceiling — same rule as `announceParked`.
             if (t.notBefore && Date.now() < t.notBefore) { continue; }
+            if (relayHandoffHold(t, batonStore.all())) { continue; }
             // ‼️ M-7 (V3) — THE SAME KEY THE MANAGER USES. This scan and
             // `announceParked` are two sightings of ONE event; with two key
             // shapes (`parked:<id>` here, `task-parked:<id>` there) the "once"
