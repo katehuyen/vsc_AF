@@ -797,6 +797,14 @@
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
         .askbox .arow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
         .askbox .note { font-size:10px; opacity:.7; margin-top:5px; }
+        .askbox .aa { display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:11px; margin-top:6px; }
+        .askbox .aa .aa-left { font-weight:600; font-variant-numeric:tabular-nums; }
+        .askbox .aa .aa-pick { font-weight:600; }
+        .askbox .aa button { font-size:11px; padding:1px 8px; }
+        .askbox .aa.held, .askbox .aa.off { opacity:.75; }
+        .askbox .t .aa-chip { flex:none; font-size:10px; font-weight:600; white-space:nowrap;
+            font-variant-numeric:tabular-nums; }
+        .askbox:not(.min) .t .aa-chip { display:none; }
         .msg.ask .body { border-left:2px solid var(--vscode-focusBorder,#3794ff); padding-left:7px; }
         .composer { margin-top:8px; flex:none; border:1px solid var(--vscode-widget-border,#4443);
             border-radius:8px; padding:8px; }
@@ -1930,6 +1938,54 @@
      */
     let askMin = { req: '', on: false };
 
+    /**
+     * K-43 — the countdown the HOST keeps on a parked question. The page only
+     * draws it and ticks the figure; the timer itself runs in the host, so an
+     * unattended card is answered whether or not this page is open.
+     */
+    let aaHoldSent = '';
+    function aaLeft(ms) {
+        const total = Math.max(0, Math.ceil(ms / 1000));
+        const s2 = total % 60, m = Math.floor(total / 60) % 60, h = Math.floor(total / 3600);
+        const two = n => (n < 10 ? '0' : '') + n;
+        return h ? h + ':' + two(m) + ':' + two(s2) : m + ':' + two(s2);
+    }
+    function aaPicks(v) {
+        return (v.picks || []).map(p => '"' + p + '"').join(', ');
+    }
+    function aaChipHtml(s) {
+        const v = s && s.autoAnswer;
+        if (!v || !(v.state === 'armed' || v.state === 'held')) { return ''; }
+        return v.state === 'held'
+            ? `<span class="aa-chip" title="${C.esc('Timer stopped' + String.fromCharCode(10, 10) + 'This question waits for you — nothing will be chosen for you.')}">⏸</span>`
+            : `<span class="aa-chip" title="${C.esc('Auto-answer at 0:00' + String.fromCharCode(10, 10) + 'Then ' + aaPicks(v) + ' is chosen for you. Open the card to stop the timer.')}">⏳ <span data-aa-due="${v.dueAt}">${aaLeft(v.dueAt - Date.now())}</span></span>`;
+    }
+    function aaLineHtml(s) {
+        const v = s && s.autoAnswer;
+        if (!v) { return ''; }
+        if (v.state === 'armed') {
+            return `<div class="aa" id="c-ask-aa">⏳ <span class="aa-left" data-aa-due="${v.dueAt}">${aaLeft(v.dueAt - Date.now())}</span>
+                left — then <span class="aa-pick">${C.esc(aaPicks(v))}</span> is chosen for you
+                <button class="secondary" id="c-ask-hold"
+                    title="Stop the countdown — this question then waits for you, and nothing is chosen on your behalf. Picking an option or typing an answer stops it too.">Stop timer</button></div>`;
+        }
+        if (v.state === 'held') {
+            return '<div class="aa held">⏸ Timer stopped — this question waits for you.</div>';
+        }
+        // Said out loud only where it would otherwise be a surprise: a question
+        // that looks like the others but will NOT be answered for you.
+        return v.reason === 'destructive' || v.reason === 'nothing-to-pick'
+            ? `<div class="aa off">✋ ${C.esc(String(v.why || '').replace(/^waiting for you — /, 'No timer — '))}</div>`
+            : '';
+    }
+    function aaTick() {
+        document.querySelectorAll('[data-aa-due]').forEach(el => {
+            const t = aaLeft(Number(el.getAttribute('data-aa-due')) - Date.now());
+            if (el.textContent !== t) { el.textContent = t; }
+        });
+    }
+    setInterval(aaTick, 1000);
+
     function askBoxHtml(s) {
         const a = s && s.pendingAsk;
         if (!a) { askPick = { req: '', by: {} }; return ''; }
@@ -1988,6 +2044,7 @@
                 <span class="who">${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking'
             : (a.displayName || a.tool) + ' wants to run')}</span>
                 ${count}
+                ${aaChipHtml(s)}
                 <button class="askmin" id="c-ask-min" aria-label="fold this card away"
                     title="Fold this card down to its line — the turn stays held and this line keeps saying so. Press again to bring it back exactly as you left it."></button>
             </div>
@@ -1996,6 +2053,7 @@
                 <input class="free" id="c-ask-free" type="text"
                        placeholder="${qs.length ? 'or say it in your own words — this reaches the agent as your answer' : 'a reason, if you deny it'}">
                 <div class="arow">${actions}</div>
+                ${aaLineHtml(s)}
                 <div class="note">The turn is still open — it picks this up and carries on, the same as answering in a terminal.</div>
             </div>`;
     }
@@ -2106,6 +2164,14 @@
             }, {}),
             response: free()
         });
+        // K-43 — somebody is here: a pick or a keystroke stops the countdown,
+        // so a half-made choice is never overwritten by the timer.
+        const hold = () => {
+            if (!s.autoAnswer || s.autoAnswer.state !== 'armed' || aaHoldSent === a.requestId) { return; }
+            aaHoldSent = a.requestId;
+            vscode.postMessage({ type: 'askHold', id: s.id });
+        };
+        byId('c-ask-hold', 'click', hold);
         const foldBtn = document.getElementById('c-ask-min');
         if (foldBtn) {
             foldBtn.addEventListener('click', () => {
@@ -2117,6 +2183,7 @@
             const q = (a.questions || [])[Number(b.dataset.askq)];
             const o = q && (q.options || [])[Number(b.dataset.asko)];
             if (!q || !o) { return; }
+            hold();
             const cur = askPick.by[q.question] || [];
             if (q.multiSelect) {
                 const at = cur.indexOf(o.label);
@@ -2140,6 +2207,7 @@
         }));
         const box = document.getElementById('c-ask-free');
         if (box) {
+            box.addEventListener('input', hold);
             box.addEventListener('keydown', ev => {
                 if (ev.key !== 'Enter') { return; }
                 ev.preventDefault();

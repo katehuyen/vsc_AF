@@ -168,5 +168,26 @@ const ask = (o) => Object.assign({
         /Zaman aşımı/.test(autoAnswerNote(undefined)));
 }
 
+{
+    const { autoAnswerView, autoAnswerResponse } = require(path.join(__dirname, '..', 'out', 'core', 'autoAnswer.js'));
+    ok('every verdict carries a reason the card can branch on',
+        autoAnswerFor(undefined, ON).reason === 'none'
+        && autoAnswerFor(ask(), autoAnswerSettings({ enabled: false })).reason === 'off'
+        && autoAnswerFor(ask({ interactive: false }), ON).reason === 'permission'
+        && autoAnswerFor(ask({ detail: 'this will delete the branch' }), ON).reason === 'destructive'
+        && autoAnswerFor(ask({ questions: [{ question: 'Q?', options: [] }] }), ON).reason === 'nothing-to-pick'
+        && autoAnswerFor(ask(), ON).reason === 'armed');
+    const v = autoAnswerView(ask(), ON);
+    ok('the view of an armed ask is due at ts + timeout and lists the picks',
+        v.state === 'armed' && v.dueAt === 1000 + AUTO_ANSWER_DEFAULT_SECONDS * 1000 && v.picks.length === 1);
+    ok('a held ask keeps its due time but says held and why',
+        autoAnswerView(ask(), ON, 5000).state === 'held' && /stopped/.test(autoAnswerView(ask(), ON, 5000).why));
+    ok('‼️ a held flag never turns a refused ask into a countdown',
+        autoAnswerView(ask({ interactive: false }), ON, 5000).state === 'waiting');
+    ok('nothing pending, no view', autoAnswerView(undefined, ON) === null);
+    ok('‼️ the agent is told the user did not pick it, with the wait that ran out',
+        /did not pick it/.test(autoAnswerResponse(300)) && /5:00/.test(autoAnswerResponse(300)));
+}
+
 console.log(`test_auto_answer.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.618.0 - a question nobody answers no longer holds the turn for ever: the recommended option is chosen on a timer (K-43) (2026-09-21)
+
+- **‼️ A Console session parked on `AskUserQuestion` is answered for you when
+  nobody is there.** An unattended card — a night shift, a queued run, a fleet
+  working while you sleep — used to sit on a question indefinitely: alive,
+  spending nothing, doing nothing, and reporting none of it. Now the wait is
+  bounded (`agentFarm.console.autoAnswer.timeoutSeconds`, default **300**,
+  clamped to 5–7200) and at the end of it the option the agent itself marked
+  **(Recommended)** / **(Önerilen)** is chosen — or its first option, which the
+  tool's own contract makes the same thing. Off with
+  `agentFarm.console.autoAnswer.enabled`.
+- **The clock lives in the host, not the page.** The unattended case is exactly
+  the one with no panel open, so a countdown drawn in the webview would stop
+  the moment nobody was looking. It is measured from when the question was
+  **asked**: reopening the window does not buy the question another wait, and
+  changing the setting re-arms the questions already waiting.
+- **Three things it will not do, each on purpose.** A **permission** request is
+  never answered on a timer (that would hand an unattended machine to whatever
+  asked). A question whose text, headers, labels or descriptions read as
+  destructive — delete, force push, `reset --hard`, drop table, sil, kaldır… —
+  is left for a person, and the card **says which word** stopped the clock. A
+  question with no options gets no invented answer.
+- **The card counts down, and a person in the room wins.** Under the question:
+  `⏳ 4:31 left — then "…" is chosen for you` with a **Stop timer** button;
+  picking an option or typing an answer stops it too, so a half-made choice is
+  never overwritten. A stop belongs to one question — the next one gets its own
+  clock. Folded, the card keeps the countdown on its header line.
+- **‼️ The agent is told the user did not choose.** The answer goes out on the
+  same wire as a click, with the picks folded into the response the CLI always
+  delivers (X-166) and one sentence saying Agent Farm chose them. The
+  transcript row reads `⏱️ Zaman aşımı: önerilen seçenekler seçildi — <question> → <pick>`.
+- **Bridge.** `console.autoAnswer.hold { id }` is the Stop button;
+  `console.sessions` → `asking.autoAnswer` says whether a timer will answer,
+  when (`dueAt`) and with what (`picks`), or why not (`reason`, `why`).
+
 ## 3.617.0 - the revive nudge reaches the armed path, and a silent revived card stops saying `starting` (X-349) (2026-09-21)
 
 - **‼️ The session that ASKED for a restart is spoken to again — on the path it

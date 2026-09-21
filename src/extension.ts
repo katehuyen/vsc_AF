@@ -477,6 +477,7 @@ import { MAX_TRANSCRIPT_BYTES, readSettled, snapshotLabel } from './core/transcr
 import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid, nodeOpencodeIo } from './core/consolehost';
+import { AUTO_ANSWER_ENABLED_KEY, AUTO_ANSWER_TIMEOUT_KEY, autoAnswerSettings } from './core/autoAnswer';
 import {
     carriedTotals, ConsoleMessage, ConsoleSessionState, contextPercent, ContextSample, contextSample, ConsoleStatus,
     OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
@@ -12077,7 +12078,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             tool: s.pendingAsk.tool,
                             questions: s.pendingAsk.questions,
                             detail: s.pendingAsk.detail,
-                            waitingSince: s.pendingAsk.ts
+                            waitingSince: s.pendingAsk.ts,
+                            // K-43 — whether a timer will answer it, when, and with what
+                            autoAnswer: consoleHost.autoAnswerView(s.id)
                         }
                         : null,
                     exitReason: s.exitReason ?? null,
@@ -12366,6 +12369,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(consoleHost.answer(id, { kind: 'answer', answers, response }), 'nothing was answered');
                 ConsolePanel.refreshIfOpen();
                 return { id, answers, response: response || undefined };
+            }
+        },
+        {
+            op: 'console.autoAnswer.hold',
+            describe: 'Stop the auto-answer countdown on the question a hosted Console session parked its turn on (K-43) — the question then waits for a person whatever agentFarm.console.autoAnswer.* says; the same as the card\'s "Stop timer" button. args: id. Returns the card\'s view: { state: armed | held | waiting, reason, why, dueAt, picks }. console.sessions → asking.autoAnswer shows the countdown before you stop it. Refused when no countdown is running (a permission ask, a destructive-looking question, or the setting is off — its why says which).',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const s = consoleHost.get(id);
+                need(s, 'no such live console session (console.sessions lists them)');
+                need(s!.pendingAsk, 'that session is not waiting on an answer right now');
+                const before = consoleHost.autoAnswerView(id);
+                need(before?.state !== 'waiting', `there is no countdown to stop — ${before?.why ?? ''}`);
+                const held = consoleHost.holdAutoAnswer(id);
+                ConsolePanel.refreshIfOpen();
+                return { id, held, autoAnswer: consoleHost.autoAnswerView(id) };
             }
         },
         {
@@ -25918,10 +25936,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void context.workspaceState.update(roundRobinKey(engine), r.cursor);
             }
             return { id: r.id, note: r.note, ...(r.refusal ? { refusal: r.refusal } : {}) };
-        });
+        },
+        // K-43 — read on every arming, so the figure is never a stale copy.
+        () => autoAnswerSettings({
+            enabled: cfg().get(AUTO_ANSWER_ENABLED_KEY.replace(/^agentFarm\./, '')),
+            timeoutSeconds: cfg().get(AUTO_ANSWER_TIMEOUT_KEY.replace(/^agentFarm\./, ''))
+        }));
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;
+    // K-43 — a changed wait re-arms the questions already waiting, not only the next one.
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.console.autoAnswer')) { consoleHost.resyncAutoAnswers(); }
+    }));
     const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
     const externalTranscriptFile = (sessionId: string): string =>
         path.join(farmExternalTranscriptDir, `${sessionId.replace(/[^a-z0-9._-]/gi, '_')}.json`);

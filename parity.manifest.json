@@ -1229,6 +1229,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#askHold",
+      "ui": [
+        "page:consolePanel.ts#askHold"
+      ],
+      "ops": [
+        "console.autoAnswer.hold"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#attachDrop",
       "ui": [
         "page:consolePanel.ts#attachDrop"

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.617.0",
+  "version": "3.618.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8410,6 +8410,18 @@
           },
           "default": [],
           "markdownDescription": "Saved launch setups offered by the **Start Session…** launcher — \"deep review\" (opus + xhigh + plan), \"quick fix\" (sonnet + acceptEdits), and so on. The launcher's *Save this as a profile…* row writes here; nothing is applied until you pick one."
+        },
+        "agentFarm.console.autoAnswer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When a **Console** session parks its turn on a question (`AskUserQuestion`) and nobody answers within `#agentFarm.console.autoAnswer.timeoutSeconds#`, choose the option the agent marked **(Recommended)** — or its first option — so an unattended session is not held for ever. The card counts down and has a **Stop timer** button. Never applies to a **permission** request, to a question whose text or options read as destructive (delete, force push, reset --hard, sil, kaldır…), or to a question with no options; the agent is told the choice was made for you, not by you."
+        },
+        "agentFarm.console.autoAnswer.timeoutSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 5,
+          "maximum": 7200,
+          "markdownDescription": "How long a **Console** question waits for you before `#agentFarm.console.autoAnswer.enabled#` chooses the recommended option — in seconds, measured from when the question was asked (reopening the window does not restart it). Default 300 (5 minutes); values outside 5–7200 are clamped. Changing it re-arms questions that are already waiting."
         },
         "agentFarm.notifyConsoleTurnEnd": {
           "type": "boolean",

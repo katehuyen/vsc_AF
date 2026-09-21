@@ -801,6 +801,23 @@ const askingOneData = () => {
     return d;
 };
 
+/**
+ * K-43 — the countdown under ONE question (the arity the card is usually in):
+ * the host's view as the panel hands it over, with the option the agent marked.
+ */
+const askingTimerData = (view, options) => {
+    const d = askingOneData();
+    d.sessions = d.sessions.map(s => {
+        if (s.id !== 'cs2') { return s; }
+        const q = Object.assign({}, s.pendingAsk.questions[0], options ? { options } : {});
+        return Object.assign({}, s, {
+            pendingAsk: Object.assign({}, s.pendingAsk, { questions: [q] }),
+            autoAnswer: Object.assign({ requestId: 'ask-one', timeoutSeconds: 300, why: '', picks: [] }, view)
+        });
+    });
+    return d;
+};
+
 module.exports = {
     script: 'console.js',
     data,
@@ -1017,6 +1034,37 @@ module.exports = {
             id: 'console-asking-one',
             label: 'Console — ONE question: the arity the fold control has to survive (U-133)',
             data: askingOneData()
+        },
+        {
+            id: 'console-asking-timer',
+            label: 'Console — ONE question with the auto-answer clock running, and its Stop timer (K-43)',
+            data: askingTimerData({
+                state: 'armed', reason: 'armed', dueAt: Date.now() + 272000,
+                picks: ['personal@gmail (Recommended)']
+            }, [
+                { label: 'work@studio', description: 'max20x — five-hour window 91% gone' },
+                { label: 'personal@gmail (Recommended)', description: 'pro — 12% gone, resets at 05:40' }
+            ])
+        },
+        {
+            id: 'console-asking-timer-held',
+            label: 'Console — …the same question after Stop timer: it waits for you (K-43)',
+            data: askingTimerData({
+                state: 'held', reason: 'armed', dueAt: Date.now() + 272000, heldAt: Date.now(),
+                picks: ['personal@gmail (Recommended)'],
+                why: 'waiting for you — the timer was stopped, so nothing will be chosen for you.'
+            })
+        },
+        {
+            id: 'console-asking-timer-refused',
+            label: 'Console — a question that reads as destructive gets no clock, and says which word stopped it (K-43)',
+            data: askingTimerData({
+                state: 'waiting', reason: 'destructive', dueAt: 0,
+                why: 'waiting for you — this question says "delete", and a choice that may not be undone is yours to make.'
+            }, [
+                { label: 'Delete the branch (Recommended)', description: 'it is merged' },
+                { label: 'Keep it', description: 'look at it later' }
+            ])
         },
         {
             id: 'console-asking',

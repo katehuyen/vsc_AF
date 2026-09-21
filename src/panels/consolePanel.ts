@@ -1271,6 +1271,8 @@ export class ConsolePanel {
                             ? '' : sessionAllowRule(s.pendingAsk).label
                     }
                     : null,
+                // K-43 — the countdown under the question, decided by the host
+                autoAnswer: s.pendingAsk ? this.deps.host.autoAnswerView(s.id) : null,
                 exitReason: s.exitReason ?? '',
                 // the project this session was STARTED under — a badge on the
                 // card, because the stamp is otherwise invisible and a session
@@ -2644,6 +2646,10 @@ export class ConsolePanel {
                 }
                 break;
             }
+            // K-43 — Stop timer: this question waits for a person now.
+            case 'askHold':
+                host.holdAutoAnswer(str('id'));
+                break;
             case 'permissionMode':
                 // The standing RULE — how much may happen without stopping to
                 // ask at all. One specific request is settled by 'askAnswer'.

@@ -39,6 +39,10 @@ import {
     translateOpencodeResult, translateOpencodeUpdate
 } from './opencodeproto';
 import {
+    AutoAnswerSettings, AutoAnswerView, autoAnswerNote, autoAnswerResponse, autoAnswerSettings
+} from './autoAnswer';
+import { AutoAnswerTimers } from './autoAnswerTimers';
+import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
     CarriedTotals, ConsoleMessage, ConsoleSessionState, carryOn, controlLine, drainAutoAnswer,
     editQueued, hostArgs, IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued,
@@ -609,8 +613,58 @@ export class ConsoleHost {
          */
         private accountPick?: (
             engine: string, stated: string, agentId?: string, model?: string
-        ) => { id: string; note: string; refusal?: string }
+        ) => { id: string; note: string; refusal?: string },
+        /**
+         * K-43 — the auto-answer settings as they are now. Absent = OFF: a host
+         * nobody configured (every test) must never answer a question on its own.
+         */
+        private autoAnswerConfig?: () => AutoAnswerSettings
     ) {}
+
+    /** K-43 — the countdown on a parked question, one timer per card. */
+    private autoAnswers = new AutoAnswerTimers({
+        settings: () => this.autoAnswerConfig?.() ?? autoAnswerSettings({ enabled: false }),
+        askOf: id => this.sessions.get(id)?.state.pendingAsk,
+        expire: (id, answers, settings) => this.answerOnTimeout(id, answers, settings)
+    });
+
+    /**
+     * The clock ran out on a question: answer it through the SAME path a click
+     * takes, then make the row say it was chosen FOR the user, not by them.
+     */
+    private answerOnTimeout(
+        id: string, answers: Record<string, string | string[]>, settings: AutoAnswerSettings
+    ): void {
+        const h = this.sessions.get(id);
+        if (!h?.state.pendingAsk) { return; }
+        const before = h.state.messages.length;
+        const response = autoAnswerResponse(settings.timeoutSeconds);
+        if (!this.answer(id, { kind: 'answer', answers, response })) { return; }
+        const msgs = h.state.messages;
+        const row = msgs[msgs.length - 1];
+        if (msgs.length > before && row?.role === 'ask' && row.answer !== undefined) {
+            h.state = { ...h.state, messages: [...msgs.slice(0, -1), { ...row, answer: autoAnswerNote(answers) }] };
+            this.fire(id);
+        }
+    }
+
+    /** K-43 — stop the countdown on this card's question; it waits for a person now. */
+    holdAutoAnswer(id: string): boolean {
+        const done = this.autoAnswers.hold(id);
+        if (done) { this.fire(id); }
+        return done;
+    }
+
+    /** K-43 — what the card and the bridge show under the pending ask. */
+    autoAnswerView(id: string): AutoAnswerView | null {
+        return this.autoAnswers.view(id);
+    }
+
+    /** K-43 — the settings changed: re-arm every pending question against them. */
+    resyncAutoAnswers(): void {
+        for (const id of this.sessions.keys()) { this.autoAnswers.sync(id, true); }
+        for (const id of this.sessions.keys()) { this.fire(id); }
+    }
 
     /**
      * ‼️ X-305 R2 — THE SLOT A STATED ACCOUNT RUNS ON, for a door about to
@@ -678,6 +732,7 @@ export class ConsoleHost {
     }
 
     private fire(id: string): void {
+        this.autoAnswers.sync(id);
         for (const fn of this.listeners) { fn(id); }
     }
 
@@ -3048,6 +3103,7 @@ export class ConsoleHost {
     }
 
     dispose(): void {
+        this.autoAnswers.dispose();
         for (const t of this.settleTimers) { clearInterval(t); }
         this.settleTimers.clear();
         // ‼️ Synchronously: the window is going away, and a kill deferred to a

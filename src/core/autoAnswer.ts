@@ -153,6 +153,15 @@ export function destructiveWord(ask: AutoAnswerAsk | undefined): string | null {
     return null;
 }
 
+/**
+ * Why the clock is or is not running, as a code the card can branch on. The
+ * card stays SILENT for `off` (the user switched it off and knows) and for
+ * `permission` (no permission card ever carries a timer, so a line saying so on
+ * every one is noise); it SAYS the other two, because a question that will not
+ * be auto-answered looks exactly like one that will until it is too late.
+ */
+export type AutoAnswerReason = 'armed' | 'none' | 'off' | 'permission' | 'destructive' | 'nothing-to-pick';
+
 export interface AutoAnswerVerdict {
     /** the clock runs for this ask */
     armed: boolean;
@@ -160,6 +169,7 @@ export interface AutoAnswerVerdict {
     answers?: Record<string, string | string[]>;
     /** why it is not armed, in one sentence for the card; empty when it is */
     why: string;
+    reason: AutoAnswerReason;
 }
 
 /**
@@ -169,15 +179,16 @@ export interface AutoAnswerVerdict {
 export function autoAnswerFor(
     ask: AutoAnswerAsk | undefined, settings: AutoAnswerSettings
 ): AutoAnswerVerdict {
-    if (!ask) { return { armed: false, why: 'nothing is being asked.' }; }
+    if (!ask) { return { armed: false, why: 'nothing is being asked.', reason: 'none' }; }
     if (!settings.enabled) {
-        return { armed: false, why: `waiting for you — ${AUTO_ANSWER_ENABLED_KEY} is off.` };
+        return { armed: false, why: `waiting for you — ${AUTO_ANSWER_ENABLED_KEY} is off.`, reason: 'off' };
     }
     if (!ask.interactive) {
         return {
             armed: false,
             why: 'waiting for you — this is a permission ask, and a permission is never '
-                + 'answered on a timer.'
+                + 'answered on a timer.',
+            reason: 'permission'
         };
     }
     const stopper = destructiveWord(ask);
@@ -185,7 +196,8 @@ export function autoAnswerFor(
         return {
             armed: false,
             why: `waiting for you — this question says "${stopper}", and a choice that may not be `
-                + 'undone is yours to make.'
+                + 'undone is yours to make.',
+            reason: 'destructive'
         };
     }
     const answers: Record<string, string | string[]> = {};
@@ -196,15 +208,16 @@ export function autoAnswerFor(
             return {
                 armed: false,
                 why: 'waiting for you — one of these questions offers nothing to pick, so there is '
-                    + 'no deterministic answer to give it.'
+                    + 'no deterministic answer to give it.',
+                reason: 'nothing-to-pick'
             };
         }
         answers[key] = q.multiSelect ? [pick] : pick;
     }
     if (!Object.keys(answers).length) {
-        return { armed: false, why: 'waiting for you — this ask carries no questions.' };
+        return { armed: false, why: 'waiting for you — this ask carries no questions.', reason: 'nothing-to-pick' };
     }
-    return { armed: true, answers, why: '' };
+    return { armed: true, answers, why: '', reason: 'armed' };
 }
 
 /** Where the countdown stands. `heldAt` freezes it — the reader pressed Hold. */
@@ -252,4 +265,50 @@ export function autoAnswerNote(answers: Record<string, string | string[]> | unde
     return picks.length
         ? `⏱️ Zaman aşımı: önerilen seçenekler seçildi — ${picks.join(' · ')}`
         : '⏱️ Zaman aşımı: önerilen seçenekler seçildi';
+}
+
+/**
+ * ‼️ WHAT THE AGENT IS TOLD, beside the picks. Without it the tool result reads
+ * exactly like the user choosing, and the agent carries on believing a person
+ * agreed. It rides as `response`, which `askInput` folds together with the
+ * picks — the one channel the CLI never drops (X-166).
+ */
+export function autoAnswerResponse(timeoutSeconds: number): string {
+    return `(No answer came within ${formatCountdown(timeoutSeconds * 1000)} — Agent Farm chose the `
+        + 'recommended option automatically; the user did not pick it. If the choice matters, say so '
+        + 'where they will see it.)';
+}
+
+/** What the card draws under a pending ask — one verdict, read by the page and the bridge. */
+export interface AutoAnswerView {
+    requestId: string;
+    /** `armed` counts down · `held` was stopped by a person · `waiting` never ran */
+    state: 'armed' | 'held' | 'waiting';
+    reason: AutoAnswerReason;
+    why: string;
+    /** when the clock runs out (epoch ms); 0 when it never ran */
+    dueAt: number;
+    heldAt?: number;
+    timeoutSeconds: number;
+    /** the labels the timer will choose, in question order */
+    picks: string[];
+}
+
+export function autoAnswerView(
+    ask: AutoAnswerAsk | undefined, settings: AutoAnswerSettings, heldAt?: number
+): AutoAnswerView | null {
+    if (!ask) { return null; }
+    const verdict = autoAnswerFor(ask, settings);
+    const base = { requestId: ask.requestId, timeoutSeconds: settings.timeoutSeconds };
+    if (!verdict.armed) {
+        return { ...base, state: 'waiting', reason: verdict.reason, why: verdict.why, dueAt: 0, picks: [] };
+    }
+    const picks = Object.values(verdict.answers ?? {}).flatMap(a => (Array.isArray(a) ? a : [a]));
+    const dueAt = ask.ts + settings.timeoutSeconds * 1000;
+    return heldAt && heldAt > 0
+        ? {
+            ...base, state: 'held', reason: 'armed', dueAt, heldAt, picks,
+            why: 'waiting for you — the timer was stopped, so nothing will be chosen for you.'
+        }
+        : { ...base, state: 'armed', reason: 'armed', why: '', dueAt, picks };
 }

@@ -195,10 +195,12 @@ walk(path.join(ROOT, 'src'));
         .find(c => c.name === 'ConsoleHost');
     ok('‼️ it is handed every parameter the class declares',
         !!host && args.length === host.params.length);
-    ok('‼️ …including the pin, which is what was missing (X-267)',
-        /^\s*pinProjectContext\s*$/.test(args[args.length - 2] || ''));
+    const pin = args.findIndex(a => /^\s*pinProjectContext\s*$/.test(a));
+    ok('‼️ …including the pin, which is what was missing (X-267)', pin >= 0);
     ok('‼️ …and the rule resolver after it, or a rule picked in a Console box is refused (X-305 R2)',
-        /launchAccountPick\(/.test(args[args.length - 1] || ''));
+        /launchAccountPick\(/.test(args[pin + 1] || ''));
+    ok('‼️ …and the auto-answer settings last, or the host treats the feature as OFF (K-43)',
+        /autoAnswerSettings\(/.test(args[pin + 2] || '') && pin + 2 === args.length - 1);
 }
 
 // ------------- 4. …and the same mistake one slot over, on every page there is
