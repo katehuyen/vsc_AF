@@ -392,6 +392,27 @@ export function usageFrom(slot: { id: string; engine: string }, snap: PlanUsageS
 }
 
 /**
+ * ‼️ X-353 — THE FIVE-HOUR ROW OF A READING, FOR THE CALLER THAT MUST NOT TAKE
+ * `percent`.
+ *
+ * `SlotUsage.percent` is the BINDING bar (`bindingBar`) — whichever of the
+ * five-hour window and the week is fuller. That is right for the question it
+ * was built for, "can a session be started here", and wrong for the handover
+ * law, which names the 5-hour window as a trigger and says in the same breath
+ * that the weekly figure is never one. Measured 2026-09-21: an account at 34%
+ * of its five-hour window and 90% of its week was told `QUOTA HANDOVER 90% —
+ * your account's 5-hour window is 90% used` and ordered to end the run.
+ *
+ * A reading with no five-hour row at all (Codex's window is the week) answers
+ * nothing, because a quota line drawn on a window the law does not name is the
+ * same lie with a different number in it.
+ */
+export function fiveHourOf(u: SlotUsage | undefined): UsageBar | undefined {
+    const b = (u?.bars ?? []).find(x => x.id === FIVE_HOUR);
+    return b && Number.isFinite(b.percent) && b.percent >= 0 ? b : undefined;
+}
+
+/**
  * ‼️ CAN A SESSION BE STARTED ON THIS ACCOUNT RIGHT NOW.
  *
  * A slot with no readable figure is USABLE, not blocked — Codex states a plan it

@@ -20,7 +20,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     AccountUsageService, mostRoom, pickAccount, accountOrder, roomOrder, nextResetAt, slotIsUsable, usageFrom,
-    unreadUsage, fiveHourBar, FIVE_HOUR, usageFromEngine, fullestBar, shortWindowOf
+    unreadUsage, fiveHourBar, fiveHourOf, FIVE_HOUR, usageFromEngine, fullestBar, shortWindowOf
 } = require(path.join(__dirname, '..', 'out', 'core', 'accountUsage.js'));
 const { RATE_LIMIT_BACKOFF_START_MS } = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
 
@@ -581,6 +581,30 @@ async function main() {
             weekly.window === 'Current week');
         ok('…and carries THAT window\'s reset, the one the countdown has to wait for',
             weekly.resetsAt === t + 86400_000);
+        /**
+         * ‼️ X-353 — AND THE ONE CALLER THAT MUST NOT TAKE THAT FIGURE.
+         *
+         * The handover law names the 5-hour window as a trigger and says the
+         * weekly figure is never one, so the quota whisper reads the five-hour
+         * ROW, not the row that binds the pool. Measured 2026-09-21: a session
+         * on an account at 34% of five hours and 90% of its week was told
+         * `QUOTA HANDOVER 90% — your account's 5-hour window is 90% used` and
+         * ordered to end for a quota that was not stopping it.
+         */
+        ok('‼️ the five-hour row is read on its own — 33, not the 71 that binds the pool',
+            fiveHourOf(weekly).percent === 33 && fiveHourOf(weekly).resetsAt === t);
+        ok('…and a reading with no five-hour window at all (Codex\'s is the week) answers NOTHING',
+            fiveHourOf(usageFromEngine({ id: 'c', engine: 'codex' }, {
+                state: 'ok', plan: '', fetchedAt: NOW,
+                bars: [{ id: 'weekly', title: 'Current week', percent: 88, resetsAt: t }]
+            })) === undefined);
+        ok('…and neither an unread slot nor a missing one throws',
+            fiveHourOf(undefined) === undefined && fiveHourOf({ bars: [] }) === undefined
+            && fiveHourOf({ bars: [{ id: FIVE_HOUR, percent: -1, resetsAt: 0 }] }) === undefined);
+        const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('…and the quota whisper is wired to THAT reader, never to SlotUsage.percent',
+            /const five = fiveHourOf\(u\);/.test(ext) && /pct: five\.percent,/.test(ext)
+            && !/pct: u\.percent,/.test(ext));
         const fiveBinds = {
             ...snap, bars: [
                 { id: FIVE_HOUR, title: 'Current session', percent: 60, resetsAt: t },

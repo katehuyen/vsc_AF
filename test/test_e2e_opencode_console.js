@@ -99,7 +99,7 @@ async function main() {
         }
         await Promise.all([a.close(), b.close()]);
         await sleep(1500);
-        // ‼️ X-352 — THE SWEEPING UP IS NOT ONE OF THE CHECKS. Every assertion
+        // ‼️ X-354 — THE SWEEPING UP IS NOT ONE OF THE CHECKS. Every assertion
         // above has already run by the time this line does; on Windows the
         // engine's own child can still hold the data home open after dispose,
         // and `rmSync` then throws EPERM straight out of `finally` — turning a

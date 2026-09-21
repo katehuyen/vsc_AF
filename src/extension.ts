@@ -273,7 +273,7 @@ import {
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
-    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, UsageBar, accountOrder, engineUsageFromSlot,
+    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, UsageBar, accountOrder, engineUsageFromSlot, fiveHourOf,
     mostRoom, nextResetAt,
     slotCredentialsFile, slotIsUsable,
     slotSessionDir, windowNameOf, windowPhraseOf
@@ -1536,9 +1536,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             || (launchId ? (launchManifests().find(m => m.launchId === launchId)?.account ?? '') : '');
         if (!slotId) { return undefined; }
         const u: SlotUsage | undefined = accountUsage.current().find((x: SlotUsage) => x.slotId === slotId);
-        if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return undefined; }
+        if (!u || u.state === 'no-source') { return undefined; }
+        /**
+         * ‼️ X-353 — THIS LINE IS THE FIVE-HOUR WINDOW AND NOTHING ELSE.
+         *
+         * `SlotUsage.percent` is the BINDING bar — whichever of the five-hour
+         * and the week is fuller (`bindingBar`). That is right where it was
+         * built for, choosing an account to start a session on, and wrong
+         * here: the handover law names the 5-hour window as a trigger and says
+         * in the same breath that the weekly figure is never one.
+         *
+         * Measured 2026-09-21 on this machine: an account at 34% of its
+         * five-hour window and 90% of its week was told
+         * `QUOTA HANDOVER 90% — your account's 5-hour window is 90% used` and
+         * ordered to end the run. A weekly percentage under the words
+         * "five-hour window" is the X-215 defect again — a lie with a real
+         * number in it — and here it does not merely mislabel a card, it stops
+         * a session for a quota that was not stopping it.
+         *
+         * An engine with no five-hour window (Codex's is the week) therefore
+         * gets NO quota line, which is exactly what the law asks for.
+         */
+        const five = fiveHourOf(u);
+        if (!five) { return undefined; }
         const sl = findSlot(storedAccounts(), slotId);
-        return { pct: u.percent, account: sl ? slotLabel(sl) : slotId, ...(u.resetsAt ? { resetsAt: u.resetsAt } : {}) };
+        return { pct: five.percent, account: sl ? slotLabel(sl) : slotId, ...(five.resetsAt ? { resetsAt: five.resetsAt } : {}) };
     };
     const contextGuard = new ContextGuard({
         thresholds: () => ({
