@@ -87,7 +87,16 @@ const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10);
         outputsDigest: (ms) => `# OUTPUTS ${ms}`,
         costReport: () => '# COST',
         triggerReport: () => triggers || undefined,
-        taskAnalytics: (days) => ({ days, runs: 17 }),
+        taskAnalytics: (days) => ({
+            days, runs: 17,
+            agents: [
+                { agentId: 'a1', agentName: 'yazar', total: 9, done: 8, failed: 1, models: ['opus', 'haiku'] },
+                // a row carrying a field the first one does not: the columns are
+                // DERIVED, so it must appear rather than be dropped
+                { agentId: 'a2', agentName: 'dev | pipe', total: 3, done: 3, failed: 0, retries: 2 }
+            ],
+            families: [{ title: 'nightly\nsweep', runs: 4, failed: 0 }]
+        }),
         instructionReport: (a) => `# INSTRUCTIONS ${a.name}`,
         otlp: (ms) => ({ resourceSpans: [{ window: ms }] }),
         schedules: () => schedules,
@@ -152,6 +161,31 @@ const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10);
         const an = await reg.dispatch('reports.tasks', { days: 14 });
         ok('reports.tasks is DATA, because it is the one you compute with',
             an.ok && an.result.analytics.runs === 17 && an.result.analytics.days === 14);
+
+        // ---- B-21 — the analytics page as a document ----
+        {
+            const doc = await reg.dispatch('tasks.analytics.export', { days: 14 });
+            ok('tasks.analytics.export returns the content and files nothing by default',
+                doc.ok && doc.result.file === null && doc.result.days === 14
+                && /^# Agent Farm — task analytics \(14 days\)/.test(doc.result.content));
+            ok('…one table per section of the page, each counted',
+                doc.ok && doc.result.tables.length === 2
+                && doc.result.tables[0].title === 'Agents' && doc.result.tables[0].rows === 2
+                && doc.result.tables[1].title === 'Task families');
+            // ‼️ Columns are DERIVED from the rows: `retries` exists on the
+            // second agent only, and a hand-written column list would drop it.
+            ok('a field only some rows carry still gets a column',
+                doc.ok && /\| retries \|/.test(doc.result.content));
+            ok('a cell that would break the table is escaped, not dropped',
+                doc.ok && /dev \\\| pipe/.test(doc.result.content)
+                && /nightly sweep/.test(doc.result.content));
+            ok('an array cell is readable rather than JSON', doc.ok && /opus, haiku/.test(doc.result.content));
+
+            const target = path.join(root, 'analytics.md');
+            const written = await reg.dispatch('tasks.analytics.export', { file: target });
+            ok('`file` writes it and names the path back',
+                written.ok && written.result.file === path.resolve(target) && fs.existsSync(target));
+        }
 
         const instr = await reg.dispatch('reports.instructions', { agent: 'yazar' });
         ok('reports.instructions answers for one agent', instr.ok && instr.result.content === '# INSTRUCTIONS yazar');
@@ -225,7 +259,7 @@ const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10);
     // ---- the catalog ----
     ok('B-9 ops appear in the catalog',
         ['reports.fleet', 'reports.outputs', 'reports.cost', 'reports.triggers', 'reports.tasks',
-            'reports.instructions', 'export.otlp', 'export.schedule', 'export.relayScript',
+            'reports.instructions', 'tasks.analytics.export', 'export.otlp', 'export.schedule', 'export.relayScript',
             'digest.daily', 'reports.weekly', 'sessions.context']
             .every(op => reg.catalog().some(c => c.op === op)));
 

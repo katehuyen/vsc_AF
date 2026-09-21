@@ -4,6 +4,7 @@ import * as path from 'path';
 import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { deliverDocument, exportStamp } from './exportDoc';
+import { markdownTable, tableOfRecords } from './mdTable';
 import { FarmSchedule } from './tasks';
 
 /**
@@ -159,6 +160,32 @@ export function registerReportOps(bridge: BridgeRegistry, deps: ReportBridgeDeps
             handler: (args) => {
                 const days = windowDays(args, 30);
                 return { days, analytics: deps.taskAnalytics(days) };
+            }
+        },
+        {
+            op: 'tasks.analytics.export',
+            describe: 'B-21 — THE TASK ANALYTICS PAGE AS A DOCUMENT. reports.tasks hands back the figures to compute with; this hands back the page\'s own Markdown — the per-agent scorecards and the recurring task families as tables, assembled by the function the page\'s ⬇ MD button uses. Columns are derived from the rows, so a figure the stats start carrying appears here without anybody adding a column. args: days? (default 30) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
+            handler: (args) => {
+                const days = windowDays(args, 30);
+                const a = (deps.taskAnalytics(days) ?? {}) as Record<string, unknown>;
+                const asRows = (v: unknown): Record<string, unknown>[] =>
+                    Array.isArray(v) ? v.filter(x => x && typeof x === 'object') as Record<string, unknown>[] : [];
+                const tables = [
+                    { key: 'agents', title: 'Agents' },
+                    { key: 'families', title: 'Task families' }
+                ].map(t => ({ t, rows: asRows(a[t.key]) }))
+                    .filter(x => x.rows.length)
+                    .map(x => tableOfRecords(x.t.title, x.rows));
+                need(tables.length > 0, `Nothing ran in the last ${days} day(s) — there is no analytics to export.`);
+                // ‼️ markdownTable, the page's own builder — not a second one
+                // that would drift from it (the parity gate reads exactly this).
+                const md = [`# Agent Farm — task analytics (${days} days)`, '']
+                    .concat(tables.map(t => markdownTable(t).replace(/^# /, '## ')))
+                    .join('\n');
+                return {
+                    days, tables: tables.map(t => ({ title: t.title, rows: t.rows.length })),
+                    ...deliver(args, md, `AgentFarm-TaskAnalytics-${stamp()}.md`)
+                };
             }
         },
         {

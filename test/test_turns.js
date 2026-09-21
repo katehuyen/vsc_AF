@@ -295,6 +295,56 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     ok('the axes combine by AND', both.ok && both.result.length === 1);
     ok('the catalog names the three args', reg2.catalog().find(c => c.op === 'turns.list').describe.includes('providers?'));
 
+    // ---------- 8) B-21 — the table as a document (turns.export) ----------
+    {
+        ok('farm.ops lists turns.export', reg.catalog().some(c => c.op === 'turns.export'));
+        // ‼️ The builder reads the reader's settings, so it is INJECTED — an op
+        // that is not wired says so rather than assembling a second document.
+        const unwired = await reg.dispatch('turns.export', {});
+        ok('an unwired host refuses rather than inventing a document',
+            !unwired.ok && /not wired/.test(unwired.error));
+
+        const idx = { all: () => [info], allWithExternal: () => [info], isSessionActive: () => false };
+        const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-turns-export-'));
+        const reg3 = new BridgeRegistry();
+        registerTurnsOps(reg3, {
+            sessions: () => [info], isActive: () => false,
+            exportMarkdown: (shown, openKeys, roles, opts) => buildTurnsMarkdown(
+                { extensionUri: {}, index: idx, getPricing: () => pricing }, shown, openKeys, roles, opts),
+            defaultReportDir: () => exportDir
+        });
+
+        const doc = await reg3.dispatch('turns.export', {});
+        ok('export returns the content and files nothing by default',
+            doc.ok && doc.result.file === null && /# Agent Farm — Turns export/.test(doc.result.content));
+        ok('…it is the page\'s OWN document, full content and all',
+            doc.ok && /fix the login bug please/.test(doc.result.content)
+            && /TOOL CALL/.test(doc.result.content) && /on it/.test(doc.result.content));
+        ok('…counting the turns it wrote', doc.ok && doc.result.turns === 2 && doc.result.matched === 2
+            && doc.result.truncated === 0);
+
+        // ‼️ Turn content is heavy, so a cap is inevitable — what must never
+        // happen is a file that stops without saying so.
+        const capped = await reg3.dispatch('turns.export', { limit: 1 });
+        ok('a cap is named, never silent',
+            capped.ok && capped.result.turns === 1 && capped.result.matched === 2
+            && capped.result.truncated === 1);
+
+        const none = await reg3.dispatch('turns.export', { agent: 'nobody' });
+        ok('a selection matching nothing is refused rather than filed blank',
+            !none.ok && /No turn matches/.test(none.error));
+
+        const target = path.join(exportDir, 'turns.md');
+        const written = await reg3.dispatch('turns.export', { file: target });
+        ok('`file` writes it and names the path back',
+            written.ok && written.result.file === path.resolve(target) && fs.existsSync(target));
+        const saved = await reg3.dispatch('turns.export', { save: true });
+        ok('`save:true` lands in the report folder and says where',
+            saved.ok && path.dirname(saved.result.file) === exportDir
+            && saved.result.chosenForYou === true && fs.existsSync(saved.result.file));
+        fs.rmSync(exportDir, { recursive: true, force: true });
+    }
+
     fs.rmSync(dir, { recursive: true, force: true });
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

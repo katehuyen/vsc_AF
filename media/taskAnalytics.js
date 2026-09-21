@@ -94,14 +94,20 @@
         };
         return { rows, bar, th };
     }
+    // B-21 — the page decides WHICH rows (its search, filters and sort are the
+    // question); the document is assembled host-side by core/mdTable, so the
+    // same one is reachable from an op and not only from this button.
     function exportTable(id) {
         const t = lastTables[id];
-        if (!t || !t.rows.length) { post({ type: 'export-md', name: id, content: '' }); return; }
-        const cell = v => String(v == null ? '' : v).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
-        const head = '| ' + t.cols.map(c => c.label).join(' | ') + ' |';
-        const sep = '| ' + t.cols.map(() => '---').join(' | ') + ' |';
-        const body = t.rows.map(r => '| ' + t.cols.map(c => cell(c.get(r))).join(' | ') + ' |').join('\n');
-        post({ type: 'export-md', name: id, content: `# ${t.title}\n\n_Exported ${window.AFTime.full(Date.now())} · ${t.rows.length} row(s)_\n\n${head}\n${sep}\n${body}\n` });
+        if (!t) { return; }
+        post({
+            type: 'export-md', name: id, title: t.title,
+            cols: t.cols.map(c => c.label),
+            rows: t.rows.map(r => t.cols.map(c => {
+                const v = c.get(r);
+                return v == null ? '' : String(v);
+            }))
+        });
     }
 
     function render() {

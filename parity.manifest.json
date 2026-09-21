@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 23,
+  "gapBudget": 21,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -6477,9 +6477,9 @@
       "ui": [
         "page:taskAnalyticsPanel.ts#export-md"
       ],
-      "gap": {
-        "why": "reports.tasks returns the figures, but the analytics page's own Markdown export is not on the bridge."
-      }
+      "ops": [
+        "tasks.analytics.export"
+      ]
     },
     {
       "capability": "taskAnalyticsPanel.ts#open-forecast",
@@ -7397,9 +7397,9 @@
       "ui": [
         "page:turnsPanel.ts#exportChoose"
       ],
-      "gap": {
-        "why": "The turns table's Markdown export has no op; turns.list returns the rows but not the document."
-      }
+      "ops": [
+        "turns.export"
+      ]
     },
     {
       "capability": "turnsPanel.ts#focusTerminal",

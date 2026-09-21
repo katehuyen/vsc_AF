@@ -543,7 +543,7 @@ import {
     QuietHours, quietHours, QuietVerdict, quietLine, QUIET_HOURS_DEFAULT,
     Silence, silence
 } from './core/alertGate';
-import { TurnsPanel } from './panels/turnsPanel';
+import { buildTurnsMarkdown, TurnsDeps, TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
@@ -15843,13 +15843,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ‼️ …which means the PAGE's pool (X-35). The op takes an `engine` filter
     // naming all four, over a claude-only list: asking it for Codex turns
     // returned an empty array that read as "Codex did nothing".
+    // Where a document lands when the caller named no file — the same folder for
+    // every export op (B-21), so a fleet's reports do not scatter by op family.
+    const defaultReportDir = (): string =>
+        expandEnvPath(cfg().get<string>('autoReportFolder', ''))
+        || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
+        || os.homedir();
+    // B-21 — ONE description of the Turns page's dependencies: the page opens
+    // with it and turns.export builds the same document from it.
+    const turnsPageDeps = (): TurnsDeps => ({
+        extensionUri: context.extensionUri,
+        index,
+        getPricing: () => pricing,
+        launchManifests: () => launchManifests(),
+        lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
+    });
     registerTurnsOps(bridge, {
         sessions: () => index.allWithExternal(),
         isActive: s => index.isSessionActive(s, Date.now()),
         forcedWindow: () => cfg().get<number>('contextWindowTokens', 0),
         // X-111 — the same identity the Sessions table states, so `providers=kimi`
         // finds the Claude-via-Kimi turns here as it does on the page.
-        identityOf: s => sessionIdentity(s, launchManifests())
+        identityOf: s => sessionIdentity(s, launchManifests()),
+        // B-21 — the page's own builder, so the op cannot describe a turn
+        // differently from the row it came from.
+        exportMarkdown: (shown, openKeys, roles, opts) =>
+            buildTurnsMarkdown(turnsPageDeps(), shown, openKeys, roles, opts),
+        defaultReportDir
     });
 
     // ‼️ B-14 (X-50) — THE WIKI CANDIDATE POOL. Marking a turn is cheap and
@@ -16323,12 +16344,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return found.size === 1 ? [...found][0] : undefined;
     };
 
-    // Where a document lands when the caller named no file — the same folder for
-    // every export op (B-21), so a fleet's reports do not scatter by op family.
-    const defaultReportDir = (): string =>
-        expandEnvPath(cfg().get<string>('autoReportFolder', ''))
-        || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
-        || os.homedir();
     registerNoticesOps(bridge, {
         store: noticesStore,
         writeReport,
@@ -36325,14 +36340,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openTurns', () => {
-            TurnsPanel.show({
-                extensionUri: context.extensionUri,
-                index,
-                getPricing: () => pricing,
-                launchManifests: () => launchManifests(),
-                lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
-                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
-            });
+            TurnsPanel.show(turnsPageDeps());
         }),
 
         // The sessions table's own page. It takes an optional scope so the

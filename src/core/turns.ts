@@ -1,4 +1,5 @@
-import { BridgeRegistry, optNum, optStr } from './bridge';
+import { BridgeRegistry, need, optNum, optStr } from './bridge';
+import { deliverDocument, exportStamp } from './exportDoc';
 import { ENGINE_ENUM } from './consoleEngine';
 import { CtxWindowSource, contextWindowOf } from './pricing';
 import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
@@ -174,33 +175,77 @@ export function registerTurnsOps(
         /** X-111 — the session's identity, so the op's provider filter finds
          *  what the page's does. */
         identityOf?(s: SessionInfo): RunIdentity | undefined;
+        /**
+         * B-21 — the Turns page's own Markdown builder (`buildTurnsMarkdown`),
+         * injected because it reads the reader's settings and this module is
+         * vscode-free. The op must never assemble a second document of its own:
+         * an export that describes a turn differently from the page it came
+         * from is a quieter answer to the same question.
+         */
+        exportMarkdown?(
+            shown: { file: string; n: number }[],
+            openKeys: Set<string>,
+            roles: string[],
+            opts: { view: boolean; foldedTitles: boolean }
+        ): string;
+        /** Where an exported document lands when the caller names no file. */
+        defaultReportDir?(): string;
     }
 ): void {
+    /**
+     * The turn selection both reading ops ask for, applied once. `turns.list`
+     * and `turns.export` are the same question with two answers (rows · a
+     * document), so the filters cannot be allowed to drift apart.
+     */
+    const select = (args: Record<string, unknown>, limitDefault: number): TurnRow[] => {
+        const agent = optStr(args, 'agent').toLowerCase();
+        const engine = optStr(args, 'engine').toLowerCase();
+        const origin = optStr(args, 'origin').toLowerCase();
+        const sel = runSelectionArgs(args);
+        // ‼️ B-25 — `optNum`, not a `typeof === 'number'` test. The CLI's
+        // `limit=50` shorthand and a hand-written arg both arrive as TEXT,
+        // and a type test drops them for the default without saying so —
+        // the same silence that queued four items at the bottom.
+        const limit = Math.max(1, Math.floor(optNum(args, 'limit', limitDefault)) || limitDefault);
+        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf)
+            .filter(r => !agent || r.agentName.toLowerCase() === agent)
+            // ‼️ The same axis the page filters on — an agent calling this op
+            // to ask "what has Codex been doing" had no way to say so.
+            .filter(r => !engine || engine === 'all' || r.engine.toLowerCase() === engine)
+            .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
+            // X-111 — the three axes the page filters on, by the same rule;
+            // `providers` is already the resolved value, so no turn report.
+            .filter(r => matchesAny(r.providers, sel.providers)
+                && matchesAny([r.profile].filter(Boolean), sel.profiles)
+                && matchesAny(r.models, sel.models))
+            .slice(0, limit);
+    };
+
+    bridge.register({
+        op: 'turns.export',
+        describe: 'B-21 — THE TURNS TABLE AS A DOCUMENT. The page\'s Export MD without the page: the same header line per turn (agent, turn n/of, the prompt label, session, models, who served it, steps, duration, tokens, context, cost, tools, errors) and each turn\'s full content — user text, assistant text, tool calls and tool results — assembled by the very function the page uses, so the two can never describe a turn differently. Selects exactly like turns.list. ‼️ TURN CONTENT IS HEAVY, so the default is 50 turns rather than the whole farm, and the answer always names how many MATCHED: a caller that got 50 of 900 is told so rather than handed a file that stops. args: every turns.list filter (agent?, engine?, origin?, provider/profile/model selection, limit? — default 50) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
+        handler: (args) => {
+            need(deps.exportMarkdown, 'Turn export is not wired on this host.');
+            const limit = Math.max(1, Math.floor(optNum(args, 'limit', 50)) || 50);
+            const matched = select({ ...args, limit: 1e9 }, 1e9).length;
+            const rows = select(args, 50);
+            need(rows.length > 0, 'No turn matches those filters — turns.list shows what is there.');
+            const md = (deps.exportMarkdown as NonNullable<typeof deps.exportMarkdown>)(
+                rows.map(r => ({ file: r.file, n: r.n })), new Set<string>(), [],
+                { view: false, foldedTitles: false });
+            return {
+                turns: rows.length, matched, truncated: matched > rows.length ? matched - rows.length : 0, limit,
+                ...deliverDocument(args, md, `AgentFarm-Turns-${exportStamp()}.md`,
+                    () => deps.defaultReportDir?.() ?? '')
+            };
+        }
+    });
+
     bridge.register({
         op: 'turns.list',
         describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), ' + RUN_SELECTION_ARGS + ', limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one), ctxWindowSource (forced | engine | model | ""), providerIds (what the engine itself named for the turn — empty on Claude for ever) and providers (what served it: the turn\'s own, else its session\'s route — the value the filter matches).',
         handler: (args) => {
-            const agent = optStr(args, 'agent').toLowerCase();
-            const engine = optStr(args, 'engine').toLowerCase();
-            const origin = optStr(args, 'origin').toLowerCase();
-            const sel = runSelectionArgs(args);
-            // ‼️ B-25 — `optNum`, not a `typeof === 'number'` test. The CLI's
-            // `limit=50` shorthand and a hand-written arg both arrive as TEXT,
-            // and a type test drops them for the default without saying so —
-            // the same silence that queued four items at the bottom.
-            const limit = Math.max(1, Math.floor(optNum(args, 'limit', 20)) || 20);
-            return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf)
-                .filter(r => !agent || r.agentName.toLowerCase() === agent)
-                // ‼️ The same axis the page filters on — an agent calling this op
-                // to ask "what has Codex been doing" had no way to say so.
-                .filter(r => !engine || engine === 'all' || r.engine.toLowerCase() === engine)
-                .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
-                // X-111 — the three axes the page filters on, by the same rule;
-                // `providers` is already the resolved value, so no turn report.
-                .filter(r => matchesAny(r.providers, sel.providers)
-                    && matchesAny([r.profile].filter(Boolean), sel.profiles)
-                    && matchesAny(r.models, sel.models))
-                .slice(0, limit)
+            return select(args, 20)
                 .map(r => ({
                     agent: r.agentName, engine: r.engine,
                     session: r.session, turn: `${r.n}/${r.of}`,

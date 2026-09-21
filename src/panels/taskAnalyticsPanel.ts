@@ -7,6 +7,7 @@ import { TaskManager } from '../core/tasks';
 import { buildAgentTaskStats, buildTaskFamilies, taskAlerts, TaskRecord, titleFamily } from '../core/taskstats';
 import { buildTriggerStats, triggerAlerts } from '../core/triggerstats';
 import { AccountSpendReport } from '../core/accountSpend';
+import { markdownTable } from '../core/mdTable';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -178,17 +179,28 @@ export class TaskAnalyticsPanel {
         void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
     }
 
-    private onMessage(msg: { type: string; to?: string; content?: string; name?: string }): void {
+    private onMessage(msg: {
+        type: string; to?: string; name?: string;
+        title?: string; cols?: unknown; rows?: unknown;
+    }): void {
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'open-history': void vscode.commands.executeCommand('agentfarm.openTaskHistory'); break;
             case 'open-forecast': void vscode.commands.executeCommand('agentfarm.openForecast'); break;
             case 'open-tasks': void vscode.commands.executeCommand('agentfarm.openTasks'); break;
-            case 'export-md':
-                if (typeof msg.content === 'string' && msg.content.trim()) {
-                    void this.saveMarkdown(msg.content, typeof msg.name === 'string' ? msg.name : 'analytics');
-                }
+            case 'export-md': {
+                // B-21 — the page sends the rows it is showing; the document is
+                // built here, by the function tasks.analytics.export uses.
+                const cols = Array.isArray(msg.cols) ? msg.cols.map(c => String(c ?? '')) : [];
+                const rows = Array.isArray(msg.rows)
+                    ? msg.rows.filter(Array.isArray).map(r => (r as unknown[]).map(v => String(v ?? '')))
+                    : [];
+                if (!cols.length) { break; }
+                void this.saveMarkdown(
+                    markdownTable({ title: String(msg.title || 'Agent Farm — task analytics'), cols, rows }),
+                    typeof msg.name === 'string' ? msg.name : 'analytics');
                 break;
+            }
             case 'afnav': handleAfNav(msg.to); break;
             case 'openGuide': void vscode.commands.executeCommand('agentfarm.openGuide', 'tasks-sayfasi'); break;
         }
