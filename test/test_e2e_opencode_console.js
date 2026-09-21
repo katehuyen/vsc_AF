@@ -99,7 +99,16 @@ async function main() {
         }
         await Promise.all([a.close(), b.close()]);
         await sleep(1500);
-        fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+        // ‼️ X-352 — THE SWEEPING UP IS NOT ONE OF THE CHECKS. Every assertion
+        // above has already run by the time this line does; on Windows the
+        // engine's own child can still hold the data home open after dispose,
+        // and `rmSync` then throws EPERM straight out of `finally` — turning a
+        // green run red over a folder. The folder is in `os.tmpdir()` under the
+        // `af-` prefix the convention reserves for exactly this, so leaving it
+        // costs nothing — but it is SAID rather than swallowed, because a
+        // cleanup that silently never happens is how a temp drive fills up.
+        try { fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }); }
+        catch (e) { console.log(`  note  the temp data home is still held open, left behind: ${tmp} (${e && e.code || e})`); }
     }
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
