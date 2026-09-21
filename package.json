@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.621.0",
+  "version": "3.622.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8659,10 +8659,10 @@
         },
         "agentFarm.quotaConvergePct": {
           "type": "number",
-          "default": 85,
+          "default": 0,
           "minimum": 0,
           "maximum": 100,
-          "description": "Quota discipline (S-75): when the 5-hour window of the account a running session is signed in as is this full, the session is told once — QUOTA CONVERGE — to start nothing new. Read from that session's OWN sign-in (a Console card's or its launch manifest's account slot), never from the home folder; a session whose sign-in is not known is not told. Same channel and rules as the context lines. 0 = off."
+          "description": "Quota discipline (S-75): when the 5-hour window of the account a running session is signed in as is this full, the session is told once — QUOTA CONVERGE — to start nothing new. Off by default: the handover law has no quota converge line — below the handover line a run works at full capacity; set a figure only if you want that earlier warning. Read from that session's OWN sign-in (a Console card's or its launch manifest's account slot), never from the home folder; a session whose sign-in is not known is not told. Same channel and rules as the context lines. 0 = off."
         },
         "agentFarm.quotaHandoverPct": {
           "type": "number",

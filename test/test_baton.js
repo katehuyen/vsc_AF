@@ -193,5 +193,22 @@ const input = (o) => Object.assign({
         !/from 'fs'|from 'path'|require\('fs'\)|from 'vscode'|Date\.now\(/.test(src));
 }
 
+console.log('\n== S-76 — is this session a runner of a relay? ==');
+{
+    const b = (id, state, hop, from, to) => ({ id, chainId: 'chn_1', hop, state, from: { sessionId: from }, ...(to ? { toSessionId: to } : {}), updatedAt: NOW });
+    ok('a session no baton touched is not in a relay', B.batonRelayOf([b('b1', 'started', 1, 's1', 's2')], 's9') === undefined);
+    ok('an empty id is not in a relay', B.batonRelayOf([b('b1', 'started', 1, 's1', '')], '') === undefined);
+    const r = B.batonRelayOf([b('b1', 'started', 1, 's1', 's2')], 's2');
+    ok('a session a baton opened runs the relay: it would pass hop 2', r && r.chainId === 'chn_1' && r.hop === 2 && r.passed === false);
+    const p = B.batonRelayOf([b('b1', 'started', 1, 's1', 's2'), b('b2', 'waiting-end', 2, 's2')], 's2');
+    ok('once it has passed, the relay says so — only the end is left', p && p.passed === true && p.hop === 2);
+    ok('the first runner who passed is in the relay too (hop 1, passed)', (B.batonRelayOf([b('b1', 'waiting-end', 1, 's1')], 's1') || {}).passed === true);
+    ok('a baton still waiting for its opener is not a relay for the successor yet', B.batonRelayOf([b('b1', 'waiting-end', 1, 's1')], 's2') === undefined);
+    ok('the user braked the pass this runner made → no pass asked for, the note rule again',
+        B.batonRelayOf([b('b1', 'started', 1, 's1', 's2'), b('b2', 'stopped', 2, 's2')], 's2') === undefined);
+    ok('a refused pass leaves the runner in the relay (it may pass again)',
+        (B.batonRelayOf([b('b1', 'started', 1, 's1', 's2'), b('b2', 'refused', 2, 's2')], 's2') || {}).passed === false);
+}
+
 console.log(`test_baton.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

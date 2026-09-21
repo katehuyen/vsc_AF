@@ -36,6 +36,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ContextSample, contextPercent } from './consoleproto';
 import { parseHandoverName, shortSessionId } from './sessionDiagnosis';
+import type { BatonRelay } from './baton';
 
 /** The two words the law waits for — `_REF/handover.md` names exactly these. */
 export const CONTEXT_CONVERGE_WORD = 'CONTEXT CONVERGE';
@@ -56,8 +57,12 @@ export interface ContextThresholds {
     quotaHandoverPct: number;
 }
 
-/** The law's own figures (`_REF/handover.md`): converge ≥ 35%, hand over ≥ 40%. */
-export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 };
+/**
+ * The law's own figures (`_REF/handover.md`): context converge ≥ 35%, hand over
+ * ≥ 40%; quota hand over ≥ 90% and NO quota converge — below 90 a run works at
+ * full capacity (the user's rule, 2026-09-21), so that line ships switched off.
+ */
+export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 };
 
 /**
  * Both figures clamped to 0..100 and read as integers; a converge line ABOVE
@@ -98,28 +103,44 @@ export function quotaLevelFor(pct: number | undefined, t: ContextThresholds): Co
 
 /**
  * S-75 — the sentence for the account's window. The handover law's own
- * figures (85 converge / 90 hand over, _REF/handover.md), read from the
+ * figure (90 hand over, _REF/handover.md; converge only if the user sets one), read from the
  * session's OWN sign-in — never the home folder's.
  */
-export function quotaSignalText(level: ContextLevel, pct: number, account: string): string {
+export function quotaSignalText(level: ContextLevel, pct: number, account: string, relay?: BatonRelay): string {
     const who = account ? ` (${account})` : '';
     return level === 'handover'
-        ? `${QUOTA_HANDOVER_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (handover line reached). `
-            + 'Stop here: finish nothing further, commit the clean progress, write the handover note '
-            + 'and end the run — the next run continues from the note (_REF/handover.md).'
-        : `${QUOTA_CONVERGE_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (converge line reached). `
-            + 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
-            + 'then hand over (_REF/handover.md).';
+        ? `${QUOTA_HANDOVER_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (handover line reached). ${orderFor('handover', relay)}`
+        : `${QUOTA_CONVERGE_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (converge line reached). ${orderFor('converge', relay)}`;
 }
 
-export function contextSignalText(level: ContextLevel, pct: number): string {
+export function contextSignalText(level: ContextLevel, pct: number, relay?: BatonRelay): string {
     return level === 'handover'
-        ? `${CONTEXT_HANDOVER_WORD} ${pct}% — your context window is ${pct}% full (handover line reached). `
-            + 'Stop here: finish nothing further, commit the clean progress, write the handover note '
-            + 'and end the run — the next run continues from the note (_REF/handover.md).'
-        : `${CONTEXT_CONVERGE_WORD} ${pct}% — your context window is ${pct}% full (converge line reached). `
-            + 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
-            + 'then hand over (_REF/handover.md).';
+        ? `${CONTEXT_HANDOVER_WORD} ${pct}% — your context window is ${pct}% full (handover line reached). ${orderFor('handover', relay)}`
+        : `${CONTEXT_CONVERGE_WORD} ${pct}% — your context window is ${pct}% full (converge line reached). ${orderFor('converge', relay)}`;
+}
+
+/**
+ * S-76 — THE ORDER, ONE TEXT WITH TWO BRANCHES. Outside a relay it is the
+ * handover note, as the law always said; a runner of a baton relay passes the
+ * baton instead (its successor's first message IS the handover), and one that
+ * already passed is only told to end.
+ */
+function orderFor(level: ContextLevel, relay?: BatonRelay): string {
+    const chain = relay ? `baton relay — chain ${relay.chainId}, hop ${relay.hop}` : '';
+    if (relay?.passed) {
+        return `Your baton is already passed (${chain}): ${level === 'handover' ? 'commit anything left and end the run now' : 'start nothing new, finish the step in flight and end the run'} `
+            + '— the successor opens once this session has ended (_REF/handover.md).';
+    }
+    if (level === 'converge') {
+        return 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
+            + (relay ? `then pass the baton (${chain}; _REF/handover.md).` : 'then hand over (_REF/handover.md).');
+    }
+    return relay
+        ? `You run in a ${chain}: stop here, finish nothing further, commit the clean progress and pass the baton `
+            + 'instead of writing a handover note — Write { "prompt": "<what your successor starts from>" } to a file, '
+            + 'run node af.js baton.pass "@<file>", then end the run; the next runner opens once this session has ended (_REF/handover.md).'
+        : 'Stop here: finish nothing further, commit the clean progress, write the handover note '
+            + 'and end the run — the next run continues from the note (_REF/handover.md).';
 }
 
 /** Through what the signal reached the session. */
@@ -221,6 +242,8 @@ export interface ContextGuardDeps {
     channelFor: (engine: string | undefined) => { channel: ContextChannel; why?: string };
     /** S-75 — the session's OWN account window; undefined = no sign-in known for it (then the line is silent) */
     quota?: (sessionId: string, hint: ContextReadHint) => QuotaSample | undefined;
+    /** S-76 — the baton relay this session runs in, if any: the order becomes "pass the baton" */
+    relay?: (sessionId: string) => BatonRelay | undefined;
     /** Records survive a reload here (JSON). Optional so a test stays in memory. */
     storeFile?: string;
     now?: () => number;
@@ -304,7 +327,7 @@ export class ContextGuard {
         // handover contains converge: a run told to stop was told to start nothing.
         if (level === 'handover' && !rec.converge) { rec.converge = { ...delivery }; }
         this.save();
-        return { level, pct, text: contextSignalText(level, pct), dimension: 'context' };
+        return { level, pct, text: contextSignalText(level, pct, this.relayOf(id)), dimension: 'context' };
     }
 
     /**
@@ -344,7 +367,12 @@ export class ContextGuard {
         q[level] = delivery;
         if (level === 'handover' && !q.converge) { q.converge = { ...delivery }; }
         this.save();
-        return { level, pct, account: sample.account, text: quotaSignalText(level, pct, sample.account) };
+        return { level, pct, account: sample.account, text: quotaSignalText(level, pct, sample.account, this.relayOf(id)) };
+    }
+
+    /** A relay that cannot be read is no relay — the order falls back to the note, never breaks the hook. */
+    private relayOf(id: string): BatonRelay | undefined {
+        try { return this.deps.relay?.(id); } catch { return undefined; }
     }
 
     /**

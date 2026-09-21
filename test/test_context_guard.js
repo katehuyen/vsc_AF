@@ -39,11 +39,11 @@ const { contextAfter } = require(path.join(ROOT, 'out', 'core', 'pricing.js'));
 
 console.log('\n== thresholds — the law\'s figures, clamped and ordered ==');
 {
-    eq('defaults are the law\'s 35 / 40', G.normalizeThresholds(undefined), { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 });
-    eq('a converge line above the handover line folds down onto it', G.normalizeThresholds({ convergePct: 50, handoverPct: 40 }), { convergePct: 40, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 });
-    eq('0 is off and survives', G.normalizeThresholds({ convergePct: 0, handoverPct: 0 }), { convergePct: 0, handoverPct: 0, quotaConvergePct: 85, quotaHandoverPct: 90 });
-    eq('out of range is clamped, fractions rounded', G.normalizeThresholds({ convergePct: -3, handoverPct: 140.6 }), { convergePct: 0, handoverPct: 100, quotaConvergePct: 85, quotaHandoverPct: 90 });
-    eq('garbage falls to the default', G.normalizeThresholds({ convergePct: 'x', handoverPct: NaN }), { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 });
+    eq('defaults are the law\'s 35 / 40, and the quota\'s 90 with no converge line', G.normalizeThresholds(undefined), { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 });
+    eq('a converge line above the handover line folds down onto it', G.normalizeThresholds({ convergePct: 50, handoverPct: 40 }), { convergePct: 40, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 });
+    eq('0 is off and survives', G.normalizeThresholds({ convergePct: 0, handoverPct: 0 }), { convergePct: 0, handoverPct: 0, quotaConvergePct: 0, quotaHandoverPct: 90 });
+    eq('out of range is clamped, fractions rounded', G.normalizeThresholds({ convergePct: -3, handoverPct: 140.6 }), { convergePct: 0, handoverPct: 100, quotaConvergePct: 0, quotaHandoverPct: 90 });
+    eq('garbage falls to the default', G.normalizeThresholds({ convergePct: 'x', handoverPct: NaN }), { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 });
     const t = G.normalizeThresholds(undefined);
     eq('34 crosses nothing', G.contextLevelFor(34, t), undefined);
     eq('35 is the converge line', G.contextLevelFor(35, t), 'converge');
@@ -235,6 +235,48 @@ console.log('\n== S-75 — the second dimension: the account\'s own window, same
     ok('ONE SUBJECT: the window\'s lines never carry the quota\'s', !uv.lines.some(l => /Quota signal|5-hour/.test(l)));
 }
 
+console.log('\n== S-76 — in a baton relay the order is "pass the baton", outside it the note, as always ==');
+{
+    const run = { chainId: 'chn_x', hop: 3, passed: false };
+    const done = { chainId: 'chn_x', hop: 3, passed: true };
+    ok('outside a relay the sentences are exactly the note\'s, unchanged',
+        G.contextSignalText('handover', 41) === G.contextSignalText('handover', 41, undefined) && /write the handover note/.test(G.contextSignalText('handover', 41))
+        && /then hand over \(_REF\/handover\.md\)\.$/.test(G.contextSignalText('converge', 36)));
+    const h = G.contextSignalText('handover', 41, run);
+    ok('a runner told CONTEXT HANDOVER passes the baton — the chain, the hop, the file recipe — and writes no note',
+        h.startsWith('CONTEXT HANDOVER 41%') && /baton relay — chain chn_x, hop 3/.test(h) && /node af\.js baton\.pass "@<file>"/.test(h)
+        && /instead of writing a handover note/.test(h) && !/write the handover note/.test(h));
+    const q = G.quotaSignalText('handover', 91, 'kate', run);
+    ok('…the quota sentence takes the same branch (one order, two lines)', q.startsWith('QUOTA HANDOVER 91%') && /pass the baton/.test(q) && /baton\.pass/.test(q));
+    ok('converge in a relay: start nothing new, then pass the baton', /then pass the baton \(baton relay — chain chn_x, hop 3/.test(G.contextSignalText('converge', 36, run)));
+    const p = G.contextSignalText('handover', 41, done);
+    ok('a runner that already passed is only told to end', /Your baton is already passed/.test(p) && /end the run now/.test(p) && !/baton\.pass "@/.test(p));
+    ok('a relay sentence stays one paragraph', h.length < 700 && q.length < 700);
+    let relay = run;
+    const g = new G.ContextGuard({
+        thresholds: () => ({ convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 }),
+        read: () => ({ tokens: 82_000, window: 200_000, source: 'test' }),
+        quota: () => ({ pct: 91, account: 'kate' }),
+        relay: () => relay,
+        channelFor: () => ({ channel: 'claude-hook' }),
+        now: () => 1
+    });
+    const s = g.check('r1', { event: 'PostToolUse' });
+    ok('the guard asks the host for the relay and both lines carry the baton order', s && s.dimension === 'both' && (s.text.match(/baton\.pass "@<file>"/g) || []).length === 2);
+    relay = () => { throw new Error('store not ready'); };
+    const g2 = new G.ContextGuard({
+        thresholds: () => ({ convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 }),
+        read: () => ({ tokens: 82_000, window: 200_000, source: 'test' }),
+        relay: (id) => relay(id),
+        channelFor: () => ({ channel: 'claude-hook' }),
+        now: () => 1
+    });
+    const s2 = g2.check('r2', { event: 'PostToolUse' });
+    ok('‼️ a relay that cannot be read is no relay — the note sentence, never a broken hook', s2 && /write the handover note/.test(s2.text));
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('the host hands the guard the baton store\'s answer', /relay: \(sessionId: string\) => batonRelayOf\(batonStore\.all\(\), sessionId\),/.test(ext));
+}
+
 console.log('\n== the wiring — the host reads, the hook answers, the bridge reports and sets ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
@@ -258,7 +300,7 @@ console.log('\n== the wiring — the host reads, the hook answers, the bridge re
     ok('sessions.contextGuard.set writes all four settings globally, normalised (S-75: the quota pair too)',
         /normalizeThresholds\(/.test(setBlock) && /'contextConvergePct'/.test(setBlock) && /'contextHandoverPct'/.test(setBlock)
         && /'quotaConvergePct'/.test(setBlock) && /'quotaHandoverPct'/.test(setBlock) && /cfg\(\)\.update\(setting/.test(setBlock));
-    eq('S-75 — the quota pair are settings with the law\'s 85 / 90', [props['agentFarm.quotaConvergePct'].default, props['agentFarm.quotaHandoverPct'].default], [85, 90]);
+    eq('S-75 — the quota pair are settings: no converge by default, hand over at the law\'s 90', [props['agentFarm.quotaConvergePct'].default, props['agentFarm.quotaHandoverPct'].default], [0, 90]);
     ok('S-75 — the guard is handed the session\'s OWN account window, from its card or its manifest, never the home folder',
         /const sessionQuotaSample = \(sessionId: string\): QuotaSample \| undefined => \{/.test(ext) && /quota: sessionQuotaSample,/.test(ext) && /launchManifests\(\)\.find\(m => m\.launchId === launchId\)\?\.account/.test(ext)
         && /accountUsage\.current\(\)\.find\(\(x: SlotUsage\) => x\.slotId === slotId\)/.test(ext));

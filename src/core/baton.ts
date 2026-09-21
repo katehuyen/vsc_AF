@@ -281,6 +281,32 @@ export function batonPlanSentence(
         + `in ${b.from.cwd} and is handed your prompt.`;
 }
 
+/** S-76 — the relay a session runs in, as the handover whisper needs it. */
+export interface BatonRelay {
+    chainId: string;
+    /** the hop this session would pass (its opener's + 1), or the hop it already passed */
+    hop: number;
+    /** it has already left a live baton — the only step left is to end */
+    passed: boolean;
+}
+
+/**
+ * Is this session a runner of a baton relay? Yes when a baton opened it, or
+ * when it has already passed one that is still live. A chain the user braked
+ * after this runner was opened asks for no pass — the run falls back to the
+ * handover note, the rule outside a relay.
+ */
+export function batonRelayOf(list: readonly Baton[], sessionId: string): BatonRelay | undefined {
+    const sid = String(sessionId ?? '').trim();
+    if (!sid) { return undefined; }
+    const left = list.find(b => b.from.sessionId === sid && isLive(b));
+    if (left) { return { chainId: left.chainId, hop: left.hop, passed: true }; }
+    const opener = list.find(b => b.state === 'started' && b.toSessionId === sid);
+    if (!opener) { return undefined; }
+    if (list.some(b => b.chainId === opener.chainId && b.state === 'stopped' && b.hop > opener.hop)) { return undefined; }
+    return { chainId: opener.chainId, hop: opener.hop + 1, passed: false };
+}
+
 /**
  * What the store keeps: EVERY live baton, however many — dropping one would
  * silently cancel a successor — then the newest finished ones up to the cap.

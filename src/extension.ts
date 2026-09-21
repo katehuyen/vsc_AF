@@ -298,6 +298,7 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
+import { batonRelayOf } from './core/baton';
 import { registerBatonOps } from './core/batonBridge';
 import { successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
@@ -1547,6 +1548,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
         read: contextReadingFor,
         quota: sessionQuotaSample,
+        // S-76 — a runner of a baton relay is told to pass the baton, not to write a note.
+        relay: (sessionId: string) => batonRelayOf(batonStore.all(), sessionId),
         // A real hook payload never names its engine (X-265); one that reaches
         // this listener without a `cli:<engine>:` namespace is Claude Code's,
         // and Claude's hooks are the ones whose stdout carries additionalContext.
