@@ -40,6 +40,9 @@ import { parseHandoverName, shortSessionId } from './sessionDiagnosis';
 /** The two words the law waits for — `_REF/handover.md` names exactly these. */
 export const CONTEXT_CONVERGE_WORD = 'CONTEXT CONVERGE';
 export const CONTEXT_HANDOVER_WORD = 'CONTEXT HANDOVER';
+/** S-75 — the second dimension: the account's own 5-hour window. */
+export const QUOTA_CONVERGE_WORD = 'QUOTA CONVERGE';
+export const QUOTA_HANDOVER_WORD = 'QUOTA HANDOVER';
 
 export type ContextLevel = 'converge' | 'handover';
 
@@ -48,10 +51,13 @@ export interface ContextThresholds {
     convergePct: number;
     /** stop and hand over — 0 = off */
     handoverPct: number;
+    /** S-75 — the quota line, percent of the session's OWN account's 5-hour window; 0 = off */
+    quotaConvergePct: number;
+    quotaHandoverPct: number;
 }
 
 /** The law's own figures (`_REF/handover.md`): converge ≥ 35%, hand over ≥ 40%. */
-export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = { convergePct: 35, handoverPct: 40 };
+export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 };
 
 /**
  * Both figures clamped to 0..100 and read as integers; a converge line ABOVE
@@ -66,7 +72,10 @@ export function normalizeThresholds(t: Partial<ContextThresholds> | undefined): 
     const handoverPct = n(t?.handoverPct, DEFAULT_CONTEXT_THRESHOLDS.handoverPct);
     let convergePct = n(t?.convergePct, DEFAULT_CONTEXT_THRESHOLDS.convergePct);
     if (handoverPct > 0 && convergePct > handoverPct) { convergePct = handoverPct; }
-    return { convergePct, handoverPct };
+    const quotaHandoverPct = n(t?.quotaHandoverPct, DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
+    let quotaConvergePct = n(t?.quotaConvergePct, DEFAULT_CONTEXT_THRESHOLDS.quotaConvergePct);
+    if (quotaHandoverPct > 0 && quotaConvergePct > quotaHandoverPct) { quotaConvergePct = quotaHandoverPct; }
+    return { convergePct, handoverPct, quotaConvergePct, quotaHandoverPct };
 }
 
 /** Which line a reading has crossed — the higher one wins. */
@@ -82,6 +91,27 @@ export function contextLevelFor(pct: number | undefined, t: ContextThresholds): 
  * says what the reader owes and where the procedure is, because a bare
  * `CONTEXT HANDOVER` would send an agent that never read the law nowhere.
  */
+/** S-75 — the quota pair, same shape as the context pair. */
+export function quotaLevelFor(pct: number | undefined, t: ContextThresholds): ContextLevel | undefined {
+    return contextLevelFor(pct, { ...t, convergePct: t.quotaConvergePct, handoverPct: t.quotaHandoverPct });
+}
+
+/**
+ * S-75 — the sentence for the account's window. The handover law's own
+ * figures (85 converge / 90 hand over, _REF/handover.md), read from the
+ * session's OWN sign-in — never the home folder's.
+ */
+export function quotaSignalText(level: ContextLevel, pct: number, account: string): string {
+    const who = account ? ` (${account})` : '';
+    return level === 'handover'
+        ? `${QUOTA_HANDOVER_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (handover line reached). `
+            + 'Stop here: finish nothing further, commit the clean progress, write the handover note '
+            + 'and end the run — the next run continues from the note (_REF/handover.md).'
+        : `${QUOTA_CONVERGE_WORD} ${pct}% — your account's 5-hour window${who} is ${pct}% used (converge line reached). `
+            + 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
+            + 'then hand over (_REF/handover.md).';
+}
+
 export function contextSignalText(level: ContextLevel, pct: number): string {
     return level === 'handover'
         ? `${CONTEXT_HANDOVER_WORD} ${pct}% — your context window is ${pct}% full (handover line reached). `
@@ -118,6 +148,30 @@ export interface ContextSignalRecord {
     undelivered?: { level: ContextLevel; ts: number; pct: number; why: string };
     /** the run handed over after the signal (a handover note names it) */
     handedOver?: { ts: number; note: string };
+    /** S-75 — the quota dimension, kept apart so the context fields read as they always did */
+    quota?: QuotaSignalRecord;
+}
+
+export interface QuotaDelivery extends ContextDelivery {
+    account: string;
+}
+
+export interface QuotaSignalRecord {
+    account?: string;
+    converge?: QuotaDelivery;
+    handover?: QuotaDelivery;
+    lastPct?: number;
+    lastTs?: number;
+    resetsAt?: number;
+    undelivered?: { level: ContextLevel; ts: number; pct: number; why: string };
+}
+
+/** S-75 — the session's own account window, as the host reads it. */
+export interface QuotaSample {
+    pct: number;
+    /** the slot the session runs on, by label */
+    account: string;
+    resetsAt?: number;
 }
 
 /** What the hook is answered with, for a session that is due a signal. */
@@ -125,6 +179,9 @@ export interface ContextSignal {
     level: ContextLevel;
     pct: number;
     text: string;
+    /** S-75 — which line spoke: the window, the account's quota, or both in one answer */
+    dimension: 'context' | 'quota' | 'both';
+    quota?: { level: ContextLevel; pct: number; account: string };
 }
 
 /**
@@ -162,6 +219,8 @@ export interface ContextGuardDeps {
     /** Which channel this engine's hooks give the guard. Claude's carry
      *  `additionalContext`; a name with none gets `none` and a reason. */
     channelFor: (engine: string | undefined) => { channel: ContextChannel; why?: string };
+    /** S-75 — the session's OWN account window; undefined = no sign-in known for it (then the line is silent) */
+    quota?: (sessionId: string, hint: ContextReadHint) => QuotaSample | undefined;
     /** Records survive a reload here (JSON). Optional so a test stays in memory. */
     storeFile?: string;
     now?: () => number;
@@ -199,8 +258,21 @@ export class ContextGuard {
         const id = String(sessionId ?? '').trim();
         if (!id) { return undefined; }
         const t = normalizeThresholds(this.deps.thresholds());
-        if (t.convergePct <= 0 && t.handoverPct <= 0) { return undefined; }
-        const sample = this.deps.read(id, { engine: opts.engine, transcriptPath: opts.transcriptPath, cwd: opts.cwd });
+        const hint: ContextReadHint = { engine: opts.engine, transcriptPath: opts.transcriptPath, cwd: opts.cwd };
+        const ctx = (t.convergePct > 0 || t.handoverPct > 0) ? this.checkContext(id, opts, t, hint) : undefined;
+        const quota = (t.quotaConvergePct > 0 || t.quotaHandoverPct > 0) ? this.checkQuota(id, opts, t, hint) : undefined;
+        if (ctx && quota) {
+            const level: ContextLevel = ctx.level === 'handover' || quota.level === 'handover' ? 'handover' : 'converge';
+            return { ...ctx, level, text: `${ctx.text}\n\n${quota.text}`, dimension: 'both', quota: { level: quota.level, pct: quota.pct, account: quota.account } };
+        }
+        if (quota) {
+            return { level: quota.level, pct: quota.pct, text: quota.text, dimension: 'quota', quota: { level: quota.level, pct: quota.pct, account: quota.account } };
+        }
+        return ctx;
+    }
+
+    private checkContext(id: string, opts: { event?: string; engine?: string }, t: ContextThresholds, hint: ContextReadHint): ContextSignal | undefined {
+        const sample = this.deps.read(id, hint);
         const pct = contextPercent(sample);
         if (pct === undefined || !sample) { return undefined; }
         const rec = this.recordFor(id, opts.engine);
@@ -232,7 +304,47 @@ export class ContextGuard {
         // handover contains converge: a run told to stop was told to start nothing.
         if (level === 'handover' && !rec.converge) { rec.converge = { ...delivery }; }
         this.save();
-        return { level, pct, text: contextSignalText(level, pct) };
+        return { level, pct, text: contextSignalText(level, pct), dimension: 'context' };
+    }
+
+    /**
+     * S-75 — THE SAME THREE RULES ON THE ACCOUNT'S WINDOW: one delivery per
+     * level, re-armed when the window empties (a reset), undelivered on an
+     * engine with no channel. Silent when no sign-in is known for the session
+     * — a figure from the wrong account is worse than none (2026-09-06: the
+     * home folder said 95% while the session's own window stood at 23%).
+     */
+    private checkQuota(id: string, opts: { event?: string; engine?: string }, t: ContextThresholds, hint: ContextReadHint)
+        : { level: ContextLevel; pct: number; account: string; text: string } | undefined {
+        const sample = this.deps.quota?.(id, hint);
+        if (!sample || typeof sample.pct !== 'number' || !Number.isFinite(sample.pct)) { return undefined; }
+        const pct = Math.round(sample.pct);
+        const rec = this.recordFor(id, opts.engine);
+        const q: QuotaSignalRecord = rec.quota ?? (rec.quota = {});
+        const ts = this.now();
+        q.lastPct = pct; q.lastTs = ts; q.account = sample.account;
+        if (sample.resetsAt) { q.resetsAt = sample.resetsAt; }
+        const floor = t.quotaConvergePct > 0 ? t.quotaConvergePct : t.quotaHandoverPct;
+        if ((q.converge || q.handover || q.undelivered) && pct < floor) {
+            delete q.converge; delete q.handover; delete q.undelivered;
+        }
+        const level = quotaLevelFor(pct, t);
+        if (!level) { this.save(); return undefined; }
+        if (q[level]) { this.save(); return undefined; }
+        const ch = this.deps.channelFor(opts.engine);
+        if (ch.channel === 'none') {
+            if (!q.undelivered || q.undelivered.level !== level) {
+                q.undelivered = { level, ts, pct, why: ch.why ?? 'this engine’s hooks carry no additionalContext' };
+            }
+            this.save();
+            return undefined;
+        }
+        if (!opts.event || !(CONTEXT_SIGNAL_HOOKS as readonly string[]).includes(opts.event)) { this.save(); return undefined; }
+        const delivery: QuotaDelivery = { ts, pct, tokens: 0, window: 0, channel: ch.channel, via: opts.event, account: sample.account };
+        q[level] = delivery;
+        if (level === 'handover' && !q.converge) { q.converge = { ...delivery }; }
+        this.save();
+        return { level, pct, account: sample.account, text: quotaSignalText(level, pct, sample.account) };
     }
 
     /**

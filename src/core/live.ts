@@ -3,7 +3,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { FIRST_PROMPT_MAX } from './sessions';
-import { hookResponseBody } from './contextGuard';
+import { ContextSignal, hookResponseBody } from './contextGuard';
 import { truncate } from './util';
 import type { AlertEvent } from './alertVoices';
 
@@ -231,7 +231,7 @@ export interface LiveConfig {
         /** S-64 (5/n) — a PostToolUse names the tool and its input, which is
          *  how the write of a handover note is seen the moment it happens */
         tool_name?: string; tool_input?: Record<string, unknown>;
-    }) => { level: 'converge' | 'handover'; pct: number; text: string } | undefined;
+    }) => ContextSignal | undefined;
     /**
      * ‼️ B-23 — THE OTHER SHAPE THIS LISTENER CAN ANSWER WITH: a refusal.
      *

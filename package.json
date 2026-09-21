@@ -8657,6 +8657,20 @@
           "maximum": 100,
           "description": "Context discipline (S-64): when a running session's window is this full, it is told once — CONTEXT HANDOVER — to stop, commit, write the handover note and end the run. A converge line above this one is folded down onto it. 0 = off."
         },
+        "agentFarm.quotaConvergePct": {
+          "type": "number",
+          "default": 85,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Quota discipline (S-75): when the 5-hour window of the account a running session is signed in as is this full, the session is told once — QUOTA CONVERGE — to start nothing new. Read from that session's OWN sign-in (a Console card's or its launch manifest's account slot), never from the home folder; a session whose sign-in is not known is not told. Same channel and rules as the context lines. 0 = off."
+        },
+        "agentFarm.quotaHandoverPct": {
+          "type": "number",
+          "default": 90,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Quota discipline (S-75): when the session's own account window is this full, it is told once — QUOTA HANDOVER — to stop, commit, write the handover note and end the run (the handover law's 90%). A converge line above this one is folded down onto it. 0 = off."
+        },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,

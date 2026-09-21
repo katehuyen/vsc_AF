@@ -39,11 +39,11 @@ const { contextAfter } = require(path.join(ROOT, 'out', 'core', 'pricing.js'));
 
 console.log('\n== thresholds — the law\'s figures, clamped and ordered ==');
 {
-    eq('defaults are the law\'s 35 / 40', G.normalizeThresholds(undefined), { convergePct: 35, handoverPct: 40 });
-    eq('a converge line above the handover line folds down onto it', G.normalizeThresholds({ convergePct: 50, handoverPct: 40 }), { convergePct: 40, handoverPct: 40 });
-    eq('0 is off and survives', G.normalizeThresholds({ convergePct: 0, handoverPct: 0 }), { convergePct: 0, handoverPct: 0 });
-    eq('out of range is clamped, fractions rounded', G.normalizeThresholds({ convergePct: -3, handoverPct: 140.6 }), { convergePct: 0, handoverPct: 100 });
-    eq('garbage falls to the default', G.normalizeThresholds({ convergePct: 'x', handoverPct: NaN }), { convergePct: 35, handoverPct: 40 });
+    eq('defaults are the law\'s 35 / 40', G.normalizeThresholds(undefined), { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 });
+    eq('a converge line above the handover line folds down onto it', G.normalizeThresholds({ convergePct: 50, handoverPct: 40 }), { convergePct: 40, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 });
+    eq('0 is off and survives', G.normalizeThresholds({ convergePct: 0, handoverPct: 0 }), { convergePct: 0, handoverPct: 0, quotaConvergePct: 85, quotaHandoverPct: 90 });
+    eq('out of range is clamped, fractions rounded', G.normalizeThresholds({ convergePct: -3, handoverPct: 140.6 }), { convergePct: 0, handoverPct: 100, quotaConvergePct: 85, quotaHandoverPct: 90 });
+    eq('garbage falls to the default', G.normalizeThresholds({ convergePct: 'x', handoverPct: NaN }), { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 });
     const t = G.normalizeThresholds(undefined);
     eq('34 crosses nothing', G.contextLevelFor(34, t), undefined);
     eq('35 is the converge line', G.contextLevelFor(35, t), 'converge');
@@ -167,6 +167,52 @@ console.log('\n== the guard — once per level, re-armed by an emptied window, h
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp */ }
 }
 
+console.log('\n== S-75 — the second dimension: the account\'s own window, same three rules ==');
+{
+    let now = 2_000_000;
+    let quota;
+    let reading;
+    const thresholds = { convergePct: 35, handoverPct: 40, quotaConvergePct: 85, quotaHandoverPct: 90 };
+    const g = new G.ContextGuard({
+        thresholds: () => thresholds,
+        read: () => reading,
+        quota: () => quota,
+        channelFor: (engine) => (!engine || engine === 'claude') ? { channel: 'claude-hook' } : { channel: 'none', why: engine + ' has no channel' },
+        now: () => now
+    });
+    const post = (id, extra) => g.check(id, { event: 'PostToolUse', ...(extra || {}) });
+    ok('no sign-in known → the quota line is silent', post('q1') === undefined && !g.record('q1'));
+    quota = { pct: 60, account: 'kate' };
+    ok('under the line: nothing, but the reading is kept with the account', post('q1') === undefined && g.record('q1').quota.lastPct === 60 && g.record('q1').quota.account === 'kate');
+    quota = { pct: 86, account: 'kate', resetsAt: now + 3600_000 };
+    const c = post('q1');
+    ok('crossing the quota converge line speaks QUOTA CONVERGE with the figure and the account', c && c.dimension === 'quota' && c.level === 'converge' && c.pct === 86 && c.text.startsWith('QUOTA CONVERGE 86% — your account\'s 5-hour window (kate) is 86% used'));
+    ok('…the record says so and keeps the reset', g.record('q1').quota.converge.pct === 86 && g.record('q1').quota.converge.account === 'kate' && g.record('q1').quota.resetsAt === now + 3600_000);
+    quota = { pct: 88, account: 'kate' };
+    ok('the same level again is silent', post('q1') === undefined);
+    quota = { pct: 91, account: 'kate' };
+    const h = post('q1');
+    ok('the handover line speaks once, QUOTA HANDOVER', h && h.level === 'handover' && /^QUOTA HANDOVER 91%/.test(h.text) && /handover note/.test(h.text));
+    ok('…and again is silent', post('q1') === undefined);
+    quota = { pct: 12, account: 'kate' };
+    ok('the window emptied (a reset): re-armed', post('q1') === undefined && !g.record('q1').quota.converge && !g.record('q1').quota.handover);
+    quota = { pct: 86, account: 'kate' };
+    ok('…so the next crossing speaks again', !!post('q1'));
+    quota = { pct: 93, account: 'kate' };
+    ok('an engine with no channel records the crossing as undelivered, never invents a delivery',
+        post('q2', { engine: 'codex' }) === undefined && g.record('q2').quota.undelivered && g.record('q2').quota.undelivered.level === 'handover' && !g.record('q2').quota.handover);
+    ok('a hook that carries no additionalContext is not spoken through', g.check('q3', { event: 'PreToolUse' }) === undefined && !g.record('q3').quota.handover);
+    reading = { tokens: 80_000, window: 200_000, source: 'test' };
+    quota = { pct: 86, account: 'kate' };
+    const both = post('q4');
+    ok('both lines crossing in one hook are ONE answer: the window first, the quota under it',
+        both && both.dimension === 'both' && both.level === 'handover' && /^CONTEXT HANDOVER 40%/.test(both.text) && /\n\nQUOTA CONVERGE 86%/.test(both.text) && both.quota.account === 'kate');
+    const off = new G.ContextGuard({ thresholds: () => ({ ...thresholds, quotaConvergePct: 0, quotaHandoverPct: 0 }), read: () => undefined, quota: () => ({ pct: 99, account: 'kate' }), channelFor: () => ({ channel: 'claude-hook' }), now: () => now });
+    ok('0 / 0 switches the quota line off', off.check('q5', { event: 'PostToolUse' }) === undefined);
+    eq('a quota converge above its handover folds down', G.normalizeThresholds({ quotaConvergePct: 95, quotaHandoverPct: 90 }).quotaConvergePct, 90);
+    eq('quotaLevelFor reads the quota pair', [G.quotaLevelFor(84, thresholds), G.quotaLevelFor(85, thresholds), G.quotaLevelFor(90, thresholds)], [undefined, 'converge', 'handover']);
+}
+
 console.log('\n== the wiring — the host reads, the hook answers, the bridge reports and sets ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
@@ -179,8 +225,13 @@ console.log('\n== the wiring — the host reads, the hook answers, the bridge re
     ok('sessions.contextGuard reads the guard\'s own thresholds, record and list',
         guardBlock.length > 200 && /contextGuard\.thresholds\(\)/.test(guardBlock) && /contextGuard\.record\(id\)/.test(guardBlock) && /contextGuard\.all\(\)/.test(guardBlock));
     ok('…and answers one session\'s reading through the SAME reader the hook uses', /contextReadingFor\(id,/.test(guardBlock));
-    ok('sessions.contextGuard.set writes both settings globally, normalised',
-        /normalizeThresholds\(/.test(setBlock) && /update\('contextConvergePct'/.test(setBlock) && /update\('contextHandoverPct'/.test(setBlock));
+    ok('sessions.contextGuard.set writes all four settings globally, normalised (S-75: the quota pair too)',
+        /normalizeThresholds\(/.test(setBlock) && /'contextConvergePct'/.test(setBlock) && /'contextHandoverPct'/.test(setBlock)
+        && /'quotaConvergePct'/.test(setBlock) && /'quotaHandoverPct'/.test(setBlock) && /cfg\(\)\.update\(setting/.test(setBlock));
+    eq('S-75 — the quota pair are settings with the law\'s 85 / 90', [props['agentFarm.quotaConvergePct'].default, props['agentFarm.quotaHandoverPct'].default], [85, 90]);
+    ok('S-75 — the guard is handed the session\'s OWN account window, from its card or its manifest, never the home folder',
+        /quota: \(sessionId: string\): QuotaSample \| undefined => \{/.test(ext) && /launchManifests\(\)\.find\(m => m\.launchId === launchId\)\?\.account/.test(ext)
+        && /accountUsage\.current\(\)\.find\(\(x: SlotUsage\) => x\.slotId === slotId\)/.test(ext));
     const liveCfg = ext.slice(ext.indexOf('const live = new LiveMonitor('), ext.indexOf('context.subscriptions.push(live)'));
     ok('‼️ the live listener\'s config carries contextSignal → contextGuard.check, with the event, the transcript and the engine',
         /contextSignal: \(p\) => \{/.test(liveCfg) && /return contextGuard\.check\(sid, \{/.test(liveCfg)

@@ -89,7 +89,7 @@ import {
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
-import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, DEFAULT_CONTEXT_THRESHOLDS, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
+import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, ContextThresholds, DEFAULT_CONTEXT_THRESHOLDS, QuotaSample, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
@@ -1527,9 +1527,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const contextGuard = new ContextGuard({
         thresholds: () => ({
             convergePct: cfg().get<number>('contextConvergePct', DEFAULT_CONTEXT_THRESHOLDS.convergePct),
-            handoverPct: cfg().get<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct)
+            handoverPct: cfg().get<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct),
+            quotaConvergePct: cfg().get<number>('quotaConvergePct', DEFAULT_CONTEXT_THRESHOLDS.quotaConvergePct),
+            quotaHandoverPct: cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct)
         }),
         read: contextReadingFor,
+        // S-75 — the session's OWN sign-in: its Console card's slot, else the slot
+        // its sealed launch manifest names. No slot known = no line (a figure
+        // from the wrong account is worse than none — 2026-09-06, home 95% vs own 23%).
+        quota: (sessionId: string): QuotaSample | undefined => {
+            const card = consoleHost.list().find(s => s.sessionId === sessionId);
+            const launchId = card?.launchId || index.allWithExternal().find(x => x.sessionId === sessionId)?.launchId;
+            const slotId = (card?.account || '').trim()
+                || (launchId ? (launchManifests().find(m => m.launchId === launchId)?.account ?? '') : '');
+            if (!slotId) { return undefined; }
+            const u: SlotUsage | undefined = accountUsage.current().find((x: SlotUsage) => x.slotId === slotId);
+            if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return undefined; }
+            const sl = findSlot(storedAccounts(), slotId);
+            return { pct: u.percent, account: sl ? slotLabel(sl) : slotId, ...(u.resetsAt ? { resetsAt: u.resetsAt } : {}) };
+        },
         // A real hook payload never names its engine (X-265); one that reaches
         // this listener without a `cli:<engine>:` namespace is Claude Code's,
         // and Claude's hooks are the ones whose stdout carries additionalContext.
@@ -10585,20 +10601,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.contextGuard.set',
-            describe: 'S-64 — set the context discipline thresholds (agentFarm.contextConvergePct / agentFarm.contextHandoverPct, global settings). Percent of the window, integers 0..100; 0 switches that line off; a converge line above the handover line is folded down onto it. Answers the thresholds in force after the write. args: convergePct?, handoverPct?',
+            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. Answers the thresholds in force after the write. args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?',
             handler: async (args) => {
                 const cur = contextGuard.thresholds();
                 const next = normalizeThresholds({
                     convergePct: optNum(args, 'convergePct', cur.convergePct),
-                    handoverPct: optNum(args, 'handoverPct', cur.handoverPct)
+                    handoverPct: optNum(args, 'handoverPct', cur.handoverPct),
+                    quotaConvergePct: optNum(args, 'quotaConvergePct', cur.quotaConvergePct),
+                    quotaHandoverPct: optNum(args, 'quotaHandoverPct', cur.quotaHandoverPct)
                 });
-                if (next.convergePct !== cur.convergePct) {
-                    await cfg().update('contextConvergePct', next.convergePct, vscode.ConfigurationTarget.Global);
+                const keys: [keyof ContextThresholds, string][] = [
+                    ['convergePct', 'contextConvergePct'], ['handoverPct', 'contextHandoverPct'],
+                    ['quotaConvergePct', 'quotaConvergePct'], ['quotaHandoverPct', 'quotaHandoverPct']
+                ];
+                let changed = false;
+                for (const [k, setting] of keys) {
+                    if (next[k] !== cur[k]) { changed = true; await cfg().update(setting, next[k], vscode.ConfigurationTarget.Global); }
                 }
-                if (next.handoverPct !== cur.handoverPct) {
-                    await cfg().update('contextHandoverPct', next.handoverPct, vscode.ConfigurationTarget.Global);
-                }
-                return { thresholds: contextGuard.thresholds(), changed: next.convergePct !== cur.convergePct || next.handoverPct !== cur.handoverPct };
+                return { thresholds: contextGuard.thresholds(), changed };
             }
         },
         {
