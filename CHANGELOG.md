@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.627.0 - Five pages’ Export MD stops being a button and becomes an op (B-21) (2026-09-21)
+
+- **The board, the turns table, the analytics page and the runs board can
+  now be exported without a person in front of them.** `notices.export`,
+  `turns.export`, `tasks.analytics.export` and `tasks.export` each hand back
+  the document the page writes — content by default, an atomic write when
+  you pass `file`, the report folder on `save:true`, and the path always
+  named in the answer. Each selects exactly like its page’s list op through
+  one shared selector, so rows and document can never drift apart.
+- **The builders moved out of the webview.** A page that assembled its own
+  Markdown was reachable from a button and from nowhere else; that is the
+  whole of B-21’s complaint. The Task Analytics page now posts its title,
+  its columns and the rows it is showing, and the host builds with
+  `core/mdTable` — the same function the op uses. Pipes and newlines are
+  escaped, a short row is padded rather than ragged, and `0` and `false`
+  print as values instead of blanking into what reads as missing data.
+- **A cap is named, never silent.** Turn content is heavy, so `turns.export`
+  defaults to 50 turns — and always answers with `matched` and `truncated`,
+  because a caller handed 50 of 900 with no word about it has been given a
+  file that simply stops.
+- **‼️ The Tasks page’s own ⬇ MD has had no door since the page was
+  rewritten.** The handler is still there and still works; nothing reaches
+  it. `tasks.export` covers the bridge side; whether the control comes back
+  or the dead handler goes is asked on Notices rather than decided here.
+
 ## 3.626.0 - The relay proven live, and its hand-off stops posting "Task parked" on every leg (S-79 · X-355) (2026-09-21)
 
 - **The baton relay, run for real (S-79).** A three-leg haiku chain over two
