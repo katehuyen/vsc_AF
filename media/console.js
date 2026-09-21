@@ -1544,6 +1544,18 @@
         return ` · <span class="${cls}">${C.esc(v.chip)}${v.handedOver ? ' ✓' : ''}</span>`;
     };
     /**
+     * S-75 — THE ACCOUNT'S 5-HOUR WINDOW, its own chip and its own panel (ONE
+     * SUBJECT: the ctx panel is about the window of the conversation). Nothing
+     * is drawn until a quota line is crossed; the words are the host's.
+     */
+    const quotaChip = (s) => {
+        const q = s.contextSignalView && s.contextSignalView.quota;
+        if (!q || !q.chip) { return ''; }
+        const cls = q.state === 'undelivered' ? 'ctxsig bad' : q.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
+        return `${cardTip(`<span class="${cls}">${C.esc(q.chip)}</span>`, q.head,
+            window.AFTip.lines(q.lines || []), 'tip-quota')} · `;
+    };
+    /**
      * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this
      * session, so the rule is seen being held rather than trusted. Nothing is
      * drawn while there were none; the words are the host's (`bridgeGuardView`).
@@ -3158,7 +3170,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${quotaChip(s)}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${continueBtnHtml(s)}
@@ -5792,9 +5804,11 @@
      */
     function continueBtnHtml(s) {
         const v = s.contextSignalView;
-        if (!s.sessionId || !v || !(v.level === 'handover' || v.handedOver)) { return ''; }
+        const qh = v && v.quota && v.quota.level === 'handover' ? v.quota : null;
+        if (!s.sessionId || !v || !(v.level === 'handover' || v.handedOver || qh)) { return ''; }
         const lines = v.lines || [];
-        const now = (v.handedOver && lines.find(l => /^Handed over: yes/.test(l))) || lines[0] || 'CONTEXT HANDOVER';
+        const now = (v.handedOver && lines.find(l => /^Handed over: yes/.test(l)))
+            || (v.level === 'handover' ? lines[0] : (qh && qh.lines[0])) || lines[0] || 'CONTEXT HANDOVER';
         return cardTip('<button class="secondary" id="c-continue">Continue from handover</button>',
             now,
             window.AFTip.lines([

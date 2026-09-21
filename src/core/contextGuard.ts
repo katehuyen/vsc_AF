@@ -436,12 +436,90 @@ export interface ContextSignalView {
     lines: string[];
     /** A handover note has named this session. */
     handedOver: boolean;
+    /** S-75 — the account's 5-hour window, its own subject; absent until the guard has read it once. */
+    quota?: QuotaSignalView;
+}
+
+/** S-75 — the quota line's words, kept apart from the window's (ONE SUBJECT). */
+export interface QuotaSignalView {
+    state: ContextSignalState;
+    level?: ContextLevel;
+    /** SHORTHAND — '' while no line has been crossed; the figure rides in it, no other figure sits beside it. */
+    chip: string;
+    /** MIRROR — the current reading, the panel's first line. */
+    head: string;
+    lines: string[];
 }
 
 const CHANNEL_LABEL: Record<ContextChannel, string> = {
     'claude-hook': 'Claude live hook',
     none: 'no channel'
 };
+
+const clock = (ts: number): string => {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/**
+ * S-75 — WHAT THE QUOTA LINE SAYS, IN ONE PLACE. Same three states as the
+ * window's; the account is named on every line that carries a figure, because
+ * a percentage from the wrong sign-in is the failure this line exists to stop.
+ */
+export function quotaSignalView(
+    q: QuotaSignalRecord | undefined,
+    thresholds: ContextThresholds,
+    ago?: (ts: number) => string
+): QuotaSignalView | undefined {
+    if (!q || typeof q.lastPct !== 'number') { return undefined; }
+    const t = normalizeThresholds(thresholds);
+    const when = (ts: number): string => (ago ? ` — ${ago(ts)}` : '');
+    const acct = q.account ? ` (${q.account})` : '';
+    const reset = q.resetsAt ? ` · resets ${clock(q.resetsAt)}` : '';
+    const head = `5-hour window${acct}: ${q.lastPct}% used${reset}`;
+    const reading = `Last reading: ${q.lastPct}%${q.lastTs ? when(q.lastTs) : ''} — the session's own sign-in, never the home folder's.`;
+    const law = `Lines: converge ${t.quotaConvergePct > 0 ? t.quotaConvergePct + '%' : 'off'} · hand over `
+        + `${t.quotaHandoverPct > 0 ? t.quotaHandoverPct + '%' : 'off'} (agentFarm.quotaConvergePct / quotaHandoverPct).`;
+    const word = (l: ContextLevel): string => (l === 'handover' ? QUOTA_HANDOVER_WORD : QUOTA_CONVERGE_WORD);
+    const chipOf = (l: ContextLevel, pct: number): string => `5h ${pct}% ${l === 'handover' ? 'HANDOVER' : 'CONVERGE'}`;
+
+    const delivery = q.handover ?? q.converge;
+    if (delivery) {
+        const level: ContextLevel = q.handover ? 'handover' : 'converge';
+        const lines = [
+            `Quota signal: ${word(level)} ${delivery.pct}% delivered${when(delivery.ts)}, `
+                + `through the ${CHANNEL_LABEL[delivery.channel]}${delivery.via ? ` (${delivery.via})` : ''}.`
+        ];
+        if (level === 'handover' && q.converge && q.converge.ts !== q.handover?.ts) {
+            lines.push(`${QUOTA_CONVERGE_WORD} ${q.converge.pct}% had gone out earlier${when(q.converge.ts)}.`);
+        }
+        if (level === 'converge') {
+            lines.push(t.quotaHandoverPct > 0
+                ? `${QUOTA_HANDOVER_WORD} ${t.quotaHandoverPct}%: not reached — the run may still work, but starts nothing new.`
+                : `${QUOTA_HANDOVER_WORD}: switched off, so the quota will not stop this run.`);
+        }
+        lines.push(reading, law);
+        return { state: 'delivered', level, chip: chipOf(level, delivery.pct), head, lines };
+    }
+    if (q.undelivered) {
+        const u = q.undelivered;
+        return {
+            state: 'undelivered',
+            level: u.level,
+            chip: `${chipOf(u.level, u.pct)} ✕`,
+            head,
+            lines: [
+                `Quota signal: ${word(u.level)} ${u.pct}% — ‼️ NEVER REACHED THIS RUN${when(u.ts)}.`,
+                u.why,
+                'The reading is here and the sentence is not: this run was not told, so its '
+                    + 'silence is not obedience. Watch it yourself, or hand it over by hand.',
+                reading,
+                law
+            ]
+        };
+    }
+    return { state: 'quiet', chip: '', head, lines: ['Quota signal: nothing sent — no line crossed yet.', reading, law] };
+}
 
 /**
  * ‼️ S-64 (2/n) — THE SENTENCE A SURFACE SHOWS, BUILT IN ONE PLACE.
@@ -475,6 +553,8 @@ export function contextSignalView(
     // full wording.
     const chipWord = (l: ContextLevel): string => word(l).replace('CONTEXT ', '');
     const handedOver = !!rec?.handedOver;
+    const qv = quotaSignalView(rec?.quota, t, ago);
+    const quota = qv ? { quota: qv } : {};
     const handedLine = rec?.handedOver
         ? `Handed over: yes${when(rec.handedOver.ts)} — ${rec.handedOver.note}`
         : 'Handed over: not yet — the note that closes this run names it here.';
@@ -495,7 +575,7 @@ export function contextSignalView(
                 : `${CONTEXT_HANDOVER_WORD}: switched off, so nothing will stop this run.`);
         }
         lines.push(handedLine, law);
-        return { state: 'delivered', level, chip: chipWord(level), lines, handedOver };
+        return { state: 'delivered', level, chip: chipWord(level), lines, handedOver, ...quota };
     }
 
     if (rec?.undelivered) {
@@ -511,7 +591,8 @@ export function contextSignalView(
                     + 'silence is not obedience. Watch it yourself, or hand it over by hand.',
                 law
             ],
-            handedOver
+            handedOver,
+            ...quota
         };
     }
 
@@ -524,7 +605,8 @@ export function contextSignalView(
         lines: handedOver
             ? ['Discipline signal: nothing sent — this window never crossed a line.', handedLine, law]
             : ['Discipline signal: nothing sent — no line crossed yet.', law],
-        handedOver
+        handedOver,
+        ...quota
     };
 }
 

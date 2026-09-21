@@ -178,6 +178,22 @@ module.exports = {
             // carried on, which is a charge against an agent nobody ever spoke to.
             label: 'Session viewer — a Codex run past the line the sentence cannot reach: ✕, never silence',
             data: data({ signal: 'undelivered' })
+        },
+        {
+            id: 'sessionviewer-quota',
+            // S-75 — the account's window crossed while the conversation's is
+            // quiet: the quota line alone under the gauge, the host's own words.
+            label: 'Session viewer — QUOTA HANDOVER delivered, the window quiet: 5h 91% HANDOVER under the gauge',
+            data: data({ over: { contextSignal: quotaView() } })
         }
     ]
 };
+
+function quotaView() {
+    const G = require('../../out/core/contextGuard.js');
+    const del = (pct, ago) => ({ ts: NOW - ago, pct, tokens: 0, window: 0, channel: 'claude-hook', via: 'PostToolUse', account: 'aicozums' });
+    return G.contextSignalView({
+        sessionId: 's', lastPct: 18,
+        quota: { account: 'aicozums', lastPct: 91, lastTs: NOW - 20000, resetsAt: NOW + 5400000, converge: del(86, 1500000), handover: del(91, 60000) }
+    }, G.DEFAULT_CONTEXT_THRESHOLDS, ts => Math.round((NOW - ts) / 60000) + 'm ago');
+}

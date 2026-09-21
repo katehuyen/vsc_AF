@@ -1062,6 +1062,14 @@
                 `${sig.chip} — ${sig.state === 'undelivered' ? 'never reached this run' : 'delivered to this run'}`,
                 window.AFTip.lines(sig.lines), '', 'data-aftip-mute="#ctxcard"')
             : '';
+        // S-75 — the account's 5-hour window, a line of its own under the gauge.
+        const qsig = sig && sig.quota;
+        const qsigHtml = qsig && qsig.chip
+            ? window.AFTip.wrap(
+                `<div class="sub ctxsigline ${qsig.state === 'undelivered' ? 'bad' : qsig.level === 'handover' ? 'stop' : ''}">`
+                    + `${C.esc(qsig.chip)}</div>`,
+                qsig.head, window.AFTip.lines(qsig.lines), '', 'data-aftip-mute="#ctxcard"')
+            : '';
 
         document.getElementById('app').innerHTML = `
             <style>
@@ -1277,7 +1285,7 @@
                 <div class="card ctxcard" id="ctxcard" title="Click for the /context breakdown by category"><div class="label">Context now</div>
                     <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>
                     <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div>
-                    ${sigHtml}
+                    ${sigHtml}${qsigHtml}
                     <span class="ctxglyph" id="ctxglyph">⛁</span>
                     ${contextPopHtml(DATA.contextReport)}</div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>

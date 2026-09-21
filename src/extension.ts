@@ -89,7 +89,7 @@ import {
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
-import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, ContextThresholds, DEFAULT_CONTEXT_THRESHOLDS, QuotaSample, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
+import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, ContextThresholds, DEFAULT_CONTEXT_THRESHOLDS, QuotaSample, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds, quotaLevelFor } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
@@ -1524,6 +1524,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Every refusal, kept across reloads, so the rule's own health can be read (`sessions.bridgeGuard`). */
     const bridgeGuardLog = new BridgeGuardLog(path.join(context.globalStorageUri.fsPath, 'bridge-guard.json'));
     context.subscriptions.push({ dispose: () => bridgeGuardLog.flush() });
+    // S-75 — the session's OWN sign-in: its Console card's slot, else the slot
+    // its sealed launch manifest names. No slot known = no line (a figure
+    // from the wrong account is worse than none — 2026-09-06, home 95% vs own 23%).
+    const sessionQuotaSample = (sessionId: string): QuotaSample | undefined => {
+        const card = consoleHost.list().find(s => s.sessionId === sessionId);
+        const launchId = card?.launchId || index.allWithExternal().find(x => x.sessionId === sessionId)?.launchId;
+        const slotId = (card?.account || '').trim()
+            || (launchId ? (launchManifests().find(m => m.launchId === launchId)?.account ?? '') : '');
+        if (!slotId) { return undefined; }
+        const u: SlotUsage | undefined = accountUsage.current().find((x: SlotUsage) => x.slotId === slotId);
+        if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return undefined; }
+        const sl = findSlot(storedAccounts(), slotId);
+        return { pct: u.percent, account: sl ? slotLabel(sl) : slotId, ...(u.resetsAt ? { resetsAt: u.resetsAt } : {}) };
+    };
     const contextGuard = new ContextGuard({
         thresholds: () => ({
             convergePct: cfg().get<number>('contextConvergePct', DEFAULT_CONTEXT_THRESHOLDS.convergePct),
@@ -1532,20 +1546,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             quotaHandoverPct: cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct)
         }),
         read: contextReadingFor,
-        // S-75 — the session's OWN sign-in: its Console card's slot, else the slot
-        // its sealed launch manifest names. No slot known = no line (a figure
-        // from the wrong account is worse than none — 2026-09-06, home 95% vs own 23%).
-        quota: (sessionId: string): QuotaSample | undefined => {
-            const card = consoleHost.list().find(s => s.sessionId === sessionId);
-            const launchId = card?.launchId || index.allWithExternal().find(x => x.sessionId === sessionId)?.launchId;
-            const slotId = (card?.account || '').trim()
-                || (launchId ? (launchManifests().find(m => m.launchId === launchId)?.account ?? '') : '');
-            if (!slotId) { return undefined; }
-            const u: SlotUsage | undefined = accountUsage.current().find((x: SlotUsage) => x.slotId === slotId);
-            if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return undefined; }
-            const sl = findSlot(storedAccounts(), slotId);
-            return { pct: u.percent, account: sl ? slotLabel(sl) : slotId, ...(u.resetsAt ? { resetsAt: u.resetsAt } : {}) };
-        },
+        quota: sessionQuotaSample,
         // A real hook payload never names its engine (X-265); one that reaches
         // this listener without a `cli:<engine>:` namespace is Claude Code's,
         // and Claude's hooks are the ones whose stdout carries additionalContext.
@@ -1562,7 +1563,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const handoverEvidenceOf = (sessionId: string): { pct?: number; note?: string } | undefined => {
         const rec = contextGuard.record(sessionId);
-        if (!rec?.handover && !rec?.handedOver) { return undefined; }
+        // A run told QUOTA HANDOVER is closed exactly as one told CONTEXT
+        // HANDOVER; no pct is carried, because that figure is not the window's.
+        if (!rec?.handover && !rec?.handedOver && !rec?.quota?.handover) { return undefined; }
         return {
             ...(rec.handover ? { pct: rec.handover.pct } : {}),
             ...(rec.handedOver ? { note: rec.handedOver.note } : {})
@@ -10573,7 +10576,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.contextGuard',
-            describe: '‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL: the two thresholds (converge / handover, percent of the window, 0 = off) and what has been said to which session. The handover law (_REF/handover.md) binds a run to the window at 35% (start nothing new) and 40% (stop and hand over), and an agent cannot see its own fill — so Agent Farm reads it (the live stream, the transcript\'s last call, the index) and tells the session ONCE per line, as the answer to its next PostToolUse/UserPromptSubmit hook (Claude Code puts that answer into the model\'s context). `records`: per session — `converge`/`handover` {ts, pct, tokens, window, channel, via} when delivered, `undelivered` {level, pct, why} when the engine\'s hooks carry no channel, `lastPct`/`lastTs` the last reading seen, `handedOver` when a handover note named it. With `id` it also answers `view` — the SENTENCES the Console card and the session\'s own page are showing for it (state: quiet | delivered | undelivered, a chip and one fact per line), so an agent reads exactly what a human watching the run reads. args: id? (one session: its record, its `view` AND its window reading right now — tokens, window, pct, source — from whichever source has one), limit? (records, default 50)',
+            describe: '‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL: the two thresholds (converge / handover, percent of the window, 0 = off) and what has been said to which session. The handover law (_REF/handover.md) binds a run to the window at 35% (start nothing new) and 40% (stop and hand over), and an agent cannot see its own fill — so Agent Farm reads it (the live stream, the transcript\'s last call, the index) and tells the session ONCE per line, as the answer to its next PostToolUse/UserPromptSubmit hook (Claude Code puts that answer into the model\'s context). `records`: per session — `converge`/`handover` {ts, pct, tokens, window, channel, via} when delivered, `undelivered` {level, pct, why} when the engine\'s hooks carry no channel, `lastPct`/`lastTs` the last reading seen, `handedOver` when a handover note named it. With `id` it also answers `view` — the SENTENCES the Console card and the session\'s own page are showing for it (state: quiet | delivered | undelivered, a chip and one fact per line), so an agent reads exactly what a human watching the run reads. S-75 — the second line is the session\'s OWN account\'s 5-hour window: `record.quota` {account, converge/handover, undelivered, lastPct, resetsAt}, `view.quota` its own chip and lines, and with `id` a `quotaReading` {pct, account, resetsAt, level} read now from the session\'s sign-in (null when no slot is known for it — never the home folder\'s figure). args: id? (one session: its record, its `view`, its window reading right now — tokens, window, pct, source — from whichever source has one, and its quotaReading), limit? (records, default 50)',
             handler: (args) => {
                 const id = optStr(args, 'id');
                 const t = contextGuard.thresholds();
@@ -10587,6 +10590,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             ? { tokens: reading.tokens, window: reading.window ?? null, pct: contextPercent(reading) ?? null, source: reading.source ?? null, stale: !!reading.stale }
                             : null,
                         level: contextLevelFor(contextPercent(reading), t) ?? null,
+                        // S-75 — the account's window, read NOW from the session's own sign-in.
+                        quotaReading: (() => {
+                            const q = sessionQuotaSample(id);
+                            return q ? { pct: Math.round(q.pct), account: q.account, resetsAt: q.resetsAt ?? null, level: quotaLevelFor(q.pct, t) ?? null } : null;
+                        })(),
                         record: contextGuard.record(id) ?? null,
                         // The same sentences the Console card and the session's
                         // own page draw — an agent asking the bridge gets the
@@ -11937,7 +11945,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!!s, `no console session "${id}" — console.sessions lists them`);
                 need(!!s!.sessionId, `"${id}" has no session id yet — nothing to continue from`);
                 const view = contextSignalView(contextGuard.record(s!.sessionId!), contextGuard.thresholds());
-                need(view.level === 'handover' || view.handedOver,
+                need(view.level === 'handover' || view.handedOver || view.quota?.level === 'handover',
                     `"${id}" was never told to hand over and no handover note names it (sessions.contextGuard id=${s!.sessionId}) — a quiet card has no handover to continue from`);
                 if (args.open === true) {
                     const found = ConsolePanel.continueFromHandover(consoleDeps, id);

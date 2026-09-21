@@ -1219,6 +1219,23 @@ module.exports = {
             data: ctxSignalData('undelivered')
         },
         /**
+         * S-75 — the account's 5-hour window crossed while the conversation's
+         * window is quiet: the quota chip alone (the smallest arity), with
+         * its own panel; then an engine the sentence cannot reach.
+         */
+        {
+            id: 'console-quotasig-handover',
+            label: 'Console — QUOTA HANDOVER delivered, the window quiet: 5h 91% HANDOVER, its own panel, Continue offered',
+            tip: 'tip-quota',
+            data: quotaSignalData('handover')
+        },
+        {
+            id: 'console-quotasig-undelivered',
+            label: 'Console — a Codex run past the quota line: 5h 93% HANDOVER ✕, never silence',
+            tip: 'tip-quota',
+            data: quotaSignalData('undelivered')
+        },
+        /**
          * B-23 — the searches for a session id the bridge guard stopped on
          * this session. One refusal first (the smallest arity), then a run
          * stopped more times than the panel lists.
@@ -1330,6 +1347,32 @@ function ctxSignalData(state) {
         account: 'aicozums', accountLabel: 'aicozums',
         messages: msgs()
     })];
+    return d;
+}
+
+/** S-75 — the host's own words (`contextSignalView`) for a quota crossing. */
+function quotaSignalData(state) {
+    const G = require('../../out/core/contextGuard.js');
+    const codex = state === 'undelivered';
+    const d = ctxSignalData('converge');
+    const del = (pct, ago, via) => ({ ts: NOW - ago, pct, tokens: 0, window: 0, channel: 'claude-hook', via, account: 'aicozums' });
+    const rec = {
+        sessionId: 's', lastPct: 18,
+        quota: codex
+            ? { account: 'aicozums', lastPct: 93, lastTs: NOW - 20000, resetsAt: NOW + 5400000,
+                undelivered: { level: 'handover', ts: NOW - 120000, pct: 93, why: 'codex hooks carry no additionalContext — the signal has no way into that session' } }
+            : { account: 'aicozums', lastPct: 91, lastTs: NOW - 20000, resetsAt: NOW + 5400000,
+                converge: del(86, 1500000, 'PostToolUse'), handover: del(91, 60000, 'PostToolUse') }
+    };
+    const s = d.sessions[0];
+    Object.assign(s, {
+        engine: codex ? 'codex' : 'claude', engineLabel: codex ? 'Codex CLI' : 'Claude Code',
+        model: codex ? 'gpt-5-codex' : 'claude-opus-5', turnModel: codex ? 'gpt-5-codex' : 'claude-opus-5',
+        contextTokens: codex ? 46500 : 180000, contextWindowTokens: codex ? 258400 : 1000000,
+        contextWindowSource: codex ? 'engine' : 'model',
+        contextSource: codex ? 'rollout-last-token-usage' : 'stream-last-call',
+        contextSignalView: G.contextSignalView(rec, G.DEFAULT_CONTEXT_THRESHOLDS, ts => Math.round((NOW - ts) / 60000) + 'm ago')
+    });
     return d;
 }
 

@@ -211,6 +211,28 @@ console.log('\n== S-75 — the second dimension: the account\'s own window, same
     ok('0 / 0 switches the quota line off', off.check('q5', { event: 'PostToolUse' }) === undefined);
     eq('a quota converge above its handover folds down', G.normalizeThresholds({ quotaConvergePct: 95, quotaHandoverPct: 90 }).quotaConvergePct, 90);
     eq('quotaLevelFor reads the quota pair', [G.quotaLevelFor(84, thresholds), G.quotaLevelFor(85, thresholds), G.quotaLevelFor(90, thresholds)], [undefined, 'converge', 'handover']);
+
+    // the surface: the quota line's own words, beside the window's and never inside them
+    const ago = () => '1m';
+    ok('no quota reading yet → the view carries no quota at all', G.contextSignalView({ sessionId: 'x', lastPct: 20 }, thresholds, ago).quota === undefined);
+    const quiet = G.quotaSignalView({ account: 'kate', lastPct: 42, lastTs: now }, thresholds, ago);
+    ok('quiet: no chip, the head names the account and the figure, the lines the law',
+        quiet.state === 'quiet' && quiet.chip === '' && /^5-hour window \(kate\): 42% used$/.test(quiet.head)
+        && quiet.lines.some(l => /agentFarm\.quotaConvergePct \/ quotaHandoverPct/.test(l)) && quiet.lines.some(l => /never the home folder/.test(l)));
+    const hv = G.contextSignalView(g.record('q1'), thresholds, ago).quota;
+    ok('delivered converge: chip carries the figure, a line says what is still ahead', hv.state === 'delivered' && hv.level === 'converge' && hv.chip === '5h 86% CONVERGE'
+        && hv.lines[0].startsWith('Quota signal: QUOTA CONVERGE 86% delivered — 1m, through the Claude live hook (PostToolUse)')
+        && hv.lines.some(l => /^QUOTA HANDOVER 90%: not reached/.test(l)));
+    const hq = G.quotaSignalView({ account: 'kate', lastPct: 91, lastTs: now, resetsAt: new Date(2026, 8, 21, 19, 20).getTime(),
+        converge: { ts: now - 60_000, pct: 86, tokens: 0, window: 0, channel: 'claude-hook', via: 'PostToolUse', account: 'kate' },
+        handover: { ts: now, pct: 91, tokens: 0, window: 0, channel: 'claude-hook', via: 'PostToolUse', account: 'kate' } }, thresholds, ago);
+    ok('delivered handover: HANDOVER chip, the earlier converge named, the reset clock in the head',
+        hq.level === 'handover' && hq.chip === '5h 91% HANDOVER' && hq.lines.some(l => /^QUOTA CONVERGE 86% had gone out earlier/.test(l)) && /resets 19:20$/.test(hq.head));
+    const uv = G.contextSignalView(g.record('q2'), thresholds, ago);
+    ok('‼️ undelivered: ✕ on the chip, NEVER REACHED, the engine\'s reason — and the window\'s own view stays quiet',
+        uv.quota.state === 'undelivered' && uv.quota.chip === '5h 93% HANDOVER ✕' && /NEVER REACHED THIS RUN/.test(uv.quota.lines[0]) && uv.quota.lines[1] === 'codex has no channel'
+        && uv.state === 'quiet' && uv.chip === '');
+    ok('ONE SUBJECT: the window\'s lines never carry the quota\'s', !uv.lines.some(l => /Quota signal|5-hour/.test(l)));
 }
 
 console.log('\n== the wiring — the host reads, the hook answers, the bridge reports and sets ==');
@@ -225,12 +247,20 @@ console.log('\n== the wiring — the host reads, the hook answers, the bridge re
     ok('sessions.contextGuard reads the guard\'s own thresholds, record and list',
         guardBlock.length > 200 && /contextGuard\.thresholds\(\)/.test(guardBlock) && /contextGuard\.record\(id\)/.test(guardBlock) && /contextGuard\.all\(\)/.test(guardBlock));
     ok('…and answers one session\'s reading through the SAME reader the hook uses', /contextReadingFor\(id,/.test(guardBlock));
+    ok('S-75 — …and its quota reading through the SAME sampler the guard uses', /quotaReading:/.test(guardBlock) && /sessionQuotaSample\(id\)/.test(guardBlock));
+    ok('S-75 — a run told QUOTA HANDOVER is handover evidence (never resumed) and may be continued from its card',
+        /!rec\?\.quota\?\.handover\) \{ return undefined; \}/.test(ext) && /view\.quota\?\.level === 'handover'/.test(ext));
+    const cjs = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
+    const svjs = fs.readFileSync(path.join(ROOT, 'media', 'sessionViewer.js'), 'utf8');
+    ok('S-75 — the Console card draws the quota chip with its own panel, and its Continue door opens on a quota handover',
+        /const quotaChip = \(s\) =>/.test(cjs) && /\$\{quotaChip\(s\)\}\$\{guardChip\(s\)\}/.test(cjs) && /v\.quota\.level === 'handover'/.test(cjs));
+    ok('S-75 — the session page draws the quota line under the gauge', /\$\{sigHtml\}\$\{qsigHtml\}/.test(svjs) && /const qsig = sig && sig\.quota;/.test(svjs));
     ok('sessions.contextGuard.set writes all four settings globally, normalised (S-75: the quota pair too)',
         /normalizeThresholds\(/.test(setBlock) && /'contextConvergePct'/.test(setBlock) && /'contextHandoverPct'/.test(setBlock)
         && /'quotaConvergePct'/.test(setBlock) && /'quotaHandoverPct'/.test(setBlock) && /cfg\(\)\.update\(setting/.test(setBlock));
     eq('S-75 — the quota pair are settings with the law\'s 85 / 90', [props['agentFarm.quotaConvergePct'].default, props['agentFarm.quotaHandoverPct'].default], [85, 90]);
     ok('S-75 — the guard is handed the session\'s OWN account window, from its card or its manifest, never the home folder',
-        /quota: \(sessionId: string\): QuotaSample \| undefined => \{/.test(ext) && /launchManifests\(\)\.find\(m => m\.launchId === launchId\)\?\.account/.test(ext)
+        /const sessionQuotaSample = \(sessionId: string\): QuotaSample \| undefined => \{/.test(ext) && /quota: sessionQuotaSample,/.test(ext) && /launchManifests\(\)\.find\(m => m\.launchId === launchId\)\?\.account/.test(ext)
         && /accountUsage\.current\(\)\.find\(\(x: SlotUsage\) => x\.slotId === slotId\)/.test(ext));
     const liveCfg = ext.slice(ext.indexOf('const live = new LiveMonitor('), ext.indexOf('context.subscriptions.push(live)'));
     ok('‼️ the live listener\'s config carries contextSignal → contextGuard.check, with the event, the transcript and the engine',
