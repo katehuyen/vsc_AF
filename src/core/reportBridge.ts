@@ -3,6 +3,7 @@ import { writeAtomicSync } from './atomicFile';
 import * as path from 'path';
 import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
+import { deliverDocument, exportStamp } from './exportDoc';
 import { FarmSchedule } from './tasks';
 
 /**
@@ -98,27 +99,15 @@ function windowDays(args: Record<string, unknown>, fallback: number): number {
 export function registerReportOps(bridge: BridgeRegistry, deps: ReportBridgeDeps): void {
     /**
      * The one delivery rule, in one place: content back, or an atomic write to
-     * the path asked for — and the path is always named in the answer.
+     * the path asked for — and the path is always named in the answer. Shared
+     * with the pages' own exports (B-21) so both sides file a document the same
+     * way.
      */
     const deliver = (
         args: Record<string, unknown>, content: string, defaultName: string
-    ): Record<string, unknown> => {
-        const asked = optStr(args, 'file');
-        if (!asked && args.save !== true) {
-            return { content, bytes: Buffer.byteLength(content, 'utf8'), file: null };
-        }
-        const file = asked
-            ? path.resolve(asked)
-            : path.join(deps.defaultReportDir(), defaultName);
-        atomicWrite(file, content);
-        return {
-            file, bytes: Buffer.byteLength(content, 'utf8'),
-            chosenForYou: !asked,
-            note: asked ? `Written to ${file}.`
-                : `No path was given, so it went to ${file} — pass \`file\` to choose.`
-        };
-    };
-    const stamp = (): string => new Date().toISOString().slice(0, 10);
+    ): Record<string, unknown> =>
+        deliverDocument(args, content, defaultName, () => deps.defaultReportDir());
+    const stamp = (): string => exportStamp();
 
     const findAgent = (ref: string): AgentInfo => {
         const a = deps.getAgents().find(x =>

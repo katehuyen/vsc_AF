@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
+import { deliverDocument, exportStamp } from './exportDoc';
 
 /**
  * Notices — the farm's agent→user board (and, via the `question` type, the
@@ -703,6 +704,8 @@ export interface NoticesOpsDeps {
      *  absolute path. Injected by the host so this module stays vscode-free and
      *  unit-testable. */
     writeReport?: (a: { title: string; name?: string; body: string; agentName?: string }) => string;
+    /** B-21 — where an exported board lands when the caller names no file. */
+    defaultReportDir?: () => string;
     /**
      * A project id or name → the id, or undefined if there is no such project.
      *
@@ -777,6 +780,30 @@ function projectFilter(key: string | undefined, deps: NoticesOpsDeps): string | 
     if (!k) { return undefined; }
     if (k === NO_PROJECT) { return NO_PROJECT; }
     return deps.resolveProject?.(k) ?? k;
+}
+
+/**
+ * The board selection every reading op asks for, parsed once. `notices.list`
+ * and `notices.export` are the same question with two answers (rows · a
+ * document), so they must never drift into two ideas of what "the board" is —
+ * only the default `limit` differs, because a page of 30 is a screenful and an
+ * export that stopped at 30 is a silently truncated file.
+ */
+function listQuery(args: Record<string, unknown>, deps: NoticesOpsDeps, limitDefault: number): NoticeFilter {
+    return {
+        type: optStr(args, 'type'),
+        level: typeof args.level === 'number' ? args.level : undefined,
+        minLevel: typeof args.minLevel === 'number' ? args.minLevel : undefined,
+        agent: optStr(args, 'agent'),
+        unread: args.unread === true ? true : undefined,
+        status: optStr(args, 'status'),
+        handled: typeof args.handled === 'boolean' ? args.handled : undefined,
+        minStars: typeof args.minStars === 'number' ? args.minStars : undefined,
+        tag: optStr(args, 'tag'),
+        projectId: projectFilter(optStr(args, 'project'), deps),
+        account: optStr(args, 'account'),
+        limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : limitDefault
+    };
 }
 
 export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps): void {
@@ -880,20 +907,32 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
         {
             op: 'notices.list',
             describe: 'List notices, pinned/newest first. args: type?, level?, minLevel?, agent?, unread? (bool), status? (open|answered|declined), handled? (bool), minStars?, tag?, project? (id or name — or "(none)" for the ones nobody filed), account? (a slot id — or "(none)" for the ones about no particular sign-in; absent asks nothing about the axis, which is a different question), limit? (default 30). To poll your answered questions: agent=<you>, type=question, handled=false.',
-            handler: (args) => deps.store.list({
-                type: optStr(args, 'type'),
-                level: typeof args.level === 'number' ? args.level : undefined,
-                minLevel: typeof args.minLevel === 'number' ? args.minLevel : undefined,
-                agent: optStr(args, 'agent'),
-                unread: args.unread === true ? true : undefined,
-                status: optStr(args, 'status'),
-                handled: typeof args.handled === 'boolean' ? args.handled : undefined,
-                minStars: typeof args.minStars === 'number' ? args.minStars : undefined,
-                tag: optStr(args, 'tag'),
-                projectId: projectFilter(optStr(args, 'project'), deps),
-                account: optStr(args, 'account'),
-                limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 30
-            })
+            handler: (args) => deps.store.list(listQuery(args, deps, 30))
+        },
+        {
+            op: 'notices.export',
+            describe: 'B-21 — THE BOARD AS A DOCUMENT. The page\'s Export MD, without the page: the same blocks the Notices panel writes (title, the type/level/agent/date line, body, sections, the linked report path, a question\'s answer or the fact that it is still waiting). Selects exactly like notices.list — same filters, same order — and defaults to the whole board rather than a page of it, because an export that silently stopped at 30 is the mistake this op is for. args: every notices.list filter (type?, level?, minLevel?, agent?, unread?, status?, handled?, minStars?, tag?, project?, account?, limit? — default 0 = all) — OR — id (one notice on its own) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
+            handler: (args) => {
+                const dir = () => deps.defaultReportDir?.() ?? '';
+                const one = optStr(args, 'id');
+                if (one) {
+                    const n = deps.store.list({ limit: 0 }).find(x => x.id === one);
+                    need(n, 'Notice not found — notices.list shows current ids.');
+                    return {
+                        notices: 1,
+                        ...deliverDocument(args, `# Agent Farm — Notice\n\n${noticeMarkdown(n as Notice, 2)}`,
+                            `AgentFarm-Notice-${exportStamp()}.md`, dir)
+                    };
+                }
+                const all = deps.store.list({ limit: 0 });
+                const shown = deps.store.list(listQuery(args, deps, 0));
+                need(shown.length > 0, 'No notice matches those filters — notices.list shows what is on the board.');
+                const md = buildNoticesMarkdown(all, shown.map(n => n.id), new Set(), { view: false, foldedTitles: false });
+                return {
+                    notices: shown.length,
+                    ...deliverDocument(args, md, `AgentFarm-Notices-${exportStamp()}.md`, dir)
+                };
+            }
         },
         {
             op: 'notices.project',

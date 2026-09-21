@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 25,
+  "gapBudget": 23,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -3200,18 +3200,18 @@
       "ui": [
         "page:noticesPanel.ts#exportChoose"
       ],
-      "gap": {
-        "why": "Exporting the notices view as a document has no op; reports.* covers sessions and costs, not the board."
-      }
+      "ops": [
+        "notices.export"
+      ]
     },
     {
       "capability": "noticesPanel.ts#exportOne",
       "ui": [
         "page:noticesPanel.ts#exportOne"
       ],
-      "gap": {
-        "why": "Writing one notice out as a document has no op. notices.read returns the text but nothing files it."
-      }
+      "ops": [
+        "notices.export"
+      ]
     },
     {
       "capability": "noticesPanel.ts#handoffNotice",

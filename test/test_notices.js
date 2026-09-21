@@ -283,8 +283,10 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     // declare an agent; here it is a lookup, because what is being pinned is
     // the OP's rule about when it asks and when it does not.
     const RUNNING = { 'proje-ajani': 'prj_aaa' };
+    const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-notices-export-'));
     registerNoticesOps(reg, {
         store, writeReport, resolveProject,
+        defaultReportDir: () => exportDir,
         inferProject: (agent) => RUNNING[String(agent || '')],
         onChange: () => changes++, onPost: n => { posted = n; }
     });
@@ -619,8 +621,56 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         ok('the same sentence long afterwards is news again', later.result.posted !== false);
     }
 
+    // ---------- B-21 — the board as a document ----------
+    {
+        ok('notices.export is catalogued', reg.catalog().map(c => c.op).includes('notices.export'));
+
+        const board = await reg.dispatch('notices.export', {});
+        ok('export returns the content and files nothing by default',
+            board.ok && board.result.file === null && /# Agent Farm — Notices export/.test(board.result.content));
+        ok('…and it is the SAME document the page writes',
+            board.ok && board.result.content === buildNoticesMarkdown(
+                store.list({ limit: 0 }), store.list({ limit: 0 }).map(n => n.id), new Set(),
+                { view: false, foldedTitles: false }));
+        ok('…counting what it wrote', board.ok && board.result.notices === store.list({ limit: 0 }).length);
+
+        // ‼️ An export that silently stopped at the list's page size is the
+        // mistake this op exists to avoid: the two defaults are different
+        // questions (a screenful · the whole board).
+        const listed = await reg.dispatch('notices.list', {});
+        ok('list still pages at 30 while export takes everything',
+            listed.ok && listed.result.length <= 30 && board.result.notices >= listed.result.length);
+
+        await reg.dispatch('notices.post', { title: 'tagged for export', tags: ['export-probe'] });
+        const tagged = await reg.dispatch('notices.export', { tag: 'export-probe' });
+        ok('export selects exactly like list',
+            tagged.ok && tagged.result.notices === 1 && /tagged for export/.test(tagged.result.content));
+
+        const one = await reg.dispatch('notices.export', { id: store.list({ limit: 0 })[0].id });
+        ok('a single notice exports on its own',
+            one.ok && one.result.notices === 1 && /^# Agent Farm — Notice\n/.test(one.result.content));
+        const ghost = await reg.dispatch('notices.export', { id: 'no-such-notice' });
+        ok('an unknown id is refused, never exported as an empty file', !ghost.ok && /not found/i.test(ghost.error));
+        const nothing = await reg.dispatch('notices.export', { tag: 'nobody-tagged-this' });
+        ok('a selection matching nothing is refused rather than filed blank',
+            !nothing.ok && /No notice matches/.test(nothing.error));
+
+        const target = path.join(exportDir, 'board.md');
+        const written = await reg.dispatch('notices.export', { file: target });
+        ok('`file` writes it and names the path back',
+            written.ok && written.result.file === path.resolve(target) && fs.existsSync(target));
+        ok('…with the bytes it says it wrote',
+            written.ok && fs.readFileSync(target, 'utf8').length > 0
+            && written.result.bytes === Buffer.byteLength(fs.readFileSync(target, 'utf8'), 'utf8'));
+        const saved = await reg.dispatch('notices.export', { save: true });
+        ok('`save:true` lands in the report folder and says where',
+            saved.ok && path.dirname(saved.result.file) === exportDir
+            && saved.result.chosenForYou === true && fs.existsSync(saved.result.file));
+    }
+
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(exportDir, { recursive: true, force: true }); } catch {}
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

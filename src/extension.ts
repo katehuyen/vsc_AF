@@ -16323,9 +16323,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return found.size === 1 ? [...found][0] : undefined;
     };
 
+    // Where a document lands when the caller named no file — the same folder for
+    // every export op (B-21), so a fleet's reports do not scatter by op family.
+    const defaultReportDir = (): string =>
+        expandEnvPath(cfg().get<string>('autoReportFolder', ''))
+        || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
+        || os.homedir();
     registerNoticesOps(bridge, {
         store: noticesStore,
         writeReport,
+        defaultReportDir,
         // id OR name, because an agent writing a bridge call has the name in
         // front of it and should not have to look an id up first. `get` already
         // takes either; what it must never do is guess at a near-miss.
@@ -26023,9 +26030,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         captureContext: (s) => new Promise<{ ok: boolean; report?: unknown; error?: string }>(resolve =>
             runContextCapture(s.file, s.cwd ?? '', s.model, r => resolve(r),
                 sessionAccountOf(s.sessionId)?.id)),
-        defaultReportDir: () => expandEnvPath(cfg().get<string>('autoReportFolder', ''))
-            || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
-            || os.homedir()
+        defaultReportDir
     });
 
     // ---------- B-7: fleet and settings management ----------
