@@ -299,6 +299,8 @@ import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftovers
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
 import { registerBatonOps } from './core/batonBridge';
+import { successorRow } from './core/batonDoor';
+import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
 import { revealPath } from './core/reveal';
 import {
@@ -16261,6 +16263,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
+
+    // S-70 / S-71 — the release and the door. The three end signals (hook
+    // SessionEnd, Console host exit, terminal close) all arrive as the live
+    // monitor's `end` event; the sweep is the backup for a run that died with no
+    // hook. The successor goes through tasks.add — the one door every run uses —
+    // so the park, the budget brake, the concurrency lock and the automation
+    // gate are already on it, and the row is visible on the board.
+    const successorSessionOf = (t: FarmTask): string | undefined =>
+        t.consoleSessionId || t.spawnSessionId || t.runSessionId || undefined;
+    const batonRunner = new BatonRunner({
+        store: batonStore,
+        door: b => {
+            const agent = findAgent(b.from.agentId);
+            const row = successorRow(b, { agentName: agent.name, agentDir: agent.dir });
+            const task = taskManager.addTask(agent, row.title, row.prompt, row.mode, row.extra);
+            const started = taskManager.startTask(task);
+            return {
+                taskId: task.id,
+                ...(successorSessionOf(task) ? { sessionId: successorSessionOf(task) } : {}),
+                ...(!started && task.deferredReason ? { held: task.deferredReason } : {})
+            };
+        },
+        evidence: b => {
+            const sid = b.from.sessionId;
+            const s = live.sessions().find(x => x.sessionId === sid);
+            return {
+                registered: liveCliSessions().some(r => r.sessionId === sid),
+                live: !s ? 'unknown' : s.status === 'ended' ? 'ended' : 'alive',
+                registers: (b.from.engine || 'claude') === 'claude'
+            };
+        },
+        task: id => {
+            const t = taskManager.tasks.find(x => x.id === id);
+            if (!t) { return undefined; }
+            const last = (t.events ?? []).slice(-1)[0];
+            return {
+                status: t.status,
+                ...(successorSessionOf(t) ? { sessionId: successorSessionOf(t) } : {}),
+                ...(last?.note ? { why: last.note } : {})
+            };
+        },
+        notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
+    });
+    context.subscriptions.push(live.onEvent(e => {
+        if (e.kind === 'end') { batonRunner.sessionEnded(e.sessionId, e.detail ?? 'end'); }
+    }));
+    context.subscriptions.push(taskManager.onDidChange(() => batonRunner.follow()));
+    // The boot pass waits for the monitor to rebuild and the Console to reclaim
+    // its seats; a baton judged before that would see every session as unknown.
+    const batonBootSweep = setTimeout(() => batonRunner.sweep(), 20_000);
+    const batonSweep = setInterval(() => batonRunner.sweep(), 60_000);
+    context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); } });
 
     registerA2AOps(bridge, {
         notes: a2aNotes, tasks: a2aTasks,
