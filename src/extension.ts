@@ -116,7 +116,7 @@ import {
 } from './core/insightops';
 import { removeMcpServer, setServerDisabled } from './core/mcp';
 import { compileQuery, queryMatches } from './core/query';
-import { moveSkillScope, removeSkill } from './core/skills';
+import { moveSkillScope } from './core/skills';
 import { archiveMemoryFile } from './core/memusage';
 import {
     DEFAULT_MEDIA_PRICING, MediaPriceRule, injectMediaFeedback, mediaCostSince, readMediaMetas, registerExternalAsset
@@ -509,7 +509,7 @@ import {
 import { clearPort, portHolder } from './core/portScan';
 import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
-import { registerToolboxOps } from './core/toolboxBridge';
+import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
@@ -6492,12 +6492,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
             });
 
-    const answerMissionQuestion = async (runId: string, answer?: string): Promise<void> => {
+    /**
+     * The one place a mission's pending question is settled — the palette
+     * (which asks in an input box), the page and missions.answer all come here.
+     * `skip` declines it; an absent `answer` without `skip` asks the person.
+     */
+    const answerMissionQuestion = async (runId: string, answer?: string, skip = false): Promise<void> => {
         const pending = missionQuestions.get(runId);
         if (!pending) { return; }
-        const a = answer !== undefined
-            ? answer
-            : await vscode.window.showInputBox({ prompt: pending.question, ignoreFocusOut: true });
+        const a = skip ? undefined
+            : answer !== undefined
+                ? answer
+                : await vscode.window.showInputBox({ prompt: pending.question, ignoreFocusOut: true });
         missionQuestions.get(runId)?.resolve(a);
     };
 
@@ -15594,10 +15600,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(missionQuestions.has(runId),
                     'No pending question on this run — missions.status shows what it is doing.');
                 if (args.skip === true) {
-                    missionQuestions.get(runId)?.resolve(undefined);
+                    void answerMissionQuestion(runId, undefined, true);
                     return { id: runId, skipped: true };
                 }
-                missionQuestions.get(runId)?.resolve(argStr(args, 'answer'));
+                void answerMissionQuestion(runId, argStr(args, 'answer'));
                 return { id: runId, answered: true };
             }
         },
@@ -33978,9 +33984,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // and the one place that writes a duty is now the agent page's own form, so
     // the check lives next to the write (src/panels/agentDetail.ts).
 
-    const toggleMcp = (node: AgentNode | undefined, disable: boolean) => {
-        if (node?.kind !== 'mcp-server') { return; }
-        setServerDisabled(node.agent, node.server.name, disable);
+    // B-16 — the switch itself is `setServerDisabled`, the same call
+    // toolbox.enable makes; each command names it on its own line because the
+    // parity gate reads a command's body, not the helper it delegates to.
+    const mcpSwitched = (node: AgentNode & { kind: 'mcp-server' }, disable: boolean) => {
         refreshAll();
         void vscode.window.showInformationMessage(
             `Agent Farm: MCP server "${node.server.name}" ${disable ? 'disabled' : 'enabled'} for ${node.agent.name} ` +
@@ -37520,11 +37527,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 '? (a one-time backup is kept in skills.afbak)',
                 { modal: true }, 'Remove');
             if (confirmed !== 'Remove') { return; }
-            if (removeSkill(node.skill)) {
+            // B-16 — the same removal toolbox.remove performs, so the backup
+            // lands where the op's does and one rule says what "removed" means.
+            const res = removeToolboxItem({
+                kind: 'skill', name: node.skill.name, description: node.skill.description,
+                scope: node.skill.scope, agentId: node.agent.id, agentName: node.agent.name,
+                source: node.skill.source, dir: node.skill.dir, detail: {}
+            }, agents);
+            if (res.ok) {
                 refreshAll();
                 void vscode.window.showInformationMessage(`Agent Farm: skill "${node.skill.name}" removed.`);
             } else {
-                void vscode.window.showWarningMessage('Agent Farm: could not remove the skill folder.');
+                void vscode.window.showWarningMessage(`Agent Farm: ${res.error ?? 'could not remove the skill folder.'}`);
             }
         }),
 
@@ -37662,8 +37676,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
-        vscode.commands.registerCommand('agentfarm.disableMcpServer', (node?: AgentNode) => toggleMcp(node, true)),
-        vscode.commands.registerCommand('agentfarm.enableMcpServer', (node?: AgentNode) => toggleMcp(node, false)),
+        vscode.commands.registerCommand('agentfarm.disableMcpServer', (node?: AgentNode) => {
+            if (node?.kind !== 'mcp-server') { return; }
+            setServerDisabled(node.agent, node.server.name, true);
+            mcpSwitched(node, true);
+        }),
+        vscode.commands.registerCommand('agentfarm.enableMcpServer', (node?: AgentNode) => {
+            if (node?.kind !== 'mcp-server') { return; }
+            setServerDisabled(node.agent, node.server.name, false);
+            mcpSwitched(node, false);
+        }),
 
         vscode.commands.registerCommand('agentfarm.copyMcpServer', (node?: AgentNode) => {
             if (node?.kind !== 'mcp-server') { return; }

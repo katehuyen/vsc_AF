@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 18,
+  "gapBudget": 14,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -2004,9 +2004,9 @@
       "ui": [
         "cmd:agentfarm.disableMcpServer"
       ],
-      "gap": {
-        "why": "toolbox.enable exists, but the command toggles the server through its own local helper rather than the op's core path."
-      }
+      "ops": [
+        "toolbox.enable"
+      ]
     },
     {
       "capability": "dismissInsight",
@@ -2109,9 +2109,9 @@
       "ui": [
         "cmd:agentfarm.enableMcpServer"
       ],
-      "gap": {
-        "why": "toolbox.enable exists, but the command toggles the server through its own local helper rather than the op's core path."
-      }
+      "ops": [
+        "toolbox.enable"
+      ]
     },
     {
       "capability": "endSession",
@@ -2729,9 +2729,9 @@
       "ui": [
         "cmd:agentfarm.missionAnswer"
       ],
-      "gap": {
-        "why": "missions.answer exists, but the command answers through a local host helper rather than the op's core path."
-      }
+      "ops": [
+        "missions.answer"
+      ]
     },
     {
       "capability": "missionApprove",
@@ -4834,9 +4834,9 @@
       "ui": [
         "cmd:agentfarm.removeSkill"
       ],
-      "gap": {
-        "why": "toolbox.remove exists, but the command removes the folder itself rather than through the op's core path."
-      }
+      "ops": [
+        "toolbox.remove"
+      ]
     },
     {
       "capability": "renameSession",

@@ -152,20 +152,3 @@ export function addSkill(agent: AgentInfo, name: string, description: string): s
     return file;
 }
 
-/**
- * Remove a skill folder. A one-time backup lands in a sibling skills.afbak/
- * folder — outside skills/, so claude no longer discovers it.
- */
-export function removeSkill(skill: SkillDef): boolean {
-    try {
-        const backup = path.join(path.dirname(path.dirname(skill.dir)), 'skills.afbak', path.basename(skill.dir));
-        if (!fs.existsSync(backup)) {
-            fs.mkdirSync(path.dirname(backup), { recursive: true });
-            fs.cpSync(skill.dir, backup, { recursive: true });
-        }
-        fs.rmSync(skill.dir, { recursive: true, force: true });
-        return true;
-    } catch {
-        return false;
-    }
-}
