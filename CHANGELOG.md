@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.626.0 - The relay proven live, and its hand-off stops posting "Task parked" on every leg (S-79 · X-355) (2026-09-21)
+
+- **The baton relay, run for real (S-79).** A three-leg haiku chain over two
+  accounts: the pass answered with the right sentence; each successor opened
+  only after its predecessor's run had ended (20:27:24 ended → 20:27:25
+  started, and the same on the next leg); the successor's first message
+  opened with `=== BATON RELAY — chain … · hop 1 ===`; and the relay's
+  converge whisper reached leg 2 — `CONTEXT CONVERGE 39% … then pass the
+  baton (baton relay — chain …, hop 2)` — which passed on it. With every
+  account made full by a test-only policy, the pass said beforehand that
+  the successor would park, the baton parked until the first reset plus the
+  safety buffer, Notices said so once, and `baton.now` woke it.
+- **‼️ The hand-off was posting a "Task parked" line on every leg (X-355).**
+  Found by that run: a successor row is added the moment its predecessor's
+  session ends, a beat before that run's own row closes, so it meets the
+  per-agent lock for a second or two — and the farm-news scan announced it,
+  "Task parked — Baton — hop N of chain …", once per leg. That is the door
+  working, not news; the relay speaks for its rows (a park, a brake). A
+  successor row held by anything else still speaks.
+
 ## 3.625.0 - The baton relay gets its surfaces and its brakes: ✕ Stop chain on the card, one ⑂ item on the status bar, a ⑂ column in every sessions table (S-77) — and a leg ceiling and a barren-chain brake decided at the pass (S-78) (2026-09-21)
 
 - **✕ Stop chain, beside Continue from handover — never instead of it.** A
