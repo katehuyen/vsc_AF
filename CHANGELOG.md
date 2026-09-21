@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.623.0 - The relay leg on the Console card: ⑂ n, the chain in its own panel (S-77, part 1) (2026-09-21)
+
+- **A card that is a leg of a baton relay says so.** `⑂ 2` sits beside the
+  context figure; its panel names the chain and how many legs it has had,
+  the predecessor that passed the baton to this run, and what the successor
+  is doing right now — waiting for this session to end, parked until a
+  named time because every account is full, running as a named session, or
+  stopped / refused with the reason — plus the brake to use while anything
+  in the chain is live. The words are derived once in core
+  (`batonCardView`) and ride on `console.sessions` as `batonView`.
+- Still to come in S-77: the ✕ stop-chain button beside Continue, the
+  status-bar item, the sessions-table chain column and the two Notices
+  events.
+
 ## 3.622.0 - The whisper gets a quota line — a run is told when its own account's 5-hour window reaches 90% — and a relay runner is told to pass the baton (S-75 · S-76) (2026-09-21)
 
 - **‼️ The discipline signal is two-dimensional now (S-75).** The handover
