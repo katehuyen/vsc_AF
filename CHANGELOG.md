@@ -2,6 +2,61 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.621.0 - The baton is released when its session ends, and the successor opens through the task board; the user has a brake and a go (S-70 · S-71 · S-74) (2026-09-21)
+
+- **‼️ The relay now runs on its own (S-66).** A baton left with `baton.pass`
+  is released the moment its session ENDS — the hook's `SessionEnd`, the
+  Console host's exit and a terminal's close all arrive on one channel — and
+  a 60-second sweep is the backup for a run that died with no hook. The
+  verdict is evidence, never silence: a session with a **registered CLI
+  process** is alive whatever else is known (two agents in one repo, never
+  — an agent that passed the baton and kept working keeps its repo); the
+  watcher's own end is an end; a claude session with no registry record is
+  gone; an engine without a registry is believed dead only once the watcher
+  has forgotten it. Evidence that cannot be read is a wait that says so.
+- **The successor opens through `tasks.add` — the one door every run uses**
+  — so the park, the budget brake, the concurrency lock and the automation
+  gate are all already on it, and the row is visible on the board
+  (`Baton — hop n of chain …`). Surface by surface: headless → headless;
+  console → an interactive row hosted by the Console that stays open;
+  terminal → the VS Code terminal; external-terminal → an external window;
+  `inherit` = whatever the predecessor used. The sealed setup rides on the
+  row, the account is the want (`@emptiest` by default), the project travels
+  from the manifest and is stated even when absent, a run outside the
+  agent's folder says so. Always a fresh session, never a resume.
+- **The header is the system's.** The successor's first message names the
+  chain, the hop and the predecessor (session · agent · engine/model ·
+  project), says the words below are its own, and teaches it to pass the
+  baton itself by the file recipe when its own run is ending — then the
+  predecessor's prompt, untouched. The chain carries itself.
+- **What the door did is the baton's state:** a session opened → `started`
+  (task + successor); a row the pump holds → `parked` on that row with the
+  hold in `why`, then `started` when the row names its session; a row that
+  ended without a session, or a door that refused (no such agent, an engine
+  not installed) → `refused`, told once on Notices, nothing started.
+- **`baton.stop`** — by baton, chain or session; each record stays as
+  `stopped` with your reason, nothing is deleted. **`baton.now`** — a
+  waiting baton goes through the door at once; a baton parked on a queued
+  row asks the pump again (what a hand that just freed an account wants).
+
+- **The quota brake reads the row's own account (S-72).** The pump's
+  `quota:5h` hold read one figure — the machine-wide transcript window —
+  whichever account the row would run on, so a row bound for a slot at 10%
+  was held because the home account stood at 95%. Now a row that states an
+  account (a slot or a rule) is judged by the 5-hour figure of the slot it
+  resolves to, from that plan's own published usage, and the hold names the
+  slot; a row that states none keeps the machine figure it always had.
+- **Every account full at the release → the successor waits until the first
+  reset (S-73).** The row is written with the first reset plus the safety
+  buffer as its start moment, so it waits visibly on the board and the pump
+  starts it then — no second timer; the baton is `parked` with its wake time
+  and the person is told once on Notices (the moment, `baton.now` to go
+  sooner once room is made, `baton.stop` to drop it). Quiet hours and the
+  main switch defer the row, never drop it.
+- **A session with a live Console card is alive** for the release, whatever
+  the registry says at that second — the host owns that process (or is
+  reclaiming it after a reload) and says SessionEnd itself when it goes.
+
 ## 3.620.0 - `baton.pass` / `baton.status`: a run can leave its successor's first words, and nothing starts until it has ended (S-69) (2026-09-21)
 
 - **‼️ The door of the baton relay (S-66) is open — and it opens nothing yet.**

@@ -16319,6 +16319,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const s = live.sessions().find(x => x.sessionId === sid);
             return {
                 registered: liveCliSessions().some(r => r.sessionId === sid),
+                ...(() => {
+                    const card = consoleHost.list().find(c => c.sessionId === sid);
+                    return card ? { card: card.status === 'ended' || card.status === 'error' ? 'ended' as const : 'live' as const } : {};
+                })(),
                 live: !s ? 'unknown' : s.status === 'ended' ? 'ended' : 'alive',
                 registers: (b.from.engine || 'claude') === 'claude'
             };

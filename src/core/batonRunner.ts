@@ -28,6 +28,12 @@ export interface EndEvidence {
     live: LiveKnowledge;
     /** does this engine register its processes at all (claude does; the others do not) */
     registers: boolean;
+    /**
+     * the Console holds a card for the session that is not ended — the host
+     * owns that process (or is reclaiming it after a reload, S-59) and will
+     * say SessionEnd itself when it goes; absent = no card
+     */
+    card?: 'live' | 'ended';
 }
 
 /**
@@ -39,6 +45,7 @@ export interface EndEvidence {
  */
 export function endedVerdict(ev: EndEvidence): { ended: boolean; why: string } {
     if (ev.registered) { return { ended: false, why: 'a live CLI process is still registered for the session' }; }
+    if (ev.card === 'live') { return { ended: false, why: 'the Console still holds a live card for the session' }; }
     if (ev.live === 'ended') { return { ended: true, why: 'the watcher saw the session end' }; }
     if (ev.registers) { return { ended: true, why: 'no live CLI process is registered for the session' }; }
     if (ev.live === 'unknown') { return { ended: true, why: 'no watcher knows the session any more' }; }

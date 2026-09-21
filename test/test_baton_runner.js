@@ -58,6 +58,9 @@ function setup(o = {}) {
     ok('an engine that registers, with no record, is gone', v(false, 'alive', true).ended && /no live CLI process/.test(v(false, 'alive', true).why));
     ok('an engine with no registry is dead only once the watcher forgot it', v(false, 'unknown', false).ended && !v(false, 'alive', false).ended);
     ok('a waiting verdict says why', /still holds/.test(v(false, 'alive', false).why));
+    const card = (c) => endedVerdict({ registered: false, live: 'alive', registers: true, card: c });
+    ok('‼️ a live Console card is alive even with no registry record (the host is reclaiming it after a reload)', !card('live').ended && /Console still holds/.test(card('live').why));
+    ok('an ended card decides nothing by itself — the registry rule follows', card('ended').ended);
 }
 
 // ---- the end signal ----
