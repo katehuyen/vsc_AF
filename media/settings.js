@@ -1847,6 +1847,11 @@
             title: 'What it is told',
             why: 'The lead words (CONTEXT HANDOVER, QUOTA CONVERGE…) and the reading in front of them are the law\'s and stay fixed — this is the order that follows them. Six branches, because a run carrying a baton passes it instead of writing a note. Leave a branch empty and its built-in sentence stays in charge; {chain} becomes the relay\'s own chain and hop.',
             keys: ['disciplineOrders']
+        },
+        {
+            title: 'Where a relay stops by itself',
+            why: 'A run that passes the baton opens the next leg of its chain. The chain ends naturally when a run finishes the work and passes nothing; these are its brakes. Past the ceiling, or after two legs in a row that committed nothing, the pass opens no leg — the baton is kept as stopped, the runner writes a note instead, and Notices says so once.',
+            keys: ['batonMaxHops']
         }
     ];
 

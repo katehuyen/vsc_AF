@@ -40,6 +40,64 @@ function nextLine(b: Baton): string {
     }
 }
 
+export interface BatonBarView {
+    /** SHORTHAND — `⑂ 3/6 · 14:37`: the leg the newest running chain is on or opens next, its ceiling, a park's wake */
+    text: string;
+    /** MIRROR — what the text says in full, one line per running chain, then the brake */
+    tooltip: string;
+    chainId: string;
+    /** the session running that chain's leg right now, when one is */
+    sessionId?: string;
+}
+
+/** One running chain in one line. `leg` is the newest hop + 1: the leg it is on, or the one it opens next. */
+function barLine(b: Baton, leg: number, max: string, fmt: (t: number) => string): string {
+    const at = `Chain ${b.chainId} — leg ${leg}${max}`;
+    switch (b.state) {
+        case 'started': return `${at} running (session ${short(b.toSessionId)}).`;
+        case 'waiting-end': return `${at} opens when session ${short(b.from.sessionId)} ends.`;
+        case 'parked': return `${at} parked — every account is full; wakes ${b.wakeAt ? 'at ' + fmt(b.wakeAt) : 'at the first reset'}.`;
+        default: return `${at} recorded, not yet accepted.`;
+    }
+}
+
+/**
+ * ‼️ S-77 — THE ONE STATUS-BAR ITEM: the relay running right now, or nothing.
+ * A chain runs while its newest baton is live (waiting for its session to
+ * end, or parked) or is a started leg whose session `alive` still sees. With
+ * several, the newest speaks and `+N` counts the rest; each has its line.
+ */
+export function batonBarView(
+    list: readonly Baton[], maxLegs: number, alive: (sessionId: string) => boolean, fmt: (t: number) => string = hhmm
+): BatonBarView | undefined {
+    const byChain = new Map<string, Baton[]>();
+    for (const b of list) { byChain.set(b.chainId, [...(byChain.get(b.chainId) ?? []), b]); }
+    const running = [...byChain.values()]
+        .map(bs => [...bs].sort((a, b) => b.hop - a.hop || b.updatedAt - a.updatedAt)[0])
+        .filter(n => isLive(n) || (n.state === 'started' && !!n.toSessionId && alive(n.toSessionId)))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+    if (!running.length) { return undefined; }
+    const max = maxLegs > 0 ? `/${maxLegs}` : '';
+    const top = running[0];
+    const wake = top.state === 'parked' && top.wakeAt ? ` · ${fmt(top.wakeAt)}` : '';
+    const more = running.length > 1 ? ` +${running.length - 1}` : '';
+    const lines = running.map(b => barLine(b, b.hop + 1, max ? ` of ${maxLegs}` : '', fmt));
+    return {
+        text: `⑂ ${top.hop + 1}${max}${wake}${more}`,
+        tooltip: [
+            `Baton relay — ${running.length === 1 ? 'one chain' : running.length + ' chains'} running`,
+            '',
+            ...lines,
+            '',
+            maxLegs > 0 ? `Ceiling: ${maxLegs} legs a chain (agentFarm.batonMaxHops).` : 'No leg ceiling (agentFarm.batonMaxHops = 0).',
+            `Brake: ✕ Stop chain on the card, or baton.stop chain=${top.chainId}.`
+        ].join('\n'),
+        chainId: top.chainId,
+        ...(top.state === 'started' && top.toSessionId ? { sessionId: top.toSessionId }
+            : top.state === 'waiting-end' ? { sessionId: top.from.sessionId } : {})
+    };
+}
+
 /**
  * The relay seen from one session: the baton that opened it (its
  * predecessor) and the one it left (its successor). Undefined for a session

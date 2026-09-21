@@ -11,7 +11,7 @@
  * do in the window.
  */
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
-import { Baton, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
+import { BATON_DEFAULT_MAX_LEGS, Baton, batonBrake, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
 import { BatonStore } from './batonStore';
 import { LaunchManifest, manifestOf } from './launchManifest';
 import { WhoamiResult } from './whoami';
@@ -29,6 +29,12 @@ export interface BatonBridgeDeps {
     now?: () => number;
     /** S-74 — the runner's button: the successor starts now (BatonRunner.startNow) */
     startNow?: (b: Baton, by: string) => { ok: true; baton: Baton } | { ok: false; why: string };
+    /** S-78 — the passing folder's git HEAD, for the barren brake */
+    headOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-78 — agentFarm.batonMaxHops; absent = BATON_DEFAULT_MAX_LEGS */
+    maxLegs?: () => number;
+    /** S-78 — a brake stopped a chain: one of the two things a relay tells Notices (S-77) */
+    notify?: (title: string, body: string, key: string) => void;
 }
 
 /** S-74 — the live batons an op's `baton` / `chain` / `session` argument names. */
@@ -85,7 +91,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
     bridge.register([
         {
             op: 'baton.pass',
-            describe: 'S-66 — LEAVE THE BATON: the words your successor starts from, when this run is ending (5-hour quota or context wall — _REF/handover.md). It STARTS NOTHING: it records the baton against the calling session (found as sessions.whoami finds it — never from the folder), reads that session\'s sealed launch manifest for the successor\'s whole setup (engine, model, effort, permission, provider, superpowers, folder, project), and answers with `sentence` — what will happen when this session ENDS. A second pass from the same session replaces the first. args: prompt (required — the successor\'s first message), from? (a session id, when you are not the caller), surface? (inherit | console | terminal | headless; default inherit = the surface this run used), account? (default @emptiest), note? (a line for the person reading the chain, never sent to the successor). ‼️ The prompt is prose: never inline it in a shell command — write { "prompt": "…" } to a file with your Write tool and call: node af.js baton.pass "@baton.json". Refused as data (no session found, no launch id or manifest, empty prompt, unknown surface).',
+            describe: 'S-66 — LEAVE THE BATON: the words your successor starts from, when this run is ending (5-hour quota or context wall — _REF/handover.md). It STARTS NOTHING: it records the baton against the calling session (found as sessions.whoami finds it — never from the folder), reads that session\'s sealed launch manifest for the successor\'s whole setup (engine, model, effort, permission, provider, superpowers, folder, project), and answers with `sentence` — what will happen when this session ENDS. A second pass from the same session replaces the first. args: prompt (required — the successor\'s first message), from? (a session id, when you are not the caller), surface? (inherit | console | terminal | headless; default inherit = the surface this run used), account? (default @emptiest), note? (a line for the person reading the chain, never sent to the successor). ‼️ The prompt is prose: never inline it in a shell command — write { "prompt": "…" } to a file with your Write tool and call: node af.js baton.pass "@baton.json". Refused as data (no session found, no launch id or manifest, empty prompt, unknown surface). ‼️ S-78: a pass past the leg ceiling (agentFarm.batonMaxHops) or after two legs in a row that left no new commit is answered with `braked` (ceiling | barren) and opens NOTHING — the baton is kept as stopped; write the handover note instead.',
             handler: async (args, from) => {
                 const who = await deps.caller(optStr(args, 'from') || undefined, from);
                 if (!who.ok) { throw new BridgeRefusal(who.why, { step: 'caller' }); }
@@ -101,11 +107,33 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                         step: 'pass', sessionId: who.sessionId, source: who.source, launchId: launchId ?? null
                     });
                 }
-                deps.store.put(res.baton, ...res.superseded);
+                const head = deps.headOf ? await deps.headOf(res.baton.from.cwd).catch(() => undefined) : undefined;
+                const accepted: Baton = head ? { ...res.baton, head } : res.baton;
+                const brake = batonBrake(accepted, deps.store.all(), deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS);
+                if (brake) {
+                    const moved = moveBaton(accepted, 'stopped', `braked — ${brake.why}`, now());
+                    const stopped = moved.ok ? moved.baton : accepted;
+                    deps.store.put(stopped, ...res.superseded);
+                    deps.notify?.(
+                        `Baton chain stopped — ${brake.kind === 'ceiling' ? 'leg ceiling' : 'barren chain'} (${stopped.chainId})`,
+                        `${brake.why} The runner (session ${who.sessionId.slice(0, 8)}) was told to write a handover note instead, so a person can pick the work up. `
+                        + (brake.kind === 'ceiling'
+                            ? 'agentFarm.batonMaxHops sets the ceiling (0 = none).'
+                            : `What each leg did: baton.status chain=${stopped.chainId}.`),
+                        `baton:${stopped.id}:braked`);
+                    return {
+                        baton: batonView(stopped),
+                        owner: { sessionId: who.sessionId, source: who.source },
+                        braked: brake.kind,
+                        sentence: `The chain stops here: ${brake.why} Nothing opens after this session — write a handover note instead (_REF/handover.md, section 4) so a person can pick the work up, then end the run.`,
+                        superseded: res.superseded.map(b => b.id)
+                    };
+                }
+                deps.store.put(accepted, ...res.superseded);
                 return {
-                    baton: batonView(res.baton),
+                    baton: batonView(accepted),
                     owner: { sessionId: who.sessionId, source: who.source },
-                    sentence: batonPlanSentence(res.baton, deps.room?.(res.baton), deps.fmtTime),
+                    sentence: batonPlanSentence(accepted, deps.room?.(accepted), deps.fmtTime),
                     superseded: res.superseded.map(b => b.id)
                 };
             }

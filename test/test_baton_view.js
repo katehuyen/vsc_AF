@@ -45,5 +45,73 @@ ok('a stopped successor carries the reason and is not stoppable again', stopped.
 const twice = V.batonCardView([b('old', 'refused', 1, 's1', { at: NOW - 5000, why: 'x' }), b('new', 'waiting-end', 1, 's1', { at: NOW })], 's1');
 ok('two passes from one run: the newest speaks', twice.lines.some(l => /waits for this session to end/.test(l)));
 
+// S-77 — THE ONE STATUS-BAR ITEM: empty · one · many.
+{
+    const fmt = () => '14:37';
+    const none = () => false;
+    ok('no chain: no item', V.batonBarView([], 6, none, fmt) === undefined);
+    ok('a chain whose last leg ended without passing is over: no item',
+        V.batonBarView([b('b1', 'started', 1, 's1', { extra: { toSessionId: 's2' } })], 6, none, fmt) === undefined);
+    ok('…and a stopped one too', V.batonBarView([b('b1', 'stopped', 1, 's1')], 6, none, fmt) === undefined);
+    const run = V.batonBarView([b('b1', 'started', 1, 's1', { extra: { toSessionId: 's2-long-id' } }), b('b2', 'started', 2, 's2-long-id', { extra: { toSessionId: 's3-long-id' } })],
+        6, sid => sid === 's3-long-id', fmt);
+    ok('a running leg: ⑂ leg/ceiling, its session the click target',
+        run.text === '⑂ 3/6' && run.sessionId === 's3-long-id' && run.chainId === 'chn_1'
+        && /^Baton relay — one chain running/.test(run.tooltip) && /Chain chn_1 — leg 3 of 6 running \(session s3-long-\)/.test(run.tooltip)
+        && /Ceiling: 6 legs a chain \(agentFarm\.batonMaxHops\)/.test(run.tooltip) && /baton\.stop chain=chn_1/.test(run.tooltip));
+    const park = V.batonBarView([b('b1', 'parked', 2, 's2', { extra: { wakeAt: NOW + 3600000 } })], 6, none, fmt);
+    ok('a parked leg carries its wake time on the bar — ⑂ 3/6 · 14:37', park.text === '⑂ 3/6 · 14:37' && /leg 3 of 6 parked .* wakes at 14:37/.test(park.tooltip) && !park.sessionId);
+    const wait = V.batonBarView([b('b1', 'waiting-end', 1, 's1')], 0, none, fmt);
+    ok('a baton waiting on its session: the leg it opens, no ceiling written when there is none, the passing session clicked',
+        wait.text === '⑂ 2' && wait.sessionId === 's1' && /leg 2 opens when session s1 ends/.test(wait.tooltip) && /No leg ceiling/.test(wait.tooltip));
+    const many = V.batonBarView([
+        b('b1', 'waiting-end', 1, 's1', { at: NOW - 9000 }),
+        { ...b('c1', 'parked', 4, 'x4', { at: NOW }), chainId: 'chn_2', wakeAt: NOW }
+    ], 6, none, fmt);
+    ok('several chains: the newest speaks, +N counts the rest, each has its line',
+        many.text === '⑂ 5/6 · 14:37 +1' && many.chainId === 'chn_2' && /^Baton relay — 2 chains running/.test(many.tooltip)
+        && many.tooltip.indexOf('Chain chn_2') < many.tooltip.indexOf('Chain chn_1'));
+}
+
+// …and the host draws that view, and only that view, on one item.
+{
+    const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const block = ext.slice(ext.indexOf('const batonBar = '), ext.indexOf('const batonBootSweep'));
+    ok('one status-bar item, drawn from batonBarView with the setting\'s own ceiling',
+        (ext.match(/const batonBar = vscode\.window\.createStatusBarItem/g) || []).length === 1
+        && /batonBarView\(batonStore\.all\(\), normalizeMaxLegs\(cfg\(\)\.get<unknown>\('batonMaxHops'\)\), batonLegAlive\)/.test(block)
+        && /if \(!v\) \{ batonBar\.hide\(\); return; \}/.test(block));
+    ok('…redrawn on a store change, a leg starting or ending, and a new ceiling',
+        /batonStore\.onDidChange\(updateBatonBar\)/.test(block) && /e\.kind === 'start' \|\| e\.kind === 'end'/.test(block)
+        && /affectsConfiguration\('agentFarm\.batonMaxHops'\)/.test(block));
+    ok('…and the sweep redraws it too, so a leg that died silently drops off', /batonRunner\.sweep\(\); updateBatonBar\(\);/.test(ext));
+    const { BatonStore } = require(path.join(__dirname, '..', 'out', 'core', 'batonStore.js'));
+    const st = new BatonStore();
+    let n = 0;
+    const sub = st.onDidChange(() => { n++; });
+    st.put(b('b1', 'waiting-end', 1, 's1'));
+    sub.dispose();
+    st.put(b('b2', 'waiting-end', 1, 's2'));
+    ok('the store tells its listeners on every put, and stops once disposed', n === 1);
+}
+
+// ‼️ The card's ✕ is the SAME brake as baton.stop chain= — one body, not a copy.
+{
+    const fs = require('fs');
+    const rd = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+    const panel = rd('src', 'panels', 'consolePanel.ts');
+    const ext = rd('src', 'extension.ts');
+    const page = rd('media', 'console.js');
+    const caseBody = panel.slice(panel.indexOf("case 'batonStopChain':"), panel.indexOf("case 'openTranscript':"));
+    ok('the panel hands the chain to the host dep and redraws', /this\.deps\.batonStopChain\(chain\)/.test(caseBody) && /this\.refresh\(\)/.test(caseBody));
+    ok('…the host dep runs stopBatons on the chain\'s LIVE batons, the body baton.stop runs',
+        /batonStopChain: \(chainId: string\) => stopBatons\(batonStore, batonStore\.chain\(chainId\)\.filter\(isLive\)/.test(ext)
+        && /const stopped = stopBatons\(deps\.store, picked\.list/.test(rd('src', 'core', 'batonBridge.ts')));
+    ok('…the page posts only the chain id, from the host\'s own view',
+        /type: 'batonStopChain', chainId: v\.chainId/.test(page) && /if \(!v \|\| !v\.stoppable \|\| !v\.chainId\)/.test(page));
+    const row = JSON.parse(rd('parity.manifest.json')).entries.find(c => c.capability === 'consolePanel.ts#batonStopChain');
+    ok('…and the parity manifest binds the button to baton.stop', !!row && (row.ops || []).includes('baton.stop'));
+}
+
 console.log(`test_baton_view.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

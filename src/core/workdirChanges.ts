@@ -49,6 +49,13 @@ export async function changesSummary(cwd: string, git: GitRun = run): Promise<Ch
     return { cwd, status, stat };
 }
 
+/** S-78 — the folder's current commit, or undefined (no folder, not a repo, no commit yet, no git). */
+export async function headCommit(cwd: string, git: GitRun = run): Promise<string | undefined> {
+    if (!cwd) { return undefined; }
+    const h = (await git(['rev-parse', 'HEAD'], cwd).catch(() => '')).trim();
+    return /^[0-9a-f]{7,64}$/i.test(h) ? h : undefined;
+}
+
 /** The summary as one message. */
 export function changesText(label: string, c: ChangesSummary): string {
     if (c.note) { return `📄 ${label}\n${c.note}`; }

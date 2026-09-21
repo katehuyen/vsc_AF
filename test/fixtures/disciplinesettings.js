@@ -27,7 +27,8 @@ const KEYS = [
     'agentFarm.contextHandoverPct',
     'agentFarm.quotaConvergePct',
     'agentFarm.quotaHandoverPct',
-    'agentFarm.disciplineOrders'
+    'agentFarm.disciplineOrders',
+    'agentFarm.batonMaxHops'
 ];
 
 const categories = (values) => {

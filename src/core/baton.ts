@@ -71,6 +71,8 @@ export interface Baton {
     why: string;
     /** a line for the person reading the chain — never handed to the successor */
     note?: string;
+    /** S-78 — the passing folder's git HEAD at the pass; the barren brake compares these */
+    head?: string;
     createdAt: number;
     updatedAt: number;
 }
@@ -279,6 +281,53 @@ export function batonPlanSentence(
     }
     return `${head} When it ends, a fresh ${b.from.engine} session opens as ${where} on ${acct} `
         + `in ${b.from.cwd} and is handed your prompt.`;
+}
+
+/** S-78 — the most legs one chain may run, the leg that started it included; 0 = no ceiling. */
+export const BATON_DEFAULT_MAX_LEGS = 6;
+
+/** A setting's value as a leg ceiling: a whole number ≥ 0, the default for anything else. */
+export function normalizeMaxLegs(v: unknown): number {
+    const n = typeof v === 'number' ? v : Number.NaN;
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : BATON_DEFAULT_MAX_LEGS;
+}
+
+export interface BatonBrake {
+    kind: 'ceiling' | 'barren';
+    why: string;
+}
+
+/**
+ * ‼️ S-78 — WHY A PASS MUST NOT OPEN ANOTHER LEG, or undefined. The two
+ * automatic brakes a relay has; the chain's only NATURAL end is a run that
+ * finishes the work and passes nothing. `draft` is the accepted baton (its
+ * `head` read at the pass), `prior` the store before it. Pure.
+ *
+ * - ceiling: leg `draft.hop` is passing, so the leg it would open is hop + 1.
+ * - barren: the two legs before the next one each ended on the same HEAD they
+ *   were opened on — two runs in a row committed nothing, and a third would
+ *   only spend another window the same way.
+ */
+export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: number): BatonBrake | undefined {
+    const next = draft.hop + 1;
+    if (maxLegs > 0 && next > maxLegs) {
+        return {
+            kind: 'ceiling',
+            why: `leg ceiling — chain ${draft.chainId} has run ${draft.hop} of its ${maxLegs} legs (agentFarm.batonMaxHops); leg ${next} does not open.`
+        };
+    }
+    const head = draft.head;
+    if (!head) { return undefined; }
+    const openerOf = (hop: number) => prior.find(p => p.chainId === draft.chainId && p.hop === hop && p.state === 'started');
+    const h1 = openerOf(draft.hop - 1)?.head;
+    const h2 = openerOf(draft.hop - 2)?.head;
+    if (h1 === head && h2 === head) {
+        return {
+            kind: 'barren',
+            why: `barren chain — legs ${draft.hop - 1} and ${draft.hop} both ended with no new commit in ${draft.from.cwd} (HEAD still ${head.slice(0, 8)}); leg ${next} does not open.`
+        };
+    }
+    return undefined;
 }
 
 /** S-76 — the relay a session runs in, as the handover whisper needs it. */

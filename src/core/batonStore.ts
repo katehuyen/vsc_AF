@@ -37,6 +37,15 @@ export class BatonStore {
     put(...list: Baton[]): void {
         for (const b of list) { if (b && b.id) { this.batons.set(b.id, b); } }
         this.save();
+        for (const fn of this.listeners) { try { fn(); } catch { /* a surface's redraw never stops a write */ } }
+    }
+
+    private readonly listeners: (() => void)[] = [];
+
+    /** S-77 — the surfaces that draw the relay redraw on every change. */
+    onDidChange(fn: () => void): { dispose(): void } {
+        this.listeners.push(fn);
+        return { dispose: () => { const i = this.listeners.indexOf(fn); if (i >= 0) { this.listeners.splice(i, 1); } } };
     }
 
     private load(): void {

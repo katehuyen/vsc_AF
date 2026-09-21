@@ -298,12 +298,12 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { batonRelayOf, isLive } from './core/baton';
+import { batonRelayOf, isLive, normalizeMaxLegs } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
-import { batonCardView } from './core/batonView';
+import { batonBarView, batonCardView } from './core/batonView';
 import { quotaBrake } from './core/quotaBrake';
 import { revealPath } from './core/reveal';
 import {
@@ -395,7 +395,7 @@ import {
 import {
     agentsText, cancelTarget, farmStatusText, sessionsKeyboard, splitAgentPrompt
 } from './core/telegramCommands';
-import { changesSummary, changesText } from './core/workdirChanges';
+import { changesSummary, changesText, headCommit } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
     askWhich, forgetGone, pickFocus, rememberOutgoing, rememberTopic, resolve as resolveRoute,
@@ -16371,7 +16371,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         // S-74 — the runner is made just below; the op only runs long after activation
-        startNow: (b, by) => batonRunner.startNow(b, by)
+        startNow: (b, by) => batonRunner.startNow(b, by),
+        // S-78 — the two automatic brakes: the leg ceiling and the barren chain
+        headOf: cwd => headCommit(cwd),
+        maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
+        notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
     });
 
     // S-70 / S-71 — the release and the door. The three end signals (hook
@@ -16445,14 +16449,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key }),
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
+    // S-77 — ONE status-bar item for the relay running right now; hidden while none runs.
+    const batonBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);
+    context.subscriptions.push(batonBar);
+    const batonLegAlive = (sid: string): boolean => {
+        if (live.sessions().some(s => s.sessionId === sid && s.status !== 'ended')) { return true; }
+        // the Console host is declared further down; a hook event can land before it exists
+        try { return consoleHost.list().some(c => c.sessionId === sid && c.status !== 'ended' && c.status !== 'error'); } catch { return false; }
+    };
+    const updateBatonBar = (): void => {
+        const v = batonBarView(batonStore.all(), normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')), batonLegAlive);
+        if (!v) { batonBar.hide(); return; }
+        batonBar.text = v.text;
+        batonBar.tooltip = v.tooltip;
+        batonBar.command = v.sessionId
+            ? { command: 'agentfarm.openConsole', title: 'Open the running leg', arguments: [{ sessionId: v.sessionId }] }
+            : undefined;
+        batonBar.show();
+    };
+    context.subscriptions.push(batonStore.onDidChange(updateBatonBar));
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
+    }));
     context.subscriptions.push(live.onEvent(e => {
         if (e.kind === 'end') { batonRunner.sessionEnded(e.sessionId, e.detail ?? 'end'); }
+        if (e.kind === 'start' || e.kind === 'end') { updateBatonBar(); }
     }));
     context.subscriptions.push(taskManager.onDidChange(() => batonRunner.follow()));
     // The boot pass waits for the monitor to rebuild and the Console to reclaim
     // its seats; a baton judged before that would see every session as unknown.
-    const batonBootSweep = setTimeout(() => batonRunner.sweep(), 20_000);
-    const batonSweep = setInterval(() => batonRunner.sweep(), 60_000);
+    const batonBootSweep = setTimeout(() => { batonRunner.sweep(); updateBatonBar(); }, 20_000);
+    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); }, 60_000);
     context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); } });
 
     registerA2AOps(bridge, {

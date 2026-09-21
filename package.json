@@ -8709,6 +8709,12 @@
           },
           "additionalProperties": false
         },
+        "agentFarm.batonMaxHops": {
+          "type": "number",
+          "default": 6,
+          "minimum": 0,
+          "description": "Baton relay (S-78): the most legs one chain may run — the run that started it is leg 1. A pass from the last leg opens nothing: the baton is kept as stopped with the reason, the runner is told to write a handover note instead, and Notices says so once. 0 = no ceiling. The other automatic brake needs no setting: two legs in a row that end on the same git HEAD stop the chain too."
+        },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,

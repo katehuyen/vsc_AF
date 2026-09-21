@@ -205,6 +205,8 @@ const CATEGORY_OF: Record<string, string> = {
     contextConvergePct: 'discipline', contextHandoverPct: 'discipline',
     quotaConvergePct: 'discipline', quotaHandoverPct: 'discipline',
     disciplineOrders: 'discipline',
+    // S-78 — where a relay stops by itself: the same law, carried by a baton
+    batonMaxHops: 'discipline',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.
