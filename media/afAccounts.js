@@ -126,12 +126,45 @@
          * on the single line underneath, one clause per window.
          */
         const drawn = window.AFAccount.bars(a);
-        const barRow = (b) => '<div class="acwrow">'
-            + '<span class="acwk">' + esc(b.short || '') + '</span>'
-            + '<span class="acwp">' + b.percent + '%</span>'
-            + '<div class="progress"><div class="'
-            + (b.percent >= 90 ? 'hot' : b.percent >= 75 ? 'warn' : '')
-            + '" style="width:' + b.percent + '%"></div></div></div>';
+        /**
+         * ‼️ U-144 — THE FIGURE WEARS ITS OWN BAR'S COLOUR, AND ITS CLOCK SITS
+         * ON ITS OWN ROW.
+         *
+         * The user's report, and it was right: "the numbers that should catch
+         * my eye never do — I have to pick them out of a line of prose every
+         * time." Two faults, one block. (1) The percentage was 11px at the same
+         * weight and the same thin grey as every other line on the card, while
+         * the bar three pixels to its right was already red — so the loudest
+         * thing on the card was a 7px track and the number nobody could find.
+         * (2) The reset times were ONE sentence under both bars —
+         * `5h: 37m left (02:17) · wk: 4d left (14 Ağu 2026, 01:40)` — so
+         * finding how long the five-hour window has left meant reading past the
+         * weekly window's date.
+         *
+         * So: the number takes the SAME three steps its track already has
+         * (plain · warn at 75 · hot at 90 — one rule, stated once, and the two
+         * can never disagree because they are computed from one expression),
+         * and each window's own clock moves onto that window's row. The line
+         * underneath is then gone, not restyled: the fact was already drawn.
+         */
+        const tone = (p) => (p >= 90 ? 'hot' : p >= 75 ? 'warn' : '');
+        const barRow = (b) => {
+            const t = window.AFAccount.barTurnParts(b, DATA.now);
+            const tn = tone(b.percent);
+            // U-144 - a figure whose window has already turned over belongs to the
+            // window BEFORE this one, so it is struck through where it stands.
+            // The clause that used to say so sat at the tail of a sentence
+            // under both bars; this costs no width and cannot be read past.
+            const old = !!(t && t.stale);
+            return '<div class="acwrow">'
+                + '<span class="acwk">' + esc(b.short || '') + '</span>'
+                + '<span class="acwp' + (tn ? ' ' + tn : '') + (old ? ' old' : '') + '">' + b.percent + '%</span>'
+                + '<div class="progress"><div class="' + tn + '" style="width:' + b.percent + '%"></div></div>'
+                + '<span class="acwr' + (t && t.stale ? ' stale' : '') + '">'
+                + (t ? esc(t.lead) + (t.at ? '<span class="acwc">' + esc(t.at) + '</span>' : '')
+                    : '<span class="acwc">no reset time</span>')
+                + '</span></div>';
+        };
         // ONE window uses the same gutter as two — measured on the scene, where
         // `5h  8%` over a single track reads better than the caption did and
         // lines up with the card above it. The caption layout is kept for the
@@ -141,15 +174,16 @@
             ? drawn.map(barRow).join('')
             : '<div class="acwt"><span>' + esc(winName) + '</span><strong>' + a.percent + '%</strong></div>'
                 + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>';
-        const resets = (drawn.length
-            ? drawn.map(b => window.AFAccount.barLine(b, DATA.now)).filter(Boolean).join(' · ')
-            : accountTurns(a)) || 'no reset time was read';
+        // U-144 — only the caption layout still needs a line of its own; a
+        // drawn bar carries its own clock now, and repeating it underneath
+        // would be the same fact in two places.
+        const resets = (drawn.length ? '' : accountTurns(a)) || '';
         const heading = drawn.length > 1
             ? 'Allowance — ' + (a.label || a.id)
             : winName.charAt(0).toUpperCase() + winName.slice(1) + ' — ' + (a.label || a.id);
         const window5 = read
             ? T.wrap('<div class="acwin">' + rows
-                + '<div class="acsub">' + esc(resets) + '</div></div>',
+                + (resets ? '<div class="acsub">' + esc(resets) + '</div>' : '') + '</div>',
                 heading,
                 T.lines([
                     ...(drawn.length
@@ -1300,7 +1334,7 @@
         .acgrp { display:flex; align-items:center; gap:8px; margin:12px 0 5px;
             padding-bottom:3px; border-bottom:1px solid var(--vscode-widget-border,#4443); }
         .acgrpn { font-size:12px; font-weight:600; }
-        .acwin { margin-top:6px; max-width:420px; }
+        .acwin { margin-top:6px; max-width:560px; }
         /* X-196 — the window block is the card's own paragraph, so the
            AFTip wrapper around it has to be one too: an inline wrapper
            would collapse the block it holds. */
@@ -1331,9 +1365,24 @@
         .acwrow + .acwrow { margin-top:2px; }
         .acwk { flex:none; width:16px; font-size:10px; opacity:.7;
             text-transform:uppercase; letter-spacing:.3px; }
-        .acwp { flex:none; width:30px; text-align:right; font-size:11px;
-            font-variant-numeric:tabular-nums; }
+        /* ‼️ U-144 — THE FIGURE IS THE LOUDEST THING IN THE BLOCK, and it
+           wears the same three steps as the track beside it. It used to be
+           11px of the card's ordinary grey next to a red bar, so the number
+           the reader came for was the one thing they had to hunt for. */
+        .acwp { flex:none; width:34px; text-align:right; font-size:12px;
+            font-weight:600; font-variant-numeric:tabular-nums; }
+        .acwp.warn { color:var(--vscode-charts-yellow,#cca700); }
+        .acwp.hot { color:var(--vscode-charts-red,#f14c4c); }
+        .acwp.old { opacity:.45; text-decoration:line-through; }
         .acwrow .progress { flex:1; margin-top:0; height:7px; }
+        /* U-144 — this window's own clock, on this window's own row. The span
+           is the fact and stays readable; the time of day is the check on it
+           and steps back. A window that has already turned over says so in the
+           colour that means the figure beside it is stale. */
+        .acwr { flex:none; width:170px; font-size:11px; font-variant-numeric:tabular-nums;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .acwc { opacity:.6; margin-left:5px; }
+        .acwr.stale { color:var(--vscode-charts-red,#f14c4c); }
         .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
         .acnone { margin-top:6px; font-size:12px; }
         /* X-252 — the day's spend, on the card's own ruler under the

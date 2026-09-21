@@ -159,5 +159,67 @@ const r = runPage('accounts.js', DATA);
         /const age = window\.AFAccounts\.age;/.test(eng) && !/function age\(/.test(eng));
 }
 
+// ---- U-144 — the allowance block: the figure is findable, and each window's
+//      clock is on that window's row ----------------------------------------
+{
+    const r4 = runPage('accounts.js', fixture.data());
+    const h4 = r4.html();
+    // The row, whole, so nothing about its shape is assumed one piece at a time.
+    const ROW = /<div class="acwrow"><span class="acwk">([^<]*)<\/span><span class="acwp( hot| warn)?( old)?">(\d+)%<\/span><div class="progress"><div class="(hot|warn|)" style="width:\d+%"><\/div><\/div><span class="acwr( stale)?">([^<]*)(?:<span class="acwc">([^<]*)<\/span>)?<\/span><\/div>/g;
+    const rows = [...h4.matchAll(ROW)].map(m => ({
+        short: m[1], pctTone: (m[2] || '').trim(), old: !!m[3], pct: Number(m[4]),
+        barTone: m[5], stale: !!m[6], lead: m[7], at: m[8] || ''
+    }));
+    ok('every window is a row of its own, and there are as many as the data carries',
+        rows.length === fixture.data().accounts.reduce((n, a) => n + (a.bars || []).filter(b => b.percent >= 0).length, 0));
+    /**
+     * ‼️ THE NUMBER AND ITS TRACK CANNOT DISAGREE. This is the whole of the
+     * fix: the figure was the card's ordinary grey beside a red bar, so the
+     * loudest thing on the card was a 7px track and the number the reader came
+     * for was the one they had to hunt for. Both classes come from ONE
+     * expression, and this measures that they arrive equal on every row — a
+     * second threshold written anywhere would show up here as a mismatch.
+     */
+    ok('‼️ the percentage wears its own track\'s tone, on every row',
+        rows.length > 0 && rows.every(w => w.pctTone === w.barTone));
+    ok('…and the thresholds are the bar\'s own — loud at 90, warned at 75, plain below',
+        rows.every(w => w.barTone === (w.pct >= 90 ? 'hot' : w.pct >= 75 ? 'warn' : '')));
+    ok('…so a window at 91% is the loud one while the 64% beside it is not',
+        rows[0].pct === 91 && rows[0].pctTone === 'hot' && rows[1].pct === 64 && rows[1].pctTone === '');
+    ok('‼️ each row carries its OWN window\'s clock — the span first, the time of day behind it',
+        rows[0].short === '5h' && rows[0].lead === '37m left' && rows[0].at === '02:17'
+        && rows[1].short === 'wk' && rows[1].lead === '4d left' && /2026/.test(rows[1].at));
+    ok('…so the sentence that used to carry both windows at once is gone, not restyled',
+        !/class="acsub"/.test(h4) && !/5h: 37m left/.test(h4));
+    ok('the figure is drawn at a weight and a size the surrounding lines are not',
+        /\.acwp \{[^}]*font-size:12px;\s*\n?\s*font-weight:600;/.test(read('media', 'afAccounts.js')));
+
+    // ‼️ …AND A WINDOW THAT HAS ALREADY TURNED OVER IS NOT A PERCENTAGE AT ALL:
+    // the figure beside it belongs to the window before this one.
+    const stale = [...runPage('accounts.js', fixture.staleData()).html().matchAll(ROW)].filter(m => m[5]);
+    ok('‼️ a window already turned over says so on its own row — and the figure beside it is STRUCK THROUGH, because it belongs to the window before this one',
+        stale.length === 1 && /^turned over /.test(stale[0][7]) && !stale[0][8] && !!stale[0][3]);
+    // ‼️ …AND THE LINE IS NOT DELETED, IT IS NO LONGER NEEDED. An engine that
+    // publishes a percentage and NO window list has no row to hang a clock on,
+    // and that layout keeps its caption exactly as it was.
+    {
+        const noBars = fixture.data();
+        noBars.accounts = [{ ...noBars.accounts[0], bars: [] }];
+        const h = runPage('accounts.js', noBars).html();
+        ok('…a reading with no window list at all still gets its caption line',
+            !/class="acwrow"/.test(h) && /class="acsub">[^<]+</.test(h));
+    }
+
+    // The two halves and the whole sentence are ONE text (media/afAccount.js).
+    const A = r4.sandbox.window.AFAccount;
+    const b = { short: '5h', percent: 91, resetsAt: fixture.data().now + 37 * 60_000 };
+    const p = A.barTurnParts(b, fixture.data().now);
+    ok('‼️ barTurns is the parts joined back up — one text, two readers',
+        A.barTurns(b, fixture.data().now) === p.lead + ' (' + p.at + ')');
+    const old = { short: '5h', percent: 91, resetsAt: fixture.data().now - 60_000 };
+    ok('…and the same holds for a window already turned over',
+        A.barTurns(old, fixture.data().now) === A.barTurnParts(old, fixture.data().now).lead + ', figure is older');
+}
+
 console.log(`test_accounts_page: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

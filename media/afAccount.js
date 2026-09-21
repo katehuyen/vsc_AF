@@ -107,16 +107,31 @@
      * no clock cannot be checked against anything and "18:19" alone makes the
      * reader do the subtraction.
      */
-    function barTurns(b, now) {
-        if (!b || !b.resetsAt) { return ''; }
+    /**
+     * ‼️ U-144 — THE SAME SENTENCE, IN ITS TWO HALVES.
+     *
+     * A row wants to draw the span at full strength and the clock beside it
+     * quietly; a panel wants the whole sentence. Splitting it at the caller
+     * would be two spellings of one fact, so it is split HERE and `barTurns`
+     * joins it back up — there is still one text.
+     */
+    function barTurnParts(b, now) {
+        if (!b || !b.resetsAt) { return null; }
         const at = typeof now === 'number' ? now : Date.now();
         const left = b.resetsAt - at;
         // ‼️ A TURNOVER IN THE PAST IS NOT "0m LEFT" — audit B-04.1, and the
         // same trap as `turns` below: the figure beside it belongs to the OLD
         // window, and a row that hides that dresses a stale reading as a fresh
         // one.
-        if (left <= 0) { return 'turned over ' + whenOf(b.resetsAt, at) + ', figure is older'; }
-        return leftOf(left) + ' left (' + whenOf(b.resetsAt, at) + ')';
+        return left <= 0
+            ? { lead: 'turned over ' + whenOf(b.resetsAt, at), at: '', stale: true }
+            : { lead: leftOf(left) + ' left', at: whenOf(b.resetsAt, at), stale: false };
+    }
+
+    function barTurns(b, now) {
+        const p = barTurnParts(b, now);
+        if (!p) { return ''; }
+        return p.stale ? p.lead + ', figure is older' : p.lead + ' (' + p.at + ')';
     }
 
     /** …the same sentence with the window's short name in front, for the one
@@ -379,7 +394,7 @@
         figure: figure, turns: turns, label: label, detail: detail,
         // X-215 round 2 — the window list and its wording, so the card that
         // DRAWS the bars and the pickers that only name them share one reader.
-        bars: barsOf, barTurns: barTurns, barLine: barLine, left: leftOf, when: whenOf,
+        bars: barsOf, barTurns: barTurns, barTurnParts: barTurnParts, barLine: barLine, left: leftOf, when: whenOf,
         windowPhrase: windowPhrase,
         row: row, options: options,
         POLICY_GROUP: POLICY_GROUP, ACCOUNT_GROUP: ACCOUNT_GROUP,
