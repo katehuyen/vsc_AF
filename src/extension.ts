@@ -4142,11 +4142,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // S-31: the run had no transcript to be judged against. Assistant
             // messages and tool calls only — TIME IS NOT PROGRESS, because a run
             // can sit for forty minutes waiting on a lock and attempt nothing.
-            const s = index.byId(r.sessionId);
-            if (s && taskManager.setRunProgress(r.taskId, {
+            // ‼️ X-348 — the two figures RIDE WITH the resolution. Asking
+            // `byId` for them was a scan of every session per binding, on a
+            // path that fires whenever a live transcript grows.
+            if (taskManager.setRunProgress(r.taskId, {
                 sessionId: r.sessionId, file: r.file,
-                assistantSteps: s.assistantMsgs ?? 0,
-                toolCalls: s.toolCalls ?? 0
+                assistantSteps: r.assistantSteps,
+                toolCalls: r.toolCalls
             })) { wrote = true; }
         }
         if (wrote) { publishLaunchBindings(); }

@@ -1266,6 +1266,25 @@ export interface ClaudeDirRef {
     dir: string;
 }
 
+/**
+ * ‼️ S-31 / X-348 — WHICH TRANSCRIPT A RUN ENDED UP WITH, and what that
+ * transcript says the run managed to do.
+ *
+ * The two figures ride WITH the resolution rather than being looked up after
+ * it: the caller used to ask `byId` for each one, and `byId` is a scan of every
+ * session, so reading the answer cost as much as computing it did.
+ */
+export interface ResolvedBinding {
+    taskId: string;
+    sessionId: string;
+    file: string;
+    proof: string;
+    /** M-12 — assistant messages, the evidence a run attempted anything. */
+    assistantSteps: number;
+    /** M-12 — tool calls; time is not progress, these are. */
+    toolCalls: number;
+}
+
 export class SessionIndex implements vscode.Disposable {
     private sessions = new Map<string, SessionInfo>();
     /** ‼️ X-129 — the farm's activity feed, bounded and newest-first. The one
@@ -1300,6 +1319,32 @@ export class SessionIndex implements vscode.Disposable {
     private reachLive = new ReachIndex<SessionInfo>();
     private reachExternal = new ReachIndex<SessionInfo>();
     private reachDropped = new ReachIndex<BindableSession & { depth: number; machine?: string }>();
+    /**
+     * ‼️ X-348 — THE ANSWER IS KEPT, AND ONLY WHAT CHANGED IS ASKED AGAIN.
+     *
+     * `resolvedBindings` walked every session on every call, and its one caller
+     * (`reconcileBindings`) is wired to `onDidUpdate` — which fires when a live
+     * transcript grows by a few hundred bytes. So a session appending one line
+     * made the farm re-judge every session it has ever indexed against every
+     * binding: the trigger was the live write, the cost was the whole history,
+     * and X-127's rule is the opposite of that.
+     *
+     * What is kept is the resolution itself (task → the session that holds it)
+     * with the two run-progress figures the caller needs, so that caller no
+     * longer scans for a session by id either. What is asked again is the set
+     * of sessions whose OWN record moved since the last call, plus — when a
+     * binding is published or withdrawn — the sessions X-345 already says that
+     * change reaches. Nothing else is touched.
+     */
+    private resolvedByTask = new Map<string, ResolvedBinding>();
+    /** The reverse of `resolvedByTask`: which task a session currently holds. */
+    private resolvedByFile = new Map<string, string>();
+    /** Sessions whose record moved since the last resolve — the work to redo. */
+    private bindingDirty = new Set<string>();
+    /** False until the first full pass has built the map. */
+    private resolvedReady = false;
+    /** What the last `resolvedBindings()` call really cost. */
+    lastBindingResolve: { walked: number; full: boolean; held: number } | undefined;
     /** What the last binding change cost — the measurement X-345 is closed on. */
     lastBindingSweep: { added: number; removed: number; touched: number; rescued: number } | undefined;
     /** ‼️ S-31 — transcripts that more than one of our own runs could have
@@ -1438,6 +1483,9 @@ export class SessionIndex implements vscode.Disposable {
         if (this.scanGen !== gen) { return; }
         this.sessions = next;
         this.reachLive.rebuild(next.values());
+        // X-348 — the whole map was replaced, so the kept answer is about
+        // objects nobody holds any more: the next call rebuilds it once.
+        this.resolvedReady = false;
         this.feedEvents = nextFeed;
         this.missingDirs = missing;
         this.onDidUpdateEmitter.fire();
@@ -1529,6 +1577,7 @@ export class SessionIndex implements vscode.Disposable {
             this.rememberDropped(file, info, depth, machine);
             target.delete(file);
             if (target === this.sessions) { this.reachLive.remove(file); }
+            this.forgetResolved(file);
             dropFromFeed(feed, file);
             return;
         }
@@ -1545,6 +1594,10 @@ export class SessionIndex implements vscode.Disposable {
         const resident = residentSession(info, Date.now());
         target.set(file, resident);
         if (target === this.sessions) { this.reachLive.add(resident); }
+        // ‼️ X-348 — this record just moved, so its binding answer owes a
+        // re-read and NOTHING ELSE does. A scan admits every session and marks
+        // every one of them; a live append marks the one that appended.
+        this.markBindingDirty(file);
     }
 
     /**
@@ -1615,6 +1668,7 @@ export class SessionIndex implements vscode.Disposable {
         } catch {
             this.sessions.delete(file);
             this.reachLive.remove(file);
+            this.forgetResolved(file);
             dropFromFeed(this.feedEvents, file);
             this.parsers.delete(file);
             this.onDidUpdateEmitter.fire();
@@ -1655,7 +1709,7 @@ export class SessionIndex implements vscode.Disposable {
      */
     private indexFileSync(file: string, depth: number, machine?: string): void {
         const info = parseSessionFile(file, this.pricing, depth);
-        if (!info) { this.sessions.delete(file); this.reachLive.remove(file); dropFromFeed(this.feedEvents, file); return; }
+        if (!info) { this.sessions.delete(file); this.reachLive.remove(file); this.forgetResolved(file); dropFromFeed(this.feedEvents, file); return; }
         this.admit(info, file, depth, machine, this.sessions, this.feedEvents);
     }
 
@@ -1843,6 +1897,14 @@ export class SessionIndex implements vscode.Disposable {
         // what puts the schedule's name on the Origin column.
         const touched = [...this.reachLive.reachAll(changed, now), ...this.reachExternal.reachAll(changed, now)];
         for (const info of touched) { this.applyLaunchBinding(info); this.applySpawnId(info); }
+        // ‼️ X-348 — and the kept resolution moves with the same change, at the
+        // same size. A binding that went takes its answer with it; the sessions
+        // this change reaches owe a re-read, and no other session does.
+        for (const p of removed) {
+            const held = this.resolvedByTask.get(p.binding.taskId);
+            if (held) { this.resolvedByTask.delete(p.binding.taskId); this.resolvedByFile.delete(held.file); }
+        }
+        for (const info of touched) { this.markBindingDirty(info.file); }
         this.lastBindingSweep = { added: added.length, removed: removed.length, touched: touched.length, rescued };
         this.onDidUpdateEmitter.fire();
     }
@@ -1907,18 +1969,91 @@ export class SessionIndex implements vscode.Disposable {
      * session the Tasks row still cannot link to. Cheap by construction — one
      * pass over the sessions rather than one pass per binding.
      */
-    resolvedBindings(): { taskId: string; sessionId: string; file: string; proof: string }[] {
-        if (!this.bindings.length) { return []; }
-        const now = Date.now();
-        const out: { taskId: string; sessionId: string; file: string; proof: string }[] = [];
-        const taken = new Set<string>();
-        for (const s of [...this.sessions.values(), ...this.externalList]) {
-            const r = bindSessionIn(s, this.bindingIndex, now);
-            if (!isBindingHit(r) || taken.has(r.binding.taskId)) { continue; }
-            taken.add(r.binding.taskId);
-            out.push({ taskId: r.binding.taskId, sessionId: s.sessionId, file: s.file, proof: r.proof });
+    resolvedBindings(): ResolvedBinding[] {
+        if (!this.bindings.length) {
+            if (this.resolvedByTask.size) { this.resolvedByTask.clear(); this.resolvedByFile.clear(); }
+            this.bindingDirty.clear();
+            this.resolvedReady = true;
+            this.lastBindingResolve = { walked: 0, full: false, held: 0 };
+            return [];
         }
-        return out;
+        const now = Date.now();
+        let walked = 0;
+        const full = !this.resolvedReady;
+        if (!this.resolvedReady) {
+            // The first call after a scan, a reload or a binding withdrawal
+            // that orphaned a task: one pass, and then never again until
+            // something says otherwise.
+            this.resolvedByTask.clear();
+            this.resolvedByFile.clear();
+            for (const s of [...this.sessions.values(), ...this.externalList]) {
+                walked++;
+                this.resolveInto(s, now);
+            }
+            this.resolvedReady = true;
+        } else if (this.bindingDirty.size) {
+            // ‼️ ONLY THE RECORDS THAT MOVED. A session is in this set because
+            // its own file changed or because a binding change reached it —
+            // both are the size of the change, never of the history.
+            for (const file of this.bindingDirty) {
+                const s = this.sessions.get(file) ?? this.externalList.find(x => x.file === file);
+                walked++;
+                if (!s) { this.forgetResolved(file); continue; }
+                this.resolveInto(s, now);
+            }
+        }
+        this.bindingDirty.clear();
+        this.lastBindingResolve = { walked, full, held: this.resolvedByTask.size };
+        return [...this.resolvedByTask.values()];
+    }
+
+    /**
+     * ‼️ X-348 — one session judged against the bindings, and the two maps kept
+     * true. The rule it preserves is the one the full walk had: the FIRST
+     * session to claim a task keeps it, so a second one matching the same
+     * binding is recorded nowhere and changes nothing.
+     *
+     * The case that needs care is the opposite one — a session that HELD a task
+     * and no longer does (its window moved, its binding was withdrawn). The
+     * task is then free, and some other session may be the rightful holder; a
+     * map cannot know which without asking, so the next call rebuilds. That is
+     * rare by construction: a binding is withdrawn once, when its run ends.
+     */
+    private resolveInto(s: SessionInfo, now: number): void {
+        const held = this.resolvedByFile.get(s.file);
+        const r = bindSessionIn(s, this.bindingIndex, now);
+        const hit = isBindingHit(r) ? r : undefined;
+        const taskId = hit?.binding.taskId;
+        if (held && held !== taskId) {
+            this.resolvedByTask.delete(held);
+            this.resolvedByFile.delete(s.file);
+            // The task it let go may belong to somebody else now.
+            this.resolvedReady = false;
+        }
+        if (!hit || !taskId) { return; }
+        const owner = this.resolvedByTask.get(taskId);
+        if (owner && owner.file !== s.file) { return; }   // first claim wins
+        this.resolvedByTask.set(taskId, {
+            taskId, sessionId: s.sessionId, file: s.file, proof: hit.proof,
+            assistantSteps: s.assistantMsgs ?? 0,
+            toolCalls: s.toolCalls ?? 0
+        });
+        this.resolvedByFile.set(s.file, taskId);
+    }
+
+    /** A file that left the index: whatever it held is free again. */
+    private forgetResolved(file: string): void {
+        const held = this.resolvedByFile.get(file);
+        if (held === undefined) { return; }
+        this.resolvedByFile.delete(file);
+        this.resolvedByTask.delete(held);
+        this.resolvedReady = false;
+    }
+
+    /** ‼️ X-348 — this record moved; its binding answer owes a re-read. Called
+     *  wherever a session enters, changes or leaves one of the two maps. */
+    private markBindingDirty(file: string): void {
+        if (this.resolvedReady) { this.bindingDirty.add(file); }
     }
 
     /** ‼️ S-31 — the bindings and what each one resolved to, for the bridge and
@@ -2115,6 +2250,16 @@ export class SessionIndex implements vscode.Disposable {
         if (sig === this.externalSig) { return; }
         this.externalSig = sig;
         const { canonical, aliases } = this.linkImports(kept);
+        // ‼️ X-348 — the list is REPLACED here on every change, and a foreign
+        // session writing a line changes it. So the rows that really moved are
+        // named before the swap: those owe a re-read, and the untouched ones
+        // keep the answer they already have.
+        const was = new Map(this.externalList.map(s => [s.file, `${s.lastTs}:${s.sessionId}`]));
+        for (const s of canonical) {
+            if (was.get(s.file) !== `${s.lastTs}:${s.sessionId}`) { this.markBindingDirty(s.file); }
+            was.delete(s.file);
+        }
+        for (const gone of was.keys()) { this.forgetResolved(gone); }
         this.externalList = canonical;
         this.reachExternal.rebuild(canonical);
         this.externalAliases = aliases;

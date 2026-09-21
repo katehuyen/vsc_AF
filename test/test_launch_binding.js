@@ -462,7 +462,89 @@ const session = (over) => Object.assign({
         ok('‼️ X-345: the same bindings published again ask nobody', big.third === big.second && small.third === small.second);
         ok(`‼️ X-345: at ten thousand the change costs what it did at one thousand — ${big.oneMs.toFixed(2)} vs ${small.oneMs.toFixed(2)} ms`,
             big.oneMs < Math.max(5, small.oneMs * 4));
+        // --- X-348: THE RESOLUTION IS KEPT, AND A LIVE WRITE ASKS ABOUT
+        // ITSELF ALONE. `resolvedBindings` is read by `reconcileBindings`,
+        // which is wired to `onDidUpdate` — it fires when a live transcript
+        // grows by a few hundred bytes. The first call may walk everything
+        // once; what is measured here is every call after it.
+        const resolveCost = (n) => {
+            const idx = load(n);
+            idx.setLaunchBindings(runs);
+            const first = idx.resolvedBindings();
+            const firstWalk = idx.lastBindingResolve.walked;
+            idx.resolvedBindings();
+            const idleWalk = idx.lastBindingResolve.walked;
+            const victim = [...idx.sessions.values()][Math.floor(n / 2)];
+            const grown = session({
+                ...victim, lastTs: victim.lastTs + 60_000,
+                events: [], turns: [], recentMsgs: [], daily: {}, heat: {}
+            });
+            const t0 = process.hrtime.bigint();
+            idx.admit(grown, grown.file, 0, undefined, idx.sessions, idx.feedEvents);
+            const after = idx.resolvedBindings();
+            const t1 = process.hrtime.bigint();
+            const oneWalk = idx.lastBindingResolve.walked;
+            // …and the kept answer is the one a full walk would have given.
+            const sig = (rows) => rows.map(r => `${r.taskId}@${r.sessionId}:${r.assistantSteps}/${r.toolCalls}`).sort().join('|');
+            idx.resolvedReady = false;
+            const truth = idx.resolvedBindings();
+            idx.dispose();
+            return {
+                held: first.length, kept: after.length, firstWalk, idleWalk, oneWalk,
+                agrees: sig(after) === sig(truth),
+                oneMs: Number(t1 - t0) / 1e6
+            };
+        };
+        const rSmall = resolveCost(1000), rBig = resolveCost(10000);
+        console.log(`  X-348: resolvedBindings — first pass walked ${rSmall.firstWalk} @1k / ${rBig.firstWalk} @10k; `
+            + `nothing changed ${rSmall.idleWalk}/${rBig.idleWalk}; one transcript grew ${rSmall.oneWalk}/${rBig.oneWalk} `
+            + `(${rSmall.oneMs.toFixed(3)} / ${rBig.oneMs.toFixed(3)} ms)`);
+        ok(`‼️ X-348: the map is built ONCE — ${rSmall.firstWalk} walked at 1 000, ${rBig.firstWalk} at 10 000`,
+            rSmall.firstWalk === 1000 && rBig.firstWalk === 10000);
+        ok('‼️ X-348: a call with nothing changed asks nobody at either size',
+            rSmall.idleWalk === 0 && rBig.idleWalk === 0);
+        ok(`‼️ X-348: one transcript growing asks about that one record — ${rBig.oneWalk} at 10 000, ${rSmall.oneWalk} at 1 000`,
+            rBig.oneWalk === 1 && rSmall.oneWalk === 1);
+        ok(`‼️ X-348: at ten thousand a live write costs what it did at one thousand — ${rBig.oneMs.toFixed(3)} vs ${rSmall.oneMs.toFixed(3)} ms`,
+            rBig.oneMs < Math.max(2, rSmall.oneMs * 4 + 0.5));
+        ok('‼️ X-348: and the kept answer is the one a full walk gives — task, session and both figures',
+            rBig.agrees && rSmall.agrees);
         try { fs.rmSync(dirX, { recursive: true, force: true }); } catch { /* tmp */ }
+    }
+
+    // --- X-348, the rules the kept map must not lose: first claim wins, a
+    // withdrawn binding takes its answer with it, and a freed task is offered
+    // to whoever else can hold it.
+    {
+        const pricing = { costFor: () => 0, priceFor: () => undefined, price: () => 0, costOf: () => 0 };
+        const dirY = fs.mkdtempSync(path.join(os.tmpdir(), 'af-x348-'));
+        const idx = new SessionIndex(dirY, () => [], pricing,
+            () => [{ id: AGENTDIR, name: 'developer', dir: AGENTDIR, normDir: AGENTDIR }], () => true, () => 150000);
+        const early = session({ sessionId: 'a-1', file: 'C:/u/a1.jsonl', assistantMsgs: 4, toolCalls: 9 });
+        const late = session({ sessionId: 'a-2', file: 'C:/u/a2.jsonl', assistantMsgs: 1, toolCalls: 2 });
+        const map = new Map([[early.file, early], [late.file, late]]);
+        idx.sessions = map;
+        idx.reachLive.rebuild(map.values());
+        idx.setLaunchBindings([binding()]);
+
+        const one = idx.resolvedBindings();
+        ok('X-348: two sessions can claim one binding and the first keeps it',
+            one.length === 1 && one[0].sessionId === 'a-1');
+        ok('X-348: the run-progress figures ride with the resolution, so nobody scans for them',
+            one[0].assistantSteps === 4 && one[0].toolCalls === 9);
+
+        // the holder leaves the index
+        idx.forgetResolved(early.file);
+        map.delete(early.file);
+        idx.reachLive.remove(early.file);
+        const two = idx.resolvedBindings();
+        ok('X-348: a freed task is offered again rather than lost with its holder',
+            two.length === 1 && two[0].sessionId === 'a-2');
+
+        idx.setLaunchBindings([]);
+        ok('X-348: a withdrawn binding takes its answer with it', idx.resolvedBindings().length === 0);
+        idx.dispose();
+        try { fs.rmSync(dirY, { recursive: true, force: true }); } catch { /* tmp */ }
     }
 }
 

@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.616.0 - the binding resolution is kept; a live write asks about itself alone (X-348) (2026-09-21)
+
+- **‼️ A transcript growing by a few hundred bytes no longer re-judges every
+  session the farm has ever indexed.** `reconcileBindings` is wired to
+  `onDidUpdate` — which fires on every live append — and it read
+  `resolvedBindings()`, which walked every session against every binding on
+  every call, and then asked `byId` (itself a scan) for each resolved run's
+  progress figures. The trigger was the live write; the cost was the whole
+  history, which is the exact shape X-127 exists to end.
+- **What changed.** `SessionIndex` now KEEPS the resolution (task → the
+  session that holds it, with the two run-progress figures riding along) and
+  re-asks only the records that moved: a session marks itself when it is
+  admitted, dropped or replaced, and a binding change marks the sessions
+  X-345's `ReachIndex` already says that change reaches. Nothing else is
+  touched. The rules the full walk had are kept: the first session to claim a
+  task keeps it, and a task whose holder lets it go — a withdrawn binding, a
+  session that left the index — is offered to whoever else can hold it rather
+  than being lost with its holder.
+- **The figures ride with the resolution** (`ResolvedBinding`), so the caller
+  no longer scans for a session by id: one O(N) per binding, on the hottest
+  path in the index, simply disappears.
+- **Measured** (`test_launch_binding.js`, a year of sessions): the map is
+  built once (1 000 walked at 1 000 sessions, 10 000 at 10 000); a call with
+  nothing changed walks **0**; one transcript growing walks **1** at either
+  size, in **0.14 ms at 10 000** against 0.82 ms at 1 000 — the cost no
+  longer moves with the archive. The kept answer is compared against a forced
+  full walk on the same index, task by task and figure by figure.
+  `SessionIndex.lastBindingResolve` reports what each call really cost.
+
 ## 3.615.0 - a binding change sweeps what it reaches, not every session (X-345) (2026-09-21)
 
 - **‼️ The launch-binding sweep is now the size of the change, not of the
