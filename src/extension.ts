@@ -302,6 +302,7 @@ import { registerBatonOps } from './core/batonBridge';
 import { successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
+import { quotaBrake } from './core/quotaBrake';
 import { revealPath } from './core/reveal';
 import {
     agentProjectNames, CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson,
@@ -3594,14 +3595,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ M-11 — the percentage in the sentence moves with every turn the
             // farm takes; `quota:5h` is the ceiling, and it is the same ceiling
             // at 91% as it was at 90%.
-            quotaCheck: () => {
-                const guard = cfg().get<number>('quotaGuardPercent', 0);
-                const pct = windowPct();
-                if (guard <= 0 || pct === undefined) { return undefined; }
-                return pct >= guard
-                    ? { code: 'quota:5h', reason: `quota guard (${Math.round(pct)}% of 5h window)` }
-                    : undefined;
-            },
+            // ‼️ S-72 — AND THE ROW'S OWN ACCOUNT DECIDES. A row bound for a slot
+            // at 10% was held because the home account stood at 95%; now a row
+            // that states an account is judged by the window of the slot it
+            // resolves to (a preview — no round-robin cursor moves), and a row
+            // that states none keeps the machine figure it always had.
+            quotaCheck: (task) => quotaBrake({
+                guard: cfg().get<number>('quotaGuardPercent', 0),
+                stated: task.account,
+                resolve: stated => {
+                    try {
+                        const r = launchAccountPick({ engine: task.engine || 'claude', account: stated, agentId: task.agentId, model: task.model });
+                        if (!r.id) { return undefined; }
+                        const sl = findSlot(storedAccounts(), r.id);
+                        return { id: r.id, ...(sl ? { label: slotLabel(sl) } : {}) };
+                    } catch { return undefined; }
+                },
+                usageOf: slotId => {
+                    const u = accountUsage.current().find(x => x.slotId === slotId);
+                    return u ? { percent: u.percent, known: u.state !== 'no-source' && Number.isFinite(u.percent) } : undefined;
+                },
+                machinePct: windowPct
+            }),
             // The daily budget as a BRAKE. `agentFarm.budgets` used to raise an
             // insight and let the task start anyway; a ceiling you can walk
             // through is not a ceiling. Per-agent limit first, then the fleet.
@@ -16278,13 +16293,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         store: batonStore,
         door: b => {
             const agent = findAgent(b.from.agentId);
-            const row = successorRow(b, { agentName: agent.name, agentDir: agent.dir });
+            // S-73 — every account full RIGHT NOW: the row is written with the
+            // first reset + the safety buffer as its notBefore (a preview — the
+            // round-robin cursor does not move; the real pick is the launch's).
+            const pick = launchAccountPick({ engine: b.from.engine, account: b.want.account, agentId: agent.id, model: b.inherit.model });
+            const park = pick.refusal && pick.resetsAt
+                ? {
+                    resetsAt: pick.resetsAt,
+                    bufferMin: normalizeRetry(cfg().get<unknown>('taskRetry'))?.safetyBufferMin ?? RETRY_DEFAULT_SAFETY_MIN,
+                    refusal: pick.refusal
+                }
+                : undefined;
+            const row = successorRow(b, { agentName: agent.name, agentDir: agent.dir, ...(park ? { park } : {}) });
             const task = taskManager.addTask(agent, row.title, row.prompt, row.mode, row.extra);
             const started = taskManager.startTask(task);
             return {
                 taskId: task.id,
                 ...(successorSessionOf(task) ? { sessionId: successorSessionOf(task) } : {}),
-                ...(!started && task.deferredReason ? { held: task.deferredReason } : {})
+                ...(!started && task.deferredReason ? { held: task.deferredReason } : {}),
+                ...(row.wakeAt ? { wakeAt: row.wakeAt } : {})
             };
         },
         evidence: b => {
@@ -16309,6 +16336,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         nudge: id => {
             const t = taskManager.tasks.find(x => x.id === id);
             if (!t || t.status !== 'queued') { return undefined; }
+            // "now" lifts a reset park: the person pressing has made room by hand
+            delete t.notBefore; delete t.notBeforeWhy;
             const started = taskManager.startTask(t);
             return {
                 taskId: t.id,
@@ -16316,7 +16345,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(!started && t.deferredReason ? { held: t.deferredReason } : {})
             };
         },
-        notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
+        notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key }),
+        fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
     context.subscriptions.push(live.onEvent(e => {
         if (e.kind === 'end') { batonRunner.sessionEnded(e.sessionId, e.detail ?? 'end'); }

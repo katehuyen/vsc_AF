@@ -1634,7 +1634,7 @@ export interface TaskManagerOptions {
     /** Return a reason to defer auto work (e.g. quota window nearly full), or
      *  undefined. ‼️ M-11 — a `{code, reason}` pair is preferred over a bare
      *  string: the code is what dedupes a park, the sentence is what is read. */
-    quotaCheck?: () => BlockAnswer;
+    quotaCheck?: (task: FarmTask) => BlockAnswer;
     outputsMaxMB?: () => number;
     /** Secrets injected as environment variables into spawned tasks. The
      *  agent id lets the vault withhold secrets scoped to other agents. */
@@ -3199,7 +3199,9 @@ export class TaskManager implements vscode.Disposable {
                 reason: `agent busy (${task.agentName})`
             };
         }
-        const quota = asLaunchBlock(this.opts.quotaCheck?.(), 'quota:5h');
+        // S-72 — the row is handed over: a row that states an account is judged
+        // by THAT account's window, not the machine's (core/quotaBrake.ts).
+        const quota = asLaunchBlock(this.opts.quotaCheck?.(task), 'quota:5h');
         if (quota) { return quota; }
         // Budget is a BRAKE, not a notification: over the daily ceiling nothing
         // new launches. (It used to raise an insight and then start the task

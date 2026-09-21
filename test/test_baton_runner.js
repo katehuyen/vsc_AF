@@ -157,6 +157,34 @@ function setup(o = {}) {
     ok('no task reader, nothing to follow', runner.follow().length === 0);
 }
 
+// ---- S-73: park on a reset, wake by the row ----
+{
+    const rows = new Map();
+    const wake = NOW + 5000 + 43 * 60_000;
+    const { store, runner, notes } = setup({
+        door: () => ({ taskId: 'tsk_r', held: 'waiting until 14:37', wakeAt: wake }),
+        task: id => rows.get(id),
+        fmtTime: t => 'T' + Math.round((t - NOW - 5000) / 60_000)
+    });
+    const a = leave(store, 'sess-A');
+    const [p] = runner.sessionEnded('sess-A', 'end');
+    ok('every account full → parked ON the row with its wake time', p.state === 'parked' && p.taskId === 'tsk_r' && p.wakeAt === wake && /every account is full — task tsk_r wakes at T43/.test(p.why));
+    ok('‼️ told ONCE, naming the moment, and how to go sooner or drop it',
+        notes.length === 1 && notes[0].key === 'baton:' + a.id + ':parked' && /starts at T43/.test(notes[0].title) && /baton\.now/.test(notes[0].body) && /baton\.stop/.test(notes[0].body));
+    rows.set('tsk_r', { status: 'queued' });
+    ok('the row still queued changes nothing', runner.follow().length === 0 && store.get(a.id).state === 'parked' && store.get(a.id).wakeAt === wake);
+    rows.set('tsk_r', { status: 'running', sessionId: 'succ-r' });
+    const [st] = runner.follow();
+    ok('the pump woke the row → the baton starts on it, the wake time is cleared', st.state === 'started' && st.toSessionId === 'succ-r' && st.wakeAt === undefined);
+    ok('no second notice for the start', notes.length === 1);
+}
+{
+    const { store, runner, notes } = setup({ door: () => ({ taskId: 'tsk_old', wakeAt: NOW - 1 }) });
+    leave(store, 'sess-A');
+    const [p] = runner.sessionEnded('sess-A', 'end');
+    ok('a wake moment already past is an ordinary board park, not a reset park', p.state === 'parked' && p.wakeAt === undefined && notes.length === 0);
+}
+
 // ---- S-74: the user's go ----
 {
     const { store, runner, doors } = setup();

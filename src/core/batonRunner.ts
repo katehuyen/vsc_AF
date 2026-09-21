@@ -51,6 +51,8 @@ export interface DoorAnswer {
     sessionId?: string;
     /** why the row is not running yet (a ceiling, the automation gate) */
     held?: string;
+    /** S-73 — every account was full: the row waits until this moment (first reset + buffer) */
+    wakeAt?: number;
 }
 
 /** The little a baton needs to know about its task row. */
@@ -69,8 +71,9 @@ export interface BatonRunnerDeps {
     task?: (taskId: string) => TaskGlimpse | undefined;
     /** S-74 — ask the pump again for a QUEUED row (the user made room by hand); undefined = no such queued row */
     nudge?: (taskId: string) => DoorAnswer | undefined;
-    /** the two moments a person is told: a refusal, and nothing else here */
+    /** the two moments a person is told: a refusal, and a park on a reset — nothing else here */
     notify?: (title: string, body: string, key: string) => void;
+    fmtTime?: (t: number) => string;
     now?: () => number;
     log?: (line: string) => void;
 }
@@ -180,11 +183,25 @@ export class BatonRunner {
             return this.move(b, 'started', `${why}; successor session ${answer.sessionId.slice(0, 8)} opened on task ${answer.taskId}`,
                 { taskId: answer.taskId, toSessionId: answer.sessionId }) ?? b;
         }
+        if (answer.wakeAt && answer.wakeAt > this.now()) {
+            // S-73 — every account is full: parked until the first reset, and
+            // said ONCE. The pump wakes the row itself (its notBefore); no timer here.
+            const at = (this.deps.fmtTime ?? (t => new Date(t).toISOString().slice(11, 16)))(answer.wakeAt);
+            const parked = this.move(b, 'parked', `${why}; every account is full — task ${answer.taskId} wakes at ${at}`,
+                { taskId: answer.taskId, wakeAt: answer.wakeAt }) ?? b;
+            try {
+                this.deps.notify?.(`Baton parked — chain ${b.chainId} hop ${b.hop} starts at ${at}`,
+                    `Every account is full, so the successor of session ${b.from.sessionId.slice(0, 8)} (${b.from.agentId}) waits on task `
+                    + `${answer.taskId} until ${at} (the first reset plus the safety buffer). The pump starts it then; `
+                    + 'baton.now starts it sooner once you have made room, baton.stop drops it.', `baton:${b.id}:parked`);
+            } catch { /* best effort */ }
+            return parked;
+        }
         return this.move(b, 'parked', `${why}; task ${answer.taskId} is on the board — ${answer.held || 'waiting for the pump to start it'}`,
             { taskId: answer.taskId }) ?? b;
     }
 
-    private move(b: Baton, to: Baton['state'], why: string, patch: Partial<Pick<Baton, 'taskId' | 'toSessionId'>> = {}): Baton | undefined {
+    private move(b: Baton, to: Baton['state'], why: string, patch: Partial<Pick<Baton, 'taskId' | 'toSessionId' | 'wakeAt'>> = {}): Baton | undefined {
         const r = moveBaton(b, to, why, this.now(), patch);
         if (!r.ok) { this.log(`baton ${b.id}: ${r.why}`); return undefined; }
         this.deps.store.put(r.baton);

@@ -91,5 +91,22 @@ function baton(o = {}) {
     ok('another engine is stated on the row', codex.extra.engine === 'codex');
 }
 
+// ---- S-73: every account is full at the release ----
+{
+    const { wakeMoment } = require(path.join(OUT, 'batonDoor.js'));
+    const ctx = { agentName: 'developer', agentDir: 'D:\\agents\\developer' };
+    const resetsAt = NOW + 40 * 60_000;
+    const parked = successorRow(baton({ surface: 'console' }), { ...ctx, park: { resetsAt, bufferMin: 3, refusal: 'every claude account is at 100%' } });
+    ok('the row waits until the first reset plus the buffer, visibly', parked.wakeAt === resetsAt + 3 * 60_000 && parked.extra.notBefore === parked.wakeAt);
+    ok('…and says why on the row itself', /baton parked — every account is full: every claude account is at 100%; first reset \+ 3 min buffer/.test(parked.extra.notBeforeWhy));
+    ok('wakeMoment is reset + buffer, and a negative buffer is no buffer', wakeMoment({ resetsAt, bufferMin: 3 }) === resetsAt + 180_000 && wakeMoment({ resetsAt, bufferMin: -5 }) === resetsAt);
+    const noReset = successorRow(baton({}), { ...ctx, park: { resetsAt: 0, bufferMin: 3 } });
+    ok('a park with no measured reset writes no wait (the account gate holds the row instead)', !('wakeAt' in noReset) && !('notBefore' in noReset.extra));
+    const room = successorRow(baton({}), ctx);
+    ok('with room there is no wait on the row', !('wakeAt' in room) && !('notBefore' in room.extra));
+    const head = successorRow(baton({ surface: 'headless' }), { ...ctx, park: { resetsAt, bufferMin: 0 } });
+    ok('a headless row parks the same way', head.mode === 'headless' && head.wakeAt === resetsAt);
+}
+
 console.log(`test_baton_door: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

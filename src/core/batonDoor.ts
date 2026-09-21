@@ -20,7 +20,11 @@ export interface DoorRow {
     title: string;
     prompt: string;
     mode: 'headless' | 'interactive';
+    /** S-73 — the moment the row may start, when every account was full at the release */
+    wakeAt?: number;
     extra: {
+        notBefore?: number;
+        notBeforeWhy?: string;
         projectId: string | undefined;
         engine?: string;
         model?: string;
@@ -43,6 +47,18 @@ export interface DoorContext {
     agentDir?: string;
     /** S-78 — the chain's hop ceiling, when set; shown as "hop n/N" */
     maxHops?: number;
+    /**
+     * S-73 — EVERY ACCOUNT IS FULL at the release: the row is written with the
+     * first reset plus the safety buffer as its `notBefore`, so it waits
+     * visibly on the board and the pump starts it then (M-10's own machinery —
+     * no second timer). Absent = at least one account has room.
+     */
+    park?: { resetsAt: number; bufferMin: number; refusal?: string };
+}
+
+/** S-73 — the moment a parked successor wakes: the first reset plus the safety buffer. */
+export function wakeMoment(park: { resetsAt: number; bufferMin: number }): number {
+    return park.resetsAt + Math.max(0, park.bufferMin) * 60_000;
 }
 
 /** The first message the successor sees: the chain's header, then the predecessor's own words. */
@@ -84,9 +100,17 @@ export function successorRow(b: Baton, ctx: DoorContext = {}): DoorRow {
         account: b.want.account,
         ...(b.from.cwd && !same(b.from.cwd, ctx.agentDir) ? { workDir: b.from.cwd } : {})
     };
+    const park = ctx.park && ctx.park.resetsAt > 0 ? ctx.park : undefined;
+    const wakeAt = park ? wakeMoment(park) : undefined;
+    if (park && wakeAt) {
+        extra.notBefore = wakeAt;
+        extra.notBeforeWhy = `baton parked — every account is full${park.refusal ? `: ${park.refusal}` : ''}; `
+            + `first reset + ${Math.max(0, park.bufferMin)} min buffer`;
+    }
     const title = `Baton — hop ${b.hop} of chain ${b.chainId}`;
     const prompt = successorPrompt(b, ctx);
-    if (surface === 'headless') { return { title, prompt, mode: 'headless', extra }; }
+    const wake = wakeAt ? { wakeAt } : {};
+    if (surface === 'headless') { return { title, prompt, mode: 'headless', ...wake, extra }; }
     const target: InteractiveTarget = surface === 'console' ? 'console' : surface === 'external-terminal' ? 'external' : 'vscode';
-    return { title, prompt, mode: 'interactive', extra: { ...extra, interactiveTarget: target, interactiveClose: 'stay-open' } };
+    return { title, prompt, mode: 'interactive', ...wake, extra: { ...extra, interactiveTarget: target, interactiveClose: 'stay-open' } };
 }
