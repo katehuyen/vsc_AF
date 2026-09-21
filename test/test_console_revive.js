@@ -18,7 +18,8 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, swapPlaceholder
+    isPlaceholderHistory, planRevive, REVIVE_ASKED_IDLE, REVIVE_ASKED_MIDTURN, REVIVE_NUDGE_IDLE,
+    REVIVE_PLACEHOLDER_ID, reviveInit, reviveIntent, reviveSpeech, settleVerdict, swapPlaceholder
 } = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
 
 // ---------- the dimensions, read out of the source of truth ----------
@@ -151,7 +152,7 @@ const live = (over = {}) => ({
 {
     const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     const nudge = (() => {
-        const at = extTs.indexOf('const nudgeRevived = (seatId: string): void => {');
+        const at = extTs.indexOf('const nudgeRevived = (seatId: string, text: string): void => {');
         return at < 0 ? '' : extTs.slice(at, extTs.indexOf('\n    };', at));
     })();
 
@@ -173,9 +174,15 @@ const live = (over = {}) => ({
 
     // ‼️ THE SCOPE. This is the assertion that stops a future edit from nudging
     // every revived seat, which would start spending on conversations that were
-    // waiting for the user.
-    ok('‼️ ONLY a seat that was mid-turn AND ASKED for the restart is nudged',
-        /if \(row\.midTurn && itAsked\) \{ nudgeRevived\(seatId\); \}/.test(extTs));
+    // waiting for the user. ‼️ X-349 moved the decision into `reviveSpeech` —
+    // whose own tests below pin all four combinations — so what is pinned here
+    // is that the wiring ASKS it and does not hold a second opinion.
+    ok('‼️ the wiring speaks only what the core decided, and never re-tests midTurn itself',
+        /const speech = reviveSpeech\(\{ midTurn: row\.midTurn, itAsked \}\);/.test(extTs)
+        && /if \(speech\.nudge\) \{ nudgeRevived\(seatId, speech\.nudge\); \}/.test(extTs)
+        && !/row\.midTurn && itAsked/.test(extTs));
+    ok('‼️ X-349: …and a seat left silent is SETTLED instead, or it says `starting` for ever',
+        /else \{ consoleHost\.settleRevived\(seatId\); \}/.test(extTs));
 
     // ‼️ X-310 — AND THE OTHER HALF OF THE SCOPE, which is the one that was
     // measured going wrong. Being mid-turn says a turn was CUT, not that this
@@ -189,10 +196,9 @@ const live = (over = {}) => ({
         && /const itAsked = !!askedBy && row\.sessionId === askedBy;/.test(extTs));
     ok('‼️ …and it is matched on the ENGINE session id, never the seat id a restart does not survive',
         /row\.sessionId === askedBy/.test(extTs) && !/row\.id === askedBy/.test(extTs));
-    ok('‼️ …and a seat cut without asking is TOLD it is being left alone, not left silent',
-        /: REVIVE_HELD\)/.test(extTs));
-
     const { REVIVE_HELD } = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
+    ok('‼️ …and a seat cut without asking is TOLD it is being left alone, not left silent',
+        reviveSpeech({ midTurn: true, itAsked: false }).note === REVIVE_HELD);
     ok('…and that sentence says all three things the reader needs: what was lost, that nothing '
         + 'was said into it, and that it is now theirs',
         /lost on the way/.test(REVIVE_HELD)
@@ -203,7 +209,7 @@ const live = (over = {}) => ({
     // And the sentence the reader sees no longer tells them to do it by hand.
     ok('…and the card no longer says "ask again" while the farm is asking for them',
         !/ask again, nothing before it is missing/.test(extTs)
-        && /asked to carry on from where it was/.test(extTs));
+        && /asked to carry on from where it was/.test(REVIVE_ASKED_MIDTURN));
 
     const { REVIVE_NUDGE } = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
     ok('the nudge names what was lost and what was not',
@@ -347,6 +353,140 @@ const live = (over = {}) => ({
         /new ConsoleHost\(\s*\(\) => 'claude',\s*sid => ownerOf\(liveCliSessions\(\), sid\)\?\.pid/.test(extTs));
     ok('‼️ X-266: farm.health reports the twin state off the registry (Principle 1 — a rule that fails silently is not a rule)',
         /twins: twinsOf\(liveCliSessions\(\)\)/.test(extTs));
+}
+
+// ---- X-349: THE NUDGE THAT NEVER WENT OUT ON THE PATH AGENTS ACTUALLY USE ----
+//
+// ‼️ `row.midTurn && itAsked` reads like two halves of one rule and is not.
+// `midTurn` says a reply was destroyed; `itAsked` says this seat consented. The
+// AND was satisfiable only on the `now` path, where the restart fires inside the
+// asking turn. On the `armed` path it waits for somebody ELSE's turn to end, and
+// by the time it fires the asker is between turns — so the nudge was never sent,
+// not once, and the contract that "your last words are the resumed copy's
+// instruction" was broken on the path the fleet is built around.
+//
+// Measured 2026-09-21: a restart armed behind another console fired eight
+// minutes later, both copies came back on `--resume`, and the session that had
+// asked for it sat silent for thirteen minutes until a human typed into it.
+{
+    const asked = reviveSpeech({ midTurn: false, itAsked: true });
+    ok('‼️ X-349: the seat that ASKED is nudged between turns — the request is the consent',
+        asked.nudge === REVIVE_NUDGE_IDLE && asked.note === REVIVE_ASKED_IDLE);
+    ok('‼️ …and it is told the truth about the gap: nothing was lost, so nothing is claimed lost',
+        /nothing was lost/.test(REVIVE_NUDGE_IDLE) && !/reply you were writing/.test(REVIVE_NUDGE_IDLE)
+        && /no reply was lost/.test(REVIVE_ASKED_IDLE));
+    ok('‼️ …and it still refuses to let a model invent where it was',
+        /say so and stop/.test(REVIVE_NUDGE_IDLE) && /do not guess/.test(REVIVE_NUDGE_IDLE));
+
+    const askedMid = reviveSpeech({ midTurn: true, itAsked: true });
+    ok('a cut asker keeps the sentence it always had', askedMid.note === REVIVE_ASKED_MIDTURN);
+    ok('…and a different nudge from the idle one, because a reply really was lost',
+        askedMid.nudge && askedMid.nudge !== REVIVE_NUDGE_IDLE && /lost on the way/.test(askedMid.nudge));
+
+    // ‼️ THE HALF THAT MUST NOT MOVE. X-310 exists because a session that
+    // consented to nothing was handed "carry on" and acted on guesses.
+    ok('‼️ X-310 HOLDS: a seat that did not ask is never spoken into, cut or not',
+        reviveSpeech({ midTurn: true, itAsked: false }).nudge === null
+        && reviveSpeech({ midTurn: false, itAsked: false }).nudge === null);
+    ok('…and an untouched idle bystander is not given a notice about a reply it never lost',
+        reviveSpeech({ midTurn: false, itAsked: false }).note === '');
+}
+
+// ---- X-349: AND A REVIVED CARD NOBODY SPEAKS INTO STOPS SAYING `starting` ----
+//
+// The persistent CLI emits `system:init` on its first TURN, not on boot, so a
+// seat deliberately left alone never leaves `starting`. Measured: two cards held
+// it for thirteen minutes. That is not cosmetic — `starting` is in
+// SESSION_IN_FLIGHT (selfRestart.ts), so a silent revived card blocks every
+// LATER restart: the fleet's own door held shut by a session doing nothing.
+{
+    ok('a registered process settles the card', settleVerdict({
+        status: 'starting', registered: true, triesLeft: 5
+    }) === 'settle');
+    ok('…and until the registry says the process is up, nothing is claimed', settleVerdict({
+        status: 'starting', registered: false, triesLeft: 5
+    }) === 'wait');
+    ok('‼️ …and it gives up rather than waiting for ever — a process that never registers is a '
+        + 'failure to report, not a state to invent',
+        settleVerdict({ status: 'starting', registered: false, triesLeft: 0 }) === 'stop');
+    ok('‼️ a card that spoke for itself is left alone — the watch never overwrites a live status',
+        settleVerdict({ status: 'working', registered: true, triesLeft: 5 }) === 'stop'
+        && settleVerdict({ status: 'idle', registered: true, triesLeft: 5 }) === 'stop'
+        && settleVerdict({ status: 'ended', registered: true, triesLeft: 5 }) === 'stop');
+    ok('…and so are an ended card and one that is simply gone',
+        settleVerdict({ status: 'starting', closed: true, registered: true, triesLeft: 5 }) === 'stop'
+        && settleVerdict({ registered: true, triesLeft: 5 }) === 'stop');
+
+    const hostTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    const settle = (() => {
+        const at = hostTs.indexOf('settleRevived(id: string');
+        return at < 0 ? '' : hostTs.slice(at, hostTs.indexOf('\n    }', at));
+    })();
+    ok('the loop is findable — a renamed one must fail here rather than go quiet', settle.length > 200);
+    ok('‼️ the ONLY source consulted is the CLI\'s own registry, through the same door the reclaim uses',
+        /this\.ownerPid\(sessionId\)/.test(settle) && /settleVerdict\(/.test(settle));
+    ok('‼️ …and only a persistent engine with a session id is watched at all',
+        /h\.engine\.shape !== 'persistent' \|\| !sessionId/.test(settle));
+    ok('…the settled card says WHY its idle is an idle the engine has not confirmed',
+        /revivedWaiting: true/.test(settle));
+    ok('‼️ …and the watch lets go of its timer on every verdict but `wait`',
+        /clearInterval\(timer\)/.test(settle) && /this\.settleTimers\.delete\(timer\)/.test(settle));
+    ok('‼️ …and the window closing takes every outstanding watch with it',
+        /for \(const t of this\.settleTimers\) \{ clearInterval\(t\); \}/.test(hostTs));
+
+    // ‼️ AND THE FLAG IS CLEARED THE MOMENT IT STOPS BEING TRUE, or a card that
+    // has been talking for an hour still claims nobody has spoken into it.
+    const protoTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consoleproto.ts'), 'utf8');
+    ok('‼️ the engine\'s own init clears it — that is the moment `idle` means what it means elsewhere',
+        /status: state\.status === 'starting' \? 'idle' : state\.status,[\s\S]{0,220}revivedWaiting: undefined/
+            .test(protoTs));
+
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ …and farm.health counts them, because they are deliberately NOT blockers any more '
+        + '(Principle 1 — a rule that fails silently is not a rule)',
+        /revived: consoleHost\.list\(\)\s*\.filter\(s => s\.revivedWaiting\)/.test(extTs));
+}
+
+// ---- X-349: THE ARMED ANSWER SAYS WHAT WILL HAPPEN TO THE CALLER'S OWN SEAT ----
+//
+// `armed` means the restart fires later, out of the caller's hands. Whether its
+// last words are an instruction to its resumed self or are simply lost is the
+// one fact that changes what it should write next — and it was not in the
+// answer at all, which is how a session came to write its verification steps
+// after a restart that had already eaten them.
+{
+    const plan = planRevive([
+        { id: 'cs4', agentId: 'dev', agentName: 'developer', cwd: 'D:/r', status: 'idle', sessionId: 'S-ASK' },
+        { id: 'cs5', agentId: 'ops', agentName: 'ops', cwd: 'D:/r', status: 'working', sessionId: 'S-OTHER' },
+        { id: 'cs6', agentId: 'new', agentName: 'newborn', cwd: 'D:/r', status: 'idle' }
+    ]);
+
+    const mine = reviveIntent({ plan, askedBy: 'S-ASK', resume: true });
+    ok('‼️ the asker is told its seat comes back AND is spoken into', mine.nudge === true && mine.seat === 'cs4');
+    ok('‼️ …and told that its LAST words are the instruction, which is the whole point of saying so',
+        /LAST thing you say/.test(mine.note) && /developer/.test(mine.note));
+
+    const noResume = reviveIntent({ plan, askedBy: 'S-ASK', resume: false });
+    ok('‼️ a restart without `resume` says plainly that nothing comes back',
+        noResume.nudge === false && /goes down with the host/.test(noResume.note));
+
+    const anon = reviveIntent({ plan, askedBy: '', resume: true });
+    ok('a door with no session behind it is told every card comes back silent',
+        anon.nudge === false && /held and silent/.test(anon.note));
+
+    const elsewhere = reviveIntent({ plan, askedBy: 'S-TERMINAL', resume: true });
+    ok('‼️ a caller that is not a Console card is told there is nothing to revive it into, '
+        + 'rather than being promised a nudge it will never get',
+        elsewhere.nudge === false && /not a live Console card/.test(elsewhere.note));
+
+    const unnamed = reviveIntent({ plan, askedBy: 'cs6', resume: true });
+    ok('…and a seat the engine never named carries its own skip reason into the answer',
+        unnamed.nudge === false && /nothing to resume it by/.test(unnamed.note));
+
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ the op answers it on EVERY decision, off the same plan it already built',
+        /const revive = resume \? planRevive\(consoleHost\.list\(\)\) : undefined;/.test(extTs)
+        && /reviveIntent: reviveIntent\(\{ plan: revive, askedBy, resume \}\)/.test(extTs));
 }
 
 console.log(`test_console_revive.js: ${pass} passed, ${fail} failed`);

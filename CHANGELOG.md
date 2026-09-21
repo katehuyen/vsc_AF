@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.617.0 - the revive nudge reaches the armed path, and a silent revived card stops saying `starting` (X-349) (2026-09-21)
+
+- **‼️ The session that ASKED for a restart is spoken to again — on the path it
+  actually uses.** The nudge was sent only when the asker was *also* cut
+  mid-turn, and those two conditions can only both be true on the `now` path,
+  where the restart fires inside the asking turn. On the `armed` path it waits
+  for somebody else's turn to end, and by the time it fires the asker is
+  between turns — so the nudge was **never** sent there, not once. The
+  contract that "the last thing you say before a restart is what your resumed
+  copy acts on" was therefore broken on the path the fleet is built around.
+- **What changed.** Consent is the whole test now: the seat that asked is
+  nudged in a turn or between turns. `midTurn` decides only what is *true*
+  about the gap — a cut turn lost a reply and is told so, an idle one lost
+  nothing and is told that instead. **X-310 is untouched**: a seat cut without
+  asking is still brought back whole, told on its own card that nothing was
+  said into it, and left for the user.
+- **‼️ And a revived card nobody speaks into no longer sits at `starting` for
+  ever.** The persistent CLI announces itself on its first *turn*, not on
+  boot, so a seat deliberately left alone never left that state — measured at
+  thirteen minutes on two cards. That is not cosmetic: `starting` counts as a
+  turn in flight, so a silent revived card **blocked every later restart** —
+  the farm's own door held shut by a session doing nothing at all. The card
+  now settles to `idle` when the CLI's own live registry says its process is
+  up, which is the engine stating it exists rather than Agent Farm assuming
+  it; a process that never registers is given up on rather than invented.
+- **What that `idle` rests on is said out loud.** `farm.health` gains
+  `sessions.revived`: the cards a restart took up again that nobody has spoken
+  into yet. They read `idle` because the registry says so, not because the
+  engine has announced itself — and the flag clears the moment it does.
+- **‼️ And the armed answer now says what will happen to your own seat.**
+  `armed` means the restart fires later, out of your hands, so whether your
+  last words are an instruction to your resumed self or are simply lost is the
+  one fact that changes what you write next — and it was not in the answer at
+  all. `reviveIntent` names the seat, says whether it will be spoken into, and
+  says why not when it will not be (no `resume`, no named asker, a caller that
+  is not a Console card, a session the engine never named).
+
 ## 3.616.0 - the binding resolution is kept; a live write asks about itself alone (X-348) (2026-09-21)
 
 - **‼️ A transcript growing by a few hundred bytes no longer re-judges every

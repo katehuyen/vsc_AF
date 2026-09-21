@@ -20,7 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
-import { swapPlaceholder } from './consoleRevive';
+import { settleVerdict, swapPlaceholder } from './consoleRevive';
 import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
 import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import { spawnEnvironment } from './providerRuntime';
@@ -475,6 +475,8 @@ export class ConsoleHost {
     private sessions = new Map<string, Hosted>();
     private seq = 0;
     private listeners: ((id: string) => void)[] = [];
+    /** X-349 — the revive settles that are still watching for their process. */
+    private settleTimers = new Set<NodeJS.Timeout>();
 
     constructor(
         /** how to run the CLI — 'claude' unless the user overrode it */
@@ -2788,6 +2790,42 @@ export class ConsoleHost {
         return { free, pid };
     }
 
+    /**
+     * ‼️ X-349 — A REVIVED CARD NOBODY SPEAKS INTO IS NOT `starting`, IT IS WAITING.
+     *
+     * The reasoning and the verdict are in `consoleRevive.ts` (`settleVerdict`);
+     * this is the loop that asks it. The only source consulted is the CLI's OWN
+     * live registry, through the same `ownerPid` the reclaim uses: the process
+     * is registered when it is up, so the flip is the engine saying it exists
+     * rather than this host assuming it did.
+     *
+     * Nothing is written into the seat here and nothing about the conversation
+     * changes — `idle` is what the card already accepts a message in (a prompt
+     * written into a `starting` seat is delivered; measured in `nudgeRevived`).
+     * What it buys is that a silent revived card stops looking stuck and stops
+     * blocking every later restart (`SESSION_IN_FLIGHT`).
+     */
+    settleRevived(id: string, everyMs = 1000, tries = 60): void {
+        const h = this.sessions.get(id);
+        const sessionId = h?.state.sessionId;
+        if (!h || h.engine.shape !== 'persistent' || !sessionId) { return; }
+        let left = tries;
+        const timer = setInterval(() => {
+            const cur = this.sessions.get(id);
+            const verdict = settleVerdict({
+                status: cur?.state.status, closed: cur?.closed,
+                registered: !!this.ownerPid(sessionId), triesLeft: --left
+            });
+            if (verdict === 'wait') { return; }
+            clearInterval(timer);
+            this.settleTimers.delete(timer);
+            if (verdict === 'settle') {
+                this.mutate(id, s => ({ ...s, status: 'idle', revivedWaiting: true, lastTs: Date.now() }));
+            }
+        }, everyMs);
+        this.settleTimers.add(timer);
+    }
+
     setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
@@ -3010,6 +3048,8 @@ export class ConsoleHost {
     }
 
     dispose(): void {
+        for (const t of this.settleTimers) { clearInterval(t); }
+        this.settleTimers.clear();
         // ‼️ Synchronously: the window is going away, and a kill deferred to a
         // tick that never comes is the orphaned-process leak, not a fast panel.
         for (const id of [...this.sessions.keys()]) { this.close(id, { sync: true, silent: true }); }

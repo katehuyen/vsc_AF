@@ -138,8 +138,8 @@ import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
 import {
-    isPlaceholderHistory, planRevive, REVIVE_HELD, REVIVE_NUDGE, REVIVE_PLACEHOLDER_ID, reviveInit, RevivePlan,
-    ReviveRow, ReviveSkip
+    isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, reviveIntent, RevivePlan,
+    ReviveRow, ReviveSkip, reviveSpeech
 } from './core/consoleRevive';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
@@ -16975,6 +16975,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else {
             fireRestart(plan.kind, plan.delayMs, resume, askedBy);
         }
+        // X-232 — what a resume would take with it, said BEFORE the death rather
+        // than discovered after it; X-349 reads the caller's own seat out of it.
+        const revive = resume ? planRevive(consoleHost.list()) : undefined;
         return {
             ...plan, bootId, version: extVersion,
             // ‼️ X-231 — AND THE WAIT IT JUST CREATED, IN THE FLEET'S OWN DIALECT.
@@ -16988,9 +16991,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     reason: plan.reason, waitingFor: plan.waitingFor
                 }, Date.now())
                 : undefined,
-            // X-232 — what a resume would take with it, said BEFORE the death
-            // rather than discovered after it.
-            revive: resume ? planRevive(consoleHost.list()) : undefined
+            revive,
+            /**
+             * ‼️ X-349 — AND WHAT THAT MEANS FOR THE CALLER'S OWN SEAT.
+             *
+             * `armed` means the restart fires later, out of the caller's hands,
+             * so whether its last words are an instruction to its resumed self
+             * or are simply lost is the one fact that changes what it writes
+             * next. Answered on every decision, not only `armed`: a `now` that
+             * revives nothing is worth knowing before the window goes down.
+             */
+            reviveIntent: reviveIntent({ plan: revive, askedBy, resume })
         };
     };
     bridge.register([
@@ -17013,7 +17024,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'plans one for you). ‼️ `vault` — X-308 — what ${vault} resolves to and WHO answered: '
                 + '`setting` (agentFarm.vaultDir), `obsidian` (nobody set it, so the one vault Obsidian has '
                 + 'open was used), or `none` with a `why` — and `none` means every path setting using the '
-                + 'variable is being skipped, which was previously silent. args: none',
+                + 'variable is being skipped, which was previously silent. ‼️ `sessions.revived` — X-349 — '
+                + 'cards a restart took up again that nobody has spoken into yet: they read `idle` because '
+                + 'the CLI registry says their process is up, not because the engine has announced itself. '
+                + 'args: none',
             handler: () => {
                 const w = restartWorld();
                 const live = liveBlockers(w, 'extensionHost');
@@ -17095,7 +17109,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // survivors a reload or a crash left running for nobody.
                         // `ours` names what started each one; only those may be
                         // ended by a door. Empty is the only healthy answer.
-                        leftovers: leftovers()
+                        leftovers: leftovers(),
+                        // ‼️ X-349 — the cards a restart brought back that nobody
+                        // has spoken into yet. They are `idle` because the CLI's
+                        // own registry says their process is up, NOT because the
+                        // engine announced itself — it only does that on a first
+                        // turn. Deliberately not blockers (that is the fix), so
+                        // this is the only place they are counted.
+                        revived: consoleHost.list()
+                            .filter(s => s.revivedWaiting)
+                            .map(s => ({ id: s.id, agentName: s.agentName, sessionId: s.sessionId }))
                     },
                     terminals: w.terminals.map(t => t.name),
                     restartArmed: armedRestart,
@@ -17132,7 +17155,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'fires by itself when its turn ends), because it consented to nothing — and on the other '
                 + 'side only the seat that asked is spoken into, while one cut without asking comes back '
                 + 'whole, is told so on its card, and is left for the user. An asker whose engine '
-                + 'publishes no session id exempts nobody and simply waits. ‼️ B-03.8 — resume ALSO carries the HEADLESS runs this '
+                + 'publishes no session id exempts nobody and simply waits. ‼️ X-349 — THE ASKER IS '
+                + 'SPOKEN INTO WHETHER OR NOT ITS TURN WAS CUT, so on the armed path too the LAST thing '
+                + 'you say before the restart fires is the instruction your resumed copy acts on: write '
+                + 'the verification steps there, never after. The answer\'s `reviveIntent` says which of '
+                + 'those you are getting before you commit to it. ‼️ B-03.8 — resume ALSO carries the HEADLESS runs this '
                 + 'restart cuts: a running task is picked back up in its own conversation with the '
                 + 'continuation words, never the original prompt, and never more than 3 times in case the '
                 + 'host is restarting in a loop. Without resume they go back on the queue and wait for a '
@@ -26984,7 +27011,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * or errors on the way back is not nudged, it is left as the record of what
      * happened.
      */
-    const nudgeRevived = (seatId: string): void => {
+    const nudgeRevived = (seatId: string, text: string): void => {
         let done = false;
         let grace: NodeJS.Timeout | undefined;
         const fire = (sub: { dispose(): void }, why: 'idle' | 'grace'): void => {
@@ -26992,7 +27019,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (grace) { clearTimeout(grace); grace = undefined; }
             sub.dispose();
             void why;
-            consoleHost.send(seatId, REVIVE_NUDGE);
+            consoleHost.send(seatId, text);
         };
         const attempt = (sub: { dispose(): void }): void => {
             if (done) { return; }
@@ -27119,6 +27146,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const askedBy = String(stamp?.askedBy ?? '').trim();
         for (const { row, pid: survivor } of reclaimed) {
             const itAsked = !!askedBy && row.sessionId === askedBy;
+            // ‼️ X-349 — consent decides whether anything is said into the seat;
+            // `midTurn` decides only what is true about the gap. Both answers
+            // come from one place so the notice and the nudge cannot disagree.
+            const speech = reviveSpeech({ midTurn: row.midTurn, itAsked });
             try {
                 const init = reviveInit(row);
                 const past = index.byId(row.sessionId);
@@ -27136,14 +27167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                     ? ` The process that survived the restart (pid ${survivor}) was ended`
                                     + ' first, so the process behind this card is the one doing the work.'
                                     : '')
-                                + (row.midTurn
-                                    ? (itAsked
-                                        ? ' It was ANSWERING when the host went down, so that one reply was'
-                                        + ' lost on the way — nothing before it is missing, and it is being'
-                                        + ' asked to carry on from where it was.'
-                                        // ‼️ X-310 — cut without being asked: held, and told so.
-                                        : REVIVE_HELD)
-                                    : '')
+                                + speech.note
                         }
                     ],
                     carried: past ? carriedTotals(past) : undefined
@@ -27156,13 +27180,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // baseline and is given one as soon as the scan can answer.
                 if (!past) { pendingCarried.push({ seatId, sessionId: row.sessionId }); }
                 // ‼️ B-03.7 — AND THE WORK IS TAKEN UP, NOT ONLY THE CONVERSATION.
-                // The user's decision. Only for a seat that was mid-turn: see
-                // REVIVE_NUDGE for why an idle one is deliberately left alone.
-                // ‼️ X-310 — and only for the seat that ASKED to be restarted.
-                // Being mid-turn says a turn was cut, not that this seat wanted
-                // it cut; one cut without being asked is brought back whole and
-                // left to the user (REVIVE_HELD).
-                if (row.midTurn && itAsked) { nudgeRevived(seatId); }
+                // The user's decision. ‼️ X-310 — and only for the seat that
+                // ASKED to be restarted: one cut without being asked is brought
+                // back whole and left to the user (REVIVE_HELD). ‼️ X-349 — the
+                // asker is nudged in a turn or between turns; requiring both
+                // silenced the `armed` path entirely (see reviveSpeech).
+                if (speech.nudge) { nudgeRevived(seatId, speech.nudge); }
+                // ‼️ X-349 — …and a seat left silent must still stop saying
+                // `starting`, which it would otherwise do for ever: the engine
+                // announces itself on its first TURN, and this one is not having
+                // a turn. See ConsoleHost.settleRevived.
+                else { consoleHost.settleRevived(seatId); }
                 back.push(row.agentName);
             } catch (e) {
                 lost.push({

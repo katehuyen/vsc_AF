@@ -234,6 +234,155 @@ export const REVIVE_HELD =
     + ' nothing before it is missing. This session did not ask for the restart, so nothing has'
     + ' been said into it: it is waiting for you rather than guessing where it was.';
 
+/**
+ * ‼️ X-349 — AND THE ASKER IS NUDGED WHETHER OR NOT ITS TURN WAS CUT.
+ *
+ * X-310 narrowed the nudge to the seat that ASKED, which was right, and left
+ * `midTurn` standing beside it, which was not. The two conditions answer
+ * different questions: `midTurn` says a reply was destroyed, `itAsked` says
+ * this seat consented. Requiring both meant the nudge only ever went out on the
+ * `now` path — where the restart fires inside the asking turn — and NEVER on
+ * the `armed` one, where it waits for somebody else's turn to end and by then
+ * the asker is between turns. Measured 2026-09-21: a restart armed behind
+ * another console fired eight minutes later, both copies came back, and the
+ * session that had asked for it sat silent with its last instruction to itself
+ * unread. The contract that the last words before a restart are what the
+ * resumed copy acts on was therefore broken on the path agents actually use.
+ *
+ * So consent is the whole test. What changes with `midTurn` is only what is
+ * TRUE about the gap: a cut turn lost a reply, an idle one lost nothing.
+ */
+export const REVIVE_NUDGE_IDLE =
+    'Agent Farm restarted the extension host and took this session up again in the same seat — '
+    + 'same conversation, same id. You ASKED for this restart, and it fired between your turns '
+    + 'rather than during one, so nothing was lost: the conversation above is whole. Carry on — '
+    + 'the last thing you said before it is what you left yourself to do. If you cannot tell from '
+    + 'the conversation above what that was, say so and stop — do not guess at work you may '
+    + 'already have done.';
+
+/** The card's own note when the asker was cut mid-answer. */
+export const REVIVE_ASKED_MIDTURN =
+    ' It was ANSWERING when the host went down, so that one reply was'
+    + ' lost on the way — nothing before it is missing, and it is being'
+    + ' asked to carry on from where it was.';
+
+/** …and when the asker was between turns: nothing was lost, and it still goes on. */
+export const REVIVE_ASKED_IDLE =
+    ' It ASKED for this restart and was between turns when it fired, so no reply was lost —'
+    + ' and it is being asked to carry on from where it was.';
+
+export interface ReviveSpeech {
+    /** what is said INTO the seat, or `null` when it is deliberately left silent */
+    nudge: string | null;
+    /** the sentence the card's own revive note ends with; `''` adds nothing */
+    note: string;
+}
+
+/**
+ * The whole decision, in one place, so the wiring cannot hold a different
+ * opinion from the notice the reader sees: consent decides whether anything is
+ * said, `midTurn` decides what is said about the gap.
+ */
+export function reviveSpeech(o: { midTurn: boolean; itAsked: boolean }): ReviveSpeech {
+    if (o.itAsked) {
+        return o.midTurn
+            ? { nudge: REVIVE_NUDGE, note: REVIVE_ASKED_MIDTURN }
+            : { nudge: REVIVE_NUDGE_IDLE, note: REVIVE_ASKED_IDLE };
+    }
+    // X-310 — cut without being asked: brought back whole, left alone, told so.
+    return { nudge: null, note: o.midTurn ? REVIVE_HELD : '' };
+}
+
+/**
+ * ‼️ X-349 — WHAT A REVIVED CARD IS DOING WHILE IT SAYS `starting`.
+ *
+ * The persistent CLI announces itself (`system:init`) on its first TURN, not on
+ * boot, so a resumed seat nobody speaks into never leaves `starting`. That is
+ * not cosmetic in two ways: the reader sees a card that looks stuck, and
+ * `starting` is in `SESSION_IN_FLIGHT` (selfRestart.ts), so a silent revived
+ * card blocks every LATER restart — the fleet's own door held shut by a session
+ * that is doing nothing at all.
+ *
+ * The honest signal is the CLI's own live registry (`<config>/sessions/<pid>.json`,
+ * cliSessions.ts): it is written when the process is up and removed when it
+ * dies. So the settle waits for the engine to say it exists and asserts nothing
+ * itself — and it gives up rather than waiting for ever, because a process that
+ * never registers is a failure to report, not a state to invent.
+ */
+export type SettleVerdict = 'wait' | 'settle' | 'stop';
+
+export function settleVerdict(o: {
+    /** the seat's status now — gone means the card was forgotten */
+    status?: string;
+    closed?: boolean;
+    /** the CLI's registry holds this session id */
+    registered: boolean;
+    /** polls left after this one */
+    triesLeft: number;
+}): SettleVerdict {
+    // Anything that is no longer a seat waiting to be born ends the watch: the
+    // card spoke for itself, was ended, or is gone.
+    if (!o.status || o.closed || o.status !== 'starting') { return 'stop'; }
+    if (o.registered) { return 'settle'; }
+    return o.triesLeft > 0 ? 'wait' : 'stop';
+}
+
+export interface ReviveIntent {
+    /** the asking session's card, when this restart will bring it back */
+    seat?: string;
+    agentName?: string;
+    /** whether the revived copy will be spoken into */
+    nudge: boolean;
+    /** one sentence the caller can act on, in the answer that armed the wait */
+    note: string;
+}
+
+/**
+ * ‼️ X-349 — THE ARMED ANSWER SAYS WHAT WILL HAPPEN TO THE CALLER'S OWN SEAT.
+ *
+ * `armed` means "not yet": the caller goes on working and the restart fires
+ * later, out of its control. Whether its last words are an instruction to its
+ * resumed self or are simply lost is the one fact that changes what it should
+ * write next — and it was not in the answer at all.
+ */
+export function reviveIntent(o: {
+    plan?: RevivePlan; askedBy?: string; resume: boolean;
+}): ReviveIntent {
+    if (!o.resume) {
+        return {
+            nudge: false,
+            note: 'resume was not asked for, so no card is taken up again on the other side and '
+                + 'nothing is said into anything — every live seat goes down with the host.'
+        };
+    }
+    const askedBy = String(o.askedBy ?? '').trim();
+    if (!askedBy) {
+        return {
+            nudge: false,
+            note: 'no session named itself as the asker (a panel button or a command has none), so '
+                + 'every revived card comes back held and silent — nothing will be said into any of them.'
+        };
+    }
+    const row = (o.plan?.rows ?? []).find(r => r.sessionId === askedBy);
+    if (row) {
+        return {
+            seat: row.id, agentName: row.agentName, nudge: true,
+            note: `the seat that asked (${row.agentName}) comes back in the same seat and IS handed the `
+                + 'revive nudge, in a turn or between turns — so the LAST thing you say before the '
+                + 'restart fires is the instruction the resumed copy will follow. Write the '
+                + 'verification steps there, not after.'
+        };
+    }
+    const skip = (o.plan?.skipped ?? []).find(s => s.id === askedBy || s.agentName === askedBy);
+    return {
+        nudge: false,
+        note: skip
+            ? `the seat that asked cannot be resumed — ${skip.reason}`
+            : 'the session that asked is not a live Console card here (a terminal, a task or another '
+            + 'window), so there is nothing to revive it into and nothing will be said into it.'
+    };
+}
+
 /** A history that is nothing but the placeholder — i.e. a read that has not
  *  happened yet rather than a conversation. Anything else is left alone. */
 export function isPlaceholderHistory(rows: { id: string }[] | undefined): boolean {

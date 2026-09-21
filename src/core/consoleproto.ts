@@ -420,6 +420,17 @@ export interface ConsoleSessionState {
      *  rules were deriving — and, if the window's project had been used, move
      *  the session into a project it never ran in. */
     resumed?: boolean;
+    /**
+     * ‼️ X-349 — THIS CARD WAS REVIVED AND HAS NOT BEEN SPOKEN INTO YET.
+     *
+     * A revived seat is `idle` because the CLI's own registry says its process
+     * is up, not because the engine announced itself — it only does that on its
+     * first turn. The difference matters to a reader looking for a session to
+     * talk to, so it is stated rather than smoothed over. Cleared by the init
+     * the engine eventually sends (see `system:init`), which is the moment the
+     * card's `idle` starts meaning what it means everywhere else.
+     */
+    revivedWaiting?: boolean;
     /** ‼️ X-133 — was this session given the Superpowers hook, and is it to be
      *  given it again? The appended system prompt does not survive `--resume`
      *  (measured), so the answer has to live on the session rather than on the
@@ -1265,6 +1276,9 @@ export function reduceEvent(
                         }
                         : {}),
                     status: state.status === 'starting' ? 'idle' : state.status,
+                    // X-349 — the engine has now announced itself, so the card's
+                    // `idle` no longer rests on the registry alone.
+                    ...(state.revivedWaiting ? { revivedWaiting: undefined } : {}),
                     lastTs: now
                 },
                 changed: true

@@ -515,7 +515,82 @@ async function s62() {
     }
 }
 
-s29().then(() => x266()).then(() => s54()).then(() => s62()).then(() => {
+// ---- X-349: A REVIVED CARD NOBODY SPEAKS INTO STOPS SAYING `starting` ------
+//
+// ‼️ Driven through the REAL host for the same reason the nudge above is: the
+// question is not "would the rule say settle" but "does a card that nothing is
+// ever written into actually leave `starting`". Measured on 2026-09-21 it did
+// not — for thirteen minutes — because the persistent CLI announces itself on
+// its first TURN and this seat is deliberately not having one. And `starting`
+// counts as a turn in flight (selfRestart.ts), so that silent card was also
+// blocking every later restart.
+async function x349() {
+    const tick = (ms) => new Promise(r => setTimeout(r, ms));
+    // (a) the registry says the process is up → the card settles, once
+    {
+        let owner;
+        const host = new ConsoleHost(() => 'claude', () => owner);
+        const seat = host.start(init({ resume: 'S-349-a' }));
+        ok('‼️ X-349: a revived seat starts where the bug left it — `starting`',
+            host.get(seat).status === 'starting');
+        host.settleRevived(seat, 20, 50);
+        await tick(60);
+        ok('‼️ …and it does NOT settle while the CLI registry is silent — nothing is assumed',
+            host.get(seat).status === 'starting' && !host.get(seat).revivedWaiting);
+        owner = 7788;
+        await tick(80);
+        ok('‼️ …it settles once the engine\'s own registry says the process exists',
+            host.get(seat).status === 'idle');
+        ok('…and the card says what that `idle` rests on, rather than passing for an announced one',
+            host.get(seat).revivedWaiting === true);
+        // ‼️ AND IT IS A SEAT, NOT A TURN: nothing was written down the pipe.
+        ok('‼️ …with nothing said into it — the settle is a status, never a prompt',
+            (lastChild.written || []).every(l => !/"user"/.test(l)));
+        host.dispose();
+    }
+    // (b) a process that never registers is given up on, not waited for for ever
+    {
+        const host = new ConsoleHost(() => 'claude', () => undefined);
+        const seat = host.start(init({ resume: 'S-349-b' }));
+        host.settleRevived(seat, 10, 3);
+        await tick(120);
+        ok('‼️ X-349: a process that never registers leaves the card honest, not invented',
+            host.get(seat).status === 'starting' && !host.get(seat).revivedWaiting);
+        host.dispose();
+    }
+    // (c) a card that spoke for itself is never overwritten by the watch
+    {
+        const host = new ConsoleHost(() => 'claude', () => 99);
+        const seat = host.start(init({ resume: 'S-349-c' }));
+        host.settleRevived(seat, 10, 50);
+        host.send(seat, 'the user got there first');
+        await tick(60);
+        ok('‼️ X-349: a seat already working is left alone — the watch never rewrites a live status',
+            host.get(seat).status === 'working' && !host.get(seat).revivedWaiting);
+        host.dispose();
+    }
+    // (d) …and the engine's own init clears the flag, so `idle` goes back to
+    //     meaning what it means on every other card
+    {
+        let owner;
+        const host = new ConsoleHost(() => 'claude', () => owner);
+        const seat = host.start(init({ resume: 'S-349-d' }));
+        const child = lastChild;
+        host.settleRevived(seat, 10, 50);
+        owner = 1234;
+        await tick(40);
+        ok('X-349: settled', host.get(seat).revivedWaiting === true);
+        child.stdout.emit('data', JSON.stringify({
+            type: 'system', subtype: 'init', session_id: 'S-349-d'
+        }) + '\n');
+        ok('‼️ X-349: the engine announcing itself clears the flag — a card talking for an hour '
+            + 'must not still claim nobody has spoken into it',
+            host.get(seat).status === 'idle' && !host.get(seat).revivedWaiting);
+        host.dispose();
+    }
+}
+
+s29().then(() => x266()).then(() => s54()).then(() => s62()).then(() => x349()).then(() => {
     cp.spawn = realSpawn;
     cp.exec = realExec;
     cp.execSync = realExecSync;
