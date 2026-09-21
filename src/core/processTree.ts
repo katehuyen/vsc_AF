@@ -130,6 +130,30 @@ export function readProcessTable(): ProcInfo[] {
     }
 }
 
+/**
+ * S-68 — the same table WITHOUT blocking the caller. The extension host is one
+ * thread: a second of `spawnSync` there is a second of every panel frozen, so a
+ * bridge op that needs the tree reads it this way.
+ */
+export function readProcessTableAsync(): Promise<ProcInfo[]> {
+    return new Promise(resolve => {
+        try {
+            if (process.platform === 'win32') {
+                cp.execFile('powershell', [
+                    '-NoProfile', '-NonInteractive', '-Command',
+                    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress'
+                ], { encoding: 'utf8', windowsHide: true, timeout: 15_000, maxBuffer: 16 * 1024 * 1024 }, (err, out) => resolve(err ? [] : parseWindowsTable(String(out || ''))));
+                return;
+            }
+            cp.execFile('ps', ['-eo', 'pid=,ppid=,comm='],
+                { encoding: 'utf8', windowsHide: true, timeout: 15_000, maxBuffer: 16 * 1024 * 1024 },
+                (err, out) => resolve(err ? [] : parsePosixTable(String(out || ''))));
+        } catch {
+            resolve([]);
+        }
+    });
+}
+
 /** `ConvertTo-Json` emits a bare object when there is exactly one row. */
 export function parseWindowsTable(stdout: string): ProcInfo[] {
     let parsed: unknown;

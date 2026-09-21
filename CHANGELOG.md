@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.619.0 - `sessions.whoami`: a caller can ask which session it is, and the answer is evidence, never the folder (S-68) (2026-09-21)
+
+- **‼️ "Which session am I?" had no answer anywhere.** An agent calling the
+  bridge runs several processes below the CLI that holds its conversation
+  (claude → shell → node af.js), and the only way to name that conversation
+  was the engine's own environment variable — which not every engine sets.
+  `sessions.whoami` answers in a fixed order: the `session` you pass; the
+  variable af.js forwards; otherwise **af.js's parent pid, walked up the
+  process tree until a pid the CLI itself registered**
+  (`<config-dir>/sessions/<pid>.json`) — the nearest one is the conversation.
+  With none of those it refuses, and says it will not guess from the folder:
+  two sessions in one folder is the ordinary case. The answer carries the
+  Console card holding the session (agent, engine, account, `launchId`,
+  project); `verify:true` walks the tree even when the variable answered and
+  says whether the two agree. This is how the baton (S-66) will find its owner.
+- **af.js now puts its parent pid on every request**, beside the session it
+  already forwarded; the envelope keeps it (a positive integer, or nothing) and
+  it never mixes with an op's own args. A caller with no session still arrives
+  with no session — only its pid.
+- **The process tree is read without blocking the extension host**
+  (`readProcessTableAsync`): the host is one thread, and the synchronous read
+  froze every panel for the second and a half it takes. The direct parent is
+  tried against the registry first, so a caller that IS the CLI costs no tree.
+
 ## 3.618.1 - the bridge can read what a Console question asked and what it was answered (K-43) (2026-09-21)
 
 - **`console.sessions` no longer shows a question row as empty.** A row that

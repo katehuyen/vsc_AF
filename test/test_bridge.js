@@ -5797,9 +5797,12 @@ const { opencodeStatus, syncToOpencode } =
                 !!farmTerm && !!farmTerm.from && farmTerm.from.sessionId === 'sess-from-a-terminal');
 
             const nameless = await envRun({}, 'env-none');
-            ok('‼️ … while a caller whose engine publishes nothing STATES nothing — an unknown '
+            // S-68 — it still says WHERE it runs (its parent pid, which the host
+            // can walk to a registered CLI), but never an empty session.
+            ok('‼️ … while a caller whose engine publishes nothing STATES no session — an unknown '
                 + 'asker must look unknown, not empty-but-present',
-                !!nameless && !('from' in nameless));
+                !!nameless && !!nameless.from && !('sessionId' in nameless.from)
+                && nameless.from.ppid === process.ppid);
         }
 
         // ---------- ‼️ X-310 — … AND THE RUNNER READS IT BACK ----------

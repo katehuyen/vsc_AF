@@ -305,10 +305,13 @@ interface BridgeReply {
  * It is a CLAIM, never a credential: no op may grant anything on it, and every
  * op must still be correct when it is absent.
  */
-function callerIdentity(): { sessionId: string } | undefined {
+function callerIdentity(): { sessionId?: string; ppid?: number } | undefined {
     const sid = String(process.env.CLAUDE_CODE_SESSION_ID
         || process.env.AGENT_FARM_SESSION || '').trim();
-    return sid ? { sessionId: sid } : undefined;
+    // S-68 — the parent pid travels too: an engine that sets no variable can
+    // still be found, because its CLI registers its own pid and we sit under it.
+    const ppid = process.ppid > 0 ? process.ppid : undefined;
+    return sid || ppid ? { ...(sid ? { sessionId: sid } : {}), ...(ppid ? { ppid } : {}) } : undefined;
 }
 
 export async function executeBridgeRequest(

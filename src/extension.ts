@@ -296,7 +296,8 @@ import { EngineRunner, ProviderAim, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
-import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable } from './core/processTree';
+import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
+import { registryMatch, whoami } from './core/whoami';
 import { revealPath } from './core/reveal';
 import {
     agentProjectNames, CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson,
@@ -10495,6 +10496,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     title: String(data['title'] || s.title || ''),
                     agent: s.agentName ?? null,
                     ...page
+                };
+            }
+        },
+        {
+            op: 'sessions.whoami',
+            describe: 'S-68 — WHICH SESSION IS CALLING. Answers from evidence only, in this order: the session arg if you pass it; the engine\'s own session variable that af.js forwards (CLAUDE_CODE_SESSION_ID); otherwise af.js\'s parent pid, walked up the process tree until a pid the CLI itself registered (<config-dir>/sessions/<pid>.json) is found. Never from the folder — two sessions in one folder is the ordinary case. Returns { sessionId, source: arg | env | registry, pid?, cwd?, card? (the Console card holding it: id, agent, engine, account, launchId, projectId) }. args: session?, verify? (true also walks the tree when the variable already answered, and says whether the two agree)',
+            handler: async (args, from) => {
+                const records = liveCliSessions().map(r => ({ pid: r.pid, sessionId: r.sessionId, cwd: r.cwd }));
+                const ppid = from?.ppid;
+                const climb = async (): Promise<number[] | undefined> => {
+                    if (!ppid) { return undefined; }
+                    // The direct parent first — no process table when it is already the CLI.
+                    if (registryMatch([ppid], records)) { return [ppid]; }
+                    return [...ancestorsOf(ppid, await readProcessTableAsync())];
+                };
+                const argSession = optStr(args, 'session');
+                const ancestors = argSession || from?.sessionId ? undefined : await climb();
+                const r = whoami({ arg: argSession, envSessionId: from?.sessionId, ppid, ancestors, records });
+                if (!r.ok) { throw new BridgeRefusal(r.why, { ppid: ppid ?? null }); }
+                const verify = args.verify === true && r.source !== 'registry'
+                    ? (() => climb().then(chain => registryMatch(chain, records)))() : undefined;
+                const seen = verify ? await verify : undefined;
+                const card = consoleHost.list().find(s => s.sessionId === r.sessionId);
+                return {
+                    ...r,
+                    ...(args.verify === true && r.source !== 'registry'
+                        ? { registry: seen ?? null, agree: seen ? seen.sessionId === r.sessionId : null } : {}),
+                    card: card ? {
+                        id: card.id, agent: card.agentName, engine: card.engine ?? 'claude',
+                        account: card.account ?? null, launchId: card.launchId ?? null, projectId: card.projectId ?? null
+                    } : null
                 };
             }
         },

@@ -46,6 +46,8 @@ import { normalizeRounds, TaskRound } from './taskRounds';
 export interface BridgeCaller {
     /** the engine's session id, as the caller's own environment stated it */
     sessionId?: string;
+    /** S-68 — the caller's parent pid, so the host can find its CLI by ancestry */
+    ppid?: number;
 }
 
 export interface BridgeOpSpec {
@@ -210,7 +212,12 @@ export function parseBridgeRequest(text: string):
         ? o.from as Record<string, unknown>
         : null;
     const sessionId = env ? String(unwrapPsString(env.sessionId) ?? '').trim() : '';
-    return { op: o.op.trim(), args, ...(sessionId ? { from: { sessionId } } : {}) };
+    const ppid = env ? Number(env.ppid) : NaN;
+    const from: BridgeCaller = {
+        ...(sessionId ? { sessionId } : {}),
+        ...(Number.isInteger(ppid) && ppid > 0 ? { ppid } : {})
+    };
+    return { op: o.op.trim(), args, ...(Object.keys(from).length ? { from } : {}) };
 }
 
 /** Throw with a friendly message — handlers use this for arg validation. */
