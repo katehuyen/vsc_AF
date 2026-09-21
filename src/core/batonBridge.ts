@@ -51,6 +51,17 @@ export function pickLive(store: BatonStore, args: Record<string, unknown>, allow
 const PROMPT_PREVIEW = 300;
 
 /** A baton as the bridge shows it — the prompt previewed, the successor's surface resolved. */
+/** THE USER'S BRAKE, one body for the bridge op and the card's ✕ (S-74 · S-77): recorded, never deleted. */
+export function stopBatons(store: BatonStore, list: readonly Baton[], why: string, at: number): Baton[] {
+    const stopped: Baton[] = [];
+    for (const b of list) {
+        const r = moveBaton(b, 'stopped', why, at);
+        if (r.ok) { stopped.push(r.baton); }
+    }
+    store.put(...stopped);
+    return stopped;
+}
+
 export function batonView(b: Baton): Record<string, unknown> {
     return {
         id: b.id, chainId: b.chainId, hop: b.hop, state: b.state, why: b.why,
@@ -133,13 +144,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                 const picked = pickLive(deps.store, args, true);
                 if (!picked.by) { throw new BridgeRefusal('say which: baton (an id), chain (a chain id) or session (the session that passed it).', { step: 'pick' }); }
                 if (!picked.list.length) { throw new BridgeRefusal(`nothing live matches ${picked.by} — baton.status lists what is waiting or parked.`, { step: 'pick', by: picked.by }); }
-                const why = optStr(args, 'why') || 'stopped by the user';
-                const stopped: Baton[] = [];
-                for (const b of picked.list) {
-                    const r = moveBaton(b, 'stopped', why, now());
-                    if (r.ok) { stopped.push(r.baton); }
-                }
-                deps.store.put(...stopped);
+                const stopped = stopBatons(deps.store, picked.list, optStr(args, 'why') || 'stopped by the user', now());
                 return { stopped: stopped.map(batonView), by: picked.by };
             }
         },
