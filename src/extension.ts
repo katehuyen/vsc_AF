@@ -16261,7 +16261,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return { refusal: String((e as Error)?.message ?? e) };
             }
         },
-        fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        // S-74 — the runner is made just below; the op only runs long after activation
+        startNow: (b, by) => batonRunner.startNow(b, by)
     });
 
     // S-70 / S-71 — the release and the door. The three end signals (hook
@@ -16302,6 +16304,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 status: t.status,
                 ...(successorSessionOf(t) ? { sessionId: successorSessionOf(t) } : {}),
                 ...(last?.note ? { why: last.note } : {})
+            };
+        },
+        nudge: id => {
+            const t = taskManager.tasks.find(x => x.id === id);
+            if (!t || t.status !== 'queued') { return undefined; }
+            const started = taskManager.startTask(t);
+            return {
+                taskId: t.id,
+                ...(successorSessionOf(t) ? { sessionId: successorSessionOf(t) } : {}),
+                ...(!started && t.deferredReason ? { held: t.deferredReason } : {})
             };
         },
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })

@@ -11,7 +11,7 @@
  * do in the window.
  */
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
-import { Baton, batonPlanSentence, isLive, passBaton, successorSurface } from './baton';
+import { Baton, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
 import { BatonStore } from './batonStore';
 import { LaunchManifest, manifestOf } from './launchManifest';
 import { WhoamiResult } from './whoami';
@@ -27,6 +27,25 @@ export interface BatonBridgeDeps {
     room?: (b: Baton) => { account?: string; resetsAt?: number; refusal?: string } | undefined;
     fmtTime?: (t: number) => string;
     now?: () => number;
+    /** S-74 — the runner's button: the successor starts now (BatonRunner.startNow) */
+    startNow?: (b: Baton, by: string) => { ok: true; baton: Baton } | { ok: false; why: string };
+}
+
+/** S-74 — the live batons an op's `baton` / `chain` / `session` argument names. */
+export function pickLive(store: BatonStore, args: Record<string, unknown>, allowChain: boolean): { list: Baton[]; by: string } {
+    const id = optStr(args, 'baton');
+    const chain = allowChain ? optStr(args, 'chain') : undefined;
+    const session = optStr(args, 'session');
+    if (id) {
+        const b = store.get(id);
+        return { list: b && isLive(b) ? [b] : [], by: `baton ${id}` };
+    }
+    if (chain) { return { list: store.chain(chain).filter(isLive), by: `chain ${chain}` }; }
+    if (session) {
+        const b = store.liveFrom(session);
+        return { list: b ? [b] : [], by: `session ${session.slice(0, 8)}` };
+    }
+    return { list: [], by: '' };
 }
 
 const PROMPT_PREVIEW = 300;
@@ -105,6 +124,36 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                     })),
                     total: deps.store.all().length
                 };
+            }
+        },
+        {
+            op: 'baton.stop',
+            describe: 'S-74 — THE USER\'S BRAKE: stop a waiting or parked baton, or a whole chain. Nothing is deleted — each record stays as `stopped` with your reason in `why`, and baton.status still shows it. A task row the baton had already opened is NOT touched (cancel it with tasks.cancel if you mean to). args: baton? (one id) | chain? (every live baton of that chain) | session? (the live baton that session passed) — exactly one of the three; why? (a line, recorded on each). Refused as data when nothing live matches. The same brake as ✕ on the card.',
+            handler: (args) => {
+                const picked = pickLive(deps.store, args, true);
+                if (!picked.by) { throw new BridgeRefusal('say which: baton (an id), chain (a chain id) or session (the session that passed it).', { step: 'pick' }); }
+                if (!picked.list.length) { throw new BridgeRefusal(`nothing live matches ${picked.by} — baton.status lists what is waiting or parked.`, { step: 'pick', by: picked.by }); }
+                const why = optStr(args, 'why') || 'stopped by the user';
+                const stopped: Baton[] = [];
+                for (const b of picked.list) {
+                    const r = moveBaton(b, 'stopped', why, now());
+                    if (r.ok) { stopped.push(r.baton); }
+                }
+                deps.store.put(...stopped);
+                return { stopped: stopped.map(batonView), by: picked.by };
+            }
+        },
+        {
+            op: 'baton.now',
+            describe: 'S-74 — THE USER\'S GO: start the successor NOW instead of waiting. A baton waiting for its session to end goes through the door at once — you are saying the predecessor is done, or accepting two runs at once; a baton parked on a queued task row asks the pump again, which is what you want after freeing an account or lifting a ceiling by hand. args: baton? (one id) | session? (the live baton that session passed) — one of the two; by? (who, default "the user", recorded in why). Answers the baton in its new state (started · parked with the hold · refused with the door\'s reason); refused as data when nothing live matches or the row is no longer queued.',
+            handler: (args) => {
+                if (!deps.startNow) { throw new BridgeRefusal('no runner is wired in this build.', { step: 'runner' }); }
+                const picked = pickLive(deps.store, args, false);
+                if (!picked.by) { throw new BridgeRefusal('say which: baton (an id) or session (the session that passed it).', { step: 'pick' }); }
+                if (!picked.list.length) { throw new BridgeRefusal(`nothing live matches ${picked.by} — baton.status lists what is waiting or parked.`, { step: 'pick', by: picked.by }); }
+                const r = deps.startNow(picked.list[0], optStr(args, 'by') || 'the user');
+                if (!r.ok) { throw new BridgeRefusal(r.why, { step: 'now', baton: picked.list[0].id, state: picked.list[0].state }); }
+                return { baton: batonView(r.baton), by: picked.by };
             }
         }
     ]);

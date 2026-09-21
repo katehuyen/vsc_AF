@@ -157,5 +157,43 @@ function setup(o = {}) {
     ok('no task reader, nothing to follow', runner.follow().length === 0);
 }
 
+// ---- S-74: the user's go ----
+{
+    const { store, runner, doors } = setup();
+    const a = leave(store, 'sess-A');
+    const r = runner.startNow(a, 'Murat');
+    ok('a waiting baton goes through the door at once, saying who pressed', r.ok && r.baton.state === 'started' && /started now by Murat, before the session ended/.test(r.baton.why) && doors.length === 1);
+    ok('a started baton cannot be started now', !runner.startNow(store.get(a.id), 'Murat').ok);
+}
+{
+    const nudges = [];
+    let answer = { taskId: 'tsk_h', held: 'still held: quota:5h' };
+    const { store, runner } = setup({
+        door: () => ({ taskId: 'tsk_h', held: 'fleet concurrency' }),
+        nudge: id => { nudges.push(id); return answer; }
+    });
+    const a = leave(store, 'sess-A');
+    runner.sessionEnded('sess-A', 'end');
+    const r1 = runner.startNow(store.get(a.id), 'the user');
+    ok('a parked baton asks the pump again for ITS row', r1.ok && nudges.length === 1 && nudges[0] === 'tsk_h');
+    ok('…and stays parked with the new hold when the pump still says no', r1.baton.state === 'parked' && /asked again by the user; task tsk_h is still held — still held: quota:5h/.test(r1.baton.why));
+    answer = { taskId: 'tsk_h', sessionId: 'succ-7' };
+    const r2 = runner.startNow(store.get(a.id), 'the user');
+    ok('…and starts on it once the pump launches', r2.ok && r2.baton.state === 'started' && r2.baton.toSessionId === 'succ-7' && store.get(a.id).state === 'started');
+    answer = undefined;
+    const b = leave(store, 'sess-B');
+    runner.sessionEnded('sess-B', 'end');
+    const r3 = runner.startNow(store.get(b.id), 'the user');
+    ok('a parked baton whose row is no longer queued is refused, naming the row', !r3.ok && /task tsk_h is not a queued row/.test(r3.why));
+}
+{
+    const { store, runner, doors } = setup({ nudge: undefined });
+    const a = leave(store, 'sess-A');
+    const parked = Object.assign({}, a, { state: 'parked', why: 'parked without a row' });
+    store.put(parked);
+    const r = runner.startNow(parked, 'the user');
+    ok('a parked baton with no row goes through the door', r.ok && r.baton.state === 'started' && doors.length === 1);
+}
+
 console.log(`test_baton_runner: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

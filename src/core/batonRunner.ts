@@ -67,6 +67,8 @@ export interface BatonRunnerDeps {
     door: (b: Baton) => DoorAnswer;
     evidence: (b: Baton) => EndEvidence;
     task?: (taskId: string) => TaskGlimpse | undefined;
+    /** S-74 — ask the pump again for a QUEUED row (the user made room by hand); undefined = no such queued row */
+    nudge?: (taskId: string) => DoorAnswer | undefined;
     /** the two moments a person is told: a refusal, and nothing else here */
     notify?: (title: string, body: string, key: string) => void;
     now?: () => number;
@@ -142,6 +144,27 @@ export class BatonRunner {
             }
         }
         return changed;
+    }
+
+    /**
+     * S-74 — THE USER'S BUTTON: start the successor NOW. A waiting baton goes
+     * through the door without waiting for its session to end (the person
+     * pressing this knows the predecessor is done, or accepts two runs); a
+     * baton parked on a queued row asks the pump again, which is what a hand
+     * that just freed an account or lifted a ceiling wants.
+     */
+    startNow(b: Baton, by: string): { ok: true; baton: Baton } | { ok: false; why: string } {
+        if (b.state === 'waiting-end') { return { ok: true, baton: this.release(b, `started now by ${by}, before the session ended`) }; }
+        if (b.state !== 'parked') { return { ok: false, why: `a baton that is ${b.state} cannot be started now.` }; }
+        if (!b.taskId) { return { ok: true, baton: this.release(b, `started now by ${by}`) }; }
+        const answer = this.deps.nudge?.(b.taskId);
+        if (!answer) { return { ok: false, why: `task ${b.taskId} is not a queued row any more — read baton.status and the task itself.` }; }
+        if (answer.sessionId) {
+            return { ok: true, baton: this.move(b, 'started', `started now by ${by}; successor session ${answer.sessionId.slice(0, 8)} opened on task ${answer.taskId}`,
+                { taskId: answer.taskId, toSessionId: answer.sessionId }) ?? b };
+        }
+        return { ok: true, baton: this.move(b, 'parked', `asked again by ${by}; task ${answer.taskId} is still held — ${answer.held || 'waiting for the pump'}`,
+            { taskId: answer.taskId }) ?? b };
     }
 
     /** The session is over: through the door, and the baton records what the door did. */

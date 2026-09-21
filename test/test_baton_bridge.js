@@ -91,6 +91,50 @@ function setup(o = {}) {
     ok('by the session that passed', bySession.ok && bySession.result.chains.length === 2);
     ok('a session that passed nothing has nothing', (await reg.dispatch('baton.status', { session: 'nobody' })).result.chains.length === 0);
 
+    // ---- S-74: the brake and the go ----
+    {
+        const ops2 = (await reg.dispatch('farm.ops', {})).result;
+        ok('S-74 — both user buttons are in the catalog', ops2.some(c => c.op === 'baton.stop') && ops2.some(c => c.op === 'baton.now'));
+        const none = await reg.dispatch('baton.stop', {});
+        ok('stop with no handle is refused as data', !none.ok && /say which/.test(none.error));
+        const miss = await reg.dispatch('baton.stop', { baton: 'btn_nope' });
+        ok('stop of nothing live is refused, naming what was asked', !miss.ok && /nothing live matches baton btn_nope/.test(miss.error));
+        const live = again.result.baton;
+        const stopped = await reg.dispatch('baton.stop', { session: 'sess-A', why: 'I opened the successor by hand' });
+        ok('stop by the passing session stops its live baton with the reason',
+            stopped.ok && stopped.result.stopped.length === 1 && stopped.result.stopped[0].id === live.id
+            && stopped.result.stopped[0].state === 'stopped' && stopped.result.stopped[0].why === 'I opened the successor by hand');
+        ok('‼️ nothing is deleted: the record stays, stopped, and status still shows it',
+            store.get(live.id).state === 'stopped' && (await reg.dispatch('baton.status', {})).result.total === 2
+            && (await reg.dispatch('baton.status', {})).result.live.length === 0);
+        ok('stopping it again finds nothing live', !(await reg.dispatch('baton.stop', { baton: live.id })).ok);
+
+        const p3 = await reg.dispatch('baton.pass', { prompt: 'third' }, { sessionId: 'sess-A' });
+        const p3b = p3.result.baton;
+        const byChain = await reg.dispatch('baton.stop', { chain: p3b.chainId });
+        ok('stop by chain stops every live baton of it, with the default reason',
+            byChain.ok && byChain.result.stopped.length === 1 && byChain.result.stopped[0].why === 'stopped by the user');
+
+        const noRunner = await reg.dispatch('baton.now', { baton: 'x' });
+        ok('now without a runner wired is refused by name', !noRunner.ok && /no runner/.test(noRunner.error));
+        const calls = [];
+        const w = setup({
+            startNow: (b, by) => { calls.push([b.id, by]); return { ok: true, baton: Object.assign({}, b, { state: 'started', toSessionId: 'succ', why: 'started now by ' + by }) }; }
+        });
+        ok('now needs a handle', !(await w.reg.dispatch('baton.now', {})).ok);
+        ok('now of nothing live is refused', !(await w.reg.dispatch('baton.now', { session: 'sess-A' })).ok);
+        const passedOnW = await w.reg.dispatch('baton.pass', { prompt: 'go now' }, { sessionId: 'sess-A' });
+        const went = await w.reg.dispatch('baton.now', { session: 'sess-A', by: 'Murat' });
+        ok('now hands the live baton to the runner with who pressed it, and answers its new state',
+            went.ok && calls.length === 1 && calls[0][0] === passedOnW.result.baton.id && calls[0][1] === 'Murat'
+            && went.result.baton.state === 'started' && went.result.baton.toSessionId === 'succ');
+        ok('a chain handle is not a `now` handle (one baton at a time)', !(await w.reg.dispatch('baton.now', { chain: passedOnW.result.baton.chainId })).ok);
+        const refusing = setup({ startNow: () => ({ ok: false, why: 'a baton that is started cannot be started now.' }) });
+        await refusing.reg.dispatch('baton.pass', { prompt: 'x' }, { sessionId: 'sess-A' });
+        const r2 = await refusing.reg.dispatch('baton.now', { session: 'sess-A' });
+        ok('the runner\'s refusal is the op\'s refusal, with the baton named', !r2.ok && /cannot be started now/.test(r2.error) && r2.detail && r2.detail.step === 'now');
+    }
+
     console.log(`test_baton_bridge.js: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();
