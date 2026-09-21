@@ -2,6 +2,68 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.624.0 - The handover whisper becomes a setting — the two lines AND the words they deliver (S-80) — and it stops reading the week and calling it the five-hour window (X-353) (2026-09-21)
+
+- **‼️ The quota line was reading the wrong window (X-353).** Measured on this
+  machine, on the session that was doing the work: `five_hour 34% ·
+  seven_day 90%`, and the live hook answered `QUOTA HANDOVER 90% — your
+  account's 5-hour window is 90% used` and ordered the run to end. The guard
+  was handed `SlotUsage.percent`, which is the **binding** bar — whichever of
+  the five-hour window and the week is fuller (X-309). That is right where it
+  was built, choosing an account to start a session on, and wrong here twice:
+  the handover law names the 5-hour window as its trigger and says in the same
+  breath that the weekly figure is never one, and the sentence the guard
+  delivers *names* the five-hour window. `fiveHourOf` now reads that row and
+  nothing else, and the chip's reset clock is that window's reset. An engine
+  whose only window is the week (Codex) gets no quota line at all — which is
+  what the law asks for.
+- **The order the whisper delivers is yours to write (S-80).** The thresholds
+  were already settings; the sentence they deliver was not, and a percentage
+  nobody can retune is half a rule. `agentFarm.disciplineOrders` holds six
+  branches — converge · handover, and the relay pair plus the
+  already-passed pair, because a run carrying a baton is told to pass it
+  rather than to write a note. It ships **empty**: a blank branch keeps its
+  built-in sentence, so nothing changes until you change it. `{chain}` is
+  replaced by the relay's own chain and hop.
+- **‼️ The lead words are NOT settable.** `CONTEXT HANDOVER`, `QUOTA CONVERGE`
+  and the reading in front of them are what the handover law waits for — they
+  are the protocol; what you edit is the instruction that follows them.
+- **Settings ▸ Handover Discipline** is a section of its own, in two groups:
+  *When a run is spoken to* (the four percentages, moved out of Live
+  Monitoring, where they read as a monitor's sensitivity rather than as the
+  law a run is held to) and *What it is told* (the six boxes).
+  `agentFarm.contextWindowTokens` stays where it was on purpose — it is the
+  ceiling every context figure is drawn against, not a line anybody is held
+  to.
+- Two page fixes the section exposed, both derived from the schema rather than
+  from a list of keys, so they reach the next long-text setting for free: a
+  form field whose own declared default is a *sentence* gets a textarea
+  instead of a 170px box, and the flex basis that lines a form up moved onto
+  the AFTip wrapper — it had been set on the span one level down, so a long
+  field name pushed its own box to the right and a form's boxes never lined
+  up.
+- **Bridge:** `sessions.contextGuard` answers `orders` and a `sample` of the
+  sentence as it actually arrives; `sessions.contextGuard.set orders=` writes
+  them, refuses an unknown branch by name, and treats `""` as *remove this
+  override* rather than as a blank order.
+- **‼️ The allowance block on an account card stops being prose (U-144).**
+  Reported as "the numbers that should catch my eye never do — I have to pick
+  them out of a line of prose every time", and it was two faults in one block.
+  The percentage was 11px of the card's ordinary grey beside a track that was
+  already red, so the loudest thing on a card at 91% was a 7px bar; it is
+  bigger and bolder now and wears the **same three steps its track has**
+  (plain · warn at 75 · hot at 90), from one expression, so the number and the
+  bar can never disagree. And both windows' reset times were ONE sentence under
+  both bars — `5h: 37m left (02:17) · wk: 4d left (14 Ağu 2026, 01:40)` — so
+  reading how long the five-hour window had left meant reading past the weekly
+  window's date; each window's clock is on that window's own row now, the span
+  at full strength and the time of day quietly behind it, and the line
+  underneath is gone rather than restyled. **A window that has already turned
+  over strikes its own figure through** — that percentage belongs to the window
+  before this one, and the clause that used to say so sat at the tail of a
+  sentence nobody read to the end. The Engines page draws this same section, so
+  it is fixed in both places at once.
+
 ## 3.623.0 - The relay leg on the Console card: ⑂ n, the chain in its own panel (S-77, part 1) (2026-09-21)
 
 - **A card that is a leg of a baton relay says so.** `⑂ 2` sits beside the
