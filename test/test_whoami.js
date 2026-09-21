@@ -82,8 +82,10 @@ const records = [
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     const op = ext.slice(ext.indexOf("op: 'sessions.whoami'"), ext.indexOf("op: 'sessions.whoami'") + 3200);
     ok('sessions.whoami is on the bridge', op.length > 100);
-    ok('…it reads the CLI registry and walks the tree without blocking the host',
-        /liveCliSessions\(\)/.test(op) && /readProcessTableAsync\(\)/.test(op) && !/readProcessTable\(\)/.test(op));
+    const helper = ext.slice(ext.indexOf('const callerWhoami = async'), ext.indexOf('const callerWhoami = async') + 1400);
+    ok('…it resolves through the one shared helper baton.pass uses too', /await callerWhoami\(/.test(op));
+    ok('…which reads the CLI registry and walks the tree without blocking the host',
+        /liveCliSessions\(\)/.test(helper) && /readProcessTableAsync\(\)/.test(helper) && !/readProcessTable\(\)/.test(helper));
     ok('…and refuses as data rather than guessing', /throw new BridgeRefusal\(r\.why/.test(op));
 
     console.log(`test_whoami.js: ${pass} passed, ${fail} failed`);

@@ -298,6 +298,8 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
+import { registerBatonOps } from './core/batonBridge';
+import { BatonStore } from './core/batonStore';
 import { revealPath } from './core/reveal';
 import {
     agentProjectNames, CLOSED_STATUSES as CLOSED_PROJECT_STATUSES, coercePerson,
@@ -842,6 +844,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return dirs.filter((d): d is string => !!d && !!d.trim());
     };
     const liveCliSessions = (): CliSessionRecord[] => readCliSessionsAcross(cliRegistryDirs());
+    /**
+     * S-68 — the calling session, from evidence only (core/whoami.ts): the
+     * direct parent is tried against the registry before any tree is read, and
+     * the tree is read without blocking the host.
+     */
+    const callerWhoami = async (argSession: string | undefined, from: BridgeCaller | undefined, verify = false) => {
+        const records = liveCliSessions().map(r => ({ pid: r.pid, sessionId: r.sessionId, cwd: r.cwd }));
+        const ppid = from?.ppid;
+        const climb = async (): Promise<number[] | undefined> => {
+            if (!ppid) { return undefined; }
+            if (registryMatch([ppid], records)) { return [ppid]; }
+            return [...ancestorsOf(ppid, await readProcessTableAsync())];
+        };
+        const ancestors = argSession || from?.sessionId ? undefined : await climb();
+        const r = whoami({ arg: argSession, envSessionId: from?.sessionId, ppid, ancestors, records });
+        const check = verify && r.ok && r.source !== 'registry'
+            ? (registryMatch(await climb(), records) ?? null) : undefined;
+        return { r, check };
+    };
     /** Does this machine's CLI keep a registry at all (any home has one)? */
     const cliRegistryKnown = (): boolean => cliRegistryDirs().some(d => fs.existsSync(sessionsDir(d)));
     /**
@@ -10503,26 +10524,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.whoami',
             describe: 'S-68 — WHICH SESSION IS CALLING. Answers from evidence only, in this order: the session arg if you pass it; the engine\'s own session variable that af.js forwards (CLAUDE_CODE_SESSION_ID); otherwise af.js\'s parent pid, walked up the process tree until a pid the CLI itself registered (<config-dir>/sessions/<pid>.json) is found. Never from the folder — two sessions in one folder is the ordinary case. Returns { sessionId, source: arg | env | registry, pid?, cwd?, card? (the Console card holding it: id, agent, engine, account, launchId, projectId) }. args: session?, verify? (true also walks the tree when the variable already answered, and says whether the two agree)',
             handler: async (args, from) => {
-                const records = liveCliSessions().map(r => ({ pid: r.pid, sessionId: r.sessionId, cwd: r.cwd }));
-                const ppid = from?.ppid;
-                const climb = async (): Promise<number[] | undefined> => {
-                    if (!ppid) { return undefined; }
-                    // The direct parent first — no process table when it is already the CLI.
-                    if (registryMatch([ppid], records)) { return [ppid]; }
-                    return [...ancestorsOf(ppid, await readProcessTableAsync())];
-                };
-                const argSession = optStr(args, 'session');
-                const ancestors = argSession || from?.sessionId ? undefined : await climb();
-                const r = whoami({ arg: argSession, envSessionId: from?.sessionId, ppid, ancestors, records });
-                if (!r.ok) { throw new BridgeRefusal(r.why, { ppid: ppid ?? null }); }
-                const verify = args.verify === true && r.source !== 'registry'
-                    ? (() => climb().then(chain => registryMatch(chain, records)))() : undefined;
-                const seen = verify ? await verify : undefined;
+                const { r, check } = await callerWhoami(optStr(args, 'session') || undefined, from, args.verify === true);
+                if (!r.ok) { throw new BridgeRefusal(r.why, { ppid: from?.ppid ?? null }); }
                 const card = consoleHost.list().find(s => s.sessionId === r.sessionId);
                 return {
                     ...r,
-                    ...(args.verify === true && r.source !== 'registry'
-                        ? { registry: seen ?? null, agree: seen ? seen.sessionId === r.sessionId : null } : {}),
+                    ...(check !== undefined
+                        ? { registry: check, agree: check ? check.sessionId === r.sessionId : null } : {}),
                     card: card ? {
                         id: card.id, agent: card.agentName, engine: card.engine ?? 'claude',
                         account: card.account ?? null, launchId: card.launchId ?? null, projectId: card.projectId ?? null
@@ -16225,6 +16233,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     .then(pick => { if (pick) { void vscode.commands.executeCommand('agentfarm.openNotices'); } });
             }
         }
+    });
+
+    // S-66 — the batons, on disk beside the context guard's records.
+    const batonStore = new BatonStore(path.join(context.globalStorageUri.fsPath, 'batons.json'));
+    context.subscriptions.push({ dispose: () => batonStore.flush() });
+    registerBatonOps(bridge, {
+        store: batonStore,
+        caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,
+        launchIdOf: sid => consoleHost.list().find(s => s.sessionId === sid)?.launchId
+            || index.allWithExternal().find(x => x.sessionId === sid)?.launchId,
+        manifests: () => launchManifests(),
+        // a preview: launchAccountPick RETURNS a round-robin cursor, only a real
+        // launch commits it — so asking here moves nothing
+        room: b => {
+            try {
+                const r = launchAccountPick({
+                    engine: b.from.engine, account: b.want.account, agentId: b.from.agentId, model: b.inherit.model
+                });
+                if (r.refusal) { return r.resetsAt ? { resetsAt: r.resetsAt } : { refusal: r.refusal }; }
+                if (!r.id) { return undefined; }
+                const sl = findSlot(storedAccounts(), r.id);
+                return { account: sl ? slotLabel(sl) : r.id };
+            } catch (e) {
+                return { refusal: String((e as Error)?.message ?? e) };
+            }
+        },
+        fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
 
     registerA2AOps(bridge, {

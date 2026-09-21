@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.620.0 - `baton.pass` / `baton.status`: a run can leave its successor's first words, and nothing starts until it has ended (S-69) (2026-09-21)
+
+- **‼️ The door of the baton relay (S-66) is open — and it opens nothing yet.**
+  `baton.pass` records the words a run leaves for the session that will
+  continue its work, against the calling session (found the way
+  `sessions.whoami` finds it, never from the folder), with the successor's
+  whole setup read off that session's **sealed launch manifest** (engine,
+  model, effort, permission, provider, superpowers, folder, project). It
+  answers with one sentence saying what will happen when the session ENDS
+  — which account rule, which slot it would land on now (a preview: the
+  round-robin cursor does not move), or that every account is full and it
+  would park until the first reset. A second pass replaces the first; both
+  stay on record. Opening the successor is the next step (S-70/S-71).
+- **Refusals are data** naming the step: no caller evidence, no launch id or
+  manifest for the session (its setup would be a guess), an empty prompt, an
+  unknown surface.
+- **`baton.status`** lists the live batons and their chains hop by hop:
+  who passed, who was started, what each waits for, the sentence of its last
+  change. Filter by `chain` or `session`.
+- The prompt is prose, so the op's own description teaches the file recipe
+  (`node af.js baton.pass "@baton.json"`) rather than an inline string.
+
 ## 3.619.0 - `sessions.whoami`: a caller can ask which session it is, and the answer is evidence, never the folder (S-68) (2026-09-21)
 
 - **‼️ "Which session am I?" had no answer anywhere.** An agent calling the

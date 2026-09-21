@@ -69,6 +69,8 @@ export interface Baton {
     toSessionId?: string;
     /** the sentence of the latest state change */
     why: string;
+    /** a line for the person reading the chain — never handed to the successor */
+    note?: string;
     createdAt: number;
     updatedAt: number;
 }
@@ -182,6 +184,7 @@ export interface PassInput {
     manifest?: LaunchManifest;
     surface?: unknown;
     account?: unknown;
+    note?: unknown;
     /** everything the store holds now */
     prior: readonly Baton[];
     now: number;
@@ -224,6 +227,7 @@ export function passBaton(input: PassInput): PassResult {
         want: { surface: want as BatonSurfaceWant, account: s(input.account) || BATON_DEFAULT_ACCOUNT },
         state: 'armed',
         why: 'recorded',
+        ...(s(input.note) ? { note: s(input.note) } : {}),
         createdAt: input.now,
         updatedAt: input.now
     };
