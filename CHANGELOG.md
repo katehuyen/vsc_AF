@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.618.1 - the bridge can read what a Console question asked and what it was answered (K-43) (2026-09-21)
+
+- **`console.sessions` no longer shows a question row as empty.** A row that
+  asked or answered keeps its words in the question or the answer, not in
+  `text`, and the projection read `text` alone — so an agent reading a card
+  saw `role: ask, text: null` for both. Measured on the K-43 live run: the
+  auto-answer fired on time, the agent was told, and the one row that says
+  `⏱️ Zaman aşımı: önerilen seçenekler seçildi — …` came back as null. The row
+  now carries its answer, or the question it asked.
+- **K-43 seen live on 3.618.0.** A haiku Console card asked one question with
+  `Mavi (Recommended)`; with the wait at 15 s the card reported `armed` with
+  that pick, the answer went out 3 ms after `dueAt`, and the agent replied that
+  Agent Farm had chosen the recommended option for the user.
+
 ## 3.618.0 - a question nobody answers no longer holds the turn for ever: the recommended option is chosen on a timer (K-43) (2026-09-21)
 
 - **‼️ A Console session parked on `AskUserQuestion` is answered for you when

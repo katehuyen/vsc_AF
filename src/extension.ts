@@ -12086,7 +12086,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     exitReason: s.exitReason ?? null,
                     messages: take
                         ? s.messages.slice(-take).map(m => ({
-                            role: m.role, text: m.text ?? null,
+                            // an ask row keeps its words in `ask` / `answer`, not `text` —
+                            // without this the bridge saw what was asked and answered as null
+                            role: m.role, text: m.text ?? m.answer ?? m.ask?.detail ?? null,
                             tool: m.tool ? `${m.tool.name} ${m.tool.detail}` : null,
                             isError: m.isError ?? false, ts: m.ts
                         }))

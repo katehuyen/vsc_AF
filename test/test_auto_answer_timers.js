@@ -214,6 +214,8 @@ function wiring() {
         /autoAnswer: consoleHost\.autoAnswerView\(s\.id\)/.test(ext));
     ok('‼️ the host is handed the settings reader — without it the feature is OFF for everyone',
         /autoAnswerSettings\(\{\s*enabled: cfg\(\)\.get\(AUTO_ANSWER_ENABLED_KEY/.test(ext));
+    ok('‼️ console.sessions shows what an ask row asked or answered — measured live as null before',
+        /text: m\.text \?\? m\.answer \?\? m\.ask\?\.detail \?\? null/.test(ext));
     ok('a changed setting re-arms the questions already waiting',
         /affectsConfiguration\('agentFarm\.console\.autoAnswer'\)\) \{ consoleHost\.resyncAutoAnswers\(\)/.test(ext));
     const panel = read('src/panels/consolePanel.ts');
