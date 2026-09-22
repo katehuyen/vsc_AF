@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.630.0 - The lean project brief, a backlog icon that takes only its own value, and Tasks toolbars that break as two blocks (X-352, U-145) (2026-09-22)
+
+- **The project brief is lean.** A session started inside a project is no
+  longer handed the people list, the open plan, the next backlog items, the
+  recent worklog or the recent decisions — they change mid-session and have
+  ops of their own. It carries the status, the code roots, which file holds
+  which role, and the charter's four constitution sections (Scope &
+  Anti-Scope, Code Architecture, Verification Gate, Project Invariants)
+  inlined. The charter is read once per brief instead of seven times inside
+  the budget loop, and headings match by word stem: `## Research` is no
+  longer taken for architecture, `## Latest` no longer for verification, and
+  a second "Kapsam dışı" heading adds to the first instead of replacing it.
+- **A backlog metadata icon takes only its own value (X-352).** Each valued
+  icon is stripped only together with a value of its own form — the date
+  icons with YYYY-MM-DD, 🆔 with an id, ⛔ with a code list, 🏁 with
+  delete|keep. An icon without such a value stays in the text
+  (`⏳ Yanıt bekleniyor` keeps its words), and a bare ⛔ is a flag on its own
+  instead of eating the next word.
+- **The Tasks toolbars break between two blocks (U-145).** The Runs and Plan
+  toolbars are a filters block and an actions block: on a slight narrowing
+  the filters give ground and the row stays one line; narrower, the actions
+  move down together, never a button at a time; under 620px each block wraps
+  inside itself.
+
 ## 3.629.0 - The parity gate reaches zero: every door and its op meet at one function (B-16, B-26) (2026-09-22)
 
 - **Zero open parity gaps.** The last eighteen user doors that either had
