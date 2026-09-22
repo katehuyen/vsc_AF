@@ -348,6 +348,7 @@
             border:0; border-radius:4px; background:none; opacity:.85;
             color:var(--vscode-textLink-foreground); cursor:pointer; }
         #c-status .stchip:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#5a5d5e50); }
+        #c-status #c-continue { font-size:12px; }
         #c-status .batonsig { font-size:13px; line-height:1; }
         /* S-82: the attach strip under a card's status row, and the composer's relay chip. */
         #c-relay:empty { display:none; }
