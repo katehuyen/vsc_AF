@@ -83,6 +83,28 @@ const many = [
     })
 ];
 
+// S-84 — a relay's own cards: one per leg, all under the chain id, the earlier
+// legs resolved because their successor is already running. The scene the page
+// has to survive is a CHAIN AMONG ORDINARY NOTES — that is what the tri-state
+// switch and the chain lock exist for.
+const CHAIN = 'chn_mucn4k2x91';
+const leg = (hop, ts, over) => note(Object.assign({
+    id: `n-leg${hop}`, ts, fromAgent: 'developer', category: 'baton', strictness: 'hard',
+    project: '*', subsystem: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm', topic: CHAIN,
+    targetRole: 'developer',
+    title: `⑂ hop ${hop} — developer handed over`,
+    body: `Chain ${CHAIN} · hop ${hop} · passed by session 8ce00624 (developer)\n`
+        + 'Folder: D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm\n\n'
+        + '--- the successor starts from ---\n\n'
+        + 'S-84 (2/3) bitti, 3.636.0 paketlendi. Sıradaki: sayfanın 3\'lü şalteri ve zincir şeridi.'
+}, over || {}));
+const relay = [
+    leg(1, T - 220 * M, { resolved: true, readBy: ['developer'] }),
+    leg(2, T - 130 * M, { resolved: true, readBy: ['developer'] }),
+    leg(3, T - 18 * M, { title: '⑂ hop 3 — developer handed over (rescued)', pinned: true }),
+    many[0], many[1], many[3]
+];
+
 const data = over => Object.assign({
     generatedAt: T,
     now: T,
@@ -105,6 +127,17 @@ module.exports = {
             id: 'cockpit', label: 'A2A Notes — supervisor cockpit open on an undirected note (+ pressed)',
             data: data({ notes: [one], tasksByNote: {} }),
             act: r => { const b = r.query('[data-plus]')[0]; if (b) { b.click(); } }
+        },
+        // S-84 — the relay among the fleet's own notes, and the same board with
+        // one race locked: three legs, oldest first, every other filter off.
+        {
+            id: 'relay', label: 'A2A Notes — a baton chain on the board (⑂ cards, one pinned)',
+            data: data({ notes: relay, tasksByNote: {} })
+        },
+        {
+            id: 'chain', label: 'A2A Notes — locked to one chain (chip clicked): leg by leg, oldest first',
+            data: data({ notes: relay, tasksByNote: {} }),
+            act: r => { const c = r.query('[data-chain]')[0]; if (c) { c.click(); } }
         }
     ]
 };

@@ -120,6 +120,88 @@ const count = (s, re) => (s.match(re) || []).length;
     ok('an empty board says how notes get here', /No notes match/.test(e.html()) && /a2a\.notes\.post/.test(e.html()));
 }
 
+// ---------- S-84: the relay on the board, the pin, and the hand that deletes ----------
+{
+    const fx = notesFx.variants().find(v => v.id === 'relay').data;
+    const board = (state) => notes(fx, state);
+
+    const r = board();
+    ok('a relay card wears its own category icon and its chain as a CHIP, not a topic',
+        /class="a2a-cat">⑂</.test(r.html()) && /data-chain="chn_mucn4k2x91"/.test(r.html())
+        && /⑂ chn_mucn4k2x91/.test(r.html()));
+    ok('the switch says what it IS now, and its panel opens on a title (not a wall of text)',
+        /id="an-baton"[^]*?⑂ Batons: all/.test(r.html())
+        && /Relay cards on the board/.test(r.html()) && /One click → ⑂ Batons: hidden/.test(r.html()));
+
+    // the tri-state switch: all → hidden → only → all, and it survives a reload
+    r.els['an-baton'].click();
+    ok('one click hides the races — the fleet\'s own notes are what is left',
+        count(r.html(), /class="a2a-card/g) === 2 && !/class="a2a-cat">⑂</.test(r.html())
+        && r.state().batonMode === 'hide');
+    r.els['an-baton'].click();
+    ok('…the next click is the opposite: the races and nothing else',
+        count(r.html(), /class="a2a-card/g) === 1 && /class="a2a-cat">⑂</.test(r.html())
+        && r.state().batonMode === 'only');
+    r.els['an-baton'].click();
+    ok('…and the third is back to all three', r.state().batonMode === 'all'
+        && count(r.html(), /class="a2a-card/g) === 3);
+
+    // the chain lock: the whole race, oldest first, every other filter off
+    const c = board();
+    c.query('[data-chain]')[0].click();
+    const ch = c.html();
+    // ‼️ the class name is in the stylesheet too — an assertion on the bare
+    // word passes on a page that never draws it (docs/CONVENTIONS.md)
+    ok('‼️ a chain chip locks the page to that race — resolved legs and all, whatever the state filter says',
+        count(ch, /class="a2a-card/g) === 3 && /class="a2a-chainbar"/.test(ch) && c.state().chainLock === 'chn_mucn4k2x91');
+    ok('…leg by leg, OLDEST first (the order the race happened in)',
+        /data-id="n-leg1"[^]*data-id="n-leg2"[^]*data-id="n-leg3"/.test(ch));
+    ok('…and the bar says what is locked and how many legs handed on',
+        /⑂ chn_mucn4k2x91/.test(ch) && /3 leg\(s\), oldest first · 2 handed on/.test(ch));
+    c.els['an-unchain'].click();
+    ok('✕ Unlock puts the board back', !/class="a2a-chainbar"/.test(c.html()) && c.state().chainLock === null);
+
+    // the pin — the exemption, drawn as one
+    const p = board();
+    ok('a pinned card says so on the row and on the card', /class="a2a-pin on" data-pinrow="n-leg3"/.test(p.html())
+        && /a2a-card[^"]*pinned" data-id="n-leg3"/.test(p.html()));
+    p.query('[data-pinrow]').find(e => e.dataset.pinrow === 'n-leg3').click();
+    ok('…and clicking it asks to UNpin exactly that note',
+        p.posted.some(m => m.type === 'pin' && m.id === 'n-leg3' && m.pinned === false));
+    p.query('[data-pinrow]').find(e => e.dataset.pinrow === 'n-mu9p1').click();
+    ok('an unpinned one asks the other way', p.posted.some(m => m.type === 'pin' && m.id === 'n-mu9p1' && m.pinned === true));
+
+    // deletion: one row, the selected ones, and the resolved half
+    const d = board();
+    d.query('[data-open]').find(e => e.dataset.open === 'n-leg3').click();
+    d.query('[data-act]').find(e => e.dataset.act === 'delete' && e.dataset.id === 'n-leg3').click();
+    ok('✕ Delete posts delete for that note, and its panel says it is not history',
+        d.posted.some(m => m.type === 'delete' && m.id === 'n-leg3')
+        && /Delete this note for good/.test(d.html()));
+
+    const b = board();
+    // the shim does not toggle a checkbox for you; a browser does it before the
+    // click reaches the page
+    const check = (id) => { const cb = b.query('[data-cb]').find(e => e.dataset.cb === id); cb.checked = true; cb.click(); };
+    check('n-leg3');
+    ok('a row can be selected, and the header counts it',
+        /1 selected/.test(b.html()) && /a2a-card[^"]*sel" data-id="n-leg3"/.test(b.html()));
+    b.query('[data-hact]').find(e => e.dataset.hact === 'bulkDelete').click();
+    ok('🗑 Delete takes the SELECTED rows',
+        b.posted.some(m => m.type === 'deleteMany' && m.ids.length === 1 && m.ids[0] === 'n-leg3'));
+    b.query('[data-hact]').find(e => e.dataset.hact === 'bulkDelete').click();
+    ok('‼️ …and with nothing selected it takes every row SHOWN — never the whole board behind the filter',
+        b.posted.filter(m => m.type === 'deleteMany').length === 2
+        && b.posted[b.posted.length - 1].ids.length === 3);
+    b.query('[data-hact]').find(e => e.dataset.hact === 'clearResolved').click();
+    ok('● Clear resolved asks for the closed half only', b.posted.some(m => m.type === 'clear' && m.resolvedOnly === true));
+
+    const only = board({ batonMode: 'only', fState: null });
+    ok('a board with no races of its own says how one gets here',
+        /No relay cards/.test(notes({ notes: [], tasksByNote: {} }, { batonMode: 'only' }).html())
+        && count(only.html(), /class="a2a-card/g) === 3);
+}
+
 // ---------- tasks: two lanes, the lease bar, the hand ----------
 {
     const r = tasks({ focusId: 't-mu9q1' });

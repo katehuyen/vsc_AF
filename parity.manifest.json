@@ -13,6 +13,33 @@
       }
     },
     {
+      "capability": "a2aNotesPanel.ts#clear",
+      "ui": [
+        "page:a2aNotesPanel.ts#clear"
+      ],
+      "ops": [
+        "a2a.notes.clear"
+      ]
+    },
+    {
+      "capability": "a2aNotesPanel.ts#delete",
+      "ui": [
+        "page:a2aNotesPanel.ts#delete"
+      ],
+      "ops": [
+        "a2a.notes.delete"
+      ]
+    },
+    {
+      "capability": "a2aNotesPanel.ts#deleteMany",
+      "ui": [
+        "page:a2aNotesPanel.ts#deleteMany"
+      ],
+      "ops": [
+        "a2a.notes.deleteMany"
+      ]
+    },
+    {
       "capability": "a2aNotesPanel.ts#directiveRemove",
       "ui": [
         "page:a2aNotesPanel.ts#directiveRemove"
@@ -59,6 +86,15 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
+    },
+    {
+      "capability": "a2aNotesPanel.ts#pin",
+      "ui": [
+        "page:a2aNotesPanel.ts#pin"
+      ],
+      "ops": [
+        "a2a.notes.pin"
+      ]
     },
     {
       "capability": "a2aNotesPanel.ts#refresh",
@@ -1288,33 +1324,6 @@
       }
     },
     {
-      "capability": "consolePanel.ts#clearQueue",
-      "ui": [
-        "page:consolePanel.ts#clearQueue"
-      ],
-      "ops": [
-        "console.queue"
-      ]
-    },
-    {
-      "capability": "consolePanel.ts#close",
-      "ui": [
-        "page:consolePanel.ts#close"
-      ],
-      "ops": [
-        "console.close"
-      ]
-    },
-    {
-      "capability": "consolePanel.ts#continueFromHandover",
-      "ui": [
-        "page:consolePanel.ts#continueFromHandover"
-      ],
-      "ops": [
-        "console.continueFromHandover"
-      ]
-    },
-    {
       "capability": "consolePanel.ts#batonAttach",
       "ui": [
         "page:consolePanel.ts#batonAttach"
@@ -1339,6 +1348,33 @@
       ],
       "ops": [
         "baton.stop"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#clearQueue",
+      "ui": [
+        "page:consolePanel.ts#clearQueue"
+      ],
+      "ops": [
+        "console.queue"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#close",
+      "ui": [
+        "page:consolePanel.ts#close"
+      ],
+      "ops": [
+        "console.close"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#continueFromHandover",
+      "ui": [
+        "page:consolePanel.ts#continueFromHandover"
+      ],
+      "ops": [
+        "console.continueFromHandover"
       ]
     },
     {

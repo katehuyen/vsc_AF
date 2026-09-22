@@ -11,14 +11,29 @@
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     const pick = v => (Array.isArray(v) ? v : null);
+    // S-84 — the tri-state baton switch. `next` is what one click makes it, and
+    // the first line of the tooltip is what it IS right now (MIRROR).
+    const BATON_MODES = {
+        all: { next: 'hide', label: '⑂ Batons: all', now: 'Showing everything — fleet notes and relay cards together.' },
+        hide: { next: 'only', label: '⑂ Batons: hidden', now: 'Relay handover cards are hidden; only the fleet\'s own notes are on the board.' },
+        only: { next: 'all', label: '⑂ Batons: only', now: 'Only relay handover cards — the races, nothing else.' }
+    };
     // Multi-pick: null = all, an array = exactly that subset (media/afFilters.js).
-    const DEF = { fState: ['live'], fCat: null, fFrom: null, fProject: null, query: '' };
+    const DEF = { fState: ['live'], fCat: null, fFrom: null, fProject: null, query: '', batonMode: 'all' };
     // A saved null is "every state"; a missing key is "the default". Not the same.
     let fState = st.fState === undefined ? DEF.fState : pick(st.fState);
     let fCat = pick(st.fCat);
     let fFrom = pick(st.fFrom);
     let fProject = pick(st.fProject);
     let query = st.query || DEF.query;
+    // S-84 — one button, three states: the races are shown, hidden, or the only
+    // thing on the board. A relay writes a card per leg, so a busy chain would
+    // otherwise bury the fleet's ordinary traffic.
+    let batonMode = BATON_MODES[st.batonMode] ? st.batonMode : DEF.batonMode;
+    // …and one chain, leg by leg: the page locks to a chain id and reads it
+    // oldest-first, which is the order the race actually happened in.
+    let chainLock = typeof st.chainLock === 'string' ? st.chainLock : null;
+    const selected = new Set();
     const expanded = new Set();
     let focusId = DATA.focusId || null;
     let refocusSearch = false;
@@ -41,7 +56,7 @@
     }
     function closeCockpit() { cockpitId = null; draft = null; cockpitMsg = ''; focusCockpit = false; }
 
-    function saveState() { try { vscode.setState({ fState, fCat, fFrom, fProject, query }); } catch (e) { /* no state api */ } }
+    function saveState() { try { vscode.setState({ fState, fCat, fFrom, fProject, query, batonMode, chainLock }); } catch (e) { /* no state api */ } }
 
     // ---- what a note IS right now: live, resolved, or expired ----
     function stateOf(n) {
@@ -57,8 +72,17 @@
         if (!q) { return true; }
         return window.AFQuery.compile(q).test(haystack(n));
     }
+    /**
+     * S-84 — a chain lock is a WHOLE STORY, so it overrides the other filters:
+     * a race read leg by leg with its resolved legs missing is not the story.
+     * It is also the one view that reads oldest-first.
+     */
     function visible() {
+        if (chainLock) {
+            return (DATA.notes || []).filter(n => n.topic === chainLock).sort((a, b) => a.ts - b.ts);
+        }
         return (DATA.notes || []).filter(n =>
+            (batonMode === 'all' || (batonMode === 'only') === (n.category === 'baton')) &&
             (!fState || fState.indexOf(stateOf(n)) >= 0) &&
             (!fCat || fCat.indexOf(n.category) >= 0) &&
             (!fFrom || fFrom.indexOf(n.fromAgent) >= 0) &&
@@ -76,13 +100,58 @@
                 options: [{ v: 'live', t: 'live' }, { v: 'resolved', t: 'resolved' }, { v: 'expired', t: 'expired' }] },
             { id: 'an-cat', label: 'Category', get: () => fCat, set: v => { fCat = v; },
                 title: 'What kind of thing the note says',
-                options: ['info', 'warning', 'convention', 'discovery', 'result'].map(c => ({ v: c, t: (A.CAT[c] || '') + ' ' + c })) },
+                options: ['info', 'warning', 'convention', 'discovery', 'result', 'baton'].map(c => ({ v: c, t: (A.CAT[c] || '') + ' ' + c })) },
             { id: 'an-from', label: 'From', get: () => fFrom, set: v => { fFrom = v; },
                 title: 'Which agent wrote it', options: froms.map(a => ({ v: a, t: '🤖 ' + a })) },
             { id: 'an-project', label: 'Projects', get: () => fProject, set: v => { fProject = v; },
                 title: 'Which project the note is filed under — "any" is a broadcast',
                 options: projs.map(k => { const p = k === '*' ? null : window.AFProject.find(DATA.projects, k); return { v: k, t: k === '*' ? '✱ any project' : (p ? (p.icon ? p.icon + ' ' : '') + p.name : k) }; }) }
         ];
+    }
+
+    /**
+     * S-84 — the two controls the filter row gains: the tri-state relay switch
+     * and the bulk hand (Notices' own contract — the SELECTED rows, or every
+     * row shown when nothing is checked).
+     */
+    function extraControls(items) {
+        const m = BATON_MODES[batonMode];
+        const nx = BATON_MODES[m.next];
+        const batons = (DATA.notes || []).filter(n => n.category === 'baton').length;
+        const toggle = window.AFTip.wrap(
+            `<button class="secondary a2a-bmode${batonMode === 'all' ? '' : ' on'}" id="an-baton">${esc(m.label)}</button>`,
+            'Relay cards on the board',
+            `${m.now}\n\nOne click → ${nx.label}: ${nx.now}\n\n`
+            + `A baton relay hangs one card per leg (⑂), so a long race can bury the fleet's ordinary notes. `
+            + `${batons} relay card(s) are on the board now.`);
+        const n = selected.size;
+        const target = n ? `${n} selected` : `all ${items.length} shown`;
+        const del = window.AFTip.wrap(
+            '<button class="secondary danger" data-hact="bulkDelete">🗑 Delete</button>',
+            'Delete for good',
+            `Deletes ${target}.\n\nUnlike ✓ Resolve this is not history — the notes leave the board and the disk. `
+            + '📌 A pinned note is deleted too if you select it by hand: the pin exempts a note from the automatic '
+            + 'sweep, not from you.');
+        const clear = window.AFTip.wrap(
+            '<button class="secondary" data-hact="clearResolved">● Clear resolved</button>',
+            'Clear what is already closed',
+            'Deletes every RESOLVED note on the board, whatever is filtered or shown.\n\n'
+            + '📌 Pinned notes are kept. Open notes are never touched — resolve one first if you mean it to go.');
+        const all = `<label class="a2a-selall" title="Select every note shown">`
+            + `<input type="checkbox" id="an-selall"${items.length && items.every(x => selected.has(x.id)) ? ' checked' : ''}> all</label>`;
+        return `${toggle}<span class="a2a-bulk">${all}${del}${clear}</span>`;
+    }
+
+    /** S-84 — the race, read as one story: what is locked and the way out. */
+    function chainBar(items) {
+        if (!chainLock) { return ''; }
+        const legs = items.length;
+        const closed = items.filter(n => n.resolved).length;
+        return `<div class="a2a-chainbar">
+            <span class="a2a-chainid">⑂ ${esc(chainLock)}</span>
+            <span class="muted">${legs} leg(s), oldest first · ${closed} handed on · every other filter is off while a chain is locked</span>
+            <button class="secondary" id="an-unchain" title="Back to the board">✕ Unlock</button>
+        </div>`;
     }
 
     function dayLabel(ts) {
@@ -102,7 +171,9 @@
         const readTip = readers ? `Read by: ${n.readBy.join(', ')}` : 'Nobody has read it yet';
         const flag = state === 'live' ? '' : `<span class="a2a-flag">${state === 'resolved' ? '✓ resolved' : '⌛ expired'}</span>`;
         const line = `<div class="a2a-line" data-open="${n.id}">
-            ${window.AFTip.wrap(`<span class="a2a-cat">${A.CAT[n.category] || 'ℹ️'}</span>`, 'Category', `Category: ${n.category}`)}
+            <input type="checkbox" class="a2a-cb" data-cb="${n.id}" ${selected.has(n.id) ? 'checked' : ''} title="Select for the bulk actions in the filter row">
+            ${window.AFTip.wrap(`<span class="a2a-cat">${A.CAT[n.category] || 'ℹ️'}</span>`, 'Category',
+                `Category: ${n.category}${n.category === 'baton' ? '\nA baton relay\'s handover card — the words one leg left its successor.' : ''}`)}
             <span class="a2a-title">${esc(n.title)}</span>
             ${A.directiveFlag(n.humanDirective)}
             ${task ? window.AFTip.wrap(`<span class="a2a-flag">⚡ ${esc(task.state)}</span>`, 'Task', `Task ${task.id} — ${task.state}\nThis note was promoted; click to open it on the A2A Tasks board.`) : ''}
@@ -111,13 +182,22 @@
             ${window.AFTip.wrap(`<span class="a2a-flag">👁 ${readers}</span>`, 'Readers', readTip)}
             ${flag}
             ${window.AFTip.wrap(`<span class="a2a-age">${esc(window.AFTime.ago(n.ts))}</span>`, 'Posted', window.AFTime.tip(n.ts, 'Posted') + (n.expiresAt ? '\nExpires: ' + window.AFTime.full(n.expiresAt) : '\nDoes not expire'))}
+            ${window.AFTip.wrap(`<span class="a2a-pin${n.pinned ? ' on' : ''}" data-pinrow="${n.id}" data-pin="${n.pinned ? '0' : '1'}">📌</span>`,
+                n.pinned ? 'Pinned — exempt from the sweep' : 'Pin it',
+                n.pinned
+                    ? 'This note is never swept: not when it has been resolved for 48 hours, not when its ttl passes, '
+                        + 'not when a chain ends. Only deleting it by hand takes it off.\n\nClick to unpin.'
+                    : 'The board sweeps itself: a note resolved more than 48 hours ago goes, and so does an expired '
+                        + 'relay card. Pin one to keep it whatever the rules say.')}
             ${A.plus(n.id, cockpitId === n.id)}
         </div>`;
         const cp = cockpitId === n.id ? A.cockpit({
             draft: draft, has: !!n.humanDirective, setAt: n.humanDirective && n.humanDirective.ts, msg: cockpitMsg,
             lede: 'your word on this note — every agent that reads it obeys this before its own rules'
         }) : '';
-        if (!open) { return `<div class="a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}" data-id="${n.id}">${line}${cp}</div>`; }
+        const cls = `a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}`
+            + `${n.pinned ? ' pinned' : ''}${selected.has(n.id) ? ' sel' : ''}`;
+        if (!open) { return `<div class="${cls}" data-id="${n.id}">${line}${cp}</div>`; }
         const files = (n.contextFiles || []).length
             ? `<div class="a2a-sec"><div class="a2a-sech">Files</div><div class="a2a-files">${n.contextFiles.map(f => `<div><a data-file="${esc(f)}" data-note="${n.id}">${esc(f)}</a></div>`).join('')}</div></div>` : '';
         const actions = `<div class="a2a-actions">
@@ -128,8 +208,13 @@
                 ? `<button class="secondary" data-act="unresolve" data-id="${n.id}">↺ Reopen</button>`
                 : `<button class="secondary" data-act="resolve" data-id="${n.id}">✓ Resolve</button>`}
             <button class="secondary" data-act="copyId" data-id="${n.id}" title="Copy the note id — a2a.notes.get id=…">⧉ ${esc(n.id)}</button>
+            ${window.AFTip.wrap(`<button class="secondary danger" data-act="delete" data-id="${n.id}">✕ Delete</button>`,
+                'Delete this note for good',
+                'It leaves the board AND the disk. ✓ Resolve is the reversible one — it keeps the note as history '
+                + 'and the sweep clears it 48 hours later.'
+                + (n.pinned ? '\n\n📌 This note is pinned: the sweep spares it, but your hand does not.' : ''))}
         </div>`;
-        return `<div class="a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}" data-id="${n.id}">${line}${cp}
+        return `<div class="${cls}" data-id="${n.id}">${line}${cp}
             <div class="a2a-body">
                 ${A.directive(n.humanDirective)}
                 ${n.body ? A.md(n.body) : '<div class="muted">(no body)</div>'}
@@ -150,7 +235,11 @@
         const live = all.filter(n => stateOf(n) === 'live').length;
         let list = '';
         if (!items.length) {
-            list = `<p class="muted a2a-empty">🕊️ No notes match. Agents leave notes for each other here — <code>a2a.notes.post</code> on the bridge; a reader picks them up by project, subsystem, topic and role.</p>`;
+            list = chainLock
+                ? `<p class="muted a2a-empty">⑂ Chain <code>${esc(chainLock)}</code> has no cards left on the board — a race is swept a day after it ends. <code>baton.status chain=${esc(chainLock)}</code> still has the record.</p>`
+                : batonMode === 'only'
+                    ? `<p class="muted a2a-empty">⑂ No relay cards. A baton pass hangs one per leg — <code>baton.pass</code> on the bridge, or ⑂ Relay in the Console composer.</p>`
+                    : `<p class="muted a2a-empty">🕊️ No notes match. Agents leave notes for each other here — <code>a2a.notes.post</code> on the bridge; a reader picks them up by project, subsystem, topic and role.</p>`;
         } else {
             let lastDay = '';
             for (const n of items) { const d = dayLabel(n.ts); if (d !== lastDay) { list += `<div class="a2a-day">${esc(d)}</div>`; lastDay = d; } list += card(n); }
@@ -159,13 +248,17 @@
             ${window.AFHeader.tabs('a2anotes')}
             ${window.AFHeader.html({
                 page: 'a2anotes', title: '🤖 A2A Notes',
-                sub: `${all.length} total · ${live} live · showing ${items.length} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
+                sub: `${all.length} total · ${live} live · showing ${items.length}`
+                    + `${selected.size ? ` · ${selected.size} selected` : ''}`
+                    + `${chainLock ? ` · locked to chain ${chainLock}` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 controls: A.controls('an', {
                     query, pickers: filterPickers(),
+                    extra: extraControls(items),
                     searchTip: window.AFQuery.tip('Searched against the title, body, topic, subsystem, target role, author, category and file paths.')
                 }),
                 related: [{ label: '📥 Queue', name: 'Work Queue', nav: 'queue' }]
             })}
+            ${chainBar(items)}
             ${list}`;
         window.AFHeader.wire(vscode);
         wire();
@@ -182,8 +275,50 @@
             pickers: filterPickers(),
             onQuery: v => { query = v; refocusSearch = true; saveState(); render(); },
             onChange: () => { saveState(); render(); },
-            onReset: () => { fState = DEF.fState; fCat = DEF.fCat; fFrom = DEF.fFrom; fProject = DEF.fProject; query = DEF.query; saveState(); render(); }
+            onReset: () => {
+                fState = DEF.fState; fCat = DEF.fCat; fFrom = DEF.fFrom; fProject = DEF.fProject; query = DEF.query;
+                batonMode = DEF.batonMode; chainLock = null; selected.clear();
+                saveState(); render();
+            }
         });
+        const items = visible();
+        const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+        bind('an-baton', 'click', () => { batonMode = BATON_MODES[batonMode].next; saveState(); render(); });
+        bind('an-unchain', 'click', () => { chainLock = null; saveState(); render(); });
+        bind('an-selall', 'change', e => {
+            if (e.target.checked) { items.forEach(n => selected.add(n.id)); } else { items.forEach(n => selected.delete(n.id)); }
+            render();
+        });
+        document.querySelectorAll('[data-cb]').forEach(cb => cb.addEventListener('click', ev => {
+            ev.stopPropagation();
+            if (cb.checked) { selected.add(cb.dataset.cb); } else { selected.delete(cb.dataset.cb); }
+            render();
+        }));
+        document.querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', ev => {
+            ev.stopPropagation();
+            chainLock = c.dataset.chain;
+            selected.clear();
+            saveState(); render();
+        }));
+        document.querySelectorAll('[data-pinrow]').forEach(p => p.addEventListener('click', ev => {
+            ev.stopPropagation();
+            vscode.postMessage({ type: 'pin', id: p.dataset.pinrow, pinned: p.dataset.pin === '1' });
+        }));
+        // The bulk hand's contract is Notices' own: the SELECTED rows, or every
+        // row shown when nothing is checked — so a filter is how you aim it.
+        document.querySelectorAll('[data-hact]').forEach(b => b.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const a = b.dataset.hact;
+            if (a === 'bulkDelete') {
+                const ids = selected.size ? [...selected] : items.map(n => n.id);
+                if (!ids.length) { return; }
+                ids.forEach(id => expanded.delete(id));
+                selected.clear();
+                vscode.postMessage({ type: 'deleteMany', ids: ids });
+            } else if (a === 'clearResolved') {
+                vscode.postMessage({ type: 'clear', resolvedOnly: true });
+            }
+        }));
         document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', ev => {
             if (ev.target && ev.target.closest && ev.target.closest('button, a, .af-tip')) { return; }
             const id = el.dataset.open;

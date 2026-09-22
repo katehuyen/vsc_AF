@@ -43,8 +43,8 @@
         preferred: 'preferred — mismatches allowed, exact hits rank first; the target role\'s alone for a grace period',
         any: 'any — the coordinates are a label; anyone may take it'
     };
-    function chip(cls, text, head, body) {
-        const c = `<span class="a2a-chip ${cls}">${esc(text)}</span>`;
+    function chip(cls, text, head, body, attrs) {
+        const c = `<span class="a2a-chip ${cls}"${attrs || ''}>${esc(text)}</span>`;
         return window.AFTip ? window.AFTip.wrap(c, head, body) : c;
     }
     // An ABSOLUTE path is wide and its head says nothing: the chip carries the
@@ -64,7 +64,13 @@
         return `<span class="a2a-coords">`
             + chip('a2a-c-proj', '◧ ' + pName, 'Project', `Project: ${pName}\n${row.project === '*' ? 'Every project — a broadcast on this axis.' : (p ? (p.summary || '') : 'Filed by key; the project is not open in this window.')}`)
             + chip('a2a-c-where', '📁 ' + (where === '*' ? ANY : shortPath(where)), whereName, `${whereName}: ${where === '*' ? 'anywhere' : where}`)
-            + chip('a2a-c-topic', '# ' + (row.topic === '*' ? ANY : row.topic), 'Topic', `Topic: ${row.topic === '*' ? 'anything' : row.topic}\nThe anchor a reader searches by.`)
+            // S-84 — on a relay card the topic IS the chain, so the chip is the
+            // way into that race: one click locks the page to it, leg by leg.
+            + (row.category === 'baton' && row.topic !== '*'
+                ? chip('a2a-c-topic a2a-chainchip', '⑂ ' + row.topic, 'Chain',
+                    `Chain: ${row.topic}\nThis card is one leg of that relay.\n\nClick to lock the page to this chain — every leg from the first, oldest first.`,
+                    ` data-chain="${esc(row.topic)}"`)
+                : chip('a2a-c-topic', '# ' + (row.topic === '*' ? ANY : row.topic), 'Topic', `Topic: ${row.topic === '*' ? 'anything' : row.topic}\nThe anchor a reader searches by.`))
             + chip('a2a-c-role', '→ ' + (row.targetRole === '*' ? 'anyone' : row.targetRole), 'Target role', `Target role: ${row.targetRole === '*' ? 'anyone' : row.targetRole}\nSession: ${row.targetSession === '*' ? 'any' : row.targetSession}`)
             + chip('a2a-c-strict a2a-s-' + esc(row.strictness), row.strictness, 'Strictness', `Strictness: ${STRICT[row.strictness] || row.strictness}`)
             + `</span>`;
@@ -164,7 +170,7 @@
         return window.AFTip ? window.AFTip.wrap(`<span class="a2a-leasew">${bar}</span>`, 'Lease', body) : bar;
     }
 
-    const CAT = { info: 'ℹ️', warning: '⚠️', convention: '📐', discovery: '🔎', result: '✅' };
+    const CAT = { info: 'ℹ️', warning: '⚠️', convention: '📐', discovery: '🔎', result: '✅', baton: '⑂' };
     const STATE = {
         queued: ['⏳', 'queued — waiting for a claimant that fits'],
         claimed: ['✋', 'claimed — an agent holds the lease and has not reported running yet'],
@@ -279,6 +285,20 @@
         .a2a-plus.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
         .a2a-cockpit { padding:0 10px 10px 28px; }
         .a2a-cockpit .affbox { margin:0; }
+        .a2a-chainchip { cursor:pointer; }
+        .a2a-chainchip:hover { background:var(--vscode-list-hoverBackground); text-decoration:underline; }
+        .a2a-pin, .a2a-cb { flex-shrink:0; }
+        .a2a-pin { cursor:pointer; opacity:.25; filter:grayscale(1); font-size:12px; }
+        .a2a-pin:hover { opacity:.7; } .a2a-pin.on { opacity:1; filter:none; }
+        .a2a-card.pinned { border-color:var(--vscode-focusBorder); }
+        .a2a-card.sel { background:var(--vscode-list-inactiveSelectionBackground); }
+        .a2a-bulk { display:inline-flex; gap:6px; align-items:center; padding-left:6px; border-left:1px solid var(--vscode-panel-border); }
+        .a2a-bulk .a2a-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
+        .a2a-bmode.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        .a2a-chainbar { display:flex; gap:8px; align-items:center; margin:10px 0 2px; padding:5px 10px; border-radius:6px;
+            border:1px solid var(--vscode-focusBorder); background:var(--vscode-editorWidget-background); font-size:12px; }
+        .a2a-chainbar .a2a-chainid { font-weight:600; }
+        .a2a-chainbar .muted { font-size:11.5px; }
     </style>`;
 
     window.AFA2A = { esc, md, coords, directive, directiveFlag, plus, cockpit, leaseBar, stateBadge, controls, wireControls, wireCockpit, CAT, KINDS, STYLE };

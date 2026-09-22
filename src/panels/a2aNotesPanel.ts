@@ -108,6 +108,27 @@ export class A2ANotesPanel {
             case 'unresolve':
                 if (id && this.deps.notes.resolve(id, false)) { this.mutated(); }
                 break;
+            // S-84 — the board's hygiene, from the page: the same store methods
+            // a2a.notes.pin / .delete / .deleteMany / .clear call.
+            case 'pin':
+                if (id && this.deps.notes.pin(id, msg.pinned === true)) { this.mutated(); }
+                break;
+            case 'delete':
+                if (id && this.deps.notes.remove([id])) { this.mutated(); }
+                break;
+            case 'deleteMany': {
+                const ids = Array.isArray(msg.ids) ? msg.ids.filter((x): x is string => typeof x === 'string') : [];
+                if (ids.length && this.deps.notes.remove(ids)) { this.mutated(); }
+                break;
+            }
+            case 'clear': {
+                // ‼️ The page's ● Clear resolved is exactly that — the open half
+                // of the board is never cleared from a click, and a pinned note
+                // is spared here as it is by the sweep.
+                if (msg.resolvedOnly !== true) { break; }
+                if (this.deps.notes.clear({ resolvedOnly: true })) { this.mutated(); }
+                break;
+            }
             case 'toTask': {
                 // The same promotion the bridge's a2a.tasks.fromNote does, with
                 // the same refusal: a note that already has a live task is not
