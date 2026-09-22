@@ -562,6 +562,10 @@ import { A2ATasksPanel } from './panels/a2aTasksPanel';
 import { WikiPanel } from './panels/wikiPanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
+import { chainExample, inboxExample, morningExample, registerExampleOps } from './core/examples';
+import {
+    applyTerminalRender, registerTerminalRenderOps, SettingsSection, TerminalRenderAction, terminalRenderState
+} from './core/terminalRender';
 import {
     postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge,
     speakerSettings
@@ -16874,6 +16878,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const c = docOpenStore.get();
         return { mode: c.defaultMode, hasCustom: !!c.customCommand.trim() };
     };
+    // Every reader of the doc-open store, refreshed after any write to it — the
+    // Projects page's Open buttons read it too, and a page still offering the
+    // old default is a page that opens the wrong app.
+    const docOpenChanged = (): void => {
+        QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); ProjectsPanel.refreshIfOpen();
+    };
     // The host-side "configure default + custom app" flow (the ⚙ Configure item
     // in each panel's caret menu, and the palette command). Writes the module
     // store; both boards pick it up on their next render.
@@ -16902,16 +16912,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             patch.customCommand = cmd; patch.customArgs = args;
         }
         docOpenStore.set(patch);
-        QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
-        ProjectsPanel.refreshIfOpen();
+        docOpenChanged();
         void vscode.window.showInformationMessage(`Agent Farm: documents now open in "${DOC_OPEN_LABELS[picked.mode]}".`);
     };
-    registerDocOpenOps(bridge, {
-        store: docOpenStore,
-        // The Projects page's Open buttons read the same store, so it refreshes
-        // with the other two — a page still offering the old default is a page
-        // that opens the wrong app.
-        onChange: () => { QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); ProjectsPanel.refreshIfOpen(); }
+    registerDocOpenOps(bridge, { store: docOpenStore, onChange: docOpenChanged });
+
+    // One door into terminal.integrated, for the palette's repair and the bridge alike.
+    const userScope = (c: Pick<vscode.WorkspaceConfiguration, 'get' | 'update'>): SettingsSection => ({
+        get<T>(key: string, fallback: T): T { return c.get<T>(key, fallback); },
+        update: (key, value) => c.update(key, value, vscode.ConfigurationTarget.Global)
+    });
+    const terminalRenderIo = {
+        term: () => userScope(vscode.workspace.getConfiguration('terminal.integrated')),
+        farm: () => userScope(cfg())
+    };
+    registerTerminalRenderOps(bridge, terminalRenderIo);
+    registerExampleOps(bridge, {
+        agents: () => agents,
+        addTrigger: (t) => taskManager.addTrigger(t),
+        addSchedule: (s) => taskManager.addSchedule(s),
+        addWorkflow: (title, steps) => taskManager.addWorkflow(title, steps),
+        runWorkflow: (w) => taskManager.runWorkflow(w)
     });
 
     // --- Notice ↔ Kuyruk shared plumbing (used by both panels + commands) ---
@@ -34156,32 +34177,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     openLabel: 'Watch this folder'
                 });
                 if (!folderUri?.length) { return; }
-                const folder = folderUri[0].fsPath;
-                const trigger = taskManager.addTrigger({
-                    title: `Inbox: ${path.basename(folder)}`,
-                    type: 'watch',
-                    watchPath: folder,
-                    action: {
-                        kind: 'task', agentId: agent.id, agentName: agent.name,
-                        title: 'Inbox triage',
-                        prompt: 'İzlenen klasöre ({watch}) yeni veya değişmiş bir dosya düştü. Dosyayı bul, içeriğine bak ve: '
-                            + '(1) ne olduğunu tek satırda özetle; (2) CLAUDE.md/hafızandaki kurallara göre uygun yere taşı ya da işle; '
-                            + '(3) ne yaptığını kısaca raporla. Emin olamadığın dosyaya dokunma, sadece raporla.',
-                        mode: 'headless'
-                    },
-                    debounceSec: 20, cooldownSec: 60, maxPerHour: 6, enabled: true
-                });
+                const trigger = taskManager.addTrigger(inboxExample(agent, folderUri[0].fsPath));
                 showCreated(`watch trigger "${trigger.title}" (${agent.name})`);
             } else if (pick.id === 'morning') {
                 const agent = await resolveAgent(undefined);
                 if (!agent) { return; }
-                taskManager.addSchedule({
-                    agentId: agent.id, agentName: agent.name,
-                    title: 'Morning briefing',
-                    prompt: 'Günaydın. Hafızanı, DUTIES.md görevlerini ve dünkü durumu gözden geçir; '
-                        + 'bugün için 3-5 maddelik kısa bir plan/brifing yaz. Yeni dosya oluşturma, sadece raporla.',
-                    mode: 'headless', kind: 'daily', hour: 9, minute: 0, enabled: true
-                });
+                taskManager.addSchedule(morningExample(agent));
                 showCreated(`daily schedule "Morning briefing" 09:00 (${agent.name})`);
             } else {
                 const pickStep = (ph: string) => vscode.window.showQuickPick(
@@ -34191,19 +34192,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!a) { return; }
                 const b = await pickStep('Step 2 — which agent summarizes?');
                 if (!b) { return; }
-                const w = taskManager.addWorkflow('Analyze → Summarize', [
-                    {
-                        agentId: a.agent.id, agentName: a.agent.name, title: 'Analyze',
-                        prompt: 'Ajan klasöründeki güncel duruma (hafıza, son raporlar, DUTIES.md) bakarak bugünün en önemli 3 konusunu analiz et. '
-                            + 'Her biri için durum + risk + öneri yaz.',
-                        mode: 'headless'
-                    },
-                    {
-                        agentId: b.agent.id, agentName: b.agent.name, title: 'Summarize',
-                        prompt: 'Aşağıdaki analizi 5 cümleyi geçmeyen bir yönetici özetine çevir:\n\n{prev_text}',
-                        mode: 'headless'
-                    }
-                ]);
+                const chain = chainExample(a.agent, b.agent);
+                const w = taskManager.addWorkflow(chain.title, chain.steps);
                 showCreated(`workflow "${w.title}" (${a.agent.name} → ${b.agent.name})`,
                     () => { taskManager.runWorkflow(w); });
             }
@@ -36488,17 +36478,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // the DOM renderer (gpuAcceleration off) and skipping xterm.js entirely for long
         // claude sessions via the OS terminal. Both live behind this one command.
         vscode.commands.registerCommand('agentfarm.terminalRenderFix', async () => {
-            const term = () => vscode.workspace.getConfiguration('terminal.integrated');
-            const gpu = term().get<string>('gpuAcceleration', 'auto');
-            const smooth = term().get<boolean>('smoothScrolling', false);
-            const persist = term().get<boolean>('enablePersistentSessions', true);
-            const external = cfg().get<boolean>('externalTerminal', false);
+            const now = terminalRenderState(terminalRenderIo.term(), terminalRenderIo.farm());
+            const gpu = now.gpuAcceleration;
+            const smooth = now.smoothScrolling;
+            const persist = now.enablePersistentSessions;
+            const external = now.externalTerminal;
             const cur = (v: boolean) => v ? 'on' : 'off';
             const pick = await vscode.window.showQuickPick(
                 [
                     {
                         label: '$(wrench) Apply render fix (recommended)',
-                        description: `gpuAcceleration: off + smoothScrolling: off — fixes ghost spaces / lost lines${gpu === 'off' && !smooth ? ' • already applied' : ''}`,
+                        description: `gpuAcceleration: off + smoothScrolling: off — fixes ghost spaces / lost lines${now.fixed ? ' • already applied' : ''}`,
                         id: 'fix'
                     },
                     {
@@ -36528,32 +36518,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             );
             if (!pick) { return; }
-            const G = vscode.ConfigurationTarget.Global;
+            if (pick.id === 'open') {
+                await vscode.commands.executeCommand('workbench.action.openSettings', 'terminal.integrated');
+                return;
+            }
+            await applyTerminalRender(pick.id as TerminalRenderAction, terminalRenderIo.term(), terminalRenderIo.farm());
             switch (pick.id) {
                 case 'fix':
-                    await term().update('gpuAcceleration', 'off', G);
-                    await term().update('smoothScrolling', false, G);
                     void vscode.window.showInformationMessage(
                         'Agent Farm: render fix applied (gpuAcceleration=off, smoothScrolling=off) — open a NEW terminal for it to take effect. Still glitchy? Re-run this command and try the external terminal option.');
                     break;
                 case 'external':
-                    await cfg().update('externalTerminal', !external, G);
                     void vscode.window.showInformationMessage(
                         `Agent Farm: claude session terminals now open ${!external ? 'in the OS terminal (Windows Terminal when available)' : 'in the integrated terminal'}.`);
                     break;
                 case 'persist':
-                    await term().update('enablePersistentSessions', false, G);
                     void vscode.window.showInformationMessage(
                         'Agent Farm: persistent terminal sessions disabled — terminals will not be restored after a reload (that restore step is a common source of garbled output).');
                     break;
                 case 'restore':
-                    await term().update('gpuAcceleration', undefined, G);
-                    await term().update('smoothScrolling', undefined, G);
-                    await term().update('enablePersistentSessions', undefined, G);
                     void vscode.window.showInformationMessage('Agent Farm: terminal rendering settings restored to VS Code defaults.');
-                    break;
-                case 'open':
-                    await vscode.commands.executeCommand('workbench.action.openSettings', 'terminal.integrated');
                     break;
             }
         }),

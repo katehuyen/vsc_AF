@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.629.0 - The parity gate reaches zero: every door and its op meet at one function (B-16, B-26) (2026-09-22)
+
+- **Zero open parity gaps.** The last eighteen user doors that either had
+  no op or had an op doing the same act by a second road now meet their op
+  at one shared function, and the gate’s budget is 0 — a new gap can no
+  longer be added, only a new op or a reasoned exemption.
+- **New ops.** `airtable.folders.add` / `.remove` — one folder at a time,
+  the way the page’s + Add and remove do it, instead of overwriting the whole
+  list; a folder already listed (either case, either slash) is not doubled,
+  and an engine folder with no instance needs `anyway:true`, the question the
+  page asks you. `terminal.render.get` / `.apply` — the “Fix Terminal
+  Rendering” repair (`fix` · `external` · `persist` · `restore`), the only
+  op allowed to write `terminal.integrated`, and only its three keys.
+  `examples.setup` — the three working examples (inbox trigger, morning
+  briefing, two-agent chain); the chain is created, not run, unless
+  `run:true`. `studio.export` gains `format:"both"`: the XML with the EDL
+  beside it, which is what the Studio’s export card writes.
+- **One function where there were copies.** Settling a mission round’s
+  approval was written out five times (the op, the page, the tree’s Approve
+  and Reject, cancelling the run) — now `settleMissionApproval`. The
+  Studio’s export card and `studio.export` both write through
+  `core/sequenceExport`; the palette’s terminal repair and its op through
+  `core/terminalRender`; the example walk-through and its op build from
+  `core/examples`; the doc-open default refreshes its three readers through
+  one `docOpenChanged`, from the palette and from `docopen.set` alike. Also
+  (earlier in B-16): `removeToolboxItem`, `setServerDisabled`,
+  `answerMissionQuestion` with `skip`.
+- **The gate sees further, so it stops reporting parity that is there.** A
+  fall-through `case` arm carries the code it falls into; a command run from
+  inside a deps value is followed; an op reaching a deps object by its own
+  name (`portfolioDeps.importPack`) is expanded; and a command that hands off
+  to a host function is read through to it. Three gap notes had named the
+  wrong op (filing sessions is `projects.suggest.apply`, removing a project
+  is `projects.set delete:true`, the Studio’s re-run is `studio.rerun`).
+
 ## 3.628.0 - B-21 closed: the Tasks page’s ⬇ MD is back, and a session exports from an op (2026-09-21)
 
 - **The Tasks page’s Runs toolbar carries ⬇ MD again.** The handler had

@@ -6,7 +6,7 @@ import {
     assetKind, injectMediaFeedback, MEDIA_EXTS, MediaMeta, readMediaMetas, registerExternalAsset,
     registeredAssetPaths, updateMediaMeta
 } from './media';
-import { buildEdl, buildFcpXml, pickSequenceAssets } from './premiere';
+import { defaultSequenceFile, SEQUENCE_FORMATS, SequenceFormat, writeSequence } from './sequenceExport';
 import {
     DiscoveredProduction, discoverProductions, newProduction, PRODUCTION_FILENAME, sceneMatrix,
     SCENE_STATUSES, SceneStatus, setSceneStatus, writeProduction
@@ -311,29 +311,21 @@ export function registerStudioOps(bridge: BridgeRegistry, deps: StudioBridgeDeps
         },
         {
             op: 'studio.export',
-            describe: 'Write a production\'s approved assets out as an editing timeline: `format:"fcpxml"` for Premiere / Final Cut, `format:"edl"` for anything that reads a CMX3600. Only assets ASSIGNED to a scene are placed, in scene order (studio.assign files them; studio.triage decides which of several is the one). `file` is where it is written — with none, it lands beside the production.json as <id>.xml / <id>.edl. args: project (id or title), format? (fcpxml|edl, default fcpxml), file?, fps? (default 30), clipSeconds? (default 5)',
+            describe: 'Write a production\'s approved assets out as an editing timeline: `format:"fcpxml"` for Premiere / Final Cut, `format:"edl"` for anything that reads a CMX3600, `format:"both"` for the XML with the EDL beside it — what the Studio\'s export card writes. Only assets ASSIGNED to a scene are placed, in scene order (studio.assign files them; studio.triage decides which of several is the one). `file` is where it is written — with none, it lands beside the production.json as <id>.xml / <id>.edl. args: project (id or title), format? (fcpxml|edl|both, default fcpxml), file?, fps? (default 30), clipSeconds? (default 5)',
             handler: (args) => {
                 const found = findProduction(argStr(args, 'project'));
-                const format = (optStr(args, 'format') || 'fcpxml').toLowerCase();
-                need(format === 'fcpxml' || format === 'edl', `format is fcpxml or edl — not "${format}"`);
-                const clips = pickSequenceAssets(found.production, metasOf(deps));
-                need(clips.length,
+                const format = (optStr(args, 'format') || 'fcpxml').toLowerCase() as SequenceFormat;
+                need(SEQUENCE_FORMATS.includes(format), `format is fcpxml, edl or both — not "${format}"`);
+                const out = optStr(args, 'file') || defaultSequenceFile(found.file, found.production.id, format);
+                const res = writeSequence(found.production, metasOf(deps), out, {
+                    format, fps: optNum(args, 'fps', 30), clipSeconds: optNum(args, 'clipSeconds', 5)
+                });
+                need(res.clips,
                     `"${found.production.title}" has no scene assets to place — assign assets to scenes first (studio.assign).`);
-                const opts = {
-                    fps: optNum(args, 'fps', 30) || 30,
-                    clipSeconds: optNum(args, 'clipSeconds', 5) || 5,
-                    title: found.production.title
-                };
-                const safe = found.production.id.replace(/[^\w.-]+/g, '-');
-                const out = optStr(args, 'file')
-                    || path.join(path.dirname(found.file), `${safe}.${format === 'edl' ? 'edl' : 'xml'}`);
-                const text = format === 'edl' ? buildEdl(clips, opts) : buildFcpXml(clips, opts);
-                fs.mkdirSync(path.dirname(out), { recursive: true });
-                fs.writeFileSync(out, text, 'utf8');
                 return {
-                    project: found.production.title, format, file: out, clips: clips.length,
-                    fps: opts.fps, clipSeconds: opts.clipSeconds,
-                    note: `${clips.length} clip(s) written to ${path.basename(out)}.`
+                    project: found.production.title, format, file: out, files: res.files, clips: res.clips,
+                    fps: res.fps, clipSeconds: res.clipSeconds,
+                    note: `${res.clips} clip(s) written to ${res.files.map(f => path.basename(f)).join(' + ')}.`
                 };
             }
         }

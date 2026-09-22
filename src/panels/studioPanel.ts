@@ -9,7 +9,8 @@ import {
     discoverProductions, newProduction, PRODUCTION_FILENAME, sceneMatrix, SCENE_STATUSES,
     SceneStatus, setSceneStatus, writeProduction
 } from '../core/production';
-import { buildEdl, buildFcpXml, pickSequenceAssets } from '../core/premiere';
+import { pickSequenceAssets } from '../core/premiere';
+import { defaultSequenceFile, writeSequence } from '../core/sequenceExport';
 import { revealPath } from '../core/reveal';
 import { buildStudio, pipelineSummary, SCENE_TARGET_SEP } from '../core/studio';
 import { TaskManager } from '../core/tasks';
@@ -238,9 +239,11 @@ export class StudioPanel {
             case 'feedback':
                 void vscode.commands.executeCommand('agentfarm.rerunMedia', str('taskId'), false, true);
                 break;
-            case 'studio-save':
-                await this.saveForm((msg.form ?? {}) as Record<string, unknown>);
+            case 'studio-save': {
+                const form = (msg.form ?? {}) as Record<string, unknown>;
+                if (form.kind === 'export') { await this.exportSequence(form); } else { await this.saveForm(form); }
                 break;
+            }
             case 'setSceneStatus': {
                 const projectId = str('projectId');
                 const sceneId = str('sceneId');
@@ -395,32 +398,27 @@ export class StudioPanel {
             this.refresh();
             return this.say(`Started — ${meta.model}. It lands on this page when it finishes.`, true);
         }
+    }
 
-        if (kind !== 'export') { return; }
+    private async exportSequence(raw: Record<string, unknown>): Promise<void> {
         const found = discoverProductions(this.deps.getAgents())
-            .find(p => p.production.id === s('projectId'));
+            .find(p => p.production.id === String(raw.projectId ?? '').trim());
         if (!found) { return this.say('Pick a production to export.'); }
-        const clips = pickSequenceAssets(found.production, this.metas());
-        if (!clips.length) {
+        // Asked before the save dialog, so nobody picks a file to be told there was nothing to put in it.
+        if (!pickSequenceAssets(found.production, this.metas()).length) {
             return this.say(`"${found.production.title}" has no scene assets to place — assign assets to scenes first (the Assets tab's "assign" on each one).`);
         }
-        const opts = {
-            fps: Number(raw.fps) || 30,
-            clipSeconds: Number(raw.clipSeconds) || 5,
-            title: found.production.title
-        };
-        const safe = found.production.id.replace(/[^\w.-]+/g, '-');
         const uri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(path.join(path.dirname(found.file), `${safe}.xml`)),
+            defaultUri: vscode.Uri.file(defaultSequenceFile(found.file, found.production.id)),
             filters: { 'FCP7 XML': ['xml'] }, saveLabel: 'Export sequence'
         });
         if (!uri) { return this.say('Nothing was written.'); }
-        fs.writeFileSync(uri.fsPath, buildFcpXml(clips, opts), 'utf8');
-        const edlPath = uri.fsPath.replace(/\.xml$/i, '') + '.edl';
-        fs.writeFileSync(edlPath, buildEdl(clips, opts), 'utf8');
-        this.say(`${clips.length} clip(s) exported → ${path.basename(uri.fsPath)} (+ .edl). In Premiere: File → Import.`, true);
+        const { clips } = writeSequence(found.production, this.metas(), uri.fsPath, {
+            format: 'both', fps: Number(raw.fps), clipSeconds: Number(raw.clipSeconds)
+        });
+        this.say(`${clips} clip(s) exported → ${path.basename(uri.fsPath)} (+ .edl). In Premiere: File → Import.`, true);
         const choice = await vscode.window.showInformationMessage(
-            `Agent Farm: exported ${clips.length} clip(s) → ${path.basename(uri.fsPath)} (+ .edl).`,
+            `Agent Farm: exported ${clips} clip(s) → ${path.basename(uri.fsPath)} (+ .edl).`,
             'Reveal', 'Open XML');
         if (choice === 'Reveal') { void revealPath(uri.fsPath); }
         if (choice === 'Open XML') { void vscode.window.showTextDocument(uri); }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 4,
+  "gapBudget": 0,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -1133,9 +1133,9 @@
       "ui": [
         "cmd:agentfarm.configureDocOpen"
       ],
-      "gap": {
-        "why": "docopen.set exists, but the command runs its own quick-pick chain and writes the setting itself rather than through the op's core. One of the two has to give."
-      }
+      "ops": [
+        "docopen.set"
+      ]
     },
     {
       "capability": "configureLivingChecks",
@@ -2378,9 +2378,11 @@
       "ui": [
         "cmd:agentfarm.exportSequence"
       ],
-      "gap": {
-        "why": "studio.export exists, but the command builds the sequence through its own local path; the two do not meet at one function."
-      }
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens the Studio's export card; the sequence is written when that card is submitted (studio-save), through writeSequence, the function studio.export writes through."
+      },
+      "fronts": "studioPanel.ts#studio-save"
     },
     {
       "capability": "farmServiceStatus",
@@ -6190,9 +6192,9 @@
       "ui": [
         "cmd:agentfarm.setupExample"
       ],
-      "gap": {
-        "why": "The guided first-run example (an agent, a task and a schedule seeded together) is a page walk-through with no op behind it."
-      }
+      "ops": [
+        "examples.setup"
+      ]
     },
     {
       "capability": "setUsageEngine",
@@ -6379,7 +6381,9 @@
         "page:studioPanel.ts#studio-save"
       ],
       "ops": [
-        "studio.production.new"
+        "studio.export",
+        "studio.production.new",
+        "studio.rerun"
       ]
     },
     {
@@ -6974,9 +6978,10 @@
       "ui": [
         "cmd:agentfarm.terminalRenderFix"
       ],
-      "gap": {
-        "why": "Repairs the user's terminal.integrated rendering settings. settings.set is deliberately fenced to the agentFarm schema, so this needs its own narrow allowlisted op."
-      }
+      "ops": [
+        "terminal.render.apply",
+        "terminal.render.get"
+      ]
     },
     {
       "capability": "testDispatch",

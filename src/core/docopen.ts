@@ -267,7 +267,6 @@ export interface DocOpenOpsDeps {
 }
 
 export function registerDocOpenOps(bridge: BridgeRegistry, deps: DocOpenOpsDeps): void {
-    const changed = () => { try { deps.onChange?.(); } catch { /* UI best-effort */ } };
     bridge.register([
         {
             op: 'docopen.get',
@@ -283,7 +282,7 @@ export function registerDocOpenOps(bridge: BridgeRegistry, deps: DocOpenOpsDeps)
                 if (args.customCommand !== undefined) { patch.customCommand = optStr(args, 'customCommand'); }
                 if (args.customArgs !== undefined) { patch.customArgs = optStr(args, 'customArgs'); }
                 const cfg = deps.store.set(patch);
-                changed();
+                try { deps.onChange?.(); } catch { /* UI best-effort */ }
                 return cfg;
             }
         }

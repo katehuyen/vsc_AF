@@ -133,6 +133,24 @@ const methodBodies = (file) => {
     }
     return map;
 };
+/**
+ * ‼️ A COMMAND THAT DELEGATES TO A HOST FUNCTION IS THAT FUNCTION. A panel's
+ * `this.method(` is read through to the method; the host's own
+ * `const configureDocOpen = async () => { … }` is the same hop, and without it
+ * a command whose whole body is `void configureDocOpen()` looked as if it went
+ * nowhere. One hop from the handler's own text, capped like a method body.
+ */
+let hostFns;
+const hostFunctions = () => {
+    if (!hostFns) {
+        hostFns = new Map();
+        const code = P.withoutComments(hostSrc);
+        for (const m of code.matchAll(/(?:^|\n)[ \t]*(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/g)) {
+            if (!hostFns.has(m[1])) { hostFns.set(m[1], code.slice(m.index, Math.min(code.length, m.index + 2500))); }
+        }
+    }
+    return hostFns;
+};
 const wire = (body, file) => {
     let out = body;
     if (file && file.endsWith('.ts') && file !== 'extension.ts') {
@@ -140,6 +158,15 @@ const wire = (body, file) => {
         for (const m of body.matchAll(/\bthis\.([A-Za-z_$][\w$]*)\s*\(/g)) {
             const b = methods.get(m[1]);
             if (b) { out += '\n' + b; }
+        }
+    }
+    if (file === 'extension.ts') {
+        const fns = hostFunctions();
+        const read = new Set();
+        for (const m of body.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+            if (m[1].length <= 3 || read.has(m[1]) || !fns.has(m[1])) { continue; }
+            read.add(m[1]);
+            out += '\n' + fns.get(m[1]);
         }
     }
     // A page button that runs a command IS that command — follow it, or the
@@ -370,6 +397,9 @@ const manifest = JSON.parse(read(MANIFEST_FILE));
     const door = ui.find(u => u.id === 'page:missionsPanel.ts#delete');
     ok('‼️ a command run from inside a deps value is followed to its body',
         !!door && /deleteMissionRun\(/.test(door.wired));
+    const cfgDoor = ui.find(u => u.id === 'cmd:agentfarm.configureDocOpen');
+    ok('‼️ a command that delegates to a host function is read through to that function (B-26)',
+        !!cfgDoor && cfgDoor.body.length < 120 && /docOpenStore\.set\(patch\)/.test(cfgDoor.wired));
     const pack = ops.find(o => o.op === 'agents.pack.import');
     ok('‼️ an op reaching a deps object by its own name is expanded like deps.<key>',
         !!pack && /applyPackFiles\(/.test(pack.wired));
