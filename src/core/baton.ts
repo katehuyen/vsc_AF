@@ -304,6 +304,13 @@ export function normalizeMaxLegs(v: unknown): number {
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : BATON_DEFAULT_MAX_LEGS;
 }
 
+/** A chain's OWN leg ceiling as typed, seeded or sent (S-82): a whole number ≥ 0, or nothing = the setting decides. */
+export function normalizeLegCeiling(v: unknown): number | undefined {
+    if (v === undefined || v === null || v === '') { return undefined; }
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+}
+
 export interface BatonBrake {
     kind: 'ceiling' | 'barren';
     why: string;

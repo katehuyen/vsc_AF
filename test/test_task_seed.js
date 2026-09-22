@@ -63,7 +63,10 @@ const DIMENSION_BOX = {
     rounds: 'rounds', ignoreBudget: 'ignoreBudget', projectId: 'project',
     // The policy is three states and a dozen numbers, so its box is a MODE
     // plus the numbers under it (`retrySeed`) — pinned separately below.
-    retry: 'retryMode'
+    retry: 'retryMode',
+    // ‼️ S-82 — the relay tick and the ceiling under it. The chain's POOL has
+    // no box of its own: the seal reads the run's ACCOUNT (a rule = the pool).
+    baton: 'baton', batonMaxHops: 'batonMaxHops'
 };
 
 {
@@ -93,10 +96,18 @@ const DIMENSION_BOX = {
         cli: 'gemini', interactiveTarget: 'console', interactiveClose: 'auto-close',
         finishSound: 'chime', superpowers: false, projectId: 'prj_1', workDir: 'D:/x',
         priority: 3, ignoreBudget: true, rounds, retry,
-        resumeSessionId: 'ses_abc', resumedEngine: 'opencode', resumedFrom: 'yesterday'
+        resumeSessionId: 'ses_abc', resumedEngine: 'opencode', resumedFrom: 'yesterday',
+        baton: true, batonMaxHops: 4
     });
     eq('the engine, the model and the effort come back',
         [seed.engine, seed.model, seed.effort], ['codex', 'opus', 'high']);
+    // ‼️ S-82 — the ceiling comes back as TEXT: '' is "the setting decides"
+    // and 0 is "no ceiling", and a number box cannot say the first one.
+    eq('‼️ S-82 — the relay and its own ceiling come back', [seed.baton, seed.batonMaxHops], [true, '4']);
+    eq('…a chain on the setting\'s ceiling comes back with an EMPTY box, not 0',
+        P.taskSeed({ agentName: 'a', title: 't', prompt: 'p', mode: 'headless', baton: true }).batonMaxHops, '');
+    eq('…and a ceiling of 0 (none) is not mistaken for the setting',
+        P.taskSeed({ agentName: 'a', title: 't', prompt: 'p', mode: 'headless', baton: true, batonMaxHops: 0 }).batonMaxHops, '0');
     eq('‼️ M-32 — the round chain comes back, whole', seed.rounds, rounds);
     eq('‼️ M-32 — and so does the conversation it was set to continue',
         [seed.conversation, seed.resumeSessionId], ['resume', 'ses_abc']);

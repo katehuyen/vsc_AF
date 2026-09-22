@@ -23,6 +23,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { FINISH_SOUND_SILENT, normalizeFinishSound } from './alertVoices';
+import { normalizeLegCeiling } from './baton';
 import { EngineId, ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
 import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
@@ -504,6 +505,22 @@ export function bridgeRunDimensions(
     // to say the same thing with the same word, or the two surfaces disagree
     // about a run that then does not happen at 09:00.
     if (args.ignoreBudget === true) { out.ignoreBudget = true; }
+    // ‼️ S-82 — AND WHETHER ITS RUNS OPEN A BATON RELAY, in the words tasks.add
+    // uses (`baton`, `maxHops` — the second implies the first): the form can
+    // tick it on a schedule and a trigger, so "the nightly batch passes the
+    // baton when it hits the wall" must be sayable here with the same word.
+    if (args.baton !== undefined) {
+        need(typeof args.baton === 'boolean', 'baton is true or false — omit it for an ordinary run.');
+    }
+    if (args.maxHops !== undefined && args.maxHops !== null && args.maxHops !== '') {
+        need(normalizeLegCeiling(args.maxHops) !== undefined,
+            `maxHops must be a whole number ≥ 0 (0 = no ceiling), not "${String(args.maxHops)}"`);
+    }
+    if (args.baton === true || (args.baton !== false && normalizeLegCeiling(args.maxHops) !== undefined)) {
+        out.baton = true;
+        const cap = normalizeLegCeiling(args.maxHops);
+        if (cap !== undefined) { out.batonMaxHops = cap; }
+    }
     // ‼️ M-3 — AND WHAT HAPPENS IF IT FAILS, for the same reason: the page can
     // set it on a task, a schedule and a trigger, so an agent asked to "make the
     // nightly batch try three more times half an hour apart" must be able to say
@@ -738,6 +755,15 @@ export const SUPERPOWERS_NOTE =
     + 'absent means the agent\'s own default decides, which is what every run made before '
     + 'this did and must keep meaning. Pass false to switch the discipline OFF for this job '
     + 'alone.';
+
+export const BATON_NOTE =
+    ' ‼️ S-82 — AND WHETHER EACH RUN OPENS A BATON RELAY — baton? (true), maxHops? (that '
+    + 'chain\'s own leg ceiling, the first leg included; 0 = none; implies baton:true; default '
+    + 'agentFarm.batonMaxHops). A run that opens a relay is sealed as leg 1 once its session is '
+    + 'known: at the quota or context wall its whisper says "pass the baton", and a fresh session '
+    + 'on the chain\'s POOL picks the work up. The pool is the `account` when it names a policy '
+    + '(@…); a single slot or none means @emptiest. Every firing opens its OWN chain — a chain '
+    + 'name (chainId) is a tasks.add argument only.';
 
 export const DIMS_OUT_NOTE =
     ' ‼️ Each row also says what its ENGINE can do (engineLabel, turnShape, '

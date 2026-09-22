@@ -5475,6 +5475,21 @@ const { opencodeStatus, syncToOpencode } =
             && both.error === ONE_EXECUTOR);
         const onlyEngine = await reg.dispatch('m22.dims', { engine: 'opencode' });
         ok('one executor still passes', onlyEngine.ok && onlyEngine.result.engine === 'opencode');
+        // ‼️ S-82 — the relay is read here in tasks.add's words, so a schedule
+        // and a trigger can say it; the ceiling is clamped once, on the way in.
+        const relay = await reg.dispatch('m22.dims', { baton: true, maxHops: '4' });
+        ok('‼️ S-82 — baton:true and maxHops reach an automation as baton + batonMaxHops',
+            relay.ok && relay.result.baton === true && relay.result.batonMaxHops === 4);
+        const capOnly = await reg.dispatch('m22.dims', { maxHops: 0 });
+        ok('…a ceiling alone implies the relay, and 0 (= none) survives as 0',
+            capOnly.ok && capOnly.result.baton === true && capOnly.result.batonMaxHops === 0);
+        const noRelay = await reg.dispatch('m22.dims', { engine: 'opencode' });
+        ok('…and an automation that never asked carries neither key',
+            noRelay.ok && !('baton' in noRelay.result) && !('batonMaxHops' in noRelay.result));
+        const badCap = await reg.dispatch('m22.dims', { baton: true, maxHops: -2 });
+        ok('…a ceiling below zero is refused, not stored', !badCap.ok && /maxHops must be a whole number/.test(badCap.error));
+        const badFlag = await reg.dispatch('m22.dims', { baton: 'yes' });
+        ok('…and a relay flag that is not a boolean is refused', !badFlag.ok && /baton is true or false/.test(badFlag.error));
         // S-60 — a permission mode the ENGINE cannot keep is refused where it is
         // written (a schedule, a trigger, a task), with the engine's sentence.
         const agyAsk = await reg.dispatch('m22.dims', { engine: 'agy', permissionMode: 'manual' });

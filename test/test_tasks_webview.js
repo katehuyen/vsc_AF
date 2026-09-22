@@ -284,6 +284,13 @@ const DATA = {
                 { id: 'personal', label: 'personal@gmail', health: 'ready', active: false }
             ]
         },
+        // S-82 — and the rules, which the relay block narrows the Account to.
+        policies: {
+            claude: [
+                { id: '@emptiest', label: '@emptiest', detail: 'the slot with the most window left', picks: 'work@studio', note: '', refusal: '' },
+                { id: '@gece', label: '@gece', detail: 'the night pool', picks: 'personal@gmail', note: '', refusal: '' }
+            ]
+        },
         // ‼️ X-228 — and the routes an engine may be pointed at, for exactly the
         // reason the accounts above are here: a route row is drawn only where
         // there is something to pick, so a launch block without one tests the
@@ -933,6 +940,57 @@ query('[data-expand="run:r3"]')[0].click();
     sandbox.document.getElementById('nt-add').click();
     ok('…and it travels with the task the form sends',
         posted.some(p => p.type === 'task-new' && p.task.ignoreBudget === true));
+
+    // ------------------------------------------ S-82: open a baton RELAY
+    //
+    // ‼️ The two boxes under the tick exist only while it is on, and the POOL
+    // is not a second field: it is the Account narrowed to rules, because the
+    // seal reads the run's own account as the chain's pool (core/batonSeal.ts).
+    sandbox.document.getElementById('nt-open').click();
+    ok('‼️ S-82 — the form can open a baton relay', /id="nt-baton"/.test(html()));
+    ok('…and says what a relay does where the box is',
+        /hands over to a fresh session, not to a note/.test(html()));
+    ok('…the pool and the ceiling are not in the way until the tick is on',
+        !/id="nt-batonpool"/.test(html()) && !/id="nt-batonmaxhops"/.test(html()));
+    sandbox.document.getElementById('nt-prompt').value = 'gece taraması — devret';
+    sandbox.document.getElementById('nt-prompt').fire('input');
+    sandbox.document.getElementById('nt-account').value = 'personal';
+    sandbox.document.getElementById('nt-account').fire('change');
+    sandbox.document.getElementById('nt-baton').checked = true;
+    sandbox.document.getElementById('nt-baton').fire('change');
+    ok('‼️ …ticking it opens the pool picker and the ceiling box',
+        !!sandbox.document.getElementById('nt-batonpool') && !!sandbox.document.getElementById('nt-batonmaxhops'));
+    ok('‼️ …and an Account on a SINGLE SLOT is said on the pool row\'s first line — a chain cannot run on it',
+        /Account names a single slot/.test(html()));
+    ok('…the ceiling box is empty and names the setting, not 0',
+        sandbox.document.getElementById('nt-batonmaxhops').value === '' && /placeholder="setting/.test(html()));
+    ok('…the pool offers the rules and nothing else', /<option value="@gece"/.test(html())
+        && !new RegExp('id="nt-batonpool">[\\s\\S]*?value="personal"[\\s\\S]*?</select>').test(html()));
+    sandbox.document.getElementById('nt-batonpool').value = '@gece';
+    sandbox.document.getElementById('nt-batonpool').fire('change');
+    ok('‼️ …a rule picked as the pool becomes the ACCOUNT — one fact, two lenses',
+        sandbox.document.getElementById('nt-account').value === '@gece'
+        && /<option value="@gece"[^>]*selected/.test(html()));
+    // ‼️ And moving the Account box afterwards is not undone by the pool row:
+    // the pool is read only when it is the control that moved.
+    sandbox.document.getElementById('nt-account').value = 'work-1';
+    sandbox.document.getElementById('nt-account').fire('change');
+    ok('‼️ …and moving the Account back to a slot is NOT overwritten by the pool row on the next read',
+        sandbox.document.getElementById('nt-account').value === 'work-1' && /Account names a single slot/.test(html()));
+    sandbox.document.getElementById('nt-batonpool').value = '@emptiest';
+    sandbox.document.getElementById('nt-batonpool').fire('change');
+    sandbox.document.getElementById('nt-batonmaxhops').value = '4';
+    sandbox.document.getElementById('nt-batonmaxhops').fire('input');
+    posted = [];
+    sandbox.document.getElementById('nt-add').click();
+    const relayed = posted.find(p => p.type === 'task-new');
+    ok('‼️ …and the relay, its ceiling and its pool travel with the task the form sends',
+        relayed && relayed.task.baton === true && relayed.task.batonMaxHops === '4' && relayed.task.account === '@emptiest');
+    onMessage.forEach(fn => fn({ data: { type: 'task-made', id: 'relay1', title: 'gece taraması — devret', started: true } }));
+    sandbox.document.getElementById('nt-open').click();
+    ok('…and a fresh form opens with the relay OFF — nothing is decided by opening a form',
+        !/id="nt-baton"[^>]*checked/.test(html()) && !/id="nt-batonpool"/.test(html()));
+    sandbox.document.getElementById('nt-cancel').click();
 
     // ---------------------------------------------- M-3: what if it FAILS
     //

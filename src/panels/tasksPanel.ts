@@ -21,6 +21,7 @@ import {
     RunDimensions, ScheduleKind, scheduleDue, settledKeyAfterEdit,
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
+import { normalizeLegCeiling } from '../core/baton';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { describeRounds, normalizeRounds } from '../core/taskRounds';
@@ -115,6 +116,9 @@ export interface TasksDeps {
         picks: string; note: string; refusal: string;
     }[]>;
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
+    /** S-82 — the fleet's leg ceiling (agentFarm.batonMaxHops), so the relay
+     *  block can say what an empty "max legs" box means. 0 = none. */
+    batonMaxLegs?(): number;
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
@@ -357,6 +361,14 @@ function triggerTarget(t: FarmTrigger): string {
     return `runs on ${t.action.agentName}`;
 }
 
+/** S-82 — the relay as one fact on a row; the chain itself is the Console card's subject. */
+function relayFact(d: { baton?: boolean; batonMaxHops?: number; batonChainId?: string }): { label: string; value: string } | undefined {
+    if (!d.baton) { return undefined; }
+    const cap = d.batonMaxHops === undefined ? 'legs per the setting'
+        : d.batonMaxHops === 0 ? 'no leg ceiling' : `${d.batonMaxHops} legs at most`;
+    return { label: 'Relay', value: `${d.batonChainId ? `opens chain ${d.batonChainId}` : 'opens a baton chain'}, ${cap}` };
+}
+
 /**
  * ‼️ M-8 — THE WHOLE SETUP OF A SCHEDULE, THE WAY IT WAS TYPED IN.
  *
@@ -384,6 +396,8 @@ function scheduleSetup(s: FarmSchedule): { label: string; value: string }[] {
     if (s.cli) { out.push({ label: 'CLI profile', value: s.cli }); }
     if (s.workDir) { out.push({ label: 'Working folder', value: s.workDir }); }
     if (s.priority) { out.push({ label: 'Priority', value: String(s.priority) }); }
+    const relayS = relayFact(s);
+    if (relayS) { out.push(relayS); }
     if (s.ignoreBudget) {
         out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' });
     }
@@ -429,6 +443,8 @@ function triggerSetup(t: FarmTrigger, armed: boolean): { label: string; value: s
         if (a.effort) { out.push({ label: 'Effort', value: a.effort }); }
         if (a.permissionMode) { out.push({ label: 'Permissions', value: a.permissionMode }); }
         if (a.workDir) { out.push({ label: 'Working folder', value: a.workDir }); }
+        const relayA = relayFact(a);
+        if (relayA) { out.push(relayA); }
         if (a.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
         if (a.retry) { out.push({ label: 'If it fails', value: describeRetry(a.retry) }); }
         const r = describeRounds(a.rounds);
@@ -714,6 +730,8 @@ function runSetup(
     if (t.cli) { out.push({ label: 'CLI profile', value: t.cli }); }
     if (t.workDir) { out.push({ label: 'Working folder', value: t.workDir }); }
     if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }
+    const relayT = relayFact(t);
+    if (relayT) { out.push(relayT); }
     if (t.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
     if (t.retry) { out.push({ label: 'If it fails', value: describeRetry(t.retry) }); }
     if (t.outputContract === 'json') { out.push({ label: 'Output', value: 'JSON (structured handoff)' }); }
@@ -900,6 +918,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             accounts: deps.engineAccounts?.() ?? null,
             // X-305 — …and the rules, drawn as their own group above the slots.
             policies: deps.enginePolicies?.() ?? null,
+            // S-82 — the standing leg ceiling, for the relay block's empty box.
+            batonMaxLegs: deps.batonMaxLegs ? deps.batonMaxLegs() : null,
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),
@@ -1216,6 +1236,10 @@ export function taskSeed(t: FarmTask): Record<string, unknown> {
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0,
         ignoreBudget: !!t.ignoreBudget,
+        // S-82 — whether it opens a relay, and the chain's own ceiling ('' =
+        // the setting decides, which is a different answer from 0 = none).
+        baton: t.baton === true,
+        batonMaxHops: t.batonMaxHops === undefined ? '' : String(t.batonMaxHops),
         /**
          * ‼️ M-32 — THE CHAIN IS PART OF THE TASK, AND THE FORM HAD NO WAY TO
          * KNOW IT.
@@ -1390,6 +1414,9 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         account: s.account ?? '',
         workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
+        // S-82 — and whether its runs open a relay (see taskSeed).
+        baton: s.baton === true,
+        batonMaxHops: s.batonMaxHops === undefined ? '' : String(s.batonMaxHops),
         // ‼️ M-27 — what it was saved with, so reopening the form shows the
         // chain instead of an empty editor over a schedule that has one.
         rounds: normalizeRounds(s.rounds),
@@ -1428,6 +1455,9 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         account: dims.account ?? '',
         workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
+        // S-82 — and whether its runs open a relay (see taskSeed).
+        baton: dims.baton === true,
+        batonMaxHops: dims.batonMaxHops === undefined ? '' : String(dims.batonMaxHops),
         // ‼️ M-27 — the chain it was saved with (see RunDimensions.rounds).
         rounds: normalizeRounds(dims.rounds),
         ...retrySeed(dims.retry),
@@ -1801,6 +1831,11 @@ export class TasksPanel {
             // it makes carries it. Ticking it on each produced task by hand is
             // exactly what nobody is there to do at 09:00.
             ignoreBudget: item.ignoreBudget === true ? true : undefined,
+            // S-82 — and the relay, for the same reason again: the run that
+            // hits the quota wall at 03:00 is the one that must pass the baton
+            // rather than write a note nobody reads until morning.
+            baton: item.baton === true ? true : undefined,
+            batonMaxHops: item.baton === true ? normalizeLegCeiling(item.batonMaxHops) : undefined,
             // ‼️ M-3 — and so does the retry policy, for the same reason: an
             // automation that fails at 03:00 with nobody watching is the case
             // "try it again in half an hour" exists for. Absent (the form's
@@ -2350,6 +2385,11 @@ export class TasksPanel {
                         workDir: str('workDir') || undefined,
                         priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined,
                         ignoreBudget: t.ignoreBudget === true ? true : undefined,
+                        // S-82 — stated either way (the key decides, see
+                        // retryTask): unticking the relay on a rerun really
+                        // drops it instead of inheriting the original's.
+                        baton: t.baton === true ? true : undefined,
+                        batonMaxHops: t.baton === true ? normalizeLegCeiling(t.batonMaxHops) : undefined,
                         // ‼️ M-32 — AND THE THREE THE FORM DRAWS AND THE RETRY
                         // USED TO THROW AWAY. The boxes are on screen with the
                         // original's answers in them (taskSeed); a save that
@@ -2447,6 +2487,11 @@ export class TasksPanel {
                     ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {}),
                     // M-7 — "run it whatever the budget says" (see FarmTask.ignoreBudget)
                     ...(t.ignoreBudget === true ? { ignoreBudget: true } : {}),
+                    // S-82 — this run opens a baton relay (see FarmTask.baton);
+                    // the pool is the Account box when it names a policy.
+                    ...(t.baton === true ? { baton: true } : {}),
+                    ...(t.baton === true && normalizeLegCeiling(t.batonMaxHops) !== undefined
+                        ? { batonMaxHops: normalizeLegCeiling(t.batonMaxHops) } : {}),
                     // M-3 — what happens if it fails (see core/retry.ts). Absent
                     // means the user's default, which is why it is not filled in
                     // with a resolved policy here.

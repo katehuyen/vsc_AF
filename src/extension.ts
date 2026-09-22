@@ -410,7 +410,7 @@ import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } fro
 import {
     argSessionIds, argStr, BridgeCaller, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage,
     bridgeRunDimensions,
-    DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
+    BATON_NOTE, DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
     needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli,
     stagedBridgeCliPath
 } from './core/bridge';
@@ -8645,7 +8645,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
                 + enginesWithoutEffort()
                 + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + BATON_NOTE,
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -9909,7 +9909,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // older shape accepted has been taken away.
             op: 'triggers.add',
             describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + BATON_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -10033,7 +10033,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.add',
             describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + BATON_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -10253,7 +10253,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.run',
             describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + BATON_NOTE,
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -23468,6 +23468,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         engineAccounts: () => engineAccountMatrix(),
         // ‼️ X-305 — …and the RULES each engine offers, through the twin reader.
         enginePolicies: () => enginePolicyMatrix(),
+        // S-82 — the standing leg ceiling the relay block's empty box means.
+        batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.

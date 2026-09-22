@@ -282,8 +282,10 @@ console.log('\n== X-106 (2) — a task handed to the Console keeps every dimensi
     // What the Console has no use for: a CLI profile is a command template for
     // a binary the panel does not host; the interactive target/close and the
     // finish sound are the runner's terminal furniture; workDir arrives as
-    // `cwd`; priority, rounds, ignoreBudget and retry are the queue's.
-    const EXEMPT = ['cli', 'interactiveTarget', 'interactiveClose', 'finishSound', 'workDir', 'priority', 'rounds', 'ignoreBudget', 'retry'];
+    // `cwd`; priority, rounds, ignoreBudget and retry are the queue's. S-82's
+    // relay is the queue's too: the BatonRunner seals the TASK ROW as leg 1
+    // once its session is known, whichever surface hosts it.
+    const EXEMPT = ['cli', 'interactiveTarget', 'interactiveClose', 'finishSound', 'workDir', 'priority', 'rounds', 'ignoreBudget', 'retry', 'baton', 'batonMaxHops'];
     const carried = fields.filter(f => !EXEMPT.includes(f));
     ok('‼️ X-106 — the Console door carries EVERY dimension it can use (missing: '
         + carried.filter(f => !new RegExp(`\\b${f}\\b`).test(door)).join(', ') + ')',

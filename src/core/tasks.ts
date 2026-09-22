@@ -9,6 +9,7 @@ import { SecretScrubber, secretValuesOf } from './secretScrub';
 import { AgentInfo } from './agents';
 import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
+import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
@@ -841,6 +842,19 @@ export interface RunDimensions {
      * Absent = the user's default (`agentFarm.taskRetry`).
      */
     retry?: RetryPolicy;
+    /**
+     * ‼️ S-82 — AND WHETHER IT OPENS A BATON RELAY (see FarmTask.baton).
+     *
+     * It rides with the retry policy for the same reason: the nightly run
+     * nobody is watching is exactly the one that must hand its work to a fresh
+     * session at the quota wall rather than write a note into the dark. A
+     * schedule, a trigger and a retry carry it by the shape; the chain's NAME
+     * does not travel (FarmTask.batonChainId) — a named chain already has legs
+     * the second time an automation fires.
+     */
+    baton?: boolean;
+    /** S-82 — that chain's own leg ceiling (0 = none); absent = agentFarm.batonMaxHops. */
+    batonMaxHops?: number;
 }
 
 /**
@@ -1009,6 +1023,13 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     // got. `addTask` stamps the denominator from here.
     const rounds = normalizeRounds(d.rounds);
     if (rounds.length) { r.rounds = rounds; }
+    // S-82 — the relay opens on the run the shape produces, and its ceiling is
+    // clamped on the way through like every other number here.
+    if (d.baton === true) {
+        r.baton = true;
+        const cap = normalizeLegCeiling(d.batonMaxHops);
+        if (cap !== undefined) { r.batonMaxHops = cap; }
+    }
     return r;
 }
 
@@ -4522,7 +4543,9 @@ export class TaskManager implements vscode.Disposable {
                      * run's dimensions. It is FIRST on purpose: the round's own
                      * fields are written after it and must win — `rounds` here
                      * is what is LEFT to say (`next.rest`), not what the task
-                     * started with.
+                     * started with. S-82's `baton` and `batonMaxHops` ride in it
+                     * too; a round resumes a session the seal already knows, so
+                     * it is never sealed twice.
                      */
                     ...runExtras(task),
                     round: next.round,
@@ -4883,6 +4906,8 @@ export class TaskManager implements vscode.Disposable {
                      * must not become the eighteenth thing to forget. What still
                      * follows it is written after on purpose: the fields below
                      * are the retry's OWN, and they must beat the original's.
+                     * S-82's `baton` and `batonMaxHops` ride in it too: a retry
+                     * of a run that opened a relay opens one, on a new chain.
                      */
                     ...runExtras(task),
                     ...(policy ? { retry: policy } : {}),
@@ -5513,7 +5538,9 @@ export class TaskManager implements vscode.Disposable {
                 | 'priority' | 'projectId' | 'ignoreBudget'
                 // ‼️ M-32 — …and the three the AUTOMATIC retry has always
                 // carried and this one dropped (see maybeScheduleRetry).
-                | 'retry' | 'rounds' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'>>
+                | 'retry' | 'rounds' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
+                // S-82 — and whether it opens a relay, with its own leg ceiling.
+                | 'baton' | 'batonMaxHops'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
             this.resumeWorkflowFromTask(task);
@@ -5615,6 +5642,14 @@ export class TaskManager implements vscode.Disposable {
         copy.retry = said('retry') ? over?.retry : task.retry;
         const rounds = said('rounds') ? over?.rounds : task.rounds;
         if (rounds?.length) { copy.rounds = rounds; } else { delete copy.rounds; }
+        // S-82 — a rerun of a run that opened a relay opens one too, on a NEW
+        // chain: the seal is by session, and the chain's name is deliberately
+        // not carried (a named chain already has legs). The key-present rule
+        // above applies — the form always has an answer, including "not this
+        // time"; the button and the bridge omit the key and inherit.
+        const baton = said('baton') ? over?.baton === true : task.baton === true;
+        const cap = normalizeLegCeiling(said('batonMaxHops') ? over?.batonMaxHops : task.batonMaxHops);
+        if (baton) { copy.baton = true; if (cap !== undefined) { copy.batonMaxHops = cap; } }
         // ‼️ S-19 — a retry of a run that was continuing a conversation continues
         // the SAME conversation: the words being sent again were written for that
         // context, and opening a new session would answer them without it.

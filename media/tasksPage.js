@@ -1187,6 +1187,10 @@
             // only ever the one it DECLARES (core/tasks.ts RunDimensions).
             project: kind && kind !== 'task' ? '' : (L.activeProjectId || ''),
             start: true,
+            // ‼️ S-82 — whether the run opens a baton relay, and the chain's own
+            // leg ceiling. '' is "the setting decides" and is not 0 (= no
+            // ceiling), so it stays a string until the host reads it.
+            baton: false, batonMaxHops: '',
             // Set when the form was opened as "run that one again, but…": the
             // host turns it into a retry of THAT task (its lineage, its attempt
             // number) rather than an unrelated new one.
@@ -2724,8 +2728,58 @@
                 + 'Leave it empty and the ACTIVE account of that engine answers when the run fires — the '
                 + 'one the Engines page points at — and failing that the main sign-in, which is what '
                 + 'every run written before this took. A dot marks the standing choice; a warning '
-                + 'sign marks a slot that needs signing in again.')}"><span>Account</span>
+                + 'sign marks a slot that needs signing in again. '
+                + 'Under a baton relay a rule (@…) named here is the chain\'s POOL: every later leg is placed from it.')}"><span>Account</span>
                     <select id="nt-account">${opts}</select></label>`;
+        })();
+        /**
+         * ‼️ S-82 — THE RELAY, ON THE FORM.
+         *
+         * A run that opens a relay is sealed as leg 1 the moment its session is
+         * known (core/batonSeal.ts): at the quota or context wall its whisper
+         * says "pass the baton" instead of "write the note", and a fresh session
+         * on the chain's pool picks the work up. Until this block the only door
+         * was `tasks.add baton:true` — an agent's decision, never the user's.
+         *
+         * The POOL is not a second field. The seal reads the run's own Account:
+         * a rule (@…) is the pool every later leg is placed from, a single slot
+         * or nothing means @emptiest (that slot is the one running out). So the
+         * picker under the tick is the Account box narrowed to rules — choosing
+         * here writes the same draft field, and the Account box above follows.
+         * ONE SUBJECT: two lenses, one fact.
+         *
+         * Drawn shut on every form that never asked; the two boxes exist only
+         * while the tick is on, so a headless nightly run carries no ceiling it
+         * was never given ('' = the setting decides, and it is not 0).
+         */
+        const batonRow = (() => {
+            const pols = ntPolicies(c.engine);
+            const want = String(c.account || '');
+            const isPool = want.startsWith('@');
+            const fleet = (L.batonMaxLegs === undefined || L.batonMaxLegs === null) ? '' : String(L.batonMaxLegs);
+            const poolRows = pols.some(p => p.id === '@emptiest')
+                ? pols : [{ id: '@emptiest', label: '@emptiest', detail: 'The default pool: the sign-in with the most room left when each leg starts.' }].concat(pols);
+            const poolOpts = (isPool ? '' : C.option('', want ? '@emptiest — Account names a single slot' : '@emptiest — no account named', {
+                selected: true,
+                detail: 'The chain runs on @emptiest because the Account box names ' + (want ? 'a single slot, which is the one running out' : 'nothing') + '. Pick a rule here to name a pool; it becomes the Account too.'
+            }))
+                + poolRows.map(p => C.option(p.id, window.AFAccount.policyRow(p).label, {
+                    selected: isPool && p.id === want, detail: window.AFAccount.policyRow(p).detail
+                })).join('');
+            return `<label class="ntf wide cbxf" title="${C.esc('A baton relay: when this run reaches its quota or context limit it passes its work to a FRESH session '
+                + 'on the chain\'s pool instead of writing a handover note for a person to act on. The run is sealed as leg 1 '
+                + 'the moment its session is known — its card draws ⑂ 1, the status bar ⑂ 1/N, and its handover whisper says '
+                + '"pass the baton". The chain ends by itself when the work is done and nobody passes; the leg ceiling and the '
+                + 'barren-chain brake (two legs, no new commit) stop it otherwise. Same door as tasks.add baton:true.')}"><span>⑂ Relay</span>
+                    <label class="cbx"><input type="checkbox" id="nt-baton"${c.baton ? ' checked' : ''}>
+                        open a baton relay — at its limit the run hands over to a fresh session, not to a note</label>
+                    ${c.baton ? `<span class="ntbaton">
+                        <label title="${C.esc('The POOL every later leg is placed from — a rule (@…), never a single slot: the slot that hit the wall is the one that has no room. This is the Account box narrowed to rules; choosing here sets Account as well.')}"><span>pool</span>
+                            <select id="nt-batonpool">${poolOpts}</select></label>
+                        <label title="${C.esc('This chain\'s own leg ceiling, the first leg included. Empty = the fleet setting (agentFarm.batonMaxHops' + (fleet ? ', now ' + fleet : '') + '); 0 = no ceiling — only the barren-chain brake and the user\'s stop remain.')}"><span>max legs</span>
+                            <input type="number" id="nt-batonmaxhops" min="0" step="1" value="${C.esc(String(c.batonMaxHops == null ? '' : c.batonMaxHops))}" placeholder="${C.esc(fleet ? 'setting: ' + fleet : 'setting')}"></label>
+                    </span>` : ''}
+                </label>`;
         })();
         /**
          * ‼️ WHICH ENGINE (X-18) — and it matters MORE here than in the Console.
@@ -2929,6 +2983,7 @@
                 <label class="ntf wide cbxf" title="The daily budget (Farm Settings → budgets) stops a run before it starts and keeps it queued until the ceiling clears — which for an unattended run can mean the whole day. Tick this and the budget is not consulted for this one. ‼️ It does NOT lift the 5-hour quota guard or the concurrency limits: those protect the plan window and this machine, they are not a number you set about money, and a run held by them is waiting rather than refused."><span>Budget</span>
                     <label class="cbx"><input type="checkbox" id="nt-ignorebudget"${c.ignoreBudget ? ' checked' : ''}>
                         run it even when the daily budget is spent</label></label>
+                ${batonRow}
                 ${conversationHtml(c)}
                 ${retryHtml(c)}` : ''}
             </div>
@@ -3015,6 +3070,15 @@
         v('account', 'account');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
+        // ‼️ S-82 — the relay tick and the ceiling under it, read as TEXT ('' =
+        // the setting decides, which `n()` would turn into 0 = no ceiling). The
+        // pool picker is read into its OWN key only: it writes the ACCOUNT when
+        // it is the control that moved (its own handler) — written to `account`
+        // on every pass it would put the old rule back over an Account the
+        // user just changed.
+        b('baton', 'baton');
+        v('batonmaxhops', 'batonMaxHops');
+        v('batonpool', 'batonPool');
         // M-3 — the fields only exist while the picker says "set it here", and
         // `v`/`n` skip what is not on the page, so switching back to `default`
         // keeps the numbers in the draft for when it is switched on again.
@@ -3815,6 +3879,11 @@
                    two-digit number alone on a line — a 1400px input holding 3. */
                 .ntf.thin { flex:0 0 170px; }
                 .ntf > span { opacity:.75; }
+                .ntbaton { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; padding:4px 0 0 20px; }
+                .ntbaton label { display:flex; flex-direction:column; gap:2px; font-size:11px; }
+                .ntbaton label > span { opacity:.75; }
+                .ntbaton select { min-width:220px; max-width:360px; }
+                .ntbaton input[type=number] { width:96px; }
                 .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
                 .ntf select, .ntf input { padding:3px 6px; }
                 .ntf textarea { font-family:inherit; font-size:13px; padding:6px 8px; resize:vertical; min-height:70px; }
@@ -4200,7 +4269,7 @@
             // with the kind being made; bindAll skips whatever is not drawn.
             window.AFSnippets.bindAll(SNIP_BOXES);
             ['prompt', 'title', 'workdir', 'priority', 'watchPath', 'token', 'time', 'onceAt',
-                'debounceSec', 'cooldownSec', 'maxPerHour',
+                'debounceSec', 'cooldownSec', 'maxPerHour', 'batonmaxhops',
                 'guardPath', 'guardExcept', 'guardMin', 'guardHours'].forEach(id =>
                     byId('nt-' + id, 'input', () => readComposer()));
             // ‼️ M-26's two boxes are in this list, and they were in NO list when
@@ -4248,6 +4317,24 @@
             // not map). The same shape the engine handler below has.
             byId('nt-route', 'change', () => { readComposer(); ntNarrowRoute(composer); render(); });
             byId('nt-account', 'change', () => { readComposer(); render(); });
+            // ‼️ S-82 — the tick opens two boxes under it, so it repaints; the
+            // pool picker is the Account box narrowed to rules, so moving it
+            // writes the account AFTER the read (the read would take the
+            // Account select's old word) and repaints both.
+            byId('nt-baton', 'change', () => { readComposer(); render(); });
+            byId('nt-batonpool', 'change', () => {
+                readComposer();
+                const pool = document.getElementById('nt-batonpool');
+                const acc = document.getElementById('nt-account');
+                // The first row ('') is the mirror of a non-rule Account and
+                // says nothing new; a rule picked here becomes the Account —
+                // on the draft AND on the box, so the next read agrees.
+                if (composer && pool && pool.value) {
+                    composer.account = String(pool.value);
+                    if (acc) { acc.value = composer.account; }
+                }
+                render();
+            });
             byId('nt-retrycarryon', 'change', () => { readComposer(); });
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {

@@ -553,6 +553,35 @@ const variants = () => ([
         }
     },
     /**
+     * ‼️ S-82 — THE RELAY BLOCK, IN THE STATE THAT HAS TO EXPLAIN ITSELF.
+     *
+     * The two boxes under the tick exist only while it is on, so the smallest
+     * scene is the tick alone (every other form scene photographs that). This
+     * is the next arity, and the one the pool row was written for: an Account
+     * that names a SINGLE SLOT, which a chain cannot run on — the row must say
+     * so on its first line rather than draw a rule nobody chose.
+     */
+    {
+        id: 'tasks-baton', label: 'Tasks → the New-task form opening a relay, Account on a single slot (S-82)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-prompt': 'gece taraması — kaldığın yerden devam et', 'nt-account': 'personal' }, 'nt-account');
+            drive(r, { 'nt-baton': true }, 'nt-baton');
+        }
+    },
+    /** …and the same block with a rule chosen as the pool and a ceiling of its own. */
+    {
+        id: 'tasks-baton-pool', label: 'Tasks → a relay on the @gece pool, four legs at most (S-82)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-prompt': 'gece taraması — kaldığın yerden devam et', 'nt-baton': true }, 'nt-baton');
+            drive(r, { 'nt-batonpool': '@gece' }, 'nt-batonpool');
+            drive(r, { 'nt-batonmaxhops': '4' }, 'nt-baton');
+        }
+    },
+    /**
      * ‼ X-106 — THE FORM WITH A ROUTE ON IT, WHICH IS THE ONE STATE THE TWO
      * BOXES EXIST FOR.
      *
