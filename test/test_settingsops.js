@@ -763,5 +763,22 @@ const { charts } = require('./lib_charts_stub.js');
         }], () => { throw new Error('must not be asked'); })['agentFarm.sentryTemplatesFile']);
 }
 
+// S-82 — a text the schema says is several lines gets a text box, read off the schema
+{
+    const cats = SO.buildSettingsModel({
+        'agentFarm.batonHandoverTemplate': { type: 'string', default: '', editPresentation: 'multilineText', description: 't' },
+        'agentFarm.agentsRoot': { type: 'string', default: '', description: 'r' }
+    }, () => '');
+    const items = [].concat(...cats.map(c => c.items));
+    const tpl = items.find(i => i.key === 'agentFarm.batonHandoverTemplate');
+    ok('S-82: editPresentation multilineText marks the item multiline', !!tpl && tpl.multiline === true);
+    ok('…and filed under the handover discipline', cats.some(c => c.id === 'discipline' && c.items.includes(tpl)));
+    ok('…a plain string is not', !items.find(i => i.key === 'agentFarm.agentsRoot').multiline);
+    const page = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    ok('…and the page draws it as a textarea that saves like any other box (data-set)',
+        /if \(it\.multiline\) \{[\s\S]{0,200}<textarea id="\$\{id\}" data-set=/.test(page));
+    ok('…in its own group of the discipline page', /keys: \['batonHandoverTemplate', 'batonInjectedDirective'\]/.test(page));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

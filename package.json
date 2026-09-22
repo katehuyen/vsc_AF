@@ -8715,6 +8715,18 @@
           "minimum": 0,
           "description": "Baton relay (S-78): the most legs one chain may run — the run that started it is leg 1. A pass from the last leg opens nothing: the baton is kept as stopped with the reason, the runner is told to write a handover note instead, and Notices says so once. 0 = no ceiling. The other automatic brake needs no setting: two legs in a row that end on the same git HEAD stop the chain too."
         },
+        "agentFarm.batonInjectedDirective": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Baton relay (S-82): a standing rule said to EVERY leg of every chain, above the predecessor's own words — for example \"run npm test before you pass the baton\". Empty = nothing is added. In your own handover template it goes where {userDirective} stands; a template that does not name it still gets it, on its own line above the predecessor's words."
+        },
+        "agentFarm.batonHandoverTemplate": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Baton relay (S-82): your own first message for every leg, instead of the built-in \"=== BATON RELAY — chain … ===\" header. Variables: {fromSessionId} (the predecessor's session), {agentId} (the agent's name), {chain}, {hop}, {maxHops} (the chain's leg ceiling, \"none\" when it has none), {why} (what opened this leg), {userDirective} (agentFarm.batonInjectedDirective), {agentPrompt} (the predecessor's own words). An unknown {name} is left as typed. The predecessor's words are never lost: a template without {agentPrompt} gets them appended under a --- line. Empty = the built-in header stays in charge."
+        },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,

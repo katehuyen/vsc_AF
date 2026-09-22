@@ -131,6 +131,8 @@ export interface SettingSpec {
      * and cannot validate makes it refuse the whole property.
      */
     values?: string;
+    /** S-82 — the schema's own `editPresentation: multilineText`: a text box, not a one-line field */
+    multiline?: true;
 }
 
 export interface SettingItem extends SettingSpec {
@@ -207,6 +209,8 @@ const CATEGORY_OF: Record<string, string> = {
     disciplineOrders: 'discipline',
     // S-78 — where a relay stops by itself: the same law, carried by a baton
     batonMaxHops: 'discipline',
+    // S-82 — what every leg is told on top: the user's header and standing rule
+    batonHandoverTemplate: 'discipline', batonInjectedDirective: 'discipline',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.
@@ -401,7 +405,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 /** Build the category → items model from the live schema + current values. */
 export function buildSettingsModel(
-    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown }>,
+    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown; editPresentation?: unknown }>,
     valueOf: (key: string) => unknown,
     refusalOf?: (key: string) => string | undefined
 ): SettingsCategory[] {
@@ -419,6 +423,7 @@ export function buildSettingsModel(
             markdownDescription: p.markdownDescription,
             ...(p['x-af-browse'] === 'file' ? { browse: 'file' as const } : {}),
             ...(p['x-af-browse'] === 'folder' ? { browse: 'folder' as const } : {}),
+            ...(p.editPresentation === 'multilineText' ? { multiline: true as const } : {}),
             // U-84 — a picker whose options only the host knows. Read here for
             // the reason the shape below is: asked for on the page, it would be
             // a thing the NEXT surface that lists settings does without.

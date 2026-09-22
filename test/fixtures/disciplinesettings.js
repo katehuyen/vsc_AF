@@ -28,7 +28,9 @@ const KEYS = [
     'agentFarm.quotaConvergePct',
     'agentFarm.quotaHandoverPct',
     'agentFarm.disciplineOrders',
-    'agentFarm.batonMaxHops'
+    'agentFarm.batonMaxHops',
+    'agentFarm.batonInjectedDirective',
+    'agentFarm.batonHandoverTemplate'
 ];
 
 const categories = (values) => {
@@ -69,7 +71,12 @@ const variants = () => ([
                     + '— the next run reads that line first.',
                 handover: 'Stop. Commit, write the handover note into 00_OUTPUT/01_CEVAPLAR, name its path in your '
                     + 'last message and end the run — do NOT try to finish the item (_REF/handover.md).'
-            }
+            },
+            // S-82 — the relay's own header and a standing rule, both text boxes
+            'agentFarm.batonInjectedDirective': 'Run npm test before you pass the baton.',
+            'agentFarm.batonHandoverTemplate': '=== RELAY {chain} · leg {hop}/{maxHops} ===\n'
+                + 'You continue {agentId}\'s work after session {fromSessionId} ({why}).\n'
+                + 'Rule: {userDirective}\n---\n{agentPrompt}'
         })
     }
 ]);

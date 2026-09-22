@@ -1093,6 +1093,13 @@
             ? ` <button class="secondary small" data-browse="${C.esc(it.key)}" data-browsekind="${C.esc(it.browse)}"
                     title="Pick ${it.browse === 'folder' ? 'a folder' : 'a file'} — the path is written into the box and saved">Browse…</button>`
             : '';
+        // S-82 — the schema says a text is several lines (editPresentation), so it gets a text box
+        if (it.multiline) {
+            const text = String(it.value ?? '');
+            return `<textarea id="${id}" data-set="${C.esc(it.key)}" rows="${Math.min(14, Math.max(4, text.split('\n').length + 1))}" spellcheck="false"
+                placeholder="empty — the built-in text stays in charge"
+                style="width:100%; max-width:640px; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>`;
+        }
         return `<span class="setpath"><input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:100%; max-width:420px">${browse}</span>`;
     }
 
@@ -1852,6 +1859,11 @@
             title: 'Where a relay stops by itself',
             why: 'A run that passes the baton opens the next leg of its chain. The chain ends naturally when a run finishes the work and passes nothing; these are its brakes. Past the ceiling, or after two legs in a row that committed nothing, the pass opens no leg — the baton is kept as stopped, the runner writes a note instead, and Notices says so once.',
             keys: ['batonMaxHops']
+        },
+        {
+            title: 'What every leg wakes up to',
+            why: 'The first message of each new leg: a header the system writes, then the predecessor\'s own words. Your template replaces the header — its variables are listed on it — and your standing rule is said to every leg. Leave both empty and the built-in header stays in charge; the predecessor\'s words are never dropped.',
+            keys: ['batonHandoverTemplate', 'batonInjectedDirective']
         }
     ];
 

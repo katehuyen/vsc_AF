@@ -126,5 +126,41 @@ function baton(o = {}) {
     ok('…and the farm-news park scan asks it before posting', /if \(relayHandoffHold\(t, batonStore\.all\(\)\)\) \{ continue; \}/.test(scan));
 }
 
+// ---- S-82 (4/4): the user's header and standing rule (agentFarm.batonHandoverTemplate / batonInjectedDirective)
+{
+    const D = require(path.join(OUT, 'batonDoor.js'));
+    const b = baton({ prompt: 'Carry on with S-83.' });
+    const plain = successorPrompt(b, { agentName: 'developer', maxHops: 6 });
+    ok('S-82: with neither set, the built-in header is unchanged — and names the ceiling', /^=== BATON RELAY — chain chn_\w+ · hop 1\/6 ===/.test(plain)
+        && !/Standing directive/.test(plain) && plain.endsWith('---\nCarry on with S-83.'));
+    const ruled = successorPrompt(b, { agentName: 'developer', directive: '  Run npm test before passing.  ' });
+    ok('…a standing directive rides the built-in header, trimmed, ABOVE the predecessor\'s words',
+        /Standing directive \(the user's, on every leg\): Run npm test before passing\.\n---\nCarry on with S-83\.$/.test(ruled));
+    ok('…a blank one adds nothing', !/Standing directive/.test(successorPrompt(b, { directive: '   ' })));
+    const tpl = 'LEG {hop}/{maxHops} of {chain} for {agentId} after {fromSessionId}\nWhy: {why}\nRule: {userDirective}\n{agentPrompt}\nkeep {unknown}';
+    const mine = successorPrompt(b, { agentName: 'developer', maxHops: 4, template: tpl, directive: 'Be brief.' });
+    ok('‼️ a template REPLACES the header and fills every variable',
+        mine.startsWith(`LEG 1/4 of ${b.chainId} for developer after aaaaaaaa-1111\nWhy: ${b.why}\nRule: Be brief.\nCarry on with S-83.`)
+        && !/BATON RELAY/.test(mine));
+    ok('…an unknown {name} is left as typed', /keep \{unknown\}$/.test(mine));
+    ok('…no ceiling reads "none"', /^LEG 1\/none/.test(successorPrompt(b, { template: tpl })));
+    const bare = successorPrompt(b, { template: 'Hop {hop}. Go.', directive: 'Be brief.' });
+    ok('‼️ a template that forgets the directive and the words still carries both — directive first, words last',
+        bare === 'Hop 1. Go.\nStanding directive: Be brief.\n---\nCarry on with S-83.');
+    ok('…a whitespace-only template is no template', /^=== BATON RELAY/.test(successorPrompt(b, { template: ' \n ' })));
+    ok('the variable list is the one the setting documents', D.HANDOVER_TEMPLATE_VARS.join() === 'fromSessionId,agentId,chain,hop,maxHops,why,userDirective,agentPrompt');
+    const pkg = require(path.join(__dirname, '..', 'package.json')).contributes.configuration;
+    const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
+    const tplSetting = props['agentFarm.batonHandoverTemplate'];
+    ok('…and every one of them is named in that setting\'s description',
+        !!tplSetting && D.HANDOVER_TEMPLATE_VARS.every(v => tplSetting.description.includes('{' + v + '}')));
+    ok('both settings are text boxes, empty by default', tplSetting && tplSetting.editPresentation === 'multilineText' && tplSetting.default === ''
+        && props['agentFarm.batonInjectedDirective'] && props['agentFarm.batonInjectedDirective'].editPresentation === 'multilineText');
+    const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ the door reads both settings and the chain\'s own ceiling for every successor row',
+        /maxHops: chainMaxLegs\(batonStore\.all\(\), b\.chainId, normalizeMaxLegs\(cfg\(\)\.get<unknown>\('batonMaxHops'\)\)\)/.test(ext)
+        && /template: cfg\(\)\.get<string>\('batonHandoverTemplate', ''\)/.test(ext) && /directive: cfg\(\)\.get<string>\('batonInjectedDirective', ''\)/.test(ext));
+}
+
 console.log(`test_baton_door: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

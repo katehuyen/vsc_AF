@@ -301,7 +301,7 @@ import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { attachRelay, passNowText } from './core/batonAttach';
-import { chainPool } from './core/batonSeal';
+import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
@@ -16549,7 +16549,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     refusal: pick.refusal
                 }
                 : undefined;
-            const row = successorRow(b, { agentName: agent.name, agentDir: agent.dir, ...(park ? { park } : {}) });
+            const row = successorRow(b, {
+                agentName: agent.name, agentDir: agent.dir, ...(park ? { park } : {}),
+                // S-82 — the chain's own ceiling ("hop n/N"), and the user's header and standing rule
+                maxHops: chainMaxLegs(batonStore.all(), b.chainId, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))),
+                template: cfg().get<string>('batonHandoverTemplate', ''),
+                directive: cfg().get<string>('batonInjectedDirective', '')
+            });
             const task = taskManager.addTask(agent, row.title, row.prompt, row.mode, row.extra);
             const started = taskManager.startTask(task);
             return {

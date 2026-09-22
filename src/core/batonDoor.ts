@@ -54,6 +54,39 @@ export interface DoorContext {
      * no second timer). Absent = at least one account has room.
      */
     park?: { resetsAt: number; bufferMin: number; refusal?: string };
+    /** S-82 — agentFarm.batonHandoverTemplate: the user's own header; blank = the built-in one */
+    template?: string;
+    /** S-82 — agentFarm.batonInjectedDirective: a standing rule said on every leg; blank = nothing */
+    directive?: string;
+}
+
+/** The variables a handover template may name (agentFarm.batonHandoverTemplate). */
+export const HANDOVER_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'hop', 'maxHops', 'why', 'userDirective', 'agentPrompt'] as const;
+
+/**
+ * S-82 — the user's template, filled. Unknown `{names}` are left as typed. The
+ * two things a leg must never lose are kept even when the template forgets
+ * them: the standing directive goes above the predecessor's words, and the
+ * predecessor's words go last under a `---`.
+ */
+export function renderHandoverTemplate(template: string, b: Baton, ctx: DoorContext = {}): string {
+    const directive = String(ctx.directive ?? '').trim();
+    const vars: Record<string, string> = {
+        fromSessionId: b.from.sessionId,
+        agentId: ctx.agentName || b.from.agentId,
+        chain: b.chainId,
+        hop: String(b.hop),
+        maxHops: ctx.maxHops && ctx.maxHops > 0 ? String(ctx.maxHops) : 'none',
+        why: b.why,
+        userDirective: directive,
+        agentPrompt: b.prompt
+    };
+    let out = template.replace(/\{(\w+)\}/g, (m, k: string) => (Object.prototype.hasOwnProperty.call(vars, k) ? vars[k] : m));
+    const tail: string[] = [];
+    if (directive && !/\{userDirective\}/.test(template)) { tail.push(`Standing directive: ${directive}`); }
+    if (!/\{agentPrompt\}/.test(template)) { tail.push('---', b.prompt); }
+    if (tail.length) { out = [out.replace(/\s+$/, ''), ...tail].join('\n'); }
+    return out;
 }
 
 /** S-73 — the moment a parked successor wakes: the first reset plus the safety buffer. */
@@ -63,6 +96,8 @@ export function wakeMoment(park: { resetsAt: number; bufferMin: number }): numbe
 
 /** The first message the successor sees: the chain's header, then the predecessor's own words. */
 export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
+    if (String(ctx.template ?? '').trim()) { return renderHandoverTemplate(String(ctx.template), b, ctx); }
+    const directive = String(ctx.directive ?? '').trim();
     const hop = ctx.maxHops && ctx.maxHops > 0 ? `hop ${b.hop}/${ctx.maxHops}` : `hop ${b.hop}`;
     const who = ctx.agentName || b.from.agentId;
     const model = b.inherit.model ? `${b.from.engine}/${b.inherit.model}` : b.from.engine;
@@ -74,6 +109,7 @@ export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
         'If you cannot finish either, pass the baton yourself when your run is ending (_REF/handover.md): write { "prompt": "<what your successor starts from>" } to a file and run',
         '  node af.js baton.pass "@<file>"',
         'Nothing starts while you are alive. The chain ends when the work is done and nobody passes.',
+        ...(directive ? [`Standing directive (the user's, on every leg): ${directive}`] : []),
         '---',
         b.prompt
     ].join('\n');
