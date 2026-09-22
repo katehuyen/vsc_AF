@@ -11,7 +11,8 @@
  * do in the window.
  */
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
-import { BATON_DEFAULT_MAX_LEGS, Baton, batonBrake, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
+import { BATON_DEFAULT_MAX_LEGS, Baton, batonBrake, batonPlanSentence, batonRelayOf, isLive, moveBaton, passBaton, successorSurface } from './baton';
+import { chainMaxLegs, sealFirstLeg } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { LaunchManifest, manifestOf } from './launchManifest';
 import { WhoamiResult } from './whoami';
@@ -80,6 +81,7 @@ export function batonView(b: Baton): Record<string, unknown> {
         prompt: b.prompt.length > PROMPT_PREVIEW ? b.prompt.slice(0, PROMPT_PREVIEW) + '…' : b.prompt,
         promptChars: b.prompt.length,
         note: b.note ?? null,
+        ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
         wakeAt: b.wakeAt ?? null, taskId: b.taskId ?? null, toSessionId: b.toSessionId ?? null,
         createdAt: b.createdAt, updatedAt: b.updatedAt
     };
@@ -109,7 +111,8 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                 }
                 const head = deps.headOf ? await deps.headOf(res.baton.from.cwd).catch(() => undefined) : undefined;
                 const accepted: Baton = head ? { ...res.baton, head } : res.baton;
-                const brake = batonBrake(accepted, deps.store.all(), deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS);
+                const brake = batonBrake(accepted, deps.store.all(),
+                    chainMaxLegs(deps.store.all(), accepted.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
                 if (brake) {
                     const moved = moveBaton(accepted, 'stopped', `braked — ${brake.why}`, now());
                     const stopped = moved.ok ? moved.baton : accepted;
@@ -188,6 +191,45 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                 const r = deps.startNow(picked.list[0], optStr(args, 'by') || 'the user');
                 if (!r.ok) { throw new BridgeRefusal(r.why, { step: 'now', baton: picked.list[0].id, state: picked.list[0].state }); }
                 return { baton: batonView(r.baton), by: picked.by };
+            }
+        },
+        {
+            op: 'baton.attach',
+            describe: 'S-82 — MAKE A RUNNING SESSION LEG 1 OF A NEW BATON RELAY, without restarting it: it is sealed at once (hop 0), so from now on its handover line says "pass the baton" instead of "write the note", its card draws ⑂ 1 and the status bar ⑂ 1/N. args: session? (the session to attach; default the caller, found as sessions.whoami finds it), account? (the chain\'s POOL — a policy @…; every later leg is placed from it and never leaves it; a single slot or none = @emptiest), maxHops? (this chain\'s own leg ceiling, the attached leg included; 0 = none; default agentFarm.batonMaxHops), chain? (a name for the chain; default a new chn_…), by? (who attached it, recorded). Refused as data when the session is already in a chain (named), has no launch id or sealed manifest, or the chain name is taken.',
+            handler: async (args, from) => {
+                const who = await deps.caller(optStr(args, 'session') || undefined, from);
+                if (!who.ok) { throw new BridgeRefusal(who.why, { step: 'caller' }); }
+                const prior = deps.store.all();
+                const inChain = batonRelayOf(prior, who.sessionId);
+                if (inChain) {
+                    throw new BridgeRefusal(`session ${who.sessionId.slice(0, 8)} is already in chain ${inChain.chainId} (it would pass hop ${inChain.hop}) — nothing to attach.`,
+                        { step: 'attach', chainId: inChain.chainId });
+                }
+                const raw = args.maxHops;
+                const maxLegs = raw === undefined || raw === null || raw === '' ? undefined : Number(raw);
+                if (maxLegs !== undefined && !(Number.isFinite(maxLegs) && maxLegs >= 0)) {
+                    throw new BridgeRefusal(`maxHops must be a whole number ≥ 0 (0 = no ceiling), not "${String(raw)}".`, { step: 'args' });
+                }
+                const launchId = deps.launchIdOf(who.sessionId);
+                const r = sealFirstLeg({
+                    leg: {
+                        sessionId: who.sessionId, launchId, account: optStr(args, 'account'), chainId: optStr(args, 'chain'),
+                        by: optStr(args, 'by') || 'the user', ...(maxLegs !== undefined ? { maxLegs } : {})
+                    },
+                    manifest: launchId ? manifestOf(deps.manifests(), { launchId }) : undefined,
+                    prior, now: now()
+                });
+                if (!r) { throw new BridgeRefusal(`session ${who.sessionId.slice(0, 8)} is already in a chain — baton.status session=${who.sessionId} shows it.`, { step: 'attach' }); }
+                if (!r.ok) { throw new BridgeRefusal(r.why, { step: 'seal', sessionId: who.sessionId, launchId: launchId ?? null }); }
+                const head = deps.headOf ? await deps.headOf(r.baton.from.cwd).catch(() => undefined) : undefined;
+                const sealed: Baton = head ? { ...r.baton, head } : r.baton;
+                deps.store.put(sealed);
+                const cap = chainMaxLegs([sealed], sealed.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS);
+                return {
+                    baton: batonView(sealed),
+                    sentence: `Session ${who.sessionId.slice(0, 8)} is now leg 1 of chain ${sealed.chainId}: its handover line says "pass the baton" (baton.pass), `
+                        + `every later leg is placed from ${sealed.want.account}, and the chain runs ${cap ? `at most ${cap} legs` : 'with no leg ceiling'}.`
+                };
             }
         }
     ]);

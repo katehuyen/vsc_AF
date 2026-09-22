@@ -241,6 +241,8 @@ export interface FarmTask {
     baton?: boolean;
     /** S-81 — the chain it opens, when the caller named one; absent = a new `chn_…`. */
     batonChainId?: string;
+    /** S-82 — that chain's own leg ceiling (0 = none); absent = agentFarm.batonMaxHops. */
+    batonMaxHops?: number;
     /**
      * ‼️ M-26 — WHERE THIS INTERACTIVE RUN OPENS, and what it does once the
      * agent has answered. Both are ignored on a headless run, and both are
@@ -2980,7 +2982,7 @@ export class TaskManager implements vscode.Disposable {
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
-            | 'sentryWhy' | 'account' | 'accountHandover' | 'baton' | 'batonChainId'>>
+            | 'sentryWhy' | 'account' | 'accountHandover' | 'baton' | 'batonChainId' | 'batonMaxHops'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of

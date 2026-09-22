@@ -8109,7 +8109,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'here when it is a policy (@…) — every later leg is placed from that pool and never leaves '
                 + 'it; a single slot or none means @emptiest. baton.status shows the seal as hop 0), '
                 + 'chainId? (a name for that chain — implies baton:true; refused at the seal if a chain '
-                + 'with that id already has legs)',
+                + 'with that id already has legs), maxHops? (S-82 — that chain\'s own leg ceiling, the first '
+                + 'leg included, 0 = none; implies baton:true; default agentFarm.batonMaxHops. A running session '
+                + 'is made leg 1 without a task by baton.attach)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
@@ -8236,6 +8238,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // ‼️ S-81 — this run opens a baton relay; naming its chain says so too
                         ...(args.baton === true || optStr(args, 'chainId') ? { baton: true } : {}),
                         ...(optStr(args, 'chainId') ? { batonChainId: optStr(args, 'chainId') as string } : {}),
+                        ...(() => {
+                            if (args.maxHops === undefined || args.maxHops === null || args.maxHops === '') { return {}; }
+                            const n = Number(args.maxHops);
+                            need(Number.isFinite(n) && n >= 0, `maxHops must be a whole number ≥ 0 (0 = no ceiling), not "${String(args.maxHops)}"`);
+                            return { baton: true, batonMaxHops: Math.floor(n) };
+                        })(),
                         // ‼️ S-19 — LAST, so the session's own engine and folder
                         // beat anything the caller stated about them.
                         ...resumeExtra
@@ -16570,7 +16578,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .filter(t => t.baton && t.status === 'running' && successorSessionOf(t))
             .map(t => ({
                 taskId: t.id, sessionId: successorSessionOf(t)!, launchId: t.launchId,
-                chainId: t.batonChainId, account: t.account, title: t.title
+                chainId: t.batonChainId, account: t.account, title: t.title,
+                ...(t.batonMaxHops !== undefined ? { maxLegs: t.batonMaxHops } : {})
             })),
         manifestOf: launchId => manifestOf(launchManifests(), { launchId }),
         headOf: cwd => headCommit(cwd)

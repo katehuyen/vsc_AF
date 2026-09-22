@@ -7,7 +7,7 @@
  * Pure: the list and the clock come in, nothing is read.
  */
 import { Baton, isLive } from './baton';
-import { isSeal } from './batonSeal';
+import { chainMaxLegs, isSeal } from './batonSeal';
 
 export interface BatonCardView {
     chainId: string;
@@ -78,11 +78,12 @@ export function batonBarView(
         .filter(n => isLive(n) || (n.state === 'started' && !!n.toSessionId && alive(n.toSessionId)))
         .sort((a, b) => b.updatedAt - a.updatedAt);
     if (!running.length) { return undefined; }
-    const max = maxLegs > 0 ? `/${maxLegs}` : '';
     const top = running[0];
+    const cap = (b: Baton) => chainMaxLegs(list, b.chainId, maxLegs);
+    const max = cap(top) > 0 ? `/${cap(top)}` : '';
     const wake = top.state === 'parked' && top.wakeAt ? ` · ${fmt(top.wakeAt)}` : '';
     const more = running.length > 1 ? ` +${running.length - 1}` : '';
-    const lines = running.map(b => barLine(b, b.hop + 1, max ? ` of ${maxLegs}` : '', fmt));
+    const lines = running.map(b => barLine(b, b.hop + 1, cap(b) > 0 ? ` of ${cap(b)}` : '', fmt));
     return {
         text: `⑂ ${top.hop + 1}${max}${wake}${more}`,
         tooltip: [

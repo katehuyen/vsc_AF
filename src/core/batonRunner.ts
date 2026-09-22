@@ -174,10 +174,11 @@ export class BatonRunner {
     seal(): Baton[] {
         const sealed: Baton[] = [];
         for (const leg of this.deps.firstLegs?.() ?? []) {
-            if (!leg.launchId || this.unsealable.has(leg.taskId)) { continue; }
+            const key = leg.taskId || leg.sessionId;
+            if (!leg.launchId || this.unsealable.has(key)) { continue; }
             const r = sealFirstLeg({ leg, manifest: this.deps.manifestOf?.(leg.launchId), prior: this.deps.store.all(), now: this.now() });
             if (!r) { continue; }
-            if (!r.ok) { this.unsealable.add(leg.taskId); this.log(r.why); continue; }
+            if (!r.ok) { this.unsealable.add(key); this.log(r.why); continue; }
             this.deps.store.put(r.baton);
             sealed.push(r.baton);
             this.log(`baton ${r.baton.id}: ${r.baton.why}`);
