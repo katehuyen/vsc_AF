@@ -1353,6 +1353,13 @@ const intentOf = (o) => Object.assign({
     push(data(CONVO.slice(), { batonView: null }));
     ok('‼️ a run no baton touched has neither', !/batonsig|c-baton-stop/.test(status()));
 
+    // ‼️ U-81 — the status row HOSTS AFTip panels: an opacity on it paints every
+    // panel see-through (the user read the page through them). Colour, never opacity.
+    const pageJs = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    ok('‼️ the status row is dimmed with a colour (tip-host), never with opacity',
+        /<div class="crow tip-host" id="c-status" style="font-size:10px"><\/div>/.test(pageJs)
+        && !/id="c-status"[^>]*opacity/.test(pageJs));
+
     // S-82 — THE CARD'S RELAY HAND: ⑂ Pass now on a runner, ⑂ Attach relay on
     // a live run outside one; the words and the seal are both the host's.
     const relayStrip = () => (els['c-relay'] ? els['c-relay']._html : '');

@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.633.0 - The Console status row's hover panels are solid (U-81) (2026-09-22)
+
+- **No more reading the page through a panel.** The status row under the
+  composer was dimmed with `opacity`, and every hover panel on it is drawn
+  inside that row — so each panel came out 60% see-through. The row is now
+  dimmed with a colour (`tip-host`, the rule the Live Timeline cards already
+  follow), its buttons dim themselves, and the panels are opaque.
+
 ## 3.632.0 - The Console status row is one quiet line again (2026-09-22)
 
 - **Signals are dots, hands are chips.** 3.631.0 put full-size buttons and

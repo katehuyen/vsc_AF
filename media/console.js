@@ -335,6 +335,10 @@
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
         /* S-77: the relay leg is information, not a warning. */
         .batonsig { font-weight:600; color:var(--vscode-textLink-foreground); }
+        /* U-81 — the status row hosts AFTip panels, so it is dimmed with a COLOUR (tip-host), never
+           opacity: an ancestor's opacity paints the panel see-through. Its buttons dim themselves. */
+        #c-status button { opacity:.6; }
+        #c-status button:hover { opacity:1; }
         /* A signal on the status row is a 6px dot in its colour; its words are one hover away. */
         .sigdot { display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
             vertical-align:middle; margin:0 1px; }
@@ -4756,7 +4760,7 @@
                             ${window.AFTextTools.html('c')}
                         </div>
                         <div class="crow" id="c-controls">${controls}</div>
-                        <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
+                        <div class="crow tip-host" id="c-status" style="font-size:10px"></div>
                         <div class="crow" id="c-relay"></div>
                     </div>
                 </div>
