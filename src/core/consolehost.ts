@@ -726,6 +726,17 @@ export class ConsoleHost {
         return rr.changed;
     }
 
+    /** S-82 — this card asked to open a baton relay; the extension seals it as leg 1 once its session id is known. */
+    wantRelay(id: string, want: { account?: string; maxLegs?: number }): void {
+        this.mutate(id, s => ({
+            ...s,
+            relayWanted: {
+                ...(want.account ? { account: want.account } : {}),
+                ...(want.maxLegs !== undefined ? { maxLegs: want.maxLegs } : {})
+            }
+        }));
+    }
+
     onChange(fn: (id: string) => void): { dispose(): void } {
         this.listeners.push(fn);
         return { dispose: () => { this.listeners = this.listeners.filter(f => f !== fn); } };

@@ -439,6 +439,9 @@ export interface ConsoleSessionState {
      *  would come back working to whatever discipline the box happens to be
      *  showing now. Also what the chip reads to say what is being sent. */
     superpowers?: boolean;
+    /** S-82 — started asking to open a baton relay: sealed as leg 1 once its session id is known.
+     *  `account` is the rule the start named (the chain's pool), `maxLegs` this chain's own ceiling. */
+    relayWanted?: { account?: string; maxLegs?: number };
     model?: string;
     effort?: string;
     /**

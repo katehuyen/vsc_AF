@@ -63,7 +63,7 @@ const seat = (o) => Object.assign({
 }, o);
 const seats = [seat(), seat({ id: 'seat-2', sessionId: undefined, status: 'starting' })];
 const asked = [];
-const attachAsked = [], sentTo = [], infos = [], warns = [];
+const attachAsked = [], sentTo = [], infos = [], warns = [], wanted = [];
 let attachAnswer = { ok: true, sentence: 'Session sid-live is now leg 1 of chain chn_x: …' };
 let sendAnswer = { queued: false };
 const VIEWS = { contextSignalView: { chip: 'CONVERGE' }, bridgeGuardView: null, batonView: { chip: '⑂ 1' } };
@@ -72,6 +72,7 @@ const deps = {
     host: {
         list: () => seats, onChange: () => ({ dispose() { } }), start: () => 'seat-9',
         get: (id) => seats.find(s => s.id === id),
+        wantRelay: (id, want) => { wanted.push([id, want]); },
         send: (id, text) => { sentTo.push([id, text]); return sendAnswer; }
     },
     getAgents: () => ([{ id: 'a-dev', name: 'developer', dir: 'D:/ajan/developer' }]),
@@ -149,6 +150,34 @@ async function main() {
         && /registerBatonOps\(bridge, \{\s*\.\.\.batonAttachDeps,/.test(ext) && /await attachRelay\(\{ \.\.\.deps, now \}/.test(bb));
     ok('…and Pass now words the relay the whisper would (batonRelayOf + the user\'s orders)',
         /passNowText\(batonRelayOf\(batonStore\.all\(\), sessionId\), contextGuard\.orders\(\)\)/.test(ext));
+
+    // ---- S-82 (c): the composer's ⑂ Relay — a sibling of the intent, one-shot
+    await send({ type: 'setIntent', field: 'agentId', value: 'a-dev' });
+    await send({ type: 'setIntent', field: 'baton', value: true });
+    await send({ type: 'setIntent', field: 'batonMaxHops', value: '4' });
+    const ci = lastData().composerIntent;
+    ok('the composer\'s record says the relay is on, with its ceiling', ci.baton === true && ci.batonMaxHops === '4');
+    await send({ type: 'setIntent', field: 'batonMaxHops', value: '-2' });
+    ok('…a ceiling below zero is the setting again, never stored', lastData().composerIntent.batonMaxHops === '');
+    await send({ type: 'setIntent', field: 'batonMaxHops', value: '0' });
+    await send({ type: 'start', text: 'go' });
+    ok('‼️ Send with ⑂ Relay on asks the host to seal the NEW card, with its ceiling',
+        wanted.length === 1 && wanted[0][0] === 'seat-9' && wanted[0][1].maxLegs === 0);
+    ok('…and the next composer starts with the relay off', lastData().composerIntent.baton === false && lastData().composerIntent.batonMaxHops === '');
+    await send({ type: 'start', text: 'again' });
+    ok('…so a plain Send after it opens no relay', wanted.length === 1);
+
+    // …and console.start, the same door for an agent
+    const op = ext.slice(ext.indexOf("op: 'console.start'"), ext.indexOf("op: 'console.continueFromHandover'"));
+    ok('console.start says baton? and maxHops? in its contract', /baton\? \(S-82/.test(op) && /maxHops\? \(that chain/.test(op));
+    ok('…maxHops implies the relay, a bad one is refused, a resume is refused by name',
+        /const relay = args\.baton === true \|\| hasMax;/.test(op) && /need\(!hasMax \|\| relayMax !== undefined/.test(op)
+        && /need\(!relay \|\| !resume, 'baton:true opens a relay on a FRESH session/.test(op));
+    ok('…and the card is marked with the RULE the caller named, not the slot it resolved to',
+        /if \(relay\) \{ consoleHost\.wantRelay\(id, \{ account: optStr\(args, 'account'\) \|\| undefined, maxLegs: relayMax \}\); \}/.test(op));
+    ok('‼️ the runner seals Console cards that asked, as it seals task rows',
+        /consoleHost\.list\(\)\.filter\(s => s\.relayWanted && s\.sessionId\)/.test(ext)
+        && /if \(s\?\.relayWanted && s\.sessionId\) \{ batonRunner\.seal\(\); \}/.test(ext));
 
     // ---- the words themselves (src/core/batonAttach.ts)
     const A = require(path.join(__dirname, '..', 'out', 'core', 'batonAttach.js'));

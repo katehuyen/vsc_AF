@@ -36,6 +36,7 @@ import { getSlashCommands, reportToSources, SlashReport } from '../core/slashCom
 import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { afConfig } from '../core/settingsDoor';
+import { normalizeLegCeiling } from '../core/baton';
 
 /**
  * ‼️ X-113 - WHAT A LIVE CARD'S CONTEXT READING IS A FRACTION OF.
@@ -646,6 +647,13 @@ export class ConsolePanel {
     private composerIntent: LaunchIntent = {};
     /** …and WHO the next session is for — the page's picker echoes into it. */
     private composerAgent = '';
+    /**
+     * S-82 — whether the next session opens a baton relay, and its chain's own
+     * leg ceiling. A sibling of the intent, not a launch dimension: nothing is
+     * spawned differently, the card is only sealed as leg 1 once it runs.
+     * One-shot, cleared on `start` like the project.
+     */
+    private composerRelay: { on: boolean; maxLegs?: number } = { on: false };
 
     /**
      * ‼️ X-133 — THE ENGINEERING DISCIPLINE THE NEXT SESSION WILL BE STARTED
@@ -1788,7 +1796,10 @@ export class ConsolePanel {
                 this.composerRoute = this.prunedRoute(
                     providerId ? { providerId, ...(s ? { tier: s } : {}) } : undefined);
             },
-            agentId: () => { this.composerAgent = s; }
+            agentId: () => { this.composerAgent = s; },
+            // S-82 — the composer's ⑂ Relay chip and its max-legs box
+            baton: () => { this.composerRelay = { ...this.composerRelay, on: value === true || value === 'on' }; },
+            batonMaxHops: () => { this.composerRelay = { ...this.composerRelay, maxLegs: normalizeLegCeiling(value) }; }
         };
         if (Object.prototype.hasOwnProperty.call(apply, field)) { apply[field](); }
     }
@@ -1806,7 +1817,9 @@ export class ConsolePanel {
             model: i.model ?? '', effort: i.effort ?? '', permissionMode: i.permissionMode ?? '',
             providerId: i.providerId ?? '', tier: i.tier ?? '',
             account: this.accountShown(),
-            superpowers: i.superpowers === undefined ? null : i.superpowers
+            superpowers: i.superpowers === undefined ? null : i.superpowers,
+            baton: this.composerRelay.on,
+            batonMaxHops: this.composerRelay.maxLegs === undefined ? '' : String(this.composerRelay.maxLegs)
         };
     }
 
@@ -2198,6 +2211,12 @@ export class ConsolePanel {
                     firstPrompt: str('text') || undefined,
                     firstAttachments: attachmentsOf(msg)
                 });
+                // S-82 — ⑂ Relay: sealed as leg 1 once the card's session is known;
+                // the pool is the RULE in the Account box, never the slot it picked
+                if (this.composerRelay.on) {
+                    host.wantRelay(this.selected, { account: started.account, maxLegs: this.composerRelay.maxLegs });
+                }
+                this.composerRelay = { on: false };
                 // ‼️ S-34 — and THIS is a launch, so it is remembered like one.
                 // The composer used to be the door that read the record and
                 // never wrote to it, which made the launcher reopen on a setup

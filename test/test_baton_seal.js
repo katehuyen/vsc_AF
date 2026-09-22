@@ -128,7 +128,7 @@ console.log('\n== the runner seals on follow(), once ==');
         console.log('\n== the wiring ==');
         const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         ok('the host hands the runner RUNNING rows that asked for a relay',
-            /firstLegs: \(\) => taskManager\.tasks\s*\.filter\(t => t\.baton && t\.status === 'running' && successorSessionOf\(t\)\)/.test(ext));
+            /firstLegs: \(\) => \[\s*\.\.\.taskManager\.tasks\s*\.filter\(t => t\.baton && t\.status === 'running' && successorSessionOf\(t\)\)/.test(ext));
         ok('…with the account they ASKED for (the pool), not the manifest\'s slot', /chainId: t\.batonChainId, account: t\.account/.test(ext));
         const addAt = ext.indexOf("op: 'tasks.add'");
         const add = ext.slice(addAt, ext.indexOf("op: '", addAt + 20));

@@ -339,6 +339,9 @@
         #c-relay:empty { display:none; }
         #c-relay { justify-content:flex-end; }
         .crow .axisw.relaypool { flex:0 1 190px; max-width:190px; }
+        .relaymaxin { width:16ch; font-size:11px; padding:1px 4px; border-radius:3px;
+            border:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
         #c-relay input[type=number] { width:16ch; font-size:11px; padding:2px 4px; border-radius:3px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
@@ -5431,6 +5434,39 @@
     }
 
     /**
+     * S-82 — ⑂ RELAY on the composer: the next session opens a baton relay and
+     * is sealed as leg 1 once it runs. Only before Send — a running card has
+     * its own ⑂ Attach relay. The pool is the Account box's rule (a slot or
+     * nothing = @emptiest), so the chip names it rather than asking again.
+     */
+    function relayChipHtml() {
+        if (sel()) { return ''; }
+        const T = window.AFTip;
+        const i = intent();
+        const on = i.baton === true;
+        const acc = String(i.account || '');
+        const pool = acc.startsWith('@') ? acc : '@emptiest';
+        const fleet = DATA.batonMaxLegs === undefined || DATA.batonMaxLegs === null ? '' : String(DATA.batonMaxLegs);
+        const max = String(i.batonMaxHops || '');
+        const legs = max === '0' ? 'no leg ceiling' : `at most ${max || fleet || 'the setting\'s'} legs`;
+        const chip = T.wrap(
+            `<button type="button" class="pchip sw${on ? '' : ' off'}" id="c-relay-on">⑂ Relay${on ? '' : ' off'}</button>`,
+            on ? `ON · pool ${pool} · ${legs}` : 'OFF · the session writes a handover note at its limit',
+            `Click to turn it ${on ? 'off' : 'on'}.\n\n`
+            + 'A baton relay: at its quota or context limit the session passes its work to a FRESH session on the chain\'s pool '
+            + 'instead of writing a handover note for a person to act on. It is sealed as leg 1 the moment its session id is known — '
+            + 'its card draws ⑂ 1 and its handover whisper says "pass the baton".'
+            + `\n\nThe pool is the Account box: ${acc.startsWith('@') ? 'the rule ' + acc : (acc ? 'it names a single slot — the one that runs out — so the chain runs on @emptiest' : 'nothing is named, so @emptiest')}.`
+            + '\n\nThe same door for an agent: console.start baton=true maxHops=N.', 'relaychip');
+        if (!on) { return chip; }
+        return chip + T.wrap(
+            `<input type="number" class="relaymaxin" id="c-relay-hops" min="0" step="1" value="${C.esc(max)}" placeholder="${C.esc('max legs' + (fleet ? ' · ' + fleet : ''))}">`,
+            'max legs: ' + (max || (fleet ? 'the setting, ' + fleet : 'the setting')),
+            T.lines(['This chain\'s own leg ceiling, this session included. Empty = the fleet setting (agentFarm.batonMaxHops'
+                + (fleet ? ', now ' + fleet : '') + '); 0 = no ceiling — only the barren-chain brake and your stop remain.']));
+    }
+
+    /**
      * `fromHost` says the repaint is somebody ELSE's — a push, not a press. It
      * is the only thing that may be put off: a render the user's own action
      * asked for happens at once even with a field focused, because the field is
@@ -5600,7 +5636,11 @@
         // What a session started here is being told, and how it is expected to
         // work — see projectChipHtml / superpowersChipHtml. One strip, because
         // both halves ride on the same appended system prompt.
-        if (slot('c-project', projectChipHtml() + superpowersChipHtml())) {
+        if (slot('c-project', projectChipHtml() + superpowersChipHtml() + relayChipHtml())) {
+            const rl = document.getElementById('c-relay-on');
+            if (rl) { rl.addEventListener('click', () => askIntent('baton', intent().baton !== true)); }
+            const hops = document.getElementById('c-relay-hops');
+            if (hops) { hops.addEventListener('change', e => askIntent('batonMaxHops', e.target.value, 'c-relay-hops')); }
             const sw = document.getElementById('c-sp');
             // ‼️ PRESSING IT BACK ONTO THE AGENT'S OWN ANSWER CLEARS THE CHOICE
             // rather than recording the same value as a decision. Otherwise

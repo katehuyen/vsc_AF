@@ -321,8 +321,10 @@ const send = async (p, msg) => {
             userAnswers.indexOf(id) >= 0 && doors.indexOf(id) < 0));
     ok('‼️ …while a dimension the PROGRAM or this extension answers has no box at all, by definition',
         D.LAUNCH_DIMENSIONS.filter(x => x.owner !== 'user').every(x => doors.indexOf(x.id) < 0));
-    ok('…and the one door that is not a dimension is the agent, which is WHO rather than how',
-        doors.filter(f => D.ids().indexOf(f) < 0).join() === 'agentId');
+    // S-82 — the relay pair is not one either: the process spawns exactly the
+    // same, the card is only sealed as leg 1 once it runs (composerRelay)
+    ok('…and the doors that are not dimensions are the agent (WHO rather than how) and the relay (what happens AFTER the spawn)',
+        doors.filter(f => D.ids().indexOf(f) < 0).join() === 'agentId,baton,batonMaxHops');
     ok('‼️ …and the page keeps a copy of none of them: what a previous build stored is stripped '
         + 'by the list rather than by four names somebody has to keep up to date',
         /AFDimensions\.ids\(\)\.concat\(\['agentId'\]\)\.forEach\(k => \{ delete st\[k\]; \}\)/.test(pageSrc));

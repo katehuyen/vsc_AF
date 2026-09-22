@@ -1386,6 +1386,29 @@ const intentOf = (o) => Object.assign({
     ok('…and ✕ shuts it, attaching nothing', relayStrip() === '' && !posted.some(m => m.type === 'batonAttach' && posted.indexOf(m) > 0));
     push(data(CONVO.slice(), { batonView: null, status: 'ended' }));
     ok('‼️ an ended card offers neither — there is no run to seal or to tell', !/c-baton-attach|c-baton-pass/.test(status()));
+
+    // S-82 — the COMPOSER's ⑂ Relay: only before Send, the pool read off the Account box
+    const strip = () => (els['c-project'] ? els['c-project']._html : '');
+    ok('a selected card\'s strip draws no relay chip — it has ⑂ Attach relay', !/c-relay-on/.test(strip()));
+    const composing = (intent) => Object.assign(data(CONVO.slice()), {
+        selected: '', sessions: [], batonMaxLegs: 6,
+        composerIntent: Object.assign({ engine: 'claude', account: '', superpowers: null }, intent)
+    });
+    push(composing({ baton: false }));
+    ok('S-82: the composer offers ⑂ Relay off, and no ceiling box while it is off',
+        /id="c-relay-on">⑂ Relay off</.test(strip()) && !/c-relay-hops/.test(strip()));
+    posted.length = 0;
+    els['c-relay-on'].listeners.click();
+    ok('…pressed, it asks the host for the relay — the page keeps no copy',
+        posted.some(m => m.type === 'setIntent' && m.field === 'baton' && m.value === true));
+    push(composing({ baton: true, batonMaxHops: '', account: 'work-1' }));
+    ok('…on, it names the pool the Account box implies — a slot runs on @emptiest — and the fleet ceiling',
+        /ON · pool @emptiest · at most 6 legs/.test(strip()) && /id="c-relay-hops"/.test(strip()) && /placeholder="max legs · 6"/.test(strip()));
+    push(composing({ baton: true, batonMaxHops: '0', account: '@round-robin' }));
+    ok('…a rule in the Account box IS the pool, and 0 reads as no ceiling', /ON · pool @round-robin · no leg ceiling/.test(strip()));
+    posted.length = 0;
+    els['c-relay-hops'].listeners.change({ target: { value: '3' } });
+    ok('…the ceiling box asks the host too', posted.some(m => m.type === 'setIntent' && m.field === 'batonMaxHops' && m.value === '3'));
     push(data(CONVO.slice(), { batonView: null }));
 
     // A reading larger than the window is two moments, not a full bar.

@@ -298,9 +298,10 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { batonRelayOf, isLive, normalizeMaxLegs } from './core/baton';
+import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { attachRelay, passNowText } from './core/batonAttach';
+import { chainPool } from './core/batonSeal';
 import { relayHandoffHold, successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
@@ -11912,7 +11913,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
                 + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
                 + enginesWithoutEffort()
-                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list — or, X-305, a RULE that chooses one at the moment this session starts: @emptiest (the sign-in of this engine with the most of its five-hour window left), @pool (the next account with room in the running sentry campaign\'s pool), @standing (this agent\'s own standing sign-in, else the machine-wide one), @round-robin (the usable sign-ins in turn across launches), or @<name> for one of the user\'s own rules in agentFarm.accountPolicies. A rule that can choose nothing right now REFUSES the start and says why, rather than falling through to the main sign-in. Omit and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list — or, X-305, a RULE that chooses one at the moment this session starts: @emptiest (the sign-in of this engine with the most of its five-hour window left), @pool (the next account with room in the running sentry campaign\'s pool), @standing (this agent\'s own standing sign-in, else the machine-wide one), @round-robin (the usable sign-ins in turn across launches), or @<name> for one of the user\'s own rules in agentFarm.accountPolicies. A rule that can choose nothing right now REFUSES the start and says why, rather than falling through to the main sign-in. Omit and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does), baton? (S-82 — true opens a BATON RELAY: the card is sealed as leg 1 the moment its session id is known, so at the quota or context wall its whisper says "pass the baton" and a fresh session continues on the chain\'s pool — the rule account? names, or @emptiest when it names a single slot or nothing; the composer\'s ⑂ Relay chip is the same door. A fresh session only: a resumed one is attached with baton.attach), maxHops? (that chain\'s own leg ceiling, this leg included; 0 = none; implies baton:true; default agentFarm.batonMaxHops). Returns the console id to talk to. ‼️ Not every engine states a price: '
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
@@ -11944,6 +11945,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // standing on this one, because the lookup was the wrong pool
                 // rather than the wrong arithmetic. `byId` is the one resolver.
                 const past = resume ? index.byId(resume) : undefined;
+                // S-82 — baton:true opens a relay; a resume is attached instead (baton.attach)
+                const relayMax = normalizeLegCeiling(args.maxHops);
+                const hasMax = !(args.maxHops === undefined || args.maxHops === null || args.maxHops === '');
+                need(!hasMax || relayMax !== undefined, `maxHops must be a whole number ≥ 0 (0 = no ceiling), not "${String(args.maxHops)}".`);
+                const relay = args.baton === true || hasMax;
+                need(!relay || !resume, 'baton:true opens a relay on a FRESH session — to make a resumed one leg 1, call baton.attach session=<id> once it runs.');
                 // ‼️ The project is per-SESSION here, never a write to the
                 // window's active project: a background agent starting a session
                 // under project X must not silently move the project the person
@@ -12066,10 +12073,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     superpowers,
                     firstPrompt: optStr(args, 'prompt') || undefined
                 });
+                // the pool is the rule the caller named, never the slot it resolved to
+                if (relay) { consoleHost.wantRelay(id, { account: optStr(args, 'account') || undefined, maxLegs: relayMax }); }
                 ConsolePanel.refreshIfOpen();
                 const spec = ENGINES[engine as EngineId];
                 return {
                     id, agent: agent.name, cwd: agent.dir, engine,
+                    ...(relay ? { relay: `opens a baton relay: sealed as leg 1 once its session id is known (baton.status session=<id>), pool ${chainPool(optStr(args, 'account'))}` } : {}),
                     /** what changes about talking to this session — stated on the
                      *  way in rather than discovered on the second message */
                     turnShape: spec.shape,
@@ -16587,13 +16597,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key }),
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         // S-81 — a running row that asked to open a relay is sealed as its leg 1
-        firstLegs: () => taskManager.tasks
-            .filter(t => t.baton && t.status === 'running' && successorSessionOf(t))
-            .map(t => ({
-                taskId: t.id, sessionId: successorSessionOf(t)!, launchId: t.launchId,
-                chainId: t.batonChainId, account: t.account, title: t.title,
-                ...(t.batonMaxHops !== undefined ? { maxLegs: t.batonMaxHops } : {})
-            })),
+        firstLegs: () => [
+            ...taskManager.tasks
+                .filter(t => t.baton && t.status === 'running' && successorSessionOf(t))
+                .map(t => ({
+                    taskId: t.id, sessionId: successorSessionOf(t)!, launchId: t.launchId,
+                    chainId: t.batonChainId, account: t.account, title: t.title,
+                    ...(t.batonMaxHops !== undefined ? { maxLegs: t.batonMaxHops } : {})
+                })),
+            // S-82 — …and a Console card started with the relay on (composer ⑂ Relay · console.start baton:true);
+            // the host is declared further down, and a sweep can run before it exists
+            ...(() => {
+                try {
+                    return consoleHost.list().filter(s => s.relayWanted && s.sessionId).map(s => ({
+                        sessionId: s.sessionId!, launchId: s.launchId, account: s.relayWanted!.account,
+                        by: 'the Console, at start',
+                        ...(s.relayWanted!.maxLegs !== undefined ? { maxLegs: s.relayWanted!.maxLegs } : {})
+                    }));
+                } catch { return []; }
+            })()
+        ],
         manifestOf: launchId => manifestOf(launchManifests(), { launchId }),
         headOf: cwd => headCommit(cwd)
     });
@@ -26779,6 +26802,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }, 2000);
     }));
     context.subscriptions.push({ dispose: () => { if (sweepTimer) { clearTimeout(sweepTimer); } } });
+
+    // S-82 — a card started with ⑂ Relay is sealed as leg 1 the moment its session id is known
+    context.subscriptions.push(consoleHost.onChange(id => {
+        const s = consoleHost.get(id);
+        if (s?.relayWanted && s.sessionId) { batonRunner.seal(); }
+    }));
 
     context.subscriptions.push(consoleHost.onChange(id => {
         // The first change that carries an id is the earliest a hosted session

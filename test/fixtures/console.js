@@ -481,6 +481,13 @@ const rememberedComposerData = () => Object.assign(composerData(), {
     composerAgent: 'a-dev'
 });
 
+/** S-82 — the composer with ⑂ Relay on: its chip names the pool (the Account box's rule) and the max-legs box the setting. */
+const relayComposerData = (account) => Object.assign(composerData(), {
+    composerIntent: intentOf({ engine: 'claude', account, baton: true, batonMaxHops: '' }),
+    composerAgent: 'a-dev',
+    batonMaxLegs: 6
+});
+
 /** ‼️ U-59 — the same composer with the SHARED-ACP engine chosen, which is the
  *  only state in which the effort box is absent and the permission tooltip says
  *  the engine can stop and ask. Five boxes become four; that is the picture. */
@@ -911,6 +918,12 @@ module.exports = {
             id: 'console-lastlaunch',
             label: 'Console — the composer opened on what this agent last ran as (S-34)',
             data: rememberedComposerData()
+        },
+        {
+            id: 'console-composer-relay',
+            label: 'Console — S-82: the composer with ⑂ Relay on, the Account box naming a single slot (pool @emptiest), its panel open',
+            tip: 'relaychip',
+            data: relayComposerData('work-1')
         },
         {
             id: 'console-opencode',

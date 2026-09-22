@@ -450,6 +450,23 @@ async function main() {
             /accountRefusal\(account, storedAccounts\(\), engineOf\(row\?\.engine\)\.id, accountPolicies\(\)\)/.test(op));
     }
 
+    // ---------- S-82: a card that asked to open a baton relay ----------
+    {
+        const host = newHost();
+        const id = host.start(init({ account: 'claude-work' }));
+        let fired = 0;
+        host.onChange(x => { if (x === id) { fired++; } });
+        host.wantRelay(id, { account: '@emptiest', maxLegs: 0 });
+        ok('S-82: wantRelay marks the card with the RULE and its ceiling (0 kept, not dropped)',
+            host.get(id).relayWanted && host.get(id).relayWanted.account === '@emptiest' && host.get(id).relayWanted.maxLegs === 0);
+        ok('…and says so, so the extension can seal it the moment the id is known', fired >= 1);
+        host.wantRelay(id, {});
+        ok('…a start that named no rule and no ceiling is marked all the same', !!host.get(id).relayWanted
+            && !('account' in host.get(id).relayWanted) && !('maxLegs' in host.get(id).relayWanted));
+        host.wantRelay('no-such-seat', { account: '@x' });
+        ok('…and an unknown seat is a no-op', host.get('no-such-seat') === undefined);
+    }
+
     await tick();
 }
 
