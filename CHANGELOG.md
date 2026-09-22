@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.636.0 - A relay leaves its handover on the A2A board, and the board keeps itself clean (S-84) (2026-09-22)
+
+- **The words go where you already look.** Every baton pass now hangs a card
+  on the A2A Notes board — the successor's own first message as the body, the
+  chain id as its topic, `⑂` as its category. `baton.status` names the card
+  (`a2aNoteId`). The failsafe's rescue hop (S-83) gets one too: it is a
+  handover as well, just written by a session that has already gone.
+- **A card's life is its chain's.** It is marked resolved the moment the
+  successor is running — the words have reached the run they were written for
+  — and when the chain ends (`done`, `failed`, or a baton you stop) every card
+  of that race is given 24 hours before the board sweeps it.
+- **The board sweeps itself.** A note resolved more than 48 hours ago goes,
+  an expired relay card goes whether or not anybody resolved it, and
+  **a pinned note (📌) is never swept by any rule** — only deleting it by hand
+  takes it off. `a2a.notes.sweep` says exactly that.
+- **One switch for the races.** `⑂ Batons: all → hidden → only` on the filter
+  row: a busy relay writes a card per leg, and this is how it stops burying
+  the fleet's ordinary notes.
+- **One race, read as a story.** On a relay card the topic chip IS the chain
+  (`⑂ chn_…`). Click it and the page locks to that race: every leg, **oldest
+  first**, with the other filters off — a chain with its resolved legs hidden
+  is not the story. A bar says what is locked, how many legs handed on, and
+  unlocks.
+- **A hand that deletes.** ✕ Delete on a card; a checkbox per row with `all`
+  and 🗑 Delete taking the selected rows — or every row shown when nothing is
+  checked, never the whole board behind the filter; ● Clear resolved for the
+  closed half only. Pinned notes are spared by everything automatic.
+- New bridge ops: `a2a.notes.pin` · `a2a.notes.delete` ·
+  `a2a.notes.deleteMany` · `a2a.notes.clear`.
+- ‼️ A relay card is **addressed, not broadcast** (`hard`, to the agent that
+  passed it), so a race never lands on another agent's `a2a.status`; the page
+  draws the whole board, so a person still sees every chain.
+
 ## 3.635.0 - The relay's failsafe: a leg that ends without passing is judged, not lost (S-83) (2026-09-22)
 
 - **A cut-off leg is rescued.** A run in a baton relay that ends WITHOUT
