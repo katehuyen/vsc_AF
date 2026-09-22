@@ -226,5 +226,30 @@ function setup(o = {}) {
     ok('a parked baton with no row goes through the door', r.ok && r.baton.state === 'started' && doors.length === 1);
 }
 
+// ---------- S-84: the chain's card on the A2A board follows the chain ----------
+{
+    const hung = [], handed = [], closed = [];
+    const board = {
+        hang: (b) => { hung.push(b.id); return 'n-' + b.id; },
+        handedOn: (id) => handed.push(id),
+        closeChain: (ids) => { closed.push(ids); return ids.filter(Boolean).length; }
+    };
+    const { store, runner } = setup({ board });
+    const a = leave(store, 'sess-A');
+    ok('a baton that reached the door with no card gets one — the rescue hop is a handover too',
+        runner.sessionEnded('sess-A', 'hook').length === 1 && hung.length === 1 && hung[0] === a.id);
+    ok('‼️ …and the card is RESOLVED the moment the successor is running',
+        handed.length === 1 && handed[0] === 'n-' + a.id
+        && store.get(a.id).state === 'started' && store.get(a.id).a2aNoteId === 'n-' + a.id);
+    ok('the chain ending stamps the ttl on every card it hung',
+        runner.closeBoard(a.chainId) === 1 && closed.length === 1 && closed[0][0] === 'n-' + a.id);
+
+    const plain = setup();
+    const b = leave(plain.store, 'sess-B');
+    ok('a relay with no board releases exactly as before',
+        plain.runner.sessionEnded('sess-B', 'hook').length === 1
+        && plain.store.get(b.id).state === 'started' && plain.runner.closeBoard(b.chainId) === 0);
+}
+
 console.log(`test_baton_runner: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

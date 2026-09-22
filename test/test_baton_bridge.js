@@ -135,6 +135,63 @@ function setup(o = {}) {
         ok('the runner\'s refusal is the op\'s refusal, with the baton named', !r2.ok && /cannot be started now/.test(r2.error) && r2.detail && r2.detail.step === 'now');
     }
 
+    // ---------- S-84: the pass hangs its card on the A2A board ----------
+    {
+        const hung = [], closed = [];
+        const board = {
+            hang: (b) => { hung.push(b); return 'n-card-' + hung.length; },
+            handedOn: () => undefined,
+            closeChain: (ids, at) => { closed.push({ ids, at }); return ids.filter(Boolean).length; }
+        };
+        const b84 = setup({ board });
+        const passed = await b84.reg.dispatch('baton.pass', { prompt: 'Continue S-84.' }, { sessionId: 'sess-A' });
+        ok('a pass hangs one card, and the baton keeps its id',
+            hung.length === 1 && passed.result.baton.a2aNoteId === 'n-card-1'
+            && b84.store.get(passed.result.baton.id).a2aNoteId === 'n-card-1');
+        ok('…the card is hung from the accepted baton, under this chain',
+            hung[0].chainId === passed.result.baton.chainId && hung[0].prompt === 'Continue S-84.');
+        const stopped = await b84.reg.dispatch('baton.stop', { session: 'sess-A', why: 'enough' });
+        ok('‼️ stopping a baton ends its chain on the board too — the cards get the ttl',
+            stopped.ok && closed.length === 1 && closed[0].ids.indexOf('n-card-1') >= 0);
+
+        // a board that is not there is not an error: the relay is the record,
+        // the board is the copy people read
+        const bare = setup();
+        ok('a relay with no board passes exactly as before',
+            (await bare.reg.dispatch('baton.pass', { prompt: 'x' }, { sessionId: 'sess-A' })).ok);
+
+        // …and against the REAL store, so the card a person opens is the one
+        // this wiring writes — not a shape only a stand-in ever sees
+        const fs = require('fs'), os = require('os');
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-baton-board-'));
+        try {
+            const { A2ANotesStore } = require(path.join(OUT, 'a2aNotes.js'));
+            const { BatonBoard } = require(path.join(OUT, 'batonBoard.js'));
+            const notes = new A2ANotesStore(path.join(dir, 'notes.json'));
+            notes.load();
+            const real = setup({ board: new BatonBoard(notes, id => (id === 'dev' ? 'developer' : undefined)) });
+            const p = await real.reg.dispatch('baton.pass', { prompt: 'Devam et: S-84.', note: 'for Murat' }, { sessionId: 'sess-A' });
+            const card = notes.get(p.result.baton.a2aNoteId);
+            ok('the card is on the board, under the chain and in its own category',
+                !!card && card.category === 'baton' && card.topic === p.result.baton.chainId);
+            ok('‼️ …signed by the agent\'s NAME (the baton carries its folder path) and by the session, and carrying the successor\'s own words',
+                card.fromAgent === 'developer' && card.targetRole === 'developer' && card.fromSessionId === 'sess-A'
+                && /hop 1/.test(card.title) && card.body.indexOf('Devam et: S-84.') > 0);
+            ok('…and a chain id filter finds it', notes.read({ topic: p.result.baton.chainId }).length === 1);
+            ok('‼️ a handover is ADDRESSED: another agent\'s board does not carry it',
+                notes.read({ role: 'psikolog' }).length === 0 && notes.read({ role: 'developer' }).length === 1);
+
+            const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+            ok('the extension builds ONE board over the real notes store, resolving the agent\'s name',
+                /const batonBoard = new BatonBoard\(a2aNotes, id => agents\.find\(a => a\.id === id\)\?\.name\)/.test(ext));
+            ok('…and both halves of the relay get it — the pass and the runner',
+                (ext.match(/board: batonBoard/g) || []).length === 2
+                && /batonStopChain[^]*?Date\.now\(\), batonBoard\)/.test(ext));
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
     console.log(`test_baton_bridge.js: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

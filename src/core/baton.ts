@@ -78,6 +78,8 @@ export interface Baton {
     maxLegs?: number;
     /** S-83 — the failsafe opened this hop for a leg that ended without passing: why */
     rescue?: string;
+    /** S-84 — the A2A card this pass hung on the board (batonBoard.ts) */
+    a2aNoteId?: string;
     createdAt: number;
     updatedAt: number;
 }

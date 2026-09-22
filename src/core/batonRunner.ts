@@ -16,6 +16,7 @@
  * store and a clock, so every rule is testable without a window.
  */
 import { Baton, isLive, moveBaton } from './baton';
+import { BatonBoard } from './batonBoard';
 import { FirstLeg, sealFirstLeg } from './batonSeal';
 import { LegEndFacts } from './batonFailsafe';
 import { LegEndWatch, NoticeLevel } from './batonLegEnd';
@@ -100,6 +101,8 @@ export interface BatonRunnerDeps {
     manifestOf?: (launchId: string) => LaunchManifest | undefined;
     /** the folder's git HEAD, recorded on the seal for the barren brake */
     headOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-84 — the A2A board the chain's handover cards live on; absent = no cards */
+    board?: BatonBoard;
 }
 
 /** A baton on a task row: the row's session becomes the successor. */
@@ -141,7 +144,21 @@ export class BatonRunner {
 
     /** S-83 — a relay leg ended without passing: closed, failed or rescued (batonLegEnd.ts). */
     legEnded(sessionId: string, reason: string): Promise<Baton | undefined> {
-        return this.legs ? this.legs.legEnded(sessionId, reason) : Promise.resolve(undefined);
+        if (!this.legs) { return Promise.resolve(undefined); }
+        return this.legs.legEnded(sessionId, reason).then(b => {
+            if (b && (b.state === 'done' || b.state === 'failed')) { this.closeBoard(b.chainId); }
+            return b;
+        });
+    }
+
+    /**
+     * S-84 — the chain is over: its cards stay readable for a day (the race is
+     * worth reading after it ends) and the hygiene sweep then clears them. A
+     * pinned card is spared, which is the whole point of the pin.
+     */
+    closeBoard(chainId: string): number {
+        if (!this.deps.board) { return 0; }
+        return this.deps.board.closeChain(this.deps.store.chain(chainId).map(b => b.a2aNoteId), this.now());
     }
 
     /**
@@ -240,8 +257,23 @@ export class BatonRunner {
             { taskId: answer.taskId }) ?? b };
     }
 
+    /**
+     * S-84 — a baton that reached the door with no card on the board gets one
+     * now: the failsafe's rescue hop is a handover too, and it is written by a
+     * session that is already gone.
+     */
+    private hang(b: Baton): Baton {
+        if (b.a2aNoteId || !this.deps.board) { return b; }
+        const noteId = this.deps.board.hang(b, this.now());
+        if (!noteId) { return b; }
+        const hung = { ...b, a2aNoteId: noteId };
+        this.deps.store.put(hung);
+        return hung;
+    }
+
     /** The session is over: through the door, and the baton records what the door did. */
-    private release(b: Baton, why: string): Baton {
+    private release(baton: Baton, why: string): Baton {
+        const b = this.hang(baton);
         this.log(`baton ${b.id}: released — ${why}`);
         let answer: DoorAnswer;
         try { answer = this.deps.door(b); } catch (e) {
@@ -275,6 +307,9 @@ export class BatonRunner {
         const r = moveBaton(b, to, why, this.now(), patch);
         if (!r.ok) { this.log(`baton ${b.id}: ${r.why}`); return undefined; }
         this.deps.store.put(r.baton);
+        // S-84 — the successor is running, so the words have reached the run
+        // they were written for: the card leaves the active board.
+        if (to === 'started') { this.deps.board?.handedOn(r.baton.a2aNoteId, this.now()); }
         return r.baton;
     }
 

@@ -13,6 +13,7 @@
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
 import { BATON_DEFAULT_MAX_LEGS, Baton, batonBrake, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
 import { attachRelay } from './batonAttach';
+import { BatonBoard } from './batonBoard';
 import { chainMaxLegs } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { LaunchManifest, manifestOf } from './launchManifest';
@@ -37,6 +38,8 @@ export interface BatonBridgeDeps {
     maxLegs?: () => number;
     /** S-78 — a brake stopped a chain: one of the two things a relay tells Notices (S-77) */
     notify?: (title: string, body: string, key: string) => void;
+    /** S-84 — the A2A board a pass hangs its handover card on; absent = no card */
+    board?: BatonBoard;
 }
 
 /** S-74 — the live batons an op's `baton` / `chain` / `session` argument names. */
@@ -60,13 +63,18 @@ const PROMPT_PREVIEW = 300;
 
 /** A baton as the bridge shows it — the prompt previewed, the successor's surface resolved. */
 /** THE USER'S BRAKE, one body for the bridge op and the card's ✕ (S-74 · S-77): recorded, never deleted. */
-export function stopBatons(store: BatonStore, list: readonly Baton[], why: string, at: number): Baton[] {
+export function stopBatons(store: BatonStore, list: readonly Baton[], why: string, at: number, board?: BatonBoard): Baton[] {
     const stopped: Baton[] = [];
     for (const b of list) {
         const r = moveBaton(b, 'stopped', why, at);
         if (r.ok) { stopped.push(r.baton); }
     }
     store.put(...stopped);
+    // S-84 — nothing opens after a stopped baton, so its chain is over: the
+    // cards stay readable for a day and the hygiene sweep then takes them.
+    for (const chainId of new Set(stopped.map(b => b.chainId))) {
+        board?.closeChain(store.chain(chainId).map(b => b.a2aNoteId), at);
+    }
     return stopped;
 }
 
@@ -84,6 +92,7 @@ export function batonView(b: Baton): Record<string, unknown> {
         note: b.note ?? null,
         ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
         ...(b.rescue ? { rescue: b.rescue } : {}),
+        ...(b.a2aNoteId ? { a2aNoteId: b.a2aNoteId } : {}),
         wakeAt: b.wakeAt ?? null, taskId: b.taskId ?? null, toSessionId: b.toSessionId ?? null,
         createdAt: b.createdAt, updatedAt: b.updatedAt
     };
@@ -134,9 +143,14 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                         superseded: res.superseded.map(b => b.id)
                     };
                 }
-                deps.store.put(accepted, ...res.superseded);
+                // S-84 — the words go where people and agents already look: an
+                // A2A card under this chain's id. The baton keeps its id so the
+                // relay can close the card when the successor is running.
+                const noteId = deps.board?.hang(accepted, now());
+                const hung: Baton = noteId ? { ...accepted, a2aNoteId: noteId } : accepted;
+                deps.store.put(hung, ...res.superseded);
                 return {
-                    baton: batonView(accepted),
+                    baton: batonView(hung),
                     owner: { sessionId: who.sessionId, source: who.source },
                     sentence: batonPlanSentence(accepted, deps.room?.(accepted), deps.fmtTime),
                     superseded: res.superseded.map(b => b.id),
@@ -178,7 +192,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                 const picked = pickLive(deps.store, args, true);
                 if (!picked.by) { throw new BridgeRefusal('say which: baton (an id), chain (a chain id) or session (the session that passed it).', { step: 'pick' }); }
                 if (!picked.list.length) { throw new BridgeRefusal(`nothing live matches ${picked.by} — baton.status lists what is waiting or parked.`, { step: 'pick', by: picked.by }); }
-                const stopped = stopBatons(deps.store, picked.list, optStr(args, 'why') || 'stopped by the user', now());
+                const stopped = stopBatons(deps.store, picked.list, optStr(args, 'why') || 'stopped by the user', now(), deps.board);
                 return { stopped: stopped.map(batonView), by: picked.by };
             }
         },

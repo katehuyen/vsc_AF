@@ -300,6 +300,7 @@ import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, read
 import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
+import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, successorRow } from './core/batonDoor';
@@ -16475,6 +16476,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // S-66 — the batons, on disk beside the context guard's records.
     const batonStore = new BatonStore(path.join(context.globalStorageUri.fsPath, 'batons.json'));
     context.subscriptions.push({ dispose: () => batonStore.flush() });
+    // S-84 — a relay's handover cards go on the A2A board people already read.
+    // The baton's agentId is a folder path; the board speaks agent names.
+    const batonBoard = new BatonBoard(a2aNotes, id => agents.find(a => a.id === id)?.name);
     /**
      * ‼️ THE THREE VIEWS A CONSOLE CARD DRAWS — the context signal's words, the
      * bridge guard's stops and this run's baton leg. One builder for the
@@ -16504,6 +16508,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     registerBatonOps(bridge, {
         ...batonAttachDeps,
+        board: batonBoard,
         caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,
         // a preview: launchAccountPick RETURNS a round-robin cursor, only a real
         // launch commits it — so asking here moves nothing
@@ -16537,6 +16542,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         t.consoleSessionId || t.spawnSessionId || t.runSessionId || undefined;
     const batonRunner = new BatonRunner({
         store: batonStore,
+        board: batonBoard,
         door: b => {
             const agent = findAgent(b.from.agentId);
             // S-73 — every account full RIGHT NOW: the row is written with the
@@ -28042,7 +28048,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             passNowText(batonRelayOf(batonStore.all(), sessionId), contextGuard.orders()),
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
-            'stopped by the user — ✕ on the Console card', Date.now()).length,
+            'stopped by the user — ✕ on the Console card', Date.now(), batonBoard).length,
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
         estimateCost: (model: string, u: Usage) => pricing.costFor(model, u),
         projects: () => projectStore.all().map(p => ({

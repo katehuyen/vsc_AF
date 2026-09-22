@@ -22,14 +22,14 @@ import type { Baton } from './baton';
  */
 
 /** One line naming the leg, for a reader scanning the board. */
-export function batonCardTitle(b: Baton): string {
-    return `⑂ hop ${b.hop} — ${b.from.agentId} handed over${b.rescue ? ' (rescued)' : ''}`;
+export function batonCardTitle(b: Baton, agent = b.from.agentId): string {
+    return `⑂ hop ${b.hop} — ${agent} handed over${b.rescue ? ' (rescued)' : ''}`;
 }
 
 /** The card's body: what the successor starts from, under the coordinates of the pass. */
-export function batonCardBody(b: Baton): string {
+export function batonCardBody(b: Baton, agent = b.from.agentId): string {
     const lines = [
-        `Chain ${b.chainId} · hop ${b.hop} · passed by session ${b.from.sessionId.slice(0, 8)} (${b.from.agentId})`,
+        `Chain ${b.chainId} · hop ${b.hop} · passed by session ${b.from.sessionId.slice(0, 8)} (${agent})`,
         `Folder: ${b.from.cwd}`
     ];
     if (b.rescue) { lines.push(`Opened by the failsafe: ${b.rescue}`); }
@@ -44,21 +44,38 @@ export function batonCardBody(b: Baton): string {
  * record is `batons.json`, and this is the copy people read.
  */
 export class BatonBoard {
-    constructor(private readonly notes: A2ANotesStore) { }
+    /**
+     * ‼️ A BATON CARRIES THE AGENT'S ID, WHICH IS A FOLDER PATH — the board
+     * speaks agent NAMES (`fromAgent`, `targetRole`), so a card signed with the
+     * id is a card no reader's coordinates ever match. The resolver is how the
+     * one becomes the other; without it the id is written rather than a lie.
+     */
+    constructor(
+        private readonly notes: A2ANotesStore,
+        private readonly agentNameOf?: (agentId: string) => string | undefined
+    ) { }
+
+    private agent(b: Baton): string {
+        try { return this.agentNameOf?.(b.from.agentId) || b.from.agentId; } catch { return b.from.agentId; }
+    }
 
     /** Hang the card and answer its id; `undefined` if the board could not be written. */
     hang(b: Baton, now = Date.now()): string | undefined {
         try {
+            const agent = this.agent(b);
             const note = this.notes.add({
-                fromAgent: b.from.agentId,
+                fromAgent: agent,
                 fromSessionId: b.from.sessionId,
-                title: batonCardTitle(b),
-                body: batonCardBody(b),
+                title: batonCardTitle(b, agent),
+                body: batonCardBody(b, agent),
                 project: '*',
                 subsystem: b.from.cwd,
                 topic: b.chainId,
-                targetRole: b.from.agentId,
-                strictness: 'any',
+                targetRole: agent,
+                // ‼️ A HANDOVER IS ADDRESSED, NOT BROADCAST. `hard` keeps the
+                // card off every other agent's a2a.status; the PAGE draws the
+                // whole store, so a person still sees every race.
+                strictness: 'hard',
                 category: 'baton'
             }, now);
             return note?.id;
