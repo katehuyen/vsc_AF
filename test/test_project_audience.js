@@ -65,10 +65,10 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
     const mission = buildBrief({ ...seed, audience: 'mission' });
     const session = buildBrief(seed);
 
-    ok('the session brief carries the backlog — unchanged', session.includes('BACKLOGWORD'));
-    ok('…the open plan items', session.includes('PLANWORD'));
-    ok('…the recent worklog', session.includes('LOGWORD'));
-    ok('…the recent decisions', session.includes('DECISIONWORD'));
+    ok('the session brief carries no ephemeral backlog', !session.includes('BACKLOGWORD'));
+    ok('…no open plan items', !session.includes('PLANWORD'));
+    ok('…no recent worklog', !session.includes('LOGWORD'));
+    ok('…no recent decisions', !session.includes('DECISIONWORD'));
     ok('…and the write-back protocol', /## Writing back/.test(session));
 
     ok('‼️ the mission brief carries NO backlog', !mission.includes('BACKLOGWORD'));
@@ -82,7 +82,6 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
 
     ok('what it KEEPS is who the project is', mission.includes('SUMMARYWORD')
         && mission.includes('# Agent Farm — brief'));
-    ok('…its people', mission.includes('Murat'));
     ok('…its code roots', mission.includes('D:\\code\\vsc_AgentFarm'));
     ok('‼️ …and the role map, because a mission CAN be told to record something',
         /## Where things are/.test(mission) && /log: Worklog\.md/.test(mission));
@@ -113,9 +112,9 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
         seen.length = 0;
         buildBrief(seed);
         const sessionReads = seen.slice();
-        ok('the session brief reads the three list documents',
-            sessionReads.includes('Backlog.md') && sessionReads.includes('Plan.md')
-            && sessionReads.includes('Worklog.md'));
+        ok('neither session nor mission reads the three list documents',
+            !sessionReads.includes('Backlog.md') && !sessionReads.includes('Plan.md')
+            && !sessionReads.includes('Worklog.md'));
         ok('‼️ the mission brief reads NONE of them', missionReads.length === 0);
     } finally {
         fs.readFileSync = real;

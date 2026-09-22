@@ -171,15 +171,13 @@ const project = {
 
     ok('the brief states the project\'s state', brief.includes('- Status: active'));
     ok('…its one-line summary', brief.includes('the fleet command centre'));
-    ok('…who is involved', brief.includes('Murat') && brief.includes('owner'));
+    ok('…omits ephemeral people from system prompt', !brief.includes('## People'));
     ok('…and its code roots', brief.includes('D:\\code\\vsc_AgentFarm'));
     ok('‼️ WHERE THINGS ARE — the map that saves an agent ten tool calls',
         brief.includes('## Where things are') && brief.includes('log: Worklog.md'));
     ok('…and it uses paths relative to the folder, not absolute ones',
         !brief.includes(path.join(dir, 'Worklog.md')));
-    ok('the newest worklog lines come along', brief.includes('shipped the thing'));
-    ok('…newest first, as the anchor orders them',
-        brief.indexOf('shipped the thing') < brief.indexOf('started it'));
+    ok('omits ephemeral worklog lines from prompt', !brief.includes('shipped the thing'));
     ok('it says where to write back', /Record what you did in the worklog/.test(brief));
     ok('…and what not to touch', /Do not reformat the user's documents/.test(brief));
     ok('it is marked as generated, so nobody edits it by hand',

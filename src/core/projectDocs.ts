@@ -103,9 +103,13 @@ af-created: {date}
 
 ## What this is
 
-## Why it exists
+## Scope & Anti-Scope
 
-## Scope
+## Code Architecture
+
+## Verification Gate
+
+## Project Invariants
 `;
 
 const PLAN_TEMPLATE = `---
@@ -1272,6 +1276,56 @@ function readTextOrEmpty(file: string | undefined): string {
     try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
 }
 
+export interface CharterSections {
+    scope?: string;
+    architecture?: string;
+    verification?: string;
+    invariants?: string;
+}
+
+/**
+ * Extract constitutional sections out of Charter.md so they can be inlined
+ * directly into the system prompt. Matches both English and Turkish heading names.
+ */
+export function parseCharterSections(text: string): CharterSections {
+    if (!text) { return {}; }
+    const lines = text.split(/\r?\n/);
+    const sections: Record<string, string[]> = {};
+    let currentKey = '';
+
+    for (const line of lines) {
+        const m = line.match(/^##\s+(.+)$/);
+        if (m) {
+            const h = m[1].trim().toLowerCase();
+            if (h.includes('invariant') || h.includes('yasa') || h.includes('kural') || h.includes('tabu')) {
+                currentKey = 'invariants';
+            } else if (h.includes('arch') || h.includes('mimar')) {
+                currentKey = 'architecture';
+            } else if (h.includes('verif') || h.includes('doğrula') || h.includes('dogrula') || h.includes('test')) {
+                currentKey = 'verification';
+            } else if (h.includes('scope') || h.includes('kapsam')) {
+                currentKey = 'scope';
+            } else {
+                currentKey = '';
+            }
+            if (currentKey) {
+                sections[currentKey] = [];
+            }
+            continue;
+        }
+        if (currentKey && line.trim()) {
+            sections[currentKey].push(line);
+        }
+    }
+
+    return {
+        scope: sections.scope?.join('\n').trim(),
+        architecture: sections.architecture?.join('\n').trim(),
+        verification: sections.verification?.join('\n').trim(),
+        invariants: sections.invariants?.join('\n').trim(),
+    };
+}
+
 function recentLog(file: string | undefined, max = BRIEF_LOG_LINES): string[] {
     if (!file) { return []; }
     const text = readTextOrEmpty(file);
@@ -1339,41 +1393,17 @@ export interface BriefInput {
 }
 
 interface BriefLevel {
-    plan: number; backlog: number; decisions: number; log: number; people: number;
-    /**
-     * ‼️ HOW LONG ONE ENTRY MAY BE, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
-     *
-     * Measured on this installation's own project: a single worklog entry is
-     * over 2000 characters, because that is how the user writes them. Dropping
-     * to ONE log line therefore still overshot a 2500-character budget, and the
-     * tail — the "writing back" instructions — was sliced off anyway. Shortening
-     * the count without shortening the entry only looks like a fix.
-     *
-     * Undefined at the top level, on purpose: the unbudgeted brief is the FULL
-     * text that `_AF/BRIEF.md` holds and the "[cut to fit]" pointer points at,
-     * so it must not clip anything either.
-     */
     chars?: number;
 }
 
-/** How much each list carries, most generous first. When a budget is set the
- *  brief is built at the first level that fits. Decisions give way before
- *  worklog lines, and plan items last: "what is left to do" is the question a
- *  session opens with, and the decision records are one folder listing away for
- *  an agent that wants them. */
 const BRIEF_LEVELS: BriefLevel[] = [
-    { plan: 6, backlog: 5, decisions: 5, log: 6, people: 8 },
-    { plan: 6, backlog: 5, decisions: 3, log: 5, people: 6, chars: 400 },
-    { plan: 5, backlog: 4, decisions: 2, log: 4, people: 4, chars: 300 },
-    { plan: 4, backlog: 4, decisions: 1, log: 3, people: 3, chars: 220 },
-    { plan: 3, backlog: 3, decisions: 0, log: 2, people: 2, chars: 160 },
-    { plan: 2, backlog: 3, decisions: 0, log: 1, people: 1, chars: 110 },
-    // ‼️ The floor. The plan drops to a single line while the backlog keeps
-    // three, and that asymmetry is the point: at this width the brief has to
-    // choose what it IS, and what it is is the answer to "what do I do next and
-    // where do I write down that I did it". The roadmap is one document away;
-    // the backlog is the list about to be acted on.
-    { plan: 1, backlog: 3, decisions: 0, log: 1, people: 1, chars: 70 }
+    {},
+    { chars: 400 },
+    { chars: 300 },
+    { chars: 220 },
+    { chars: 160 },
+    { chars: 110 },
+    { chars: 70 }
 ];
 
 /** One entry, shortened on a word boundary and visibly so. The `…` matters: a
@@ -1422,57 +1452,15 @@ interface BriefSource {
     log: string[];
 }
 
-/** The three lists that come off disk, read once per brief. */
-function briefSource(o: BriefInput): BriefSource {
-    const roles = o.roles ?? {};
-    const widest = BRIEF_LEVELS[0];
-    // ‼️ X-94 — a mission is not shown the standing lists, so it does not read
-    // them. Returning early rather than filtering later is the difference
-    // between not printing a 500KB backlog and not parsing one.
-    if (o.audience === 'mission') { return { plan: [], backlog: [], log: [] }; }
-    return {
-        plan: roles.plan
-            ? openPlanItems(readTextOrEmpty(roles.plan), widest.plan)
-                .map(i => ({ text: i.text, section: i.section }))
-            : [],
-        // ‼️ No effort ceiling here, unlike an agent asking what to work on: the
-        // brief is telling the reader what is at the TOP OF THE PILE, and hiding
-        // the big one at position two would misrepresent the pile.
-        backlog: roles.backlog
-            ? nextBacklog(readTextOrEmpty(roles.backlog), { limit: widest.backlog, maxEffort: 'XL' }).items
-            : [],
-        log: recentLog(roles.log, widest.log)
-    };
+/** The three lists that used to come off disk — now omitted from the brief to keep context lean and invariant-focused. */
+function briefSource(_o: BriefInput): BriefSource {
+    return { plan: [], backlog: [], log: [] };
 }
 
-/** One backlog line as the brief prints it: code first (that is what gets quoted
- *  back at an agent), then the words, then only the badges that are set. */
-function briefBacklogLine(item: BacklogItem, chars?: number): string {
-    const badges = [
-        ...item.kinds.map(k => `#${k}`),
-        item.priority !== 'normal' ? BRIEF_PRIORITY[item.priority] : '',
-        item.effort ?? '',
-        // ‼️ A CHILD WITHOUT ITS PARENT IS HALF A SENTENCE. These lines are the
-        // whole of what an agent is told about the pile at session start, and
-        // "add the retry form" read on its own is a different job from "add the
-        // retry form, part of U-9". Four characters, and it is the difference
-        // between doing the item and doing the item for the right reason.
-        item.parent ? `↳${item.parent}` : '',
-        item.state === 'doing' ? '(in progress)' : ''
-    ].filter(Boolean).join(' ');
-    const head = item.code ? `${item.code} ` : '';
-    return `- ${head}${clipEntry(item.text, chars)}${badges ? `  ${badges}` : ''}`;
-}
-
-const BRIEF_PRIORITY: Record<string, string> = {
-    highest: '🔺', high: '⏫', medium: '🔼', normal: '', low: '🔽', lowest: '⏬'
-};
-
-function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): string {
+function renderBrief(o: BriefInput, level: BriefLevel, _source?: BriefSource): string {
     const p = o.project;
     const roles = o.roles ?? {};
     const now = o.now ?? Date.now();
-    const src = source ?? briefSource(o);
     const day = (ms?: number) => (ms ? localDay(ms) : '');
     const rel = (file: string) => (p.folder ? path.relative(p.folder, file) || path.basename(file) : file);
 
@@ -1501,22 +1489,6 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
     }
     out.push(...facts);
 
-    const allPeople = (p.people ?? []).filter(x => x.name?.trim());
-    const people = allPeople.slice(0, level.people);
-    if (people.length) {
-        out.push('', '## People');
-        for (const x of people) {
-            const bits = [x.role, x.kind === 'company' ? 'company' : undefined, x.contact]
-                .filter(Boolean).join(' · ');
-            out.push(`- ${x.name}${bits ? ` — ${bits}` : ''}`);
-        }
-        // A list that was shortened says so, rather than looking like the whole
-        // team is four people.
-        if (allPeople.length > people.length) {
-            out.push(`- _…and ${allPeople.length - people.length} more (see the people document)_`);
-        }
-    }
-
     const repos = (o.repos ?? []).filter(r => r?.trim());
     if (repos.length) {
         out.push('', '## Code');
@@ -1530,49 +1502,22 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
         for (const role of known) { out.push(`- ${role}: ${rel(roles[role] as string)}`); }
     }
 
-    // ‼️ What is still OPEN, not the whole plan. An agent handed a project needs
-    // the answer to "what is left", and the plan file's own checkboxes are the
-    // only place that answer already exists — copying the finished ones in too
-    // would spend the brief's budget telling it what it does not have to do.
-    const open = src.plan.slice(0, level.plan);
-    if (open.length) {
-        out.push('', '## Open plan items');
-        for (const item of open) {
-            const where = item.section ? ` _(${item.section})_` : '';
-            out.push(`- ${clipEntry(item.text, level.chars)}${where}`);
-        }
-    }
+    // ‼️ The project constitution — extracted from Charter.md
+    const charterText = readTextOrEmpty(roles.charter);
+    const charter = parseCharterSections(charterText);
+    const clipVal = level.chars ? level.chars * 3 : undefined;
 
-    // ‼️ THE LINE THAT MAKES "do the top five" WORK WITHOUT A CONVERSATION.
-    // The user's whole complaint was having to paste the work in every time; the
-    // answer is that the top of the backlog is ALREADY in front of the agent
-    // when the session opens. Everything else in this feature — the codes, the
-    // ordering, the next-engine — is only useful if this section is here.
-    const backlog = src.backlog.slice(0, level.backlog);
-    if (backlog.length) {
-        out.push('', '## Next in backlog');
-        for (const item of backlog) { out.push(briefBacklogLine(item, level.chars)); }
+    if (charter.scope) {
+        out.push('', '## Scope & Anti-Scope', clipEntry(charter.scope, clipVal));
     }
-
-    // ‼️ X-94 — the decision records are the project's own history, which is
-    // the fourth standing list and off-topic for the same reason as the other
-    // three. `Where things are` names the folder if a run really needs one.
-    const decisions = o.audience === 'mission'
-        ? [] : (o.decisions ?? []).slice(0, level.decisions);
-    if (decisions.length) {
-        out.push('', '## Recent decisions');
-        for (const d of decisions) {
-            out.push(`- ${day(d.ts)} — ${clipEntry(d.title, level.chars)}`);
-        }
+    if (charter.architecture) {
+        out.push('', '## Code Architecture', clipEntry(charter.architecture, clipVal));
     }
-
-    const log = src.log.slice(0, level.log);
-    if (log.length) {
-        out.push('', '## Recently');
-        for (const line of log) {
-            const body = clipEntry(line.replace(/^-\s*/, ''), level.chars);
-            out.push(`- ${body}`);
-        }
+    if (charter.verification) {
+        out.push('', '## Verification Gate', clipEntry(charter.verification, clipVal));
+    }
+    if (charter.invariants) {
+        out.push('', '## Project Invariants', clipEntry(charter.invariants, clipVal));
     }
 
     /**
@@ -1603,8 +1548,6 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
         ? `- Record what you did in the worklog (${rel(roles.log)}) before you finish.`
         : '- This project has no worklog file yet; create one with `af-role: log` if you need it.');
     if (roles.plan) { out.push(`- Plan items live in ${rel(roles.plan)} — tick them there, do not rewrite the file.`); }
-    // Kept to one line: this section is the FIXED tail of every brief ever
-    // generated, so a sentence here is paid for on every session start.
     if (roles.backlog) {
         out.push(`- Backlog: ${rel(roles.backlog)} — quote an item by its code;`
             + ' `projects.backlog.next` picks, `.check` closes.');
