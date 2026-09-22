@@ -1416,5 +1416,33 @@ const FAMILY = [
             .find(i => i.code === 'X-9').closed === 'bbbb2222#7');
 }
 
+// ---------- X-352: a metadata icon takes its OWN value, never the next word ----------
+{
+    const LINES = [
+        '---', 'af-role: backlog', '---', '', '## U — UI', '',
+        "- [ ] U-1 durum '⏳ Yanıt bekleniyor' rozeti #feat [efor:: S]",
+        '- [ ] U-2 ⛔ kullanıcı karar verecek #feat',
+        '- [ ] U-3 geri sayım ⏳ 2026-09-30 bitti #feat',
+        '- [ ] U-4 kimlik 🆔 abc_12 ve bekleme ⛔ U-1, U-2 sonra #feat',
+        '- [x] U-5 bitti ✅ 2026-09-01 🏁 keep sonra',
+        '- [ ] U-6 tarihsiz 📅 takvim simgesi #feat',
+        ''
+    ].join('\r\n');
+    const s = B.parseBacklog(LINES);
+    const item = c => s.items.find(i => i.code === c);
+    ok("‼️ an hourglass with no date is WORDS — '⏳ Yanıt bekleniyor' keeps both of them",
+        item('U-1').text === "durum '⏳ Yanıt bekleniyor' rozeti");
+    ok('‼️ a bare ⛔ comes off as a mark and leaves the sentence behind it',
+        item('U-2').text === 'kullanıcı karar verecek');
+    ok('…and it is still read as a hold', item('U-2').onHold === true);
+    ok('a dated ⏳ still comes off together with its date', item('U-3').text === 'geri sayım bitti');
+    ok('🆔 takes its id and a coded ⛔ its whole code list — nothing past them',
+        item('U-4').text === 'kimlik ve bekleme sonra');
+    ok('…and those codes are still read as blockers', item('U-4').blockedBy.join() === 'U-1,U-2');
+    ok('✅ takes its date and 🏁 its keep/delete', item('U-5').text === 'bitti sonra');
+    ok('a date icon with no date after it stays in the words',
+        item('U-6').text === 'tarihsiz 📅 takvim simgesi');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

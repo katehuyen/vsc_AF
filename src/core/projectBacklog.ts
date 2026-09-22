@@ -372,8 +372,21 @@ const dateAfter = (line: string, icon: string): string | undefined =>
  * "history search S]", swallowing the effort field's opening bracket and
  * leaving its tail in the text. An item whose displayed words are wrong is also
  * an item that cannot be found by text, which is how the wrong row gets edited.
+ *
+ * ‼️ X-352 — AND A VALUED ICON TAKES ONLY ITS OWN VALUE, in the shape that
+ * value has. "Any non-space token after it" turned `'⏳ Yanıt bekleniyor'` into
+ * `' bekleniyor'` and ate the first word after every bare ⛔ hold. So a date
+ * icon comes off only WITH its date (without one it is the user's word and
+ * stays), 🆔 with an id, ⛔ with its code list — a bare ⛔ is a mark on its own
+ * (the hold, `HOLD` above) — and 🏁 with its keep/delete.
  */
-const META_VALUED = /\s*(?:🆔|⛔|📅|⏳|🛫|➕|✅|❌|🏁)\s*[^\s]*/gu;
+const META_VALUED = new RegExp([
+    '\\s*(?:📅|⏳|🛫|➕|✅|❌)\\s*\\d{4}-\\d{2}-\\d{2}',
+    '\\s*🆔\\s*[A-Za-z0-9_-]+',
+    '\\s*⛔\\s*[A-Z]{1,2}-\\d+(?:\\.\\d+)*(?:\\s*,\\s*[A-Z]{1,2}-\\d+(?:\\.\\d+)*)*',
+    '\\s*⛔',
+    '\\s*🏁\\s*(?:delete|keep)\\b'
+].join('|'), 'gu');
 const META_BARE = /\s*(?:🔺|⏫|🔼|🔽|⏬|🔁)/gu;
 
 // ---------------------------------------------------------------------------
