@@ -960,7 +960,7 @@
 
         return `
             ${lede}
-            <div class="toolbar">
+            <div class="toolbar"><span class="tbf">
                 <input type="search" id="planq" placeholder="Search name, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}"
                     title="${C.esc(window.AFQuery.tip('Searched against the name, the prompt, the schedule and the agent.'))}">
                 ${/* ‼️ U-52 — the one subset this list has a word for. Three of
@@ -979,7 +979,7 @@
                 ${sel('state', 'State', v.state, [{ v: 'on', t: 'on' }, { v: 'off', t: 'off' }])}
                 ${sel('guard', 'Guard', v.guard, [{ v: 'yes', t: 'guarded' }, { v: 'no', t: 'unguarded' }])}
                 <label class="cbx"><input type="checkbox" data-f="issues"${v.issues ? ' checked' : ''}> needs attention</label>
-                <span class="spacer"></span>
+                </span><span class="tba">
                 <label class="grp">group
                     <select data-f="group">
                         ${C.option('kind', 'by kind', { selected: v.group === 'kind', detail: 'One section per task kind — tasks, schedules, chains.' })}
@@ -998,7 +998,7 @@
                          was no way to make a template on this page at all. -->
                     <button class="secondary" data-add="template" title="save a prompt you launch by hand">+ Template</button>
                 </span>
-            </div>
+            </span></div>
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'plan' ? composerHtml() : ''}
             ${chooser && chooser.tab === 'plan' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'plan' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
@@ -3680,7 +3680,7 @@
         return `
             <p class="lede">A <b>task</b> is one execution. It is started by a schedule, a trigger or a
                 workflow step — or by you, with <b>+ Run a task</b>. Everything on the Plan tab produces tasks here.</p>
-            <div class="toolbar">
+            <div class="toolbar"><span class="tbf">
                 <input type="search" id="runq" placeholder="Search run, prompt, agent…" value="${C.esc(v.q)}" class="${v.q ? 'set' : ''}"
                     title="${C.esc(window.AFQuery.tip('Searched against the run title, its prompt, the agent and what started it.'))}">
                 ${sel('agent', 'Agent', v.agent, d.agents)}
@@ -3706,7 +3706,7 @@
             title: 'Everything the farm started by itself — not the runs you pressed.'
         }])}
                 ${sel('engine', 'Engines', v.engine, runEngines(d), otherEnginePresets(runEngines(d)))}
-                <span class="spacer"></span>
+                </span><span class="tba">
                 ${/* ‼️ M-21 — "+ New task" is no longer here: it is on the page's
                       own bar beside Analytics (see tabsHtml). What is left on
                       this row is what it always should have been — the things
@@ -3725,7 +3725,7 @@
                     title="${sorted.length
             ? 'Export the ' + sorted.length + ' row(s) you can see — this search, these filters, this order — as a Markdown table.'
             : 'Nothing to export — no run is on the list you are looking at.'}">⬇ MD</button>
-            </div>
+            </span></div>
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'run' ? composerHtml() : ''}
             ${chooser && chooser.tab === 'run' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'run' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
@@ -3770,9 +3770,22 @@
                 .tab.on { opacity:1; font-weight:600; border-bottom-color:var(--vscode-textLink-foreground);
                     background:var(--vscode-editorWidget-background); }
                 .tab-n { opacity:.55; font-weight:400; font-size:11px; }
-                .toolbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
+                .toolbar { display:flex; gap:6px 12px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
+                /* U-145: two blocks. A wrapping row breaks a line on each item's basis, so the
+                   filter block's basis is ZERO and its floor is its min-content (the search at
+                   120px, each picker at the text it shows): the filters give ground first, and only
+                   then do the actions move to the next line as ONE block - never a button at a time. */
+                .toolbar .tbf, .toolbar .tba { display:flex; gap:6px; align-items:center; flex-wrap:nowrap; }
+                .toolbar .tbf { flex:1 1 0%; }
+                .toolbar .tbf > * { flex-shrink:0; }
+                .toolbar .tbf .afms { display:flex; flex:0 1 var(--afms-w, 24ch); min-width:calc(var(--afms-w, 24ch) / 2); }
+                .toolbar .tbf .afms > .tip-free { display:flex; flex:1 1 auto; min-width:0; }
+                .toolbar .tbf .afms-btn { flex:1 1 auto; width:auto !important; min-width:0; box-sizing:border-box;
+                    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+                .toolbar .tba { flex:0 0 auto; margin-left:auto; }
+                @media (max-width: 620px) { .toolbar .tbf, .toolbar .tba { flex-wrap:wrap; max-width:100%; } }
                 .toolbar input[type=search], .cmdbar input { padding:4px 9px; }
-                .toolbar input[type=search] { min-width:210px; }
+                .toolbar input[type=search] { flex:1 1 210px; min-width:120px; width:120px; }
                 .toolbar select { padding:3px 6px; }
                 .toolbar select.set, .toolbar input.set { border-color:var(--vscode-focusBorder); }
                 .cbx, .grp { font-size:12px; display:inline-flex; gap:5px; align-items:center; opacity:.85; }
