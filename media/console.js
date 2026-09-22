@@ -335,6 +335,13 @@
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
         /* S-77: the relay leg is information, not a warning. */
         .batonsig { font-weight:600; color:var(--vscode-textLink-foreground); }
+        /* S-82: the attach strip under a card's status row, and the composer's relay chip. */
+        #c-relay:empty { display:none; }
+        #c-relay { justify-content:flex-end; }
+        .crow .axisw.relaypool { flex:0 1 190px; max-width:190px; }
+        #c-relay input[type=number] { width:16ch; font-size:11px; padding:2px 4px; border-radius:3px;
+            border:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
         /* B-23: searches the bridge guard stopped. A rule that held is not an
            alarm, so the warning colour and not the error one. */
         .bgsig { font-weight:600; color:var(--vscode-editorWarning-foreground, #cca700); }
@@ -3184,6 +3191,7 @@
             ${attachBtnHtml()}
             ${continueBtnHtml(s)}
             ${batonStopBtnHtml(s)}
+            ${relayBtnHtml(s, dead)}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
     }
@@ -4196,6 +4204,65 @@
             .map(g => `<optgroup label="${C.esc(o.axis + ' · ' + g.label)}">${opts(g.list, o.cur)}</optgroup>`).join('')
         : `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`;
 
+    // The axis box, hoisted so a strip drawn outside the shell (S-82 relay) is the same shape.
+    const axisRow = (list, cur) => (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
+    /** `:` is a choice somebody made, `→` is what the engine resolves to
+     *  when nothing is named here. Two different facts, two marks. */
+    const axisHead = (name, list, cur) => {
+        const row = axisRow(list, cur);
+        const now = row ? String(row.label || row.id || '') : '';
+        return name + (now ? (String(row.id ?? '') !== '' ? ': ' : ' → ') + now : '');
+    };
+    /**
+     * The panel's body: what the CHOSEN row says, then the standing
+     * sentence, once. Both halves are needed and neither is repeated —
+     * without the row's own line `effort` opened a panel reading
+     * "Reasoning effort" under a heading reading "effort → Default", the
+     * same two words twice and nothing about what was actually picked.
+     */
+    const axisBody = (list, cur, standard) => {
+        const row = axisRow(list, cur);
+        const why = row && String(row.detail || '').trim();
+        const std = String(standard || '').trim();
+        return window.AFTip.lines(why && why !== std ? [why, window.AFTip.GAP, std] : [std]);
+    };
+    /**
+     * One box on a control row.
+     *   axis     — the heading at the top of the open list (short: it sits
+     *              over a ~100px column)
+     *   name     — what the PANEL calls it, spelled out where there is room
+     *              (`perm` in the list, `permissions` in the hover)
+     *   inner    — ready-made options, for the one list that builds its own
+     *   before   — a state mark drawn beside the box (the pending account
+     *              swap, and nothing else: it costs width)
+     */
+    const axisBox = (o) => {
+        const name = o.name || o.axis;
+        /**
+         * ‼️ X-305 — AN AXIS WHOSE VALUES ARE OF TWO KINDS SAYS SO IN THE
+         * LIST. The account box offers RULES (re-decided at every launch)
+         * and SLOTS (this one, every time), and a flat list makes them look
+         * like the same kind of answer.
+         *
+         * `groups` REPLACES the axis-named optgroup rather than nesting
+         * inside it — HTML has no nested `<optgroup>`, and the axis is
+         * already the heading of the box's own panel, so nothing is lost by
+         * spending the one grouping level on the distinction that is not
+         * said anywhere else. Every other box passes no `groups` and is
+         * drawn exactly as before.
+         */
+        const body = axisBoxBody(o);
+        return window.AFTip.wrap(
+            (o.before || '')
+            + `<select id="${o.id}">`
+            + body
+            + '</select>',
+            axisHead(name, o.list, o.cur),
+            axisBody(o.list, o.cur, o.standard),
+            'axisw' + (o.cls ? ' ' + o.cls : ''),
+            `data-axis-name="${C.esc(name)}" data-axis-std="${C.esc(String(o.standard || '').trim())}"`);
+    };
+
     function buildShell(s) {
         /**
          * ‼️ B-03.21 (round 2) — THE AXIS IS THE HEADING OF THE LIST, NOT A
@@ -4226,63 +4293,6 @@
          * controls. A row where the same question is answered three ways is not
          * a design; it is three unfinished ones.
          */
-        const axisRow = (list, cur) => (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
-        /** `:` is a choice somebody made, `→` is what the engine resolves to
-         *  when nothing is named here. Two different facts, two marks. */
-        const axisHead = (name, list, cur) => {
-            const row = axisRow(list, cur);
-            const now = row ? String(row.label || row.id || '') : '';
-            return name + (now ? (String(row.id ?? '') !== '' ? ': ' : ' → ') + now : '');
-        };
-        /**
-         * The panel's body: what the CHOSEN row says, then the standing
-         * sentence, once. Both halves are needed and neither is repeated —
-         * without the row's own line `effort` opened a panel reading
-         * "Reasoning effort" under a heading reading "effort → Default", the
-         * same two words twice and nothing about what was actually picked.
-         */
-        const axisBody = (list, cur, standard) => {
-            const row = axisRow(list, cur);
-            const why = row && String(row.detail || '').trim();
-            const std = String(standard || '').trim();
-            return window.AFTip.lines(why && why !== std ? [why, window.AFTip.GAP, std] : [std]);
-        };
-        /**
-         * One box on a control row.
-         *   axis     — the heading at the top of the open list (short: it sits
-         *              over a ~100px column)
-         *   name     — what the PANEL calls it, spelled out where there is room
-         *              (`perm` in the list, `permissions` in the hover)
-         *   inner    — ready-made options, for the one list that builds its own
-         *   before   — a state mark drawn beside the box (the pending account
-         *              swap, and nothing else: it costs width)
-         */
-        const axisBox = (o) => {
-            const name = o.name || o.axis;
-            /**
-             * ‼️ X-305 — AN AXIS WHOSE VALUES ARE OF TWO KINDS SAYS SO IN THE
-             * LIST. The account box offers RULES (re-decided at every launch)
-             * and SLOTS (this one, every time), and a flat list makes them look
-             * like the same kind of answer.
-             *
-             * `groups` REPLACES the axis-named optgroup rather than nesting
-             * inside it — HTML has no nested `<optgroup>`, and the axis is
-             * already the heading of the box's own panel, so nothing is lost by
-             * spending the one grouping level on the distinction that is not
-             * said anywhere else. Every other box passes no `groups` and is
-             * drawn exactly as before.
-             */
-            const body = axisBoxBody(o);
-            return window.AFTip.wrap(
-                (o.before || '')
-                + `<select id="${o.id}">`
-                + body
-                + '</select>',
-                axisHead(name, o.list, o.cur),
-                axisBody(o.list, o.cur, o.standard),
-                'axisw' + (o.cls ? ' ' + o.cls : ''),
-                `data-axis-name="${C.esc(name)}" data-axis-std="${C.esc(String(o.standard || '').trim())}"`);
-        };
         /**
          * ‼️ X-105 — THE ROUTE, AS A CONTROL RATHER THAN A CARRIED VALUE.
          *
@@ -4734,6 +4744,7 @@
                         </div>
                         <div class="crow" id="c-controls">${controls}</div>
                         <div class="crow" id="c-status" style="font-size:10px;opacity:.6"></div>
+                        <div class="crow" id="c-relay"></div>
                     </div>
                 </div>
             </div>`;
@@ -5704,6 +5715,20 @@
                 const v = s && s.batonView;
                 if (v && v.chainId) { vscode.postMessage({ type: 'batonStopChain', chainId: v.chainId }); }
             });
+            byId('c-baton-pass', 'click', () => vscode.postMessage({ type: 'batonPassNow', id: DATA.selected }));
+            byId('c-baton-attach', 'click', () => { relayOpen = relayOpen === DATA.selected ? '' : DATA.selected; paint(); });
+        }
+        if (slot('c-relay', relayStripHtml(s))) {
+            const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+            // the page keeps the pick, so a host repaint of the strip cannot drop it
+            byId('c-relay-pool', 'change', e => { relayPick.pool = e.target.value; });
+            byId('c-relay-max', 'input', e => { relayPick.max = e.target.value; });
+            byId('c-relay-x', 'click', () => { relayOpen = ''; paint(); });
+            byId('c-relay-go', 'click', () => {
+                vscode.postMessage({ type: 'batonAttach', id: DATA.selected, account: relayPick.pool || '@emptiest', maxHops: relayPick.max });
+                relayOpen = ''; relayPick.pool = ''; relayPick.max = '';
+                paint();
+            });
         }
     }
 
@@ -5850,6 +5875,60 @@
                 window.AFTip.GAP,
                 'The same brake for an agent: baton.stop chain=' + v.chainId + '.'
             ]), 'tip-batonstop');
+    }
+
+    /**
+     * S-82 — the card's relay hand, one button that follows the card: a run in
+     * a relay gets ⑂ Pass now, a live run outside one ⑂ Attach relay (the
+     * strip under the status row picks the pool and the ceiling).
+     */
+    let relayOpen = '';
+    const relayPick = { pool: '', max: '' };
+    function relayBtnHtml(s, dead) {
+        if (!s.sessionId || dead) { return ''; }
+        const T = window.AFTip;
+        if (s.batonView) {
+            return cardTip('<button class="secondary" id="c-baton-pass">⑂ Pass now</button>',
+                s.batonView.head,
+                T.lines([
+                    'Says the handover order into this run now, the one its context line would have sent: '
+                        + 'commit the clean progress, pass the baton (baton.pass) and end — the next leg opens once this session has ended. '
+                        + 'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.',
+                    T.GAP,
+                    'The same words for an agent: console.send id=' + (s.id || '') + ' — the text is the host\'s (PASS NOW …).'
+                ]), 'tip-batonpass');
+        }
+        return cardTip(`<button class="secondary" id="c-baton-attach"${relayOpen === s.id ? ' aria-expanded="true"' : ''}>⑂ Attach relay</button>`,
+            relayOpen === s.id ? 'Attach relay — the strip below is open' : 'Make this run leg 1 of a baton relay',
+            T.lines([
+                'Sealed at once, without a restart: after that, its handover line says "pass the baton" instead of '
+                    + '"write the note", and at its limit the work goes on in a fresh session on the chain\'s pool. '
+                    + 'The strip below picks the pool (a rule, never one slot) and this chain\'s leg ceiling.',
+                T.GAP,
+                'The same door for an agent: baton.attach session=' + s.sessionId + ' account=@… maxHops=N.'
+            ]), 'tip-batonattach');
+    }
+
+    /** The strip under the status row while ⑂ Attach relay is open on this card. */
+    function relayStripHtml(s) {
+        if (!s || relayOpen !== s.id || !s.sessionId || s.batonView) { return ''; }
+        const fleet = DATA.batonMaxLegs === undefined || DATA.batonMaxLegs === null ? '' : String(DATA.batonMaxLegs);
+        const pols = s.policyRows || [];
+        const rows = pols.some(p => p.id === '@emptiest') ? pols
+            : [{ id: '@emptiest', label: '@emptiest', detail: 'The default pool: the sign-in with the most room left when each leg starts.' }].concat(pols);
+        const T = window.AFTip;
+        const max = String(relayPick.max || '').trim();
+        return axisBox({
+            id: 'c-relay-pool', axis: 'pool', name: 'relay pool', cls: 'relaypool',
+            list: rows.map(p => window.AFAccount.policyRow(p)), cur: relayPick.pool || '@emptiest',
+            standard: 'The POOL every later leg of this chain is placed from — a rule, never a single slot: the slot that hit the wall is the one with no room.'
+        })
+            + T.wrap(`<input type="number" id="c-relay-max" min="0" step="1" value="${C.esc(max)}" placeholder="${C.esc('max legs' + (fleet ? ' · ' + fleet : ''))}">`,
+                'max legs: ' + (max || (fleet ? 'the setting, ' + fleet : 'the setting')),
+                T.lines(['This chain\'s own leg ceiling, this run included. Empty = the fleet setting (agentFarm.batonMaxHops'
+                    + (fleet ? ', now ' + fleet : '') + '); 0 = no ceiling — only the barren-chain brake and your stop remain.']), 'relaymax')
+            + `<button id="c-relay-go" title="${C.esc('Seal this run as leg 1 now — baton.attach, the same body.')}">⑂ Attach</button>
+            <button class="secondary" id="c-relay-x" title="Close the strip — nothing is attached">✕</button>`;
     }
 
     function chipsHtml() {

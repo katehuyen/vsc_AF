@@ -300,6 +300,7 @@ import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, read
 import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeMaxLegs } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
+import { attachRelay, passNowText } from './core/batonAttach';
 import { relayHandoffHold, successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
 import { BatonStore } from './core/batonStore';
@@ -16481,12 +16482,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     }
     setBatonSource(() => batonStore.all());
-    registerBatonOps(bridge, {
+    // S-82 — what attaching a relay reads, handed to baton.attach and the Console card's ⑂ Attach relay alike
+    const batonAttachDeps = {
         store: batonStore,
-        caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,
-        launchIdOf: sid => consoleHost.list().find(s => s.sessionId === sid)?.launchId
+        launchIdOf: (sid: string) => consoleHost.list().find(s => s.sessionId === sid)?.launchId
             || index.allWithExternal().find(x => x.sessionId === sid)?.launchId,
         manifests: () => launchManifests(),
+        headOf: (cwd: string) => headCommit(cwd),
+        maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))
+    };
+    registerBatonOps(bridge, {
+        ...batonAttachDeps,
+        caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,
         // a preview: launchAccountPick RETURNS a round-robin cursor, only a real
         // launch commits it — so asking here moves nothing
         room: b => {
@@ -16505,9 +16512,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         // S-74 — the runner is made just below; the op only runs long after activation
         startNow: (b, by) => batonRunner.startNow(b, by),
-        // S-78 — the two automatic brakes: the leg ceiling and the barren chain
-        headOf: cwd => headCommit(cwd),
-        maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
+        // S-78 — the two automatic brakes (headOf, maxLegs) ride in batonAttachDeps
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
     });
 
@@ -27971,6 +27976,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         handoverContinue: (sessionId: string, projectId?: string) => handoverContinueFor(sessionId, projectId),
         // S-77 — the card's ✕ runs the one body baton.stop chain= runs.
         cardViews: (sessionId: string) => consoleCardViews(sessionId),
+        // S-82 — the card's ⑂ Attach relay runs baton.attach's own body…
+        batonAttach: (sessionId: string, account: string, maxHops: unknown) =>
+            attachRelay(batonAttachDeps, { sessionId, account, maxHops, by: 'the user (Console card)' }),
+        // …and ⑂ Pass now says the handover order the context line would have sent
+        batonPassNowText: (sessionId: string) =>
+            passNowText(batonRelayOf(batonStore.all(), sessionId), contextGuard.orders()),
+        batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Console card', Date.now()).length,
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost

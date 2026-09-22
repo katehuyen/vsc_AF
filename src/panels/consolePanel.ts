@@ -482,6 +482,12 @@ export interface ConsoleDeps {
     handoverContinue(sessionId: string, projectId?: string): { prompt: string; note?: string; pct?: number };
     /** the host's own views for one card — context signal, bridge-guard stops, baton leg (the console.sessions op's builder) */
     cardViews?(sessionId: string): { contextSignalView: unknown; bridgeGuardView: unknown; batonView: unknown };
+    /** S-82 — ⑂ Attach relay: baton.attach's own body (attachRelay) for this card's session */
+    batonAttach?(sessionId: string, account: string, maxHops: unknown): Promise<{ ok: true; sentence: string } | { ok: false; why: string }>;
+    /** S-82 — ⑂ Pass now: the handover order for this runner, worded for its relay (passNowText) */
+    batonPassNowText?(sessionId: string): string;
+    /** the fleet's leg ceiling (agentFarm.batonMaxHops), for the empty max-legs boxes */
+    batonMaxLegs?(): number;
     /** S-77 — the card's ✕: every live baton of the chain stops, recorded (`stopBatons`). Answers how many. */
     batonStopChain(chainId: string): number;
     /**
@@ -1508,6 +1514,7 @@ export class ConsolePanel {
             // agent's own, X-133), the route its `providerId`/`tier`, the
             // sign-in its `account`, the engine its `engine`.
             composerIntent: this.composerIntentShown(),
+            batonMaxLegs: this.deps.batonMaxLegs?.() ?? null,
             composerAgent: this.composerAgent,
             // …and the one part of a handed-over setup that is CONTENT rather
             // than intent: the first prompt, into the box, once per seed (K-34)
@@ -2734,6 +2741,27 @@ export class ConsolePanel {
                     ? `Agent Farm: baton chain ${chain} stopped — ${n} baton${n === 1 ? '' : 's'} recorded as stopped, no further leg opens.`
                     : `Agent Farm: nothing in baton chain ${chain} was still waiting — it had already ended.`);
                 this.refresh();
+                break;
+            }
+            // S-82 — ⑂ Attach relay: this card's run becomes leg 1, sealed at once (baton.attach's body)
+            case 'batonAttach': {
+                const s = host.get(str('id'));
+                if (!s?.sessionId || !this.deps.batonAttach) { break; }
+                const r = await this.deps.batonAttach(s.sessionId, str('account'), msg.maxHops);
+                void (r.ok ? vscode.window.showInformationMessage(`Agent Farm: ${r.sentence}`)
+                    : vscode.window.showWarningMessage(`Agent Farm: ${r.why}`));
+                this.refresh();
+                break;
+            }
+            // …and ⑂ Pass now: the handover order said into the run, through console.send's own door
+            case 'batonPassNow': {
+                const s = host.get(str('id'));
+                const text = s?.sessionId ? this.deps.batonPassNowText?.(s.sessionId) : undefined;
+                if (!s || !text) { break; }
+                const r = host.send(s.id, text);
+                if (!r || r.refused) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${r?.refused || 'that session has ended — there is no run to pass from.'}`);
+                }
                 break;
             }
             case 'openTranscript': {

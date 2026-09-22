@@ -1242,6 +1242,18 @@ module.exports = {
             data: batonData(true)
         },
         {
+            id: 'console-baton-passnow',
+            label: 'Console — S-82: a relay leg\'s ⑂ Pass now beside ✕ Stop chain, its panel open (the order is the host\'s)',
+            tip: 'tip-batonpass',
+            data: batonData(true)
+        },
+        {
+            id: 'console-relay-attach',
+            label: 'Console — S-82: a live run outside any relay, ⑂ Attach relay pressed: the pool picker and the max-legs box under the status row',
+            data: relayAttachData(),
+            act: r => { r.query('#c-baton-attach').forEach(b => b.fire('click')); }
+        },
+        {
             id: 'console-quotasig-undelivered',
             label: 'Console — a Codex run past the quota line: 5h 93% HANDOVER ✕, never silence',
             tip: 'tip-quota',
@@ -1379,6 +1391,23 @@ function batonData(handover) {
         mk('b1', 'started', 1, '22597c33-aaaa', { toSessionId: sid }),
         mk('b2', 'waiting-end', 2, sid, { note: 'S-77 surfaces, card chip done' })
     ], sid);
+    return d;
+}
+
+/** S-82 — a live card no baton touched, with this engine's rules for the pool picker. */
+function relayAttachData() {
+    const d = ctxSignalData('converge');
+    const s = d.sessions[0];
+    s.sessionId = s.sessionId || 's-this';
+    s.contextSignalView = null;
+    s.batonView = null;
+    s.policyRows = [
+        { id: '@emptiest', label: '@emptiest', picks: 'personal@gmail', note: '', refusal: '',
+            detail: 'The sign-in of this engine with the most of its five-hour window left at the moment the session starts.' },
+        { id: '@round-robin', label: '@round-robin', picks: 'work@studio', note: '', refusal: '',
+            detail: 'The usable sign-ins of this engine in turn, one after another across launches.' }
+    ];
+    d.batonMaxLegs = 6;
     return d;
 }
 

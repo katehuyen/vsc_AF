@@ -45,8 +45,8 @@ Module._load = function (request) {
             window: {
                 createWebviewPanel: () => makePanel(),
                 showErrorMessage: () => Promise.resolve(undefined),
-                showInformationMessage: () => Promise.resolve(undefined),
-                showWarningMessage: () => Promise.resolve(undefined)
+                showInformationMessage: (m) => { infos.push(m); return Promise.resolve(undefined); },
+                showWarningMessage: (m) => { warns.push(m); return Promise.resolve(undefined); }
             },
             commands: { executeCommand: () => Promise.resolve(undefined) },
             workspace: { getConfiguration: () => ({ get: (_k, d) => d, update: async () => { } }), workspaceFolders: [] }
@@ -63,10 +63,17 @@ const seat = (o) => Object.assign({
 }, o);
 const seats = [seat(), seat({ id: 'seat-2', sessionId: undefined, status: 'starting' })];
 const asked = [];
+const attachAsked = [], sentTo = [], infos = [], warns = [];
+let attachAnswer = { ok: true, sentence: 'Session sid-live is now leg 1 of chain chn_x: …' };
+let sendAnswer = { queued: false };
 const VIEWS = { contextSignalView: { chip: 'CONVERGE' }, bridgeGuardView: null, batonView: { chip: '⑂ 1' } };
 const deps = {
     extensionUri: { path: 'D:/repo' },
-    host: { list: () => seats, onChange: () => ({ dispose() { } }), start: () => 'seat-9' },
+    host: {
+        list: () => seats, onChange: () => ({ dispose() { } }), start: () => 'seat-9',
+        get: (id) => seats.find(s => s.id === id),
+        send: (id, text) => { sentTo.push([id, text]); return sendAnswer; }
+    },
     getAgents: () => ([{ id: 'a-dev', name: 'developer', dir: 'D:/ajan/developer' }]),
     index: { all: () => [], external: () => [] },
     colorFor: () => '',
@@ -81,7 +88,10 @@ const deps = {
     superpowersHealth: () => ({ usable: true, why: '', skills: 3 }), superpowersDefault: () => false,
     sessionProject: () => '', promptSnippets: () => ({ items: [], scopes: [] }),
     batonStopChain: () => 0,
-    cardViews: (sid) => { asked.push(sid); return VIEWS; }
+    cardViews: (sid) => { asked.push(sid); return VIEWS; },
+    batonAttach: async (sid, account, maxHops) => { attachAsked.push([sid, account, maxHops]); return attachAnswer; },
+    batonPassNowText: (sid) => 'PASS NOW for ' + sid,
+    batonMaxLegs: () => 6
 };
 
 const lastData = () => {
@@ -107,6 +117,47 @@ async function main() {
     ok('‼️ consoleDeps.cardViews is the console.sessions op\'s own builder', /cardViews: \(sessionId: string\) => consoleCardViews\(sessionId\)/.test(ext)
         && /\.\.\.consoleCardViews\(s\.sessionId\)/.test(ext));
     ok('a baton store change repaints the Console', /batonStore\.onDidChange\(\(\) => \{ updateBatonBar\(\); ConsolePanel\.refreshIfOpen\(\); \}\)/.test(ext));
+
+    // ---- S-82 (b): the card's two relay hands, through the panel's handlers
+    const send = async (msg) => {
+        for (const fn of panels[panels.length - 1].webview.onMsgs) { fn(msg); }
+        await new Promise(r => setImmediate(r));
+    };
+    await send({ type: 'batonAttach', id: 'seat-1', account: '@pool', maxHops: '3' });
+    ok('‼️ ⑂ Attach relay hands baton.attach\'s body the card\'s SESSION, the pool and the ceiling',
+        attachAsked.length === 1 && attachAsked[0][0] === 'sid-live-1' && attachAsked[0][1] === '@pool' && attachAsked[0][2] === '3');
+    ok('…and says the host\'s sentence', infos.some(m => /is now leg 1 of chain chn_x/.test(m)));
+    attachAnswer = { ok: false, why: 'session sid-live is already in chain chn_y' };
+    await send({ type: 'batonAttach', id: 'seat-1', account: '', maxHops: '' });
+    ok('…a refusal is said as a warning, in the host\'s words', warns.some(m => /already in chain chn_y/.test(m)));
+    await send({ type: 'batonAttach', id: 'seat-2', account: '@pool' });
+    ok('…a card with no session yet attaches nothing', attachAsked.length === 2);
+
+    await send({ type: 'batonPassNow', id: 'seat-1' });
+    ok('‼️ ⑂ Pass now says the HOST\'s order into this card\'s run, through host.send (console.send\'s door)',
+        sentTo.length === 1 && sentTo[0][0] === 'seat-1' && sentTo[0][1] === 'PASS NOW for sid-live-1');
+    sendAnswer = undefined;
+    await send({ type: 'batonPassNow', id: 'seat-1' });
+    ok('…an ended run is said, not swallowed', warns.some(m => /there is no run to pass from/.test(m)));
+    await send({ type: 'batonPassNow', id: 'seat-2' });
+    ok('…and a card with no session says nothing into anything', sentTo.length === 2);
+    ok('the fleet ceiling reaches the page for the empty boxes', lastData().batonMaxLegs === 6);
+
+    const bb = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'core', 'batonBridge.ts'), 'utf8');
+    ok('‼️ the card\'s Attach and baton.attach run ONE body (attachRelay) over one set of deps',
+        /batonAttach: \(sessionId: string, account: string, maxHops: unknown\) =>\s*attachRelay\(batonAttachDeps,/.test(ext)
+        && /registerBatonOps\(bridge, \{\s*\.\.\.batonAttachDeps,/.test(ext) && /await attachRelay\(\{ \.\.\.deps, now \}/.test(bb));
+    ok('…and Pass now words the relay the whisper would (batonRelayOf + the user\'s orders)',
+        /passNowText\(batonRelayOf\(batonStore\.all\(\), sessionId\), contextGuard\.orders\(\)\)/.test(ext));
+
+    // ---- the words themselves (src/core/batonAttach.ts)
+    const A = require(path.join(__dirname, '..', 'out', 'core', 'batonAttach.js'));
+    const inRelay = A.passNowText({ chainId: 'chn_a', hop: 3, passed: false });
+    ok('passNowText heads with PASS NOW and who pressed', /^PASS NOW — the user pressed Pass now on this session's Console card\. /.test(inRelay));
+    ok('…a runner is told to pass the baton, in its own chain', /pass the baton/.test(inRelay) && /chain chn_a, hop 3/.test(inRelay));
+    ok('…one that already passed is told to end', /already passed/.test(A.passNowText({ chainId: 'chn_a', hop: 3, passed: true })));
+    ok('…and one outside a relay (a stopped chain) to write its note', /write the handover note/.test(A.passNowText(undefined)));
+    ok('…the user\'s own orders are the words when set', /MY ORDER/.test(A.passNowText({ chainId: 'c', hop: 1, passed: false }, { relayHandover: 'MY ORDER' })));
 
     console.log(`test_console_relay: ${pass} passed, ${fail} failed`);
     if (fail) { process.exitCode = 1; }

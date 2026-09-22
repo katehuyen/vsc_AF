@@ -1353,6 +1353,41 @@ const intentOf = (o) => Object.assign({
     push(data(CONVO.slice(), { batonView: null }));
     ok('‼️ a run no baton touched has neither', !/batonsig|c-baton-stop/.test(status()));
 
+    // S-82 — THE CARD'S RELAY HAND: ⑂ Pass now on a runner, ⑂ Attach relay on
+    // a live run outside one; the words and the seal are both the host's.
+    const relayStrip = () => (els['c-relay'] ? els['c-relay']._html : '');
+    push(data(CONVO.slice(), { batonView: relay(true) }));
+    ok('S-82: a runner of a relay offers ⑂ Pass now — and no Attach',
+        /id="c-baton-pass">⑂ Pass now</.test(status()) && !/c-baton-attach/.test(status()));
+    posted.length = 0;
+    els['c-baton-pass'].listeners.click();
+    ok('…the press names THIS card and carries no words of its own — the order is the host\'s',
+        posted.length === 1 && posted[0].type === 'batonPassNow' && posted[0].id === 'cs1' && !('text' in posted[0]));
+    const POLS = [{ id: '@emptiest', label: '@emptiest', detail: 'most room' }, { id: '@pool', label: '@pool', detail: 'the campaign pool' }];
+    push(Object.assign(data(CONVO.slice(), { batonView: null, policyRows: POLS }), { batonMaxLegs: 6 }));
+    ok('S-82: a live run no baton touched offers ⑂ Attach relay', /id="c-baton-attach"/.test(status()) && !/c-baton-pass/.test(status()));
+    ok('…its strip is shut until pressed', relayStrip() === '');
+    els['c-baton-attach'].listeners.click();
+    ok('…pressed, the strip opens: the pool rules and a max-legs box naming the fleet setting',
+        /id="c-relay-pool"/.test(relayStrip()) && /value="@pool"/.test(relayStrip()) && /placeholder="max legs · 6"/.test(relayStrip())
+        && /data-axis-name="relay pool"/.test(relayStrip()) && /<optgroup label="pool">/.test(relayStrip()));
+    push(Object.assign(data(CONVO.slice(), { batonView: null, policyRows: POLS }), { batonMaxLegs: 6 }));
+    ok('…and a host push does not shut it', /id="c-relay-pool"/.test(relayStrip()));
+    els['c-relay-pool'].listeners.change({ target: { value: '@pool' } });
+    els['c-relay-max'].listeners.input({ target: { value: '3' } });
+    posted.length = 0;
+    els['c-relay-go'].listeners.click();
+    ok('…Attach sends the card, the pool and the ceiling — and the strip closes',
+        posted.length === 1 && posted[0].type === 'batonAttach' && posted[0].id === 'cs1'
+        && posted[0].account === '@pool' && posted[0].maxHops === '3' && relayStrip() === '');
+    els['c-baton-attach'].listeners.click();
+    ok('…reopened, it starts on the default pool again', /value="@emptiest" selected/.test(relayStrip()) || /selected[^>]*value="@emptiest"/.test(relayStrip()));
+    els['c-relay-x'].listeners.click();
+    ok('…and ✕ shuts it, attaching nothing', relayStrip() === '' && !posted.some(m => m.type === 'batonAttach' && posted.indexOf(m) > 0));
+    push(data(CONVO.slice(), { batonView: null, status: 'ended' }));
+    ok('‼️ an ended card offers neither — there is no run to seal or to tell', !/c-baton-attach|c-baton-pass/.test(status()));
+    push(data(CONVO.slice(), { batonView: null }));
+
     // A reading larger than the window is two moments, not a full bar.
     push(data(CONVO.slice(), { contextTokens: 300000, contextWindowTokens: 258400 }));
     ok('‼️ tokens > window draws no percentage and says why',

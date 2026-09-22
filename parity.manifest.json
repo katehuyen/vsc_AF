@@ -1315,6 +1315,24 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#batonAttach",
+      "ui": [
+        "page:consolePanel.ts#batonAttach"
+      ],
+      "ops": [
+        "baton.attach"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#batonPassNow",
+      "ui": [
+        "page:consolePanel.ts#batonPassNow"
+      ],
+      "ops": [
+        "console.send"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#batonStopChain",
       "ui": [
         "page:consolePanel.ts#batonStopChain"
