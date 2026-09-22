@@ -139,7 +139,8 @@ console.log('\n== the wiring — the listener, the setting and the bridge op =='
         /new BridgeGuardLog\(path\.join\(context\.globalStorageUri\.fsPath, 'bridge-guard\.json'\)\)/.test(ext)
         && /bridgeGuardLog\.flush\(\)/.test(ext) && /bridgeGuardLog\.add\(/.test(ext));
     ok('the Console row carries this session\'s refusals, worded by the host',
-        /bridgeGuardView: bridgeGuardView\(bridgeGuardLog\.forSession\(s\.sessionId\), relTime\) \?\? null/.test(ext));
+        /bridgeGuardView: bridgeGuardView\(bridgeGuardLog\.forSession\(sid\), relTime\) \?\? null/.test(ext)
+        && /\.\.\.consoleCardViews\(s\.sessionId\)/.test(ext) && /cardViews: \(sessionId: string\) => consoleCardViews\(sessionId\)/.test(ext));
     ok('‼️ a Codex hook payload reaches the guard — it names no engine, and only a payload that does is let past',
         /if \(payload && !payload\.engine\)/.test(live));
     ok('the setting says which engines it holds on', /Held on Claude and Codex/.test(props['agentFarm.bridgeGuard'].description));

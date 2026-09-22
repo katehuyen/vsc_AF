@@ -82,7 +82,7 @@ ok('two passes from one run: the newest speaks', twice.lines.some(l => /waits fo
         && /batonBarView\(batonStore\.all\(\), normalizeMaxLegs\(cfg\(\)\.get<unknown>\('batonMaxHops'\)\), batonLegAlive\)/.test(block)
         && /if \(!v\) \{ batonBar\.hide\(\); return; \}/.test(block));
     ok('…redrawn on a store change, a leg starting or ending, and a new ceiling',
-        /batonStore\.onDidChange\(updateBatonBar\)/.test(block) && /e\.kind === 'start' \|\| e\.kind === 'end'/.test(block)
+        /batonStore\.onDidChange\(\(\) => \{ updateBatonBar\(\); ConsolePanel\.refreshIfOpen\(\); \}\)/.test(block) && /e\.kind === 'start' \|\| e\.kind === 'end'/.test(block)
         && /affectsConfiguration\('agentFarm\.batonMaxHops'\)/.test(block));
     ok('…and the sweep redraws it too, so a leg that died silently drops off', /batonRunner\.sweep\(\); updateBatonBar\(\);/.test(ext));
     const { BatonStore } = require(path.join(__dirname, '..', 'out', 'core', 'batonStore.js'));

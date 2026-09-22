@@ -12307,19 +12307,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // on an engine whose hooks carry no channel. Null = no line
                     // crossed yet (sessions.contextGuard has the thresholds).
                     contextSignal: (s.sessionId && contextGuard.record(s.sessionId)) || null,
-                    // …and the WORDS for it, derived host-side so this card and a
-                    // session's own page can never word the same state differently.
-                    contextSignalView: contextSignalView(
-                        (s.sessionId && contextGuard.record(s.sessionId)) || undefined,
-                        contextGuard.thresholds(), relTime),
-                    // ‼️ B-23 — the searches for a session id the bridge guard
-                    // stopped on this session. Null while there were none.
-                    bridgeGuardView: bridgeGuardView(bridgeGuardLog.forSession(s.sessionId), relTime) ?? null,
-                    // S-77 — this run's leg of a baton relay; the store may not
-                    // be up yet while the host is still activating.
-                    batonView: (() => {
-                        try { return (s.sessionId && batonCardView(batonStore.all(), s.sessionId)) || null; } catch { return null; }
-                    })(),
+                    // …the words for it, the bridge guard's stops (B-23) and this
+                    // run's baton leg (S-77) — the three views the Console page's
+                    // card draws, out of the one builder it is handed too.
+                    ...consoleCardViews(s.sessionId),
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     // ‼️ The turn is OPEN and standing still until this is
                     // answered — `status` alone still says "working", which is
@@ -16472,6 +16463,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // S-66 — the batons, on disk beside the context guard's records.
     const batonStore = new BatonStore(path.join(context.globalStorageUri.fsPath, 'batons.json'));
     context.subscriptions.push({ dispose: () => batonStore.flush() });
+    /**
+     * ‼️ THE THREE VIEWS A CONSOLE CARD DRAWS — the context signal's words, the
+     * bridge guard's stops and this run's baton leg. One builder for the
+     * console.sessions op and the Console page: the page had been handed none of
+     * them, so "Continue from handover", ⑂ n and ✕ Stop chain were drawn only
+     * in fixtures. Hoisted; the store may not be up yet while activating.
+     */
+    function consoleCardViews(sessionId: string | undefined) {
+        const sid = sessionId || undefined;
+        return {
+            contextSignalView: contextSignalView((sid && contextGuard.record(sid)) || undefined, contextGuard.thresholds(), relTime),
+            bridgeGuardView: bridgeGuardView(bridgeGuardLog.forSession(sid), relTime) ?? null,
+            batonView: (() => {
+                try { return (sid && batonCardView(batonStore.all(), sid)) || null; } catch { return null; }
+            })()
+        };
+    }
     setBatonSource(() => batonStore.all());
     registerBatonOps(bridge, {
         store: batonStore,
@@ -16602,7 +16610,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : undefined;
         batonBar.show();
     };
-    context.subscriptions.push(batonStore.onDidChange(updateBatonBar));
+    context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
     }));
@@ -27962,6 +27970,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // S-64 (5/n) — the first message of the run that continues a handed-over card
         handoverContinue: (sessionId: string, projectId?: string) => handoverContinueFor(sessionId, projectId),
         // S-77 — the card's ✕ runs the one body baton.stop chain= runs.
+        cardViews: (sessionId: string) => consoleCardViews(sessionId),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Console card', Date.now()).length,
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost

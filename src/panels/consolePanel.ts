@@ -480,6 +480,8 @@ export interface ConsoleDeps {
      * found, for the answer the bridge gives.
      */
     handoverContinue(sessionId: string, projectId?: string): { prompt: string; note?: string; pct?: number };
+    /** the host's own views for one card — context signal, bridge-guard stops, baton leg (the console.sessions op's builder) */
+    cardViews?(sessionId: string): { contextSignalView: unknown; bridgeGuardView: unknown; batonView: unknown };
     /** S-77 — the card's ✕: every live baton of the chain stops, recorded (`stopBatons`). Answers how many. */
     batonStopChain(chainId: string): number;
     /**
@@ -1301,6 +1303,9 @@ export class ConsolePanel {
                 // other mark. Empty until they pick one, and empty for a card
                 // whose session has not written its id yet.
                 color: s.sessionId ? (this.deps.colorFor?.(s.sessionId) ?? '') : '',
+                // S-64 / B-23 / S-77 — what the card's status line, its
+                // Continue-from-handover button and its ⑂ chip are drawn from
+                ...(s.sessionId ? this.deps.cardViews?.(s.sessionId) : undefined),
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({
