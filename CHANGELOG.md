@@ -2,6 +2,46 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.631.0 - A baton relay you start yourself: from the New-task form, the Console composer and a running card, with your own header on every leg (S-81, S-82) (2026-09-22)
+
+- **The run that opens a relay is leg 1 from its first turn (S-81).** A task
+  started with `baton:true` is sealed as leg 1 the moment its session is
+  known, so at its quota or context line it is told to pass the baton rather
+  than to write a note. The chain keeps the pool its first leg named on every
+  later leg — a rule (`@…`) is the pool, a single slot or nothing means
+  `@emptiest` — and a pass that asks for another account is answered with
+  `poolKept`.
+- **Start a relay from the New-task form (S-82).** A `⑂ Relay` row beside
+  Budget: the tick, and while it is on a pool picker (the Account box
+  narrowed to rules) and a max-legs box whose empty value is the fleet
+  setting. The relay travels with the run's other dimensions, so schedules,
+  triggers, templates and every retry carry it.
+- **…from the Console composer.** `⑂ Relay` beside Superpowers, before Send:
+  the pool is the rule in the Account box, and a max-legs box appears while
+  it is on. `console.start baton=true maxHops=N` is the same door for an
+  agent.
+- **…or on a session that is already running.** A live card outside any relay
+  offers `⑂ Attach relay`: a strip under the status row picks the pool and the
+  ceiling, and the run becomes leg 1 at once, without a restart — the same
+  body as the new `baton.attach` op. A card that is in a relay offers
+  `⑂ Pass now` beside `✕ Stop chain`: the handover order its context line
+  would have sent is said into the run now.
+- **A chain can carry its own leg ceiling.** Set from any of the three doors
+  (0 = none); empty means `agentFarm.batonMaxHops`. The successor's header
+  now says `hop n/N`.
+- **Your own header on every leg.** `agentFarm.batonHandoverTemplate` replaces
+  the built-in "=== BATON RELAY ===" header — `{fromSessionId}`, `{agentId}`,
+  `{chain}`, `{hop}`, `{maxHops}`, `{why}`, `{userDirective}`,
+  `{agentPrompt}` — and `agentFarm.batonInjectedDirective` is a standing rule
+  said to every leg. The predecessor's words are never dropped, even by a
+  template that forgets them. Both are text boxes on Settings ▸ Handover
+  Discipline.
+- **The Console cards were missing three things they had been designed to
+  show.** "Continue from handover", the `⑂ n` relay chip, `✕ Stop chain` and
+  the bridge-guard chip are drawn from views the Console page had never been
+  sent — only the `console.sessions` op built them. The page now gets the
+  same views from the same builder, and repaints when a baton changes.
+
 ## 3.630.0 - The lean project brief, a backlog icon that takes only its own value, and Tasks toolbars that break as two blocks (X-352, U-145) (2026-09-22)
 
 - **The project brief is lean.** A session started inside a project is no
