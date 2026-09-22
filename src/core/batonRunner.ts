@@ -17,6 +17,8 @@
  */
 import { Baton, isLive, moveBaton } from './baton';
 import { FirstLeg, sealFirstLeg } from './batonSeal';
+import { LegEndFacts } from './batonFailsafe';
+import { LegEndWatch, NoticeLevel } from './batonLegEnd';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
 
@@ -80,8 +82,16 @@ export interface BatonRunnerDeps {
     task?: (taskId: string) => TaskGlimpse | undefined;
     /** S-74 — ask the pump again for a QUEUED row (the user made room by hand); undefined = no such queued row */
     nudge?: (taskId: string) => DoorAnswer | undefined;
-    /** the two moments a person is told: a refusal, and a park on a reset — nothing else here */
-    notify?: (title: string, body: string, key: string) => void;
+    /** what a person is told: a refusal, a park on a reset, and a chain's end (S-83, with its level) */
+    notify?: (title: string, body: string, key: string, level?: NoticeLevel, type?: 'info' | 'warning') => void;
+    /** S-83 — what is known about a relay leg that ended; absent = no failsafe */
+    legFacts?: (sessionId: string, endedAt: number) => Promise<LegEndFacts>;
+    /** S-83 — the launch id a session started with, for the rescue's manifest */
+    launchIdOf?: (sessionId: string) => string | undefined;
+    /** S-83 — agentFarm.batonMaxHops, for the rescue's brake */
+    maxLegs?: () => number;
+    /** S-83 — how long a leg's end settles (its card, its task row) before it is read */
+    settleMs?: number;
     fmtTime?: (t: number) => string;
     now?: () => number;
     log?: (line: string) => void;
@@ -98,7 +108,18 @@ export function bindSuccessor(b: Baton, sessionId: string, now: number): Baton {
 }
 
 export class BatonRunner {
-    constructor(private readonly deps: BatonRunnerDeps) { }
+    /** S-83 — the failsafe for a leg that ends without passing */
+    private readonly legs?: LegEndWatch;
+
+    constructor(private readonly deps: BatonRunnerDeps) {
+        if (!deps.legFacts) { return; }
+        this.legs = new LegEndWatch({
+            store: deps.store, legFacts: deps.legFacts,
+            isEnded: (sid, o) => endedVerdict(deps.evidence({ ...o, from: { ...o.from, sessionId: sid } })).ended,
+            launchIdOf: deps.launchIdOf, manifestOf: deps.manifestOf, headOf: deps.headOf, maxLegs: deps.maxLegs,
+            notify: deps.notify, now: () => this.now(), log: l => this.log(l), settleMs: deps.settleMs
+        }, (b, why) => this.release(b, why));
+    }
 
     private now(): number { return (this.deps.now ?? Date.now)(); }
     private log(line: string): void { try { this.deps.log?.(line); } catch { /* best effort */ } }
@@ -111,9 +132,16 @@ export class BatonRunner {
     sessionEnded(sessionId: string, reason: string): Baton[] {
         const sid = String(sessionId ?? '').trim();
         if (!sid) { return []; }
-        return this.waiting()
+        const released = this.waiting()
             .filter(b => b.from.sessionId === sid)
             .map(b => this.release(b, `session ended (${reason || 'end'})`));
+        if (!released.length) { void this.legEnded(sid, reason || 'end'); }
+        return released;
+    }
+
+    /** S-83 — a relay leg ended without passing: closed, failed or rescued (batonLegEnd.ts). */
+    legEnded(sessionId: string, reason: string): Promise<Baton | undefined> {
+        return this.legs ? this.legs.legEnded(sessionId, reason) : Promise.resolve(undefined);
     }
 
     /**
@@ -134,6 +162,7 @@ export class BatonRunner {
                 waiting.push({ id: b.id, sessionId: b.from.sessionId, why: v.why });
             }
         }
+        this.legs?.sweep();
         return { released, waiting };
     }
 

@@ -83,6 +83,7 @@ export function batonView(b: Baton): Record<string, unknown> {
         promptChars: b.prompt.length,
         note: b.note ?? null,
         ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
+        ...(b.rescue ? { rescue: b.rescue } : {}),
         wakeAt: b.wakeAt ?? null, taskId: b.taskId ?? null, toSessionId: b.toSessionId ?? null,
         createdAt: b.createdAt, updatedAt: b.updatedAt
     };
@@ -145,7 +146,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
         },
         {
             op: 'baton.status',
-            describe: 'S-66 — THE BATONS: every live one (waiting for its session to end, or parked until a reset) and the chains they belong to, hop by hop — who passed, who was started (hop 0 is the seal of the leg that opened the chain, S-81), what each is waiting for, its wake time, the sentence of its last change. args: chain? (one chain id), session? (batons passed by or started for that session), limit? (chains, default 20, newest first)',
+            describe: 'S-66 — THE BATONS: every live one (waiting for its session to end, or parked until a reset) and the chains they belong to, hop by hop — who passed, who was started (hop 0 is the seal of the leg that opened the chain, S-81), what each is waiting for, its wake time, the sentence of its last change. A chain\'s END is on record too (S-83): `done` (its last leg finished without passing, or the user ended it) or `failed` (a successor died on arrival — the crash-loop guard); a hop the failsafe opened for a leg that ended without passing carries `rescue` (why). args: chain? (one chain id), session? (batons passed by or started for that session), limit? (chains, default 20, newest first)',
             handler: (args) => {
                 const chain = optStr(args, 'chain');
                 const session = optStr(args, 'session');

@@ -13,6 +13,7 @@
  * context into the next hop defeats the whole point (_REF/handover.md).
  */
 import { Baton, successorSurface } from './baton';
+import { emergencyPrompt } from './batonFailsafe';
 import { InteractiveClose, InteractiveTarget } from './launch';
 import { normPath } from './util';
 
@@ -58,6 +59,8 @@ export interface DoorContext {
     template?: string;
     /** S-82 — agentFarm.batonInjectedDirective: a standing rule said on every leg; blank = nothing */
     directive?: string;
+    /** S-83 — agentFarm.batonEmergencyTemplate: the header of a hop the failsafe opened; blank = the built-in one */
+    emergencyTemplate?: string;
 }
 
 /** The variables a handover template may name (agentFarm.batonHandoverTemplate). */
@@ -96,6 +99,7 @@ export function wakeMoment(park: { resetsAt: number; bufferMin: number }): numbe
 
 /** The first message the successor sees: the chain's header, then the predecessor's own words. */
 export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
+    if (b.rescue) { return emergencyPrompt(b, ctx); }
     if (String(ctx.template ?? '').trim()) { return renderHandoverTemplate(String(ctx.template), b, ctx); }
     const directive = String(ctx.directive ?? '').trim();
     const hop = ctx.maxHops && ctx.maxHops > 0 ? `hop ${b.hop}/${ctx.maxHops}` : `hop ${b.hop}`;

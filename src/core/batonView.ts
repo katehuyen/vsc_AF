@@ -37,6 +37,8 @@ function nextLine(b: Baton): string {
         case 'parked': return `Successor: parked — every account is full; wakes ${b.wakeAt ? 'at ' + hhmm(b.wakeAt) : 'at the first reset'}.`;
         case 'started': return `Successor: running — session ${short(b.toSessionId)}${b.taskId ? ` (task ${b.taskId})` : ''}.`;
         case 'stopped': return `Successor: stopped — ${b.why}`;
+        case 'done': return `Successor: none — the chain ended: ${b.why}`;
+        case 'failed': return `Successor: none — the chain failed: ${b.why}`;
         default: return `Successor: refused — ${b.why}`;
     }
 }
@@ -119,7 +121,8 @@ export function batonCardView(list: readonly Baton[], sessionId: string): BatonC
     const lines = [
         `Chain: ${chainId} — leg ${leg} of ${legs} so far.`,
         opener && !isSeal(opener)
-            ? `Predecessor: session ${short(opener.from.sessionId)} (${opener.from.agentId.split(/[\\/]/).pop()} · ${opener.from.engine}) passed the baton to this run.`
+            ? `Predecessor: session ${short(opener.from.sessionId)} (${opener.from.agentId.split(/[\\/]/).pop()} · ${opener.from.engine}) `
+                + (opener.rescue ? `ended without passing — the failsafe opened this run: ${opener.rescue}.` : 'passed the baton to this run.')
             : 'Predecessor: none — this run started the chain.',
         left ? nextLine(left) : 'Successor: none yet — this run has not passed the baton.'
     ];

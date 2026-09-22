@@ -16,7 +16,7 @@
 import { isPolicyId } from './accountPolicy';
 import { LaunchManifest, LaunchSurface } from './launchManifest';
 
-export type BatonState = 'armed' | 'waiting-end' | 'parked' | 'started' | 'stopped' | 'refused';
+export type BatonState = 'armed' | 'waiting-end' | 'parked' | 'started' | 'stopped' | 'refused' | 'done' | 'failed';
 
 /** What the passing agent may ask for; `inherit` = the surface its own run used. */
 export type BatonSurfaceWant = 'inherit' | 'console' | 'terminal' | 'headless';
@@ -76,12 +76,14 @@ export interface Baton {
     head?: string;
     /** S-82 — on a seal only: this chain's own leg ceiling (0 = none); absent = agentFarm.batonMaxHops */
     maxLegs?: number;
+    /** S-83 — the failsafe opened this hop for a leg that ended without passing: why */
+    rescue?: string;
     createdAt: number;
     updatedAt: number;
 }
 
 /** Terminal states: nothing moves out of them. */
-export const BATON_DONE: readonly BatonState[] = ['started', 'stopped', 'refused'];
+export const BATON_DONE: readonly BatonState[] = ['started', 'stopped', 'refused', 'done', 'failed'];
 
 const MOVES: Record<BatonState, readonly BatonState[]> = {
     // recorded but not yet accepted — the host crashing mid-pass leaves one
@@ -89,7 +91,9 @@ const MOVES: Record<BatonState, readonly BatonState[]> = {
     'waiting-end': ['parked', 'started', 'stopped', 'refused'],
     // a park can be moved to a later wake (an account filled up again)
     parked: ['parked', 'started', 'stopped', 'refused'],
-    started: [], stopped: [], refused: []
+    started: [], stopped: [], refused: [],
+    // S-83 — a chain's closing record (batonFailsafe.ts): born terminal
+    done: [], failed: []
 };
 
 export function canMove(from: BatonState, to: BatonState): boolean {

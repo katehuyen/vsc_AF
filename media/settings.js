@@ -1864,6 +1864,11 @@
             title: 'What every leg wakes up to',
             why: 'The first message of each new leg: a header the system writes, then the predecessor\'s own words. Your template replaces the header — its variables are listed on it — and your standing rule is said to every leg. Leave both empty and the built-in header stays in charge; the predecessor\'s words are never dropped.',
             keys: ['batonHandoverTemplate', 'batonInjectedDirective']
+        },
+        {
+            title: 'When a leg ends without passing',
+            why: 'A leg that finishes the work and passes nothing is the chain\'s natural end, and one you end yourself is never overridden. A leg that was cut off — told to hand over, a note written in its last two minutes, an error, uncommitted work — is rescued: the failsafe opens the next leg from what it left behind, through the same brakes. A successor that dies within 30 seconds without a tool call stops the chain instead. Your template replaces the emergency header; the evidence is never dropped.',
+            keys: ['batonEmergencyTemplate']
         }
     ];
 

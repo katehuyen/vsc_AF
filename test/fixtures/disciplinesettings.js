@@ -30,7 +30,8 @@ const KEYS = [
     'agentFarm.disciplineOrders',
     'agentFarm.batonMaxHops',
     'agentFarm.batonInjectedDirective',
-    'agentFarm.batonHandoverTemplate'
+    'agentFarm.batonHandoverTemplate',
+    'agentFarm.batonEmergencyTemplate'
 ];
 
 const categories = (values) => {
@@ -76,7 +77,10 @@ const variants = () => ([
             'agentFarm.batonInjectedDirective': 'Run npm test before you pass the baton.',
             'agentFarm.batonHandoverTemplate': '=== RELAY {chain} · leg {hop}/{maxHops} ===\n'
                 + 'You continue {agentId}\'s work after session {fromSessionId} ({why}).\n'
-                + 'Rule: {userDirective}\n---\n{agentPrompt}'
+                + 'Rule: {userDirective}\n---\n{agentPrompt}',
+            // S-83 — the header of a leg the failsafe opened
+            'agentFarm.batonEmergencyTemplate': '=== RESCUE {chain} · leg {hop}/{maxHops} ===\n'
+                + 'Session {fromSessionId} stopped without passing: {why}.\n---\n{evidence}'
         })
     }
 ]);

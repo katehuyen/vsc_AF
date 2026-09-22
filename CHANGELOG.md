@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.635.0 - The relay's failsafe: a leg that ends without passing is judged, not lost (S-83) (2026-09-22)
+
+- **A cut-off leg is rescued.** A run in a baton relay that ends WITHOUT
+  passing is now looked at. If it was cut off — a QUOTA/CONTEXT HANDOVER had
+  reached it, it wrote a handover note in its last two minutes, it exited with
+  an error, or it left uncommitted work — Agent Farm opens the next leg itself,
+  through the same door and the same brakes as `baton.pass`. The new run wakes
+  up under an `EMERGENCY HANDOVER` header: why it was rescued, the note's
+  Durum / Kalan / İlk 5 dakika sections (or the folder's `git status`), the
+  predecessor's full session id and the command that reads its LAST turns.
+- **A finished leg is not.** A leg that ended cleanly — the chain's natural
+  end — or one you ended yourself closes the chain as `done` (a routine line
+  on Notices); nothing is opened.
+- **Crash-loop guard.** A successor that dies within 30 seconds without a
+  tool call stops the chain as `failed` and says so on Notices, instead of
+  opening another that would die the same way.
+- **Your own emergency header.** `agentFarm.batonEmergencyTemplate`
+  (Settings ▸ Handover Discipline ▸ When a leg ends without passing), with
+  `{fromSessionId}` `{agentId}` `{chain}` `{hop}` `{maxHops}` `{why}`
+  `{evidence}` `{userDirective}`; the evidence is never dropped.
+- `baton.status` shows a chain's end (`done` / `failed`) and marks a rescued
+  hop with `rescue`; the card's relay panel says how the chain ended.
+
 ## 3.634.0 - The Console status row's icons are legible, and every hover panel on it opens on a title (2026-09-22)
 
 - **Frameless icon chips.** The relay and handover hands on a card's status row

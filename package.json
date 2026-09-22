@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.634.0",
+  "version": "3.635.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8726,6 +8726,12 @@
           "default": "",
           "editPresentation": "multilineText",
           "description": "Baton relay (S-82): your own first message for every leg, instead of the built-in \"=== BATON RELAY — chain … ===\" header. Variables: {fromSessionId} (the predecessor's session), {agentId} (the agent's name), {chain}, {hop}, {maxHops} (the chain's leg ceiling, \"none\" when it has none), {why} (what opened this leg), {userDirective} (agentFarm.batonInjectedDirective), {agentPrompt} (the predecessor's own words). An unknown {name} is left as typed. The predecessor's words are never lost: a template without {agentPrompt} gets them appended under a --- line. Empty = the built-in header stays in charge."
+        },
+        "agentFarm.batonEmergencyTemplate": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Baton relay (S-83): your own first message for a leg the FAILSAFE opens — when a leg ends without passing the baton although it was cut off (a QUOTA/CONTEXT HANDOVER had reached it, it wrote a handover note in its last two minutes, it exited with an error, or it left uncommitted work). Empty = the built-in \"=== BATON RELAY — … · EMERGENCY HANDOVER ===\" header, which names the predecessor and how to read its last turns. Variables: {fromSessionId} (the ended session, in full), {agentId}, {chain}, {hop}, {maxHops} (\"none\" when the chain has no ceiling), {why} (why it was rescued), {evidence} (its handover note's Durum/Kalan/İlk 5 dakika sections, or its uncommitted state), {userDirective} (agentFarm.batonInjectedDirective). A template that does not name {evidence} still gets it, last, under a ---. A leg that finished cleanly, or that you ended yourself, is never rescued: the chain simply ends, and a successor that dies within 30 seconds without a tool call stops it (crash-loop guard)."
         },
         "agentFarm.bridgeGuard": {
           "type": "boolean",

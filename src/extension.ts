@@ -304,6 +304,7 @@ import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, successorRow } from './core/batonDoor';
 import { BatonRunner } from './core/batonRunner';
+import { legFactsFrom } from './core/batonLegFacts';
 import { BatonStore } from './core/batonStore';
 import { batonBarView, batonCardView } from './core/batonView';
 import { quotaBrake } from './core/quotaBrake';
@@ -16554,7 +16555,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // S-82 — the chain's own ceiling ("hop n/N"), and the user's header and standing rule
                 maxHops: chainMaxLegs(batonStore.all(), b.chainId, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))),
                 template: cfg().get<string>('batonHandoverTemplate', ''),
-                directive: cfg().get<string>('batonInjectedDirective', '')
+                directive: cfg().get<string>('batonInjectedDirective', ''),
+                emergencyTemplate: cfg().get<string>('batonEmergencyTemplate', '')
             });
             const task = taskManager.addTask(agent, row.title, row.prompt, row.mode, row.extra);
             const started = taskManager.startTask(task);
@@ -16600,8 +16602,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(!started && t.deferredReason ? { held: t.deferredReason } : {})
             };
         },
-        notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key }),
+        notify: (title, body, key, level, type) => noticesStore.add({ agentName: 'agent-farm', title, body, type: type ?? 'warning', level: level ?? 3, sourceKey: key }),
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        // S-83 — the failsafe: a relay leg that ended without passing is closed, failed or rescued
+        legFacts: legFactsFrom({
+            card: sid => { try { return consoleHost.list().find(c => c.sessionId === sid); } catch { return undefined; } },
+            row: sid => {
+                const t = taskManager.tasks.find(x => successorSessionOf(x) === sid);
+                const why = (t?.events ?? []).slice(-1)[0]?.note;
+                return t ? { status: t.status, ...(why ? { why } : {}) } : undefined;
+            },
+            guard: sid => contextGuard.record(sid),
+            notePath: sid => {
+                const b = batonStore.all().find(x => x.state === 'started' && x.toSessionId === sid);
+                return findHandover(sid, b?.from.projectId ? projectStore.get(b.from.projectId)?.folder : undefined).hit?.path;
+            },
+            readNote: file => ({ ts: fs.statSync(file).mtimeMs, text: fs.readFileSync(file, 'utf8') }),
+            toolCalls: sid => live.sessions().find(x => x.sessionId === sid)?.toolCalls,
+            cwdOf: sid => batonStore.all().find(x => x.state === 'started' && x.toSessionId === sid)?.from.cwd,
+            gitStatus: async cwd => { const c = await changesSummary(cwd); return c.note ? undefined : c.status; }
+        }),
+        launchIdOf: batonAttachDeps.launchIdOf,
+        maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
+        settleMs: 5000,
         // S-81 — a running row that asked to open a relay is sealed as its leg 1
         firstLegs: () => [
             ...taskManager.tasks

@@ -210,7 +210,7 @@ const CATEGORY_OF: Record<string, string> = {
     // S-78 — where a relay stops by itself: the same law, carried by a baton
     batonMaxHops: 'discipline',
     // S-82 — what every leg is told on top: the user's header and standing rule
-    batonHandoverTemplate: 'discipline', batonInjectedDirective: 'discipline',
+    batonHandoverTemplate: 'discipline', batonInjectedDirective: 'discipline', batonEmergencyTemplate: 'discipline',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.
