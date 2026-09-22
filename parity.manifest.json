@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 14,
+  "gapBudget": 4,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -668,18 +668,18 @@
       "ui": [
         "page:airtablePanel.ts#add-media"
       ],
-      "gap": {
-        "why": "On the bridge as airtable.config.set, but the page writes the roots through its own store loader instead. Bring the two onto one core before this counts as covered."
-      }
+      "ops": [
+        "airtable.folders.add"
+      ]
     },
     {
       "capability": "airtablePanel.ts#add-root",
       "ui": [
         "page:airtablePanel.ts#add-root"
       ],
-      "gap": {
-        "why": "On the bridge as airtable.config.set, but the page writes the roots through its own store loader instead. Bring the two onto one core before this counts as covered."
-      }
+      "ops": [
+        "airtable.folders.add"
+      ]
     },
     {
       "capability": "airtablePanel.ts#afnav",
@@ -756,18 +756,18 @@
       "ui": [
         "page:airtablePanel.ts#remove-media"
       ],
-      "gap": {
-        "why": "On the bridge as airtable.config.set, but the page removes through its own store loader instead. Bring the two onto one core before this counts as covered."
-      }
+      "ops": [
+        "airtable.folders.remove"
+      ]
     },
     {
       "capability": "airtablePanel.ts#remove-root",
       "ui": [
         "page:airtablePanel.ts#remove-root"
       ],
-      "gap": {
-        "why": "On the bridge as airtable.config.set, but the page removes through its own store loader instead. Bring the two onto one core before this counts as covered."
-      }
+      "ops": [
+        "airtable.folders.remove"
+      ]
     },
     {
       "capability": "airtablePanel.ts#reveal",
@@ -2463,9 +2463,9 @@
       "ui": [
         "cmd:agentfarm.importAgentPackInto"
       ],
-      "gap": {
-        "why": "agents.pack.import exists, but this entry point applies the pack through its own local installer rather than the op's core."
-      }
+      "ops": [
+        "agents.pack.import"
+      ]
     },
     {
       "capability": "insightHistory",
@@ -2829,9 +2829,9 @@
       "ui": [
         "page:missionsPanel.ts#approve"
       ],
-      "gap": {
-        "why": "missions.approve exists, but the page settles the approval through its own deps callback rather than the op's core path."
-      }
+      "ops": [
+        "missions.approve"
+      ]
     },
     {
       "capability": "missionsPanel.ts#consoleAgent",
@@ -2867,9 +2867,9 @@
       "ui": [
         "page:missionsPanel.ts#delete"
       ],
-      "gap": {
-        "why": "missions.run.delete exists, but the page deletes through its own deps callback rather than the op's core path."
-      }
+      "ops": [
+        "missions.run.delete"
+      ]
     },
     {
       "capability": "missionsPanel.ts#guide",
@@ -4042,9 +4042,9 @@
       "ui": [
         "page:projectsPanel.ts#applyBackfill"
       ],
-      "gap": {
-        "why": "projects.tracks.backfill exists, but the page applies the chosen rows through its own deps path rather than the op's core."
-      }
+      "ops": [
+        "projects.suggest.apply"
+      ]
     },
     {
       "capability": "projectsPanel.ts#archive",
@@ -4196,9 +4196,9 @@
       "ui": [
         "page:projectsPanel.ts#delete"
       ],
-      "gap": {
-        "why": "Deleting a project from the page does not meet projects.archive at a shared function; the two are separate implementations of one act."
-      }
+      "ops": [
+        "projects.set"
+      ]
     },
     {
       "capability": "projectsPanel.ts#focusTerminal",
@@ -6359,9 +6359,9 @@
       "ui": [
         "page:studioPanel.ts#rerun"
       ],
-      "gap": {
-        "why": "studio.rerun exists, but the page's own rerun does not reach it through a shared function."
-      }
+      "ops": [
+        "studio.rerun"
+      ]
     },
     {
       "capability": "studioPanel.ts#setSceneStatus",

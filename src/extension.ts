@@ -5,8 +5,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents, scanRoots } from './core/agents';
 import {
-    airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
-    saveStore, stageMcpServer, unregisterMcp
+    addStoreFolder, airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
+    removeStoreFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from './core/airtable';
 import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
@@ -6493,6 +6493,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
 
     /**
+     * The one place a mission round's pending approval is settled — the tree's
+     * Approve/Reject, the page, cancelling the run and missions.approve.
+     * Answers false when the run has nothing waiting.
+     */
+    const settleMissionApproval = (runId: string, ok: boolean): boolean => {
+        const apId = missionApprovals.get(runId);
+        if (!apId) { return false; }
+        approvalQueue.settle(apId, ok);
+        return true;
+    };
+
+    /**
      * The one place a mission's pending question is settled — the palette
      * (which asks in an input box), the page and missions.answer all come here.
      * `skip` declines it; an absent `answer` without `skip` asks the person.
@@ -6944,8 +6956,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
         missionEngines.get(runId)?.cancel();
-        const apId = missionApprovals.get(runId);
-        if (apId) { approvalQueue.settle(apId, false); }
+        settleMissionApproval(runId, false);
         missionQuestions.get(runId)?.resolve(undefined);
         for (const t of taskManager.tasks) {
             if (t.missionId === runId && (t.status === 'running' || t.status === 'queued')) {
@@ -15612,9 +15623,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Settle a mission round waiting for approval (approvalMode each-round). args: id, ok? (default true = approve the plan; false = reject and the planner revises)',
             handler: (args) => {
                 const runId = argStr(args, 'id');
-                const apId = missionApprovals.get(runId);
-                need(apId, 'No pending approval on this run — missions.status shows its state.');
-                approvalQueue.settle(apId as string, args.ok !== false);
+                need(settleMissionApproval(runId, args.ok !== false),
+                    'No pending approval on this run — missions.status shows its state.');
                 return { id: runId, approved: args.ok !== false };
             }
         },
@@ -17124,6 +17134,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'airtable.folders.add',
+            describe: 'Add ONE folder to the module store — what the page\'s + Add folder does, without replacing the list the way airtable.config.set does. A folder already listed (any case, either slash) is not doubled. An engine folder must hold an instance (a config.json in it or in a direct subfolder); one that does not is refused unless anyway:true, the answer the page asks the person for. args: kind ("database" | "media"), path, anyway?',
+            handler: (args) => {
+                const kind = argStr(args, 'kind');
+                need(kind === 'database' || kind === 'media', `kind is "database" or "media" — not "${kind}"`);
+                const folder = argStr(args, 'path').trim();
+                const key: StoreFolderKey = kind === 'database' ? 'databaseRoots' : 'mediaRoots';
+                const instances = kind === 'database' ? validateDatabaseRoot(folder).instances.map(i => i.name) : undefined;
+                need(!instances || instances.length || args.anyway === true,
+                    `No engine instance found in "${folder}" — expected a config.json in it or in a direct subfolder. Pass anyway:true to add it regardless.`);
+                const res = addStoreFolder(airtableStorage, key, folder);
+                if (res.added) { AirtablePanel.refreshIfOpen(); }
+                return {
+                    added: res.added, kind, path: folder, [key]: res.store[key],
+                    ...(instances ? { instances } : {}),
+                    ...(res.added ? {} : { note: 'already listed — nothing changed' })
+                };
+            }
+        },
+        {
+            op: 'airtable.folders.remove',
+            describe: 'Take ONE folder off the module store — the page\'s remove on a folder row. The folder and its data on disk are untouched; only the listing goes. args: kind ("database" | "media"), path (as airtable.config.get lists it; case and slash direction do not matter)',
+            handler: (args) => {
+                const kind = argStr(args, 'kind');
+                need(kind === 'database' || kind === 'media', `kind is "database" or "media" — not "${kind}"`);
+                const key: StoreFolderKey = kind === 'database' ? 'databaseRoots' : 'mediaRoots';
+                const folder = argStr(args, 'path').trim();
+                const res = removeStoreFolder(airtableStorage, key, folder);
+                need(res.removed, `"${folder}" is not in ${key}: ${res.store[key].join(' · ') || '(empty)'}`);
+                AirtablePanel.refreshIfOpen();
+                return { removed: true, kind, path: folder, [key]: res.store[key] };
+            }
+        },
+        {
             op: 'airtable.register',
             describe: 'Register (or repoint) the user-scope airtable MCP in ~/.claude.json so every new claude session gets the airtable_* tools. args: none',
             handler: () => {
@@ -18256,10 +18300,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             try { return { note: guideMission(runId, text).note }; }
             catch (e) { return { error: String((e as Error).message || e) }; }
         },
-        settleApproval: (runId: string, ok: boolean) => {
-            const id = missionApprovals.get(runId);
-            if (id) { approvalQueue.settle(id, ok); }
-        },
+        settleApproval: (runId: string, ok: boolean) => { settleMissionApproval(runId, ok); },
         // ‼️ X-177 — the page's two sentry doors. Both go through the SAME
         // manager methods the bridge ops use: a surface that started a campaign
         // its own way would be a second definition of what a campaign is.
@@ -18361,13 +18402,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.registerTreeDataProvider('agentfarm.missions', missionsTree),
         vscode.commands.registerCommand('agentfarm.missionApprove', (node?: MissionNode) => {
             const run = missionNodeRun(node);
-            const id = run ? missionApprovals.get(run.id) : undefined;
-            if (id) { approvalQueue.settle(id, true); }
+            if (run) { settleMissionApproval(run.id, true); }
         }),
         vscode.commands.registerCommand('agentfarm.missionReject', (node?: MissionNode) => {
             const run = missionNodeRun(node);
-            const id = run ? missionApprovals.get(run.id) : undefined;
-            if (id) { approvalQueue.settle(id, false); }
+            if (run) { settleMissionApproval(run.id, false); }
         }),
         vscode.commands.registerCommand('agentfarm.missionAnswer', (node?: MissionNode) => {
             const run = missionNodeRun(node);

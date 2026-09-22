@@ -144,16 +144,26 @@ const wire = (body, file) => {
     }
     // A page button that runs a command IS that command — follow it, or the
     // button and the op that share a manager look like strangers.
-    for (const m of body.matchAll(/(?:executeCommand|\brun)\(\s*'(agentfarm\.[\w.]+)'/g)) {
-        const cmd = ui.find(u => u.id === `cmd:${m[1]}`);
-        if (cmd) { out += '\n' + cmd.body; }
-    }
+    // ‼️ Two rounds: the command is as often in the DEPS VALUE as in the body
+    // (`remove: (id) => executeCommand('agentfarm.missionDelete', …)`), and a
+    // command followed only in the body left that door looking like a stranger.
+    const followed = new Set();
     const seen = new Set();
-    for (const m of out.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)) {
-        if (seen.has(m[1])) { continue; }
-        seen.add(m[1]);
-        if (!keyCache.has(m[1])) { keyCache.set(m[1], P.valueOfKey(hostSrc, m[1]).join('\n')); }
-        out += '\n' + keyCache.get(m[1]);
+    for (let round = 0; round < 2; round++) {
+        for (const m of out.matchAll(/(?:executeCommand|\brun)\(\s*'(agentfarm\.[\w.]+)'/g)) {
+            if (followed.has(m[1])) { continue; }
+            followed.add(m[1]);
+            const cmd = ui.find(u => u.id === `cmd:${m[1]}`);
+            if (cmd) { out += '\n' + cmd.body; }
+        }
+        // An op in the host reaches the same object under its own name —
+        // `portfolioDeps.importPack(…)` is `deps.importPack` seen from outside.
+        for (const m of out.matchAll(/\b(?:deps|[a-z]\w*Deps)\.([A-Za-z_$][\w$]*)/g)) {
+            if (seen.has(m[1])) { continue; }
+            seen.add(m[1]);
+            if (!keyCache.has(m[1])) { keyCache.set(m[1], P.valueOfKey(hostSrc, m[1]).join('\n')); }
+            out += '\n' + keyCache.get(m[1]);
+        }
     }
     return out;
 };
@@ -343,6 +353,26 @@ const manifest = JSON.parse(read(MANIFEST_FILE));
     ok('…and so both sides of a store-backed act carry the core class',
         P.valueOfKey(host, 'setDocOpen')[0].includes('new DocOpenStore(')
         && P.depsVocabulary('deps.setDocOpen(x)', host, P.coreImports(host)).has('DocOpenStore'));
+}
+
+// ‼️ B-16 — THREE WAYS A SHARED CORE WAS INVISIBLE. A fall-through arm
+// (`case 'approve': case 'reject': …`) has no text of its own; a command run
+// from a DEPS VALUE rather than from the body was never followed; and an op in
+// the host reaches a deps object by its own name (`portfolioDeps.importPack`).
+{
+    const page = "switch (msg.type) {\n  case 'approve':\n  case 'reject':\n    this.deps.settle(msg.id);\n    break;\n  case 'other':\n    break;\n}";
+    const arms = P.discoverPageActions('x.ts', page);
+    const arm = (a) => arms.find(x => x.id === 'page:x.ts#' + a);
+    ok('‼️ a fall-through arm carries the code of the arm it falls into',
+        arm('approve') && arm('approve').body.includes('deps.settle('));
+    ok('…while an arm with a body of its own keeps just that',
+        arm('other') && arm('other').body.trim().startsWith('break') && !arm('other').body.includes('settle'));
+    const door = ui.find(u => u.id === 'page:missionsPanel.ts#delete');
+    ok('‼️ a command run from inside a deps value is followed to its body',
+        !!door && /deleteMissionRun\(/.test(door.wired));
+    const pack = ops.find(o => o.op === 'agents.pack.import');
+    ok('‼️ an op reaching a deps object by its own name is expanded like deps.<key>',
+        !!pack && /applyPackFiles\(/.test(pack.wired));
 }
 
 ok('the scan found the surface at all — commands, page actions and ops',

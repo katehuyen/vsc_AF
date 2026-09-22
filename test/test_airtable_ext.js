@@ -46,6 +46,41 @@ air.saveStore(storeDir, { databaseRoots: ['%USERPROFILE%\\data'] });
 ok('env tokens in stored roots expand on demand',
     air.expandedDatabaseRoots(air.loadStore(storeDir))[0].toLowerCase() === (process.env.USERPROFILE + '\\data').toLowerCase());
 
+// ---------------------------------------------------------------- one folder at a time (B-16)
+// The page's + Add / remove and airtable.folders.add / .remove are one act:
+// both go through these two, so "already listed" means the same on both.
+{
+    const dir = path.join(tmp, 'folders');
+    air.saveStore(dir, { databaseRoots: ['D:\\zone\\db'], mediaRoots: [], defaultInstance: 'keep-me' });
+    const dup = air.addStoreFolder(dir, 'databaseRoots', 'd:/ZONE/db');
+    ok('‼️ a folder already listed (other case, other slash) is not doubled',
+        dup.added === false && air.loadStore(dir).databaseRoots.length === 1);
+    const add = air.addStoreFolder(dir, 'mediaRoots', 'E:\\media');
+    ok('a new folder is appended to its own list only',
+        add.added && add.store.mediaRoots.join() === 'E:\\media' && air.loadStore(dir).databaseRoots.length === 1);
+    air.addStoreFolder(dir, 'databaseRoots', 'F:\\more');
+    ok('…after the ones already there', air.loadStore(dir).databaseRoots.join('|') === 'D:\\zone\\db|F:\\more');
+    const rm = air.removeStoreFolder(dir, 'databaseRoots', 'd:/zone/DB');
+    ok('remove matches the same way add refuses a duplicate',
+        rm.removed && air.loadStore(dir).databaseRoots.join() === 'F:\\more');
+    const none = air.removeStoreFolder(dir, 'mediaRoots', 'Z:\\never');
+    ok('…and says so when the folder is not listed, writing nothing',
+        none.removed === false && air.loadStore(dir).mediaRoots.join() === 'E:\\media');
+    ok('other keys survive a folder write', air.loadStore(dir).defaultInstance === 'keep-me');
+
+    const src = (f) => fs.readFileSync(path.resolve(__dirname, '..', 'src', f), 'utf8');
+    const page = src('panels/airtablePanel.ts');
+    ok('‼️ the page adds and removes through the shared core',
+        /addStoreFolder\(this\.deps\.storageDir, key, folder\)/.test(page)
+        && /removeStoreFolder\(this\.deps\.storageDir, key, value\)/.test(page));
+    const ext = src('extension.ts');
+    const body = (op) => { const at = ext.indexOf(`op: '${op}'`); return at < 0 ? '' : ext.slice(at, ext.indexOf('\n        },', at)); };
+    ok('airtable.folders.add is registered on the same core', /addStoreFolder\(airtableStorage/.test(body('airtable.folders.add')));
+    ok('…and refuses an engine folder with no instance unless anyway:true, the page\'s own question',
+        /validateDatabaseRoot\(/.test(body('airtable.folders.add')) && /anyway === true/.test(body('airtable.folders.add')));
+    ok('airtable.folders.remove is registered on the same core', /removeStoreFolder\(airtableStorage/.test(body('airtable.folders.remove')));
+}
+
 // ---------------------------------------------------------------- expandMcpConfig (probe side)
 
 const env = { APPDATA: 'C:\\Users\\demo\\AppData\\Roaming', USERPROFILE: 'C:\\Users\\demo', X: 'val' };

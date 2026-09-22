@@ -215,12 +215,16 @@ export function discoverPageActions(file: string, src: string): UiAction[] {
     while ((m = re.exec(src))) {
         marks.push({ act: m[1], at: m.index, end: m.index + m[0].length });
     }
+    const bodies = marks.map((mark, i) =>
+        src.slice(mark.end, i + 1 < marks.length ? marks[i + 1].at : Math.min(src.length, mark.end + 1200)));
+    // ‼️ `case 'approve': case 'reject': …` — the first arm has no body of its
+    // own and FALLS THROUGH; its code is the next arm's. Read as the text up to
+    // the next `case` it was empty, so the gate saw a door that went nowhere.
+    for (let i = bodies.length - 2; i >= 0; i--) {
+        if (!withoutComments(bodies[i]).trim()) { bodies[i] = bodies[i + 1]; }
+    }
     for (const [i, mark] of marks.entries()) {
-        const stop = i + 1 < marks.length ? marks[i + 1].at : Math.min(src.length, mark.end + 1200);
-        out.push({
-            id: `page:${file}#${mark.act}`, kind: 'page', file,
-            body: src.slice(mark.end, stop)
-        });
+        out.push({ id: `page:${file}#${mark.act}`, kind: 'page', file, body: bodies[i] });
     }
     return out;
 }

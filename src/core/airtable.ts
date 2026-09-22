@@ -54,6 +54,30 @@ export function saveStore(storageDir: string, patch: Partial<AirtableStore>): Ai
     return next;
 }
 
+export type StoreFolderKey = 'databaseRoots' | 'mediaRoots';
+
+/** Case and slash direction are not a difference between two folder paths. */
+export function sameFolder(a: string, b: string): boolean {
+    const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
+    return norm(a) === norm(b);
+}
+
+/** Append one folder to a store list; one already listed is refused, never doubled.
+ *  THROWS on write failure, like saveStore. */
+export function addStoreFolder(storageDir: string, key: StoreFolderKey, folder: string): { added: boolean; store: AirtableStore } {
+    const store = loadStore(storageDir);
+    if (store[key].some(r => sameFolder(r, folder))) { return { added: false, store }; }
+    return { added: true, store: saveStore(storageDir, { [key]: [...store[key], folder] }) };
+}
+
+/** Drop one folder from a store list. THROWS on write failure, like saveStore. */
+export function removeStoreFolder(storageDir: string, key: StoreFolderKey, folder: string): { removed: boolean; store: AirtableStore } {
+    const store = loadStore(storageDir);
+    const next = store[key].filter(r => !sameFolder(r, folder));
+    if (next.length === store[key].length) { return { removed: false, store }; }
+    return { removed: true, store: saveStore(storageDir, { [key]: next }) };
+}
+
 /** Stored paths may carry env tokens — expand for THIS machine. Uses the same
  *  expander the MCP discovery uses, so the page and the agents agree. */
 export function expandedDatabaseRoots(store: AirtableStore): string[] {

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import {
-    airtablePageData, loadStore, probeAirtableInstances, registerMcp, saveStore,
-    stageMcpServer, unregisterMcp, validateDatabaseRoot
+    addStoreFolder, airtablePageData, loadStore, probeAirtableInstances, registerMcp, removeStoreFolder,
+    sameFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from '../core/airtable';
 import { loadProbeCache, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
 import { probeCacheKey, resolveServerConfig } from '../core/toolboxBridge';
@@ -83,9 +83,9 @@ export class AirtablePanel {
     }
 
     /** Store mutation with mandatory error surfacing. */
-    private mutate(what: string, patch: Record<string, unknown>): void {
+    private mutate(what: string, write: () => unknown): void {
         try {
-            saveStore(this.deps.storageDir, patch);
+            write();
             this.refresh();
         } catch (e) {
             this.fail(what, e);
@@ -122,7 +122,7 @@ export class AirtablePanel {
                 const value = key === 'requestTimeoutMs'
                     ? Math.max(1000, Number(msg.value) || 8000)
                     : String(msg.value ?? '').trim();
-                this.mutate(`saving ${key}`, { [key]: value });
+                this.mutate(`saving ${key}`, () => saveStore(this.deps.storageDir, { [key]: value }));
                 break;
             }
 
@@ -175,7 +175,7 @@ export class AirtablePanel {
         }
     }
 
-    private async addFolder(key: 'databaseRoots' | 'mediaRoots'): Promise<void> {
+    private async addFolder(key: StoreFolderKey): Promise<void> {
         const picked = await vscode.window.showOpenDialog({
             canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
             openLabel: key === 'databaseRoots' ? 'Add engine folder' : 'Add media folder',
@@ -185,10 +185,7 @@ export class AirtablePanel {
         });
         const folder = picked?.[0]?.fsPath;
         if (!folder) { return; }
-        const store = loadStore(this.deps.storageDir);
-        const list = store[key];
-        const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
-        if (list.some(r => norm(r) === norm(folder))) {
+        if (loadStore(this.deps.storageDir)[key].some(r => sameFolder(r, folder))) {
             void vscode.window.showWarningMessage('Agent Farm: that folder is already listed.');
             return;
         }
@@ -206,15 +203,12 @@ export class AirtablePanel {
                     `Agent Farm: ${found.length} engine instance(s) found: ${found.map(i => i.name).join(', ')}.`);
             }
         }
-        this.mutate('adding the folder', { [key]: [...list, folder] });
+        this.mutate('adding the folder', () => addStoreFolder(this.deps.storageDir, key, folder));
     }
 
-    private removeFolder(key: 'databaseRoots' | 'mediaRoots', value: string): void {
+    private removeFolder(key: StoreFolderKey, value: string): void {
         if (!value) { return; }
-        const store = loadStore(this.deps.storageDir);
-        const next = store[key].filter(r => r !== value);
-        if (next.length === store[key].length) { return; }
-        this.mutate('removing the folder', { [key]: next });
+        this.mutate('removing the folder', () => removeStoreFolder(this.deps.storageDir, key, value));
     }
 
     private async probeTools(): Promise<void> {
