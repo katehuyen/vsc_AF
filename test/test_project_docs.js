@@ -514,87 +514,122 @@ const {
             .match(/readProjectDoc\(folder, rel, DOC_EDIT_CAP\)/g) || []).length === 2);
 }
 
-// ---------- the brief carries the plan and the decisions ----------
+// ---------- the brief inlines the charter's constitution, not the queues ----------
 {
+    const { parseCharterSections } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
+    const charterDoc = (...body) => ['---', 'af-role: charter', '---', '', '# Charter', '', ...body, ''].join('\n');
+
     const dir = freshDir();
-    const p = P({ folder: dir, summary: 'the command centre' });
+    const p = P({
+        folder: dir, summary: 'the command centre',
+        people: [{ name: 'PERSONWORD', role: 'owner', kind: 'person' }]
+    });
     createSkeleton(dir, p);
     const scan0 = scanProjectFolder(dir);
-    fs.writeFileSync(scan0.roles.plan,
-        '---\naf-role: plan\n---\n\n# Plan\n\n## Milestones\n- [x] Faz 3\n- [ ] Faz 4 — belgeler\n\n## Next up\n- [ ] Faz 1.7\n');
-    insertLogEntry(scan0.roles.log, '- 2026-08-03 — Faz 4 started.');
-    addDecision(dir, { title: 'Documents are found by frontmatter', now: new Date(2026, 7, 3) });
+    fs.writeFileSync(scan0.roles.charter, charterDoc(
+        '## What this is', 'Prose the brief does not own.', '',
+        '## Scope & Anti-Scope', '- Purpose: orchestrate the fleet.', '- Anti-Scope: it runs no model of its own.', '',
+        '## Code Architecture', '- Entrypoint: src/extension.ts', '',
+        '## Verification Gate', '- Test Command: `npm test`', '',
+        '## Project Invariants', '1. Files stay under 300 lines.'));
+    fs.writeFileSync(scan0.roles.plan, '---\naf-role: plan\n---\n\n# Plan\n\n## Milestones\n- [ ] PLANWORD belgeler\n');
+    fs.writeFileSync(scan0.roles.backlog, '---\naf-role: backlog\n---\n\n# Backlog\n\n## U\n- [ ] U-1 BACKLOGWORD form\n');
+    insertLogEntry(scan0.roles.log, '- 2026-08-03 — LOGWORD Faz 4 started.');
+    addDecision(dir, { title: 'DECISIONWORD found by frontmatter', now: new Date(2026, 7, 3) });
 
-    const scan = scanProjectFolder(dir);
-    const brief = buildBrief({ project: p, roles: scan.roles, decisions: scan.decisions, repos: ['D:/c/app'] });
-    ok('the brief carries what is still OPEN, not the whole plan',
-        /## Open plan items/.test(brief) && /Faz 4 — belgeler/.test(brief) && !/Faz 3/.test(brief));
-    ok('…with the section each item sits under', /_\(Milestones\)_/.test(brief));
-    ok('…the recent decisions', /## Recent decisions/.test(brief) && /Documents are found by frontmatter/.test(brief));
-    ok('…and the worklog, as before', /Faz 4 started/.test(brief));
+    const brief = buildBrief({ project: p, roles: scanProjectFolder(dir).roles, repos: ['D:/c/app'] });
+    ok('‼️ the brief inlines the invariants — an agent cannot plead ignorance of what is in front of it',
+        /## Project Invariants/.test(brief) && /Files stay under 300 lines/.test(brief));
+    ok('…the scope and the anti-scope', /## Scope & Anti-Scope/.test(brief) && /it runs no model of its own/.test(brief));
+    ok('…the code map and the verification gate',
+        /## Code Architecture/.test(brief) && /src\/extension\.ts/.test(brief)
+        && /## Verification Gate/.test(brief) && /npm test/.test(brief));
+    ok('…and not the charter prose under headings it does not own', !brief.includes('Prose the brief does not own'));
+
+    // ‼️ THE QUEUES ARE NOT IN THE BRIEF, AND THAT IS THE POINT. A brief is
+    // pinned in the prompt cache for a whole session; a backlog copied into it
+    // is stale by the second turn, and the space it took belongs to the rules.
+    ok('‼️ no backlog', !brief.includes('BACKLOGWORD') && !/## Next in backlog/.test(brief));
+    ok('…no open plan items', !brief.includes('PLANWORD') && !/## Open plan items/.test(brief));
+    ok('…no worklog lines', !brief.includes('LOGWORD') && !/## Recently/.test(brief));
+    ok('…no decision records', !brief.includes('DECISIONWORD') && !/## Recent decisions/.test(brief));
+    ok('…and no people', !brief.includes('PERSONWORD') && !/## People/.test(brief));
     ok('…and it still ends by saying where to write back',
-        brief.indexOf('## Writing back') > brief.indexOf('## Recently'));
+        brief.indexOf('## Writing back') > brief.indexOf('## Project Invariants'));
 
-    // ‼️ THE BUDGET SHORTENS LISTS; IT MUST NEVER COST THE INSTRUCTIONS.
-    // A project that has actually been worked on: a long plan, a real worklog,
-    // several decisions and a team — which is exactly when the old
-    // slice-the-tail cap started eating the "writing back" section.
+    // ---- the heading reader
+    const s = parseCharterSections(charterDoc(
+        '## Kapsam', '- ne yapar', '', '## Kapsam dışı', '- ne yapmaz', '',
+        '## MİMARİ', '- src/core saf', '', '## Doğrulama', '- npm test', '', '## Kurallar', '- 300 satır', '',
+        '## Research notes', '- NOTARCH', '', '## Latest', '- NOTTEST'));
+    ok('‼️ Turkish headings are read too — the user writes the charter in their own language',
+        /ne yapar/.test(s.scope || '') && /src\/core saf/.test(s.architecture || '')
+        && /npm test/.test(s.verification || '') && /300 satır/.test(s.invariants || ''));
+    ok('‼️ a second heading of the same kind CONTINUES the section instead of wiping it',
+        /ne yapar/.test(s.scope || '') && /### Kapsam dışı/.test(s.scope || '') && /ne yapmaz/.test(s.scope || ''));
+    ok('‼️ headings match by WORD — "Research" is not architecture, "Latest" is not a test',
+        !/NOTARCH/.test(s.architecture || '') && !/NOTTEST/.test(s.verification || ''));
+    ok('an old charter\'s plain "## Scope" still feeds the brief', /x/.test(parseCharterSections(charterDoc('## Scope', 'x')).scope || ''));
+    ok('the template\'s "Why it exists" is not mistaken for a constitutional section',
+        Object.values(parseCharterSections(charterDoc('## Why it exists', 'WHY'))).every(v => !v));
+
+    // ‼️ THE BUDGET SHORTENS THE LONG ENTRIES; IT MUST NEVER COST THE INSTRUCTIONS.
+    // A project whose charter is a real document — which is exactly when the
+    // old slice-the-tail cap started eating the "writing back" section.
     const busyDir = freshDir();
-    const busy = P({
-        folder: busyDir, summary: 'a project with some history behind it',
-        people: Array.from({ length: 12 }, (_, i) => ({
-            name: `Person Number ${i}`, role: 'contributor', kind: 'person',
-            contact: `person${i}@example.com`
-        }))
-    });
+    const busy = P({ folder: busyDir, summary: 'a project with a constitution behind it' });
     createSkeleton(busyDir, busy);
     const busyRoles = scanProjectFolder(busyDir).roles;
-    fs.writeFileSync(busyRoles.plan, '---\naf-role: plan\n---\n\n# Plan\n\n## Milestones\n'
-        + Array.from({ length: 10 }, (_, i) => `- [ ] Milestone number ${i} with a reasonably long title`).join('\n') + '\n');
-    for (let i = 0; i < 9; i++) {
-        insertLogEntry(busyRoles.log, `- 2026-08-0${(i % 9) + 1} — A worklog entry with enough words in it to be worth carrying.`);
-    }
-    for (let i = 0; i < 6; i++) {
-        addDecision(busyDir, { title: `Decision number ${i} about something structural`, now: new Date(2026, 6, i + 1) });
-    }
-    const busyScan = scanProjectFolder(busyDir);
-    const seed = { project: busy, roles: busyScan.roles, decisions: busyScan.decisions, repos: ['D:/c/app'] };
+    fs.writeFileSync(busyRoles.charter, charterDoc(
+        '## Project Invariants',
+        ...Array.from({ length: 12 }, (_, i) => `${i + 1}. Invariant number ${i} with a long enough sentence behind it to be worth clipping.`),
+        '', '## Code Architecture',
+        ...Array.from({ length: 8 }, (_, i) => `- Module number ${i} lives exactly where the map says it lives.`)));
+    const seed = { project: busy, roles: scanProjectFolder(busyDir).roles, repos: ['D:/c/app'] };
 
     const full = buildBrief(seed);
-    const tight = buildBrief({ ...seed, maxChars: 1200 });
-    ok('‼️ a budgeted brief actually fits its budget', tight.length <= 1200);
+    const tight = buildBrief({ ...seed, maxChars: 1800 });
+    ok('‼️ a budgeted brief actually fits its budget', tight.length <= 1800);
     ok('…which means it is genuinely shorter than the full one', tight.length < full.length);
     ok('‼️ …and it STILL says where to write back — the section the old cap sliced off',
         /## Writing back/.test(tight) && /worklog/.test(tight));
     ok('‼️ …and it still says which file holds which role, which is the point of a brief',
         /## Where things are/.test(tight) && /log:/.test(tight));
-    ok('it gave up list rows to get there, and says so where it shortened people',
-        /and \d+ more/.test(tight));
+    ok('…it still carries the invariants, shortened visibly rather than dropped',
+        /## Project Invariants/.test(tight) && /…/.test(tight));
     ok('an unbudgeted brief is the FULL one — it is what the "cut to fit" pointer points at',
-        full.includes('Person Number 7') && full.length > tight.length);
+        full.includes('Invariant number 11') && full.includes('Module number 7'));
     ok('a budget nothing can satisfy still returns a whole document rather than a sliced one',
         /## Writing back/.test(buildBrief({ ...seed, maxChars: 50 })));
 
-    // ‼️ HOW LONG ONE ENTRY IS, WHICH IS NOT THE SAME QUESTION AS HOW MANY.
-    // Found by generating this installation's OWN brief rather than a fixture:
-    // a single worklog entry here is over 2000 characters, so dropping to one
-    // log line still overshot the 2500-character system-prompt budget and the
-    // tail was sliced off anyway. Shortening the count without shortening the
-    // entry only looks like a fix.
+    // ‼️ ONE ENORMOUS SECTION. A charter is prose the user writes, and a single
+    // paragraph can outweigh the whole budget on its own.
     const fatDir = freshDir();
-    const fat = P({ folder: fatDir, summary: 'a project whose worklog entries are paragraphs' });
+    const fat = P({ folder: fatDir, summary: 'a project whose charter is a wall of text' });
     createSkeleton(fatDir, fat);
     const fatRoles = scanProjectFolder(fatDir).roles;
-    insertLogEntry(fatRoles.log, '- 2026-08-03 — ' + 'kelime '.repeat(400).trim() + '.');
+    fs.writeFileSync(fatRoles.charter, charterDoc('## Project Invariants', '- ' + 'kelime '.repeat(400).trim() + '.'));
     const fatSeed = { project: fat, roles: scanProjectFolder(fatDir).roles, repos: [] };
     const fatFull = buildBrief(fatSeed);
     const fatTight = buildBrief({ ...fatSeed, maxChars: 2500 });
-    ok('‼️ ONE enormous worklog entry still fits the budget', fatTight.length <= 2500);
+    ok('‼️ ONE enormous charter section still fits the budget', fatTight.length <= 2500);
     ok('‼️ …and the instructions survive it, which is the whole point of the budget',
         /## Writing back/.test(fatTight) && /worklog/.test(fatTight));
-    ok('…the entry was shortened visibly, not silently', /…/.test(fatTight));
-    ok('…and the FULL brief on disk keeps the whole entry — it is what the pointer points at',
+    ok('…the section was shortened visibly, not silently', /…/.test(fatTight));
+    ok('…and the FULL brief on disk keeps the whole section — it is what the pointer points at',
         fatFull.length > 2500 && !/…/.test(fatFull));
+
+    // ‼️ THE BUDGET LOOP MUST NOT RE-READ THE FOLDER: it renders at up to seven
+    // widths to find one that fits, and reading inside the renderer meant seven
+    // disk reads of the same charter for one brief.
+    const real = fs.readFileSync;
+    let charterReads = 0;
+    fs.readFileSync = function (f, ...rest) {
+        if (typeof f === 'string' && f === fatRoles.charter) { charterReads++; }
+        return real.call(fs, f, ...rest);
+    };
+    try { buildBrief({ ...fatSeed, maxChars: 900 }); } finally { fs.readFileSync = real; }
+    ok('‼️ the charter is read ONCE per brief, not once per budget level', charterReads === 1);
 }
 
 try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* best effort */ }

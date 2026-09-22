@@ -46,7 +46,7 @@ const roles = {
     plan: write('Plan.md', '## Milestones\n- [ ] PLANWORD ship the thing\n- [x] done already\n'),
     backlog: write('Backlog.md', '- [ ] B-1 BACKLOGWORD do the other thing #feat 🔺 [effort:: M]\n'),
     log: write('Worklog.md', '## Log\n- 2026-08-01 — LOGWORD something happened\n'),
-    charter: write('Charter.md', '# what this is\n'),
+    charter: write('Charter.md', '# what this is\n\n## Project Invariants\n- INVARIANTWORD files stay small\n'),
     people: write('People.md', '- Murat — owner\n')
 };
 const project = {
@@ -83,6 +83,9 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
     ok('what it KEEPS is who the project is', mission.includes('SUMMARYWORD')
         && mission.includes('# Agent Farm — brief'));
     ok('…its code roots', mission.includes('D:\\code\\vsc_AgentFarm'));
+    ok('‼️ …and the charter\'s invariants, which bind a delegate touching the code as much as a session',
+        /## Project Invariants/.test(mission) && mission.includes('INVARIANTWORD')
+        && session.includes('INVARIANTWORD'));
     ok('‼️ …and the role map, because a mission CAN be told to record something',
         /## Where things are/.test(mission) && /log: Worklog\.md/.test(mission));
 
@@ -115,7 +118,9 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
         ok('neither session nor mission reads the three list documents',
             !sessionReads.includes('Backlog.md') && !sessionReads.includes('Plan.md')
             && !sessionReads.includes('Worklog.md'));
-        ok('‼️ the mission brief reads NONE of them', missionReads.length === 0);
+        ok('‼️ the mission brief reads ONE document — the charter, once — and no list',
+            missionReads.length === 1 && missionReads[0] === 'Charter.md');
+        ok('…and so does the session brief', sessionReads.length === 1 && sessionReads[0] === 'Charter.md');
     } finally {
         fs.readFileSync = real;
     }

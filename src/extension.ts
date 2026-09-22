@@ -330,7 +330,7 @@ import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { AppliedReading, AppliedWindow, appliedInWindow } from './core/appliedTurn';
 import { ProjectsTreeProvider } from './views/projectsTree';
 import {
-    addDecision, addDeliverableRow, BRIEF_REL, buildBrief, createSkeleton, DecisionDoc,
+    addDecision, addDeliverableRow, BRIEF_REL, buildBrief, createSkeleton,
     dirExists, DEFAULT_SKELETON, DOC_EDIT_CAP, ensureRoleDoc, insertLogEntry, listProjectDocs, localDay,
     localStamp, normalizeSkeleton, parseDeliverables, ProjectDocRole, readProjectDoc,
     renameProjectFolder, resolveInFolder, scanProjectFolder, scanProjectsRoot, scanRoles,
@@ -3281,11 +3281,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const folder = (p.folder ?? '').trim();
         const repos = (p.repos ?? []).filter(r => !!r?.trim());
         const hasFolder = !!folder && dirExists(folder);
-        const scan = hasFolder ? scanProjectFolder(folder) : { roles: {}, decisions: [] };
+        const scan = hasFolder ? scanProjectFolder(folder) : { roles: {} };
         const parent = p.parentId ? projectStore.get(p.parentId) : undefined;
         const parts = projectStore.childrenOf(p.id).map(c => c.name);
         const seed = {
-            project: p, roles: scan.roles, repos, decisions: scan.decisions,
+            project: p, roles: scan.roles, repos,
             ...(parent ? { parent: parent.name } : {}),
             ...(parts.length ? { parts } : {})
         };
@@ -3293,16 +3293,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The FILE is the full one — it is what the "[cut to fit — the full
         // brief is at …]" line in the injected copy points at, so a file holding
         // the same shortened text would make that pointer a lie. The INJECTED
-        // one is built to a budget, which shortens its lists instead of letting
-        // the system-prompt cap slice the tail off; the tail is "Writing back",
-        // the only part of a brief an agent has to act on.
+        // one is built to a budget, which shortens its longest entries instead
+        // of letting the system-prompt cap slice the tail off; the tail is
+        // "Writing back", the only part of a brief an agent has to act on.
         // ‼️ X-94 — `_AF/BRIEF.md` IS THE SESSION BRIEF AND ONLY EVER THAT. A
         // mission spawn must not rewrite that file with its own shorter shape:
         // it is the document the "[cut to fit — the full brief is at …]" pointer
         // points at and the one a person opens in Obsidian, and a delegation
         // firing while somebody is reading it would silently replace it with a
-        // copy that has no backlog in it. `writeBrief` is skipped for the
-        // mission audience below; this stays the session text either way.
+        // copy whose tail is addressed to a delegate. `writeBrief` is skipped
+        // for the mission audience below; this stays the session text either way.
         const brief = buildBrief(seed);
         const briefPath = hasFolder ? path.join(folder, BRIEF_REL) : undefined;
         const text = buildProjectContext({
@@ -12975,12 +12975,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const folder = (project.folder ?? '').trim();
                 const scan = folder && dirExists(folder)
-                    ? scanProjectFolder(folder) : { roles: {}, decisions: [] as DecisionDoc[] };
+                    ? scanProjectFolder(folder) : { roles: {} };
                 return {
                     project: project.name,
                     briefFile: folder && dirExists(folder) ? path.join(folder, BRIEF_REL) : null,
                     brief: buildBrief({
-                        project, roles: scan.roles, decisions: scan.decisions,
+                        project, roles: scan.roles,
                         repos: project.repos ?? [],
                         ...(project.parentId && projectStore.get(project.parentId)
                             ? { parent: (projectStore.get(project.parentId) as Project).name } : {}),

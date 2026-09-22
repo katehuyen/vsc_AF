@@ -1,8 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { writeAtomicSync } from './atomicFile';
-import { BacklogItem, nextBacklog } from './projectBacklog';
-import { openPlanItems } from './projectPlan';
 import { folderNameFor, Project } from './projects';
 import { slugify } from './util';
 
@@ -99,9 +97,13 @@ af-created: {date}
 # {project}
 
 <!-- This file is yours: rename it, restructure it, write in any language.
-     Agent Farm finds it by the af-role line above, never by its name. -->
+     Agent Farm finds it by the af-role line above, never by its name.
+     The last four sections are copied into every agent session's brief:
+     keep them short and binding. -->
 
 ## What this is
+
+## Why it exists
 
 ## Scope & Anti-Scope
 
@@ -1258,17 +1260,6 @@ export function addDeliverableRow(text: string, input: DeliverableInput): { ok: 
  *  never drift apart. */
 export const BRIEF_REL = path.join(AF_DIR, 'BRIEF.md');
 
-/** How many worklog lines the brief carries — enough to say what just happened,
- *  not so many that the system prompt turns into a diary. */
-const BRIEF_LOG_LINES = 6;
-
-/**
- * Read the newest entries out of a worklog.
- *
- * The anchor marks where new entries are inserted, so what follows it is the
- * recent end of the log. With no anchor (a log the user rewrote their own way)
- * the tail of the file is the honest answer.
- */
 /** A document's text, or '' — a brief must be buildable for a project whose
  *  folder has just been moved, not throw halfway through. */
 function readTextOrEmpty(file: string | undefined): string {
@@ -1283,6 +1274,25 @@ export interface CharterSections {
     invariants?: string;
 }
 
+/** Word stems that file a charter heading under a section, in precedence order.
+ *  Matched against the heading's WORDS, never as substrings: a substring test
+ *  filed "## Research" under architecture and "## Latest" under verification. */
+const CHARTER_STEMS: [keyof CharterSections, string[]][] = [
+    ['invariants', ['invariant', 'yasa', 'kural', 'tabu']],
+    ['architecture', ['architect', 'mimari']],
+    ['verification', ['verif', 'doğrula', 'dogrula', 'test']],
+    ['scope', ['scope', 'kapsam']]
+];
+
+function charterKey(heading: string): keyof CharterSections | undefined {
+    // U+0307 goes before the split: `'MİMARİ'.toLowerCase()` leaves a combining
+    // dot after each i, and a mark is not a letter, so the word would break in two.
+    const words = heading.toLowerCase().replace(/̇/g, '')
+        .split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const hit = CHARTER_STEMS.find(([, stems]) => words.some(w => stems.some(s => w.startsWith(s))));
+    return hit?.[0];
+}
+
 /**
  * Extract constitutional sections out of Charter.md so they can be inlined
  * directly into the system prompt. Matches both English and Turkish heading names.
@@ -1290,31 +1300,24 @@ export interface CharterSections {
 export function parseCharterSections(text: string): CharterSections {
     if (!text) { return {}; }
     const lines = text.split(/\r?\n/);
-    const sections: Record<string, string[]> = {};
-    let currentKey = '';
+    const sections: Partial<Record<keyof CharterSections, string[]>> = {};
+    let currentKey: keyof CharterSections | undefined;
 
     for (const line of lines) {
         const m = line.match(/^##\s+(.+)$/);
         if (m) {
-            const h = m[1].trim().toLowerCase();
-            if (h.includes('invariant') || h.includes('yasa') || h.includes('kural') || h.includes('tabu')) {
-                currentKey = 'invariants';
-            } else if (h.includes('arch') || h.includes('mimar')) {
-                currentKey = 'architecture';
-            } else if (h.includes('verif') || h.includes('doğrula') || h.includes('dogrula') || h.includes('test')) {
-                currentKey = 'verification';
-            } else if (h.includes('scope') || h.includes('kapsam')) {
-                currentKey = 'scope';
-            } else {
-                currentKey = '';
-            }
-            if (currentKey) {
+            currentKey = charterKey(m[1]);
+            // ‼️ A second heading of the same kind ("Scope", then "Out of scope")
+            // continues the section under its own label instead of wiping it.
+            if (currentKey && sections[currentKey]) {
+                sections[currentKey]!.push(`### ${m[1].trim()}`);
+            } else if (currentKey) {
                 sections[currentKey] = [];
             }
             continue;
         }
         if (currentKey && line.trim()) {
-            sections[currentKey].push(line);
+            sections[currentKey]!.push(line);
         }
     }
 
@@ -1324,18 +1327,6 @@ export function parseCharterSections(text: string): CharterSections {
         verification: sections.verification?.join('\n').trim(),
         invariants: sections.invariants?.join('\n').trim(),
     };
-}
-
-function recentLog(file: string | undefined, max = BRIEF_LOG_LINES): string[] {
-    if (!file) { return []; }
-    const text = readTextOrEmpty(file);
-    if (!text) { return []; }
-    const at = text.indexOf(LOG_ANCHOR);
-    const body = at >= 0 ? text.slice(at + LOG_ANCHOR.length) : text;
-    const lines = body.split(/\r?\n/)
-        .map(l => l.trim())
-        .filter(l => l && !l.startsWith('---') && !l.startsWith('#') && !l.startsWith('<!--'));
-    return at >= 0 ? lines.slice(0, max) : lines.slice(-max);
 }
 
 export interface BriefInput {
@@ -1349,13 +1340,9 @@ export interface BriefInput {
      *  are context ("do not file that work here"), not a second registry. */
     parent?: string;
     parts?: string[];
-    /** The project's decision records, newest first — from the SAME folder walk
-     *  that produced `roles` (`scanProjectFolder`), so building a brief stays
-     *  one pass over the directory even though it answers three questions. */
-    decisions?: DecisionDoc[];
     now?: number;
     /**
-     * Fit the brief into this many characters by carrying FEWER list entries.
+     * Fit the brief into this many characters by carrying SHORTER entries.
      *
      * ‼️ THE CALLER THAT INJECTS A BRIEF MUST PASS THIS, AND HERE IS WHY.
      * The system prompt has a hard cap, and the cap used to be applied by
@@ -1363,9 +1350,9 @@ export interface BriefInput {
      * "Writing back" — where the worklog is, where the plan is, what not to
      * reformat — so growing the brief pushed the ONE part an agent has to act on
      * off the end, and the agent was left with a nice summary and no idea where
-     * to write. Shortening the lists instead keeps the document's shape whole:
-     * fewer worklog lines is a smaller answer to the same question, a missing
-     * instruction is no answer at all.
+     * to write. Shortening the variable-length entries instead keeps the
+     * document's shape whole: a clipped charter section is a smaller answer to
+     * the same question, a missing instruction is no answer at all.
      *
      * Left undefined for the copy written to `_AF/BRIEF.md`, which is the FULL
      * text — that file is what the "[cut to fit]" pointer points at, so it has
@@ -1373,29 +1360,37 @@ export interface BriefInput {
      */
     maxChars?: number;
     /**
-     * ‼️ X-94 — WHO IS READING IT. `session` (default) is the brief as it has
-     * always been. `mission` drops the four STANDING LISTS — open plan items,
-     * the top of the backlog, recent decisions, recent worklog — and replaces
-     * the write-back protocol, because a mission arrives with its own objective
-     * and the project's queues are not its subject.
+     * ‼️ X-94 — WHO IS READING IT. `session` (default) ends with the write-back
+     * protocol: record what you did, tick the plan, close the backlog item.
+     * `mission` replaces that tail, because a mission arrives with its own
+     * objective and the project's bookkeeping is not its subject — telling it to
+     * file a worklog line is telling it to write about work nobody asked it to
+     * record.
      *
-     * What it KEEPS is the map: identity, people, code roots and "Where things
-     * are". That is deliberate — a mission can be told to record something, and
-     * then it has to know which document holds which role. What it must not be
-     * handed is the standing pile of unrelated work, nor an instruction to file
-     * a worklog line for work nobody asked it to record.
-     *
-     * The lists are not merely hidden: `briefSource` does not read them off
-     * disk at all for this audience, so a mission spawn does not pay for
-     * parsing a 500KB backlog either.
+     * What BOTH get is the map — identity, code roots, "Where things are" — and
+     * the charter's constitutional sections. A mission can be told to record
+     * something, and then it has to know which document holds which role; and
+     * the invariants bind whoever is touching the code, delegate or not.
      */
     audience?: 'session' | 'mission';
 }
 
 interface BriefLevel {
+    /**
+     * ‼️ HOW LONG ONE ENTRY MAY BE. The fixed parts of a brief — the facts, the
+     * role map, the write-back protocol — are a known width; what a user can
+     * make arbitrarily long is the summary and the charter sections the brief
+     * inlines. So the budget is spent there and nowhere else.
+     *
+     * Undefined at the top level, on purpose: the unbudgeted brief is the FULL
+     * text that `_AF/BRIEF.md` holds and the "[cut to fit]" pointer points at,
+     * so it must not clip anything either.
+     */
     chars?: number;
 }
 
+/** How much of each variable-length entry survives, most generous first. When a
+ *  budget is set the brief is built at the first level that fits. */
 const BRIEF_LEVELS: BriefLevel[] = [
     {},
     { chars: 400 },
@@ -1431,10 +1426,10 @@ function clipEntry(text: string, max?: number): string {
  */
 export function buildBrief(o: BriefInput): string {
     const budget = Number(o.maxChars) > 0 ? Number(o.maxChars) : 0;
-    if (!budget) { return renderBrief(o, BRIEF_LEVELS[0]); }
-    // The lists are read ONCE and handed to every attempt: the loop is choosing
-    // how much to print, not re-reading the folder up to six times.
+    // The charter is read ONCE and handed to every attempt: the loop is choosing
+    // how much to print, not re-reading the folder up to seven times.
     const source = briefSource(o);
+    if (!budget) { return renderBrief(o, BRIEF_LEVELS[0], source); }
     for (const level of BRIEF_LEVELS) {
         const text = renderBrief(o, level, source);
         if (text.length <= budget) { return text; }
@@ -1442,22 +1437,23 @@ export function buildBrief(o: BriefInput): string {
     // Still over: the fixed part alone (a very long summary, a wall of code
     // roots) does not fit, and `trimBrief` is the backstop for that. It is the
     // only case where the tail can still be lost, and it is not one this
-    // function can honestly solve by dropping more rows.
+    // function can honestly solve by clipping harder.
     return renderBrief(o, BRIEF_LEVELS[BRIEF_LEVELS.length - 1], source);
 }
 
+/** What the brief needs off disk. One document, read once per brief: the
+ *  standing lists (backlog, plan, worklog) are deliberately NOT here — a brief
+ *  is pinned in the prompt cache for the whole session, and a queue copied into
+ *  it is stale by the second turn. */
 interface BriefSource {
-    plan: { text: string; section: string }[];
-    backlog: BacklogItem[];
-    log: string[];
+    charter: CharterSections;
 }
 
-/** The three lists that used to come off disk — now omitted from the brief to keep context lean and invariant-focused. */
-function briefSource(_o: BriefInput): BriefSource {
-    return { plan: [], backlog: [], log: [] };
+function briefSource(o: BriefInput): BriefSource {
+    return { charter: parseCharterSections(readTextOrEmpty(o.roles?.charter)) };
 }
 
-function renderBrief(o: BriefInput, level: BriefLevel, _source?: BriefSource): string {
+function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): string {
     const p = o.project;
     const roles = o.roles ?? {};
     const now = o.now ?? Date.now();
@@ -1502,9 +1498,12 @@ function renderBrief(o: BriefInput, level: BriefLevel, _source?: BriefSource): s
         for (const role of known) { out.push(`- ${role}: ${rel(roles[role] as string)}`); }
     }
 
-    // ‼️ The project constitution — extracted from Charter.md
-    const charterText = readTextOrEmpty(roles.charter);
-    const charter = parseCharterSections(charterText);
+    // ‼️ THE PROJECT'S CONSTITUTION, INLINED. This is what the brief is FOR: an
+    // agent that has the invariants in front of it cannot plead ignorance of
+    // them, and a charter one tool call away is a charter nobody opens.
+    const charter = (source ?? briefSource(o)).charter;
+    // A section is a paragraph, not a list row, so it is given three times the
+    // width of a one-line entry before it is cut.
     const clipVal = level.chars ? level.chars * 3 : undefined;
 
     if (charter.scope) {
