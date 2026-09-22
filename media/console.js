@@ -342,12 +342,13 @@
         /* A signal on the status row is a 6px dot in its colour; its words are one hover away. */
         .sigdot { display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
             vertical-align:middle; margin:0 1px; }
-        /* The status row's relay and handover hands are CHIPS, never buttons: a
-           full button here squeezes the row's figures into three lines. */
-        .stchip { flex:none; font-size:10px; line-height:13px; padding:0 4px; min-width:0; height:auto;
-            border:1px solid var(--vscode-widget-border,#4443); border-radius:6px; background:none;
+        /* The status row's hands are frameless icon CHIPS: no border, no box, so the
+           width goes to the glyph (15px, legible) instead of a frame around a 10px one. */
+        #c-status .stchip { flex:none; font-size:15px; line-height:18px; padding:0 3px; min-width:0; height:auto;
+            border:0; border-radius:4px; background:none; opacity:.85;
             color:var(--vscode-textLink-foreground); cursor:pointer; }
-        .stchip:hover { background:var(--vscode-toolbar-hoverBackground,#5a5d5e50); }
+        #c-status .stchip:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#5a5d5e50); }
+        #c-status .batonsig { font-size:13px; line-height:1; }
         /* S-82: the attach strip under a card's status row, and the composer's relay chip. */
         #c-relay:empty { display:none; }
         #c-relay { justify-content:flex-end; }
@@ -1489,9 +1490,9 @@
     // child in place of the trigger — so every sizing rule that was on the
     // trigger has to move out to it, or the line silently stops being sized
     // (afTip.js says this; the identity line is exactly the case it means).
-    const cardTip = (trigger, head, body, cls) =>
+    const cardTip = (trigger, head, body, cls, title) =>
         window.AFTip.wrap(trigger, head, body, 'tip-free' + (cls ? ' ' + cls : ''),
-            'data-aftip-anchor=".srow"');
+            'data-aftip-anchor=".srow"', title);
 
     /** A value nobody set is said as the thing that will decide it — never as a
      *  bare "Default", which is a word with no referent (CONVENTIONS.md). */
@@ -1579,14 +1580,14 @@
         if (!q || !q.chip) { return ''; }
         const cls = q.state === 'undelivered' ? 'ctxsig bad' : q.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
         return `${cardTip(`<span class="${cls} sigdot" aria-label="${C.esc(q.chip)}"></span>`, q.head,
-            window.AFTip.lines(q.lines || []), 'tip-quota')} `;
+            window.AFTip.lines(q.lines || []), 'tip-quota', '5-hour quota signal')} `;
     };
     /** S-77 — this run's leg of a baton relay: `⑂ 3`, the chain in its panel. The words are the host's. */
     const batonChip = (s) => {
         const v = s.batonView;
         if (!v || !v.chip) { return ''; }
         return `${cardTip(`<span class="batonsig">${C.esc(v.chip)}</span>`, v.head,
-            window.AFTip.lines(v.lines || []), 'tip-baton')} · `;
+            window.AFTip.lines(v.lines || []), 'tip-baton', 'Baton relay chain')} · `;
     };
     /**
      * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this
@@ -1597,7 +1598,7 @@
         const v = s.bridgeGuardView;
         if (!v || !v.chip) { return ''; }
         return `${cardTip(`<span class="bgsig sigdot" aria-label="${C.esc(v.chip)}"></span>`, v.head,
-            window.AFTip.lines(v.lines || []), 'tip-guard')} `;
+            window.AFTip.lines(v.lines || []), 'tip-guard', 'Bridge guard')} `;
     };
     /** MIRROR — the current value first, then what it means. */
     const ctxTip = (s) => {
@@ -3203,7 +3204,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${batonChip(s)}${quotaChip(s)}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body, '', 'Context window')} · ` : ''}${batonChip(s)}${quotaChip(s)}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${continueBtnHtml(s)}
@@ -5878,7 +5879,19 @@
         // why this button used to open a window with no files in it at all. A
         // folder is attached by dropping it, and that is worth one clause here
         // rather than a dead end at the dialog.
-        return `<button class="secondary" id="c-attach" title="Attach files — click here, drop them anywhere on this page, or paste a screenshot into the box. A FOLDER can only be dropped, not picked (Windows has no files-and-folders dialog). Images travel inside the message; everything else is handed over as a path the agent opens itself.">📎${n ? ' ' + n : ''}</button>`;
+        return cardTip(`<button class="stchip" id="c-attach" aria-label="Attach files">📎${n ? ' ' + n : ''}</button>`,
+            attachHead(n), attachBody(), 'tip-attach', 'Attach files');
+    }
+    function attachHead(n) {
+        return n ? `${n} file${n === 1 ? '' : 's'} attached to the next message` : 'Nothing attached';
+    }
+    function attachBody() {
+        return window.AFTip.lines([
+            'Click here to pick files, drop them anywhere on this page, or paste a screenshot into the box.',
+            'Images travel inside the message; everything else is handed over as a path the agent opens itself.',
+            window.AFTip.GAP,
+            'A folder can only be dropped, not picked — Windows has no dialog that selects files and folders at once.'
+        ]);
     }
 
     /**
@@ -5905,15 +5918,15 @@
         return cardTip('<button class="stchip" id="c-continue" aria-label="Continue from handover">↪</button>',
             now,
             window.AFTip.lines([
-                'Continue from handover: opens the composer for this agent with this card\'s whole setup — engine, model, '
-                    + 'effort, permission mode, sign-in, route, project — and the handover note as '
-                    + 'the first message. Nothing starts until you press Send: change the account '
-                    + 'first if this run stopped on its quota.',
+                'Opens the composer for this agent with this card\'s whole setup — engine, model, effort, '
+                    + 'permission mode, Superpowers, route, sign-in, project — and the first message already '
+                    + 'written: it points the new run at this one\'s handover note (or, if none was found, '
+                    + 'at this session\'s transcript).',
+                'Nothing starts until you press Send — if this run stopped on its quota, change the account first.',
                 window.AFTip.GAP,
-                'This conversation itself is never resumed — a window at the handover line walks '
-                    + 'straight back into the wall. The same door for an agent: '
-                    + 'console.continueFromHandover id=' + (s.id || '') + ' open=true.'
-            ]));
+                'This conversation itself is never resumed: a window at the handover line walks straight back into the wall.',
+                'Agent door: console.continueFromHandover id=' + (s.id || '') + ' open=true'
+            ]), 'tip-continue', 'Continue from handover');
     }
 
     /** S-77 — the user's brake on this card's relay: beside Continue, never instead of it. */
@@ -5923,12 +5936,12 @@
         return cardTip('<button class="stchip" id="c-baton-stop" aria-label="Stop chain">✕⑂</button>',
             v.head,
             window.AFTip.lines([
-                'Stop chain: stops every waiting or parked baton of chain ' + v.chainId + ' — no further leg opens. '
-                    + 'Nothing is deleted: baton.status keeps each one as stopped, with the reason. '
-                    + 'A run a baton already opened keeps running — end it on its own card.',
+                'Stops every waiting or parked baton of chain ' + v.chainId + ', so no further leg opens.',
+                'Nothing is deleted: baton.status keeps each one as stopped, with the reason.',
+                'A run a baton already opened keeps running — end it on its own card.',
                 window.AFTip.GAP,
-                'The same brake for an agent: baton.stop chain=' + v.chainId + '.'
-            ]), 'tip-batonstop');
+                'Agent door: baton.stop chain=' + v.chainId
+            ]), 'tip-batonstop', 'Stop chain');
     }
 
     /**
@@ -5945,22 +5958,24 @@
             return cardTip('<button class="stchip" id="c-baton-pass" aria-label="Pass now">⑂→</button>',
                 s.batonView.head,
                 T.lines([
-                    'Pass now: says the handover order into this run now, the one its context line would have sent: '
-                        + 'commit the clean progress, pass the baton (baton.pass) and end — the next leg opens once this session has ended. '
-                        + 'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.',
+                    'Sends this run the handover order now — the one its context line would have sent: '
+                        + 'commit the clean progress, pass the baton (baton.pass) and end.',
+                    'The next leg opens once this session has ended.',
+                    'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.',
                     T.GAP,
-                    'The same words for an agent: console.send id=' + (s.id || '') + ' — the text is the host\'s (PASS NOW …).'
-                ]), 'tip-batonpass');
+                    'Agent door: console.send id=' + (s.id || '') + ' — the words are the host\'s (PASS NOW …)'
+                ]), 'tip-batonpass', 'Pass now');
         }
         return cardTip(`<button class="stchip" id="c-baton-attach" aria-label="Attach relay"${relayOpen === s.id ? ' aria-expanded="true"' : ''}>⑂+</button>`,
-            relayOpen === s.id ? 'Attach relay — the strip below is open' : 'Attach relay — make this run leg 1 of a baton relay',
+            relayOpen === s.id ? 'The strip below is open — pick the pool and the leg ceiling' : 'This run is in no relay',
             T.lines([
-                'Sealed at once, without a restart: after that, its handover line says "pass the baton" instead of '
-                    + '"write the note", and at its limit the work goes on in a fresh session on the chain\'s pool. '
-                    + 'The strip below picks the pool (a rule, never one slot) and this chain\'s leg ceiling.',
+                'Makes this run leg 1 of a baton relay, sealed at once — no restart.',
+                'After that, its handover line says "pass the baton" instead of "write the note", and at its limit '
+                    + 'the work goes on in a fresh session on the chain\'s pool.',
+                'The strip that opens below picks the pool (a rule, never one slot) and this chain\'s leg ceiling.',
                 T.GAP,
-                'The same door for an agent: baton.attach session=' + s.sessionId + ' account=@… maxHops=N.'
-            ]), 'tip-batonattach');
+                'Agent door: baton.attach session=' + s.sessionId + ' account=@… maxHops=N'
+            ]), 'tip-batonattach', 'Attach relay');
     }
 
     /** The strip under the status row while ⑂ Attach relay is open on this card. */
@@ -6040,7 +6055,11 @@
         if (btn) {
             const n = (st.attach || []).length;
             const label = `📎${n ? ' ' + n : ''}`;
-            if (btn.textContent !== label) { btn.textContent = label; }
+            if (btn.textContent !== label) {
+                btn.textContent = label;
+                const w = btn.parentElement;
+                if (w && w.classList && w.classList.contains('af-tipw')) { window.AFTip.set(w, attachHead(n), attachBody()); }
+            }
         }
     }
 

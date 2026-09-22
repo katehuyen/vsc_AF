@@ -1373,6 +1373,12 @@ const intentOf = (o) => Object.assign({
     const POLS = [{ id: '@emptiest', label: '@emptiest', detail: 'most room' }, { id: '@pool', label: '@pool', detail: 'the campaign pool' }];
     push(Object.assign(data(CONVO.slice(), { batonView: null, policyRows: POLS }), { batonMaxLegs: 6 }));
     ok('S-82: a live run no baton touched offers ⑂ Attach relay', /id="c-baton-attach"/.test(status()) && !/c-baton-pass/.test(status()));
+    // The strip's hands: each panel names its subject in a title between the state line and the paragraph.
+    ok('the strip\'s panels open on a title — Attach relay, Attach files',
+        /id="c-baton-attach"[\s\S]*?<span class="af-tipt">Attach relay<\/span>/.test(status())
+        && /id="c-attach"[\s\S]*?<span class="af-tipt">Attach files<\/span>/.test(status()));
+    ok('…and the hands are frameless 15px chips, never boxed buttons around a 10px glyph',
+        /#c-status \.stchip \{[^}]*font-size:15px[^}]*border:0;/.test(allHtml()) && !/id="c-attach" title=/.test(status()));
     ok('…its strip is shut until pressed', relayStrip() === '');
     els['c-baton-attach'].listeners.click();
     ok('…pressed, the strip opens: the pool rules and a max-legs box naming the fleet setting',

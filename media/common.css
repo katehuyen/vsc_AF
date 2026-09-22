@@ -434,6 +434,12 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     font-size: 10px; opacity: .6; white-space: normal;
     border-bottom: 1px solid var(--vscode-widget-border, #4443);
 }
+/* The subject, read before the paragraph: small head (state) · title (what this is) · body. */
+.af-tipt {
+    display: block; margin-bottom: 4px;
+    font-size: 13px; font-weight: 600; line-height: 1.35; white-space: normal;
+    color: var(--vscode-foreground, #cccccc);
+}
 .af-tipb { display: block; }
 /* ‼️ U-81 — A BLOCK THAT HOSTS A PANEL DIMS ITSELF WITH A COLOUR, NEVER WITH
    `opacity`. MEASURED, on the Live Timeline's session cards: the panel sat

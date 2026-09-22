@@ -1288,6 +1288,25 @@ module.exports = {
             label: 'Console — stopped seven times: the panel lists five and says how many it left out',
             tip: 'tip-guard',
             data: guardData(7)
+        },
+        /** The strip's hands are frameless icon chips; every panel reads state · title · paragraph. */
+        {
+            id: 'console-continue-tip',
+            label: 'Console — ↪ Continue from handover, its panel open: the state line, then the title, then the paragraph',
+            tip: 'tip-continue',
+            data: quotaSignalData('handover')
+        },
+        {
+            id: 'console-relay-attach-tip',
+            label: 'Console — ⑂+ Attach relay before it is pressed, its panel open',
+            tip: 'tip-batonattach',
+            data: relayAttachData()
+        },
+        {
+            id: 'console-attach-tip',
+            label: 'Console — 📎 Attach files, its panel open',
+            tip: 'tip-attach',
+            data: relayAttachData()
         }
     ]
 };

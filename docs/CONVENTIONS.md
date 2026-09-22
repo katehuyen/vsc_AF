@@ -115,6 +115,14 @@ short readout of figures that will never grow.
 Say **"put an AFTip on it"**; the component ships to every page from
 `htmlShell`, so there is nothing to wire and no excuse to hand-roll one.
 
+**‼️ A PANEL THAT EXPLAINS A CONTROL OPENS ON A TITLE (U-81 follow-up).** The
+order is fixed: the small **head** (the state right now — MIRROR), then the
+**title** (`.af-tipt`, bold 13px: what this thing IS — `Pass now`, `Attach files`),
+then the paragraph. A paragraph that opens with `Pass now: …` makes the reader
+read a sentence to learn the subject. `AFTip.wrap(trigger, head, body, cls, attrs,
+title)`; on the Console `cardTip(trigger, head, body, cls, title)`. A readout of
+`Label: value` figures needs no title — its labels are the subject.
+
 **‼️ A BLANK LINE INSIDE A PANEL IS `AFTip.GAP`, NEVER `''` (audit A-12.9).**
 `AFTip.lines` drops an empty string, because that is how a caller writes a
 conditional line — so `''` cannot also mean "blank line here", and for as long
@@ -713,6 +721,11 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   removes the others before measuring and writes `<fixture>.sN.png` at the
   scene's own size. **The scene you photograph is the one that carries the thing
   you changed** — a montage's first scene is almost never it.
+- **‼️ A GLYPH IS JUDGED AT ITS OWN SIZE.** A 1400px scene scaled to fit a reader
+  leaves a status-row chip three pixels wide, so "is the icon legible?" cannot be
+  answered from it. `--scale N` shoots at N device pixels per CSS pixel and
+  `node test/crop_png.js <png> x,y,w,h` cuts the row out (box in the PNG's own
+  pixels; no dependencies).
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes

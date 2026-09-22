@@ -158,7 +158,7 @@ function main() {
     const args = process.argv.slice(2);
     const name = args[0];
     if (!name || name.startsWith('--')) {
-        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light] [--scene N] [--scenes]');
+        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light] [--scene N] [--scenes] [--scale N]');
         return;
     }
     const wIdx = args.indexOf('--width');
@@ -167,6 +167,8 @@ function main() {
     const listOnly = args.indexOf('--scenes') >= 0;
     const sIdx = args.indexOf('--scene');
     const scene = sIdx >= 0 ? Number(args[sIdx + 1]) : 0;
+    const zIdx = args.indexOf('--scale');
+    const scale = zIdx >= 0 ? Number(args[zIdx + 1]) || 1 : 1;
     if (sIdx >= 0 && !(scene > 0)) {
         console.error('--scene takes a 1-based scene number; --scenes lists them');
         process.exitCode = 1;
@@ -225,7 +227,9 @@ function main() {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-shoot-'));
     // ‼️ X-311 — the flags live in ONE file; a fresh profile launched without
     // them installs the machine's external extensions into %TEMP% on every run.
-    const common = headlessFlags(profile);
+    // `--scale N` shoots at N device pixels per CSS pixel, for test/crop_png.js
+    const common = headlessFlags(profile).map(f => (scale > 1 && f.startsWith('--force-device-scale-factor=')
+        ? '--force-device-scale-factor=' + scale : f));
     try {
         // PASS 1 — ask the laid-out page how tall it is and what its scenes are
         // called. Failing here is never silent: it falls back to the old fixed

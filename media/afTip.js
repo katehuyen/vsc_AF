@@ -12,7 +12,7 @@
 // scrolled, and scrolling is the whole point).
 //
 // Two shapes, one component:
-//   AFTip.wrap(trigger, head, body)  — wrap any inline trigger
+//   AFTip.wrap(trigger, head, body, cls, attrs, title)  — wrap any inline trigger
 //   AFTip.cell(attrs, inner, head, body) — a whole <td> becomes the trigger
 //
 // The body is TEXT, printed whole. The head is the one line of context that
@@ -59,9 +59,12 @@
         return n ? n.toLocaleString() + ' characters' : '';
     }
 
-    function panel(head, body) {
+    /** `title` names the thing under the pointer, between the head and the
+     *  paragraph, so the reader knows the subject before reading a word of it. */
+    function panel(head, body, title) {
         return '<span class="af-tip">'
             + (head ? '<span class="af-tiph">' + esc(head) + '</span>' : '')
+            + (title ? '<span class="af-tipt">' + esc(title) + '</span>' : '')
             + '<span class="af-tipb">' + esc(body) + '</span></span>';
     }
 
@@ -79,11 +82,11 @@
      * — in practice `data-aftip-anchor` (see `tip-free` below), which names the
      * block a free panel is measured against.
      */
-    function wrap(trigger, head, body, cls, attrs) {
+    function wrap(trigger, head, body, cls, attrs, title) {
         if (!String(body || '').trim()) { return trigger; }
         const a = String(attrs || '').trim();
         return '<span class="af-tipw' + (cls ? ' ' + esc(cls) : '') + '"' + (a ? ' ' + a : '') + '>'
-            + trigger + panel(head, body) + '</span>';
+            + trigger + panel(head, body, title) + '</span>';
     }
 
     /**

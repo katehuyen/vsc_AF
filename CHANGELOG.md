@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.634.0 - The Console status row's icons are legible, and every hover panel on it opens on a title (2026-09-22)
+
+- **Frameless icon chips.** The relay and handover hands on a card's status row
+  (↪ Continue from handover, ✕⑂ Stop chain, ⑂→ Pass now, ⑂+ Attach relay) were
+  10px glyphs inside a bordered box — the frame took the room and the ⑂ could
+  not be read. They are now frameless chips with a 15px glyph (a hover tint
+  shows they can be pressed), and 📎 Attach files joins them. `⑂ n` on the
+  strip is larger too.
+- **A title before the paragraph.** Every hover panel on the strip now reads:
+  the small state line, then a bold title saying what the thing is (Pass now,
+  Stop chain, Context window, 5-hour quota signal, Bridge guard…), then the
+  explanation — you know the subject before you read a word of it. 📎's panel
+  follows the attached count as it changes.
+
 ## 3.633.0 - The Console status row's hover panels are solid (U-81) (2026-09-22)
 
 - **No more reading the page through a panel.** The status row under the
