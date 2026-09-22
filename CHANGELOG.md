@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.632.0 - The Console status row is one quiet line again (2026-09-22)
+
+- **Signals are dots, hands are chips.** 3.631.0 put full-size buttons and
+  words on a card's status row — "Continue from handover", "⑂ Attach relay",
+  "CONVERGE ✓", "guard 1" — and squeezed its figures into three lines. The
+  context, quota and bridge-guard signals are now a 6px dot in their colour,
+  with the words one hover away; Continue from handover (↪), Stop chain (✕⑂),
+  Pass now (⑂→) and Attach relay (⑂+) are small chips, each named first in its
+  hover.
+
 ## 3.631.0 - A baton relay you start yourself: from the New-task form, the Console composer and a running card, with your own header on every leg (S-81, S-82) (2026-09-22)
 
 - **The run that opens a relay is leg 1 from its first turn (S-81).** A task

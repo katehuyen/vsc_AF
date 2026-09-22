@@ -335,6 +335,15 @@
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
         /* S-77: the relay leg is information, not a warning. */
         .batonsig { font-weight:600; color:var(--vscode-textLink-foreground); }
+        /* A signal on the status row is a 6px dot in its colour; its words are one hover away. */
+        .sigdot { display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
+            vertical-align:middle; margin:0 1px; }
+        /* The status row's relay and handover hands are CHIPS, never buttons: a
+           full button here squeezes the row's figures into three lines. */
+        .stchip { flex:none; font-size:10px; line-height:13px; padding:0 4px; min-width:0; height:auto;
+            border:1px solid var(--vscode-widget-border,#4443); border-radius:6px; background:none;
+            color:var(--vscode-textLink-foreground); cursor:pointer; }
+        .stchip:hover { background:var(--vscode-toolbar-hoverBackground,#5a5d5e50); }
         /* S-82: the attach strip under a card's status row, and the composer's relay chip. */
         #c-relay:empty { display:none; }
         #c-relay { justify-content:flex-end; }
@@ -1553,7 +1562,8 @@
         const cls = v.handedOver ? 'ctxsig done'
             : v.state === 'undelivered' ? 'ctxsig bad'
                 : v.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
-        return ` · <span class="${cls}">${C.esc(v.chip)}${v.handedOver ? ' ✓' : ''}</span>`;
+        // a 6px dot in the law's colour; the words are in the ctx panel it sits in
+        return ` <span class="${cls} sigdot" aria-label="${C.esc(v.chip + (v.handedOver ? ' ✓' : ''))}"></span>`;
     };
     /**
      * S-75 — THE ACCOUNT'S 5-HOUR WINDOW, its own chip and its own panel (ONE
@@ -1564,8 +1574,8 @@
         const q = s.contextSignalView && s.contextSignalView.quota;
         if (!q || !q.chip) { return ''; }
         const cls = q.state === 'undelivered' ? 'ctxsig bad' : q.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
-        return `${cardTip(`<span class="${cls}">${C.esc(q.chip)}</span>`, q.head,
-            window.AFTip.lines(q.lines || []), 'tip-quota')} · `;
+        return `${cardTip(`<span class="${cls} sigdot" aria-label="${C.esc(q.chip)}"></span>`, q.head,
+            window.AFTip.lines(q.lines || []), 'tip-quota')} `;
     };
     /** S-77 — this run's leg of a baton relay: `⑂ 3`, the chain in its panel. The words are the host's. */
     const batonChip = (s) => {
@@ -1582,8 +1592,8 @@
     const guardChip = (s) => {
         const v = s.bridgeGuardView;
         if (!v || !v.chip) { return ''; }
-        return `${cardTip(`<span class="bgsig">${C.esc(v.chip)}</span>`, v.head,
-            window.AFTip.lines(v.lines || []), 'tip-guard')} · `;
+        return `${cardTip(`<span class="bgsig sigdot" aria-label="${C.esc(v.chip)}"></span>`, v.head,
+            window.AFTip.lines(v.lines || []), 'tip-guard')} `;
     };
     /** MIRROR — the current value first, then what it means. */
     const ctxTip = (s) => {
@@ -5888,10 +5898,10 @@
         const lines = v.lines || [];
         const now = (v.handedOver && lines.find(l => /^Handed over: yes/.test(l)))
             || (v.level === 'handover' ? lines[0] : (qh && qh.lines[0])) || lines[0] || 'CONTEXT HANDOVER';
-        return cardTip('<button class="secondary" id="c-continue">Continue from handover</button>',
+        return cardTip('<button class="stchip" id="c-continue" aria-label="Continue from handover">↪</button>',
             now,
             window.AFTip.lines([
-                'Opens the composer for this agent with this card\'s whole setup — engine, model, '
+                'Continue from handover: opens the composer for this agent with this card\'s whole setup — engine, model, '
                     + 'effort, permission mode, sign-in, route, project — and the handover note as '
                     + 'the first message. Nothing starts until you press Send: change the account '
                     + 'first if this run stopped on its quota.',
@@ -5906,10 +5916,10 @@
     function batonStopBtnHtml(s) {
         const v = s.batonView;
         if (!v || !v.stoppable || !v.chainId) { return ''; }
-        return cardTip('<button class="secondary" id="c-baton-stop">✕ Stop chain</button>',
+        return cardTip('<button class="stchip" id="c-baton-stop" aria-label="Stop chain">✕⑂</button>',
             v.head,
             window.AFTip.lines([
-                'Stops every waiting or parked baton of chain ' + v.chainId + ' — no further leg opens. '
+                'Stop chain: stops every waiting or parked baton of chain ' + v.chainId + ' — no further leg opens. '
                     + 'Nothing is deleted: baton.status keeps each one as stopped, with the reason. '
                     + 'A run a baton already opened keeps running — end it on its own card.',
                 window.AFTip.GAP,
@@ -5928,18 +5938,18 @@
         if (!s.sessionId || dead) { return ''; }
         const T = window.AFTip;
         if (s.batonView) {
-            return cardTip('<button class="secondary" id="c-baton-pass">⑂ Pass now</button>',
+            return cardTip('<button class="stchip" id="c-baton-pass" aria-label="Pass now">⑂→</button>',
                 s.batonView.head,
                 T.lines([
-                    'Says the handover order into this run now, the one its context line would have sent: '
+                    'Pass now: says the handover order into this run now, the one its context line would have sent: '
                         + 'commit the clean progress, pass the baton (baton.pass) and end — the next leg opens once this session has ended. '
                         + 'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.',
                     T.GAP,
                     'The same words for an agent: console.send id=' + (s.id || '') + ' — the text is the host\'s (PASS NOW …).'
                 ]), 'tip-batonpass');
         }
-        return cardTip(`<button class="secondary" id="c-baton-attach"${relayOpen === s.id ? ' aria-expanded="true"' : ''}>⑂ Attach relay</button>`,
-            relayOpen === s.id ? 'Attach relay — the strip below is open' : 'Make this run leg 1 of a baton relay',
+        return cardTip(`<button class="stchip" id="c-baton-attach" aria-label="Attach relay"${relayOpen === s.id ? ' aria-expanded="true"' : ''}>⑂+</button>`,
+            relayOpen === s.id ? 'Attach relay — the strip below is open' : 'Attach relay — make this run leg 1 of a baton relay',
             T.lines([
                 'Sealed at once, without a restart: after that, its handover line says "pass the baton" instead of '
                     + '"write the note", and at its limit the work goes on in a fresh session on the chain\'s pool. '

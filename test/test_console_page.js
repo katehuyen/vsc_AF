@@ -1283,7 +1283,7 @@ const intentOf = (o) => Object.assign({
         lines: ['Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago, through the Claude live hook (PostToolUse).']
     }));
     ok('a delivered handover puts the law\'s word on the strip, in the stop colour',
-        /· <span class="ctxsig stop">HANDOVER<\/span>/.test(status()));
+        /<span class="ctxsig stop sigdot" aria-label="HANDOVER"><\/span>/.test(status()) && !/>HANDOVER</.test(status()));
     ok('…and the whole delivery is one hover away',
         /CONTEXT HANDOVER 41% delivered/.test(status()));
     push(sigged({
@@ -1291,19 +1291,19 @@ const intentOf = (o) => Object.assign({
         lines: ['Discipline signal: CONTEXT HANDOVER 44% — NEVER REACHED THIS RUN — 2m ago.']
     }));
     ok('‼️ a crossing the engine has no channel for is marked ✕, never left looking like silence',
-        /class="ctxsig bad">HANDOVER ✕</.test(status()));
+        /class="ctxsig bad sigdot" aria-label="HANDOVER ✕">/.test(status()));
     push(sigged({
         state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: true,
         lines: ['Handed over: yes — 30s ago — devir.md']
     }));
     ok('an order that was obeyed stops shouting and says so',
-        /class="ctxsig done">HANDOVER ✓</.test(status()));
+        /class="ctxsig done sigdot" aria-label="HANDOVER ✓">/.test(status()));
     // ‼️ S-64 (5/n) — THE LAW'S NEXT STEP IS ON THE CARD THAT STOPPED. A run
     // told to hand over (or whose note is found) is never resumed; the button
     // opens the composer with the same setup and the note as the first
     // message. Drawn only there — a quiet card has no handover to continue.
     ok('a handed-over card offers "Continue from handover" beside Open transcript',
-        /id="c-continue">Continue from handover</.test(status())
+        /id="c-continue" aria-label="Continue from handover">↪</.test(status())
         && status().indexOf('id="c-continue"') < status().indexOf('id="c-transcript"'));
     ok('…MIRROR: the tooltip opens with the state the card is in — the note that closed it',
         /Handed over: yes — 30s ago — devir\.md/.test(status()));
@@ -1337,7 +1337,7 @@ const intentOf = (o) => Object.assign({
             lines: ['Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago.'] }
     }));
     ok('a relay with a live baton offers ✕ Stop chain — after Continue, before Open transcript',
-        /id="c-baton-stop">✕ Stop chain</.test(status())
+        /id="c-baton-stop" aria-label="Stop chain">✕⑂</.test(status())
         && status().indexOf('id="c-continue"') < status().indexOf('id="c-baton-stop"')
         && status().indexOf('id="c-baton-stop"') < status().indexOf('id="c-transcript"'));
     ok('…MIRROR: its tooltip opens with the relay\'s state, then says what stops and what does not',
@@ -1358,7 +1358,7 @@ const intentOf = (o) => Object.assign({
     const relayStrip = () => (els['c-relay'] ? els['c-relay']._html : '');
     push(data(CONVO.slice(), { batonView: relay(true) }));
     ok('S-82: a runner of a relay offers ⑂ Pass now — and no Attach',
-        /id="c-baton-pass">⑂ Pass now</.test(status()) && !/c-baton-attach/.test(status()));
+        /id="c-baton-pass" aria-label="Pass now">⑂→</.test(status()) && !/c-baton-attach/.test(status()));
     posted.length = 0;
     els['c-baton-pass'].listeners.click();
     ok('…the press names THIS card and carries no words of its own — the order is the host\'s',

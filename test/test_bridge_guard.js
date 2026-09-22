@@ -228,7 +228,7 @@ console.log('\n== the Console strip draws it ==');
     const js = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
     ok('the chip is drawn from the host\'s view and nothing else', /const guardChip = \(s\) => \{\s*const v = s\.bridgeGuardView;/.test(js));
     ok('…on the session strip, beside the window figure', /\$\{guardChip\(s\)\}<span title="\$\{C\.esc\(spTip\)\}">/.test(js));
-    ok('…in an AFTip opening with the long form', /cardTip\(`<span class="bgsig">\$\{C\.esc\(v\.chip\)\}<\/span>`, v\.head,/.test(js));
+    ok('…in an AFTip opening with the long form', /cardTip\(`<span class="bgsig sigdot" aria-label="\$\{C\.esc\(v\.chip\)\}"><\/span>`, v\.head,/.test(js));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
