@@ -13,6 +13,7 @@
  * every rule is testable without a window (the same rule `accountPolicy.ts`
  * states at its top). `batonStore.ts` holds the file.
  */
+import { isPolicyId } from './accountPolicy';
 import { LaunchManifest, LaunchSurface } from './launchManifest';
 
 export type BatonState = 'armed' | 'waiting-end' | 'parked' | 'started' | 'stopped' | 'refused';
@@ -57,7 +58,7 @@ export interface BatonWant {
 export interface Baton {
     id: string;
     chainId: string;
-    /** 1 for the first handover of a chain */
+    /** 1 for the first handover of a chain; 0 is the first leg's seal (batonSeal.ts) */
     hop: number;
     prompt: string;
     from: BatonFrom;
@@ -194,7 +195,7 @@ export interface PassInput {
 }
 
 export type PassResult =
-    | { ok: true; baton: Baton; superseded: Baton[] }
+    | { ok: true; baton: Baton; superseded: Baton[]; poolKept?: string }
     | { ok: false; why: string };
 
 /**
@@ -219,6 +220,10 @@ export function passBaton(input: PassInput): PassResult {
     if (!src.ok) { return src; }
     const rnd = input.rnd ?? Math.random;
     const parent = input.prior.find(p => p.state === 'started' && p.toSessionId === src.from.sessionId);
+    // ‼️ S-81 — A CHAIN'S POOL IS SET ONCE (its first leg's seal, or its first
+    // pass) AND NEVER LEFT: a leg naming another account does not move it.
+    const pool = parent && isPolicyId(parent.want.account) ? parent.want.account : '';
+    const asked = s(input.account);
     const draft: Baton = {
         id: newBatonId(input.now, rnd),
         chainId: parent?.chainId ?? newChainId(input.now, rnd),
@@ -226,7 +231,7 @@ export function passBaton(input: PassInput): PassResult {
         prompt,
         from: src.from,
         inherit: src.inherit,
-        want: { surface: want as BatonSurfaceWant, account: s(input.account) || BATON_DEFAULT_ACCOUNT },
+        want: { surface: want as BatonSurfaceWant, account: pool || asked || BATON_DEFAULT_ACCOUNT },
         state: 'armed',
         why: 'recorded',
         ...(s(input.note) ? { note: s(input.note) } : {}),
@@ -241,7 +246,12 @@ export function passBaton(input: PassInput): PassResult {
         const r = moveBaton(p, 'stopped', `replaced by ${draft.id} — the session passed again`, input.now);
         if (r.ok) { superseded.push(r.baton); }
     }
-    return { ok: true, baton: accepted.baton, superseded };
+    return {
+        ok: true, baton: accepted.baton, superseded,
+        ...(pool && asked && asked !== pool
+            ? { poolKept: `account ${asked} was not used — chain ${draft.chainId} runs on its pool ${pool}, which no leg leaves.` }
+            : {})
+    };
 }
 
 const SURFACE_WORDS: Record<LaunchSurface, string> = {
@@ -263,7 +273,7 @@ export function batonPlanSentence(
     fmtTime: (t: number) => string = t => new Date(t).toISOString().slice(11, 16)
 ): string {
     const where = SURFACE_WORDS[successorSurface(b)] ?? successorSurface(b);
-    const chain = b.hop > 1 ? `hop ${b.hop} of chain ${b.chainId}` : `new chain ${b.chainId}`;
+    const chain = `hop ${b.hop} of chain ${b.chainId}`;
     const head = `Baton ${b.id} taken (${chain}). Nothing starts while session ${b.from.sessionId.slice(0, 8)} is alive — `
         + 'finish your last step and end your run now.';
     const acct = b.want.account;

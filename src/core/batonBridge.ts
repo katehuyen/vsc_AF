@@ -91,7 +91,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
     bridge.register([
         {
             op: 'baton.pass',
-            describe: 'S-66 — LEAVE THE BATON: the words your successor starts from, when this run is ending (5-hour quota or context wall — _REF/handover.md). It STARTS NOTHING: it records the baton against the calling session (found as sessions.whoami finds it — never from the folder), reads that session\'s sealed launch manifest for the successor\'s whole setup (engine, model, effort, permission, provider, superpowers, folder, project), and answers with `sentence` — what will happen when this session ENDS. A second pass from the same session replaces the first. args: prompt (required — the successor\'s first message), from? (a session id, when you are not the caller), surface? (inherit | console | terminal | headless; default inherit = the surface this run used), account? (default @emptiest), note? (a line for the person reading the chain, never sent to the successor). ‼️ The prompt is prose: never inline it in a shell command — write { "prompt": "…" } to a file with your Write tool and call: node af.js baton.pass "@baton.json". Refused as data (no session found, no launch id or manifest, empty prompt, unknown surface). ‼️ S-78: a pass past the leg ceiling (agentFarm.batonMaxHops) or after two legs in a row that left no new commit is answered with `braked` (ceiling | barren) and opens NOTHING — the baton is kept as stopped; write the handover note instead.',
+            describe: 'S-66 — LEAVE THE BATON: the words your successor starts from, when this run is ending (5-hour quota or context wall — _REF/handover.md). It STARTS NOTHING: it records the baton against the calling session (found as sessions.whoami finds it — never from the folder), reads that session\'s sealed launch manifest for the successor\'s whole setup (engine, model, effort, permission, provider, superpowers, folder, project), and answers with `sentence` — what will happen when this session ENDS. A second pass from the same session replaces the first. args: prompt (required — the successor\'s first message), from? (a session id, when you are not the caller), surface? (inherit | console | terminal | headless; default inherit = the surface this run used), account? (the pool the successor is placed from — used only while the chain has none: a chain whose first leg named a policy (tasks.add baton:true, S-81) or whose first pass did keeps that pool on every leg, and a different account here is answered in `poolKept`; default @emptiest), note? (a line for the person reading the chain, never sent to the successor). ‼️ The prompt is prose: never inline it in a shell command — write { "prompt": "…" } to a file with your Write tool and call: node af.js baton.pass "@baton.json". Refused as data (no session found, no launch id or manifest, empty prompt, unknown surface). ‼️ S-78: a pass past the leg ceiling (agentFarm.batonMaxHops) or after two legs in a row that left no new commit is answered with `braked` (ceiling | barren) and opens NOTHING — the baton is kept as stopped; write the handover note instead.',
             handler: async (args, from) => {
                 const who = await deps.caller(optStr(args, 'from') || undefined, from);
                 if (!who.ok) { throw new BridgeRefusal(who.why, { step: 'caller' }); }
@@ -134,13 +134,14 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                     baton: batonView(accepted),
                     owner: { sessionId: who.sessionId, source: who.source },
                     sentence: batonPlanSentence(accepted, deps.room?.(accepted), deps.fmtTime),
-                    superseded: res.superseded.map(b => b.id)
+                    superseded: res.superseded.map(b => b.id),
+                    ...(res.poolKept ? { poolKept: res.poolKept } : {})
                 };
             }
         },
         {
             op: 'baton.status',
-            describe: 'S-66 — THE BATONS: every live one (waiting for its session to end, or parked until a reset) and the chains they belong to, hop by hop — who passed, who was started, what each is waiting for, its wake time, the sentence of its last change. args: chain? (one chain id), session? (batons passed by or started for that session), limit? (chains, default 20, newest first)',
+            describe: 'S-66 — THE BATONS: every live one (waiting for its session to end, or parked until a reset) and the chains they belong to, hop by hop — who passed, who was started (hop 0 is the seal of the leg that opened the chain, S-81), what each is waiting for, its wake time, the sentence of its last change. args: chain? (one chain id), session? (batons passed by or started for that session), limit? (chains, default 20, newest first)',
             handler: (args) => {
                 const chain = optStr(args, 'chain');
                 const session = optStr(args, 'session');

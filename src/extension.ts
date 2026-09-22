@@ -8102,7 +8102,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'opens the next one. A round is a REPLY, so a run with no conversation bound to it (see '
                 + 'sessions.bindings) opens none and says so on the record rather than starting a fresh '
                 + 'conversation with a prompt written for a context it does not have; a failed or cancelled '
-                + 'run ends the chain. Read `round` / `rounds` / `roundsLeft` in the answer)',
+                + 'run ends the chain. Read `round` / `rounds` / `roundsLeft` in the answer), '
+                + 'baton? (‼️ S-81 — true = THIS RUN OPENS A BATON RELAY: once its session is known it is sealed '
+                + 'as leg 1 of a new chain, so its handover whisper says "pass the baton" rather than "write a '
+                + 'note", the card and the status bar draw ⑂ 1, and the chain\'s POOL is the `account` named '
+                + 'here when it is a policy (@…) — every later leg is placed from that pool and never leaves '
+                + 'it; a single slot or none means @emptiest. baton.status shows the seal as hop 0), '
+                + 'chainId? (a name for that chain — implies baton:true; refused at the seal if a chain '
+                + 'with that id already has legs)',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const effort = optStr(args, 'effort') ?? '';
@@ -8226,6 +8233,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // nonsense wait are refused identically at both doors.
                         ...(normalizeRounds(args.rounds).length
                             ? { rounds: normalizeRounds(args.rounds) } : {}),
+                        // ‼️ S-81 — this run opens a baton relay; naming its chain says so too
+                        ...(args.baton === true || optStr(args, 'chainId') ? { baton: true } : {}),
+                        ...(optStr(args, 'chainId') ? { batonChainId: optStr(args, 'chainId') as string } : {}),
                         // ‼️ S-19 — LAST, so the session's own engine and folder
                         // beat anything the caller stated about them.
                         ...resumeExtra
@@ -8249,6 +8259,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // back so a caller never has to trust that its id landed.
                     resume: task.resumeSessionId ?? null,
                     resumedFrom: task.resumedFrom ?? null,
+                    baton: task.baton ? { chainId: task.batonChainId ?? null, sealed: 'when its session is known' } : null,
                     agent: task.agentName, mode: task.mode,
                     engine: task.engine ?? 'claude',
                     // …and what that engine means for the figures this caller
@@ -16553,7 +16564,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         },
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key }),
-        fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        // S-81 — a running row that asked to open a relay is sealed as its leg 1
+        firstLegs: () => taskManager.tasks
+            .filter(t => t.baton && t.status === 'running' && successorSessionOf(t))
+            .map(t => ({
+                taskId: t.id, sessionId: successorSessionOf(t)!, launchId: t.launchId,
+                chainId: t.batonChainId, account: t.account, title: t.title
+            })),
+        manifestOf: launchId => manifestOf(launchManifests(), { launchId }),
+        headOf: cwd => headCommit(cwd)
     });
     // S-77 — ONE status-bar item for the relay running right now; hidden while none runs.
     const batonBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);

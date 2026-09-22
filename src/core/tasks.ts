@@ -237,6 +237,10 @@ export interface FarmTask {
      * could not be resolved: an honest gap, never a nearest match.
      */
     launchId?: string;
+    /** ‼️ S-81 — this run opens a baton relay: sealed as leg 1 once its session is known (core/batonSeal.ts). */
+    baton?: boolean;
+    /** S-81 — the chain it opens, when the caller named one; absent = a new `chn_…`. */
+    batonChainId?: string;
     /**
      * ‼️ M-26 — WHERE THIS INTERACTIVE RUN OPENS, and what it does once the
      * agent has answered. Both are ignored on a headless run, and both are
@@ -2976,7 +2980,7 @@ export class TaskManager implements vscode.Disposable {
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
-            | 'sentryWhy' | 'account' | 'accountHandover'>>
+            | 'sentryWhy' | 'account' | 'accountHandover' | 'baton' | 'batonChainId'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of

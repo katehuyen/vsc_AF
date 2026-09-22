@@ -7,6 +7,7 @@
  * Pure: the list and the clock come in, nothing is read.
  */
 import { Baton, isLive } from './baton';
+import { isSeal } from './batonSeal';
 
 export interface BatonCardView {
     chainId: string;
@@ -107,7 +108,7 @@ export function batonCardView(list: readonly Baton[], sessionId: string): BatonC
     const sid = String(sessionId ?? '').trim();
     if (!sid) { return undefined; }
     const opener = list.find(b => b.state === 'started' && b.toSessionId === sid);
-    const left = [...list].filter(b => b.from.sessionId === sid).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    const left = [...list].filter(b => b.from.sessionId === sid && !isSeal(b)).sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const anchor = opener ?? left;
     if (!anchor) { return undefined; }
     const chainId = anchor.chainId;
@@ -116,7 +117,7 @@ export function batonCardView(list: readonly Baton[], sessionId: string): BatonC
     const legs = Math.max(leg, ...chain.map(b => b.hop + (b.state === 'started' ? 1 : 0)));
     const lines = [
         `Chain: ${chainId} — leg ${leg} of ${legs} so far.`,
-        opener
+        opener && !isSeal(opener)
             ? `Predecessor: session ${short(opener.from.sessionId)} (${opener.from.agentId.split(/[\\/]/).pop()} · ${opener.from.engine}) passed the baton to this run.`
             : 'Predecessor: none — this run started the chain.',
         left ? nextLine(left) : 'Successor: none yet — this run has not passed the baton.'

@@ -16,7 +16,9 @@
  * store and a clock, so every rule is testable without a window.
  */
 import { Baton, isLive, moveBaton } from './baton';
+import { FirstLeg, sealFirstLeg } from './batonSeal';
 import { BatonStore } from './batonStore';
+import { LaunchManifest } from './launchManifest';
 
 /** What the live monitor holds for a session. */
 export type LiveKnowledge = 'alive' | 'ended' | 'unknown';
@@ -83,6 +85,11 @@ export interface BatonRunnerDeps {
     fmtTime?: (t: number) => string;
     now?: () => number;
     log?: (line: string) => void;
+    /** S-81 — task rows that asked to open a relay and whose session is known */
+    firstLegs?: () => FirstLeg[];
+    manifestOf?: (launchId: string) => LaunchManifest | undefined;
+    /** the folder's git HEAD, recorded on the seal for the barren brake */
+    headOf?: (cwd: string) => Promise<string | undefined>;
 }
 
 /** A baton on a task row: the row's session becomes the successor. */
@@ -136,9 +143,9 @@ export class BatonRunner {
      * a refusal, with the row's own last word as the reason.
      */
     follow(): Baton[] {
+        const changed: Baton[] = this.seal();
         const read = this.deps.task;
-        if (!read) { return []; }
-        const changed: Baton[] = [];
+        if (!read) { return changed; }
         for (const b of this.deps.store.all()) {
             if (!isLive(b) || !b.taskId || b.toSessionId) { continue; }
             const t = read(b.taskId);
@@ -154,6 +161,32 @@ export class BatonRunner {
             }
         }
         return changed;
+    }
+
+    private readonly unsealable = new Set<string>();
+
+    /**
+     * S-81 — every first leg whose session is now known gets its seal, so the
+     * run that started the chain is leg 1 of it from its first turn on. A row
+     * that cannot be sealed (no manifest, a chain name already taken) is said
+     * once in the log and not asked again.
+     */
+    seal(): Baton[] {
+        const sealed: Baton[] = [];
+        for (const leg of this.deps.firstLegs?.() ?? []) {
+            if (!leg.launchId || this.unsealable.has(leg.taskId)) { continue; }
+            const r = sealFirstLeg({ leg, manifest: this.deps.manifestOf?.(leg.launchId), prior: this.deps.store.all(), now: this.now() });
+            if (!r) { continue; }
+            if (!r.ok) { this.unsealable.add(leg.taskId); this.log(r.why); continue; }
+            this.deps.store.put(r.baton);
+            sealed.push(r.baton);
+            this.log(`baton ${r.baton.id}: ${r.baton.why}`);
+            const seal = r.baton;
+            void this.deps.headOf?.(seal.from.cwd)
+                .then(head => { if (head) { this.deps.store.put({ ...seal, head }); } })
+                .catch(() => undefined);
+        }
+        return sealed;
     }
 
     /**
