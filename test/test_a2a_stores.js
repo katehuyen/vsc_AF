@@ -149,6 +149,55 @@ try {
     ok('‼️ sweep past the ttl drops the resolved one and keeps the open one',
         notes.sweep(3000) === 1 && !notes.get(soon.id) && !!notes.get(openButOld.id));
 
+    // ---------- S-84: the board has a lifecycle, and the pin outranks it ----------
+    const H = require(path.join(__dirname, '..', 'out', 'core', 'a2aHygiene.js'));
+    const hy = (over = {}) => N.normaliseNote({ id: 'h', ts: 0, category: 'info', ...over });
+    ok('a resolved note is swept 48 hours after it was RESOLVED, not after it was written',
+        !H.sweepable(hy({ resolved: true, resolvedAt: 1000 }), 1000 + H.RESOLVED_SWEEP_MS - 1)
+        && H.sweepable(hy({ resolved: true, resolvedAt: 1000 }), 1000 + H.RESOLVED_SWEEP_MS));
+    ok('…and a resolved row from an older build counts from when it was written',
+        H.sweepable(hy({ ts: 1000, resolved: true }), 1000 + H.RESOLVED_SWEEP_MS));
+    ok('an open note is never swept, however old', !H.sweepable(hy({ ts: 0 }), 1e12));
+    ok('‼️ an expired BATON card goes whether or not anybody resolved it',
+        H.sweepable(hy({ category: 'baton', expiresAt: 500 }), 600)
+        && !H.sweepable(hy({ category: 'info', expiresAt: 500 }), 600));
+    ok('‼️ A PINNED NOTE IS NEVER SWEPT — not resolved, not expired, not a baton',
+        !H.sweepable(hy({ pinned: true, resolved: true, resolvedAt: 0, expiresAt: 1 }), 1e12)
+        && !H.sweepable(hy({ pinned: true, category: 'baton', expiresAt: 1 }), 1e12));
+    ok('baton is a category of its own', N.A2A_CATEGORIES.includes('baton')
+        && N.makeNote({ fromAgent: 'x', title: 't', category: 'baton' }, 1).category === 'baton');
+
+    const keep = notes.add({ fromAgent: 'developer', title: 'pin me', project: 'AF' });
+    notes.pin(keep.id);
+    ok('a pin is on the row, and comes off again',
+        notes.get(keep.id).pinned === true
+        && !('pinned' in notes.pin(keep.id, false)) && notes.pin(keep.id).pinned === true);
+    notes.resolve(keep.id, true, 1000);
+    ok('the sweep spares it even once every rule says otherwise',
+        notes.sweep(1e12) >= 0 && !!notes.get(keep.id));
+    ok('…and clear spares it too, unless the user says they meant it',
+        notes.clear({ topic: '*' }) >= 0 && !!notes.get(keep.id));
+    ok('‼️ deleting by hand is the one way a pinned note goes',
+        notes.remove([keep.id]) === 1 && !notes.get(keep.id));
+
+    const chain = 'chn_test';
+    const legs = [1, 2, 3].map(i => notes.add({
+        fromAgent: 'developer', title: `leg ${i}`, project: 'AF', topic: chain, category: 'baton'
+    }));
+    ok('a finished chain stamps a ttl on every one of its cards',
+        notes.expire(legs.map(l => l.id), 4000) === 3
+        && notes.notes.filter(n => n.topic === chain).every(n => n.expiresAt === 4000));
+    ok('…and the sweep clears the race a day later, unresolved cards and all',
+        notes.sweep(5000) === 3 && notes.notes.filter(n => n.topic === chain).length === 0);
+    const mixed = [
+        notes.add({ fromAgent: 'developer', title: 'open', project: 'AF', topic: 'ui' }),
+        notes.add({ fromAgent: 'developer', title: 'closed', project: 'AF', topic: 'ui' })
+    ];
+    notes.resolve(mixed[1].id);
+    ok('clear resolvedOnly takes the closed half and leaves the open one',
+        notes.clear({ topic: 'ui', resolvedOnly: true }) === 1
+        && !!notes.get(mixed[0].id) && !notes.get(mixed[1].id));
+
     // ---------- tasks: the claim is the whole point ----------
     const task = (over = {}) => T.makeTask({ fromAgent: 'developer', title: 't', ...over }, 1000);
     ok('a new task is queued and unclaimed',

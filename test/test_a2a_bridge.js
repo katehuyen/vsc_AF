@@ -66,6 +66,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         // ---------- the catalogue ----------
         const cat = (await call('farm.ops')).result.map(o => o.op);
         for (const op of ['a2a.notes.post', 'a2a.notes.list', 'a2a.notes.get', 'a2a.notes.resolve', 'a2a.notes.sweep',
+            'a2a.notes.pin', 'a2a.notes.delete', 'a2a.notes.deleteMany', 'a2a.notes.clear',
             'a2a.tasks.add', 'a2a.tasks.fromNote', 'a2a.tasks.list', 'a2a.tasks.next', 'a2a.tasks.claim',
             'a2a.tasks.heartbeat', 'a2a.tasks.finish', 'a2a.tasks.cancel', 'a2a.tasks.handoff',
             'a2a.directive.set', 'a2a.directive.remove', 'a2a.tasks.reroute', 'a2a.tasks.runNow', 'a2a.status']) {
@@ -306,6 +307,43 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         ok('cancel stops a task and records why', cancelled.ok && cancelled.result.state === 'cancelled' && cancelled.result.resultSummary === 'moot');
 
         ok('every write told the host something changed', changes >= 25);
+
+        // ---------- S-84: pin, delete, clear — the hand on the board ----------
+        {
+            const post = async (over) => (await call('a2a.notes.post',
+                { agent: 'developer', project: '*', title: 'h', ...over })).result;
+            const pinned = await post({ title: 'keep me' });
+            const p = await call('a2a.notes.pin', { id: pinned.id });
+            ok('a2a.notes.pin puts the user\'s exemption on the row', p.ok && p.result.pinned === true);
+            ok('…and pinned=false takes it off', (await call('a2a.notes.pin', { id: pinned.id, pinned: false })).result.pinned === undefined);
+            await call('a2a.notes.pin', { id: pinned.id });
+            ok('pinning a note that is not there is refused by id',
+                !(await call('a2a.notes.pin', { id: 'nnope' })).ok);
+
+            const batons = [];
+            for (const leg of [1, 2]) {
+                batons.push(await post({ title: `leg ${leg}`, topic: 'chn_x', category: 'baton' }));
+            }
+            ok('a baton card is posted under its own category', batons[0].category === 'baton');
+            const cleared = await call('a2a.notes.clear', { topic: 'chn_x' });
+            ok('a2a.notes.clear takes one race off the board by its chain id',
+                cleared.ok && cleared.result.deleted === 2);
+
+            const doomed = [await post({ title: 'a' }), await post({ title: 'b' })];
+            const many = await call('a2a.notes.deleteMany', { ids: [doomed[0].id, doomed[1].id, 'nnope'] });
+            ok('a2a.notes.deleteMany deletes what is there and NAMES what was not',
+                many.ok && many.result.deleted === 2 && many.result.missing.join() === 'nnope');
+            ok('deleteMany with no ids is refused rather than clearing the board',
+                !(await call('a2a.notes.deleteMany', { ids: [] })).ok);
+
+            const before = notes.notes.length;
+            const wipe = await call('a2a.notes.clear', {});
+            ok('‼️ clear spares the pinned note — nothing automatic removes one',
+                wipe.ok && wipe.result.deleted === before - 1 && !!notes.get(pinned.id));
+            const gone = await call('a2a.notes.delete', { id: pinned.id });
+            ok('‼️ …and a2a.notes.delete is the one door it goes through',
+                gone.ok && gone.result.deleted === 1 && !notes.get(pinned.id));
+        }
 
         // ---------- the extension wires it ----------
         {

@@ -1,3 +1,4 @@
+import { registerA2AHygieneOps } from './a2aHygiene';
 import { CAPABILITY_RE, normaliseCapabilities, PREFERRED_GRACE_MS } from './a2aMatch';
 import { A2ANotesStore, A2A_CATEGORIES, A2A_STRICTNESS, A2ACategory, A2ANote, A2AStrictness, directiveBlock, HumanDirective, NoteQuery } from './a2aNotes';
 import { registerA2ASupervisorOps, A2ASupervisorDeps } from './a2aSupervisor';
@@ -169,6 +170,10 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         capabilities: capabilitiesArg
     });
 
+    // S-84 — pin, delete, clear: the board's hygiene, from the file that holds
+    // the rules the sweep applies.
+    registerA2AHygieneOps(bridge, deps, { noteById, changed, listArg });
+
     bridge.register([
         // ---------------------------------------------------------------- notes
         {
@@ -183,7 +188,8 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 + 'MODE, the role is what strictness is about: hard shows it only to the role named, preferred keeps it '
                 + 'for that role for agentFarm.a2a.preferredGraceHours then opens it to the project ranked below an '
                 + 'exact fit, any opens it to the project at once), category? (info | warning | '
-                + 'convention | discovery | result, default info), contextFiles? (string[] | csv of paths worth opening), '
+                + 'convention | discovery | result | baton — baton is a relay\'s own handover card and the board can '
+                + 'hide or isolate them, default info), contextFiles? (string[] | csv of paths worth opening), '
                 + 'ttlHours? (after which it is history; omitted = never). Answers the note and `projectFrom` when the '
                 + 'host filled the project in.',
             handler: (args, from) => {
@@ -258,8 +264,10 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         },
         {
             op: 'a2a.notes.sweep',
-            describe: 'N-4 — DROP THE NOTES THAT ARE BOTH RESOLVED AND PAST THEIR TTL — history the board no longer '
-                + 'owes. Nothing unresolved and nothing without a ttl is touched. args: none. Answers how many went.',
+            describe: 'N-4 · S-84 — DROP WHAT THE BOARD NO LONGER OWES: a note resolved more than 48 hours ago, '
+                + 'anything resolved and past its ttl, and a relay card (category baton) whose ttl has passed whether '
+                + 'or not anybody resolved it. ‼️ A PINNED NOTE IS NEVER SWEPT — a2a.notes.delete is the only way one '
+                + 'goes. args: none. Answers how many went.',
             handler: () => {
                 deps.notes.load();
                 const dropped = deps.notes.sweep();

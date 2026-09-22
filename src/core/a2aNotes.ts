@@ -1,5 +1,6 @@
 import { byFit, fit } from './a2aMatch';
 import { a2aId, Envelope, readEnvelope, withLock, writeEnvelope } from './a2aStore';
+import { ClearFilter, clearable, sweepable } from './a2aHygiene';
 
 /**
  * N-3 — WHAT ONE AGENT LEAVES FOR ANOTHER TO READ. A note is PASSIVE: nobody
@@ -19,8 +20,12 @@ import { a2aId, Envelope, readEnvelope, withLock, writeEnvelope } from './a2aSto
  *   any       — the coordinates are a label; anyone may read it
  */
 
-export type A2ACategory = 'info' | 'warning' | 'convention' | 'discovery' | 'result';
-export const A2A_CATEGORIES: A2ACategory[] = ['info', 'warning', 'convention', 'discovery', 'result'];
+/**
+ * S-84 — `baton` is a relay's own handover card, kept apart from fleet traffic
+ * so a race can be hidden, isolated or swept on rules of its own.
+ */
+export type A2ACategory = 'info' | 'warning' | 'convention' | 'discovery' | 'result' | 'baton';
+export const A2A_CATEGORIES: A2ACategory[] = ['info', 'warning', 'convention', 'discovery', 'result', 'baton'];
 
 export type A2AStrictness = 'hard' | 'preferred' | 'any';
 export const A2A_STRICTNESS: A2AStrictness[] = ['hard', 'preferred', 'any'];
@@ -73,6 +78,10 @@ export interface A2ANote {
     /** epoch ms after which the note is history; 0 = it does not expire */
     expiresAt: number;
     resolved: boolean;
+    /** when it was resolved — what the 48-hour hygiene sweep counts from */
+    resolvedAt?: number;
+    /** S-84 — the user's exemption: a pinned note is never swept, only deleted by hand */
+    pinned?: boolean;
     /** who has read it — a note is passive, so this is the only "state" it has */
     readBy: string[];
 }
@@ -145,6 +154,8 @@ export function normaliseNote(row: Partial<A2ANote> & { id: string }): A2ANote {
         ...(row.humanDirective ? { humanDirective: row.humanDirective } : {}),
         expiresAt: typeof row.expiresAt === 'number' ? row.expiresAt : 0,
         resolved: row.resolved === true,
+        ...(typeof row.resolvedAt === 'number' ? { resolvedAt: row.resolvedAt } : {}),
+        ...(row.pinned === true ? { pinned: true } : {}),
         readBy: Array.isArray(row.readBy) ? row.readBy : []
     };
 }
@@ -240,11 +251,64 @@ export class A2ANotesStore {
         });
     }
 
-    resolve(id: string, resolved = true): A2ANote | undefined {
+    resolve(id: string, resolved = true, now = Date.now()): A2ANote | undefined {
         return this.mutate(notes => {
-            const out = notes.map(n => n.id === id ? { ...n, resolved } : n);
+            const out = notes.map(n => {
+                if (n.id !== id) { return n; }
+                const { resolvedAt: _was, ...rest } = n;
+                return resolved ? { ...rest, resolved, resolvedAt: now } : { ...rest, resolved };
+            });
             return { notes: out, out: out.find(n => n.id === id) };
         });
+    }
+
+    /** S-84 — the user's exemption from every automatic sweep; only a hand takes it off. */
+    pin(id: string, pinned = true): A2ANote | undefined {
+        return this.mutate(notes => {
+            const out = notes.map(n => {
+                if (n.id !== id) { return n; }
+                const { pinned: _was, ...rest } = n;
+                return pinned ? { ...rest, pinned: true } : rest;
+            });
+            return { notes: out, out: out.find(n => n.id === id) };
+        });
+    }
+
+    /** S-84 — stamp a ttl on notes by id: what a finished chain does to its own cards. */
+    expire(ids: string[], at: number): number {
+        const want = new Set(ids);
+        return this.mutate(notes => {
+            let hit = 0;
+            const out = notes.map(n => {
+                if (!want.has(n.id)) { return n; }
+                hit++;
+                return { ...n, expiresAt: at };
+            });
+            return { notes: out, out: hit };
+        }) ?? 0;
+    }
+
+    /**
+     * S-84 — delete by hand, which is the one way a PINNED note goes. Everything
+     * automatic (`sweep`) spares them; a person asking by id does not.
+     */
+    remove(ids: string[]): number {
+        const want = new Set(ids);
+        return this.mutate(notes => {
+            const out = notes.filter(n => !want.has(n.id));
+            return { notes: out, out: notes.length - out.length };
+        }) ?? 0;
+    }
+
+    /**
+     * S-84 — clear the board, or the part of it a filter names. Pinned notes stay
+     * unless `includePinned` says the user meant them too.
+     */
+    clear(filter: ClearFilter = {}): number {
+        return this.mutate(notes => {
+            const out = notes.filter(n => !clearable(n, filter));
+            return { notes: out, out: notes.length - out.length };
+        }) ?? 0;
     }
 
     /** The user's word, which every agent treats as the highest rule there is; `undefined` takes it off. */
@@ -259,13 +323,14 @@ export class A2ANotesStore {
         });
     }
 
-    /** Drop what has expired AND been resolved — history the board no longer owes. */
+    /**
+     * Drop what the board no longer owes — the rules are `a2aHygiene.sweepable`,
+     * and a pinned note is never one of them.
+     */
     sweep(now = Date.now()): number {
-        const before = this.notes.length;
-        const kept = this.mutate(notes => {
-            const out = notes.filter(n => !(n.resolved && n.expiresAt && n.expiresAt <= now));
-            return { notes: out, out: out.length };
-        });
-        return kept === undefined ? 0 : before - kept;
+        return this.mutate(notes => {
+            const out = notes.filter(n => !sweepable(n, now));
+            return { notes: out, out: notes.length - out.length };
+        }) ?? 0;
     }
 }
