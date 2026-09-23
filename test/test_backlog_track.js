@@ -155,6 +155,48 @@ const RECORDS = [
         T.reconcileOutside(items, RECORDS.concat(found), T0 + 10 * DAY).length === 0);
 }
 
+// ---------- ‼️ X-357: a code born straight in the file gets a birth ----------
+{
+    // the snapshot of the LAST read: K-9 was not in the file then
+    const before = new Map([['K-8', 'x'], ['K-10', 'x'], ['K-11', 'x']]);
+    const saved = T0 + 5 * DAY;
+    const found = T.reconcileOutside(items, RECORDS, T0 + 9 * DAY, before, saved);
+    const born = found.find(r => r.code === 'K-9');
+    ok('‼️ X-357: a code that was not in the last read is born', !!born && born.event === 'opened');
+    ok('…from outside, with no session to name', born && born.by === 'outside' && born.uncertain === 'none');
+    ok('…dated by the file\'s last save, the latest it can have been written', born && born.ts === saved);
+    ok('…and says how it was dated', born && /file's last save/.test(born.note));
+    ok('a save time LATER than now is not trusted — now is used',
+        T.reconcileOutside(items, RECORDS, T0 + 9 * DAY, before, T0 + 99 * DAY)
+            .find(r => r.code === 'K-9').ts === T0 + 9 * DAY);
+    ok('no save time → when it was noticed',
+        /when it was noticed/.test(T.reconcileOutside(items, RECORDS, T0 + 9 * DAY, before).find(r => r.code === 'K-9').note));
+    ok('‼️ no snapshot (a first read) stamps nothing — old undated lines are not "new today"',
+        !T.reconcileOutside(items, RECORDS, T0 + 9 * DAY).some(r => r.event === 'opened'));
+    ok('a code the last read already had is not re-born',
+        !T.reconcileOutside(items, RECORDS, T0 + 9 * DAY, new Map([...before, ['K-9', 'x']])).some(r => r.code === 'K-9'));
+    ok('it is born once: with its birth on the ledger nothing more is written',
+        !T.reconcileOutside(items, RECORDS.concat(found), T0 + 10 * DAY, before).some(r => r.code === 'K-9'));
+    ok('an item born already ticked is recorded as closed, not opened',
+        found.find(r => r.code === 'K-11').event === 'done');
+
+    // ‼️ the exclusion trap: a NOTICED record is kept out of the dates — but a
+    // birth is the only date such a line will ever have
+    const sum = T.summarizeCode('K-9', [born]);
+    ok('‼️ X-357: summarizeCode dates the item by its birth', sum.firstTs === saved && sum.lastTs === saved);
+    const done = { code: 'K-9', event: 'done', ts: saved + DAY, by: 'outside', uncertain: 'none' };
+    ok('…while a noticed CLOSING is still kept out of the dates (X-135 unchanged)',
+        T.summarizeCode('K-9', [born, done]).lastTs === saved);
+
+    // the wiring: the pass hands the file's own save time, and a record it
+    // appends reaches an open page
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('X-357: refreshBacklogLog hands the backlog\'s mtime to the reconciler',
+        /reconcileOutside\(items, records, Date\.now\(\), outsideSeen\.get\(folder\), backlog\.mtimeMs\)/.test(src));
+    ok('X-357: a pass that appended records tells the open page',
+        /appendTrack\(trackLedgerOf\(folder\), missed\);\s*records = records\.concat\(missed\);[\s\S]{0,200}projectDocWritten\(projectId\);/.test(src));
+}
+
 // ---------- backfill: a clue, or nothing ----------
 {
     // The evidence a transcript search produces: the code was WRITTEN in that turn.

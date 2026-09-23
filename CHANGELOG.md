@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.645.0 - A backlog line typed straight into the file is dated from the moment it appears (X-357) (2026-09-23)
+
+- **Born in the file, dated in the file (X-357).** An item written or pasted
+  straight into `Backlog.md` passed no door that records `opened`, so it had no
+  date and both time orderings sank the newest thing in the file to the
+  bottom (X-339…X-343 sat at 731–735). The outside reconciler now records a
+  birth for a code that was not in the file the last time it was read —
+  dated by the file's own last save when that is earlier than the moment it was
+  noticed, and never on a first read, so old undated lines are not all "new
+  today". `summarizeCode` keeps a noticed birth in the dates (a noticed closing
+  is still kept out, X-135), and a pass that appended records refreshes an open
+  Projects page.
+- **The ones already undated can be dated from git.** `projects.tracks.backfill`
+  (and the Track tab's ⚕) now has a second clue besides the transcripts: when
+  the project folder is under git, an item with no `opened` of its own gets one
+  at the first commit whose backlog diff adds its line — earlier than anything
+  its ledger holds, or not at all — stamped `backfill` / `guess`, counted as
+  `births`. One `git log` per run (measured: 1 s, 193 commits on the vault).
+
 ## 3.644.0 - A turn waiting on its own background command is no longer "your turn" (U-148), and the test suite stops calling a real model (X-361) (2026-09-23)
 
 - **Waiting on background is its own state (U-148).** When a turn ends while a

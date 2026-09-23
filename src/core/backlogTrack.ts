@@ -572,7 +572,11 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
     // null, and the item sorted as though nobody had ever recorded it — which
     // is precisely the hole `opened` was added to close. So the exclusion is
     // narrowed to what its own reason describes: records that were NOTICED.
-    const timed = mine.filter(r => !(r.uncertain === 'none' && NOTICED.includes(r.by)));
+    //
+    // ‼️ X-357 — EXCEPT A BIRTH. An `opened` noticed from outside is the only
+    // date a line typed straight into the file will ever have; its time is an
+    // upper bound on when it was written, which is what an ordering needs.
+    const timed = mine.filter(r => r.event === 'opened' || !(r.uncertain === 'none' && NOTICED.includes(r.by)));
     return {
         code,
         runs, loose,
@@ -722,16 +726,40 @@ export function reconcileOutside(
      * the old wording is the one that is kept. See `TrackRecord.prevGuess` for
      * what happens when there is no snapshot.
      */
-    seen?: Map<string, string>
+    seen?: Map<string, string>,
+    /**
+     * ‼️ X-357 — the backlog file's own last write. A line that appeared in it
+     * was written by then at the latest, which is a tighter bound than the
+     * moment we noticed (a window that was closed notices hours late).
+     */
+    writtenBy?: number
 ): TrackRecord[] {
     const out: TrackRecord[] = [];
     for (const item of items) {
         if (!item.code) { continue; }
         const mine = records.filter(r => r.code === item.code);
+        // ‼️ X-357 — A CODE BORN IN THE FILE. Typed or pasted straight into the
+        // backlog, it never passed a door that writes `opened`, so both time
+        // orderings sank the newest item to the bottom. It is a birth only when
+        // the snapshot of the last read exists AND lacks it — without one (a
+        // first read) every old undated line would be stamped "new" today.
+        if (!mine.length && isLive(item.state)) {
+            if (seen && !seen.has(item.code)) {
+                const at = writtenBy && writtenBy > 0 && writtenBy < now ? writtenBy : now;
+                out.push({
+                    code: item.code, event: 'opened', ts: at,
+                    by: 'outside', uncertain: 'none',
+                    note: at < now
+                        ? 'added outside Agent Farm, straight into the file; dated by the file\'s last save, the latest it can have been written'
+                        : 'added outside Agent Farm, straight into the file; this is when it was noticed'
+                });
+            }
+            continue;
+        }
         let implied: BacklogState | undefined;
         for (const r of mine) { implied = stateOfEvent(r.event) ?? implied; }
-        // Nothing recorded and nothing to record: an untouched open item has no
-        // history, and inventing a row saying so would fill the log with noise.
+        // Nothing recorded and nothing to record: an item with history that is
+        // still open where the history left it has nothing new to say.
         if (implied === undefined && isLive(item.state)) { continue; }
         if (implied === item.state) { continue; }
         const event: TrackEvent = item.state === 'done' ? 'done'

@@ -342,6 +342,7 @@ import {
     renameProjectFolder, resolveInFolder, scanProjectFolder, scanProjectsRoot, scanRoles,
     tracksFolder, writeBrief, writeProjectDoc
 } from './core/projectDocs';
+import { birthLogArgs, birthsFromHistory, firstAddedByCode } from './core/backlogBirth';
 import {
     appendTrack, backfillFromHits, BacklogEcho, closingAttribution, closingNoteRefusal, closingStamp,
     parseBacklogLog, reconcileOutside,
@@ -14307,7 +14308,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.tracks.backfill',
-            describe: 'Reconstruct the track of items that were closed before any of this was recorded — by SEARCHING THE TRANSCRIPTS for the code itself. ‼️ A clue or nothing: a row is only proposed where the code was literally written in that turn, never inferred from one date being near another, so an item nobody ever quoted stays visibly blank (which is the honest answer and also shows what is missing). Every row is stamped `by: backfill` + `uncertain: guess` and can always be told apart from something that was watched happening. For a closed item the mention nearest its ✅ date becomes the closing row; with no date, the last mention does. Only the DIALOG is searched, not tool output — a turn that merely read the backlog file mentions every code in it and proves nothing. Runs as a PREVIEW unless you pass apply. args: project (id or name), apply? (false = show what would be written), code? (just this one)',
+            describe: 'Reconstruct the track of items that were closed before any of this was recorded — by SEARCHING THE TRANSCRIPTS for the code itself. ‼️ A clue or nothing: a row is only proposed where the code was literally written in that turn, never inferred from one date being near another, so an item nobody ever quoted stays visibly blank (which is the honest answer and also shows what is missing). Every row is stamped `by: backfill` + `uncertain: guess` and can always be told apart from something that was watched happening. For a closed item the mention nearest its ✅ date becomes the closing row; with no date, the last mention does. Only the DIALOG is searched, not tool output — a turn that merely read the backlog file mentions every code in it and proves nothing. X-357: when the project folder is under git, an item with no `opened` of its own also gets one at the FIRST commit whose backlog diff adds its line (the line is literally there; `births` counts them) — earlier than anything its ledger holds, or not at all. Runs as a PREVIEW unless you pass apply. args: project (id or name), apply? (false = show what would be written), code? (just this one)',
             handler: (args) => {
                 const { project } = projectDocsFor(argStr(args, 'project'));
                 const res = runBackfill({
@@ -32468,7 +32469,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // files the OLD wording as the previous round rather than the new one.
         // The snapshot is taken after, from the items just read, so the next
         // pass has this pass's truth. See snapshotBacklog / TrackRecord.prevGuess.
-        const missed = reconcileOutside(items, records, Date.now(), outsideSeen.get(folder));
+        const missed = reconcileOutside(items, records, Date.now(), outsideSeen.get(folder), backlog.mtimeMs);
         outsideSeen.set(folder, snapshotBacklog(items));
         // ‼️ X-130 — this is the text the pass was run against. When the watcher
         // hears our own write a second and a half from now, that is what it
@@ -32481,6 +32482,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (missed.length) {
             appendTrack(trackLedgerOf(folder), missed);
             records = records.concat(missed);
+            // X-357 — an open page must re-read the times it just gained (a
+            // birth noticed by the watcher reaches no other refresh).
+            projectDocWritten(projectId);
         }
 
         const made = ensureRoleDoc(folder, project, 'backloglog', projectSkeleton());
@@ -32785,7 +32789,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const runBackfill = (o: { projectId: string; apply: boolean; code?: string }): {
         error?: string; project?: string; scanned?: number; partial?: boolean;
-        mentions?: number; codes?: string[]; rows?: number;
+        mentions?: number; births?: number; codes?: string[]; rows?: number;
         proposed?: ReturnType<typeof trackOut>[]; applied?: boolean;
     } => {
         const project = projectStore.get(o.projectId);
@@ -32824,13 +32828,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 turn: h.turn as number, ts: h.ts,
                 ...(agentOf.get(h.file) ? { agent: agentOf.get(h.file) as string } : {})
             }));
-        const proposed = backfillFromHits(items, readTracks(folder), hits);
+        const ledger = readTracks(folder);
+        const fromTurns = backfillFromHits(items, ledger, hits);
+        // ‼️ X-357 — the second clue: the first commit of the folder's own git
+        // history whose backlog diff adds the line. No git, no repo, a timeout —
+        // no rows, never an error: this is evidence when it exists.
+        let first = new Map<string, number>();
+        try {
+            const log = cp.spawnSync('git', birthLogArgs(relDoc(folder, roles.backlog).replace(/\\/g, '/')), {
+                cwd: folder, encoding: 'utf8', windowsHide: true, timeout: 20_000, maxBuffer: 256 * 1024 * 1024
+            });
+            if (log.status === 0) { first = firstAddedByCode(log.stdout ?? ''); }
+        } catch { /* no git on this machine */ }
+        const births = birthsFromHistory(items, ledger.concat(fromTurns), first);
+        const proposed = fromTurns.concat(births).sort((a, b) => a.ts - b.ts);
 
         const summary = {
             project: project.name,
             scanned: found.filesScanned,
             partial: found.truncated || found.timedOut === true,
             mentions: hits.length,
+            births: births.length,
             codes: [...new Set(proposed.map(r => r.code))],
             rows: proposed.length,
             proposed: proposed.slice(0, 100).map(trackOut)
