@@ -949,6 +949,12 @@
                 // other engines read, which is a piece of the extension model
                 // that page is about — and there it has the room to carry its
                 // whole name instead of "Sync Cons.".
+                related: [{
+                    action: 'openWebView', label: '📱 Web', name: 'Mobile Web Dashboard',
+                    title: 'Mobile Web Dashboard — open this farm in a browser or on your phone: read-only, '
+                        + 'token-protected. Turns the web view on first if it is off (asking whether your '
+                        + 'network may reach it); its QR code, bind and token live on Toolbox → Services.'
+                }],
                 guide: 'dashboard'
             })}
             ${kpis}

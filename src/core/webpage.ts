@@ -24,6 +24,12 @@ export function renderPage(): string {
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
          padding:12px 12px 40px; -webkit-text-size-adjust:100%; }
+  /* viewport-fit=cover lets the page run under a notch and the home bar; these
+     insets are what keeps the text out from under them (0 on a plain screen). */
+  @supports (padding: max(0px)) {
+    body { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+                    max(40px, calc(env(safe-area-inset-bottom) + 24px)) max(12px, env(safe-area-inset-left)); }
+  }
   h1 { font-size:17px; margin:0 0 2px; display:flex; align-items:center; gap:8px; }
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
        margin:22px 0 8px; }
@@ -51,7 +57,7 @@ export function renderPage(): string {
          border-radius:8px; padding:4px 10px; font-size:12px; }
 </style></head>
 <body>
-<button class="ref" onclick="load(true)">↻</button>
+<button class="ref" onclick="load()" title="Refresh now" aria-label="Refresh now">↻</button>
 <h1><span class="dot" id="pulse" style="background:var(--muted)"></span>Agent Farm</h1>
 <div class="sub" id="sub">loading…</div>
 <div id="banner"></div>
@@ -140,17 +146,28 @@ function render(s) {
     + '. Nothing here starts, stops or changes anything — the farm is driven from the machine itself.';
 }
 
+const POLL_MS = 15000;
 let timer = null;
-function load(manual) {
+function load() {
   fetch('snapshot.json', { cache: 'no-store' })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(render)
     .catch(e => { $('sub').textContent = 'cannot reach the farm — ' + e.message; $('pulse').style.background = 'var(--red)'; });
-  if (manual) { return; }
 }
+function poll(on) {
+  if (timer) { clearInterval(timer); timer = null; }
+  if (on) { timer = setInterval(load, POLL_MS); }
+}
+// A phone left open on this page must not wake its radio every 15s for a
+// screen nobody is looking at: polling stops while hidden, and showing the
+// page again fetches at once rather than waiting out the interval.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { poll(false); return; }
+  load();
+  poll(true);
+});
 load();
-timer = setInterval(load, 15000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { load(); } });
+poll(!document.hidden);
 </script>
 </body></html>`;
 }

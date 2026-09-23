@@ -209,9 +209,12 @@ try { fs.rmSync(nest, { recursive: true, force: true }); } catch { }
         /action: 'syncConstitution'/.test(js) && /Sync Constitution/.test(js));
     check('…spelled out on the button, not shortened to "Sync Cons."',
         /label: '⚖ Sync Constitution'/.test(js));
+    // The Dashboard has a header action of its own now (U-85, the web view),
+    // so "no headerAction case" stopped meaning "no Sync button" — ask for the
+    // thing itself on both sides.
     check('…and the Dashboard no longer draws one',
         !/syncConstitution/.test(rd('media/dashboard.js'))
-        && !/case 'headerAction'/.test(rd('src/panels/dashboard.ts')));
+        && !/syncConstitution/.test(rd('src/panels/dashboard.ts')));
     check('the header renders a `related` entry that is an ACTION as a button',
         /if \(r\.action\)/.test(head) && /data-afact="\$\{r\.action\}"/.test(head));
     check('…and wires it to one message the page owns',

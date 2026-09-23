@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.637.0 - The web view gets a cockpit: can my phone read this farm right now? (U-85) (2026-09-23)
+
+- **A card that answers the one question.** Toolbox → Services has a Mobile
+  Web Dashboard card: start/stop, the port badge, a local ↔ LAN select, the
+  whole link with a copy button, and a new token. Turning LAN on and minting a
+  new token (which revokes every bookmark) are both asked about every time.
+- ‼️ **`local` is amber, not green.** Enabled, token set, server bound — and
+  the only link is `http://127.0.0.1:…`, which the phone on the desk cannot
+  open. The card says so instead of painting its three booleans green.
+- ‼️ **A QR code only where a phone can use it.** Drawn by our own encoder (a
+  link carrying a token is not handed to a website to draw), and only when the
+  link is reachable from the network; otherwise the card says why there is none.
+  With the view off the address is struck through and there is no copy button —
+  a URL that refuses every request is not something to put on a clipboard.
+- **A door on the Dashboard.** `📱 Web` in the top bar runs the same command as
+  the palette: it asks local or LAN if the view is off, then opens it.
+- **The phone page stops polling when nobody is looking.** A phone left open on
+  it no longer wakes its radio every 15 s behind a locked screen; showing it
+  again fetches at once. It also pads for the notch and the home bar
+  (`safe-area-inset-*`), which `viewport-fit=cover` had promised and never done.
+- New bridge ops: `web.status` (the card's own verdict, the code on request) ·
+  `web.stop` · `web.bind` · `web.token.new`. The link has ONE formula
+  (`webUrl()`), used by the card, the command, the QR, the server and the ops.
+
 ## 3.636.0 - A relay leaves its handover on the A2A board, and the board keeps itself clean (S-84) (2026-09-22)
 
 - **The words go where you already look.** Every baton pass now hangs a card

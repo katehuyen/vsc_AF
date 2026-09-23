@@ -16,6 +16,7 @@
 // decision about somebody's network, so a DECLINED confirmation must leave the
 // machine untouched — asserted below by counting what the host was asked to do.
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 
@@ -183,6 +184,25 @@ const draw = (webOpts) => {
         ok('‼️ …and NO code in a state where one could not be scanned', d.qr === undefined);
         eq('…and the link is the core formula s', d.url, 'http://127.0.0.1:8378/?t=abc');
         ok('no host, no card', W.webCardData(undefined) === undefined);
+
+        // ---------- THE DASHBOARD'S TOP-BAR DOOR ----------
+        // The button asks the header for an ACTION (not a nav), the panel runs
+        // the palette's own command — the one that asks local/LAN when the view
+        // is off — and the parity manifest ties that door to web.enable.
+        {
+            const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+            const dj = rd('media/dashboard.js');
+            const dt = rd('src/panels/dashboard.ts');
+            ok('the Dashboard header carries the web action',
+                /related: \[\{\s*action: 'openWebView'/.test(dj));
+            ok('…with a tooltip that says what it does and where the rest lives',
+                /Mobile Web Dashboard — [^']*read-only/.test(dj) && /Toolbox → Services/.test(dj));
+            ok('the panel answers it with the palette command, and only that one',
+                /case 'headerAction':\s*if \(msg\.action === 'openWebView'\) \{\s*void vscode\.commands\.executeCommand\('agentfarm\.openWebView'\)/.test(dt));
+            const man = JSON.parse(rd('parity.manifest.json'));
+            const cap = (man.capabilities || man.entries || []).find(c => c.capability === 'dashboard.ts#headerAction');
+            ok('parity ties the door to web.enable', !!cap && (cap.ops || []).includes('web.enable'));
+        }
 
         Module._load = origLoad;
         console.log(`\n${pass} passed, ${fail} failed`);
