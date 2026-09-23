@@ -104,6 +104,47 @@ console.log('\n== the ender: once, then the release is asked for ==');
     const s = B.batonPlanSentence(baton());
     ok('‼️ baton.pass tells the agent it is ended for it — never to close its own card', /Agent Farm ends this session itself/.test(s) && /never close it yourself/.test(s));
 
+    console.log('\n== S-90 — a leg told to hand over that rests WITHOUT passing is ended too ==');
+    {
+        const U = E.BATON_UNPASSED_SETTLE_MS;
+        const opener = baton({ id: 'btn_op', hop: 1, state: 'started', toSessionId: 'leg-9' });
+        const H = { what: 'CONTEXT HANDOVER 40%', ts: NOW };
+        const handoverOf = sid => (sid === 'leg-9' ? H : undefined);
+        const legs = E.unpassedLegs([opener], handoverOf);
+        ok('a running leg a handover order reached is found', legs.length === 1 && legs[0].sessionId === 'leg-9');
+        ok('…but not once it passed (a baton FROM it exists)',
+            E.unpassedLegs([opener, baton({ id: 'btn_p', hop: 2, from: { ...opener.from, sessionId: 'leg-9' } })], handoverOf).length === 0);
+        ok('…and not a leg no order reached', E.unpassedLegs([opener], () => undefined).length === 0);
+        const leg = legs[0];
+        const rest = card({ turnEndedAt: NOW + 5000, turnMs: 60_000 });
+        ok('at rest, but not long enough yet → wait, with the time it is due',
+            (o => o.act === 'wait' && o.at === NOW + 5000 + U)(E.unpassedLegOrder(leg, { card: rest }, NOW + 6000)));
+        const due = E.unpassedLegOrder(leg, { card: rest }, NOW + 5000 + U);
+        ok('‼️ settled → its card is closed, and the reason names the order and the failsafe',
+            due.act === 'close-card' && due.cardId === rest.id && /CONTEXT HANDOVER 40%/.test(due.why) && /failsafe/.test(due.why));
+        ok('‼️ a turn the USER started after the order leaves the session to them',
+            /theirs now/.test(E.unpassedLegOrder(leg, { card: card({ turnEndedAt: NOW + 90_000, turnMs: 10_000 }) }, NOW + 999_999).why));
+        ok('a running turn, an open question or a queued message → wait',
+            E.unpassedLegOrder(leg, { card: card({ status: 'working' }) }, NOW + 999_999).act === 'wait'
+            && E.unpassedLegOrder(leg, { card: card({ asking: true }) }, NOW + 999_999).act === 'wait'
+            && E.unpassedLegOrder(leg, { card: card({ queued: 1 }) }, NOW + 999_999).act === 'wait');
+        ok('‼️ no card (a terminal) is never killed on this evidence',
+            E.unpassedLegOrder(leg, { pid: 5, live: { status: 'idle', lastEventTs: NOW } }, NOW + 999_999).act === 'wait');
+
+        const closed = [];
+        const ender = new E.PassedLegEnder({
+            batons: () => [opener], facts: () => ({}), factsOf: () => ({ card: rest }), handoverOf,
+            closeCard: (id, why) => closed.push([id, why]), kill: () => {}, sweep: () => {}, now: () => NOW + 5000 + U, sweepAfterMs: 1
+        });
+        ender.check();
+        ender.check();
+        ok('‼️ the ender closes it ONCE (not again inside the reorder window)', closed.length === 1 && closed[0][0] === rest.id);
+        ender.dispose();
+        const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+        ok('the host wires the facts by session id and the guard\'s handover order (quota first)',
+            /factsOf: batonLegFacts/.test(ext) && /QUOTA HANDOVER \$\{q\.pct\}%/.test(ext) && /turnMs: c\.lastTurn\?\.ms/.test(ext));
+    }
+
     console.log(`\ntest_baton_end: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

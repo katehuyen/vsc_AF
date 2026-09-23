@@ -89,6 +89,19 @@ const input = (o) => Object.assign({
     ok('a baton that never started its successor is not a parent',
         B.passBaton(input({ sessionId: 'succ-1111', prior: [notStarted] })).baton.hop === 1);
 
+    // S-89 — a relay leg that lost its launch record passes on its chain's setup
+    const lost = B.passBaton(input({ sessionId: 'succ-1111', launchId: '', manifest: undefined, prior: [parent] }));
+    ok('‼️ S-89 — a relay leg with NO launch id still passes, on its chain\'s own setup, and says so',
+        lost.ok && lost.baton.chainId === 'chn_seven' && lost.baton.hop === 3
+        && lost.baton.inherit === parent.inherit && lost.baton.from.cwd === parent.from.cwd
+        && lost.baton.from.sessionId === 'succ-1111' && /no launch id/.test(lost.setupFromChain));
+    const noManifest = B.passBaton(input({ sessionId: 'succ-1111', manifest: undefined, prior: [parent] }));
+    ok('…and so does one whose launch id has no manifest, keeping the id it has',
+        noManifest.ok && noManifest.baton.from.launchId === 'lch_abc123def' && /no launch manifest/.test(noManifest.setupFromChain));
+    ok('…while a session that is NOT a leg is still refused rather than guessed',
+        !B.passBaton(input({ sessionId: 'other-2222', launchId: '', prior: [parent] })).ok);
+    ok('…and a pass that had its manifest says nothing about a fallback', child.ok && !('setupFromChain' in child));
+
     // a second pass replaces the first
     const first = r.baton;
     const doneSame = Object.assign({}, first, { id: 'btn_old', state: 'started' });

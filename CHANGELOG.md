@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.643.0 - A relay leg keeps its setup across a restart, and one that cannot pass is still carried on (S-89, S-90) (2026-09-23)
+
+- **A revived card is the same run (S-89).** A `resume=true` restart brought each
+  Console conversation back in a new card without its launch id, so a relay leg
+  that loaded a new build on arrival could no longer pass the baton ("carries no
+  launch id, so its setup is unknown"). The launch id now travels with the
+  revive, and a relay leg whose launch record is missing anyway passes on its
+  chain's own setup — the one it was opened on and the one the failsafe's rescue
+  uses — and says so in `setupFromChain`.
+- **A leg told to hand over is never left idle for ever (S-90).** A Console card
+  does not end by itself, so a leg that got its QUOTA/CONTEXT HANDOVER order and
+  came to rest WITHOUT passing sat there, and the failsafe — which judges an END
+  — never ran. Agent Farm now closes such a card after 30 s at rest; the failsafe
+  then opens the next leg from its handover note. A card the user spoke to after
+  the order is left alone, and a terminal leg is never killed on this evidence.
+
 ## 3.642.0 - A Console task follows its conversation across a restart (S-88) (2026-09-23)
 
 - **The row stays with the run.** A restart that takes the Console's

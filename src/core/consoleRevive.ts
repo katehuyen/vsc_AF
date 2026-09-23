@@ -46,6 +46,7 @@ export interface ReviveSource {
     account?: string;
     projectId?: string;
     superpowers?: boolean;
+    launchId?: string;
 }
 
 export interface ReviveRow extends ReviveSource {
@@ -80,6 +81,8 @@ export interface ReviveInit {
     account?: string;
     projectId?: string;
     superpowers?: boolean;
+    /** S-89 — the spawn the card IS; a baton reads the setup of its run off this id */
+    launchId?: string;
 }
 
 export interface RevivePlan {
@@ -150,6 +153,9 @@ export function reviveInit(row: ReviveSource & { sessionId?: string }): ReviveIn
     // it was actually measured in.
     if (row.projectId) { out.projectId = row.projectId; }
     if (row.superpowers !== undefined) { out.superpowers = row.superpowers; }
+    // ‼️ S-89 — the same conversation is the same RUN: without its launch id a
+    // revived relay leg could neither pass the baton nor be rescued by it.
+    if (row.launchId) { out.launchId = row.launchId; }
     return out;
 }
 

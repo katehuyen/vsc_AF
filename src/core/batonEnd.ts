@@ -31,6 +31,8 @@ export interface PassedLegCard {
     asking: boolean;
     /** when its last turn ended */
     turnEndedAt?: number;
+    /** how long that turn ran — so its start can be told from a handover order */
+    turnMs?: number;
 }
 
 /** What is known about the session that passed; each part optional. */
@@ -71,9 +73,60 @@ export function passedLegOrder(b: Baton, f: PassedLegFacts, now: number, settleM
     return { act: 'kill', pid: f.pid, why: done };
 }
 
+/** S-90 — how long a leg told to hand over must rest, unpassed, before it is ended. */
+export const BATON_UNPASSED_SETTLE_MS = 30_000;
+
+/** A running relay leg that was ordered to hand over and has not passed. */
+export interface UnpassedLeg {
+    opener: Baton;
+    sessionId: string;
+    handover: { what: string; ts: number };
+}
+
+/** The legs running now (opened, not yet passed or closed) that a handover order reached. */
+export function unpassedLegs(list: readonly Baton[], handoverOf: (sid: string) => UnpassedLeg['handover'] | undefined): UnpassedLeg[] {
+    const out: UnpassedLeg[] = [];
+    for (const b of list) {
+        const sid = b.toSessionId;
+        if (b.state !== 'started' || !sid || list.some(x => x.from.sessionId === sid && x.hop > b.hop)) { continue; }
+        const h = handoverOf(sid);
+        if (h) { out.push({ opener: b, sessionId: sid, handover: h }); }
+    }
+    return out;
+}
+
+/**
+ * ‼️ S-90 — A LEG TOLD TO HAND OVER THAT CAME TO REST WITHOUT PASSING IS ENDED
+ * TOO, so the failsafe (S-83) can judge it: a Console card never ends by itself,
+ * and a failsafe that waits for an end nobody gives rescues nothing. Only a card
+ * — and never one the user spoke to after the order: that session is theirs.
+ */
+export function unpassedLegOrder(leg: UnpassedLeg, f: PassedLegFacts, now: number, settleMs = BATON_UNPASSED_SETTLE_MS): EndOrder {
+    const card = f.card;
+    if (!card) { return { act: 'wait', why: 'no Console card — a terminal leg told to hand over is ended by hand' }; }
+    if (card.status === 'ended' || card.status === 'error') { return { act: 'wait', why: 'its card has ended' }; }
+    if (card.status !== 'idle') { return { act: 'wait', why: 'its turn is still running' }; }
+    if (card.asking) { return { act: 'wait', why: 'a question is open on its card' }; }
+    if (card.queued > 0) { return { act: 'wait', why: 'a message is queued for it' }; }
+    const ended = card.turnEndedAt ?? 0;
+    if (ended && ended - (card.turnMs ?? 0) > leg.handover.ts) {
+        return { act: 'wait', why: 'the user spoke to it after the handover order — the session is theirs now' };
+    }
+    const due = Math.max(leg.handover.ts, ended) + settleMs;
+    if (now < due) { return { act: 'wait', why: 'told to hand over and at rest without passing — Agent Farm ends it in a moment', at: due }; }
+    return {
+        act: 'close-card', cardId: card.id,
+        why: `leg ${leg.opener.hop + 1} was told to hand over (${leg.handover.what}) and came to rest without passing the baton — `
+            + 'Agent Farm ended it so the failsafe can open the next leg from what it left'
+    };
+}
+
 export interface PassedLegEnderDeps {
     batons: () => readonly Baton[];
     facts: (b: Baton) => PassedLegFacts;
+    /** S-90 — the facts of any session by its id, and the handover order that reached it */
+    factsOf?: (sessionId: string) => PassedLegFacts;
+    handoverOf?: (sessionId: string) => UnpassedLeg['handover'] | undefined;
     closeCard: (cardId: string, why: string) => void;
     kill: (pid: number) => void;
     /** asked a beat after an order, so the release does not wait for the next sweep */
@@ -95,8 +148,13 @@ export class PassedLegEnder {
 
     /** Something moved (a card, the watcher, the store): look again soon, if any baton waits. */
     poke(): void {
-        if (!this.deps.batons().some(b => b.state === 'waiting-end')) { return; }
+        if (!this.deps.batons().some(b => b.state === 'waiting-end') && !this.unpassed().length) { return; }
         this.schedule(this.now() + 1000);
+    }
+
+    private unpassed(): UnpassedLeg[] {
+        const h = this.deps.handoverOf;
+        return h && this.deps.factsOf ? unpassedLegs(this.deps.batons(), h) : [];
     }
 
     private schedule(at: number): void {
@@ -125,6 +183,23 @@ export class PassedLegEnder {
                 this.deps.log?.(`baton ${b.id}: ${o.act === 'close-card' ? `card ${o.cardId} closed` : `pid ${o.pid} ended`} — ${o.why}`);
             } catch (e) {
                 this.deps.log?.(`baton ${b.id}: could not end session ${b.from.sessionId.slice(0, 8)}: ${String((e as Error)?.message ?? e)}`);
+            }
+            setTimeout(() => { try { this.deps.sweep(); } catch { /* the periodic sweep follows */ } }, this.deps.sweepAfterMs ?? SWEEP_AFTER_MS);
+        }
+        for (const leg of this.unpassed()) {
+            const key = `leg:${leg.sessionId}`;
+            const last = this.ordered.get(key);
+            if (last !== undefined && now - last < REORDER_MS) { continue; }
+            let o: EndOrder;
+            try { o = unpassedLegOrder(leg, this.deps.factsOf!(leg.sessionId), now); } catch { continue; }
+            orders.push(o);
+            if (o.act !== 'close-card') { if (o.act === 'wait' && o.at) { next = Math.min(next, o.at); } continue; }
+            this.ordered.set(key, now);
+            try {
+                this.deps.closeCard(o.cardId, o.why);
+                this.deps.log?.(`baton leg ${leg.sessionId.slice(0, 8)}: card ${o.cardId} closed — ${o.why}`);
+            } catch (e) {
+                this.deps.log?.(`baton leg ${leg.sessionId.slice(0, 8)}: could not close card ${o.cardId}: ${String((e as Error)?.message ?? e)}`);
             }
             setTimeout(() => { try { this.deps.sweep(); } catch { /* the periodic sweep follows */ } }, this.deps.sweepAfterMs ?? SWEEP_AFTER_MS);
         }

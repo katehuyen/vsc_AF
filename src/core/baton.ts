@@ -219,7 +219,7 @@ export interface PassInput {
 }
 
 export type PassResult =
-    | { ok: true; baton: Baton; superseded: Baton[]; poolKept?: string }
+    | { ok: true; baton: Baton; superseded: Baton[]; poolKept?: string; setupFromChain?: string }
     | { ok: false; why: string };
 
 /**
@@ -240,8 +240,15 @@ export function passBaton(input: PassInput): PassResult {
     if (!(BATON_SURFACE_WANTS as readonly string[]).includes(want)) {
         return { ok: false, why: `surface "${want}" is not one of ${BATON_SURFACE_WANTS.join(' · ')}.` };
     }
-    const src = inheritFrom(input.sessionId, input.launchId, input.manifest);
-    if (!src.ok) { return src; }
+    let src = inheritFrom(input.sessionId, input.launchId, input.manifest);
+    // ‼️ S-89 — a relay leg whose launch record is gone still HAS a setup: its
+    // chain's, the one it was opened on and the one the failsafe's rescue uses.
+    const setupFromChain = src.ok ? undefined : src.why;
+    if (!src.ok) {
+        const leg = openerOf(input.prior, input.sessionId);
+        if (!leg) { return src; }
+        src = { ok: true, from: { ...leg.from, sessionId: s(input.sessionId), launchId: s(input.launchId) }, inherit: leg.inherit };
+    }
     const rnd = input.rnd ?? Math.random;
     const parent = openerOf(input.prior, src.from.sessionId);
     // ‼️ S-81 — A CHAIN'S POOL IS SET ONCE (its first leg's seal, or its first
@@ -272,6 +279,7 @@ export function passBaton(input: PassInput): PassResult {
     }
     return {
         ok: true, baton: accepted.baton, superseded,
+        ...(setupFromChain ? { setupFromChain } : {}),
         ...(pool && asked && asked !== pool
             ? { poolKept: `account ${asked} was not used — chain ${draft.chainId} runs on its pool ${pool}, which no leg leaves.` }
             : {})

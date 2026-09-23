@@ -51,6 +51,13 @@ const live = (over = {}) => ({
     ok('‼️ …carrying the two facts that are not dimensions but are still this session\'s: '
         + 'the project it was started under and whether it had the skills discipline',
         init.projectId === 'prj_1' && init.superpowers === true);
+    ok('‼️ S-89 — …and the launch id of the run it IS, so a revived relay leg can still pass the baton',
+        reviveInit(live({ launchId: 'lch_1' })).launchId === 'lch_1' && !('launchId' in init));
+    {
+        const plan = planRevive([live({ launchId: 'lch_2' })]);
+        ok('‼️ S-89 — the plan the stamp carries keeps it, so the wiring hands it to start()',
+            plan.rows[0].launchId === 'lch_2' && reviveInit(plan.rows[0]).launchId === 'lch_2');
+    }
     ok('‼️ the transcript and what it spent are NOT invented here — they are read '
         + 'from the index at the wiring, so this stays a pure decision',
         !('history' in init) && !('carried' in init));

@@ -304,7 +304,7 @@ import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, rowSessionId, successorRow } from './core/batonDoor';
-import { PassedLegCard, PassedLegEnder } from './core/batonEnd';
+import { PassedLegCard, PassedLegEnder, PassedLegFacts } from './core/batonEnd';
 import { BatonRunner } from './core/batonRunner';
 import { legFactsFrom } from './core/batonLegFacts';
 import { BatonStore } from './core/batonStore';
@@ -16685,17 +16685,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
     // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
-    const batonEnder = new PassedLegEnder({
-        batons: () => batonStore.all(),
-        facts: b => {
-            const sid = b.from.sessionId;
+    const batonLegFacts = (sid: string): PassedLegFacts => {
+        {
             let card: PassedLegCard | undefined;
             try {
                 const c = consoleHost.list().find(x => x.sessionId === sid);
                 if (c) {
                     card = {
                         id: c.id, status: c.status, queued: c.queued?.length ?? 0,
-                        asking: !!(c.pendingAsk || c.pendingPermission), turnEndedAt: c.lastTurn?.endedAt
+                        asking: !!(c.pendingAsk || c.pendingPermission), turnEndedAt: c.lastTurn?.endedAt,
+                        turnMs: c.lastTurn?.ms
                     };
                 }
             } catch { /* the host is declared further down */ }
@@ -16706,6 +16705,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(s ? { live: { status: s.status, lastEventTs: s.lastEventTs } } : {}),
                 ...(owner ? { pid: owner.pid } : {})
             };
+        }
+    };
+    const batonEnder = new PassedLegEnder({
+        batons: () => batonStore.all(),
+        facts: b => batonLegFacts(b.from.sessionId),
+        // ‼️ S-90 — a leg told to hand over that rests without passing is ended too
+        factsOf: batonLegFacts,
+        handoverOf: sid => {
+            const rec = contextGuard.record(sid);
+            const q = rec?.quota?.handover;
+            if (q) { return { what: `QUOTA HANDOVER ${q.pct}%`, ts: q.ts }; }
+            return rec?.handover ? { what: `CONTEXT HANDOVER ${rec.handover.pct}%`, ts: rec.handover.ts } : undefined;
         },
         closeCard: (id, why) => { consoleHost.close(id, { reason: why }); ConsolePanel.refreshIfOpen(); },
         kill: pid => killPid(pid),
