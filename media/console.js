@@ -300,6 +300,8 @@
         .srow .h2 { display:flex; align-items:center; justify-content:space-between; gap:6px;
             min-height:16px; margin-top:2px; font-size:10px; }
         .srow .h2 > .af-tipw.acw { flex:0 1 auto; min-width:0; display:block; overflow:hidden; }
+        .srow .h2 > .af-tipw.bcw { flex:0 0 auto; }
+        .srow .h2 .batonsig { font-size:10px; line-height:15px; white-space:nowrap; }
         /* …and on line 1 the ROUTE yields before the name does: the shelf may
            shrink, only the route pill inside it gives way (its panel opens with
            the whole value — MIRROR), and the engine pill never does.
@@ -1606,12 +1608,13 @@
             window.AFTip.lines(q.lines || []), 'tip-quota', '5-hour quota signal')} `;
     };
     /** S-77 — this run's leg of a baton relay: `⑂ 3`, the chain in its panel. The words are the host's. */
-    const batonChip = (s) => {
+    const batonPill = (s, cls) => {
         const v = s.batonView;
         if (!v || !v.chip) { return ''; }
-        return `${cardTip(`<span class="batonsig">${C.esc(v.chip)}</span>`, v.head,
-            window.AFTip.lines(v.lines || []), 'tip-baton', 'Baton relay chain')} · `;
+        return cardTip(`<span class="batonsig">${C.esc(v.chip)}</span>`, v.head,
+            window.AFTip.lines(v.lines || []), cls, 'Baton relay chain');
     };
+    const batonChip = (s) => { const p = batonPill(s, 'tip-baton'); return p ? p + ' · ' : ''; };
     /**
      * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this
      * session, so the rule is seen being held rather than trusted. Nothing is
@@ -2489,6 +2492,8 @@
             // to "(#019"). It opens line 2, across from the spend figures, so
             // the crowded status line below no longer has to carry it.
             const acct = accountBadge(s);
+            // S-91 — a card in a relay says so in the list, beside the sign-in.
+            const bchip = batonPill(s, 'tip-batoncard bcw');
             return `
             <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
@@ -2527,7 +2532,7 @@
                     <span class="hb">${engineBadge(s)}${routeBadge(s)}</span>
                 </div>
                 <div class="h2">
-                    ${acct || '<span></span>'}
+                    ${acct || (bchip ? '' : '<span></span>')}${bchip}
                     <span class="hb">${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
                           The rows below carry one each, but only for the card
                           being read; from a card in the list the whole thing is

@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.651.0 - A card in a baton relay wears its leg in the session list (S-91) (2026-09-23)
+
+- **The relay leg is on the card, not only on the open session (S-91).** The
+  `⑂ N` chip used to live on the status row under the conversation, so the
+  list on the left could not tell a relay run from any other. Every live card
+  in a chain now carries it on its second line, right after the sign-in pill
+  (first on the line when there is none), in the same small size so the card
+  keeps its height; hovering it opens the same chain panel — the chain, the
+  predecessor, the successor and the brake. A card no baton touched draws
+  nothing new.
+
 ## 3.650.0 - A re-indexed session keeps the search shards it was re-indexed into (X-356) (2026-09-23)
 
 - **The search index stopped deleting its own fresh work (X-356).** When a

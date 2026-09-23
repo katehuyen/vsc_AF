@@ -52,7 +52,9 @@ const CANDIDATES = [
     ok('‼️ K-42 — the card header never wraps', /\.srow \.h \{[^}]*flex-wrap:nowrap/.test(src));
     ok('‼️ K-42 — a live card has a fixed second line for the sign-in and the spend',
         /\.srow \.h2 \{[^}]*justify-content:space-between/.test(src)
-        && /<div class="h2">\s*\$\{acct \|\| '<span><\/span>'\}/.test(src));
+        && /<div class="h2">\s*\$\{acct \|\| \(bchip \? '' : '<span><\/span>'\)\}\$\{bchip\}/.test(src));
+    ok('…and S-91\'s relay chip on it never shrinks, so ⑂ N is never cut',
+        /\.srow \.h2 > \.af-tipw\.bcw \{[^}]*flex:0 0 auto/.test(src));
     ok('…and the sign-in is no longer on the crowded status line',
         !/\$\{acct \? ` · \$\{acct\}` : ''\}/.test(src));
     ok('…and a resume card pins its engine to the end of its title line',

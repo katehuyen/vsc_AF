@@ -1353,6 +1353,23 @@ const intentOf = (o) => Object.assign({
     push(data(CONVO.slice(), { batonView: null }));
     ok('‼️ a run no baton touched has neither', !/batonsig|c-baton-stop/.test(status()));
 
+    // S-91 — THE CARD IN THE LIST CARRIES THE LEG TOO, on line 2 right after
+    // the sign-in pill (first when there is none), with the chain in its panel.
+    const cards = () => (els['c-list'] ? els['c-list']._html : '');
+    const line2 = () => { const m = /<div class="h2">([\s\S]*?)<span class="hb">/.exec(cards()); return m ? m[1] : ''; };
+    push(data(CONVO.slice(), { batonView: relay(false), accountAxis: true, accountLabel: 'work@studio' }));
+    ok('S-91: a relay card wears ⑂ 2 on line 2, AFTER the sign-in pill',
+        /class="batonsig">⑂ 2</.test(line2())
+        && line2().indexOf('class="af-acct') > -1
+        && line2().indexOf('class="af-acct') < line2().indexOf('class="batonsig"'));
+    ok('…and its panel is the chain, in the host\'s words',
+        /tip-batoncard/.test(line2()) && /Chain: chn_muq2k1 — leg 2 of 2 so far\./.test(line2()));
+    push(data(CONVO.slice(), { batonView: relay(false), accountAxis: false }));
+    ok('…with no sign-in pill the chip is the first thing on line 2 — no spacer before it',
+        /^\s*<span class="af-tipw[^"]*tip-batoncard/.test(line2()));
+    push(data(CONVO.slice(), { batonView: null, accountAxis: true, accountLabel: 'work@studio' }));
+    ok('‼️ …and a card no baton touched has no chip', !/batonsig/.test(line2()) && /af-acct/.test(line2()));
+
     // ‼️ U-81 — the status row HOSTS AFTip panels: an opacity on it paints every
     // panel see-through (the user read the page through them). Colour, never opacity.
     const pageJs = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');

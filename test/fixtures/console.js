@@ -1261,6 +1261,17 @@ module.exports = {
             data: batonData(true)
         },
         {
+            id: 'console-baton-card',
+            label: 'Console — S-91: the relay leg on the CARD in the list, ⑂ 2 beside the sign-in, the chain in its panel',
+            tip: 'tip-batoncard',
+            data: batonData()
+        },
+        {
+            id: 'console-baton-card-bare',
+            label: 'Console — S-91: a relay card with no sign-in pill: ⑂ 2 alone at the start of line 2',
+            data: (() => { const d = batonData(); d.sessions[0].accountAxis = false; return d; })()
+        },
+        {
             id: 'console-relay-attach',
             label: 'Console — S-82: a live run outside any relay, ⑂ Attach relay pressed: the pool picker and the max-legs box under the status row',
             data: relayAttachData(),
