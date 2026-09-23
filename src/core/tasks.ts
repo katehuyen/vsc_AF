@@ -56,6 +56,7 @@ export type { TaskRound } from './taskRounds';
 import { archiveMonths, readArchive } from './taskstats';
 import { openExternalTerminal } from './extTerminal';
 import { extractJson, sanitizePrompt } from './util';
+import { LiveCard, reattachPlan } from './consoleTaskRevive';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type TaskMode = 'interactive' | 'headless';
@@ -2207,8 +2208,12 @@ export class TaskManager implements vscode.Disposable {
                 // conversation nobody can open.
                 if (t.consoleSessionId) {
                     noteTaskEvent(t, 'parked',
-                        'the VS Code window closed — the Console session it was hosted in did not survive');
+                        'the VS Code window closed — the Console card it was hosted in went with it');
                     t.consoleSessionId = undefined;
+                    // ‼️ S-88 — …UNLESS THE RESTART TAKES THE CONVERSATION UP
+                    // AGAIN (resume=true), in a NEW card: `reattachConsoleRuns`
+                    // hooks the row back on by the engine's session id.
+                    if (t.hostedSessionId) { this.cutConsoleByReload.push(t.id); }
                 } else if (t.workflowRunId === undefined) {
                     // ‼️ M-21 — WHY A RUN IS BACK ON THE QUEUE IS PART OF WHAT
                     // HAPPENED TO IT. Clearing `startedAt` on its own left a row
@@ -2270,6 +2275,33 @@ export class TaskManager implements vscode.Disposable {
      * sitting queued for a week.
      */
     private cutByReload: string[] = [];
+    /** S-88 — the Console-hosted rows THIS load unhooked from their dead card. */
+    private cutConsoleByReload: string[] = [];
+
+    /**
+     * S-88 — the restart took some conversations up again in new cards: each
+     * cut row whose conversation is among them goes back to `running` on that
+     * card (see core/consoleTaskRevive.ts). Asked once, after the revive.
+     */
+    reattachConsoleRuns(cards: readonly LiveCard[]): { id: string; title: string; cardId: string }[] {
+        const ids = this.cutConsoleByReload;
+        this.cutConsoleByReload = [];
+        if (!this.runner()) { return []; }
+        const rows = this.tasks.filter(t => ids.includes(t.id));
+        const back: { id: string; title: string; cardId: string }[] = [];
+        for (const { taskId, cardId } of reattachPlan(rows, cards)) {
+            const t = this.tasks.find(x => x.id === taskId);
+            if (!t) { continue; }
+            t.status = 'running';
+            // the load cleared startedAt; the run really began at its own `started` line
+            t.startedAt = [...(t.events ?? [])].reverse().find(e => e.kind === 'started')?.ts ?? Date.now();
+            t.consoleSessionId = cardId;
+            noteTaskEvent(t, 'resumed', `the window restarted and the Console took this conversation up again (card ${cardId})`);
+            back.push({ id: t.id, title: t.title, cardId });
+        }
+        if (back.length) { this.save(); this.startInteractiveWatch(); }
+        return back;
+    }
 
     /**
      * ‼️ B-03.8 — THE HEADLESS SIDE OF X-232, AND THE ANSWER TO "WHO PRESSES

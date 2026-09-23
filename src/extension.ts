@@ -27769,6 +27769,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             reclaimed.push({ row, pid: held.pid });
         }
         const back: string[] = [];
+        /** S-88 — the seat each conversation came back in (its engine id is known HERE, before the card learns it) */
+        const seats: { id: string; sessionId: string; status: string }[] = [];
         /** ‼️ the seats whose scrollback could not be read YET. */
         let pendingHistory: { seatId: string; sessionId: string }[] = [];
         /** ‼️ …and the seats whose TOTALS could not be read yet, for the same
@@ -27831,6 +27833,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // a turn. See ConsoleHost.settleRevived.
                 else { consoleHost.settleRevived(seatId); }
                 back.push(row.agentName);
+                seats.push({ id: seatId, sessionId: row.sessionId, status: 'idle' });
             } catch (e) {
                 lost.push({
                     id: row.id, agentName: row.agentName,
@@ -27898,6 +27901,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const runs = askedForResume
             ? taskManager.reviveCutRuns()
             : { resumed: [], skipped: [] as { title: string; reason: string }[] };
+        // ‼️ S-88 — …and a Console-hosted row follows its conversation into the
+        // NEW card the revive opened, instead of sitting parked beside it
+        const reattached = askedForResume
+            ? taskManager.reattachConsoleRuns(seats)
+            : [];
         void vscode.window.showInformationMessage(
             `Agent Farm ${extVersion}: ${back.length} console session(s) taken up where they left off`
             + (back.length ? ` (${back.join(', ')})` : '')
@@ -27905,6 +27913,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             + (runs.resumed.length
                 ? ` · ${runs.resumed.length} headless run(s) carried on (${runs.resumed.map(r => r.title).join(', ')})`
                 : '')
+            + (reattached.length ? ` · ${reattached.length} Console task(s) followed their conversation` : '')
             + (runs.skipped.length
                 ? ` · ${runs.skipped.length} run(s) could not be: ${runs.skipped.map(r => r.title).join(', ')}`
                 : ''));

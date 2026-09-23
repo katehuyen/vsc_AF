@@ -133,7 +133,7 @@ const kinds = t => (t.events || []).map(e => e.kind);
     // this host has no map entry for and can never resume.
     ok('…and its dead session id goes with the session', !t.consoleSessionId);
     ok('…and the row says why', (t.events || []).some(
-        e => e.kind === 'parked' && /Console session/.test(e.note || '')));
+        e => e.kind === 'parked' && /Console card it was hosted in went with it/.test(e.note || '')));
     ok('…and no timer is left watching a session that can never answer',
         !mgr.tasks.some(x => x.status === 'running' && x.consoleSessionId));
     mgr.dispose();

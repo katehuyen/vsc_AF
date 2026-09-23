@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.642.0 - A Console task follows its conversation across a restart (S-88) (2026-09-23)
+
+- **The row stays with the run.** A restart that takes the Console's
+  conversations up again (`farm.restartExtensionHost resume=true`) reopens each
+  one in a NEW card — but its task row went back to the queue, lost its card,
+  and said the session "did not survive" while it was still working. Every
+  relay leg that loads a new build on arrival hit this: its row sat parked
+  beside the running leg, and ▶ on it would have opened a second one. Now the
+  row is hooked onto the new card by the conversation's own id, goes back to
+  running, keeps its start time, and its timeline says what happened. A row
+  whose conversation was not taken up stays parked, as before.
+
 ## 3.641.0 - The baton relay no longer stalls on a Console leg (S-85, S-86, S-87) (2026-09-23)
 
 The first real relay stopped after one hand-off. Three causes, all fixed:

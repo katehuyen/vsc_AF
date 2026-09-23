@@ -137,7 +137,10 @@ export function rowSessionId(
     t: { consoleSessionId?: string; hostedSessionId?: string; spawnSessionId?: string; runSessionId?: string },
     cardSession?: (cardId: string) => string | undefined
 ): string | undefined {
-    if (t.consoleSessionId) { return t.hostedSessionId || cardSession?.(t.consoleSessionId) || undefined; }
+    // S-88 — the engine's id outlives the card: a reload unhooks the row from
+    // its card, and the conversation it names may well have been taken up again
+    if (t.hostedSessionId) { return t.hostedSessionId; }
+    if (t.consoleSessionId) { return cardSession?.(t.consoleSessionId) || undefined; }
     return t.spawnSessionId || t.runSessionId || undefined;
 }
 
