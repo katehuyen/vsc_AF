@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.650.0 - A re-indexed session keeps the search shards it was re-indexed into (X-356) (2026-09-23)
+
+- **The search index stopped deleting its own fresh work (X-356).** When a
+  transcript changed, its search shards were rebuilt under the same file names
+  — but the old ones were cleared by a delete that was never waited for, so it
+  was still in flight when the new ones were written, and removed them. The
+  answer stayed right (a missing shard is rebuilt on the spot), but every
+  changed session was re-read from its transcript again on the next search, and
+  the next, instead of once. Measured: five changed transcripts, 20 shards
+  before, 5 left once the deletes landed. The old shards are now cleared before
+  the new ones are written, so a live session is parsed once per change. This
+  was also the test suite's long-standing intermittent red in
+  `test_search_speed.js` (load decided whether a delete landed before or after
+  the write).
+
 ## 3.649.0 - The phone opens a real Console session: /new <agent> [prompt] (U-138) (2026-09-23)
 
 - **An eleventh launch door (U-138).** `/agent <name> <prompt>` stays what it

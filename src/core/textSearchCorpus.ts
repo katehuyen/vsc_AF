@@ -331,6 +331,20 @@ export class TextSearchService {
         }
     }
 
+    /**
+     * ‼️ X-356 — A REBUILD CLEARS THE OLD SHARDS SYNCHRONOUSLY. The new ones
+     * take the SAME names (`<key>.<role>.tsv`), so an unlink still in flight
+     * when they are written deletes the build it was clearing the way for —
+     * measured: five changed transcripts, 20 shards → 12 → 5 once the event
+     * loop turned, and every next query re-parsed them again.
+     */
+    private dropShardsNow(e: Entry): void {
+        for (const info of Object.values(e.r ?? {})) {
+            try { fs.unlinkSync(path.join(this.shardDir, info.f)); }
+            catch { /* already gone */ }
+        }
+    }
+
     // -------------------------------------------------------------- the shards
 
     /**
@@ -475,7 +489,7 @@ export class TextSearchService {
     private buildOne(s: SearchableSession, sig: string, withTrail: boolean): Entry {
         const key = this.keyOf(s.file);
         const old = this.manifest.entries[key];
-        if (old) { this.dropShards(old); }
+        if (old) { this.dropShardsNow(old); }
         let raw = '';
         let records: SearchRecord[] | undefined;
         try { raw = fs.readFileSync(s.file, 'utf8'); records = buildRecords(raw, s, this.deps.parseForeign); }
