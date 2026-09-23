@@ -46,6 +46,7 @@ import { agyDefaultEffort } from './agy';
 import { EngineId, EngineProbe } from './engines';
 import { engineFlagFor, engineOf, engineTakesEffort } from './consoleEngine';
 import { EFFORT_CHOICES, LaunchChoice } from './launch';
+import { variantEffortRows } from './opencodeVariant';
 // ‼️ X-149 — ONE narrowing rule, and it is `media/afLaunch.js`. Loaded, never
 // reimplemented: the pages run the same file (see src/core/aflaunch.ts).
 import { LaunchCatalog, catalog, effortsForModel, narrow } from './aflaunch';
@@ -462,6 +463,8 @@ export function readEngineModels(
     opencodeCatalog?: {
         models?: { id: string; label: string }[]; fetchedAt?: number;
         via?: 'handshake' | 'cli';
+        /** X-330 — model ref → the variants it publishes (`opencode models --verbose`). */
+        variants?: Record<string, string[]>;
     }
 ): Record<EngineId, EngineModels> {
     const safe = <T>(fn: () => T): T | undefined => { try { return fn(); } catch { return undefined; } };
@@ -551,6 +554,8 @@ export function readEngineModels(
         };
 
     const opencodeRows = (opencodeCatalog?.models ?? []).filter(m => m.id);
+    const variantsOf = opencodeCatalog?.variants ?? {};
+    const variantModels = opencodeRows.filter(m => (variantsOf[m.id] ?? []).length);
     const opencode: EngineModels = opencodeRows.length
         ? {
             models: [DEFAULT_ROW, ...opencodeRows.map(m => ({
@@ -561,13 +566,15 @@ export function readEngineModels(
                 // to check against `opencode models`.
                 detail: m.id
             }))],
-            // ‼️ NO EFFORT VOCABULARY AT ALL, AND IT IS MEASURED. ACP 1.18.18
-            // declares only `model` and `mode` as session config, and not one of
-            // the seven reachable models publishes a variant (`export` →
-            // `variant: "default"`). `engineTakesEffort` already answers no for
-            // this engine; the empty list is the same answer where a picker
-            // reads it instead.
-            efforts: { '': [] },
+            // ‼️ X-330 — THE VOCABULARY IS PER MODEL: a model's own published
+            // variants, and nothing for a model that publishes none (`''` too,
+            // so a model the catalog does not name offers nothing). Only a
+            // headless run carries one — `engineTakesEffort(…, 'run')` — so a
+            // Console card or a terminal still draws no box at all.
+            efforts: {
+                '': [],
+                ...Object.fromEntries(variantModels.map(m => [m.id, variantEffortRows(m.label || m.id, variantsOf[m.id])]))
+            },
             defaultEffort: {},
             source: 'catalog',
             fetchedAt: opencodeCatalog?.fetchedAt,
@@ -576,7 +583,10 @@ export function readEngineModels(
                 + 'connected here offer, whether or not a session has ever been opened. '
                 : 'as OpenCode itself listed them when the session opened — '
                 + 'the handshake hands the whole catalog over, so nothing is spawned to ask. ')
-                + 'This engine has no reasoning-effort setting to go with them.'
+                + (variantModels.length
+                    ? `${variantModels.length} of them publish reasoning variants, which a headless task sends as `
+                    + '--variant; a Console card or a terminal cannot carry one.'
+                    : 'None of them publishes a reasoning variant, so there is no level to pick.')
                 + ageNote(opencodeCatalog?.fetchedAt)
         }
         : {

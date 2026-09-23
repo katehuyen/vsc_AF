@@ -1758,10 +1758,10 @@
      * hides it rather than collecting a value the run cannot use.
      *
      * ‼️ U-59 — AND THE ENGINE IS ASKED, NOT NAMED. This was the word `gemini`,
-     * so the second engine with no effort setting (OpenCode: ACP declares only
-     * model and mode, and no reachable model publishes a variant) was covered
-     * only by its catalog's empty list — which is not there until a session has
-     * opened. `takesEffort` is the same answer the bridge refuses on, and it is
+     * so the second engine with no effort setting on a card (OpenCode: ACP
+     * declares only model and mode; a headless task takes the model's own
+     * variants, X-330) was covered only by its catalog's empty list — which is
+     * not there until a session has opened. `takesEffort` is the same answer the bridge refuses on, and it is
      * true before anything has connected. The bare `gemini` fallback survives
      * for the one case the row cannot cover: before ANY engine row has landed.
      */
@@ -1830,7 +1830,7 @@
             e.label + (e.ready ? '' : ' — cannot run here'), {
             selected: e.id === chosen, disabled: !e.ready, detail: e.next || ''
         })).join('');
-        return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). ‼️ OpenCode breaks that sentence at both ends: it CAN stop and ask, which is exactly why an unattended run of it needs the auto-approve mode — with nobody to answer, the request comes back REFUSED rather than waiting — and it states the price of every turn itself. An engine with no reasoning-effort setting of its own (Gemini has none, OpenCode has none) is not given that box at all. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
+        return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). ‼️ OpenCode breaks that sentence at both ends: it CAN stop and ask, which is exactly why an unattended run of it needs the auto-approve mode — with nobody to answer, the request comes back REFUSED rather than waiting — and it states the price of every turn itself. An engine with no reasoning-effort setting of its own (Gemini has none) is not given that box at all; OpenCode offers the chosen model's own variants on a headless run, and no box for a model that publishes none. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
                 <select id="nt-${id}">${opts}</select></label>`;
     }
     /**

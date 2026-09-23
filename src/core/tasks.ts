@@ -1852,6 +1852,8 @@ export interface TaskManagerOptions {
      * producing an output file containing a shell's "command not found".
      */
     engineRefusal?: (engine: string | undefined) => string | undefined;
+    /** X-330 — the variants an OpenCode model publishes; undefined = the catalog does not know it. */
+    opencodeVariants?: (model: string) => string[] | undefined;
     /** F3: global browser-step allowlist + per-step approval gate. */
     browserAllowHosts?: () => string[];
     /** Resolve to true to run the browser step; false cancels it. */
@@ -3567,7 +3569,12 @@ export class TaskManager implements vscode.Disposable {
         // `--variant` no reachable model publishes — both of which look like a
         // run that worked, or a run that failed for no stated reason.
         {
-            const refused = headlessEffortRefusal(task.engine, task.effort, task.cli);
+            const refused = headlessEffortRefusal(task.engine, task.effort, task.cli, {
+                transport: task.mode === 'headless' ? 'run'
+                    : normInteractiveTarget(task.interactiveTarget) === 'console' ? 'hosted' : 'tui',
+                model: task.model,
+                variantsOf: this.opts.opencodeVariants
+            });
             if (refused) {
                 void vscode.window.showWarningMessage(
                     `Agent Farm: "${task.title}" did not start — ${refused}`);

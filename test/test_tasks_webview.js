@@ -2172,12 +2172,12 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         takesEffort: AFL.takesEffort({ id: 'opencode', takesEffort: false })
     });
     ok('‼️ …and that an engine with no effort setting is not given the box',
-        /Gemini has none, OpenCode has none/.test(page)
+        /Gemini has none\)/.test(page) && /OpenCode offers the chosen model's own variants on a headless run/.test(page)
         && AFL.effortsFor(noEffort, '').length === 0
         && AFL.narrow(noEffort, { model: '', effort: 'high' }).effort === ''
         && /if \(!\(list \|\| \[\]\)\.length\) \{ return ''; \}/.test(page));
     ok('‼️ …and that answer is the engine\'s own, not the catalog\'s silence',
-        /takesEffort: engineTakesEffort\(e\.id\)/.test(panel));
+        /takesEffort: engineTakesEffort\(e\.id, 'run'\)/.test(panel));
     // ‼️ U-59 — OPENCODE BREAKS THE PER-TURN SENTENCE AT BOTH ENDS, and the
     // Engine box has to say so: it CAN stop and ask (which is exactly why an
     // unattended run of it needs the auto-approve mode) and it states the price

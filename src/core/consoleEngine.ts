@@ -42,8 +42,10 @@ import {
     OPENCODE_NO_TRANSCRIPT_NOTE, opencodeModeNote, opencodePermissionSetting,
     opencodeRunArgs, opencodeTuiArgs
 } from './opencode';
+import { EffortTransport, openCodeVariantRefusal } from './opencodeVariant';
 
 export { EngineId };
+export type { EffortTransport };
 
 /**
  * How a turn reaches the engine.
@@ -1046,8 +1048,11 @@ export function enginePermissionSetting(
  * control with no referent — the thing `docs/CONVENTIONS.md` already forbids —
  * so every surface asks this instead of assuming four engines behave alike.
  */
-export function engineTakesEffort(engine: string | undefined): boolean {
+export function engineTakesEffort(engine: string | undefined, transport?: EffortTransport): boolean {
     const id = engineOf(engine).id;
+    // X-330 — a headless OpenCode run carries the level as `--variant`, per
+    // model (core/opencodeVariant.ts). Every other transport still answers no.
+    if (id === 'opencode' && transport === 'run') { return true; }
     /**
      * ‼️ OPENCODE HAS THE FLAG AND — AS OF X-117 — SOMETHING TO PUT IN IT ON
      * SOME MODELS. THE ANSWER IS STILL NO, AND NOW FOR A DIFFERENT REASON.
@@ -1068,10 +1073,12 @@ export function engineTakesEffort(engine: string | undefined): boolean {
      *   · ACP declares only `model` and `mode` as session config, so a hosted
      *     card still has no channel for one and the box would work headless and
      *     not in Console.
-     * Doing it properly is its own item (X-330); flipping this line alone would
-     * ship the half of it that misleads. `test_e2e_opencode_providers.js` reads
-     * the engine's catalog on every run, so this measurement cannot go stale
-     * again without saying so.
+     * X-330 did it properly: `transport: 'run'` answers yes (above), and the
+     * per-model list and the refusal live in core/opencodeVariant.ts. Without a
+     * transport the answer stays no, because every caller that omits one is a
+     * Console card or a terminal. `test_e2e_opencode_providers.js` reads the
+     * engine's catalog on every run, so this measurement cannot go stale again
+     * without saying so.
      */
     return id !== 'gemini' && id !== 'opencode';
 }
@@ -1087,29 +1094,28 @@ export function engineTakesEffort(engine: string | undefined): boolean {
  * happens then is not an error message, it is worse —
  *
  * - **gemini exits 42** and says nothing a reader can act on (measured);
- * - **opencode** takes `--variant` happily and no reachable model publishes
- *   one, so the flag is either ignored or the run dies on a provider's
- *   complaint, with the Effort column on the row still saying it asked.
+ * - **opencode** takes `--variant` on a headless run only, and only a level
+ *   the chosen model publishes (X-330) — anything else is ignored or dies on
+ *   a provider's complaint, with the Effort column still saying it asked.
  *
  * A silent flag is the failure this repo keeps finding, so the run is refused
  * BY NAME with the field to clear — a refusal a person can fix in one click
  * beats a run that starts and lies.
  */
 export function headlessEffortRefusal(
-    engine: string | undefined, effort: string | undefined, cli?: string
+    engine: string | undefined, effort: string | undefined, cli?: string,
+    /** X-330 — OpenCode's answer depends on the transport and the model. */
+    variant: { transport?: EffortTransport; model?: string; variantsOf?: (model: string) => string[] | undefined } = {}
 ): string {
     const value = String(effort ?? '').trim();
     // A CLI profile runs a binary this matrix knows nothing about; refusing on
     // its behalf would refuse a profile that works.
     if (!value || String(cli ?? '').trim()) { return ''; }
-    if (engineTakesEffort(engine)) { return ''; }
     const spec = engineOf(engine);
-    const why = spec.id === 'opencode'
-        ? 'OpenCode has a `--variant` flag and nothing to put in it: not one of the models reachable here '
-        + 'publishes a variant, and its hosted channel declares only model and mode'
-        : `${spec.label} has no reasoning-effort flag at all`;
-    return `this run asks for effort "${value}" and ${why} — clear the effort, `
-        + 'or run it on an engine that has one';
+    if (spec.id === 'opencode') { return openCodeVariantRefusal(value, variant); }
+    if (engineTakesEffort(engine)) { return ''; }
+    return `this run asks for effort "${value}" and ${spec.label} has no reasoning-effort flag at all — `
+        + 'clear the effort, or run it on an engine that has one';
 }
 
 /** The prompt as a per-turn engine receives it — the same wording on both, so

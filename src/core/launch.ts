@@ -922,7 +922,9 @@ export function validateLaunch(o: LaunchOptions): string[] {
     if (o.engine && !(o.engine in ENGINES)) {
         errors.push(`engine "${o.engine}" is not one of: ${Object.keys(ENGINES).join(', ')}`);
     }
-    if (o.effort?.trim() && !known(EFFORT_CHOICES, o.effort.trim())) {
+    // X-330 — OpenCode's levels are its models' own variants (`minimal` is one),
+    // checked against the catalog by openCodeVariantRefusal, not this list.
+    if (o.effort?.trim() && o.engine !== 'opencode' && !known(EFFORT_CHOICES, o.effort.trim())) {
         errors.push(`effort "${o.effort.trim()}" is not one of: ` +
             EFFORT_CHOICES.filter(c => c.id).map(c => c.id).join(', '));
     }

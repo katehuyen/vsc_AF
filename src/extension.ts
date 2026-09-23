@@ -201,6 +201,7 @@ import {
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
 import { publicOpenCodeCatalogText, readOpenCodeCatalog } from './core/providerCatalog';
+import { variantsByRef } from './core/opencodeVariant';
 import {
     dropTestsFor, keyFor, providerHealth, ProviderHealthInput, ProviderHealthReport, ProviderTestRecord,
     smokeRefusal, testKeyOf
@@ -3824,6 +3825,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // X-18 — a task naming an engine is checked against this machine
             // before it spawns, with the same sentence every other surface uses.
             engineRefusal: (engine) => engineRefusal(engineMatrix(), engine),
+            opencodeVariants: (model) => opencodeVariantsOf(model),
             // ‼️ S-19 — the launch gate for a resumed run; see sessionBusyReason.
             // ‼️ S-59 — a survivor of an earlier window that this farm started
             // is ended here rather than waited for: it never lets go by itself,
@@ -7547,7 +7549,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // reports one fault per press makes the user find them serially.
             const problems = [
                 engineRefusal(engines, dims.engine),
-                headlessEffortRefusal(dims.engine, dims.effort) || undefined,
+                headlessEffortRefusal(dims.engine, dims.effort, undefined, {
+                    transport: 'run', model: dims.model, variantsOf: (m) => opencodeVariantsOf(m)
+                }) || undefined,
                 // ‼️ X-120 — THE PAIR, AGAINST THE ENGINE IT REALLY LANDS ON. A
                 // row moved between engines keeps its model, and a model changed
                 // under a kept effort keeps that: both were dropped or sent
@@ -21965,6 +21969,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }));
     };
     applyPublishedWindows();
+    // X-330 — each model's published variants, off the same persisted text.
+    // A task names the wire ref or, resumed, the bare tail; a tail two
+    // providers share answers nothing rather than a guess.
+    const opencodeVariantMap = (): Record<string, string[]> =>
+        variantsByRef(readOpenCodeCatalog(opencodeCatalog.text).rows);
+    const opencodeVariantsOf = (model: string): string[] | undefined => {
+        const map = opencodeVariantMap();
+        if (map[model]) { return map[model]; }
+        const tails = Object.keys(map).filter(ref => ref.slice(ref.lastIndexOf('/') + 1) === model);
+        return tails.length === 1 ? map[tails[0]] : undefined;
+    };
     let opencodeInFlight: Promise<void> | undefined;
     /**
      * One place both sources land, so the rule about which wins is written once:
@@ -22079,7 +22094,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engineProbe,
             cfg().get<string[]>('modelAliases', ['haiku', 'sonnet', 'opus', 'fable']),
             { text: agyCatalog.text, fetchedAt: agyCatalog.fetchedAt },
-            { models: opencodeCatalog.models, fetchedAt: opencodeCatalog.fetchedAt, via: opencodeCatalog.via }
+            {
+                models: opencodeCatalog.models, fetchedAt: opencodeCatalog.fetchedAt, via: opencodeCatalog.via,
+                variants: opencodeVariantMap()
+            }
         );
     };
     // ‼️ WARMED ONCE, OFF THE ACTIVATION PATH (U-31). The first person to open a

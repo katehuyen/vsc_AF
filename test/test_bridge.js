@@ -3658,7 +3658,7 @@ const { opencodeStatus, syncToOpencode } =
                     /const dims = resolveDelegateRun\(member, spec, \{/.test(src)
                     && /const planMissionLaunch = [^]{0,3000}storedDefault\(agentDefaults, agent\.dir, engine as EngineId\)/.test(src));
                 ok('…and every refusal at once — an engine this machine cannot run AND an effort it has no flag for',
-                    /engineRefusal\(engines, dims\.engine\),\s*headlessEffortRefusal\(dims\.engine, dims\.effort\)/.test(src)
+                    /engineRefusal\(engines, dims\.engine\),\s*headlessEffortRefusal\(dims\.engine, dims\.effort, undefined, \{\s*transport: 'run', model: dims\.model/.test(src)
                     && /EVERY refusal at once/.test(prevBlock));
                 // ‼️ X-120 — AND THE PAIR AGAINST THE ENGINE IT REALLY LANDS ON.
                 // `engineRefusal` answers "can this machine run it at all" and

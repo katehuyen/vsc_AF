@@ -824,6 +824,35 @@ const variants = () => ([
             });
         }
     },
+    // X-330 — an OpenCode task takes its MODEL's own variants as the effort, so
+    // the two arities are two pictures: a model that publishes five levels
+    // (the box lists exactly those) and one that publishes none (no box at all).
+    ...[['tasks-oc-variants', 'opencode/muse-spark', 'publishes five variants: the Effort box lists exactly those'],
+        ['tasks-oc-novariant', 'opencode/big-pickle', 'publishes no variants: there is no Effort box']].map(([id, model, what]) => ({
+        id,
+        label: `Tasks → New task on OpenCode, a model that ${what}`,
+        data: (() => {
+            const d = data();
+            d.launch.engines = d.launch.engines.concat([
+                { id: 'opencode', label: 'OpenCode', ready: true, next: 'Ready, on a plan.', takesEffort: true }
+            ]);
+            d.launch.engineModels = Object.assign({}, d.launch.engineModels, {
+                opencode: require('../../out/core/models.js').readEngineModels({ readHome: () => undefined }, ['sonnet'], undefined, {
+                    models: [{ id: 'opencode/muse-spark', label: 'Muse Spark' }, { id: 'opencode/big-pickle', label: 'Big Pickle' }],
+                    via: 'cli', fetchedAt: NOW,
+                    variants: { 'opencode/muse-spark': ['minimal', 'low', 'medium', 'high', 'xhigh'], 'opencode/big-pickle': [] }
+                }).opencode
+            });
+            return d;
+        })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması', 'nt-engine': 'opencode' };
+            drive(r, draft, 'nt-engine');
+            draft['nt-model'] = model;
+            drive(r, draft, 'nt-model');
+        }
+    })),
     // ‼️ M-24 — the saved prompts, over the form that writes prompts. The
     // window is the whole change and it exists in no other state, so a picture
     // of the form with it shut would show none of it. It is drawn LAST because

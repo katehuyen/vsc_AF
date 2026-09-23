@@ -122,8 +122,9 @@ async function main() {
             + `(${varied.length} of ${rows.length} rows: `
             + (varied.map(r => r.modelId || r.id).join(', ') || 'none') + ')',
             rows.length > 0 && varied.length !== rows.length);
-        ok('‼️ …so the product still offers no box for one, and the two agree ON WHY (X-330)',
-            CE.engineTakesEffort('opencode') === false);
+        ok('‼️ …so a Console card or a terminal offers no box, and only a headless run takes one (X-330)',
+            CE.engineTakesEffort('opencode') === false && CE.engineTakesEffort('opencode', 'run') === true
+            && CE.engineTakesEffort('opencode', 'hosted') === false);
         ok('the adapter passes a model the catalog offers', adapter.preflight({ engine: 'opencode', providerId: 'oca', modelId: 'oca/m1' }).length === 0);
         ok('‼️ …and refuses one no provider serves', adapter.preflight({ engine: 'opencode', providerId: 'oca', modelId: 'oca/nope' }).length > 0);
 

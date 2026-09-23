@@ -207,9 +207,15 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
         finally { Module._load = orig; }
     })();
 
-    ok('‼️ an effort on OpenCode is refused, and the sentence says what to clear',
-        /clear the effort/.test(CE.headlessEffortRefusal('opencode', 'high'))
-        && /variant/.test(CE.headlessEffortRefusal('opencode', 'high')));
+    // X-330 — the answer is the transport's and the model's.
+    const pub = (m) => ({ 'opencode/ling': ['low', 'medium', 'high'], 'opencode/big-pickle': [] })[m];
+    ok('‼️ an effort on an interactive OpenCode run is refused, and the sentence says what to clear',
+        /clear the effort/.test(CE.headlessEffortRefusal('opencode', 'high', undefined, { transport: 'tui' }))
+        && /variant/.test(CE.headlessEffortRefusal('opencode', 'high', undefined, { transport: 'hosted' })));
+    ok('‼️ a headless run carries a variant the model publishes, and nothing else',
+        CE.headlessEffortRefusal('opencode', 'high', undefined, { model: 'opencode/ling', variantsOf: pub }) === ''
+        && /publishes: low, medium, high/.test(CE.headlessEffortRefusal('opencode', 'xhigh', undefined, { model: 'opencode/ling', variantsOf: pub }))
+        && /publishes no reasoning variants/.test(CE.headlessEffortRefusal('opencode', 'low', undefined, { model: 'opencode/big-pickle', variantsOf: pub })));
     ok('…and on Gemini, which exits 42 rather than explaining itself',
         CE.headlessEffortRefusal('gemini', 'medium') !== '');
     for (const id of ['claude', 'codex', 'agy']) {
@@ -223,7 +229,7 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
         CE.headlessEffortRefusal('opencode', 'high', 'my-profile') === '');
 
     ok('the launch gate applies it, and fails the run BEFORE it starts',
-        /headlessEffortRefusal\(task\.engine, task\.effort, task\.cli\)/.test(tasksTs)
+        /headlessEffortRefusal\(task\.engine, task\.effort, task\.cli, \{/.test(tasksTs)
         && /failed before it started — \$\{refused\}/.test(tasksTs));
 }
 

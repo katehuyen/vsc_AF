@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.647.0 - A headless OpenCode task can pick its model's own reasoning variant (X-330) (2026-09-23)
+
+- **The variant is the model's, and only a headless run carries it (X-330).**
+  OpenCode's reasoning level is `--variant`, and `opencode models --verbose`
+  publishes it per model — some models none, some low · medium · high, some
+  minimal … xhigh. The launcher already said "a headless task can pick one",
+  but no task could: the Effort box was hidden for OpenCode and any level was
+  refused at launch. Now the New-task form offers the chosen model exactly the
+  variants it publishes (and no box at all for a model that publishes none), a
+  headless run sends it as `--variant`, and a level the model does not publish
+  is refused before anything spawns, with the model's own list. A terminal (the
+  TUI has no `--variant`) and a Console card (ACP declares only model and mode)
+  still take none, and a task set to run there is refused by name; a catalog
+  that has not answered yet refuses nothing. The rule is one pure module,
+  `core/opencodeVariant.ts`, asked by the form, the bridge, the task launcher
+  and the mission preview alike.
+
 ## 3.646.0 - A notice that becomes a work item carries the whole notice, and goes back to the agent that raised it (N-10) (2026-09-23)
 
 - **The item carries its notice (N-10).** Converting a notice — "Add to queue",

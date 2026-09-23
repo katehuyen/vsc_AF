@@ -295,8 +295,13 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
     // 1.18.18 declares only `model` and `mode`, and no reachable model publishes
     // a variant — so accepting an effort would let a caller believe a run was
     // throttled when nothing is.
-    ok('‼️ an effort on OpenCode is refused, the same way it is on Gemini',
-        threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'high' }))
+    // X-330 — a headless OpenCode run carries the level as `--variant` (which
+    // variants the MODEL publishes is checked at launch, against the catalog);
+    // an interactive one cannot, and Gemini has no setting at all.
+    ok('‼️ an effort on an interactive OpenCode run is refused, the same way it is on Gemini',
+        !threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'high' }))
+        && threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'high' }, { mode: 'interactive' }))
+        && threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'high', mode: 'interactive' }))
         && threw(() => bridgeRunDimensions({ engine: 'gemini', effort: 'high' })));
     ok('…and the contract NAMES both of them rather than one',
         /gemini/.test(enginesWithoutEffort()) && /opencode/.test(enginesWithoutEffort())
@@ -387,9 +392,12 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
     // it — but no reachable model publishes one, so the honest answer is that
     // this engine takes no effort at all and says so rather than sending a flag
     // the model will ignore.
-    ok('‼️ a variant/effort on OpenCode is refused rather than sent and ignored',
-        threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'low' }))
-        && threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'max' })));
+    // X-330 — and now that some models publish variants, a headless run may
+    // carry one (`minimal` is one, and not in the shared list); a terminal may not.
+    ok('‼️ a variant/effort on an interactive OpenCode run is refused rather than sent and ignored',
+        threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'low' }, { mode: 'interactive' }))
+        && threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'max' }, { mode: 'interactive' }))
+        && !threw(() => bridgeRunDimensions({ engine: 'opencode', effort: 'minimal' })));
 
     // ---- the fallback model list said Claude's flag name on every engine ----
     //

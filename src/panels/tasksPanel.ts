@@ -983,7 +983,9 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
                 ...e,
                 shape: engineOf(e.id).shape,
                 reportsCost: engineOf(e.id).reportsCost,
-                takesEffort: engineTakesEffort(e.id)
+                // X-330 — a task is a headless run unless it says otherwise, and
+                // there OpenCode takes its model's own variants.
+                takesEffort: engineTakesEffort(e.id, 'run')
             })),
             defaults: deps.launchDefaults(),
             // Only offered when the user actually has profiles: a picker whose

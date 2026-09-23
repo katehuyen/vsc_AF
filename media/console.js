@@ -4538,8 +4538,8 @@
         /**
          * ‼️ U-59 — AN ENGINE WITH NO EFFORT SETTING IS NOT GIVEN THE BOX.
          *
-         * Gemini has no such flag and OpenCode has none either (ACP declares
-         * only model and mode, and no reachable model publishes a variant), so
+         * Gemini has no such flag and OpenCode has none on a card (ACP declares
+         * only model and mode; its variants ride a headless task, X-330), so
          * both were handed an EMPTY dropdown to stare at — the control with no
          * referent `docs/CONVENTIONS.md` forbids and the tasks form already
          * drops. The Console drew it anyway, at a fixed 82px, on both rows.

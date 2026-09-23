@@ -419,8 +419,15 @@ export function bridgeRunDimensions(
     // has no reasoning-effort setting at all (core/gemini.ts) and exits 42 when
     // handed one. Accepting the field and silently ignoring it would let a
     // caller believe a run is throttled when nothing is.
-    if (out.effort && !engineTakesEffort(String(out.engine ?? ''))) {
-        need(false, `engine "${out.engine}" has no reasoning-effort setting — leave effort out.`);
+    // X-330 — a task-like run is headless unless it says otherwise, and a
+    // headless OpenCode run carries the level as `--variant`; which variants
+    // the model publishes is checked at launch, against the catalog.
+    const interactive = (opts.mode ?? optStr(args, 'mode')) === 'interactive';
+    if (out.effort && !engineTakesEffort(String(out.engine ?? ''), interactive ? 'tui' : 'run')) {
+        need(false, String(out.engine) === 'opencode'
+            ? 'OpenCode takes a reasoning variant only on a headless run — its TUI has no --variant flag. '
+            + 'Leave effort out, or run it headless.'
+            : `engine "${out.engine}" has no reasoning-effort setting — leave effort out.`);
     }
     // ‼️ A-24 — AND WHAT IT SOUNDS LIKE WHEN IT IS OVER. An agent that can
     // queue a nightly run has to be able to say "and tell me in that tone", or
