@@ -1082,7 +1082,7 @@ Being the one surface that can face a network, its rules are strict:
 
 **Connect Telegram…** takes a bot token (verified against Telegram *before* anything is saved) and stores it in the **secret vault** — never in settings.json. After that a chat talks to your agents: any message runs headlessly on the agent the chat is bound to, and the answer comes back in the same thread with the run's cost. No inbound port is opened — the farm long-polls outward.
 
-Commands: `/agent <name>` (bind this chat) · `/agents` · `/status` (running, blocked, today's spend) · `/cancel` · `/help`.
+Commands: `/agent <name>` (bind this chat) · `/new <agent> [prompt]` (open a real Console session — numbered in `/sessions`, its turn cards sent here, the chat focused on it, every turn billed against the daily cap) · `/agents` · `/status` (running, blocked, today's spend) · `/cancel` · `/help`.
 
 Two rails that are not optional:
 

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.648.0",
+  "version": "3.649.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8180,7 +8180,7 @@
         "agentFarm.telegram.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Let a **Telegram chat talk to your agents**: send a message, the agent the chat is bound to runs it headlessly, and the answer comes back in the same thread. Off by default; the bot token lives in the Agent Farm **secret vault** (never in settings) — set it up with **Connect Telegram…**. Two rails are always on: a message from a chat that is not in `agentFarm.telegram.allowedChats` is refused (it is told its own chat id, so allowing it is one copy), and chat-started runs stop at `agentFarm.telegram.maxDailyUSD` per day. Commands in chat: `/agent <name>` · `/agents` · `/status` · `/cancel` · `/help`."
+          "markdownDescription": "Let a **Telegram chat talk to your agents**: send a message, the agent the chat is bound to runs it headlessly, and the answer comes back in the same thread. Off by default; the bot token lives in the Agent Farm **secret vault** (never in settings) — set it up with **Connect Telegram…**. Two rails are always on: a message from a chat that is not in `agentFarm.telegram.allowedChats` is refused (it is told its own chat id, so allowing it is one copy), and chat-started runs stop at `agentFarm.telegram.maxDailyUSD` per day. Commands in chat: `/agent <name>` · `/new <agent> [prompt]` (opens a real Console session, focused on the chat) · `/agents` · `/status` · `/cancel` · `/help`."
         },
         "agentFarm.telegram.allowedChats": {
           "type": "array",

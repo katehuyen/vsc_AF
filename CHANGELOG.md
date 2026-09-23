@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.649.0 - The phone opens a real Console session: /new <agent> [prompt] (U-138) (2026-09-23)
+
+- **An eleventh launch door (U-138).** `/agent <name> <prompt>` stays what it
+  was — a headless run that answers once in the thread. `/new <agent> [prompt]`
+  opens a real **Console session** instead: numbered in `/sessions`, its turn
+  cards sent to this chat, steerable from the phone, and a message written
+  while it works waits in the queue for the turn to end. It starts like every
+  other door — seeded from what that agent was last run with and recorded
+  afterwards — in the agent's own folder, under the window's active project.
+  A bare `/new` means the agent the chat is bound to; a name nobody has is
+  refused rather than run on the bound agent.
+- **Budgeted for its whole life.** A spent daily cap refuses the door before
+  anything spawns, and every turn the session takes — from the phone or from
+  the window — is billed against `agentFarm.telegram.maxDailyUSD`. A session
+  that cannot start (a missing CLI, a sign-in that is not on this machine) now
+  says why on the phone, not only in the window.
+
 ## 3.648.0 - A wiki category is renamed, or merged into another, in all three places it lives (U-125) (2026-09-23)
 
 - **One rename, three places (U-125).** A category is a folder under the wiki

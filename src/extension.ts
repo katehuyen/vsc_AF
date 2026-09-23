@@ -404,6 +404,7 @@ import {
 import {
     agentsText, cancelTarget, farmStatusText, sessionsKeyboard, splitAgentPrompt
 } from './core/telegramCommands';
+import { phoneLaunchVerdict, phoneOpenedText } from './core/telegramLaunch';
 import { changesSummary, changesText, headCommit } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
@@ -28811,14 +28812,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const startConsoleSession = (
         agent: AgentInfo, o: LaunchOptions = {}, project?: string
-    ): void => {
+    ): { id: string } | { refused: string } => {
         const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
         // The same refusal every other entry point uses, on this side of every
         // picker: a hosted session on a missing CLI dies on its first turn.
+        // ‼️ U-138 — returned as well as shown: a door with no window in front
+        // of it (the phone) has to be able to say why nothing opened.
         const refused = engineRefusal(engineMatrix(), merged.engine);
         if (refused) {
             void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
-            return;
+            return { refused };
         }
         // ‼️ X-169 — and the same refusal for the sign-in, on this side of every
         // picker too. Nothing reachable today can hand this an id that names no
@@ -28830,7 +28833,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
         if (accountNo) {
             void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
-            return;
+            return { refused: accountNo };
         }
         /**
          * ‼️ X-102 — THE MANIFEST FOR A CARD, WRITTEN BEFORE THE PROCESS STARTS.
@@ -28911,6 +28914,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             context.subscriptions.push(sub);
         }
         ConsolePanel.show(consoleDeps, { sessionId: id });
+        return { id };
     };
 
     /**
@@ -29461,6 +29465,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * ‼️ U-138 — `/new`: the phone opens a real Console session (the verdict
+     * and its words are `core/telegramLaunch.ts`). Seeded and recorded like
+     * every other door; billed against the phone's cap from its first turn to
+     * its last (the cost mark is set at 0 as it opens — `turnEnded` bills every
+     * turn of a marked conversation); and the chat is focused on it, which is
+     * what brings its turn card here and parks a message typed while it works.
+     */
+    const chatOpenSession = async (chatId: number, arg: string, bound?: string) => {
+        const st = chatState();
+        const cap = chatCfg().maxDailyUSD;
+        const v = phoneLaunchVerdict({
+            arg, names: agents.map(a => a.name), bound,
+            ledger: st.ledger, capUSD: cap, day: dayKey(Date.now()),
+            spent: fmtUSD(st.ledger.usd), cap: fmtUSD(cap)
+        });
+        if (v.do === 'refuse') { await chatSend(chatId, v.text); return; }
+        const agent = agents.find(a => a.name === v.agent);
+        if (!agent) { await chatSend(chatId, `No agent called "${v.agent}". /agents lists them.`); return; }
+        const o = seedLastLaunch(agent.id, { prompt: v.prompt });
+        const started = startConsoleSession(agent, o);
+        if ('refused' in started) { await chatSend(chatId, `${agent.name} — nothing opened: ${started.refused}`); return; }
+        void rememberLaunch(agent.id, o, 'console');
+        await saveChatState({
+            ...st,
+            seen: chargeTurn(st.seen, started.id, 0).seen,
+            routing: setFocus(st.routing, chatId, started.id)
+        });
+        const live = chatRoutable();
+        const n = live.findIndex(s => s.id === started.id) + 1;
+        const label = n ? sessionLabel(live[n - 1]) : agent.name;
+        await chatSend(chatId, phoneOpenedText(label, n || live.length, v.prompt), started.id);
+    };
+
+    /**
      * U-116 — `/status`, gathered here and rendered in `telegramCommands.ts`,
      * so the bridge can hand an agent the same screen the phone gets without
      * a bot token in the way.
@@ -29706,6 +29744,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await chatSend(msg.chatId, `This chat now talks to ${split.agent}.`);
             return;
         }
+        if (cmd.kind === 'new') { await chatOpenSession(msg.chatId, cmd.agent, bound); return; }
         if (cmd.kind === 'status') {
             await chatSend(msg.chatId, chatStatusText(st, live, focused, bound));
             return;
@@ -41777,7 +41816,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'EACH PLAN — an engine that publishes no figure is NAMED, never rendered as 0%); `sessions` is '
                 + 'the numbered list with what each conversation is waiting on, plus the buttons under it. '
                 + 'Read-only: this is what the phone WOULD be shown. To act, use the op the command stands on '
-                + '(console.interrupt, telegram.focus, tasks.add). args: chat? (a chat id — its focus and bound '
+                + '(console.interrupt, telegram.focus, tasks.add; U-138 /new → console.start, which seeds '
+                + 'from the same last-used layer). args: chat? (a chat id — its focus and bound '
                 + 'agent are used; omitted, the first allowed chat)',
             handler: (args) => {
                 const c = chatCfg();

@@ -55,6 +55,8 @@ export type ChatCommand =
     | { kind: 'status' }
     | { kind: 'agents' }
     | { kind: 'use'; agent: string }
+    /** U-138 — open a real Console session; the arg is `<agent> [prompt]` */
+    | { kind: 'new'; agent: string }
     /** U-116 — no arg stops the run this chat started; an arg names a live turn */
     | { kind: 'cancel'; arg: string }
     /** U-113 — the live conversations, numbered, so `/focus 2` has a 2 */
@@ -137,6 +139,7 @@ export function parseCommand(text: string): ChatCommand {
     if (cmd === 'agents') { return { kind: 'agents' }; }
     if (cmd === 'cancel' || cmd === 'stop') { return { kind: 'cancel', arg }; }
     if (cmd === 'agent' || cmd === 'use') { return { kind: 'use', agent: arg }; }
+    if (cmd === 'new') { return { kind: 'new', agent: arg }; }
     if (cmd === 'sessions') { return { kind: 'sessions' }; }
     if (cmd === 'focus') { return { kind: 'focus', arg }; }
     // an unknown slash command is not a prompt — running it would be a guess
@@ -178,12 +181,14 @@ export const HELP_TEXT = [
     '/focus <number|agent> — send plain messages to that one (/focus off clears it)',
     '/agent <name> — the agent a headless run is started for when nothing is live',
     '/agent <name> <prompt> — run that prompt now, answered in this thread',
+    '/new <agent> [prompt] — open a real Console session for it and focus this chat on it: /sessions numbers it, its turn cards come here',
     '/agents — the agents and what each one thinks with',
     '/status — the farm: what is running, what needs you, today\'s cost, what is left on each plan',
     '/cancel — stop the run this chat started · /cancel <number> stops a live turn',
     '/help — this message',
     '',
-    'Runs started from chat are headless and carry their own daily budget.',
+    'A /agent run is headless; a /new session is a Console conversation. Both carry',
+    'the chat\'s own daily budget — a /new session for every turn it takes.',
     'Write to a conversation that is working and your message WAITS for the turn',
     'to end rather than cutting into it — it survives a restart. Over the daily',
     'budget, or asking for something that cannot be undone, I ask you first.'
