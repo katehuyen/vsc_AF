@@ -104,7 +104,9 @@ const runTimers = () => {
 const windowStub = {
     getComputedStyle: el => ({ visibility: el.shown ? 'visible' : 'hidden' })
 };
-const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
+// afTipEdge.js first: afTip.js asks it where a panel opens (K-18 lives there).
+const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTipEdge.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
 new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame',
     'setTimeout', 'clearTimeout', src)(
         windowStub, documentStub, MO, fn => fn(),     // run the frame at once: a

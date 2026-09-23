@@ -29,6 +29,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // Shared for the reason the snippet picker is, one step on: a box that
     // talks to an engine offers what that engine could actually be told.
     'afSlashPicker.js',
+    // afTipEdge.js — where the panel opens and that nothing veils it (K-18,
+    // K-44, U-146). Before afTip.js, which calls it.
+    'afTipEdge.js',
     'afTip.js',
     // afCombo.js was the fourteenth — the searchable multi-pick box (U-90).
     // Shared because the tagger asks its one question with it and the cockpit

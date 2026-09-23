@@ -50,6 +50,7 @@ vm.createContext(sandbox);
 // U-68 put every nav button's full name in a rich panel, so the component the
 // panels come from has to be here too — the header degrades to a bare button
 // without it, which is exactly the state that must not pass unnoticed.
+vm.runInContext(read('media/afTipEdge.js'), sandbox);
 vm.runInContext(read('media/afTip.js'), sandbox);
 vm.runInContext(read('media/pageHeader.js'), sandbox);
 const AFHeader = sandbox.window.AFHeader;

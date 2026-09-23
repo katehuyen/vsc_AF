@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.639.0 - A hover panel is never seen through a dimmed row (U-146) (2026-09-23)
+
+- **Opaque, everywhere.** A panel opened inside a faded block — a closed A2A
+  card, a done task, a muted account line, a dimmed table header, a quiet
+  session row — was drawn at that block's opacity: half-transparent, with the
+  text behind it showing through and the next row painting over it. Measured
+  on the page renders: about 640 panels on 14 pages sat under such a block.
+  Now the faded block is lifted to full opacity for exactly as long as its
+  panel is open — the row you are reading comes forward with it — and fades
+  back when the panel closes. A pointer merely passing over a list flashes
+  nothing: the lift waits the same short delay the panel does.
+- The code that decides where a panel opens (K-18's side, K-44's fit, and this
+  lift) now lives in its own file, `media/afTipEdge.js`, so the panel component
+  itself stops growing.
+
 ## 3.638.0 - A hover panel never opens off the window, or under the column beside it (K-44) (2026-09-23)
 
 - **A third answer when neither side fits.** A panel used to choose between

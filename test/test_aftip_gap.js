@@ -27,7 +27,8 @@ const documentStub = {
     addEventListener: () => {}, removeEventListener: () => {},
     querySelectorAll: () => [], body: { classList: { add: () => {}, remove: () => {} } }
 };
-const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
+const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTipEdge.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
 new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame',
     'setTimeout', 'clearTimeout', src)(
     windowStub, documentStub, function () { this.observe = () => {}; this.disconnect = () => {}; },

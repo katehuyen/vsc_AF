@@ -315,7 +315,18 @@ outrank the A-12 collapse rule and give every closed panel its box back.
 real component at three widths, and proves it bites by measuring again with
 `contain()` removed.
 
-`afTip.js` does it for every panel from real measurements the moment the pointer
+**‼️ A PANEL IS NEVER SEEN THROUGH A DIMMED ROW (U-146).** `opacity` below 1 on
+any ancestor composites the panel at that opacity too, and makes the ancestor a
+stacking context the next row paints over — no rule on the panel can undo
+either. So dim a row with `opacity` freely: `afTipEdge.js` marks a translucent
+ancestor `af-dimhost` when a pointer first reaches a panel inside it, and
+`common.css` lifts it to full opacity for exactly as long as the panel is open
+(the row being read comes forward with it). A plain hover waits the ordinary
+open delay, so a sweeping pointer flashes no row. `test/test_tip_lift.js`
+measures the product of every ancestor's computed opacity with a panel open on
+six pages, and again with the marking removed.
+
+`afTipEdge.js` (called by `afTip.js`) does it for every panel from real measurements the moment the pointer
 arrives — before the open delay, so nothing is ever seen moving — by writing
 `af-up` / `af-left`, which `common.css` honours. **The classes are the
 component's**: a page's own `tip-right` / `tip-block` are statements about a

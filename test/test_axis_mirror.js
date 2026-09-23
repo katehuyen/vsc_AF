@@ -92,7 +92,8 @@ const fire = (ev, e) => (listeners[ev] || []).forEach(fn => fn(e));
 class MO { constructor(cb) { this.cb = cb; } observe() { } }
 
 const windowStub = { getComputedStyle: () => ({ visibility: 'hidden' }) };
-const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
+const src = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTipEdge.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afTip.js'), 'utf8');
 new Function('window', 'document', 'MutationObserver', 'requestAnimationFrame',
     'setTimeout', 'clearTimeout', src)(
         windowStub, documentStub, MO, fn => fn(), () => 0, () => { });

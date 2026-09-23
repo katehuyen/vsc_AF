@@ -413,6 +413,27 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     left: var(--af-fit-l); right: auto;
     max-width: var(--af-fit-w); min-width: min(280px, var(--af-fit-w));
 }
+/* ‼️ U-146 — A PANEL IS NEVER SEEN THROUGH A DIMMED ROW. Opacity below 1 on an
+   ancestor composites the panel at that opacity too, and nothing on the panel
+   can undo it; afTipEdge.js marks such an ancestor `af-dimhost` and this lifts
+   it while a panel inside is OPEN — the row being read comes forward with it.
+   Keyed on the panel's own states, so it ends exactly when the panel does. The
+   ordinary hover waits the ordinary open delay, so a pointer sweeping a list
+   flashes no row; a panel already on screen (af-open · af-on · af-hold) lifts
+   at once. `:has()` is scoped to marked hosts only, which keeps it cheap; the
+   second selector of each rule is a dimmed WRAPPER (a table cell that is its
+   own trigger), which `:has()` cannot see because it only looks inside.
+   ‼️ The delayed rule is wrapped in :where() so it has NO specificity to spend:
+   an :is() list counts as its most specific argument whichever one matched, so
+   a combined rule let the `:hover` branch's delay win over "already open". */
+.af-dimhost:has(:where(.af-tipw:not(.af-mute):not(.tip-free):hover) > .af-tip),
+.af-tipw.af-dimhost:where(:not(.af-mute):not(.tip-free):hover) {
+    opacity: 1 !important; transition: opacity 0s linear .25s !important;
+}
+.af-dimhost:has(.af-tipw:not(.af-mute):is(.af-open, .af-on, .af-hold) > .af-tip),
+.af-tipw.af-dimhost:not(.af-mute):is(.af-open, .af-on, .af-hold) {
+    opacity: 1 !important; transition: none !important;
+}
 /* ‼️ U-74 — A PANEL YIELDS THE MOMENT THE HAND STARTS WORKING (afTip.js).
    `Console` in the toolbar is one button that drops a menu under itself, in
    exactly the place its own panel opens: press it and the panel was still

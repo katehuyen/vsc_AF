@@ -362,6 +362,9 @@ export function htmlShell(
     // page had to opt into is the page where the caret still gets thrown out.
     const repaint = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRepaint.js'));
     const tip = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTip.js'));
+    // Where that panel opens and that nothing veils it (K-18 · K-44 · U-146) —
+    // loaded before afTip.js, which calls it.
+    const tipEdge = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTipEdge.js'));
     // The page's own form. Ships everywhere for the reason the rule exists:
     // "an object is made by a form on the page, a chain of VS Code boxes is a
     // missing feature" (docs/CONVENTIONS.md). A component a page had to opt
@@ -489,6 +492,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${snippets}"></script>
 <script nonce="${nonce}" src="${slash}"></script>
 <script nonce="${nonce}" src="${repaint}"></script>
+<script nonce="${nonce}" src="${tipEdge}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
 <script nonce="${nonce}" src="${combo}"></script>
 <script nonce="${nonce}" src="${wiki}"></script>

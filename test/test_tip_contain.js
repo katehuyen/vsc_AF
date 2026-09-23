@@ -11,7 +11,7 @@
  * the clipping box, and narrow it only when even that box is too small.
  *
  * ‼️ A LAYOUT DEFECT NEVER FAILS A STRING TEST, so the guard is a measurement:
- * the Console render, the REAL afTip.js loaded into it, every non-free trigger
+ * the Console render, the REAL afTipEdge.js + afTip.js loaded into it, every non-free trigger
  * hovered through the component's own pointer handler, and every open panel's
  * box compared with the window and every ancestor that clips it — at three
  * widths, because which panels overflow is decided by the width.
@@ -39,7 +39,7 @@ const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
         fit > css.indexOf('.af-tipw.af-left > .af-tip'));
     ok('‼️ A-12 still holds: a CLOSED panel carries no fit width — the collapse rule is not overruled',
         !/\.af-tipw\.af-fit > \.af-tip/.test(css) && !/--af-fit-w[^;]*!important/.test(css));
-    const tip = rd('media/afTip.js');
+    const tip = rd('media/afTipEdge.js');
     ok('the flip hands every non-free panel to contain()', /\n\s*contain\(w, tip, vw\);/.test(tip));
     ok('…and clears the last answer before measuring a new one', /unfit\(w, tip\);/.test(tip));
     const con = rd('media/console.js');
@@ -101,7 +101,7 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         { cwd: ROOT, encoding: 'utf8', timeout: 240000, stdio: ['ignore', 'pipe', 'pipe'] });
     // The render is static — no page script runs in it — so the component is
     // loaded here, and the flip it performs is the real one.
-    const src = rd('media/afTip.js');
+    const src = rd('media/afTipEdge.js') + '\n;' + rd('media/afTip.js');
     const expr = path.join(os.tmpdir(), `af-tipcontain-${process.pid}.js`);
     const exprOff = path.join(os.tmpdir(), `af-tipcontain-off-${process.pid}.js`);
     const wrap = s => '(function(){ ' + s + '\n; return ' + PROBE + '; })()';
