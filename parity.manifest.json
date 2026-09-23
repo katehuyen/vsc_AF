@@ -7671,6 +7671,15 @@
       ]
     },
     {
+      "capability": "wikiPanel.ts#renameCategory",
+      "ui": [
+        "page:wikiPanel.ts#renameCategory"
+      ],
+      "ops": [
+        "wiki.category.rename"
+      ]
+    },
+    {
       "capability": "wikiPanel.ts#revealWikiPath",
       "ui": [
         "page:wikiPanel.ts#revealWikiPath"

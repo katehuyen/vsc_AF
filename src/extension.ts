@@ -535,6 +535,7 @@ import {
     SUPERPOWERS_DEFAULT_AGENTS
 } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
+import { registerWikiCategoryOps } from './core/wikiCategory';
 import {
     alertPlan, installedSpeechVoices, playTurnSound, RateLimit, runTurnAlerts,
     SessionAlertPrefs, SESSION_ALERT_EVENTS, soundCandidates, SoundResult, speakAnnouncement,
@@ -16271,6 +16272,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         WikiPanel.refreshIfOpen();
     };
     registerWikiOps(bridge, wikiDeps);
+    registerWikiCategoryOps(bridge, wikiDeps);
     // ‼️ X-55 — the skills that sleep. The folder and the per-agent defaults are
     // resolved up where the appended system prompt is built (`superpowersRoot`),
     // because that is the one place that has to agree with itself.

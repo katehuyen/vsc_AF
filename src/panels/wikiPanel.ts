@@ -5,6 +5,8 @@ import {
     WikiDeps, WikiStore, candidateView, createWikiCategory, editCandidate, isRawCandidate, lintWiki,
     readWikiCategories, removeCandidates, scaffoldWiki, startCompileRun, wikiStatus
 } from '../core/wiki';
+import { renameWikiCategory } from '../core/wikiCategory';
+import { askCategoryRename, categoryChoices, renameNews } from './wikiCategoryPrompt';
 
 /**
  * U-70 (X-50) — THE WIKI COCKPIT.
@@ -281,6 +283,25 @@ export class WikiPanel {
                     });
                     this.mutated();
                 });
+                break;
+            // U-125 — the page names the category it is filtered to; the host
+            // asks the rest and moves folder, index section and marks together.
+            case 'renameCategory':
+                void (async () => {
+                    const root = this.deps.wiki().root();
+                    const store = this.deps.store();
+                    const ask = await askCategoryRename(
+                        categoryChoices(readWikiCategories(root), store.topics()),
+                        typeof msg.from === 'string' ? msg.from : '');
+                    if (!ask) { return; }
+                    this.guard(() => {
+                        const r = renameWikiCategory(root, store, ask.from, ask.to);
+                        if (!r.ok) { throw new Error(r.error); }
+                        void vscode.window.showInformationMessage(renameNews(r));
+                        void this.panel.webview.postMessage({ type: 'categoryRenamed', from: r.from, to: r.to });
+                        this.mutated();
+                    });
+                })();
                 break;
             // The shape check of the vault, reported and never repaired
             // (_REF/wiki.md §9). It answers into the page rather than a

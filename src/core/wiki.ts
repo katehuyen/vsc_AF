@@ -743,15 +743,11 @@ export function safeCategoryName(v: unknown): string {
 }
 
 /**
- * Make one category folder. Refuses rather than guesses: a name that is nothing
- * once cleaned, a name the platform reserves, and the `_` prefix the wiki keeps
- * for itself — a folder created under that prefix would never appear in the
- * list it was created for.
+ * Refuses rather than guesses: a name that is nothing once cleaned, a name the
+ * platform reserves, and the `_` prefix the wiki keeps for itself — a folder
+ * made under that prefix would never appear in the list it was made for.
  */
-export function createWikiCategory(root: string, name: unknown):
-    { ok: true; name: string; dir: string; existed: boolean } | { ok: false; error: string } {
-    if (!root) { return { ok: false, error: 'The wiki root is not set.' }; }
-    if (!fs.existsSync(root)) { return { ok: false, error: `The wiki root does not exist: ${root}` }; }
+export function checkCategoryName(name: unknown): { ok: true; name: string } | { ok: false; error: string } {
     const safe = safeCategoryName(name);
     if (!safe) { return { ok: false, error: 'That leaves no name once the characters a folder cannot carry are removed.' }; }
     if (safe.startsWith('_')) {
@@ -760,6 +756,17 @@ export function createWikiCategory(root: string, name: unknown):
     if (RESERVED_DEVICE.test(safe)) {
         return { ok: false, error: `"${safe}" is a name Windows reserves for a device.` };
     }
+    return { ok: true, name: safe };
+}
+
+/** Make one category folder, under the name `checkCategoryName` allows. */
+export function createWikiCategory(root: string, name: unknown):
+    { ok: true; name: string; dir: string; existed: boolean } | { ok: false; error: string } {
+    if (!root) { return { ok: false, error: 'The wiki root is not set.' }; }
+    if (!fs.existsSync(root)) { return { ok: false, error: `The wiki root does not exist: ${root}` }; }
+    const checked = checkCategoryName(name);
+    if (!checked.ok) { return checked; }
+    const safe = checked.name;
     // An existing category, however it is spelled, is that category — creating
     // "wiki" beside "Wiki" is the duplicate this picker exists to prevent.
     const hit = readWikiCategories(root).find(c => c.name.toLowerCase() === safe.toLowerCase());

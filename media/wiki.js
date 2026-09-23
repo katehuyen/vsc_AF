@@ -72,6 +72,13 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; repaint(); }
         if (ev.data.type === 'lint') { LINT = ev.data.data; render(); }
+        // U-125 — a filter left on the old name would show an empty table.
+        if (ev.data.type === 'categoryRenamed' && fTopic) {
+            const from = String(ev.data.from).toLowerCase();
+            fTopic = fTopic.map(t => (t.toLowerCase() === from ? ev.data.to : t))
+                .filter((t, i, a) => a.findIndex(x => x.toLowerCase() === t.toLowerCase()) === i);
+            saveState();
+        }
         // ‼️ U-91/U-92 — the host made the folder and says what it REALLY made.
         // Typing `ajanlar` beside an existing `Ajanlar` files the mark under
         // `Ajanlar` and the editor takes that spelling, not the typed one.
@@ -791,6 +798,9 @@
                 title="${blocked ? esc(why) : `Start one run over every waiting mark (${waiting}). Marks a run is already out for are left alone.`}"
                 >⚡ Compile All Pending${waiting ? ` (${waiting})` : ''}</button>
             ${bulk}
+            <button class="secondary" id="wk-rencat" ${topicOptions().length ? '' : 'disabled'}
+                title="${topicOptions().length ? 'Rename a category, or merge it into one that exists. Its folder, its index.md section and every mark filed under it move together; a page name present in both stops a merge before anything moves.' + (fTopic && fTopic.length === 1 ? ` “${esc(fTopic[0])}” — the topic you are filtered to — is offered first.` : '') : 'The wiki has no category yet — nothing to rename.'}"
+                >✏ Rename category</button>
             <button class="secondary" id="wk-lint" title="Check the SHAPE of the wiki — orphans, broken links, pages missing from the index. It reports and never repairs.">🩺 Lint</button>`;
 
         const sub = [
@@ -1278,6 +1288,7 @@
             selected.clear(); render();
         });
         bind('wk-lint', 'click', () => post({ type: 'lint' }));
+        bind('wk-rencat', 'click', () => post({ type: 'renameCategory', from: fTopic && fTopic.length === 1 ? fTopic[0] : '' }));
         bind('wk-lclose', 'click', () => { LINT = null; render(); });
 
         each('[data-open]', 'click', e => post({ type: 'openWikiFile', which: e.currentTarget.dataset.open }));

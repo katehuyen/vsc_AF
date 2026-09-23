@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.648.0 - A wiki category is renamed, or merged into another, in all three places it lives (U-125) (2026-09-23)
+
+- **One rename, three places (U-125).** A category is a folder under the wiki
+  root, a `## <Category>` section in `index.md`, and the topic of every mark
+  the next compile files under it. Renamed by hand in Obsidian, only the folder
+  moved: the index kept the old heading and the next compile, reading a pending
+  mark's old topic, opened the old folder again. The Wiki page's new
+  **✏ Rename category** button (and `wiki.category.rename {from, to}` on the
+  bridge) moves all three together — including the page paths a compiled mark
+  keeps as provenance — appends a line to `log.md`, and answers with the lint.
+  With exactly one topic in the filter, that one is offered first, and the
+  filter follows the new name.
+- **A name that exists is a merge.** Typed in any spelling, it merges into that
+  spelling: every entry of the source folder moves in, the two index sections
+  become one sorted list (a page linked from both is listed once), and the
+  empty source goes. The box warns as you type and a modal asks before
+  anything moves. **A page name present in both stops the merge before a single
+  file leaves**, with the list; a move that fails half-way puts back what it
+  moved. A case-only rename (`ai` → `AI`) really renames on Windows. The rules
+  a new category name follows — no separators, no `_` prefix, no device name —
+  are the same ones starting a category already followed.
+
 ## 3.647.0 - A headless OpenCode task can pick its model's own reasoning variant (X-330) (2026-09-23)
 
 - **The variant is the model's, and only a headless run carries it (X-330).**
