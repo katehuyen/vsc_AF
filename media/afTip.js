@@ -293,6 +293,7 @@
         if (!tip || typeof tip.getBoundingClientRect !== 'function') { return; }
         w.classList.remove('af-up');
         w.classList.remove('af-left');
+        unfit(w, tip);
         const host = tip.offsetParent || w;
         if (!host || typeof host.getBoundingClientRect !== 'function') { return; }
         const a = host.getBoundingClientRect();
@@ -328,7 +329,57 @@
             && wd > vw - EDGE - a.left && a.right - EDGE > vw - EDGE - a.left) {
             w.classList.add('af-left');
         }
+        contain(w, tip, vw);
         done();
+    }
+
+    /* ------------------------------------------------------------------
+       ‼️ K-44 — TWO ANCHORS ARE A CHOICE BETWEEN TWO FAILURES WHEN THE PANEL
+       IS WIDER THAN THE ROOM ON BOTH SIDES. A nav button in the middle of the
+       Console header hung a 760px panel 21px past the window's left edge at
+       1400px, and at 744px four kinds of panel ran 26-42px off the right; a
+       panel inside a scroller (the conversation) is cut at the scroller's edge
+       instead, which reads as the panel sliding under the column beside it.
+       So after the flip has picked a side, the panel is measured against the
+       box that really clips it — the window, narrowed by every ancestor of its
+       containing block that has overflow — and shifted into it; narrowed only
+       when even that box is too small. It is written as two custom properties
+       plus a class, and the rule in common.css applies them ONLY while the
+       panel is open: an inline width would outrank the A-12 collapse rule and
+       give every closed panel its box back.
+       ------------------------------------------------------------------ */
+    function unfit(w, tip) {
+        w.classList.remove('af-fit');
+        if (tip.style && typeof tip.style.removeProperty === 'function') {
+            tip.style.removeProperty('--af-fit-l');
+            tip.style.removeProperty('--af-fit-w');
+        }
+    }
+
+    function contain(w, tip, vw) {
+        if (!tip.style || typeof tip.style.setProperty !== 'function') { return; }
+        const b = tip.getBoundingClientRect();
+        if (!b || !isFinite(b.left) || !isFinite(b.right) || !(b.right > b.left)) { return; }
+        let l = EDGE, r = vw - EDGE;
+        if (typeof getComputedStyle === 'function') {
+            for (let n = tip.offsetParent; n && n !== doc.documentElement && n !== doc.body; n = n.parentElement) {
+                const cs = getComputedStyle(n);
+                if (cs && /auto|scroll|hidden|clip/.test(cs.overflowX || '')) {
+                    const c = n.getBoundingClientRect();
+                    l = Math.max(l, c.left);
+                    r = Math.min(r, c.right);
+                }
+            }
+        }
+        if (b.left >= l - 0.5 && b.right <= r + 0.5) { return; }
+        // Its own width, unrounded downwards, unless the box forces less: a
+        // pixel shaved off a panel that fits re-wraps its longest line.
+        const width = b.width <= r - l ? Math.ceil(b.width) : Math.floor(r - l);
+        if (width < 120) { return; }
+        const left = Math.max(l, Math.min(b.left, r - width));
+        tip.style.setProperty('--af-fit-l', Math.round((tip.offsetLeft || 0) + left - b.left) + 'px');
+        tip.style.setProperty('--af-fit-w', width + 'px');
+        w.classList.add('af-fit');
     }
 
     if (doc && typeof doc.addEventListener === 'function'

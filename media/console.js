@@ -212,6 +212,15 @@
         body { overflow:hidden; padding:16px 20px 12px; }
         #app { height:100%; min-height:0; display:flex; flex-direction:column; }
         #c-head { flex:none; }
+        /* K-44 — A READING WIDTH, NOT THE WINDOW'S. The shared ceiling is
+           min(760px, 62vw), sized for full pages; this page is split into a
+           session column and a conversation, and is often docked narrow, so a
+           one-paragraph explanation was drawn as a single 760px line that
+           neither side of its trigger had room for. About 75 characters of
+           12px text; the containment in afTip.js does the rest. A tip-free
+           panel is placed by the component with its own inline width, and a
+           tip-block panel takes its block's, so neither is narrowed by this. */
+        .af-tip { max-width: min(520px, 62vw); }
         /* X-177 — the sentry's one line. It is a whole-strip press (it GOES to
            Missions, where the controls are), so it is styled as one thing that
            highlights, and it stays a single row at any width: what does not fit

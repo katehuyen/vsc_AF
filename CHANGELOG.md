@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.638.0 - A hover panel never opens off the window, or under the column beside it (K-44) (2026-09-23)
+
+- **A third answer when neither side fits.** A panel used to choose between
+  its trigger's left edge and its right edge; when it was wider than the room
+  on both sides, both choices ran off the page — measured on the Console: a
+  760px panel off `📥 Queue` started 21px past the left edge at 1400px, and at
+  744px four kinds of panel ran 26–42px off the right. Now, after picking a
+  side, the panel is measured against the box that really clips it — the
+  window, narrowed by any scrolling area it sits in — and slid inside it,
+  narrowed only when even that box is too small. Every page gets this; the
+  Console is where it showed.
+- **The Console reads at a reading width.** Its ordinary panels are capped at
+  520px (about 75 characters) instead of the full-page 760px: a
+  one-paragraph explanation is no longer drawn as a single line that neither
+  side of its button had room for. Panels placed against a row (`tip-block`)
+  and the session list's floating panels keep their own widths.
+
 ## 3.637.0 - The web view gets a cockpit: can my phone read this farm right now? (U-85) (2026-09-23)
 
 - **A card that answers the one question.** Toolbox → Services has a Mobile

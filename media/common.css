@@ -403,6 +403,16 @@ span.af-tipw { display: inline-block; max-width: 100%; }
    the edge it applies to. */
 .af-tipw.af-up > .af-tip { top: auto; bottom: 100%; margin-bottom: 4px; }
 .af-tipw.af-left > .af-tip { left: auto; right: 0; }
+/* ‼️ K-44 — WHEN NEITHER SIDE FITS, THE PANEL IS MOVED INTO THE BOX THAT CLIPS
+   IT (afTip.js contain()). Scoped to the OPEN states on purpose: the collapse
+   rule above takes a closed panel's box away (A-12), and a fit width that also
+   held while closed would hand it back. The :is() also lifts this over a
+   page's own ceiling for its panels, which is the one thing that must not win
+   here: a page cap wider than the room is exactly the overflow being fixed. */
+.af-tipw.af-fit:is(:hover, .af-open, .af-on, .af-hold, .af-measure) > .af-tip {
+    left: var(--af-fit-l); right: auto;
+    max-width: var(--af-fit-w); min-width: min(280px, var(--af-fit-w));
+}
 /* ‼️ U-74 — A PANEL YIELDS THE MOMENT THE HAND STARTS WORKING (afTip.js).
    `Console` in the toolbar is one button that drops a menu under itself, in
    exactly the place its own panel opens: press it and the panel was still

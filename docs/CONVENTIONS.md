@@ -305,8 +305,15 @@ EDGE IT IS ALREADY ON.** This is the rule, and it is not about one control: the
 Console composer's `?` sits a few pixels off the BOTTOM of the window, the panel
 hung *downwards* out of it, and nearly all of it was off screen — which is the
 same mistake as a 760px panel on the last column of a row growing further right.
-Anything anchored near an edge flips to the roomier side; where neither side
-fits, the roomier one still shows more.
+Anything anchored near an edge flips to the roomier side; **where neither side
+fits, the panel is slid into the box that really clips it** — the window,
+narrowed by every scrolling ancestor of its containing block — and narrowed only
+when even that box is too small (K-44, `contain()` → `af-fit` + `--af-fit-l` /
+`--af-fit-w`). The fit rule applies to OPEN states only: an inline width would
+outrank the A-12 collapse rule and give every closed panel its box back.
+`test/test_tip_contain.js` hovers every panel of the Console render through the
+real component at three widths, and proves it bites by measuring again with
+`contain()` removed.
 
 `afTip.js` does it for every panel from real measurements the moment the pointer
 arrives — before the open delay, so nothing is ever seen moving — by writing
