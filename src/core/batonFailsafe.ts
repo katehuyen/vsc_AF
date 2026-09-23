@@ -17,7 +17,7 @@
  *
  * Pure — the facts arrive as arguments; `batonRunner.ts` gathers and applies.
  */
-import { Baton, BatonState } from './baton';
+import { Baton, BatonState, openerOf } from './baton';
 import { isSeal } from './batonSeal';
 import type { DoorContext } from './batonDoor';
 
@@ -55,8 +55,7 @@ export type FailsafeVerdict =
 
 /** The baton that opened this session's leg (a seal for leg 1), if it runs in a relay. */
 export function legOpener(list: readonly Baton[], sessionId: string): Baton | undefined {
-    const sid = String(sessionId ?? '').trim();
-    return sid ? list.find(b => b.state === 'started' && b.toSessionId === sid) : undefined;
+    return openerOf(list, sessionId);
 }
 
 /**
@@ -148,7 +147,7 @@ export function rescueEvidence(f: LegEndFacts, reasons: readonly string[]): stri
 }
 
 /** The variables an emergency template may name (agentFarm.batonEmergencyTemplate). */
-export const EMERGENCY_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'hop', 'maxHops', 'why', 'evidence', 'userDirective'] as const;
+export const EMERGENCY_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'leg', 'hop', 'maxHops', 'why', 'evidence', 'userDirective'] as const;
 
 /**
  * The first message of a RESCUED leg. The user's template when set — the
@@ -163,6 +162,7 @@ export function emergencyPrompt(b: Baton, ctx: DoorContext = {}): string {
         fromSessionId: b.from.sessionId,
         agentId: ctx.agentName || b.from.agentId,
         chain: b.chainId,
+        leg: String(b.hop + 1),
         hop: String(b.hop),
         maxHops: maxHops || 'none',
         why: b.rescue || b.why,
@@ -178,11 +178,12 @@ export function emergencyPrompt(b: Baton, ctx: DoorContext = {}): string {
         if (tail.length) { out = [out.replace(/\s+$/, ''), ...tail].join('\n'); }
         return out;
     }
-    const hop = maxHops ? `hop ${b.hop}/${maxHops}` : `hop ${b.hop}`;
+    // S-87 — in LEGS, the unit the ceiling, the card and the status bar count in
+    const leg = maxHops ? `leg ${b.hop + 1}/${maxHops}` : `leg ${b.hop + 1}`;
     const model = b.inherit.model ? `${b.from.engine}/${b.inherit.model}` : b.from.engine;
     const project = b.from.projectId ? ` · project ${b.from.projectId}` : '';
     return [
-        `=== BATON RELAY — chain ${b.chainId} · ${hop} · EMERGENCY HANDOVER ===`,
+        `=== BATON RELAY — chain ${b.chainId} · ${leg} · EMERGENCY HANDOVER ===`,
         `Predecessor: session ${b.from.sessionId} (${vars.agentId} · ${model}${project}) ended WITHOUT passing the baton — ${vars.why}.`,
         'Agent Farm opened you from what it left behind (below). If that is not enough, read its last turns first:',
         `  node af.js sessions.read session=${b.from.sessionId} from=-10`,

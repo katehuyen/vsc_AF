@@ -14,6 +14,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const OUT = path.join(__dirname, '..', 'out', 'core');
 const B = require(path.join(OUT, 'baton.js'));
+const { batonBrake } = require(path.join(OUT, 'batonBrake.js'));
 const S = require(path.join(OUT, 'batonSeal.js'));
 const V = require(path.join(OUT, 'batonView.js'));
 const G = require(path.join(OUT, 'contextGuard.js'));
@@ -94,10 +95,10 @@ console.log('\n== the first pass continues the sealed chain, on its pool ==');
     ok('a chain with no seal and no pool yet takes the account it is given', loose.ok && loose.baton.want.account === '@mine' && !loose.poolKept);
 
     ok('‼️ the leg ceiling counts the sealed leg once: with 2 legs, leg 1 may pass',
-        B.batonBrake(pass1.baton, [s0], 2) === undefined);
-    const b2 = B.batonBrake(pass2.baton, [s0, started1], 2);
+        batonBrake(pass1.baton, [s0], 2) === undefined);
+    const b2 = batonBrake(pass2.baton, [s0, started1], 2);
     ok('…and leg 2 may not', b2 && b2.kind === 'ceiling' && /run 2 of its 2 legs/.test(b2.why));
-    const barren = B.batonBrake({ ...pass2.baton, head: 'abc1234' }, [{ ...s0, head: 'abc1234' }, { ...started1, head: 'abc1234' }], 6);
+    const barren = batonBrake({ ...pass2.baton, head: 'abc1234' }, [{ ...s0, head: 'abc1234' }, { ...started1, head: 'abc1234' }], 6);
     ok('‼️ the seal\'s HEAD lets the barren brake see legs 1 and 2 committed nothing', barren && barren.kind === 'barren');
 }
 

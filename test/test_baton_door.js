@@ -40,14 +40,14 @@ function baton(o = {}) {
     const b = baton({ projectId: 'prj_1' });
     const p = successorPrompt(b, { agentName: 'developer' });
     const lines = p.split('\n');
-    ok('the header names the chain and the hop', lines[0] === `=== BATON RELAY — chain ${b.chainId} · hop 1 ===`);
+    ok('S-87: the header names the chain and the LEG the successor runs (hop 1 = leg 2)', lines[0] === `=== BATON RELAY — chain ${b.chainId} · leg 2 ===`);
     ok('the predecessor is named by session, agent, engine/model and project',
         /Predecessor: session aaaaaaaa \(developer · claude\/opus · project prj_1\) ended its run/.test(lines[1]));
     ok('‼️ it teaches the successor to pass the baton itself, by the file recipe', /baton\.pass "@<file>"/.test(p) && /_REF\/handover\.md/.test(p));
     ok('…and that nothing starts while it is alive', /Nothing starts while you are alive/.test(p));
     ok('the predecessor\'s own words are underneath, after the rule, untouched',
         lines[lines.length - 2] === '---' && lines[lines.length - 1] === b.prompt);
-    ok('with a ceiling the hop reads n/N', /hop 1\/6 ===/.test(successorPrompt(b, { maxHops: 6 })));
+    ok('with a ceiling the leg reads n/N, both counted in legs', /leg 2\/6 ===/.test(successorPrompt(b, { maxHops: 6 })));
     ok('without an agent name the id stands in', /\(d:\/agents\/developer · /.test(successorPrompt(b)));
     const multi = baton({ prompt: 'line one\n\nline `two` with "quotes"' });
     ok('a multi-line prompt with quotes and backticks survives whole', successorPrompt(multi).endsWith('line one\n\nline `two` with "quotes"'));
@@ -63,7 +63,7 @@ function baton(o = {}) {
         && con.extra.permissionMode === 'bypassPermissions' && con.extra.providerId === 'anthropic' && con.extra.superpowers === false);
     ok('the account is the WANT (@emptiest by default), never the predecessor\'s slot', con.extra.account === '@emptiest');
     ok('the project travels from the manifest', con.extra.projectId === 'prj_1');
-    ok('the title names the hop and the chain', /^Baton — hop 1 of chain chn_/.test(con.title));
+    ok('the title names the leg and the chain', /^Baton — leg 2 of chain chn_/.test(con.title));
     ok('the prompt is the header + the words', con.prompt.startsWith('=== BATON RELAY') && con.prompt.endsWith('resolved account.'));
     ok('a run in the agent\'s own folder states no workDir', !('workDir' in con.extra));
     ok('claude is the default engine and is not stated', !('engine' in con.extra));
@@ -131,7 +131,7 @@ function baton(o = {}) {
     const D = require(path.join(OUT, 'batonDoor.js'));
     const b = baton({ prompt: 'Carry on with S-83.' });
     const plain = successorPrompt(b, { agentName: 'developer', maxHops: 6 });
-    ok('S-82: with neither set, the built-in header is unchanged — and names the ceiling', /^=== BATON RELAY — chain chn_\w+ · hop 1\/6 ===/.test(plain)
+    ok('S-82: with neither set, the built-in header is unchanged — and names the ceiling', /^=== BATON RELAY — chain chn_\w+ · leg 2\/6 ===/.test(plain)
         && !/Standing directive/.test(plain) && plain.endsWith('---\nCarry on with S-83.'));
     const ruled = successorPrompt(b, { agentName: 'developer', directive: '  Run npm test before passing.  ' });
     ok('…a standing directive rides the built-in header, trimmed, ABOVE the predecessor\'s words',
@@ -148,7 +148,7 @@ function baton(o = {}) {
     ok('‼️ a template that forgets the directive and the words still carries both — directive first, words last',
         bare === 'Hop 1. Go.\nStanding directive: Be brief.\n---\nCarry on with S-83.');
     ok('…a whitespace-only template is no template', /^=== BATON RELAY/.test(successorPrompt(b, { template: ' \n ' })));
-    ok('the variable list is the one the setting documents', D.HANDOVER_TEMPLATE_VARS.join() === 'fromSessionId,agentId,chain,hop,maxHops,why,userDirective,agentPrompt');
+    ok('the variable list is the one the setting documents', D.HANDOVER_TEMPLATE_VARS.join() === 'fromSessionId,agentId,chain,leg,hop,maxHops,why,userDirective,agentPrompt');
     const pkg = require(path.join(__dirname, '..', 'package.json')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
     const tplSetting = props['agentFarm.batonHandoverTemplate'];

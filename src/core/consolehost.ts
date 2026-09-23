@@ -3001,7 +3001,7 @@ export class ConsoleHost {
      * `silent` belongs to `forget`, which fires its own change straight after
      * and would otherwise repaint the whole panel twice for one gesture.
      */
-    close(id: string, o?: { sync?: boolean; silent?: boolean }): void {
+    close(id: string, o?: { sync?: boolean; silent?: boolean; reason?: string }): void {
         const h = this.sessions.get(id);
         if (!h) { return; }
         const again = h.closed === true;
@@ -3086,10 +3086,11 @@ export class ConsoleHost {
         };
         // Say it first (unless the caller is about to say something louder),
         // then reap. See the note above: the reap spawns processes.
+        const reason = o?.reason || 'closed by you';
         if (o?.silent) {
-            h.state = { ...h.state, status: 'ended', exitReason: h.state.exitReason ?? 'closed by you' };
+            h.state = { ...h.state, status: 'ended', exitReason: h.state.exitReason ?? reason };
         } else {
-            this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? 'closed by you' }));
+            this.mutate(id, s => ({ ...s, status: 'ended', exitReason: s.exitReason ?? reason }));
         }
         if (o?.sync) { reap(); } else { setImmediate(reap); }
     }

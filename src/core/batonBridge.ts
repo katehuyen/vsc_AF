@@ -11,7 +11,8 @@
  * do in the window.
  */
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
-import { BATON_DEFAULT_MAX_LEGS, Baton, batonBrake, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
+import { BATON_DEFAULT_MAX_LEGS, Baton, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
+import { batonBrake } from './batonBrake';
 import { attachRelay } from './batonAttach';
 import { BatonBoard } from './batonBoard';
 import { chainMaxLegs } from './batonSeal';

@@ -107,6 +107,22 @@ export function isLive(b: Pick<Baton, 'state'> | undefined): boolean {
 }
 
 /**
+ * ‼️ S-85 — THE BATON THAT OPENED THIS SESSION, the one lookup every part of
+ * the relay asks (the pass, the whisper, the card, the failsafe). A session
+ * can also be named by a seal written on it LATER — a relay attached to a run
+ * a baton had already started, which was possible while successor rows held a
+ * Console card's id — so the baton that really started it wins over a seal,
+ * then the newest.
+ */
+export function openerOf(list: readonly Baton[], sessionId: string): Baton | undefined {
+    const sid = String(sessionId ?? '').trim();
+    if (!sid) { return undefined; }
+    return list
+        .filter(b => b.state === 'started' && b.toSessionId === sid)
+        .sort((a, b) => Number(a.hop === 0) - Number(b.hop === 0) || b.createdAt - a.createdAt)[0];
+}
+
+/**
  * Move a baton. A move the machine does not allow is REFUSED with a sentence,
  * never applied — a started baton put back to waiting would open a second
  * successor for one run.
@@ -227,7 +243,7 @@ export function passBaton(input: PassInput): PassResult {
     const src = inheritFrom(input.sessionId, input.launchId, input.manifest);
     if (!src.ok) { return src; }
     const rnd = input.rnd ?? Math.random;
-    const parent = input.prior.find(p => p.state === 'started' && p.toSessionId === src.from.sessionId);
+    const parent = openerOf(input.prior, src.from.sessionId);
     // ‼️ S-81 — A CHAIN'S POOL IS SET ONCE (its first leg's seal, or its first
     // pass) AND NEVER LEFT: a leg naming another account does not move it.
     const pool = parent && isPolicyId(parent.want.account) ? parent.want.account : '';
@@ -283,7 +299,8 @@ export function batonPlanSentence(
     const where = SURFACE_WORDS[successorSurface(b)] ?? successorSurface(b);
     const chain = `hop ${b.hop} of chain ${b.chainId}`;
     const head = `Baton ${b.id} taken (${chain}). Nothing starts while session ${b.from.sessionId.slice(0, 8)} is alive — `
-        + 'finish your last step and end your run now.';
+        + 'finish your last step and end your run now: end the turn — on a Console card or in a terminal Agent Farm '
+        + 'ends this session itself once that turn has been at rest a few seconds (S-86), so never close it yourself.';
     const acct = b.want.account;
     if (room?.refusal) {
         return `${head} When it ends, ${acct} has no account to place the successor on: ${room.refusal}`;
@@ -317,44 +334,6 @@ export function normalizeLegCeiling(v: unknown): number | undefined {
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
 }
 
-export interface BatonBrake {
-    kind: 'ceiling' | 'barren';
-    why: string;
-}
-
-/**
- * ‼️ S-78 — WHY A PASS MUST NOT OPEN ANOTHER LEG, or undefined. The two
- * automatic brakes a relay has; the chain's only NATURAL end is a run that
- * finishes the work and passes nothing. `draft` is the accepted baton (its
- * `head` read at the pass), `prior` the store before it. Pure.
- *
- * - ceiling: leg `draft.hop` is passing, so the leg it would open is hop + 1.
- * - barren: the two legs before the next one each ended on the same HEAD they
- *   were opened on — two runs in a row committed nothing, and a third would
- *   only spend another window the same way.
- */
-export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: number): BatonBrake | undefined {
-    const next = draft.hop + 1;
-    if (maxLegs > 0 && next > maxLegs) {
-        return {
-            kind: 'ceiling',
-            why: `leg ceiling — chain ${draft.chainId} has run ${draft.hop} of its ${maxLegs} legs (agentFarm.batonMaxHops); leg ${next} does not open.`
-        };
-    }
-    const head = draft.head;
-    if (!head) { return undefined; }
-    const openerOf = (hop: number) => prior.find(p => p.chainId === draft.chainId && p.hop === hop && p.state === 'started');
-    const h1 = openerOf(draft.hop - 1)?.head;
-    const h2 = openerOf(draft.hop - 2)?.head;
-    if (h1 === head && h2 === head) {
-        return {
-            kind: 'barren',
-            why: `barren chain — legs ${draft.hop - 1} and ${draft.hop} both ended with no new commit in ${draft.from.cwd} (HEAD still ${head.slice(0, 8)}); leg ${next} does not open.`
-        };
-    }
-    return undefined;
-}
-
 /** S-76 — the relay a session runs in, as the handover whisper needs it. */
 export interface BatonRelay {
     chainId: string;
@@ -375,7 +354,7 @@ export function batonRelayOf(list: readonly Baton[], sessionId: string): BatonRe
     if (!sid) { return undefined; }
     const left = list.find(b => b.from.sessionId === sid && isLive(b));
     if (left) { return { chainId: left.chainId, hop: left.hop, passed: true }; }
-    const opener = list.find(b => b.state === 'started' && b.toSessionId === sid);
+    const opener = openerOf(list, sid);
     if (!opener) { return undefined; }
     if (list.some(b => b.chainId === opener.chainId && b.state === 'stopped' && b.hop > opener.hop)) { return undefined; }
     return { chainId: opener.chainId, hop: opener.hop + 1, passed: false };

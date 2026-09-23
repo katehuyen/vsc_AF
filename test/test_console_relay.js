@@ -117,7 +117,7 @@ async function main() {
     const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('‼️ consoleDeps.cardViews is the console.sessions op\'s own builder', /cardViews: \(sessionId: string\) => consoleCardViews\(sessionId\)/.test(ext)
         && /\.\.\.consoleCardViews\(s\.sessionId\)/.test(ext));
-    ok('a baton store change repaints the Console', /batonStore\.onDidChange\(\(\) => \{ updateBatonBar\(\); ConsolePanel\.refreshIfOpen\(\); \}\)/.test(ext));
+    ok('a baton store change repaints the Console', /batonStore\.onDidChange\(\(\) => \{ updateBatonBar\(\); ConsolePanel\.refreshIfOpen\(\);/.test(ext));
 
     // ---- S-82 (b): the card's two relay hands, through the panel's handlers
     const send = async (msg) => {

@@ -64,7 +64,7 @@ export interface DoorContext {
 }
 
 /** The variables a handover template may name (agentFarm.batonHandoverTemplate). */
-export const HANDOVER_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'hop', 'maxHops', 'why', 'userDirective', 'agentPrompt'] as const;
+export const HANDOVER_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'leg', 'hop', 'maxHops', 'why', 'userDirective', 'agentPrompt'] as const;
 
 /**
  * S-82 — the user's template, filled. Unknown `{names}` are left as typed. The
@@ -78,6 +78,7 @@ export function renderHandoverTemplate(template: string, b: Baton, ctx: DoorCont
         fromSessionId: b.from.sessionId,
         agentId: ctx.agentName || b.from.agentId,
         chain: b.chainId,
+        leg: String(b.hop + 1),
         hop: String(b.hop),
         maxHops: ctx.maxHops && ctx.maxHops > 0 ? String(ctx.maxHops) : 'none',
         why: b.why,
@@ -102,7 +103,11 @@ export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
     if (b.rescue) { return emergencyPrompt(b, ctx); }
     if (String(ctx.template ?? '').trim()) { return renderHandoverTemplate(String(ctx.template), b, ctx); }
     const directive = String(ctx.directive ?? '').trim();
-    const hop = ctx.maxHops && ctx.maxHops > 0 ? `hop ${b.hop}/${ctx.maxHops}` : `hop ${b.hop}`;
+    // ‼️ S-87 — IN LEGS, the unit the ceiling, the card (⑂ n) and the status
+    // bar count in. `hop` counts handovers: the second leg read "hop 1/6", the
+    // same "1" its predecessor's card showed, and the last leg looked like it
+    // had one more to go.
+    const hop = ctx.maxHops && ctx.maxHops > 0 ? `leg ${b.hop + 1}/${ctx.maxHops}` : `leg ${b.hop + 1}`;
     const who = ctx.agentName || b.from.agentId;
     const model = b.inherit.model ? `${b.from.engine}/${b.inherit.model}` : b.from.engine;
     const project = b.from.projectId ? ` · project ${b.from.projectId}` : '';
@@ -117,6 +122,23 @@ export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
         '---',
         b.prompt
     ].join('\n');
+}
+
+/**
+ * ‼️ S-85 — THE SESSION A TASK ROW RUNS, AS THE ENGINE NAMES IT. A
+ * Console-hosted row holds the CARD's id (`consoleSessionId`, what the panel
+ * handed back at the start); its conversation's id comes later, from the
+ * engine — recorded on the row as `hostedSessionId`, or read off the card while
+ * it is still there. A card id on a baton names nothing the relay can find: the
+ * next pass opened a new chain, the card showed no relay, the whisper said
+ * "write a note". Undefined = the engine has not named it yet.
+ */
+export function rowSessionId(
+    t: { consoleSessionId?: string; hostedSessionId?: string; spawnSessionId?: string; runSessionId?: string },
+    cardSession?: (cardId: string) => string | undefined
+): string | undefined {
+    if (t.consoleSessionId) { return t.hostedSessionId || cardSession?.(t.consoleSessionId) || undefined; }
+    return t.spawnSessionId || t.runSessionId || undefined;
 }
 
 const same = (a: string | undefined, b: string | undefined): boolean =>
@@ -158,7 +180,7 @@ export function successorRow(b: Baton, ctx: DoorContext = {}): DoorRow {
         extra.notBeforeWhy = `baton parked — every account is full${park.refusal ? `: ${park.refusal}` : ''}; `
             + `first reset + ${Math.max(0, park.bufferMin)} min buffer`;
     }
-    const title = `Baton — hop ${b.hop} of chain ${b.chainId}`;
+    const title = `Baton — leg ${b.hop + 1} of chain ${b.chainId}`;
     const prompt = successorPrompt(b, ctx);
     const wake = wakeAt ? { wakeAt } : {};
     if (surface === 'headless') { return { title, prompt, mode: 'headless', ...wake, extra }; }

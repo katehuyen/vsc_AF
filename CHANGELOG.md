@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.641.0 - The baton relay no longer stalls on a Console leg (S-85, S-86, S-87) (2026-09-23)
+
+The first real relay stopped after one hand-off. Three causes, all fixed:
+
+- **The leg that passed is ended for it (S-86).** A Console card — and a
+  terminal session — does not end when its turn does; it waits for the next
+  message. The successor waits for the predecessor to END, so the chain sat
+  still for as long as nobody closed the card. Now, once the turn that passed
+  the baton has been at rest for ten seconds (nothing queued, no question
+  open), Agent Farm ends that session itself: the card is closed with the
+  reason written on it, or the terminal's process is stopped, together with
+  any background command it left running. The successor opens right after.
+  The passing turn itself is never cut.
+- **A Console successor stays in its chain (S-85).** Its baton recorded the
+  Console card's id instead of the conversation's, so nothing could find it:
+  its own pass opened a NEW chain at hop 1 (the leg ceiling started over), its
+  card showed no relay badge, ⑂ Attach on it sealed a second chain, and its
+  handover whisper said "write a note" instead of "pass the baton". The baton
+  now holds the engine's session id, and batons written the old way are
+  repaired on the next sweep while their task row is still around.
+- **The successor's header counts legs (S-87).** It said `hop 1/6` on the
+  second leg — the same "1" the first leg's card showed. It now reads
+  `leg 2/6`, the number the card and the status bar use; handover templates
+  get a `{leg}` variable.
+
 ## 3.640.0 - The Dashboard and Farm Settings say which build is running (U-147) (2026-09-23)
 
 - **`v3.640.0`, top right.** The Dashboard and Farm Settings headers carry the

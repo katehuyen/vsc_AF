@@ -10,7 +10,8 @@
  * when this window opened is never judged — after a reload, the last leg of
  * every old chain would otherwise be "rescued" from a dirty folder.
  */
-import { BATON_DEFAULT_MAX_LEGS, Baton, batonBrake, moveBaton, newBatonId, passBaton } from './baton';
+import { BATON_DEFAULT_MAX_LEGS, Baton, moveBaton, newBatonId, passBaton } from './baton';
+import { batonBrake } from './batonBrake';
 import { closingRecord, failsafeVerdict, LegEndFacts, legOpener, rescueEvidence } from './batonFailsafe';
 import { chainMaxLegs } from './batonSeal';
 import { BatonStore } from './batonStore';

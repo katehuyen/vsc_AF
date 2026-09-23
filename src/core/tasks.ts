@@ -286,10 +286,13 @@ export interface FarmTask {
      * automation the day it shipped.
      */
     superpowers?: boolean;
-    /** ‼️ M-26 — the hosted conversation this task was handed to, when it runs
-     *  in the Console. The one handle that lets the panel's own report be read
-     *  back against this task (see `pumpConsoleTasks`). */
+    /** ‼️ M-26 — the Console CARD this task was handed to (the panel's id, `cs…`),
+     *  NOT the engine's session id. The one handle that lets the panel's own
+     *  report be read back against this task (see `pumpConsoleTasks`). */
     consoleSessionId?: string;
+    /** ‼️ S-85 — the ENGINE's id of the conversation that card hosts, written
+     *  when the card first reports it; `rowSessionId` (batonDoor.ts) reads it. */
+    hostedSessionId?: string;
     /**
      * ‼️ M-26 — HOW AN EXTERNAL WINDOW REPORTS BACK. A detached `wt` returns
      * immediately and its own exit code says nothing about the CLI inside it, so
@@ -1808,6 +1811,8 @@ export interface TaskManagerOptions {
     consoleTaskState?: (sessionId: string) => {
         state: 'starting' | 'working' | 'idle' | 'ended' | 'error';
         answered: boolean; failed?: boolean; reason?: string;
+        /** S-85 — the engine's session id, once the card has one */
+        sessionId?: string;
     } | undefined;
     /** I5: model policy — extra --model args (and reason) for a task launch. */
     modelArgsFor?: (task: FarmTask) => { args: string; reason: string } | undefined;
@@ -3952,10 +3957,12 @@ export class TaskManager implements vscode.Disposable {
     pumpConsoleTasks(): void {
         const read = this.opts.consoleTaskState;
         if (!read) { return; }
+        let named = false;
         for (const task of this.tasks) {
             if (task.status !== 'running' || !task.consoleSessionId) { continue; }
             const st = read(task.consoleSessionId);
             if (!st) { continue; }
+            if (st.sessionId && task.hostedSessionId !== st.sessionId) { task.hostedSessionId = st.sessionId; named = true; }
             if (st.state === 'ended') {
                 noteTaskEvent(task, 'finished', `the Console session ended — ${st.reason || 'closed'}`);
                 this.finish(task, st.failed ? 'failed' : 'done');
@@ -3976,6 +3983,7 @@ export class TaskManager implements vscode.Disposable {
                 this.finish(task, 'done');
             }
         }
+        if (named) { this.save(); }
     }
 
     /** Explicit per-task model (mission member override) beats the policy engine.

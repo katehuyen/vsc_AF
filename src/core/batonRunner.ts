@@ -61,6 +61,8 @@ export function endedVerdict(ev: EndEvidence): { ended: boolean; why: string } {
 export interface DoorAnswer {
     taskId: string;
     sessionId?: string;
+    /** S-85 — the row is RUNNING but its engine has not named the session yet (a Console card before its init) */
+    running?: boolean;
     /** why the row is not running yet (a ceiling, the automation gate) */
     held?: string;
     /** S-73 — every account was full: the row waits until this moment (first reset + buffer) */
@@ -105,9 +107,12 @@ export interface BatonRunnerDeps {
     board?: BatonBoard;
 }
 
-/** A baton on a task row: the row's session becomes the successor. */
-export function bindSuccessor(b: Baton, sessionId: string, now: number): Baton {
-    return { ...b, toSessionId: sessionId, why: `successor session ${sessionId.slice(0, 8)} is running`, updatedAt: now };
+/** A baton on a task row: the row's session becomes the successor (`was` = the id it held before, S-85). */
+export function bindSuccessor(b: Baton, sessionId: string, now: number, was?: string): Baton {
+    const why = was
+        ? `${b.why} · bound to session ${sessionId.slice(0, 8)} (it held ${was}, which the row no longer names)`
+        : `successor session ${sessionId.slice(0, 8)} is running`;
+    return { ...b, toSessionId: sessionId, why, updatedAt: now };
 }
 
 export class BatonRunner {
@@ -166,6 +171,9 @@ export class BatonRunner {
      * shown alive is released; the rest are listed with why they wait.
      */
     sweep(): { released: Baton[]; waiting: { id: string; sessionId: string; why: string }[] } {
+        // S-85 — the backup for follow() too: a Console card names its session
+        // without the task board moving
+        this.follow();
         const released: Baton[] = [];
         const waiting: { id: string; sessionId: string; why: string }[] = [];
         for (const b of this.waiting()) {
@@ -187,27 +195,45 @@ export class BatonRunner {
      * The successor's row moved. A row that names its session binds the baton
      * to it (`parked` → `started`); a row that ended without ever naming one is
      * a refusal, with the row's own last word as the reason.
+     *
+     * ‼️ S-85 — A STARTED BATON IS FOLLOWED TOO, until it names the session its
+     * row names: a Console row starts before its engine names the session, and
+     * a baton written before this held the card's id instead. The row is the
+     * truth, so a baton that disagrees with it is bound again.
      */
     follow(): Baton[] {
         const changed: Baton[] = this.seal();
         const read = this.deps.task;
         if (!read) { return changed; }
         for (const b of this.deps.store.all()) {
-            if (!isLive(b) || !b.taskId || b.toSessionId) { continue; }
+            const bound = b.state === 'started';
+            if (!b.taskId || (!bound && (!isLive(b) || b.toSessionId))) { continue; }
             const t = read(b.taskId);
             if (!t) { continue; }
             if (t.sessionId) {
-                const next = b.state === 'started'
-                    ? bindSuccessor(b, t.sessionId, this.now())
+                if (bound && b.toSessionId === t.sessionId) { continue; }
+                const next = bound
+                    ? bindSuccessor(b, t.sessionId, this.now(), b.toSessionId)
                     : this.move(b, 'started', `successor session ${t.sessionId.slice(0, 8)} is running`, { toSessionId: t.sessionId });
+                if (bound && next) { this.deps.store.put(next); this.log(`baton ${b.id}: ${next.why}`); }
                 if (next) { changed.push(next); }
             } else if (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') {
-                const next = this.move(b, 'refused', `task ${b.taskId} ${t.status} before a session started${t.why ? `: ${t.why}` : ''}`);
-                if (next) { changed.push(next); this.tell(next); }
+                const why = `task ${b.taskId} ${t.status} before a session started${t.why ? `: ${t.why}` : ''}`;
+                if (!bound) {
+                    const next = this.move(b, 'refused', why);
+                    if (next) { changed.push(next); this.tell(next); }
+                } else if (!b.toSessionId && !this.unnamed.has(b.id)) {
+                    // a started record cannot be moved again; the run that never
+                    // named its session is SAID, once, or the chain ends in silence
+                    this.unnamed.add(b.id);
+                    this.tell({ ...b, why });
+                }
             }
         }
         return changed;
     }
+
+    private readonly unnamed = new Set<string>();
 
     private readonly unsealable = new Set<string>();
 
@@ -249,9 +275,10 @@ export class BatonRunner {
         if (!b.taskId) { return { ok: true, baton: this.release(b, `started now by ${by}`) }; }
         const answer = this.deps.nudge?.(b.taskId);
         if (!answer) { return { ok: false, why: `task ${b.taskId} is not a queued row any more — read baton.status and the task itself.` }; }
-        if (answer.sessionId) {
-            return { ok: true, baton: this.move(b, 'started', `started now by ${by}; successor session ${answer.sessionId.slice(0, 8)} opened on task ${answer.taskId}`,
-                { taskId: answer.taskId, toSessionId: answer.sessionId }) ?? b };
+        if (answer.sessionId || answer.running) {
+            const opened = answer.sessionId ? `successor session ${answer.sessionId.slice(0, 8)} opened` : 'successor opened';
+            return { ok: true, baton: this.move(b, 'started', `started now by ${by}; ${opened} on task ${answer.taskId}`,
+                { taskId: answer.taskId, ...(answer.sessionId ? { toSessionId: answer.sessionId } : {}) }) ?? b };
         }
         return { ok: true, baton: this.move(b, 'parked', `asked again by ${by}; task ${answer.taskId} is still held — ${answer.held || 'waiting for the pump'}`,
             { taskId: answer.taskId }) ?? b };
@@ -284,6 +311,10 @@ export class BatonRunner {
         if (answer.sessionId) {
             return this.move(b, 'started', `${why}; successor session ${answer.sessionId.slice(0, 8)} opened on task ${answer.taskId}`,
                 { taskId: answer.taskId, toSessionId: answer.sessionId }) ?? b;
+        }
+        if (answer.running) {
+            return this.move(b, 'started', `${why}; successor opened on task ${answer.taskId} — its session is bound when the engine names it`,
+                { taskId: answer.taskId }) ?? b;
         }
         if (answer.wakeAt && answer.wakeAt > this.now()) {
             // S-73 — every account is full: parked until the first reset, and

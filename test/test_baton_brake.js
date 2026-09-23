@@ -16,6 +16,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const OUT = path.join(__dirname, '..', 'out', 'core');
 const B = require(path.join(OUT, 'baton.js'));
+const { batonBrake } = require(path.join(OUT, 'batonBrake.js'));
 const { BridgeRegistry } = require(path.join(OUT, 'bridge.js'));
 const { registerBatonOps } = require(path.join(OUT, 'batonBridge.js'));
 const { BatonStore } = require(path.join(OUT, 'batonStore.js'));
@@ -37,29 +38,29 @@ ok('a setting is read as a whole number >= 0, the default for anything else',
     B.normalizeMaxLegs(3) === 3 && B.normalizeMaxLegs(0) === 0 && B.normalizeMaxLegs(2.9) === 2
     && B.normalizeMaxLegs(-1) === 6 && B.normalizeMaxLegs('4') === 6 && B.normalizeMaxLegs(undefined) === 6);
 {
-    const c = B.batonBrake(mk('x', 6, 'waiting-end'), [], 6);
+    const c = batonBrake(mk('x', 6, 'waiting-end'), [], 6);
     ok('leg 6 of 6 passing: leg 7 does not open — the ceiling, named with its setting',
         c && c.kind === 'ceiling' && /has run 6 of its 6 legs \(agentFarm\.batonMaxHops\); leg 7 does not open/.test(c.why));
-    ok('leg 5 of 6 passing still opens leg 6', B.batonBrake(mk('x', 5, 'waiting-end'), [], 6) === undefined);
-    ok('0 = no ceiling', B.batonBrake(mk('x', 60, 'waiting-end'), [], 0) === undefined);
-    ok('a ceiling of 1 stops the very first pass', B.batonBrake(mk('x', 1, 'waiting-end'), [], 1).kind === 'ceiling');
+    ok('leg 5 of 6 passing still opens leg 6', batonBrake(mk('x', 5, 'waiting-end'), [], 6) === undefined);
+    ok('0 = no ceiling', batonBrake(mk('x', 60, 'waiting-end'), [], 0) === undefined);
+    ok('a ceiling of 1 stops the very first pass', batonBrake(mk('x', 1, 'waiting-end'), [], 1).kind === 'ceiling');
 }
 {
     const prior = [mk('b1', 1, 'started', H1), mk('b2', 2, 'started', H1)];
-    const barren = B.batonBrake(mk('b3', 3, 'waiting-end', H1), prior, 6);
+    const barren = batonBrake(mk('b3', 3, 'waiting-end', H1), prior, 6);
     ok('two legs in a row ending on the HEAD they opened on stop the chain',
         barren && barren.kind === 'barren' && /legs 2 and 3 both ended with no new commit in D:\\repo \(HEAD still aaaaaaaa\); leg 4 does not open/.test(barren.why));
-    ok('a commit in the last leg keeps it going', B.batonBrake(mk('b3', 3, 'waiting-end', H2), prior, 6) === undefined);
-    ok('one barren leg is not two', B.batonBrake(mk('b3', 3, 'waiting-end', H2), [mk('b1', 1, 'started', H1), mk('b2', 2, 'started', H2)], 6) === undefined
-        && B.batonBrake(mk('b3', 3, 'waiting-end', H2), [mk('b1', 1, 'started', H2), mk('b2', 2, 'started', H1)], 6) === undefined);
+    ok('a commit in the last leg keeps it going', batonBrake(mk('b3', 3, 'waiting-end', H2), prior, 6) === undefined);
+    ok('one barren leg is not two', batonBrake(mk('b3', 3, 'waiting-end', H2), [mk('b1', 1, 'started', H1), mk('b2', 2, 'started', H2)], 6) === undefined
+        && batonBrake(mk('b3', 3, 'waiting-end', H2), [mk('b1', 1, 'started', H2), mk('b2', 2, 'started', H1)], 6) === undefined);
     ok('leg 2 cannot be judged barren — nobody read the HEAD leg 1 started on',
-        B.batonBrake(mk('b2', 2, 'waiting-end', H1), [mk('b1', 1, 'started', H1)], 6) === undefined);
-    ok('a folder with no HEAD (not a repo) never trips it', B.batonBrake(mk('b3', 3, 'waiting-end'), [mk('b1', 1, 'started'), mk('b2', 2, 'started')], 6) === undefined);
+        batonBrake(mk('b2', 2, 'waiting-end', H1), [mk('b1', 1, 'started', H1)], 6) === undefined);
+    ok('a folder with no HEAD (not a repo) never trips it', batonBrake(mk('b3', 3, 'waiting-end'), [mk('b1', 1, 'started'), mk('b2', 2, 'started')], 6) === undefined);
     ok('only the legs that really opened count — a stopped hop is not a leg',
-        B.batonBrake(mk('b3', 3, 'waiting-end', H1), [mk('b1', 1, 'started', H1), mk('b2', 2, 'stopped', H1)], 6) === undefined);
+        batonBrake(mk('b3', 3, 'waiting-end', H1), [mk('b1', 1, 'started', H1), mk('b2', 2, 'stopped', H1)], 6) === undefined);
     ok('another chain\'s heads are not this chain\'s',
-        B.batonBrake(mk('b3', 3, 'waiting-end', H1), prior.map(p => ({ ...p, chainId: 'chn_2' })), 6) === undefined);
-    ok('the ceiling speaks before the barren rule', B.batonBrake(mk('b3', 3, 'waiting-end', H1), prior, 3).kind === 'ceiling');
+        batonBrake(mk('b3', 3, 'waiting-end', H1), prior.map(p => ({ ...p, chainId: 'chn_2' })), 6) === undefined);
+    ok('the ceiling speaks before the barren rule', batonBrake(mk('b3', 3, 'waiting-end', H1), prior, 3).kind === 'ceiling');
 }
 
 (async () => {

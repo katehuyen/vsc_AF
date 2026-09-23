@@ -6,7 +6,7 @@
  * for?" — so the words are built here and every surface renders them.
  * Pure: the list and the clock come in, nothing is read.
  */
-import { Baton, isLive } from './baton';
+import { Baton, isLive, openerOf } from './baton';
 import { chainMaxLegs, isSeal } from './batonSeal';
 
 export interface BatonCardView {
@@ -110,7 +110,7 @@ export function batonBarView(
 export function batonCardView(list: readonly Baton[], sessionId: string): BatonCardView | undefined {
     const sid = String(sessionId ?? '').trim();
     if (!sid) { return undefined; }
-    const opener = list.find(b => b.state === 'started' && b.toSessionId === sid);
+    const opener = openerOf(list, sid);
     const left = [...list].filter(b => b.from.sessionId === sid && !isSeal(b)).sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const anchor = opener ?? left;
     if (!anchor) { return undefined; }

@@ -303,7 +303,8 @@ import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
-import { relayHandoffHold, successorRow } from './core/batonDoor';
+import { relayHandoffHold, rowSessionId, successorRow } from './core/batonDoor';
+import { PassedLegCard, PassedLegEnder } from './core/batonEnd';
 import { BatonRunner } from './core/batonRunner';
 import { legFactsFrom } from './core/batonLegFacts';
 import { BatonStore } from './core/batonStore';
@@ -16542,8 +16543,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // hook. The successor goes through tasks.add — the one door every run uses —
     // so the park, the budget brake, the concurrency lock and the automation
     // gate are already on it, and the row is visible on the board.
+    // S-85 — the ENGINE's id, never the Console card's (rowSessionId); the host
+    // is declared further down, and a sweep can run before it exists
     const successorSessionOf = (t: FarmTask): string | undefined =>
-        t.consoleSessionId || t.spawnSessionId || t.runSessionId || undefined;
+        rowSessionId(t, card => { try { return consoleHost.get(card)?.sessionId; } catch { return undefined; } });
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,
@@ -16573,6 +16576,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return {
                 taskId: task.id,
                 ...(successorSessionOf(task) ? { sessionId: successorSessionOf(task) } : {}),
+                ...(task.status === 'running' ? { running: true } : {}),
                 ...(!started && task.deferredReason ? { held: task.deferredReason } : {}),
                 ...(row.wakeAt ? { wakeAt: row.wakeAt } : {})
             };
@@ -16609,6 +16613,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return {
                 taskId: t.id,
                 ...(successorSessionOf(t) ? { sessionId: successorSessionOf(t) } : {}),
+                // read again: startTask moved it (a narrowed `t.status` still says queued)
+                ...((t.status as string) === 'running' ? { running: true } : {}),
                 ...(!started && t.deferredReason ? { held: t.deferredReason } : {})
             };
         },
@@ -16677,19 +16683,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : undefined;
         batonBar.show();
     };
-    context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); }));
+    // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
+    // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
+    const batonEnder = new PassedLegEnder({
+        batons: () => batonStore.all(),
+        facts: b => {
+            const sid = b.from.sessionId;
+            let card: PassedLegCard | undefined;
+            try {
+                const c = consoleHost.list().find(x => x.sessionId === sid);
+                if (c) {
+                    card = {
+                        id: c.id, status: c.status, queued: c.queued?.length ?? 0,
+                        asking: !!(c.pendingAsk || c.pendingPermission), turnEndedAt: c.lastTurn?.endedAt
+                    };
+                }
+            } catch { /* the host is declared further down */ }
+            const s = live.sessions().find(x => x.sessionId === sid);
+            const owner = ownerOf(liveCliSessions(), sid);
+            return {
+                ...(card ? { card } : {}),
+                ...(s ? { live: { status: s.status, lastEventTs: s.lastEventTs } } : {}),
+                ...(owner ? { pid: owner.pid } : {})
+            };
+        },
+        closeCard: (id, why) => { consoleHost.close(id, { reason: why }); ConsolePanel.refreshIfOpen(); },
+        kill: pid => killPid(pid),
+        sweep: () => { batonRunner.sweep(); updateBatonBar(); },
+        log: l => console.log(`[Agent Farm] ${l}`)
+    });
+    context.subscriptions.push({ dispose: () => batonEnder.dispose() });
+    context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
     }));
     context.subscriptions.push(live.onEvent(e => {
         if (e.kind === 'end') { batonRunner.sessionEnded(e.sessionId, e.detail ?? 'end'); }
         if (e.kind === 'start' || e.kind === 'end') { updateBatonBar(); }
+        batonEnder.poke();
     }));
     context.subscriptions.push(taskManager.onDidChange(() => batonRunner.follow()));
     // The boot pass waits for the monitor to rebuild and the Console to reclaim
     // its seats; a baton judged before that would see every session as unknown.
     const batonBootSweep = setTimeout(() => { batonRunner.sweep(); updateBatonBar(); }, 20_000);
-    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); }, 60_000);
+    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); }, 60_000);
     context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); } });
 
     registerA2AOps(bridge, {
@@ -26867,6 +26904,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(consoleHost.onChange(id => {
         const s = consoleHost.get(id);
         if (s?.relayWanted && s.sessionId) { batonRunner.seal(); }
+        // S-86 — a card that passed the baton may have come to rest
+        batonEnder.poke();
     }));
 
     context.subscriptions.push(consoleHost.onChange(id => {
@@ -28206,7 +28245,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             state: s.status,
             answered: s.status === 'idle' && (s.turns || 0) > 0,
             failed: s.status === 'error',
-            reason: s.exitReason
+            reason: s.exitReason,
+            ...(s.sessionId ? { sessionId: s.sessionId } : {})
         };
     };
 
