@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
+import { coerceNoticeSource, NoticeSource, NoticeSourceFields, queueInputFromNotice } from './noticeToQueue';
 
 /**
  * Work Queue — the farm's user→agent async work channel (the mirror image of
@@ -53,7 +54,7 @@ export interface SpawnedItemRef {
     ts: number;
 }
 
-export interface WorkItem {
+export interface WorkItem extends NoticeSourceFields {
     id: string;
     /** capturedAt. */
     ts: number;
@@ -156,7 +157,7 @@ export interface WorkItem {
     editedAt?: number;
 }
 
-export interface WorkItemInput {
+export interface WorkItemInput extends NoticeSourceFields {
     text: string;
     author?: string;
     target?: string;
@@ -197,6 +198,9 @@ export interface WorkItemFilter {
     groupId?: string;
     tag?: string;
     sourceNoticeId?: string;
+    /** The agent whose notice spawned the item — how an agent finds the
+     *  answers to its OWN questions once they left Notices (N-10). */
+    sourceNoticeAgent?: string;
     /** A project id — or `NO_PROJECT` for the ones nobody filed. Absent = no
      *  project filter at all, which is not the same question. */
     projectId?: string;
@@ -320,6 +324,7 @@ export function makeWorkItem(input: WorkItemInput, now = Date.now()): WorkItem {
         item.sourceNoticeId = srcId.slice(0, 60);
         const srcTitle = String(input.sourceNoticeTitle ?? '').trim();
         if (srcTitle) { item.sourceNoticeTitle = srcTitle.slice(0, 200); }
+        Object.assign(item, coerceNoticeSource(input));
     }
     const projectId = String(input.projectId ?? '').trim();
     if (projectId) { item.projectId = projectId.slice(0, 60); }
@@ -338,6 +343,7 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
     const urgency = (f.urgency ?? '').toLowerCase();
     const tag = (f.tag ?? '').toLowerCase();
     const project = (f.projectId ?? '').trim();
+    const srcAgent = (f.sourceNoticeAgent ?? '').trim().toLowerCase();
     // X-49 — one axis, asked the same way three times: a value matches that
     // value, and `(none)` matches the items that carry nothing there.
     const axis = (want: string | undefined, has: string | undefined): boolean => {
@@ -356,6 +362,7 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
         (!urgency || n.urgency === urgency) &&
         (!f.groupId || n.groupId === f.groupId) &&
         (!f.sourceNoticeId || n.sourceNoticeId === f.sourceNoticeId) &&
+        (!srcAgent || (n.sourceNoticeAgent ?? '').toLowerCase() === srcAgent) &&
         (!project || (project === NO_PROJECT ? !n.projectId : n.projectId === project)) &&
         (!tag || (n.tags ?? []).some(t => t.toLowerCase() === tag)));
     if (f.limit && f.limit > 0) { out = out.slice(0, Math.floor(f.limit)); }
@@ -870,6 +877,10 @@ function normalise(n: WorkItem): WorkItem {
 export interface NoticesPort {
     /** Title of a notice, for the queue's source-snapshot. */
     titleOf(id: string): string | undefined;
+    /** The whole notice the item carries (N-10); absent = title only. */
+    snapshotOf?(id: string): NoticeSource | undefined;
+    /** Is this name an agent that takes work — gates the item's target. */
+    isAgent?(name: string): boolean;
     /** Record on the notice that it spawned this queue item (bi-di link). */
     addSpawnedItem(noticeId: string, ref: SpawnedItemRef): boolean;
     /** Remove the notice (the default on convert). */
@@ -989,7 +1000,7 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.list',
-            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, engine?/model?/effort?/account? (X-49, X-254 — WHO the item asks for: pass your own engine id / model / effort / account slot id to get the items meant for you, or "(none)" on any axis for the ones nobody claimed there. Omitting an axis does NOT mean "unclaimed" — it means every item, claimed or not. So "the work for me and the work nobody asked anyone for" is TWO calls: engine="codex" then engine="(none)"), urgency?, groupId?, tag?, sourceNoticeId?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50), ‼️ ready? (bool — X-254 (d): drop the items whose STATED sign-in is at its wall right now, and report how many were held and until when. Off by default, because an answer that silently narrowed would change what every existing caller sees. An item that names NO account is never held: empty means "the resolved account decides", and holding it would enforce a decision nobody made. ‼️ A held item WAITS — it is never slid onto another plan, because an account written on an item is an instruction, not a preference. The same distinction carryOnAccount already makes for a run pinned to @machine). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
+            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, engine?/model?/effort?/account? (X-49, X-254 — WHO the item asks for: pass your own engine id / model / effort / account slot id to get the items meant for you, or "(none)" on any axis for the ones nobody claimed there. Omitting an axis does NOT mean "unclaimed" — it means every item, claimed or not. So "the work for me and the work nobody asked anyone for" is TWO calls: engine="codex" then engine="(none)"), urgency?, groupId?, tag?, sourceNoticeId?, sourceNoticeAgent? (N-10 — the agent whose notice spawned the item: pass your own name to find the answers to YOUR questions that left Notices for the queue), project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50), ‼️ ready? (bool — X-254 (d): drop the items whose STATED sign-in is at its wall right now, and report how many were held and until when. Off by default, because an answer that silently narrowed would change what every existing caller sees. An item that names NO account is never held: empty means "the resolved account decides", and holding it would enforce a decision nobody made. ‼️ A held item WAITS — it is never slid onto another plan, because an account written on an item is an instruction, not a preference. The same distinction carryOnAccount already makes for a run pinned to @machine). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
             handler: (args) => {
                 const out = store.list({
                     status: optStr(args, 'status') || undefined,
@@ -1004,6 +1015,7 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
                     groupId: optStr(args, 'groupId') || undefined,
                     tag: optStr(args, 'tag') || undefined,
                     sourceNoticeId: optStr(args, 'sourceNoticeId') || undefined,
+                    sourceNoticeAgent: optStr(args, 'sourceNoticeAgent') || undefined,
                     projectId: projectFilter(optStr(args, 'project'), deps),
                     limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 50
                 });
@@ -1204,12 +1216,14 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.fromNotice',
-            describe: 'Convert a Notices message into a work item (the user\'s reply/elaboration becomes the item). Links both ways. args: noticeId (required), text (required — what the user wrote), deleteNotice? (default true — the source notice is removed; false keeps it and records the spawned item ON the notice so the linkage stays visible). One notice may be converted several times.',
+            describe: 'Convert a Notices message into a work item (the user\'s reply/elaboration becomes the item). Links both ways, and the item CARRIES the notice (N-10): sourceNoticeTitle/Agent/Type/Body/Sections/ReportPath and its projectId; target = the notice\'s agent when that is an agent that takes work. args: noticeId (required), text (required — what the user wrote), deleteNotice? (default true — the source notice is removed; false keeps it and records the spawned item ON the notice so the linkage stays visible). One notice may be converted several times.',
             handler: (args) => {
                 const noticeId = argStr(args, 'noticeId');
                 const text = argStr(args, 'text');
-                const title = deps.notices?.titleOf(noticeId);
-                const item = store.add({ text, author: 'user', sourceNoticeId: noticeId, sourceNoticeTitle: title });
+                const np = deps.notices;
+                const snap = np?.snapshotOf ? np.snapshotOf(noticeId) : undefined;
+                const source = snap ?? (np?.titleOf(noticeId) !== undefined ? { title: np.titleOf(noticeId) as string } : undefined);
+                const item = store.add(queueInputFromNotice(noticeId, text, source, np?.isAgent ? (a) => !!np.isAgent?.(a) : undefined));
                 const del = args.deleteNotice === false ? false : true;
                 if (deps.notices) {
                     if (del) { deps.notices.dismiss(noticeId); }

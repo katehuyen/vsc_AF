@@ -79,6 +79,7 @@ import {
     staleReminderKeys
 } from './core/notices';
 import { registerQueueOps, WorkItem, WorkQueueStore } from './core/workqueue';
+import { queueInputFromNotice } from './core/noticeToQueue';
 import { PulseStore, runPulseSweep } from './core/pulse';
 import { buildTriggerStats, describeTriggerStat, triggerAlerts } from './core/triggerstats';
 import {
@@ -16989,6 +16990,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return out.join('\n\n');
     };
 
+    // A notice's author becomes a converted item's target only when it names an agent that takes work.
+    const isAgentName = (name: string): boolean => {
+        const k = name.trim().toLowerCase();
+        return !!k && agents.some(a => a.name.toLowerCase() === k);
+    };
+
     // Work Queue bridge ops (queue.*) — the user→agent capture channel. The
     // notices port lets queue.fromNotice cross-link the two boards without a
     // hard module dependency. Panel refresh is added once QueuePanel exists.
@@ -16996,6 +17003,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         store: workQueueStore,
         notices: {
             titleOf: (id) => noticesStore.titleOf(id),
+            snapshotOf: (id) => noticesStore.snapshotOf(id),
+            isAgent: (name) => isAgentName(name),
             addSpawnedItem: (id, ref) => noticesStore.addSpawnedItem(id, ref),
             dismiss: (id) => noticesStore.dismiss(id)
         },
@@ -17108,8 +17117,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // both boards. Default-deletes the source notice (else records the spawned
     // item ON the notice so the link stays visible).
     const convertNoticeToQueue = (a: { noticeId: string; text: string; deleteNotice: boolean }): void => {
-        const title = noticesStore.titleOf(a.noticeId);
-        const item = workQueueStore.add({ text: a.text, author: 'user', sourceNoticeId: a.noticeId, sourceNoticeTitle: title });
+        const item = workQueueStore.add(queueInputFromNotice(a.noticeId, a.text, noticesStore.snapshotOf(a.noticeId), isAgentName));
         if (a.deleteNotice) { noticesStore.dismiss(a.noticeId); }
         else { noticesStore.addSpawnedItem(a.noticeId, { itemId: item.id, text: item.text, ts: item.ts }); }
         QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen(); updateNoticesBadge();

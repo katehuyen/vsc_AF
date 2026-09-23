@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { deliverDocument, exportStamp } from './exportDoc';
+import type { NoticeSource } from './noticeToQueue';
 
 /**
  * Notices — the farm's agent→user board (and, via the `question` type, the
@@ -514,6 +515,16 @@ export class NoticesStore {
 
     /** Title of a notice (for the queue's source-snapshot). */
     titleOf(id: string): string | undefined { return this.find(id)?.title; }
+
+    /** The notice as a work item carries it (N-10) — a copy, never the row. */
+    snapshotOf(id: string): NoticeSource | undefined {
+        const n = this.find(id); if (!n) { return undefined; }
+        return {
+            title: n.title, agentName: n.agentName, type: n.type, body: n.body,
+            sections: n.sections?.map(s => ({ title: s.title, body: s.body })),
+            reportPath: n.reportPath, projectId: n.projectId
+        };
+    }
 
     dismiss(id: string): boolean {
         const gone = this.notices.filter(n => n.id === id);

@@ -293,7 +293,7 @@ export class QueuePanel {
                 break;
             case 'openFile':
                 if (typeof msg.id === 'string') {
-                    this.openFile(msg.id, msg.kind === 'report' ? 'report' : 'answer', typeof msg.mode === 'string' ? msg.mode : undefined);
+                    this.openFile(msg.id, msg.kind === 'report' || msg.kind === 'noticeReport' ? msg.kind : 'answer', typeof msg.mode === 'string' ? msg.mode : undefined);
                 }
                 break;
             case 'configureDocOpen':
@@ -320,9 +320,9 @@ export class QueuePanel {
      *  shared "open with" helper (mode = the caret choice, or the user's default
      *  when omitted). The path comes from the item itself, never the webview —
      *  no arbitrary file open. */
-    private openFile(id: string, kind: 'answer' | 'report', mode?: string): void {
+    private openFile(id: string, kind: 'answer' | 'report' | 'noticeReport', mode?: string): void {
         const n = this.deps.store.get(id);
-        const p = kind === 'report' ? n?.reportPath : n?.answerPath;
+        const p = kind === 'report' ? n?.reportPath : kind === 'noticeReport' ? n?.sourceNoticeReportPath : n?.answerPath;
         if (!p) { return; }
         try { this.deps.openDoc?.(p, mode); } catch { /* best-effort */ }
     }

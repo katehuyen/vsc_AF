@@ -111,6 +111,27 @@ const items = [
     }
 ];
 
+const noticeItems = [
+    {
+        id: 'q7', ts: T - 3 * M, author: 'user', status: 'captured', urgency: 'normal',
+        text: 'Evet, sil. Yedeği de aynı commit\'te temizle.',
+        target: 'developer', projectId: 'p1', tags: [],
+        sourceNoticeId: 'mudnn1m7nmyuf', sourceNoticeTitle: 'Test paketinin bıraktığı 93 çöp oturum klasörü silinsin mi? (X-361)',
+        sourceNoticeAgent: 'developer', sourceNoticeType: 'question',
+        sourceNoticeBody: 'Tam test paketi her koşuda gerçek bir **haiku** çağrısı yapıp transcript havuzuna bir oturum bırakıyordu. 3.644.0 ile bu durdu.\n\nGeride 93 adet `af-activation-*` klasörü kaldı.',
+        sourceNoticeSections: [
+            { title: 'Ne silinecek', body: '93 klasör, her biri ~200 KB, yalnızca testin ürettiği boş filo özeti.' },
+            { title: 'Risk', body: 'Bilgi kaybı yok.' }
+        ],
+        sourceNoticeReportPath: 'D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_OUTPUT\\10_REPORT\\2026-09-23_developer_x361-temizlik.md'
+    },
+    {
+        id: 'q8', ts: T - 700 * M, author: 'user', status: 'captured', urgency: 'normal',
+        text: 'b', tags: [],
+        sourceNoticeId: 'mtyhiafd61hud', sourceNoticeTitle: 'U-146 için iki yol var — hangisi?'
+    }
+];
+
 const data = over => Object.assign({
     generatedAt: T,
     items,
@@ -140,6 +161,17 @@ module.exports = {
                 launch: { engines: [], efforts: [], engineModels: null, accounts: null },
                 items: items.map(n => ({ ...n, engine: undefined, account: undefined, model: undefined, effort: undefined }))
             })
+        },
+        // N-10 — an answered question carries its notice; a legacy item carries
+        // only a title and must still draw. Both rows opened, the first one's
+        // Original too.
+        {
+            id: 'fromnotice', label: 'Work Queue — items converted from notices: a question with its original open, and a legacy title-only one',
+            data: data({ items: noticeItems }),
+            act: r => {
+                for (const id of ['q7', 'q8']) { const row = r.query(`[data-toggle="${id}"]`)[0]; if (row) { row.click(); } }
+                const b = r.query('[data-act="srcfull"][data-id="q7"]')[0]; if (b) { b.click(); }
+            }
         }
     ]
 };

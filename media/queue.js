@@ -31,6 +31,7 @@
     // the manager's tracked delegations never crowd out the user's own captures.
     let agentLaneOpen = st.agentLaneOpen !== undefined ? !!st.agentLaneOpen : DEF.agentLaneOpen;
     const expanded = new Set();     // open item ids
+    const srcOpen = new Set();      // items showing their source notice in full (N-10)
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {text,target,urgency}
     const answering = new Set();    // blocked ids with the answer box open (GAP-2)
@@ -171,10 +172,31 @@
         return n.urgency && n.urgency !== 'normal' ? `<span class="q-urg u-${n.urgency}">${URG[n.urgency]}</span>` : '';
     }
 
+    // N-10 — an item converted from a notice carries the notice; a legacy one
+    // carries only its title, and still draws.
+    function sourceKind(n) {
+        const t = String(n.sourceNoticeType || '');
+        return { icon: t === 'question' ? '❓' : '🔔', label: t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Notice' };
+    }
+
     function sourceLink(n) {
         if (!n.sourceNoticeId) { return ''; }
+        const k = sourceKind(n);
         const t = n.sourceNoticeTitle ? esc(n.sourceNoticeTitle) : '(message)';
-        return `<div class="q-src">source: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="Go to the source notice">🔔 ${t}</a></div>`;
+        const from = n.sourceNoticeAgent ? ` <span class="muted">· from <strong>${esc(n.sourceNoticeAgent)}</strong></span>` : '';
+        const secs = n.sourceNoticeSections || [];
+        const has = !!(n.sourceNoticeBody || secs.length || n.sourceNoticeReportPath);
+        const open = has && srcOpen.has(n.id);
+        const toggle = has ? ` <button class="secondary q-srctoggle" data-act="srcfull" data-id="${esc(n.id)}" title="${open ? 'Hide' : 'Show'} the notice as it read when it became this item">${open ? '▾' : '▸'} Original</button>` : '';
+        let h = `<div class="q-src">${k.icon} ${esc(k.label)}: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="Go to the source notice">${t}</a>${from}${toggle}</div>`;
+        if (!open) { return h; }
+        h += '<div class="q-srcfull">';
+        if (n.sourceNoticeBody) { h += `<div class="q-md">${mdToHtml(n.sourceNoticeBody)}</div>`; }
+        for (const s of secs) { h += `<div class="q-srcsec"><div class="q-srcsec-h">${esc(s.title || '')}</div><div class="q-md">${mdToHtml(s.body || '')}</div></div>`; }
+        if (n.sourceNoticeReportPath) {
+            h += `<button class="secondary" data-act="srcreport" data-id="${esc(n.id)}" title="${esc(n.sourceNoticeReportPath)}">📄 Open the notice's report (${esc(fileBase(n.sourceNoticeReportPath))})</button>`;
+        }
+        return h + '</div>';
     }
 
     function delegationLink(n) {
@@ -311,7 +333,7 @@
                 ${routeChip(n)}
                 ${projectChip(n)}
                 ${tags ? `<span class="q-tags">${tags}</span>` : ''}
-                ${n.sourceNoticeId ? '<span class="q-badge src" title="Spawned from a notice">🔔</span>' : ''}
+                ${n.sourceNoticeId ? `<span class="q-badge src" title="From a ${esc(sourceKind(n).label.toLowerCase())}${n.sourceNoticeAgent ? ` · ${esc(n.sourceNoticeAgent)}` : ''}">${sourceKind(n).icon}</span>` : ''}
                 <span class="q-meta muted small">${esc(timeLabel(n.ts))}</span>
             </div>
             <div class="q-body" ${open ? '' : 'hidden'}>${body}</div>
@@ -719,6 +741,10 @@
         .q-body { padding:2px 12px 12px 30px; border-top:1px solid var(--vscode-panel-border); }
         .q-fulltext { margin:6px 0; line-height:1.5; word-break:break-word; }
         .q-src { margin:4px 0; font-size:11px; opacity:.85; }
+        .q-srctoggle { padding:0 6px; font-size:11px; margin-left:4px; }
+        .q-srcfull { margin:2px 0 8px 2px; padding:4px 8px; border-left:2px solid var(--vscode-textBlockQuote-border, rgba(128,128,128,.5)); font-size:12px; }
+        .q-srcsec { margin-top:6px; }
+        .q-srcsec-h { font-weight:600; }
         .q-src a, .q-link, .q-afnav, .q-openNotice { color:var(--vscode-textLink-foreground); cursor:pointer; }
         .q-deleg { margin:5px 0; font-size:11px; }
         .q-outcome { margin:8px 0; padding:8px 10px; border-left:3px solid var(--vscode-charts-green,#89d185); background:var(--vscode-editorWidget-background); border-radius:4px; }
@@ -995,7 +1021,7 @@
         }));
 
         // item actions
-        document.querySelectorAll('.q-actions [data-act], .q-edit [data-act], .q-outcome [data-act], .q-answer [data-act], .q-routerow [data-act]').forEach(b => b.addEventListener('click', ev => {
+        document.querySelectorAll('.q-src [data-act], .q-srcfull [data-act], .q-actions [data-act], .q-edit [data-act], .q-outcome [data-act], .q-answer [data-act], .q-routerow [data-act]').forEach(b => b.addEventListener('click', ev => {
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'handoff') { vscode.postMessage({ type: 'handoff', id }); }
@@ -1007,6 +1033,8 @@
                 if (t) { vscode.postMessage({ type: 'answer', id, text: t }); answering.delete(id); delete answerDrafts[id]; }
             }
             else if (act === 'remove') { expanded.delete(id); vscode.postMessage({ type: 'remove', id }); }
+            else if (act === 'srcfull') { if (srcOpen.has(id)) { srcOpen.delete(id); } else { srcOpen.add(id); } render(); }
+            else if (act === 'srcreport') { vscode.postMessage({ type: 'openFile', kind: 'noticeReport', id }); }
             else if (act === 'urg') {
                 const n = (DATA.items || []).find(x => x.id === id) || {};
                 const next = n.urgency === 'normal' ? 'soon' : n.urgency === 'soon' ? 'urgent' : 'normal';

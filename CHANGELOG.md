@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.646.0 - A notice that becomes a work item carries the whole notice, and goes back to the agent that raised it (N-10) (2026-09-23)
+
+- **The item carries its notice (N-10).** Converting a notice — "Add to queue",
+  or answering a question — deletes the notice by default, and the item kept
+  only its title: who asked, what kind of message it was, its words, its
+  sections and its report were gone. Now the item keeps all of it
+  (`sourceNoticeAgent` · `Type` · `Body` · `Sections` · `ReportPath`, and the
+  notice's project), copied once at the moment of conversion. Both doors — the
+  Notices page and `queue.fromNotice` — build the item through one pure
+  function (`core/noticeToQueue.ts`), so they cannot disagree about what
+  travels.
+- **Back to the agent that asked.** The item's target is the notice's agent
+  when that is an agent that takes work; a notice raised by Agent Farm itself
+  stays unrouted. `queue.list` gains `sourceNoticeAgent`, which is how an agent
+  finds the answers to its own questions after they left Notices — every
+  agent's answered-questions duty now watches both boards.
+- **The queue card shows it.** The badge says what the notice was and who sent
+  it (`❓ Question: <title> · from developer`), and **▸ Original** opens the
+  notice as it read when it became this item — body, sections and a button for
+  its report — even after the notice itself is gone. Items converted before
+  this still draw their title, as before.
+
 ## 3.645.0 - A backlog line typed straight into the file is dated from the moment it appears (X-357) (2026-09-23)
 
 - **Born in the file, dated in the file (X-357).** An item written or pasted

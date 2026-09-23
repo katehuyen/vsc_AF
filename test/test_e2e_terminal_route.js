@@ -24,7 +24,7 @@
 // wire. A guard nothing can turn red is not a guard.
 //
 // Skipped (not failed) when the CLI is not on PATH; the POSIX scene is skipped
-// where there is no `bash`.
+// where no `bash` actually runs.
 'use strict';
 const cp = require('child_process');
 const fs = require('fs');
@@ -62,6 +62,31 @@ function vscodeMerge(windowEnv, overlay) {
         out[k] = String(v);
     }
     return out;
+}
+
+/**
+ * A shell that RUNS, not one that is merely found. On Windows the first `bash`
+ * on a PowerShell PATH is WSL's stub (System32\bash.exe): with no distribution
+ * installed it exits 1 and prints its complaint on stdout, so the POSIX scene
+ * failed whenever the suite was launched from PowerShell rather than Git Bash.
+ * Git's own bash is preferred; any candidate must answer `exit 0` to count.
+ */
+function posixBash() {
+    const cands = [];
+    if (process.platform === 'win32') {
+        try {
+            const git = cp.execSync('where git', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split(/\r?\n/)[0].trim();
+            const root = path.resolve(path.dirname(git), '..');
+            cands.push(path.join(root, 'bin', 'bash.exe'), path.join(root, 'usr', 'bin', 'bash.exe'));
+        } catch { /* no git on PATH */ }
+    }
+    if (cliPresent('bash')) { cands.push('bash'); }
+    for (const c of cands) {
+        if (c !== 'bash' && !fs.existsSync(c)) { continue; }
+        const r = cp.spawnSync(c, ['-c', 'exit 0'], { windowsHide: true, timeout: 20000 });
+        if (r.status === 0) { return c; }
+    }
+    return null;
 }
 
 function run(cmd, args, env, cwd) {
@@ -166,9 +191,10 @@ async function main() {
 
         // ---- 3. external terminal, a real POSIX shell ----
         const afterWindows = kimiM.hits.length;
-        if (cliPresent('bash')) {
+        const bash = posixBash();
+        if (bash) {
             const prefix = X.posixEnvPrefix(overlay);
-            const shRun = await run('bash', ['-c', prefix + TURN], windowEnv, tmp);
+            const shRun = await run(bash, ['-c', prefix + TURN], windowEnv, tmp);
             ok('the POSIX-shell turn finished', shRun.code === 0);
             if (shRun.code !== 0) { console.log('  stderr:', shRun.err.slice(0, 400)); }
             const mine = kimiM.hits.slice(afterWindows).filter(h => h.method === 'POST');
@@ -178,7 +204,7 @@ async function main() {
             ok('‼️ …and `unset` really removed the inherited bearer',
                 kimiM.hits.slice(afterWindows).every(h => !/inherited/.test(h.auth)));
         } else {
-            console.log('  skipped: the POSIX scene needs bash on PATH');
+            console.log('  skipped: the POSIX scene needs a bash that runs');
         }
 
         // ---- 4. the clearing, falsified ----
