@@ -96,6 +96,11 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // which detaches whatever the caret was in.
     'afRepaint.js',
     'afTelegram.js',
+    // afWeb.js — the web view card (U-85): the farm on a phone and the QR that
+    // opens it. Shared for the reason the card above is, sharpened: the fact it
+    // draws is true or false on a detail no page can see for itself, and the
+    // wrong answer is the green one.
+    'afWeb.js',
     // afA2A.js — the A2A card grammar (N-6): coordinates, the supervisor
     // directive block, the lease bar and a safe markdown, shared by the two
     // A2A pages so a note and a task are drawn in one voice.

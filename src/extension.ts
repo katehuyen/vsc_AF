@@ -406,6 +406,8 @@ import {
     RoutableSession, RouteWhy, RoutingTable, sessionLabel, sessionList, setFocus, topicName
 } from './core/telegramRouting';
 import { generateToken, RunningWebServer, startWebServer, lanAddress } from './core/webserver';
+import { webHost, webStatus, webUrl } from './core/webCockpit';
+import { qrEncode, qrSvg } from './core/qr';
 import { buildPortfolioRows } from './panels/portfolioPanel';
 import {
     applySuggestionToClaudeMd, collectUserMessages, scanCorrections, Suggestion, SuggestionStore
@@ -23102,6 +23104,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             clearPort: () => clearPort(cfg().get<number>('livePort', 8377)),
             restart: () => live.start()
+        },
+        /**
+         * U-85 — the read-only web surface a phone opens.
+         *
+         * ‼️ `serving` IS THE HOST'S OWN KNOWLEDGE, NEVER A PORT SCAN. We hold
+         * the object `startWebServer` returned, so "did it bind" is a fact here
+         * and a guess anywhere else — and it is the fact that separates "on"
+         * from "on and working". The rest is settings.
+         *
+         * ‼️ AND THE FOUR WRITES ALL END IN `applyWebServer()`, which is the
+         * one place that closes the old server, rewrites the service's copy of
+         * the config and binds again. A write that only touched the setting
+         * would leave the running server on the old port with the old token
+         * until something else happened to restart it.
+         */
+        web: {
+            snapshot: () => ({ ...webCfg(), serving: !!webServer, lanAddress: lanAddress() }),
+            enableWebView: async (bind: 'local' | 'lan') => { await enableWebView(bind); },
+            disableWebView: async () => { await disableWebView(); },
+            setWebBind: async (bind: 'local' | 'lan') => { await setWebBind(bind); },
+            newWebToken: async () => { await newWebToken(); }
         }
     };
     /**
@@ -28975,12 +28998,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         applyWebServer();
         return webCfg();
     };
-    /** The link a phone opens — fresh snapshot first, so the first page is not empty. */
+    /**
+     * U-85 — THE OTHER THREE WRITES, EACH DEFINED ONCE. The Toolbox card's
+     * buttons and the bridge ops call THESE, not a copy of their two lines:
+     * a handler that wrote the setting itself would be a second implementation
+     * that forgets `applyWebServer()` — and forgetting it leaves the running
+     * server on the old port with the old token until something else happens
+     * to restart it. The parity gate reads exactly this and refuses a door
+     * whose op shares no symbol with it.
+     */
+    const disableWebView = async () => {
+        await cfg().update('web.enabled', false, vscode.ConfigurationTarget.Global);
+        applyWebServer();
+        return webCfg();
+    };
+    const setWebBind = async (bind: 'local' | 'lan') => {
+        await cfg().update('web.bind', bind, vscode.ConfigurationTarget.Global);
+        applyWebServer();
+        return webCfg();
+    };
+    /** ‼️ The REVOKE: every link built from the old token dies with it. */
+    const newWebToken = async () => {
+        await cfg().update('web.token', generateToken(), vscode.ConfigurationTarget.Global);
+        applyWebServer();
+        return webCfg();
+    };
+    /**
+     * The link a phone opens — fresh snapshot first, so the first page is not
+     * empty. ‼️ The shape comes from `core/webCockpit`, which the card and the
+     * bridge ops also call: a second copy of this template is a link that goes
+     * stale the first time the route changes, silently and in green.
+     */
     const webViewUrl = () => {
         writeWebSnapshot();
         const w = webCfg();
-        const host = w.bind === 'lan' ? lanAddress() : '127.0.0.1';
-        return { ...w, host, url: `http://${host}:${w.port}/?t=${w.token}` };
+        const lan = lanAddress();
+        return { ...w, host: webHost(w.bind, lan), url: webUrl({ ...w, lanAddress: lan }) };
     };
     const galleryPacks = () => {
         const sources = cfg().get<string[]>('packGalleryRepos', []);
@@ -39496,6 +39549,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!alreadyOn) { await enableWebView(bind as 'local' | 'lan'); }
                 const w = webViewUrl();
                 return { enabled: w.enabled, bind: w.bind, port: w.port, host: w.host, url: w.url, alreadyOn };
+            }
+        },
+        {
+            op: 'web.status',
+            describe: 'U-85 — CAN A PHONE READ THIS FARM RIGHT NOW, and if not, why. The same verdict the Toolbox card draws (core/webCockpit), so the two can never disagree: `state` is one of off · no-token · not-serving · local · lan-no-address · lan, with a `tone`, the sentence a person reads (`detail`) and the one thing to do about it (`next`). ‼️ READ `phoneReachable`, NOT `enabled`: the commonest failure is entirely green — the switch on, a token set, the server really bound — and bound to `local`, so the only link that exists is http://127.0.0.1 and no phone can open it. `serving` is the host\'s own knowledge (it holds the server object), never a port scan. args: qr? (default false — true also returns the page\'s own QR as an SVG string, encoded only when the link would actually work). Answer: { enabled, serving, bind, port, hasToken, lanAddress, host, url, status: {state, tone, detail, next?, phoneReachable}, qr? }.',
+            handler: (args) => {
+                const w = webCfg();
+                const lan = lanAddress();
+                const status = webStatus({
+                    enabled: w.enabled, port: w.port, bind: w.bind,
+                    hasToken: !!w.token, serving: !!webServer, lanAddress: lan
+                });
+                const url = w.token ? webUrl({ ...w, lanAddress: lan }) : '';
+                return {
+                    enabled: w.enabled, serving: !!webServer, bind: w.bind, port: w.port,
+                    hasToken: !!w.token, lanAddress: lan, host: status.host, url, status,
+                    ...(optBool(args, 'qr', false) && status.phoneReachable && url
+                        ? { qr: qrSvg(qrEncode(url), { scale: 4, title: 'Open Agent Farm on your phone' }) }
+                        : {})
+                };
+            }
+        },
+        {
+            op: 'web.stop',
+            describe: 'U-85 — SWITCH THE WEB VIEW OFF: the port closes and every link stops working, including a bookmark saved on a phone. The token is KEPT (agentFarm.web.token), so web.enable puts the same links back; mint a new one with web.token.new if the point is to revoke them. The same act as "turn off" on the Toolbox card. args: none. Answer: { enabled:false, wasServing, port }.',
+            handler: async () => {
+                const wasServing = !!webServer;
+                const w = await disableWebView();
+                return { enabled: w.enabled, wasServing, port: w.port };
+            }
+        },
+        {
+            op: 'web.bind',
+            describe: 'U-85 — MOVE THE BINDING WHILE THE VIEW IS ON, which web.enable will not do (it answers `alreadyOn` and changes nothing). This is the switch that decides whether a phone can reach the farm at all: `local` keeps the port on 127.0.0.1 and there is no link that leaves this machine; `lan` serves the dashboard to EVERYONE on this network who has the link. ‼️ `lan` therefore requires confirm:true, exactly as web.enable does — it stays read only, but read by whoever is on the network. The server rebinds at once. The same select as "Binding" on the Toolbox card. args: bind (local | lan), confirm (true — required for lan). Answer: web.status\'s own answer, after the move.',
+            handler: async (args) => {
+                const bind = optStr(args, 'bind');
+                need(bind === 'local' || bind === 'lan', 'bind must be local or lan.');
+                need(bind === 'local' || args.confirm === true,
+                    'bind:lan makes the dashboard readable by anyone on this network who has the link — pass confirm:true if that is meant.');
+                await setWebBind(bind as 'local' | 'lan');
+                return bridge.dispatch('web.status', {}).then(r => r.ok ? r.result : r);
+            }
+        },
+        {
+            op: 'web.token.new',
+            describe: 'U-85 — MINT A FRESH TOKEN AND PUT IT IN FORCE AT ONCE. ‼️ THIS IS THE REVOKE: every link made from the old token dies with it, including a phone bookmark — the page stores the token in a cookie, so a phone that was working simply starts being refused. That is the point of the op, so `confirm:true` is required. The new link is in the answer; the view is left exactly as on or off as it was. The same button as "new token" on the Toolbox card. args: confirm (true — required). Answer: web.status\'s own answer, carrying the new url.',
+            handler: async (args) => {
+                need(args.confirm === true,
+                    'A new token kills every existing link, including a phone bookmark — pass confirm:true if that is meant.');
+                await newWebToken();
+                return bridge.dispatch('web.status', {}).then(r => r.ok ? r.result : r);
             }
         },
         {

@@ -14,6 +14,37 @@ const { telegramCard } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'telegramCockpit.js'));
 const { hooksStatus } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'hooksCockpit.js'));
+const { webStatus, webUrl } =
+    require(path.join(__dirname, '..', '..', 'out', 'core', 'webCockpit.js'));
+const { qrEncode, qrSvg } =
+    require(path.join(__dirname, '..', '..', 'out', 'core', 'qr.js'));
+
+/**
+ * U-85 — one web block, built the way `webCardData()` builds it: the verdict,
+ * the link AND the code are asked for rather than typed, because all three are
+ * the thing under test. ‼️ A hand-drawn QR in a fixture is a picture of a code
+ * that was never encoded — and the one property that matters (does a scanner
+ * read it) is exactly what a hand-drawn one cannot have.
+ */
+const web = (o) => {
+    const s = Object.assign({
+        enabled: true, port: 8378, bind: 'lan',
+        token: '9f2c1a4e77b0d3568ae1cc02f4b9d716',
+        serving: true, lanAddress: '192.168.1.40'
+    }, o || {});
+    const status = webStatus({
+        enabled: s.enabled, port: s.port, bind: s.bind,
+        hasToken: !!s.token, serving: s.serving, lanAddress: s.lanAddress
+    });
+    const url = s.token
+        ? webUrl({ bind: s.bind, port: s.port, token: s.token, lanAddress: s.lanAddress }) : '';
+    return Object.assign({
+        enabled: s.enabled, port: s.port, bind: s.bind, hasToken: !!s.token,
+        serving: s.serving, lanAddress: s.lanAddress, url, status
+    }, status.phoneReachable && url
+        ? { qr: qrSvg(qrEncode(url), { scale: 4, title: 'Open Agent Farm on your phone' }) }
+        : {});
+};
 
 /**
  * U-86 — one hooks block, built the way `buildHooks()` builds it: the status is
@@ -172,7 +203,34 @@ const variants = () => ([
                 }
             })
         })
+    },
+    /**
+     * ‼️ U-85 — FOUR PICTURES, SMALLEST FIRST, because the card changes SHAPE
+     * between them and not just colour: the off state has two buttons and no
+     * code block, and the working one grows a 200px square beside a link that
+     * has to wrap. The middle one is the scene this card exists for — every
+     * switch correct, and the phone still cannot open anything.
+     */
+    {
+        id: 'toolbox-web-off',
+        label: 'Toolbox — Services: the web view is off (the smallest the card gets)',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }) })
+    },
+    {
+        id: 'toolbox-web-notoken',
+        label: 'Toolbox — Services: on, but no token, so the server refuses to start',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ token: '', serving: false }) })
+    },
+    {
+        id: 'toolbox-web-local',
+        label: 'Toolbox — Services: ‼️ every switch right, bound to local, and NO phone can open it',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ bind: 'local' }) })
+    },
+    {
+        id: 'toolbox-web-lan',
+        label: 'Toolbox — Services: reachable from the network, with the code that opens it',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web() })
     }
 ]);
 
-module.exports = { script: 'toolbox.js', data, variants, tg, base, hooks };
+module.exports = { script: 'toolbox.js', data, variants, tg, base, hooks, web };

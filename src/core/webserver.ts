@@ -23,6 +23,7 @@
 import * as fs from 'fs';
 import * as http from 'http';
 import { renderPage } from './webpage';
+import { webUrl } from './webCockpit';
 
 export type WebRoute = 'page' | 'snapshot' | 'health' | 'notfound';
 
@@ -148,7 +149,9 @@ export function startWebServer(
     return {
         close: () => { try { server.close(); } catch { /* already closed */ } },
         port: opts.port,
-        url: () => `http://${opts.bind === 'lan' ? lanAddress() : '127.0.0.1'}:${opts.port}/?t=${opts.token}`
+        // ‼️ ONE FORMULA (core/webCockpit): the command, the card, the QR and
+        // this all build the link the same way, or one of them is wrong.
+        url: () => webUrl({ bind: opts.bind, port: opts.port, token: opts.token, lanAddress: lanAddress() })
     };
 }
 

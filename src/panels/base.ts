@@ -445,6 +445,11 @@ export function htmlShell(
     // reach the farm", and a card invented per page is a card that answers that
     // differently per page — in green, on the page that was not updated.
     const telegram = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTelegram.js'));
+    // The web view card (U-85) — the farm on a phone, and the QR that opens it.
+    // Ships everywhere for the reason the card above does, sharpened: the fact
+    // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
+    // page can see for itself, and the wrong answer is the green one.
+    const webCard = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afWeb.js'));
     // N-6 — the A2A card grammar (coordinates, directive block, lease bar,
     // markdown), shared by the two A2A pages.
     const a2a = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afA2A.js'));
@@ -500,6 +505,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
+<script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>

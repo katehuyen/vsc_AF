@@ -2842,6 +2842,131 @@ const { opencodeStatus, syncToOpencode } =
             ok('B-19: …already on: nothing is rewritten, bind is ignored, the current link is answered with alreadyOn',
                 again.ok && again.result.alreadyOn === true && again.result.bind === 'lan' && writes.length === 3
                 && again.result.url === on.result.url && snapshots === 2);
+            // --- U-85: the other four web doors, against the REAL core, so the
+            // verdict the op answers is the verdict the card draws.
+            //
+            // ‼️ web.enable above CANNOT move the binding — it answers
+            // `alreadyOn` and changes nothing — and the binding is the switch
+            // that decides whether a phone can reach the farm at all. That gap
+            // is what web.bind exists to close, and it is asserted here.
+            const WC = require(path.join(__dirname, '..', 'out', 'core', 'webCockpit.js'));
+            const QR = require(path.join(__dirname, '..', 'out', 'core', 'qr.js'));
+            let serving = true;
+            const lan = '192.168.1.20';
+            const applyWebServer = () => { serving = webState.enabled && !!webState.token; };
+            const disableWebView = async () => {
+                writes.push(['web.enabled', false]);
+                webState = { ...webState, enabled: false };
+                applyWebServer();
+                return webCfg();
+            };
+            const setWebBind = async (bind) => {
+                writes.push(['web.bind', bind]);
+                webState = { ...webState, bind };
+                applyWebServer();
+                return webCfg();
+            };
+            const newWebToken = async () => {
+                writes.push(['web.token', 'tok-fresh']);
+                webState = { ...webState, token: 'tok-fresh' };
+                applyWebServer();
+                return webCfg();
+            };
+            reg.register({
+                op: 'web.status',
+                describe: 'U-85 — can a phone read this farm right now, and if not why. args: qr?',
+                handler: (args) => {
+                    const w = webCfg();
+                    const status = WC.webStatus({
+                        enabled: w.enabled, port: w.port, bind: w.bind,
+                        hasToken: !!w.token, serving, lanAddress: lan
+                    });
+                    const url = w.token ? WC.webUrl({ ...w, lanAddress: lan }) : '';
+                    return {
+                        enabled: w.enabled, serving, bind: w.bind, port: w.port,
+                        hasToken: !!w.token, lanAddress: lan, host: status.host, url, status,
+                        ...(args.qr === true && status.phoneReachable && url
+                            ? { qr: QR.qrSvg(QR.qrEncode(url), { scale: 4 }) } : {})
+                    };
+                }
+            });
+            reg.register({
+                op: 'web.stop',
+                describe: 'U-85 — switch the web view off. args: none',
+                handler: async () => {
+                    const wasServing = serving;
+                    const w = await disableWebView();
+                    return { enabled: w.enabled, wasServing, port: w.port };
+                }
+            });
+            reg.register({
+                op: 'web.bind',
+                describe: 'U-85 — move the binding while the view is on. args: bind, confirm (required for lan)',
+                handler: async (args) => {
+                    const bind = String(args.bind || '');
+                    need(bind === 'local' || bind === 'lan', 'bind must be local or lan.');
+                    need(bind === 'local' || args.confirm === true,
+                        'bind:lan makes the dashboard readable by anyone on this network — pass confirm:true.');
+                    await setWebBind(bind);
+                    return (await reg.dispatch('web.status', {})).result;
+                }
+            });
+            reg.register({
+                op: 'web.token.new',
+                describe: 'U-85 — mint a fresh token and put it in force. args: confirm (required)',
+                handler: async (args) => {
+                    need(args.confirm === true, 'A new token kills every existing link — pass confirm:true.');
+                    await newWebToken();
+                    return (await reg.dispatch('web.status', {})).result;
+                }
+            });
+
+            // The state left by web.enable above: on, bound to lan, serving.
+            const st1 = await reg.dispatch('web.status', {});
+            ok('U-85: web.status answers the card\'s own verdict, reachable on a lan bind',
+                st1.ok && st1.result.status.state === 'lan' && st1.result.status.phoneReachable === true
+                && st1.result.host === lan && st1.result.url === `http://${lan}:8378/?t=${webState.token}`);
+            ok('U-85: …and no code unless one is asked for', st1.result.qr === undefined);
+            const st1q = await reg.dispatch('web.status', { qr: true });
+            ok('U-85: …qr:true encodes the real link', /^<svg /.test(String(st1q.result.qr || '')));
+
+            // ‼️ THE GREEN LIE, ON THE BRIDGE TOO.
+            const toLocalNoConfirm = await reg.dispatch('web.bind', { bind: 'local' });
+            ok('U-85: web.bind to local needs no confirmation — the port never leaves this machine',
+                toLocalNoConfirm.ok && toLocalNoConfirm.result.bind === 'local');
+            ok('U-85: ‼️ …and the answer says the phone can no longer reach it, though nothing "failed"',
+                toLocalNoConfirm.result.enabled === true && toLocalNoConfirm.result.serving === true
+                && toLocalNoConfirm.result.status.state === 'local'
+                && toLocalNoConfirm.result.status.phoneReachable === false);
+            const wroteBefore = writes.length;
+            const toLanNoConfirm = await reg.dispatch('web.bind', { bind: 'lan' });
+            ok('U-85: …bind:lan without confirm:true is refused and writes nothing',
+                toLanNoConfirm.ok === false && /confirm:true/.test(toLanNoConfirm.error)
+                && writes.length === wroteBefore);
+            const badBind2 = await reg.dispatch('web.bind', { bind: 'world', confirm: true });
+            ok('U-85: …and a binding that is neither is refused rather than defaulted',
+                badBind2.ok === false && writes.length === wroteBefore);
+            const toLan = await reg.dispatch('web.bind', { bind: 'lan', confirm: true });
+            ok('U-85: …confirmed, the binding really moves and the link names the machine',
+                toLan.ok && toLan.result.status.phoneReachable === true && toLan.result.host === lan);
+
+            // ‼️ THE REVOKE.
+            const urlBefore = toLan.result.url;
+            const tokNoConfirm = await reg.dispatch('web.token.new', {});
+            ok('U-85: web.token.new without confirm:true is refused — it kills every existing link',
+                tokNoConfirm.ok === false && webState.token !== 'tok-fresh');
+            const tok = await reg.dispatch('web.token.new', { confirm: true });
+            ok('U-85: …confirmed, the link really changes, which is the whole point',
+                tok.ok && tok.result.url !== urlBefore && /t=tok-fresh$/.test(tok.result.url));
+
+            const webOff = await reg.dispatch("web.stop", {});
+            ok('U-85: web.stop closes the port and says whether anything was really serving',
+                webOff.ok && webOff.result.enabled === false && webOff.result.wasServing === true);
+            const stOff = await reg.dispatch('web.status', {});
+            ok('U-85: …and the view then reports off, with the token KEPT for web.enable',
+                stOff.result.status.state === 'off' && stOff.result.serving === false
+                && stOff.result.hasToken === true);
+
             // --- packs.gallery: the real collector over a local folder source
             const groot = fs.mkdtempSync(path.join(os.tmpdir(), 'af-b19-'));
             const gsrc = path.join(groot, 'gallery'); fs.mkdirSync(path.join(gsrc, 'nested'), { recursive: true });

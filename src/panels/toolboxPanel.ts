@@ -15,6 +15,7 @@ import { afConfig } from '../core/settingsDoor';
 import { HookFile, hooksStatus, ListenerState, PortHolder } from '../core/hooksCockpit';
 import { TelegramSnapshot } from '../core/telegramCockpit';
 import { handleAfNav, htmlShell, telegramCardData, telegramCardMessage } from './base';
+import { webCardData, webCardMessage, WebViewHost } from './toolboxWeb';
 
 /** ‼️ The snapshot's contract lives in the pure core now — Farm Settings draws
  *  the same card and would otherwise have to import it from a panel. Re-exported
@@ -74,6 +75,11 @@ export interface ToolboxPanelDeps {
         /** Bind again. `LiveMonitor.start()` stops first, so this IS the reset. */
         restart(): void;
     };
+    /**
+     * U-85 — the read-only web surface a phone opens. Optional for the reason
+     * the two hosts above are: a window that supplies nothing draws no card.
+     */
+    web?: WebViewHost;
 }
 
 /**
@@ -152,7 +158,14 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
 function buildServices(deps: ToolboxPanelDeps): Record<string, unknown> | undefined {
     const telegram = telegramCardData(deps.telegram);
     const hooks = buildHooks(deps);
-    return telegram || hooks ? { ...(telegram ? { telegram } : {}), ...(hooks ? { hooks } : {}) } : undefined;
+    const web = webCardData(deps.web);
+    return telegram || hooks || web
+        ? {
+            ...(telegram ? { telegram } : {}),
+            ...(hooks ? { hooks } : {}),
+            ...(web ? { web } : {})
+        }
+        : undefined;
 }
 
 /**
@@ -254,6 +267,12 @@ export class ToolboxPanel {
             webview: this.panel.webview,
             warn: t => this.warn(t),
             refresh: () => this.refresh()
+        })) { return; }
+        // U-85 — the web view card's four acts, in their own module for the
+        // same reason: the card is a component, so its rules are too.
+        if (await webCardMessage(msg, {
+            ...(this.deps.web ? { host: this.deps.web } : {}),
+            say: m => this.webMsg(m)
         })) { return; }
         switch (msg.type) {
             case 'refresh':
@@ -406,6 +425,12 @@ export class ToolboxPanel {
      *  the result of a write before the write has happened. */
     private hooksMsg(m: { ok: boolean; text: string } | undefined): void {
         if (m) { void this.panel.webview.postMessage({ type: 'hooks-said', ...m }); }
+        this.refresh();
+    }
+
+    /** The same contract for the web view card (U-85). */
+    private webMsg(m: { ok: boolean; text: string } | undefined): void {
+        if (m) { void this.panel.webview.postMessage({ type: 'web-said', ...m }); }
         this.refresh();
     }
 

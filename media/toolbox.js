@@ -196,6 +196,13 @@
             render();
             return;
         }
+        // U-85 — what the host did about the web view, said IN THE CARD, for
+        // the reason the line above exists.
+        if (m.type === 'web-said') {
+            webMsg = { ok: m.ok, text: m.text };
+            render();
+            return;
+        }
         if (m.type === 'mcp-def' && toolForm && toolForm.name === m.name) {
             Object.assign(toolForm, m.def || {});
             render();
@@ -379,6 +386,8 @@
     // U-86 — what the host last did about the hooks. Page state, not DATA: it
     // is an answer to a button this reader pressed.
     let hooksMsg = null;
+    // U-85 — the same contract for the web view card.
+    let webMsg = null;
 
     const KIND_LABEL = { skill: 'skill', subagent: 'subagent', command: 'command', mcp: 'MCP server' };
     const KIND_LEDE = {
@@ -806,7 +815,12 @@
     function serviceTab() {
         return window.AFTelegram.card(tg(), {
             controls: true, agents: DATA.agents || [], msg: svcMsg
-        }) + hooksCard();
+        }) + hooksCard()
+            // U-85 — the farm on a phone. A component (media/afWeb.js) for the
+            // reason the Telegram card is one, with one of its own: this file
+            // is past its size budget, so a card written here is a card that
+            // grows a monolith.
+            + window.AFWeb.card((DATA.services || {}).web, { msg: webMsg });
     }
 
     function wireServices() {
@@ -823,6 +837,7 @@
             else if (act === 'restart') { post({ type: 'hooks-restart' }); }
             else if (act === 'clear-port') { post({ type: 'hooks-clear-port' }); }
         }));
+        window.AFWeb.wire(post);
     }
 
     function settingsTab() {
@@ -890,6 +905,7 @@
                 .tb-card { cursor: pointer; }
                 .tb-card:hover { outline: 1px solid var(--vscode-charts-blue, #3794ff); }
                 ${window.AFTelegram.css()}
+                ${window.AFWeb.css()}
                 /* U-86 — the hook files, one row each. The mark, whose file it
                    is, and the path — in that order, because "is it in?" is the
                    question and the path is the evidence. */
