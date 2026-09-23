@@ -16,6 +16,13 @@
     const STYLE = `<style>
         .af-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px 24px; flex-wrap:wrap; margin:0 0 10px; }
         .af-head-info { flex:1 1 260px; min-width:200px; }
+        /* U-147 — the running build, flush right on the title's own line. The
+           info block takes the whole first row when it carries one, so the
+           stamp sits in the far corner rather than just left of the toolbar. */
+        .af-head-info.af-head-full { flex-basis:100%; }
+        .af-head-title { display:flex; align-items:baseline; gap:12px; min-width:0; }
+        .af-head-ver { margin-left:auto; font-size:11px; opacity:.65; white-space:nowrap;
+            color:var(--vscode-descriptionForeground); font-variant-numeric:tabular-nums; }
         /* The toolbar is two wrapping halves (page actions | global nav) that
            break onto a second line as UNITS — never intermixing, never leaving
            the divider stranded — so many-button pages stay tidy at any width. */
@@ -308,6 +315,8 @@
      *                //   by meaning.
      *   searchTitle, // optional tooltip when ⌕ Search is page-scoped
      *   refresh,     // false to omit the Refresh button (pages with nothing to re-scan)
+     *   version,     // true → the running build (window.__AFUI__.version) flush right
+     *                //   on the title's line. Dashboard and Farm Settings only (U-147).
      *   navActions,  // optional { <navId>: {label, title} } — this page claims
      *                //   that nav button for its own subject; the button stays ONE
      *                //   button and opens a small menu: the claimed action first,
@@ -446,9 +455,16 @@
         // every AFForm Submit), so a related ACTION lifted out of the box would
         // silently stop posting.
         const moreRow = more.length ? `<div class="af-head-more">${more.join('')}</div>` : '';
+        // U-147 — asked for by the page, read from what the host says is
+        // running (never typed into a page), and absent rather than "v" when
+        // the host said nothing.
+        const ver = o.version ? String((window.__AFUI__ || {}).version || '').replace(/[^0-9A-Za-z.+-]/g, '') : '';
+        const title = ver
+            ? `<div class="af-head-title"><h1>${o.title}</h1><span class="af-head-ver" title="Agent Farm ${ver} — the build running in this window">v${ver}</span></div>`
+            : `<h1>${o.title}</h1>`;
         return `${STYLE}
             <div class="af-head">
-                <div class="af-head-info"${info}><h1>${o.title}</h1>${o.sub ? `<div class="muted small">${o.sub}</div>` : ''}</div>
+                <div class="af-head-info${ver ? ' af-head-full' : ''}"${info}>${title}${o.sub ? `<div class="muted small">${o.sub}</div>` : ''}</div>
                 <div class="af-head-bar">${bar}</div>
                 ${moreRow}
             </div>`;

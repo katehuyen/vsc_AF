@@ -27,6 +27,12 @@ function currentBlocked(): number {
     try { return queueBlockedProvider ? Math.max(0, Math.floor(queueBlockedProvider())) : 0; } catch { return 0; }
 }
 
+/** U-147 — the build running in this window, from the extension's own manifest
+ *  (set once in activate), so a page's version stamp can never disagree with
+ *  what is actually loaded. */
+let runningVersion = '';
+export function setRunningVersion(v: string): void { runningVersion = String(v || ''); }
+
 /**
  * N-6 — the A2A pair's own counts: live notes and open tasks. INDEPENDENT of
  * the two above on purpose: they are the fleet's business, drawn in grey on
@@ -466,7 +472,9 @@ export function htmlShell(
         // values — from here on they arrive by push (see pushHeaderCounts).
         ...headerCounts(),
         // Where a right-click on this page's rows posts back to (media/afCtx.js).
-        ctxPanel: ctxKeyFor(webview, scriptFile)
+        ctxPanel: ctxKeyFor(webview, scriptFile),
+        // The running build, for the header's version stamp (U-147).
+        version: runningVersion
     };
     // This page is now live: it must receive count changes for as long as it exists.
     livePages.add(webview);

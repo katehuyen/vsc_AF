@@ -573,8 +573,8 @@ import {
     applyTerminalRender, registerTerminalRenderOps, SettingsSection, TerminalRenderAction, terminalRenderState
 } from './core/terminalRender';
 import {
-    postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge,
-    speakerSettings
+    postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setRunningVersion,
+    setWikiMarkBridge, speakerSettings
 } from './panels/base';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
@@ -996,6 +996,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // own JSON file, deliberately NOT a VS Code settings leak (the custom-app
     // command is machine-specific and the choice is a panel UI convenience).
     const docOpenStore = new DocOpenStore(path.join(context.globalStorageUri.fsPath, 'doc-open-config.json'));
+    // U-147 — the version stamp on the Dashboard and Farm Settings headers.
+    setRunningVersion(String((context.extension?.packageJSON as { version?: string } | undefined)?.version ?? ''));
     // Feed the global nav's 🔔 Notices badge (read live at each page render).
     setNoticesUnreadProvider(() => noticesStore.unread());
     setQueueBlockedProvider(() => workQueueStore.blocked());

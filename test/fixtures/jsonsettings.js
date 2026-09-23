@@ -157,4 +157,5 @@ const variants = () => ([
     }
 ]);
 
-module.exports = { script: 'settings.js', data, variants };
+// U-147: the host's running build, which the header stamps flush right.
+module.exports = { script: 'settings.js', data, variants, window: { __AFUI__: { version: '3.640.0' } } };

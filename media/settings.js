@@ -3046,6 +3046,7 @@
             ${window.AFHeader.html({
                 page: 'settings',
                 title: 'Farm Settings',
+                version: true,
                 sub: `Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} setting${total === 1 ? '' : 's'} · ${modified} changed from default. Changes save immediately to your user settings.`,
                 // ‼️ U-139 — THE FILE ITSELF, from the page that writes it.
                 // Every box here is a view of one document, and a reader who

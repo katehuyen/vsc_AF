@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.640.0 - The Dashboard and Farm Settings say which build is running (U-147) (2026-09-23)
+
+- **`v3.640.0`, top right.** The Dashboard and Farm Settings headers carry the
+  running Agent Farm version on the title's own line, flush right, small and
+  quiet — no trip to the Extensions view to find out which build you are on.
+- **The running one, not the installed one.** The number is read from the
+  extension's own manifest when it activates and handed to the page, so after
+  installing a new VSIX the stamp keeps showing the OLD version until the
+  window is reloaded — which is exactly the question it answers. Every other
+  page is unchanged.
+
 ## 3.639.0 - A hover panel is never seen through a dimmed row (U-146) (2026-09-23)
 
 - **Opaque, everywhere.** A panel opened inside a faded block — a closed A2A

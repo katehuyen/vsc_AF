@@ -201,4 +201,5 @@ const variants = () => ([
     { id: 'dashboard', label: 'Dashboard — an agent driven mostly through another engine', data: data() }
 ]);
 
-module.exports = { script: 'dashboard.js', data, variants, agents, sessionRows };
+// U-147: the host's running build, which the header stamps flush right.
+module.exports = { script: 'dashboard.js', data, variants, agents, sessionRows, window: { __AFUI__: { version: '3.640.0' } } };

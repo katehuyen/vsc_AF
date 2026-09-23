@@ -921,6 +921,7 @@
             ${window.AFHeader.html({
                 page: 'dashboard',
                 title: 'Agent Farm',
+                version: true,
                 // ‼️ "data: local Claude Code transcripts" was true when there was
                 // one engine and is a claim this page can no longer make (X-35):
                 // the Sessions table below holds four. What IS Claude-only is the
