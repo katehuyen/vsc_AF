@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.644.0 - A turn waiting on its own background command is no longer "your turn" (U-148), and the test suite stops calling a real model (X-361) (2026-09-23)
+
+- **Waiting on background is its own state (U-148).** When a turn ends while a
+  command it started is still running, the CLI wakes the session by itself once
+  the command ends — nothing waits on you. The Console card said "your turn" in
+  green and counted it in "N waiting for you"; the Live Timeline showed YOUR
+  TURN. Now the card is purple with a slow, deep breath and reads "waiting on
+  background", the strip says the same instead of "your turn now", the green
+  nudge leaves it out, and Send becomes **Steer** — the box stays open, because
+  a message then is a deliberate interruption, not an answer. The live monitor
+  has a `waiting-task` status for it (decided in `core/liveWait.ts` from the
+  Console's own background list, the way a parked question is), so the Live
+  Timeline, the phone page, the Agents tree, Portfolio and Missions all show
+  BACKGROUND in purple, the "your turn" alert and the idle reminder do not fire
+  for it, and it becomes your turn again only when the list drains with no new
+  turn behind it. A parked question still wins; terminal sessions are unchanged.
+- **The suite no longer spends a model call (X-361).** `test_activation.js`
+  turns every switch on, the weekly summary among them, and activation ran the
+  real `claude` with the account slot's `CLAUDE_CONFIG_DIR` — every full run
+  since 2026-09-20 left a real haiku conversation in the transcript pool (93 of
+  them). The sandbox now puts stub engine CLIs first on PATH and removes the
+  engines' configuration variables, and asserts both.
+
 ## 3.643.0 - A relay leg keeps its setup across a restart, and one that cannot pass is still carried on (S-89, S-90) (2026-09-23)
 
 - **A revived card is the same run (S-89).** A `resume=true` restart brought each

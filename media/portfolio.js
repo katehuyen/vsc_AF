@@ -60,6 +60,7 @@
         'tool': { label: 'TOOL', color: 'var(--vscode-charts-green,#4caf50)' },
         'waiting-permission': { label: 'PERMISSION?', color: 'var(--vscode-charts-red,#f14c4c)' },
         'waiting-input': { label: 'YOUR TURN', color: 'var(--vscode-charts-yellow,#cca700)' },
+        'waiting-task': { label: 'BACKGROUND', color: 'var(--vscode-charts-purple,#b180d7)' },
         'stalled': { label: 'STALLED', color: 'var(--vscode-charts-orange,#d18616)' },
         'idle': { label: '', color: 'var(--vscode-descriptionForeground,#999)' },
         'ended': { label: '', color: 'var(--vscode-descriptionForeground,#999)' }

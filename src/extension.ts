@@ -89,6 +89,7 @@ import {
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
+import type { HostedWait } from './core/liveWait';
 import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalText, contextSignalView, ContextThresholds, DEFAULT_CONTEXT_THRESHOLDS, DEFAULT_DISCIPLINE_ORDERS, DisciplineOrders, QuotaSample, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds, quotaLevelFor } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
@@ -1429,12 +1430,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             sessionId?: string; pendingAsk?: unknown; engine?: string;
             contextTokens?: number; contextWindowTokens?: number; contextMeasuredAt?: number;
             contextSource?: string; contextStale?: boolean; model?: string; applied?: { model: string };
+            status?: string; backgroundTasks?: unknown[];
         }[];
     } | undefined;
     const pendingAskOf = (sessionId: string): boolean => {
         const id = String(sessionId || '').trim();
         if (!id || !consoleHostRef) { return false; }
         return consoleHostRef.list().some(s => s.sessionId === id && !!s.pendingAsk);
+    };
+    // U-148 — what the Console knows still runs behind a hosted session's turn.
+    const hostedWaitOf = (sessionId: string): HostedWait | undefined => {
+        const id = String(sessionId || '').trim();
+        if (!id || !consoleHostRef) { return undefined; }
+        const rows = consoleHostRef.list()
+            .filter(s => s.sessionId === id && s.status !== 'ended' && s.status !== 'error');
+        if (!rows.length) { return undefined; }
+        return {
+            tasks: rows.reduce((n, s) => n + (s.backgroundTasks ?? []).length, 0),
+            working: rows.some(s => s.status === 'working')
+        };
     };
     // cwd → agent mapping, shared by the live monitor and the external-CLI
     // transcript sources (E3b). Pure extraction — behavior unchanged.
@@ -1664,7 +1678,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ A-18 — `onAttention`, NOT `onTurnReady`. One emit site feeds
             // both, so wiring the two would ring twice on the same edge.
             onAttention: fireAttention,
-            pendingAskOf
+            pendingAskOf,
+            backgroundOf: hostedWaitOf
         }),
         resolveAgentByCwd,
         // B3 inbound: /trigger/<token> → webhook trigger (late-bound; manager is created below)
@@ -26917,6 +26932,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (s?.relayWanted && s.sessionId) { batonRunner.seal(); }
         // S-86 — a card that passed the baton may have come to rest
         batonEnder.poke();
+        // U-148 — its background list may have moved: your turn, or not yet
+        live.settleWaits();
     }));
 
     context.subscriptions.push(consoleHost.onChange(id => {

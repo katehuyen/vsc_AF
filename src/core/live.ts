@@ -6,12 +6,14 @@ import { FIRST_PROMPT_MAX } from './sessions';
 import { ContextSignal, hookResponseBody } from './contextGuard';
 import { truncate } from './util';
 import type { AlertEvent } from './alertVoices';
+import { HostedWait, settleWait } from './liveWait';
 
 export type LiveStatus =
     | 'working'            // processing a prompt
     | 'tool'               // executing a tool right now
     | 'waiting-permission' // blocked on a permission dialog
     | 'waiting-input'      // turn done, waiting for the user
+    | 'waiting-task'       // turn done, but a background command will wake it (U-148, liveWait.ts)
     | 'stalled'            // was working, but no events for too long
     | 'idle'
     | 'ended';
@@ -259,6 +261,12 @@ export interface LiveConfig {
      * old behaviour exactly, so Codex, Gemini and Antigravity cannot regress.
      */
     spareOf?: (sessionId: string) => boolean | undefined;
+    /**
+     * ‼️ U-148 — WHAT STILL RUNS BEHIND THIS SESSION'S TURN, as its host knows
+     * it. Injected like `pendingAskOf`; absent or `undefined` (a terminal, any
+     * other engine) keeps `waiting-input` exactly as it was. See liveWait.ts.
+     */
+    backgroundOf?: (sessionId: string) => HostedWait | undefined;
 }
 
 // Detail views (≤8h) render from memory; longer ranges are bucketed from the
@@ -1137,6 +1145,9 @@ export class LiveMonitor implements vscode.Disposable {
         // one crossing into waiting-input, and a session parked in a state must
         // not keep ringing. `turn-ready` covers both of today's paths exactly as
         // it always has.
+        // U-148 — a turn that ended with a command still running behind it is
+        // `waiting-task`, which is no edge at all: nothing here wants the user.
+        s.status = this.waitOf(cfg, s);
         if (s.status !== prevStatus) {
             if (s.status === 'waiting-permission') {
                 // A tool is asking to run. From another room this is the same
@@ -1176,6 +1187,32 @@ export class LiveMonitor implements vscode.Disposable {
      *  never a broken timeline. */
     private askPending(cfg: LiveConfig, s: LiveSession): boolean {
         try { return cfg.pendingAskOf?.(s.sessionId) === true; } catch { return false; }
+    }
+
+    /** U-148 — the resting status its host's background list implies; a host
+     *  that throws leaves the status as it was. */
+    private waitOf(cfg: LiveConfig, s: LiveSession): LiveStatus {
+        if (s.status !== 'waiting-input' && s.status !== 'waiting-task') { return s.status; }
+        try {
+            return settleWait(s.status, cfg.backgroundOf?.(s.sessionId), this.askPending(cfg, s));
+        } catch { return s.status; }
+    }
+
+    /**
+     * U-148 — re-take the resting status of every session; the host calls it
+     * when its background list moves, reads call it quietly. It never rings: a
+     * list that drained with no new turn behind it is the user's own ✕.
+     */
+    settleWaits(fire = true): boolean {
+        const cfg = this.getConfig();
+        if (!cfg.backgroundOf) { return false; }
+        let changed = false;
+        for (const s of this.sessionsMap.values()) {
+            const next = this.waitOf(cfg, s);
+            if (next !== s.status) { s.status = next; changed = true; }
+        }
+        if (changed && fire) { this.onDidUpdateEmitter.fire(); }
+        return changed;
     }
 
     private prune(now: number): void {
@@ -1319,6 +1356,7 @@ export class LiveMonitor implements vscode.Disposable {
 
     sessions(): LiveSession[] {
         this.settleSpares();
+        this.settleWaits(false);
         return [...this.sessionsMap.values()]
             .filter(s => !s.spare)
             .sort((a, b) => b.lastEventTs - a.lastEventTs);
@@ -1368,11 +1406,12 @@ export class LiveMonitor implements vscode.Disposable {
     agentStatus(agentId: string): { status: LiveStatus; tool?: string; sessions: number } | undefined {
         const rank: Record<LiveStatus, number> = {
             'waiting-permission': 0, stalled: 1, tool: 2, working: 3,
-            'waiting-input': 4, idle: 5, ended: 6
+            'waiting-task': 4, 'waiting-input': 5, idle: 6, ended: 7
         };
         let best: LiveSession | undefined;
         let count = 0;
         this.settleSpares();
+        this.settleWaits(false);
         for (const s of this.sessionsMap.values()) {
             // A held spare is not one of this agent's sessions — it is the
             // CLI's own idle worker, and counting it lit an agent up as busy

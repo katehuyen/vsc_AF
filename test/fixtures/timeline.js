@@ -397,6 +397,18 @@ const variants = () => ([
     },
     { id: 'timeline', label: 'Live Timeline — every engine at once', data: base() },
     {
+        // U-148 — a turn that ended with a command still running behind it,
+        // beside one that really is your turn: purple and breathing vs yellow.
+        id: 'timeline-bgwait',
+        label: 'Live Timeline — BACKGROUND (waiting on its own command) beside YOUR TURN',
+        data: Object.assign(base(), (() => {
+            const two = sessions().filter(s => s.status === 'waiting-input').slice(0, 2);
+            two[0] = Object.assign({}, two[0], { status: 'waiting-task' });
+            const ids = new Set(two.map(s => s.sessionId));
+            return { sessions: two, events: events().filter(e => ids.has(e.sessionId)) };
+        })())
+    },
+    {
         id: 'timeline-one-engine',
         label: 'Live Timeline — Claude only (lifecycle-only wording, single badge)',
         data: Object.assign(base(), {

@@ -36,6 +36,7 @@ const LIVE_STATUS_LABEL: Record<LiveStatus, string> = {
     'tool': 'WORKING',
     'waiting-permission': '⚠ PERMISSION',
     'waiting-input': 'YOUR TURN',
+    'waiting-task': '⏳ BACKGROUND',
     'stalled': '⚠ STALLED',
     'idle': 'idle',
     'ended': 'ended'

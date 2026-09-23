@@ -153,6 +153,11 @@
         .card .card-said .said-mark { font-style:normal; font-weight:600;
             margin-right:3px; letter-spacing:.02em;
             color:var(--vscode-textLink-foreground, #3794ff); }
+        /* U-148 — waiting on its own background command: alive, but not yours.
+           A slow deep breath, never the quick working one. */
+        .card.st-bgwait .badge { animation:afdeep 4.2s ease-in-out infinite; }
+        @keyframes afdeep { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+        @media (prefers-reduced-motion: reduce) { .card.st-bgwait .badge { animation:none; } }
     </style>`;
 
     /**
@@ -336,6 +341,7 @@
         'tool':               { label: 'TOOL',        color: 'var(--vscode-charts-green, #4caf50)' },
         'waiting-permission': { label: 'PERMISSION?', color: 'var(--vscode-charts-red, #f14c4c)' },
         'waiting-input':      { label: 'YOUR TURN',   color: 'var(--vscode-charts-yellow, #cca700)' },
+        'waiting-task':       { label: 'BACKGROUND',  color: 'var(--vscode-charts-purple, #b180d7)' },
         'stalled':            { label: 'STALLED',     color: 'var(--vscode-charts-orange, #d18616)' },
         'idle':               { label: 'IDLE',        color: 'var(--vscode-descriptionForeground, #999)' },
         'ended':              { label: 'ENDED',       color: 'var(--vscode-descriptionForeground, #999)' }
@@ -354,6 +360,7 @@
         'tool': 'running a tool right now',
         'waiting-permission': 'stopped at a permission prompt — it cannot go on until somebody answers',
         'waiting-input': 'the turn is finished and it is waiting on you',
+        'waiting-task': 'the turn is finished but a background command it started is still running — when that ends the session carries on by itself, so it is not waiting on you',
         'stalled': 'nothing has arrived for longer than the stuck threshold',
         'idle': 'open, with nothing in flight',
         'ended': 'the session is over'
@@ -1580,7 +1587,7 @@
                         body: s.cwd + '\n\nClick reveals it in the OS file manager.'
                     }) : ''
             ].filter(Boolean).join(' · ');
-            return `<div class="card" style="border-left:3px solid ${gone ? 'var(--vscode-descriptionForeground,#999)' : meta.color}"
+            return `<div class="card${!gone && s.status === 'waiting-task' ? ' st-bgwait' : ''}" style="border-left:3px solid ${gone ? 'var(--vscode-descriptionForeground,#999)' : meta.color}"
                  ${ctxAttr({
                      webviewSection: 'afTimelineSession', preventDefaultContextMenuItems: false,
                      sessionId: s.sessionId, title: s.title || '', agentName: s.agentName || '', cwd: s.cwd || ''

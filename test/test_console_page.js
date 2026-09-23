@@ -3377,9 +3377,17 @@ const intentOf = (o) => Object.assign({
         status: 'idle', backgroundTasks: tasks.slice(0, 1),
         lastTurn: { outcome: 'interrupted', ms: 5000, cost: 0.01, tokens: 100, wTokens: 100 }
     }));
-    ok('‼️ S-62: after the turn the chip is still on the strip, beside "your turn now"',
-        /your turn now · <span class="af-tipw wbgw">/.test(strip()) && /data-bgstop="b1"/.test(strip())
-        && !/data-bgstop="b2"/.test(strip()));
+    ok('‼️ S-62: after the turn the chip is still on the strip',
+        /data-bgstop="b1"/.test(strip()) && !/data-bgstop="b2"/.test(strip()));
+    ok('‼️ U-148: …and the strip says it waits on the background, never "your turn now"',
+        /<span class="wbgnow"[^>]*>waiting on background<\/span> · <span class="af-tipw wbgw">/.test(strip())
+        && !/your turn now/.test(strip()));
+    ok('U-148: the card is the waiting phase, not your turn',
+        /class="srow p-wait[^"]*"/.test(html()) && /waiting on background/.test(html()));
+    ok('U-148: the button says Steer — a message now interrupts the wait, it does not answer a turn',
+        els['c-send'].textContent === 'Steer');
+    ok('‼️ U-148: and it is not counted in the green "waiting for you" nudge',
+        !/class="callout"/.test(html()));
     ok('…and the panel says the CLI will open a new turn on its own, and that the ✕ is the only way to stop it',
         /The turn is over but this is not\. When it finishes, the CLI opens a NEW turn on its own/.test(strip())
         && /Nothing else on this page can — there is no turn to interrupt/.test(strip()));

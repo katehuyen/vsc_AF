@@ -17,7 +17,7 @@ export function renderPage(): string {
 <title>Agent Farm</title>
 <style>
   :root { --bg:#14161a; --card:#1c1f26; --fg:#e6e6e6; --muted:#9aa0a6; --line:#2b2f38;
-          --green:#4caf50; --blue:#3794ff; --yellow:#cca700; --red:#f14c4c; --orange:#d18616; }
+          --green:#4caf50; --blue:#3794ff; --yellow:#cca700; --red:#f14c4c; --orange:#d18616; --purple:#b180d7; }
   @media (prefers-color-scheme: light) {
     :root { --bg:#f6f7f9; --card:#fff; --fg:#1f2328; --muted:#5c6370; --line:#e2e5ea; }
   }
@@ -78,7 +78,7 @@ const ago = ts => {
   return Math.round(h/24) + 'd ago';
 };
 const STATUS = { working:'var(--blue)', tool:'var(--green)', 'waiting-permission':'var(--red)',
-                 'waiting-input':'var(--yellow)', stalled:'var(--orange)' };
+                 'waiting-input':'var(--yellow)', 'waiting-task':'var(--purple)', stalled:'var(--orange)' };
 
 function list(rows, render, emptyText) {
   return rows && rows.length ? rows.map(render).join('') : '<div class="empty">' + emptyText + '</div>';

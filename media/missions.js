@@ -795,7 +795,7 @@
     // live-session status labels (mirrors the Agents view wording)
     const LIVE_LABEL = {
         working: 'working', tool: 'tool', 'waiting-permission': '⚠ permission',
-        'waiting-input': 'your turn', stalled: '⚠ stalled', idle: 'idle', ended: 'ended'
+        'waiting-input': 'your turn', 'waiting-task': '⏳ background', stalled: '⚠ stalled', idle: 'idle', ended: 'ended'
     };
     // hook-event labels (mirrors the Live Feed view)
     const EV_LABEL = {

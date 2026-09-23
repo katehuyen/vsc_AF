@@ -456,7 +456,14 @@
         .srow.p-agent .dot { background:var(--vscode-charts-blue,#3794ff); animation:afbreath 1.8s ease-in-out infinite; }
         .srow.p-agent .phase { color:var(--vscode-charts-blue,#3794ff); }
         @keyframes afbreath { 0%,100% { opacity:1; } 50% { opacity:.35; } }
-        @media (prefers-reduced-motion: reduce) { .srow.p-agent .dot { animation:none; } }
+        /* WAITING ON BACKGROUND (U-148) — alive but not yours: its own colour
+           and a slow deep breath, so it is never read as working or your turn. */
+        .srow.p-wait { border-left-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 70%, transparent);
+            background:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 6%, transparent); }
+        .srow.p-wait .dot { background:var(--vscode-charts-purple,#b180d7); animation:afdeep 4.2s ease-in-out infinite; }
+        .srow.p-wait .phase { color:var(--vscode-charts-purple,#b180d7); }
+        @keyframes afdeep { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.3; transform:scale(.8); } }
+        @media (prefers-reduced-motion: reduce) { .srow.p-agent .dot, .srow.p-wait .dot { animation:none; } }
         .srow.p-open .dot { background:var(--vscode-charts-yellow,#cca700); }
         .srow.p-over { opacity:.55; }
         .srow.p-error { border-left-color:var(--vscode-charts-red,#f14c4c); }
@@ -566,6 +573,7 @@
            so it is drawn as a glyph and not as a box. */
         .working .af-tipw.wbgw { display:inline; }
         .working .wbg { color:var(--vscode-foreground); cursor:default; }
+        .working .wbgnow { color:var(--vscode-charts-purple,#b180d7); font-weight:600; }
         .working .wbgx { background:none; border:0; padding:0 2px; margin-left:2px; cursor:pointer;
             color:var(--vscode-descriptionForeground); font-size:11px; line-height:1; vertical-align:baseline; }
         .working .wbgx:hover { color:var(--vscode-errorForeground,#f48771); }
@@ -1312,6 +1320,8 @@
      *   you      — it replied and stopped. The state that has to reach you.
      *   blocked  — it refused a tool and cannot go on until you decide. Same
      *              ball, heavier: nothing at all happens until you look.
+     *   wait     — its turn ended but a command it started still runs; the CLI
+     *              wakes it when that ends. Nobody's ball: purple, slow breath.
      *   agent    — a turn is running. Transient, resolves itself.
      *   held     — you wrote something and chose to hold it back; it goes when
      *              the running turn ends, and until then it is still yours.
@@ -1351,6 +1361,9 @@
         if (s.status === 'starting') { return { id: 'opening', label: 'starting…', cls: 'p-open' }; }
         if ((s.queued || []).length) { return { id: 'held', label: 'a message is held', cls: 'p-agent' }; }
         if (s.status === 'working') { return { id: 'agent', label: 'working', cls: 'p-agent' }; }
+        // U-148 — the turn is over but a command it started still runs, and
+        // the CLI wakes the session by itself when it ends: not your turn.
+        if ((s.backgroundTasks || []).length) { return { id: 'wait', label: 'waiting on background', cls: 'p-wait' }; }
         if (!s.turns) { return { id: 'new', label: 'nothing said yet', cls: '' }; }
         return { id: 'you', label: 'your turn', cls: 'p-you' };
     }
@@ -1743,6 +1756,8 @@
                     + (s.turnApiCalls ? ' · ' + s.turnApiCalls + ' API calls' : '') : '',
                 ask ? 'Asking you: ' + ask : '',
                 perm ? 'Waiting on permission for: ' + perm : '',
+                p.id === 'wait' ? 'Waiting on: ' + (s.backgroundTasks || [])
+                    .map(t => String(t.description || t.id || '')).join(' · ') : '',
                 (s.queued || []).length ? 'Held: ' + s.queued.length + ' message'
                     + ((s.queued || []).length === 1 ? '' : 's') : '',
                 s.exitReason ? 'Why it ended: ' + s.exitReason : ''
@@ -2995,7 +3010,9 @@
             : '';
         return stripHtml(
             `<span class="dspin">${glyph}</span> <b>${word}</b>`,
-            `${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)} · your turn now${bg}`);
+            `${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)}${bg
+                ? ` · <span class="wbgnow" title="Not your turn — when the background command ends the session carries on by itself. You can still steer it now.">waiting on background</span>${bg}`
+                : ' · your turn now'}`);
     }
 
     function workingHtml(s) {
@@ -5306,13 +5323,18 @@
         // — it goes into the turn that is running (Send after turn, next to it,
         // is what waiting looks like now).
         const working = !!s && s.status === 'working';
-        const label = s ? (working ? 'Send into turn' : 'Send') : 'Start session';
+        // U-148 — a session waiting on its own background command is not
+        // waiting on you: a message now steers it rather than answers it.
+        const steer = !!s && !working && phaseOf(s).id === 'wait';
+        const label = s ? (working ? 'Send into turn' : steer ? 'Steer' : 'Send') : 'Start session';
         if (sendBtn.textContent !== label) { sendBtn.textContent = label; }
         const tip = (empty
             ? 'Nothing to send yet — type a message (Ctrl+Enter sends it too)'
             : working
                 ? 'Delivered at the next step boundary — the agent picks it up mid-turn, the way a terminal does. Send after turn, next to it, waits for the turn to end completely instead.'
-                : '') + `\n${SNIP_HINT}`;
+                : steer
+                    ? 'Steer\n\nNot your turn: a background command is still running, and when it ends the session carries on by itself. Sending now starts a new turn at once, before that result arrives.'
+                    : '') + `\n${SNIP_HINT}`;
         if (sendBtn.title !== tip) { sendBtn.title = tip; }
         sendBtn.disabled = !!dead || empty;
     }

@@ -70,6 +70,39 @@ for (const [k, v] of Object.entries({
     try { fs.mkdirSync(v, { recursive: true }); } catch { /* best effort */ }
 }
 
+/*
+ * ‼️ X-361 — AND THE ENGINES ARE STAND-INS TOO.
+ *
+ * The warm pass below turns every boolean switch on, `weeklySummary` among
+ * them, and a fresh globalState has never seen this week — so activation asks
+ * a model for the fleet summary. `execOneShot` runs the bare `claude` off PATH
+ * with the process's own environment, and this process inherits the real
+ * `CLAUDE_CONFIG_DIR` of whichever account slot runs the suite. Measured
+ * 2026-09-23: every suite run since the warm pass existed made a real haiku call
+ * and left a conversation in the user's transcript pool under a
+ * `...-Temp-af-activation-*` project — 93 of them. `process.exit` below does not
+ * take a Windows child with it, so the call always finished.
+ *
+ * So every engine CLI resolves to a stub that records its name and fails, first
+ * on PATH, and the engines' own configuration variables are removed.
+ */
+const ENGINE_CLIS = ['claude', 'codex', 'gemini', 'agy', 'opencode'];
+const ENGINE_ENV = /^(CLAUDE|CODEX|GEMINI|OPENCODE|ANTHROPIC|ANTIGRAVITY)/i;
+const STUB_BIN = path.join(SANDBOX, 'engine-stubs');
+const STUB_LOG = path.join(SANDBOX, 'engine-calls.log');
+fs.mkdirSync(STUB_BIN, { recursive: true });
+for (const cli of ENGINE_CLIS) {
+    if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(STUB_BIN, cli + '.cmd'), `@echo ${cli}>>"${STUB_LOG}"\r\n@exit /b 1\r\n`);
+    } else {
+        fs.writeFileSync(path.join(STUB_BIN, cli), `#!/bin/sh\necho ${cli} >> "${STUB_LOG}"\nexit 1\n`, { mode: 0o755 });
+    }
+}
+process.env.PATH = STUB_BIN + path.delimiter + (process.env.PATH || '');
+for (const k of Object.keys(process.env)) {
+    if (ENGINE_ENV.test(k)) { delete process.env[k]; }
+}
+
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -440,6 +473,18 @@ const makeContext = (pass) => {
     ok('‼️ activation ran against a sandbox home, not the developer\'s machine',
         os.homedir() === SANDBOX
         && !fs.existsSync(path.join(os.homedir(), '.claude', 'settings.json')));
+
+    // ‼️ X-361 — measured the way activation itself resolves it: a shell line
+    // naming the bare CLI, from the sandbox home.
+    for (const cli of ENGINE_CLIS) {
+        const r = require('child_process').spawnSync(`${cli} --version`,
+            { shell: true, cwd: SANDBOX, env: process.env, encoding: 'utf8', windowsHide: true });
+        const calls = fs.existsSync(STUB_LOG) ? fs.readFileSync(STUB_LOG, 'utf8') : '';
+        ok(`‼️ a \`${cli}\` activation could run is the stub, never the real CLI`,
+            r.status === 1 && calls.split(/\r?\n/).map(l => l.trim()).indexOf(cli) >= 0);
+    }
+    ok('‼️ no engine configuration (CLAUDE_CONFIG_DIR…) reaches activation',
+        !Object.keys(process.env).some(k => ENGINE_ENV.test(k)));
 
     Module._load = origLoad;
     try { fs.rmSync(storageRoot, { recursive: true, force: true }); } catch { /* temp dir */ }
