@@ -1,4 +1,10 @@
 import { SessionDiagnosis } from './sessionDiagnosis';
+import {
+    Condition, conditionHits, evaluateConditions, FieldSpec, FieldType, OperatorSpec, OPERATORS,
+    PolicyDictionary, SNAPSHOT_TEXT_MAX, snapshotFacts
+} from './policyEngine';
+
+export { Condition, FieldSpec, FieldType, OperatorSpec, OPERATORS, SNAPSHOT_TEXT_MAX };
 
 /**
  * X-190 — WHEN THE LEADER WAKES, AND WHO DECIDES.
@@ -53,15 +59,6 @@ export interface PolicyFacts {
 
 /* --------------------------------------------------------- the dictionary */
 
-export type FieldType = 'enum' | 'number' | 'boolean' | 'text';
-
-export interface FieldSpec {
-    field: string;
-    type: FieldType;
-    describe: string;
-    /** the closed set of answers, where there is one */
-    values?: string[];
-}
 
 /**
  * ‼️ ONE PLACE. A settings or missions surface DRAWS this list rather than
@@ -142,43 +139,9 @@ export const FIELDS: FieldSpec[] = [
     }
 ];
 
-export interface OperatorSpec {
-    id: string;
-    label: string;
-    /** which field types it may be offered for */
-    types: FieldType[];
-    /** does it take a value at all */
-    takesValue: boolean;
-}
-
-export const OPERATORS: OperatorSpec[] = [
-    { id: 'eq', label: 'is', types: ['enum', 'number', 'text'], takesValue: true },
-    { id: 'ne', label: 'is not', types: ['enum', 'number', 'text'], takesValue: true },
-    { id: 'gt', label: 'is more than', types: ['number'], takesValue: true },
-    { id: 'gte', label: 'is at least', types: ['number'], takesValue: true },
-    { id: 'lt', label: 'is less than', types: ['number'], takesValue: true },
-    { id: 'lte', label: 'is at most', types: ['number'], takesValue: true },
-    { id: 'isTrue', label: 'is true', types: ['boolean'], takesValue: false },
-    { id: 'isFalse', label: 'is false', types: ['boolean'], takesValue: false },
-    { id: 'contains', label: 'contains', types: ['text', 'enum'], takesValue: true },
-    { id: 'matches', label: 'matches', types: ['text', 'enum'], takesValue: true }
-];
 
 /* --------------------------------------------------------- the conditions */
 
-export interface Condition {
-    /** the user's own handle for it — what the verdict names when it fires */
-    id: string;
-    field?: string;
-    /** ‼️ `operator`, never `op`. In this codebase `op:` means a BRIDGE
-     *  operation — the parity gate scans every source file for that exact key
-     *  and would read a condition row as an unregistered bridge op. One word,
-     *  one meaning. */
-    operator?: string;
-    value?: unknown;
-    /** an AND group: every part must hold. Conditions themselves are ORed. */
-    all?: Condition[];
-}
 
 export interface SentryPolicy {
     /** the preset this started from, kept so a surface can say "hybrid (edited)" */
@@ -262,117 +225,17 @@ function read(field: string, f: PolicyFacts): unknown {
     }
 }
 
-/**
- * How much of a text field a READING carries. `output` is the tail of a whole
- * session; a row that has to sit next to a `<select>` cannot hold it and does
- * not need to. The evaluator keeps the untouched facts — this is the reading,
- * not the fact.
- */
-export const SNAPSHOT_TEXT_MAX = 200;
+/** The sentry's dictionary for the shared condition engine (src/core/policyEngine.ts). */
+export const SENTRY_DICTIONARY: PolicyDictionary<PolicyFacts> = { noun: 'sentry', when: 'this round', fields: FIELDS, read };
 
 /**
- * ‼️ X-194 — WHAT EVERY FIELD READS RIGHT NOW.
- *
- * A condition editor whose rows do not say what the field holds today makes the
- * user write rules against numbers they cannot see, which is exactly the click
- * DENSITY forbids. So the reading is derived by running the evaluator's OWN
- * `read()` over the dictionary: a field added to `FIELDS` turns up on the row
- * without this function being touched, and a row can never show a figure the
- * verdict disagrees with — the two come out of one reader or the row is a lie.
- *
- * The text reading keeps the END of the value, because `output` is already a
- * tail and the last thing an engine said is what a `contains` rule is written
- * about; a cut one opens with `…` so nobody reads it as the whole.
+ * ‼️ X-194 — WHAT EVERY FIELD READS RIGHT NOW, by the evaluator's OWN `read()`
+ * over the dictionary: a field added to `FIELDS` turns up on the row without
+ * this being touched, and a row can never show a figure the verdict disagrees
+ * with. A long text keeps its END (`output` is a tail), opening with `…`.
  */
-export function factsSnapshot(facts: PolicyFacts): Record<string, unknown> {
-    const out: Record<string, unknown> = {};
-    for (const spec of FIELDS) {
-        const v = read(spec.field, facts);
-        out[spec.field] = typeof v === 'string' && v.length > SNAPSHOT_TEXT_MAX
-            ? '…' + v.slice(-(SNAPSHOT_TEXT_MAX - 1))
-            : v;
-    }
-    return out;
-}
+export const factsSnapshot = (facts: PolicyFacts): Record<string, unknown> => snapshotFacts(SENTRY_DICTIONARY, facts);
 
-const num = (v: unknown): number => {
-    const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
-    return Number.isFinite(n) ? n : NaN;
-};
-
-/** One leaf, or a problem describing why it could not be judged. */
-function judge(c: Condition, f: PolicyFacts): { hit: boolean } | { problem: string } {
-    const field = String(c.field ?? '').trim();
-    if (!field) { return { problem: `condition "${c.id}" names no field` }; }
-    const spec = FIELDS.find(s => s.field === field);
-    if (!spec) {
-        return { problem: `condition "${c.id}" reads "${field}", which is not a field this sentry knows` };
-    }
-    const actual = read(field, f);
-    if (actual === undefined) {
-        return { problem: `condition "${c.id}" reads "${field}", which nothing measured this round` };
-    }
-    const operator = String(c.operator ?? '').trim();
-    const spec2 = OPERATORS.find(o => o.id === operator);
-    if (!spec2) {
-        return { problem: `condition "${c.id}" uses "${operator || '(none)'}", which is not an operator` };
-    }
-    switch (operator) {
-        case 'isTrue': return { hit: actual === true };
-        case 'isFalse': return { hit: actual === false };
-        case 'eq': return { hit: String(actual) === String(c.value ?? '') };
-        case 'ne': return { hit: String(actual) !== String(c.value ?? '') };
-        case 'gt': case 'gte': case 'lt': case 'lte': {
-            const a = num(actual), b = num(c.value);
-            if (!Number.isFinite(a) || !Number.isFinite(b)) {
-                return { problem: `condition "${c.id}" compares "${field}" with something that is not a number` };
-            }
-            return {
-                hit: operator === 'gt' ? a > b
-                    : operator === 'gte' ? a >= b
-                        : operator === 'lt' ? a < b : a <= b
-            };
-        }
-        case 'contains':
-            return { hit: String(actual).includes(String(c.value ?? '')) };
-        case 'matches': {
-            try {
-                return { hit: new RegExp(String(c.value ?? '')).test(String(actual)) };
-            } catch (e) {
-                // ‼️ A regular expression the user mistyped must not fire and
-                // must not vanish. It is exactly the case where both mistakes
-                // are expensive: one spends, the other hides a rule that is
-                // doing nothing.
-                return {
-                    problem: `condition "${c.id}" has a pattern that will not compile — `
-                        + String((e as Error)?.message ?? e).slice(0, 80)
-                };
-            }
-        }
-        default:
-            return { problem: `condition "${c.id}" uses "${operator}", which is not an operator` };
-    }
-}
-
-/** A leaf, or an AND group of leaves. An empty group is NOT "always". */
-function evaluateOne(c: Condition, f: PolicyFacts, problems: string[]): boolean {
-    if (Array.isArray(c.all)) {
-        if (!c.all.length) {
-            problems.push(`group "${c.id}" is empty, so it can never say anything`);
-            return false;
-        }
-        let all = true;
-        for (const part of c.all) {
-            const r = judge(part, f);
-            if ('problem' in r) { problems.push(r.problem); return false; }
-            if (!r.hit) { all = false; }
-        }
-        return all;
-    }
-    const r = judge(c, f);
-    if ('problem' in r) { problems.push(r.problem); return false; }
-    return r.hit;
-}
 
 /**
  * ‼️ THE WHOLE DECISION, AND IT COSTS NOTHING TO MAKE.
@@ -382,11 +245,7 @@ function evaluateOne(c: Condition, f: PolicyFacts, problems: string[]): boolean 
  * four must not silently disarm rows one to three.
  */
 export function evaluateSentryPolicy(policy: SentryPolicy, facts: PolicyFacts): PolicyVerdict {
-    const problems: string[] = [];
-    const fired: string[] = [];
-    for (const c of policy?.conditions ?? []) {
-        if (evaluateOne(c, facts, problems)) { fired.push(String(c.id ?? '')); }
-    }
+    const { fired, problems } = evaluateConditions(SENTRY_DICTIONARY, policy?.conditions, facts);
     const tail = problems.length
         ? ` ${problems.length} condition(s) could not be judged and did not fire.`
         : '';
@@ -450,7 +309,7 @@ export function probePolicy(conditions: Condition[], facts?: PolicyFacts): Polic
         // POSITION while the verdict names conditions by their handle — and two
         // rows are free to carry the same handle. Conditions are ORed, so
         // judging one alone is exactly the question "does this row hold".
-        hits: list.map(c => evaluateSentryPolicy({ conditions: [c] }, facts).fired.length > 0),
+        hits: conditionHits(SENTRY_DICTIONARY, list, facts),
         facts: factsSnapshot(facts)
     };
 }
