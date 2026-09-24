@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import { WorkItem, WorkQueueStore } from '../core/workqueue';
+import { clearHandled, removeMany } from '../core/queueHygiene';
 import { ProjectRef } from './noticesPanel';
 
 /**
@@ -284,6 +285,20 @@ export class QueuePanel {
                     }
                     this.mutated();
                 }
+                break;
+            case 'removeMany': {
+                const ids = Array.isArray(msg.ids) ? msg.ids.filter((x): x is string => typeof x === 'string') : [];
+                if (!ids.length) { break; }
+                const r = removeMany(s, ids);
+                if (r.live.length) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: ${r.live.length} item(s) kept — not handled yet. Drop or finish them first; only handled items can be deleted.`);
+                }
+                if (r.deleted) { this.mutated(); }
+                break;
+            }
+            case 'clearHandled':
+                if (clearHandled(s)) { this.mutated(); }
                 break;
             case 'handoff':
                 if (typeof msg.id === 'string') {

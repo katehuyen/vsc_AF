@@ -18,6 +18,8 @@ export interface RepoWeight {
     top: WeighedFile[];
     /** untracked, not ignored, at or over the WARN line — in no backup */
     leftOut: WeighedFile[];
+    /** why the committed sizes could not be read — an empty `top` is then NOT "nothing committed" */
+    unread?: string;
 }
 
 const mb = (bytes: number) => Math.round(bytes / 1048576 * 10) / 10;

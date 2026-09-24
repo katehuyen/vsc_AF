@@ -1,4 +1,5 @@
 import type { A2ANote, A2ANotesStore } from './a2aNotes';
+import type { A2ATask, A2ATasksStore } from './a2aTasks';
 import { argStr, BridgeRegistry, need, optBool, optStr } from './bridge';
 
 /**
@@ -56,6 +57,7 @@ export function clearable(note: A2ANote, filter: ClearFilter = {}): boolean {
 
 export interface A2AHygieneCtx {
     noteById: (id: string) => A2ANote;
+    taskById: (id: string) => A2ATask;
     changed: () => void;
     /** a `string[]` or a comma-separated string — both arrive over the CLI */
     listArg: (args: Record<string, unknown>, key: string) => string[];
@@ -67,7 +69,7 @@ export interface A2AHygieneCtx {
  */
 export function registerA2AHygieneOps(
     bridge: BridgeRegistry,
-    deps: { notes: A2ANotesStore },
+    deps: { notes: A2ANotesStore; tasks: A2ATasksStore },
     ctx: A2AHygieneCtx
 ): void {
     const ids = (args: Record<string, unknown>): string[] => {
@@ -132,6 +134,43 @@ export function registerA2AHygieneOps(
                 const gone = deps.notes.clear(filter);
                 if (gone) { ctx.changed(); }
                 return { deleted: gone, remaining: deps.notes.notes.length };
+            }
+        },
+        {
+            op: 'a2a.tasks.delete',
+            describe: 'N-11 — TAKE A TASK OFF THE BOARD FOR GOOD (not a2a.tasks.cancel, which keeps it as history). '
+                + 'A task an agent holds under a live lease is REFUSED — cancel it first. args: id.',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                ctx.taskById(id);
+                const r = deps.tasks.remove([id]);
+                need(!r.held.length, `${id} is held live by ${deps.tasks.get(id)?.claimedBy?.agent ?? 'an agent'} — a2a.tasks.cancel it first.`);
+                if (r.deleted) { ctx.changed(); }
+                return { deleted: r.deleted, remaining: deps.tasks.tasks.length };
+            }
+        },
+        {
+            op: 'a2a.tasks.deleteMany',
+            describe: 'N-11 — DELETE THE TASKS NAMED, in one locked write. A task held under a live lease is spared and '
+                + 'listed in `held`; an unknown id is counted as missing. args: ids (string[] or comma-separated).',
+            handler: (args) => {
+                deps.tasks.load();
+                const list = ctx.listArg(args, 'ids');
+                need(list.length > 0, 'ids: name at least one task — a2a.tasks.list shows the board.');
+                const missing = list.filter(id => !deps.tasks.get(id));
+                const r = deps.tasks.remove(list);
+                if (r.deleted) { ctx.changed(); }
+                return { deleted: r.deleted, held: r.held, missing, remaining: deps.tasks.tasks.length };
+            }
+        },
+        {
+            op: 'a2a.tasks.clear',
+            describe: 'N-11 — CLEAR THE TASK BOARD. By default only the CLOSED tasks go (done · failed · cancelled); '
+                + 'closedOnly:false takes every task nobody holds live. args: closedOnly? (default true).',
+            handler: (args) => {
+                const gone = deps.tasks.clear({ closedOnly: optBool(args, 'closedOnly', true) });
+                if (gone) { ctx.changed(); }
+                return { deleted: gone, remaining: deps.tasks.tasks.length };
             }
         }
     ]);

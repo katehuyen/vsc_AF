@@ -41,6 +41,12 @@ const big = v => v.items.find(i => i.id === 'repo:big-files');
     ok('under 50 MB passes and names the largest', v.ok && big(v).ok && /largest committed: x\.jsonl \(44\.3 MB\)/.test(big(v).detail));
 }
 {
+    // measured live: right after a reload git timed out, came back empty, and the gate said "nothing committed" — a pass
+    const v = gate({ top: [], leftOut: [], unread: 'Command failed: git ls-tree (timeout)' });
+    ok('‼️ an UNREAD weight fails and says so — never "nothing committed"', !v.ok && !big(v).ok
+        && /could not be read/.test(big(v).detail) && !/nothing committed/.test(big(v).detail));
+}
+{
     const v = gate({ top: [{ file: 'w.bin', mb: 61 }], leftOut: [] });
     ok('50–90 MB passes but says GitHub warns', v.ok && /GitHub warns over 50 MB — w\.bin \(61 MB\)/.test(big(v).detail));
 }

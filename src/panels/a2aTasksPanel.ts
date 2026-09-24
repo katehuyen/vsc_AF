@@ -107,6 +107,24 @@ export class A2ATasksPanel {
                 if (id && this.deps.tasks.cancel(id, 'cancelled by the user from the A2A Tasks page')) { this.mutated(); }
                 break;
             // ---- N-7, the supervisor cockpit ----
+            case 'delete':
+            case 'deleteMany': {
+                const ids = msg.type === 'delete' ? (id ? [id] : [])
+                    : Array.isArray(msg.ids) ? msg.ids.filter((x): x is string => typeof x === 'string') : [];
+                if (!ids.length) { break; }
+                const r = this.deps.tasks.remove(ids);
+                if (r.held.length) {
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: ${r.held.length} task(s) kept — an agent holds them live. ⊘ Cancel first, then delete.`);
+                }
+                if (r.deleted) { this.mutated(); }
+                break;
+            }
+            case 'clear':
+                // ● Clear closed is exactly that — an open task is never cleared from a click.
+                if (msg.closedOnly !== true) { break; }
+                if (this.deps.tasks.clear({ closedOnly: true })) { this.mutated(); }
+                break;
             case 'directiveSet': {
                 const kind = typeof msg.kind === 'string' ? msg.kind : '';
                 const text = typeof msg.text === 'string' ? msg.text.trim() : '';

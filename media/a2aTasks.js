@@ -21,6 +21,7 @@
     let fProject = pick(st.fProject);
     let query = st.query || DEF.query;
     const expanded = new Set();
+    const selected = new Set();
     let focusId = DATA.focusId || null;
     let refocusSearch = false;
     // N-7 — the supervisor cockpit. On a task it carries three more hands than
@@ -112,7 +113,10 @@
         const hop = t.handoffDepth > 0
             ? window.AFTip.wrap(`<span class="a2a-hop">↪${t.handoffDepth}</span>`, 'Handoffs', `Handed on ${t.handoffDepth} time(s) — past ${DATA.maxHandoffDepth} it is blocked rather than passed again.${t.parentTaskId ? '\nParent task: ' + t.parentTaskId : ''}`)
             : '';
+        const held = (t.state === 'claimed' || t.state === 'running') && t.claimedBy && t.claimedBy.leaseExpiresAt > now
+            ? `${t.claimedBy.agent} holds it live — ⊘ Cancel it first, then it can be deleted` : '';
         const line = `<div class="a2a-line" data-open="${t.id}">
+            ${window.AFBulk.cb(t.id, selected.has(t.id))}
             ${A.stateBadge(t.state)}
             <span class="a2a-title">${esc(t.title)}</span>
             ${A.directiveFlag(t.humanDirective)}
@@ -123,6 +127,7 @@
             ${A.leaseBar(t, now, DATA.leaseMs)}
             ${window.AFTip.wrap(`<span class="a2a-age">${esc(window.AFTime.ago(t.ts))}</span>`, 'Handed over', window.AFTime.tip(t.ts, 'Handed over'))}
             ${A.plus(t.id, cockpitId === t.id)}
+            ${window.AFBulk.x(t.id, 'Delete this task for good', held)}
         </div>`;
         const cp = cockpitId === t.id ? A.cockpit({
             draft: draft, has: !!t.humanDirective, setAt: t.humanDirective && t.humanDirective.ts, msg: cockpitMsg,
@@ -132,7 +137,7 @@
             reroute: !closed, roles: roleOptions(t), projects: projectOptions(t),
             runNow: !closed
         }) : '';
-        const cls = `a2a-card${focusId === t.id ? ' a2a-focus' : ''}${closed ? ' a2a-closed' : ''}`;
+        const cls = `a2a-card${focusId === t.id ? ' a2a-focus' : ''}${closed ? ' a2a-closed' : ''}${selected.has(t.id) ? ' sel' : ''}`;
         if (!open) { return `<div class="${cls}" data-id="${t.id}">${line}${cp}</div>`; }
         const xref = [];
         if (t.sourceNoteId) {
@@ -175,16 +180,25 @@
         if (!items.length) {
             list = `<p class="muted a2a-empty">🕊️ No tasks match. Agents hand work to each other here — <code>a2a.tasks.add</code> on the bridge, <code>a2a.tasks.next</code> to take one; a claim is a 30-minute lease kept alive by heartbeats.</p>`;
         } else {
-            if (openItems.length) { list += `<div class="a2a-lane">Open · ${openItems.length}</div>` + openItems.map(card).join(''); }
-            if (closedItems.length) { list += `<div class="a2a-lane">Closed · ${closedItems.length}</div>` + closedItems.map(card).join(''); }
+            if (openItems.length) { list += `<div class="a2a-lane">Open · ${openItems.length}</div>` + window.AFBulk.days(openItems, card, DATA.now); }
+            if (closedItems.length) { list += `<div class="a2a-lane">Closed · ${closedItems.length}</div>` + window.AFBulk.days(closedItems, card, DATA.now); }
         }
+        const target = selected.size ? `${selected.size} selected` : `all ${items.length} shown`;
+        const actions = window.AFBulk.bar('at-selall', items.length && items.every(t => selected.has(t.id)), [
+            window.AFBulk.delBtn('Delete for good',
+                `Deletes ${target}.\n\nUnlike ⊘ Cancel this is not history — the tasks leave the board and the disk. `
+                + 'A task an agent holds under a live lease is kept: cancel it first.'),
+            window.AFBulk.clearBtn('clearClosed', 'Clear closed', 'Clear what is already closed',
+                'Deletes every done, failed and cancelled task on the board, whatever is filtered or shown. Open tasks are never touched.')
+        ]);
         document.getElementById('app').innerHTML = `${A.STYLE}
             ${window.AFHeader.tabs('a2atasks')}
             ${window.AFHeader.html({
                 page: 'a2atasks', title: '⚡ A2A Tasks',
-                sub: `${all.length} total · ${openN} open · showing ${items.length} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
+                sub: `${all.length} total · ${openN} open · showing ${items.length}`
+                    + `${selected.size ? ` · ${selected.size} selected` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 controls: A.controls('at', {
-                    query, pickers: filterPickers(),
+                    query, pickers: filterPickers(), actions: actions,
                     searchTip: window.AFQuery.tip('Searched against the title, instructions, expected output, result, topic, workdir, target role, author, claimant, progress and requirements.')
                 }),
                 related: [{ label: '📥 Queue', name: 'Work Queue', nav: 'queue' }]
@@ -205,7 +219,22 @@
             pickers: filterPickers(),
             onQuery: v => { query = v; refocusSearch = true; saveState(); render(); },
             onChange: () => { saveState(); render(); },
-            onReset: () => { fState = DEF.fState; fFrom = DEF.fFrom; fRole = DEF.fRole; fProject = DEF.fProject; query = DEF.query; saveState(); render(); }
+            onReset: () => { fState = DEF.fState; fFrom = DEF.fFrom; fRole = DEF.fRole; fProject = DEF.fProject; query = DEF.query; selected.clear(); saveState(); render(); }
+        });
+        const shown = visible();
+        window.AFBulk.wire({
+            allId: 'at-selall', selected: selected, shown: () => shown.map(t => t.id), repaint: render,
+            onRowDelete: id => { expanded.delete(id); vscode.postMessage({ type: 'delete', id: id }); },
+            onBulk: (a, ids) => {
+                if (a === 'bulkDelete') {
+                    if (!ids.length) { return; }
+                    ids.forEach(id => expanded.delete(id));
+                    selected.clear();
+                    vscode.postMessage({ type: 'deleteMany', ids: ids });
+                } else if (a === 'clearClosed') {
+                    vscode.postMessage({ type: 'clear', closedOnly: true });
+                }
+            }
         });
         document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', ev => {
             if (ev.target && ev.target.closest && ev.target.closest('button, a, .af-tip')) { return; }

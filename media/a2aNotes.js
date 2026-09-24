@@ -110,11 +110,10 @@
     }
 
     /**
-     * S-84 — the two controls the filter row gains: the tri-state relay switch
-     * and the bulk hand (Notices' own contract — the SELECTED rows, or every
-     * row shown when nothing is checked).
+     * S-84 — the relay switch the filter row gains. The bulk hand is NOT here:
+     * it is the bar under the filters (bulkBar, media/afBulk.js — N-11).
      */
-    function extraControls(items) {
+    function extraControls() {
         const m = BATON_MODES[batonMode];
         const nx = BATON_MODES[m.next];
         const batons = (DATA.notes || []).filter(n => n.category === 'baton').length;
@@ -124,22 +123,23 @@
             `${m.now}\n\nOne click → ${nx.label}: ${nx.now}\n\n`
             + `A baton relay hangs one card per leg (⑂), so a long race can bury the fleet's ordinary notes. `
             + `${batons} relay card(s) are on the board now.`);
+        return toggle;
+    }
+
+    /** N-11 — Notices' own contract: the SELECTED rows, or every row shown when nothing is checked. */
+    function bulkBar(items) {
         const n = selected.size;
         const target = n ? `${n} selected` : `all ${items.length} shown`;
-        const del = window.AFTip.wrap(
-            '<button class="secondary danger" data-hact="bulkDelete">🗑 Delete</button>',
+        const del = window.AFBulk.delBtn(
             'Delete for good',
             `Deletes ${target}.\n\nUnlike ✓ Resolve this is not history — the notes leave the board and the disk. `
             + '📌 A pinned note is deleted too if you select it by hand: the pin exempts a note from the automatic '
             + 'sweep, not from you.');
-        const clear = window.AFTip.wrap(
-            '<button class="secondary" data-hact="clearResolved">● Clear resolved</button>',
+        const clear = window.AFBulk.clearBtn('clearResolved', 'Clear resolved',
             'Clear what is already closed',
             'Deletes every RESOLVED note on the board, whatever is filtered or shown.\n\n'
             + '📌 Pinned notes are kept. Open notes are never touched — resolve one first if you mean it to go.');
-        const all = `<label class="a2a-selall" title="Select every note shown">`
-            + `<input type="checkbox" id="an-selall"${items.length && items.every(x => selected.has(x.id)) ? ' checked' : ''}> all</label>`;
-        return `${toggle}<span class="a2a-bulk">${all}${del}${clear}</span>`;
+        return window.AFBulk.bar('an-selall', items.length && items.every(x => selected.has(x.id)), [del, clear]);
     }
 
     /** S-84 — the race, read as one story: what is locked and the way out. */
@@ -154,15 +154,6 @@
         </div>`;
     }
 
-    function dayLabel(ts) {
-        const d = new Date(ts), n = new Date(DATA.now || Date.now());
-        const k = x => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
-        const y = new Date(n); y.setDate(n.getDate() - 1);
-        if (k(d) === k(n)) { return 'Today'; }
-        if (k(d) === k(y)) { return 'Yesterday'; }
-        return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
-    }
-
     function card(n) {
         const open = expanded.has(n.id);
         const state = stateOf(n);
@@ -171,7 +162,7 @@
         const readTip = readers ? `Read by: ${n.readBy.join(', ')}` : 'Nobody has read it yet';
         const flag = state === 'live' ? '' : `<span class="a2a-flag">${state === 'resolved' ? '✓ resolved' : '⌛ expired'}</span>`;
         const line = `<div class="a2a-line" data-open="${n.id}">
-            <input type="checkbox" class="a2a-cb" data-cb="${n.id}" ${selected.has(n.id) ? 'checked' : ''} title="Select for the bulk actions in the filter row">
+            ${window.AFBulk.cb(n.id, selected.has(n.id))}
             ${window.AFTip.wrap(`<span class="a2a-cat">${A.CAT[n.category] || 'ℹ️'}</span>`, 'Category',
                 `Category: ${n.category}${n.category === 'baton' ? '\nA baton relay\'s handover card — the words one leg left its successor.' : ''}`)}
             <span class="a2a-title">${esc(n.title)}</span>
@@ -190,6 +181,7 @@
                     : 'The board sweeps itself: a note resolved more than 48 hours ago goes, and so does an expired '
                         + 'relay card. Pin one to keep it whatever the rules say.')}
             ${A.plus(n.id, cockpitId === n.id)}
+            ${window.AFBulk.x(n.id, 'Delete this note for good')}
         </div>`;
         const cp = cockpitId === n.id ? A.cockpit({
             draft: draft, has: !!n.humanDirective, setAt: n.humanDirective && n.humanDirective.ts, msg: cockpitMsg,
@@ -241,8 +233,7 @@
                     ? `<p class="muted a2a-empty">⑂ No relay cards. A baton pass hangs one per leg — <code>baton.pass</code> on the bridge, or ⑂ Relay in the Console composer.</p>`
                     : `<p class="muted a2a-empty">🕊️ No notes match. Agents leave notes for each other here — <code>a2a.notes.post</code> on the bridge; a reader picks them up by project, subsystem, topic and role.</p>`;
         } else {
-            let lastDay = '';
-            for (const n of items) { const d = dayLabel(n.ts); if (d !== lastDay) { list += `<div class="a2a-day">${esc(d)}</div>`; lastDay = d; } list += card(n); }
+            list = window.AFBulk.days(items, card, DATA.now);
         }
         document.getElementById('app').innerHTML = `${A.STYLE}
             ${window.AFHeader.tabs('a2anotes')}
@@ -253,7 +244,8 @@
                     + `${chainLock ? ` · locked to chain ${chainLock}` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 controls: A.controls('an', {
                     query, pickers: filterPickers(),
-                    extra: extraControls(items),
+                    extra: extraControls(),
+                    actions: bulkBar(items),
                     searchTip: window.AFQuery.tip('Searched against the title, body, topic, subsystem, target role, author, category and file paths.')
                 }),
                 related: [{ label: '📥 Queue', name: 'Work Queue', nav: 'queue' }]
@@ -285,15 +277,6 @@
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         bind('an-baton', 'click', () => { batonMode = BATON_MODES[batonMode].next; saveState(); render(); });
         bind('an-unchain', 'click', () => { chainLock = null; saveState(); render(); });
-        bind('an-selall', 'change', e => {
-            if (e.target.checked) { items.forEach(n => selected.add(n.id)); } else { items.forEach(n => selected.delete(n.id)); }
-            render();
-        });
-        document.querySelectorAll('[data-cb]').forEach(cb => cb.addEventListener('click', ev => {
-            ev.stopPropagation();
-            if (cb.checked) { selected.add(cb.dataset.cb); } else { selected.delete(cb.dataset.cb); }
-            render();
-        }));
         document.querySelectorAll('[data-chain]').forEach(c => c.addEventListener('click', ev => {
             ev.stopPropagation();
             chainLock = c.dataset.chain;
@@ -304,21 +287,20 @@
             ev.stopPropagation();
             vscode.postMessage({ type: 'pin', id: p.dataset.pinrow, pinned: p.dataset.pin === '1' });
         }));
-        // The bulk hand's contract is Notices' own: the SELECTED rows, or every
-        // row shown when nothing is checked — so a filter is how you aim it.
-        document.querySelectorAll('[data-hact]').forEach(b => b.addEventListener('click', ev => {
-            ev.stopPropagation();
-            const a = b.dataset.hact;
-            if (a === 'bulkDelete') {
-                const ids = selected.size ? [...selected] : items.map(n => n.id);
-                if (!ids.length) { return; }
-                ids.forEach(id => expanded.delete(id));
-                selected.clear();
-                vscode.postMessage({ type: 'deleteMany', ids: ids });
-            } else if (a === 'clearResolved') {
-                vscode.postMessage({ type: 'clear', resolvedOnly: true });
+        window.AFBulk.wire({
+            allId: 'an-selall', selected: selected, shown: () => items.map(n => n.id), repaint: render,
+            onRowDelete: id => { expanded.delete(id); vscode.postMessage({ type: 'delete', id: id }); },
+            onBulk: (a, ids) => {
+                if (a === 'bulkDelete') {
+                    if (!ids.length) { return; }
+                    ids.forEach(id => expanded.delete(id));
+                    selected.clear();
+                    vscode.postMessage({ type: 'deleteMany', ids: ids });
+                } else if (a === 'clearResolved') {
+                    vscode.postMessage({ type: 'clear', resolvedOnly: true });
+                }
             }
-        }));
+        });
         document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', ev => {
             if (ev.target && ev.target.closest && ev.target.closest('button, a, .af-tip')) { return; }
             const id = el.dataset.open;

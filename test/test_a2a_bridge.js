@@ -159,6 +159,15 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         const noSuch = await call('a2a.tasks.claim', { id: 'tnope', agent: 'developer' });
         ok('claiming a missing task is refused by id', !noSuch.ok && /No such task/.test(noSuch.error));
 
+        // N-11 — a hand deletes, but never from under a live lease
+        const heldDel = await call('a2a.tasks.delete', { id: t1.result.id });
+        ok('N-11: a2a.tasks.delete refuses a task held live, naming the holder', !heldDel.ok && /developer/.test(heldDel.error));
+        const spare = await call('a2a.tasks.add', { title: 'throwaway', agent: 'manager' });
+        const many = await call('a2a.tasks.deleteMany', { ids: [spare.result.id, t1.result.id, 'tnope'] });
+        ok('N-11: a2a.tasks.deleteMany deletes the free one, spares the held one, names the unknown',
+            many.ok && many.result.deleted === 1 && many.result.held.join() === t1.result.id && many.result.missing.join() === 'tnope');
+        ok('N-11: a2a.tasks.deleteMany with no ids is refused', !(await call('a2a.tasks.deleteMany', { ids: [] })).ok);
+
         const notHolder = await call('a2a.tasks.heartbeat', { id: t1.result.id, agent: 'explorer', progress: 'x' });
         ok('‼️ only the holder heartbeats', !notHolder.ok && /not held by explorer \(held by developer\)/.test(notHolder.error));
         const hb = await call('a2a.tasks.heartbeat', { id: t1.result.id, agent: 'developer', progress: 'found the race' });

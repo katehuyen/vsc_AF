@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.657.0 - A2A Tasks, A2A Notes and the Work Queue get Notices' bulk hand; Farm Settings filter clears in one press (N-11, U-150) (2026-09-24)
+
+- **One bulk hand on every list page (N-11).** A2A Notes, A2A Tasks and the
+  Work Queue now draw rows the way Notices does: a box at the head of each row,
+  a ✕ at its tail, and the bulk bar — [ ] all · 🗑 Delete · ● Clear — on its own
+  line UNDER the filters instead of among them. Bulk actions aim at the selected
+  rows, or at every row shown when none is. Rows sit under Today / Yesterday /
+  date headers and show their age ("2h ago") with the full clock and UTC on hover.
+  One shared component: `media/afBulk.js`.
+- **A2A Tasks can finally be deleted.** `a2a.tasks.delete`, `a2a.tasks.deleteMany`
+  and `a2a.tasks.clear` (closed tasks by default) on the bridge and on the page.
+  A task an agent holds under a live lease is never deleted from under it — its
+  ✕ is disabled and says who holds it; ⊘ Cancel first.
+- **The queue keeps its rule in bulk.** `queue.removeMany` deletes only handled
+  items (done · dropped) and names the live ones it kept; `queue.clearHandled`
+  clears done and dropped items, keeping 📌 pinned and archived ones. On a live
+  row the ✕ drops the item; on a handled one it deletes it.
+- **Farm Settings (U-150).** The category reads "Handover Discipline"; the filter
+  box has a ✕ and Escape to empty it; the auto-answer settings are found by
+  "soru", "question", "timeout", "zaman aşımı"; the Claude Code card and its chip
+  moved up from the foot of the page to sit right under Engines.
+- **The big-files gate no longer passes what it never measured.** Right after a
+  window reload `git ls-tree` timed out, came back empty, and `repo:big-files`
+  said "nothing committed" — green. An unread measurement now fails the item and
+  says why; the read gets 60 s and a 64 MB buffer.
+
 ## 3.656.0 - The migration gate names the agent repo's largest files and fails on one no backup carries (X-285) (2026-09-24)
 
 - **The large-file valve reaches the acceptance gate (X-285).** GitHub warns at

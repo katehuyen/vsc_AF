@@ -172,7 +172,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
 
     // S-84 — pin, delete, clear: the board's hygiene, from the file that holds
     // the rules the sweep applies.
-    registerA2AHygieneOps(bridge, deps, { noteById, changed, listArg });
+    registerA2AHygieneOps(bridge, deps, { noteById, taskById, changed, listArg });
 
     bridge.register([
         // ---------------------------------------------------------------- notes

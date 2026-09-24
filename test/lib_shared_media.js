@@ -107,7 +107,10 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afA2A.js — the A2A card grammar (N-6): coordinates, the supervisor
     // directive block, the lease bar and a safe markdown, shared by the two
     // A2A pages so a note and a task are drawn in one voice.
-    'afA2A.js'];
+    'afA2A.js',
+    // afBulk.js — the bulk hand (N-11): Notices' row box, row ✕ and bulk bar,
+    // shared by the A2A pages and the Work Queue.
+    'afBulk.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

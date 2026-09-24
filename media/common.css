@@ -513,6 +513,21 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 }
 .af-clr > .af-clrx:hover { color: var(--vscode-foreground); background: transparent; }
 
+/* ------------------------------------------------------------ the bulk hand
+   media/afBulk.js (N-11) — Notices' list contract on every list page: box at
+   the row's head, ✕ at its tail, the bar on its own line under the filters. */
+.afb-break { flex-basis: 100%; height: 0; }
+.afb-bar { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.afb-selall { display: inline-flex; gap: 3px; align-items: center; font-size: 11px; opacity: .85; cursor: pointer; }
+.afb-cb { flex-shrink: 0; margin: 0; cursor: pointer; }
+.afb-x { flex: 0 0 auto; padding: 1px 6px; min-width: 0; opacity: .55; }
+.afb-x:hover:not([disabled]) { opacity: 1; color: var(--vscode-editorError-foreground, #e51400); }
+.afb-x[disabled] { opacity: .2; cursor: default; }
+.afb-trash { color: var(--vscode-editorError-foreground, #e51400); }
+.afb-bar button.danger:hover { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color: var(--vscode-editorError-foreground, #e51400); }
+.afb-age { flex-shrink: 0; font-size: 11px; opacity: .6; white-space: nowrap; }
+.afb-day { margin: 12px 0 4px; font-size: 11px; opacity: .6; text-transform: uppercase; letter-spacing: .04em; }
+
 /* -------------------------------------------------------------------- AFForm
    ‼️ THE PAGE MAKES THE OBJECT — media/afForm.js, docs/CONVENTIONS.md.
    The card the Tasks page proved, extracted so that every surface can draw one:

@@ -3068,8 +3068,9 @@
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px"
                     title="${C.esc(window.AFQuery.tip('Searched against every setting key and its description.'))}">
             </div>
-            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}</div>
+            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}</div>
             ${enginesHtml}
+            ${claudeHtml}
             ${foldersHtml}
             ${docOpenHtml}
             ${cats.map(c => `
@@ -3083,7 +3084,6 @@
                                         : c.id === 'discipline' ? disciplineSection(c)
                                             : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
-            ${claudeHtml}
         `;
 
         // -- wiring --

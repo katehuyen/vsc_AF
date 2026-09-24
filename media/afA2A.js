@@ -185,7 +185,7 @@
         return window.AFTip ? window.AFTip.wrap(b, 'State', s[1]) : b;
     }
 
-    /** One filter row: a query box, the multi-pick pickers, a reset. */
+    /** The filter row — a query box, the pickers, a reset — then `o.actions`, the bulk bar on its own line. */
     function controls(prefix, o) {
         return `<div class="a2a-controls">
             <input id="${prefix}-search" type="search" placeholder="🔍 search" value="${esc(o.query)}"
@@ -193,6 +193,7 @@
             ${o.pickers.map(p => window.AFFilter.multi({ id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title })).join('')}
             ${o.extra || ''}
             <button class="secondary" id="${prefix}-reset" title="Reset filters">↺</button>
+            ${o.actions || ''}
         </div>`;
     }
     /**
@@ -287,13 +288,11 @@
         .a2a-cockpit .affbox { margin:0; }
         .a2a-chainchip { cursor:pointer; }
         .a2a-chainchip:hover { background:var(--vscode-list-hoverBackground); text-decoration:underline; }
-        .a2a-pin, .a2a-cb { flex-shrink:0; }
+        .a2a-pin { flex-shrink:0; }
         .a2a-pin { cursor:pointer; opacity:.25; filter:grayscale(1); font-size:12px; }
         .a2a-pin:hover { opacity:.7; } .a2a-pin.on { opacity:1; filter:none; }
         .a2a-card.pinned { border-color:var(--vscode-focusBorder); }
         .a2a-card.sel { background:var(--vscode-list-inactiveSelectionBackground); }
-        .a2a-bulk { display:inline-flex; gap:6px; align-items:center; padding-left:6px; border-left:1px solid var(--vscode-panel-border); }
-        .a2a-bulk .a2a-selall { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; cursor:pointer; }
         .a2a-bmode.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
         .a2a-chainbar { display:flex; gap:8px; align-items:center; margin:10px 0 2px; padding:5px 10px; border-radius:6px;
             border:1px solid var(--vscode-focusBorder); background:var(--vscode-editorWidget-background); font-size:12px; }

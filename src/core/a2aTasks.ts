@@ -196,6 +196,15 @@ export function isOpen(task: A2ATask, now: number): boolean {
 }
 
 /**
+ * N-11 — an agent is working on it RIGHT NOW. Such a task is never deleted from
+ * under its claimant (the queue's rule: nothing vanishes under a live hand);
+ * ⊘ Cancel is the way to stop it, and then it can go.
+ */
+export function heldLive(task: A2ATask, now: number): boolean {
+    return (task.state === 'claimed' || task.state === 'running') && !leaseExpired(task, now);
+}
+
+/**
  * ‼️ ZOMBIES ARE COLLECTED ON EVERY READ, not on a timer. A timer is a thing
  * that can be not running; a rule applied at the moment somebody looks cannot
  * be. A task whose lease died goes back to `queued` — unless it has already
@@ -322,6 +331,25 @@ export class A2ATasksStore {
                 : t);
             return { tasks: out, out: out.find(t => t.id === id) };
         }, now);
+    }
+
+    /** N-11 — delete by hand; a task an agent holds live is spared and named in `held`. */
+    remove(ids: string[], now = Date.now()): { deleted: number; held: string[] } {
+        const want = new Set(ids);
+        return this.mutate(tasks => {
+            const held = tasks.filter(t => want.has(t.id) && heldLive(t, now)).map(t => t.id);
+            const out = tasks.filter(t => !want.has(t.id) || heldLive(t, now));
+            return { tasks: out, out: { deleted: tasks.length - out.length, held } };
+        }, now) ?? { deleted: 0, held: [] };
+    }
+
+    /** N-11 — clear the board: the closed tasks (done · failed · cancelled), or every one nobody holds live. */
+    clear(filter: { closedOnly?: boolean } = {}, now = Date.now()): number {
+        const closedOnly = filter.closedOnly !== false;
+        return this.mutate(tasks => {
+            const out = tasks.filter(t => heldLive(t, now) || (closedOnly && !A2A_TERMINAL.includes(t.state)));
+            return { tasks: out, out: tasks.length - out.length };
+        }, now) ?? 0;
     }
 
     /** The user's call: stop it, whoever holds it. */

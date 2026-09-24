@@ -22,16 +22,24 @@ const anonymousStatus = (owner: string, repo: string) => new Promise<number | un
     req.on('error', () => resolve(undefined));
 });
 
-/** X-285 — committed sizes in one git call; untracked files are few, so they are stat'ed. */
+/**
+ * X-285 — committed sizes in one git call; untracked files are few, so they are stat'ed.
+ * A failed read is carried as `unread`: right after a window reload the call timed out and
+ * came back empty, and the gate read that as "nothing committed" — a pass it never measured.
+ */
 async function weigh(root: string): Promise<RepoWeight> {
-    const top = largestBlobs(await git(root, ['ls-tree', '-r', '-l', '-z', 'HEAD']));
+    const tree = await new Promise<{ out: string; err: string }>(resolve =>
+        cp.execFile('git', ['-C', root, 'ls-tree', '-r', '-l', '-z', 'HEAD'],
+            { windowsHide: true, timeout: 60000, maxBuffer: 64 << 20 },
+            (err, out) => resolve({ out: err ? '' : String(out), err: err ? String(err.message).split('\n')[0].slice(0, 160) : '' })));
+    const top = largestBlobs(tree.out);
     const untracked = (await git(root, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
         .map(file => {
             let bytes = 0;
             try { bytes = fs.statSync(path.join(root, file)).size; } catch { bytes = 0; }
             return { file, bytes };
         });
-    return { top, leftOut: leftOutBig(untracked) };
+    return { top, leftOut: leftOutBig(untracked), ...(tree.err ? { unread: tree.err } : {}) };
 }
 
 /** X-286 — the repo the claude dir's link lands in, its carried sign-ins and whether strangers can read it. */

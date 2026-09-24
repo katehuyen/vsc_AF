@@ -31,6 +31,7 @@
     // the manager's tracked delegations never crowd out the user's own captures.
     let agentLaneOpen = st.agentLaneOpen !== undefined ? !!st.agentLaneOpen : DEF.agentLaneOpen;
     const expanded = new Set();     // open item ids
+    const selected = new Set();     // N-11 — the bulk hand's rows
     const srcOpen = new Set();      // items showing their source notice in full (N-10)
     const editing = new Set();      // ids in edit mode
     const editDrafts = {};          // id -> {text,target,urgency}
@@ -312,9 +313,10 @@
                 </div>
                 ${answering.has(n.id) ? answerForm(n) : ''}`;
         }
-        return `<div class="q-card s-${n.status} ${n.pinned ? 'pinned' : ''} ${focusItem === n.id ? 'focus' : ''}" data-id="${esc(n.id)}">
+        return `<div class="q-card s-${n.status} ${n.pinned ? 'pinned' : ''} ${focusItem === n.id ? 'focus' : ''}${selected.has(n.id) ? ' sel' : ''}" data-id="${esc(n.id)}">
             <div class="q-row" data-toggle="${esc(n.id)}" ${itemCtx(n, open, terminal)}
                 title="${esc(window.AFCtx.hint('Click to open it'))}">
+                ${window.AFBulk.cb(n.id, selected.has(n.id))}
                 <span class="q-caret">${open ? '▾' : '▸'}</span>
                 <span class="q-author" title="${n.author === 'user' ? 'your entry' : 'agent entry'}">${authorChip(n.author)}</span>
                 <!-- The item is TEXT and the row ellipsises it, so the hover has
@@ -334,7 +336,9 @@
                 ${projectChip(n)}
                 ${tags ? `<span class="q-tags">${tags}</span>` : ''}
                 ${n.sourceNoticeId ? `<span class="q-badge src" title="From a ${esc(sourceKind(n).label.toLowerCase())}${n.sourceNoticeAgent ? ` · ${esc(n.sourceNoticeAgent)}` : ''}">${sourceKind(n).icon}</span>` : ''}
-                <span class="q-meta muted small">${esc(timeLabel(n.ts))}</span>
+                ${window.AFBulk.age(n.ts, n.author === 'user' ? 'Captured' : 'Delegated')}
+                ${window.AFBulk.x(n.id, terminal ? 'Delete this item for good'
+                    : 'Drop this item — it is voided (handled), and then it can be deleted')}
             </div>
             <div class="q-body" ${open ? '' : 'hidden'}>${body}</div>
         </div>`;
@@ -346,7 +350,7 @@
             <div class="q-lane-head"
                 ${window.AFCtx.row('afQueueLane', { lane: lane.id, laneLabel: lane.label, afDropShown: !!showDropped })}
                 title="${esc(window.AFCtx.hint(lane.label))}"><span class="q-lane-ico">${lane.icon}</span> ${esc(lane.label)} <span class="q-lane-n">${items.length}</span></div>
-            ${items.map(itemCard).join('')}</div>`;
+            ${items.filter(n => n.pinned).map(itemCard).join('')}${window.AFBulk.days(items.filter(n => !n.pinned), itemCard, DATA.now)}</div>`;
     }
 
     // The pipeline sub-lanes WITHIN a top-level category. `blocked` is skipped —
@@ -683,7 +687,21 @@
         ];
     }
 
-    function controls() {
+    /** N-11 — Notices' contract: the SELECTED rows, or every row shown when none is. */
+    function bulkBar(items) {
+        const target = selected.size ? `${selected.size} selected` : `all ${items.length} shown`;
+        return window.AFBulk.bar('q-selall', items.length && items.every(n => selected.has(n.id)), [
+            window.AFBulk.delBtn('Delete for good',
+                `Deletes the HANDLED items among ${target} (done · dropped).\n\n`
+                + 'A live item is never deleted — the queue\'s rule is that nothing vanishes before it is handled. '
+                + 'Drop it first (✕ on its row), then delete it.'),
+            window.AFBulk.clearBtn('clearHandled', 'Clear handled', 'Clear what is already handled',
+                'Deletes every done and dropped item in the queue, whatever is filtered or shown.\n\n'
+                + '📌 Pinned and archived items are kept. Live items are never touched.')
+        ]);
+    }
+
+    function controls(items) {
         return `<div class="q-controls">
             <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip('Searched against the item, its target, the engine/model/effort it asks for, its author, its resolution, its stamp and its tags.'))}">
@@ -693,6 +711,7 @@
             })).join('')}
             <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> show dropped</label>
             <button class="secondary" id="q-reset" title="Reset filters">↺</button>
+            ${bulkBar(items)}
         </div>`;
     }
 
@@ -719,6 +738,7 @@
         .q-card.pinned { background:var(--vscode-editorWidget-background); }
         .q-card.focus { box-shadow:0 0 0 2px var(--vscode-focusBorder,#007fd4); }
         .q-row { display:flex; gap:8px; align-items:center; padding:7px 10px; cursor:pointer; }
+        .q-card.sel { background:var(--vscode-list-inactiveSelectionBackground); }
         .q-row:hover { background:var(--vscode-list-hoverBackground); }
         .q-caret { width:12px; opacity:.7; flex-shrink:0; }
         .q-author { flex-shrink:0; font-size:11px; opacity:.85; }
@@ -837,7 +857,7 @@
             ${window.AFHeader.html({
                 page: 'queue', title: '📥 Work Queue',
                 sub: `${(DATA.items || []).length} items · ${active} active${blocked ? ` · ${blocked} need you` : ''} · showing ${items.length} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
-                controls: controls()
+                controls: controls(items)
             })}
             ${addForm()}
             ${body}`;
@@ -1002,6 +1022,26 @@
             e.stopPropagation();
             vscode.postMessage({ type: 'openProject', project: el.dataset.project });
         }));
+
+        const shown = visible();
+        window.AFBulk.wire({
+            allId: 'q-selall', selected: selected, shown: () => shown.map(n => n.id), repaint: render,
+            onRowDelete: id => {
+                const n = (DATA.items || []).find(x => x.id === id);
+                const handled = n && (n.status === 'done' || n.status === 'dropped');
+                if (handled) { expanded.delete(id); }
+                vscode.postMessage({ type: handled ? 'remove' : 'drop', id: id });
+            },
+            onBulk: (a, ids) => {
+                if (a === 'bulkDelete') {
+                    if (!ids.length) { return; }
+                    selected.clear();
+                    vscode.postMessage({ type: 'removeMany', ids: ids });
+                } else if (a === 'clearHandled') {
+                    vscode.postMessage({ type: 'clearHandled' });
+                }
+            }
+        });
 
         // row expand
         document.querySelectorAll('[data-toggle]').forEach(row => row.addEventListener('click', () => {

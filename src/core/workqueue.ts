@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { coerceNoticeSource, NoticeSource, NoticeSourceFields, queueInputFromNotice } from './noticeToQueue';
+import { registerQueueHygieneOps } from './queueHygiene';
 
 /**
  * Work Queue — the farm's user→agent async work channel (the mirror image of
@@ -1235,4 +1236,5 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
             }
         }
     ]);
+    registerQueueHygieneOps(bridge, store, changed);
 }
