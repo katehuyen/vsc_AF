@@ -1,3 +1,5 @@
+import { normalizeSupervisor, SupervisorPolicy } from './retrySupervisor';
+
 /**
  * ‼️ M-3 — WHAT HAPPENS WHEN A RUN FAILS, AS A SETTING RATHER THAN A SECRET.
  *
@@ -48,8 +50,10 @@ export type RetryBackoff = 'same' | 'double' | 'linear' | 'formula';
 export type RetryWhen = 'any' | 'limit';
 
 /** ‼️ M-10 — a retry is a fresh run (`simple`) or a continuation of the one that
- *  was cut off (`smart`). Absent means `simple`, for every policy ever written. */
-export type RetryBehavior = 'simple' | 'smart';
+ *  was cut off (`smart`). Absent means `simple`, for every policy ever written.
+ *  ‼️ M-13 — `supervisor` is `smart` whose continuation after a limit is decided
+ *  by a bounded agent (retrySupervisor.ts); `smart` is its fallback. */
+export type RetryBehavior = 'simple' | 'smart' | 'supervisor';
 
 /** ‼️ M-10 — what `smart` does when it cannot tell whether work happened. */
 export type UnknownProgressFallback = 'park' | 'simple' | 'stop' | 'ask';
@@ -114,6 +118,8 @@ export interface RetryPolicy {
      * accounts of the engine; a slot id names the one account to carry on with.
      */
     carryOn?: string;
+    /** ‼️ M-13 — who judges the continuation when `behavior` is `supervisor` (retrySupervisor.ts) */
+    supervisor?: SupervisorPolicy;
     /** How many times to try AGAIN after a failure. 0 (or absent) = never. */
     max?: number;
     /** Minutes to wait before the FIRST retry — and the `base` every strategy
@@ -419,6 +425,9 @@ export function retryRefusal(raw: unknown): string {
         const err = retryFormulaError(src);
         if (err) { return `the retry formula was refused — ${err}`; }
     }
+    if (o.behavior === 'supervisor' && !normalizeSupervisor(o.supervisor)) {
+        return 'behavior "supervisor" needs supervisor.engine — the engine that judges the continuation';
+    }
     return '';
 }
 
@@ -493,6 +502,10 @@ export function normalizeRetry(raw: unknown): RetryPolicy | undefined {
     // bridge caller cannot half-say it and get a run resuming a conversation
     // nobody asked it to resume.
     if (o.behavior === 'smart') { out.behavior = 'smart'; }
+    // M-13 — a supervisor with no engine to ask is the deterministic `smart` it falls back to
+    const sup = normalizeSupervisor(o.supervisor);
+    if (sup) { out.supervisor = sup; }
+    if (o.behavior === 'supervisor') { out.behavior = sup ? 'supervisor' : 'smart'; }
     for (const k of ['continuationPrompt', 'continuationPrompt2', 'continuationPromptLater'] as const) {
         const v = typeof o[k] === 'string' ? (o[k] as string).trim() : '';
         if (v) { out[k] = v.slice(0, RETRY_PROMPT_MAX_CHARS); }
@@ -539,7 +552,10 @@ export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Requ
     // is INHERITED rather than defaulted-on: a run that says nothing gets the
     // user's own setting, and a user who has said nothing gets `simple`.
     const behavior = a.behavior ?? b.behavior;
-    if (behavior === 'smart') { out.behavior = 'smart'; }
+    const sup = a.supervisor ?? b.supervisor;
+    if (sup) { out.supervisor = sup; }
+    if (behavior === 'smart' || (behavior === 'supervisor' && !sup)) { out.behavior = 'smart'; }
+    if (behavior === 'supervisor' && sup) { out.behavior = 'supervisor'; }
     for (const k of ['continuationPrompt', 'continuationPrompt2', 'continuationPromptLater'] as const) {
         const v = (a[k] ?? b[k] ?? '').trim();
         if (v) { out[k] = v; }
@@ -1027,6 +1043,14 @@ export interface RetryDecision {
      * the question to the user. Never a silent repeat of the original prompt.
      */
     hold?: 'park' | 'ask';
+    /**
+     * ‼️ M-13 — ASK THE SUPERVISOR BEFORE APPLYING THIS. Set only in
+     * `supervisor` behaviour, only for a LIMIT that cut off work that had
+     * happened (the first version's whole scope). Everything else on the
+     * decision is the deterministic `smart` answer — the fallback the manager
+     * applies when the supervisor cannot be asked, fails, or is not confident.
+     */
+    supervise?: boolean;
     /** Said in words, because it goes on the task's own record and in its
      *  output file — "attempt 2 of 6" alone never explains a retry that did NOT
      *  happen, and that is the case somebody comes looking for. */
@@ -1083,7 +1107,7 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
      *   unknown     → hold. The one thing that must not happen is the original
      *                 prompt going out as if the run had been idle.
      */
-    const smart = p.behavior === 'smart';
+    const smart = p.behavior === 'smart' || p.behavior === 'supervisor';
     let continueRun = false;
     let promptTemplate: string | undefined;
     let hold: 'park' | 'ask' | undefined;
@@ -1126,13 +1150,16 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
             + (o.handover?.note ? ` and ${o.handover.note} closed it` : '')
             + ', and a saturated conversation is never resumed — the fresh run carries the original prompt'
         : '';
+    const supervise = p.behavior === 'supervisor' && !!p.supervisor && wasLimit && continueRun;
     const held = (d: RetryDecision): RetryDecision => hold
         ? {
             ...d, hold,
             why: `${d.why} — held: smart continue cannot yet tell whether this run had already done work`
             + (hold === 'ask' ? ', and you asked to be the one who decides' : '')
         }
-        : d;
+        : supervise
+            ? { ...d, supervise, why: `${d.why} — the supervisor (${p.supervisor!.engine}) decides how it goes on; this is its fallback` }
+            : d;
 
     // ‼️ M-10 — RESET-AWARE OVERRIDES THE FIRST RETRY AND ONLY THE FIRST, and
     // only when the failure really was a limit. Attempts 2 and 3 have their own
@@ -1223,5 +1250,8 @@ export function describeRetry(policy?: RetryPolicy, fallback?: RetryPolicy): str
     // X-226 — said out loud, because it is the one part of a policy that can
     // spend a plan the run was not given.
     if (p.carryOn) { bits.push(`at a limit carries on via ${p.carryOn}`); }
+    if (p.behavior === 'supervisor' && p.supervisor) {
+        bits.push(`after a limit, ${p.supervisor.engine}${p.supervisor.model ? ` (${p.supervisor.model})` : ''} decides how it continues`);
+    }
     return bits.join(' · ');
 }

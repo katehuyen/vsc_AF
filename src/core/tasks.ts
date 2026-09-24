@@ -39,6 +39,11 @@ import {
     classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, HandoverEvidence,
     isLimitFailure, normalizeRetry, resolveRetry, RetryPolicy, retryDecision, RunProgress
 } from './retry';
+import { incidentKey, SupervisorPolicy, SupervisorRoom, supervisorWhen } from './retrySupervisor';
+import {
+    isSupervisionOpen, SUPERVISION_ASK_CODE, SUPERVISION_HOLD_CODE, SUPERVISION_PARK_CODE,
+    SupervisionOutcome, supervisionEffect, TaskSupervision
+} from './retrySupervision';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
     newSentry, pauseSentry, refuseSentry, resumeSentry, SENTRY_DEFAULT_POLL_MIN, SentryAsk,
@@ -295,6 +300,8 @@ export interface FarmTask {
     /** ‼️ S-85 — the ENGINE's id of the conversation that card hosts, written
      *  when the card first reports it; `rowSessionId` (batonDoor.ts) reads it. */
     hostedSessionId?: string;
+    /** ‼️ M-13 — this retry row waits on (or was settled by) the supervisor (retrySupervision.ts) */
+    supervision?: TaskSupervision;
     /**
      * ‼️ M-26 — HOW AN EXTERNAL WINDOW REPORTS BACK. A detached `wt` returns
      * immediately and its own exit code says nothing about the CLI inside it, so
@@ -1575,6 +1582,8 @@ export interface TaskManagerOptions {
      * to the ordinary interval, saying which on the run's record.
      */
     limitResetAt?: (engine?: string) => number | undefined;
+    /** ‼️ M-13 — whether the supervisor's own limit has room now; absent/unknown is never read as room */
+    supervisorRoom?: (p: SupervisorPolicy) => SupervisorRoom;
     /**
      * ‼️ S-64 — DID THIS RUN'S WINDOW REACH THE HANDOVER LINE? Asked of the
      * context guard, which is the only thing that knows: it read the fill and
@@ -3202,6 +3211,16 @@ export class TaskManager implements vscode.Disposable {
                 code: ROUND_BINDING_CODE,
                 reason: roundBindingReason(task)
             };
+        }
+        // ‼️ M-13 — held for the supervisor, or by what it (or its fallback) said
+        if (isSupervisionOpen(task.supervision)) {
+            return { code: 'supervisor:pending', reason: task.deferredReason || 'waiting for the supervisor to decide how this run continues' };
+        }
+        if (task.deferredCode === SUPERVISION_ASK_CODE) {
+            return { code: 'supervisor:ask', reason: task.deferredReason || 'waiting for you — the supervisor asked for a person' };
+        }
+        if (task.deferredCode === SUPERVISION_PARK_CODE) {
+            return { code: 'supervisor:park', reason: task.deferredReason || 'parked — the supervisor did not decide' };
         }
         // ‼️ S-19 — A LIVE OWNER OUTRANKS EVERY OTHER CEILING, and is checked
         // HERE rather than at the moment the user picked the session: minutes
@@ -5054,6 +5073,27 @@ export class TaskManager implements vscode.Disposable {
                 // going out as if the run had been idle. The park clears itself
                 // when the binding lands and `setRunProgress` answers the
                 // question — or when the user answers it.
+                // ‼️ M-13 — the row IS the fallback; it waits for the supervisor's word
+                if (d.supervise && continuing) {
+                    const sup = resolveRetry(policy, fallback).supervisor!;
+                    const when = supervisorWhen({
+                        now: Date.now(), plannedAt: startAt, ...(d.notBefore ? { resetAt: d.notBefore } : {}),
+                        taskEngine: engineId, ...(task.account ? { taskAccount: task.account } : {}),
+                        // a supervisor on the task's own engine is taken to share its sign-in: unknown is not room
+                        supervisor: sup, ...(sup.engine === engineId && task.account ? { supervisorAccount: task.account } : {}),
+                        room: this.opts.supervisorRoom?.(sup) ?? 'unknown'
+                    });
+                    t.supervision = {
+                        key: incidentKey(task.id, d.attempt, task.endedAt ?? Date.now()), state: 'pending',
+                        at: when.at, atWhy: when.why, failedTask: task.id, calls: task.supervision?.calls ?? 0,
+                        ...(task.supervision?.spentUsd ? { spentUsd: task.supervision.spentUsd } : {})
+                    };
+                    t.deferredCode = SUPERVISION_HOLD_CODE;
+                    t.deferredReason = `waiting for the supervisor — ${when.why}`;
+                    t.parkEpisode = (t.parkEpisode ?? 0) + 1;
+                    noteTaskEvent(t, 'parked', t.deferredReason);
+                    return;
+                }
                 if (d.hold) {
                     t.deferredCode = `progress:${d.hold === 'ask' ? 'ask' : 'unknown'}`;
                     t.deferredReason = d.hold === 'ask'
@@ -5221,6 +5261,58 @@ export class TaskManager implements vscode.Disposable {
         const child = this.processes.get(task.id);
         if (child) { this.killProcess(task.id, child); }
         this.finish(task, 'done');
+    }
+
+    // ---------- ‼️ M-13 — the supervisor's side of a held retry row ----------
+
+    /** Rows whose supervisor may be asked now (and rows left `asking` by a window that closed mid-call). */
+    supervisionDue(now = Date.now()): FarmTask[] {
+        return this.tasks.filter(t => t.status === 'queued' && isSupervisionOpen(t.supervision)
+            && (t.supervision!.state === 'asking' || t.supervision!.at <= now));
+    }
+
+    /** Marked BEFORE the call and saved, so a restart mid-call never asks the same incident twice. */
+    beginSupervision(task: FarmTask): boolean {
+        const s = task.supervision;
+        if (!s || s.state !== 'pending') { return false; }
+        task.supervision = { ...s, state: 'asking', calls: s.calls + 1 };
+        noteTaskEvent(task, 'parked', `asking the supervisor (call ${s.calls + 1})`);
+        this.save();
+        return true;
+    }
+
+    /** The decision (or the fallback) applied to the held row: released, held for the user, or cancelled. */
+    settleSupervision(task: FarmTask, o: SupervisionOutcome, meta: { engine: string; originalPrompt: string; spentUsd?: number; sessionId?: string }): void {
+        const s = task.supervision;
+        if (!s || !isSupervisionOpen(s) || task.status !== 'queued') { return; }
+        const fx = supervisionEffect(task, o, { originalPrompt: meta.originalPrompt, engine: meta.engine });
+        Object.assign(task, fx.set);
+        for (const k of fx.unset) { delete (task as unknown as Record<string, unknown>)[k]; }
+        task.supervision = {
+            ...s, state: o.kind === 'decision' ? 'decided' : 'fallback',
+            ...(o.kind === 'decision' ? { decision: o.decision } : { note: o.note }),
+            ...(meta.spentUsd ? { spentUsd: (s.spentUsd ?? 0) + meta.spentUsd } : {}),
+            ...(meta.sessionId ? { sessionId: meta.sessionId } : {})
+        };
+        if (fx.kind === 'cancel') {
+            task.status = 'cancelled';
+            task.endedAt = Date.now();
+            this.clearPark(task);
+            noteTaskEvent(task, 'cancelled', fx.event);
+            this.save();
+            return;
+        }
+        if (fx.kind === 'hold') {
+            task.deferredCode = fx.code;
+            task.deferredReason = fx.event;
+            noteTaskEvent(task, 'parked', fx.event);
+            this.save();
+            return;
+        }
+        this.clearPark(task);
+        noteTaskEvent(task, 'retried', fx.event);
+        this.startTask(task);
+        this.save();
     }
 
     cancelTask(task: FarmTask): void {
