@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.655.0 - The acceptance gate says when the agent repo is public, and whose sign-ins it carries (X-286) (2026-09-24)
+
+- **A public agent repo now fails the migration gate, first (X-286).** The
+  agent repo carries every account's live sign-in in plain text — the user's
+  choice, so a new machine comes up signed in — which means it must never be
+  public. `migration.verify` now opens with `repo:visibility`: an anonymous
+  GitHub API read of the repo the claude dir lives in (404 = strangers cannot
+  read it; 200 = PUBLIC, the gate fails and says to revoke every carried
+  sign-in as well as switching it back). An API that does not answer is said,
+  not failed.
+- **Which accounts travel is named.** `repo:credentials` lists every account
+  whose `.credentials.json` / `*.key` the repo tracks, main first.
+- **One module to seal them later.** `src/core/credentialCarry.ts` is the only
+  place that knows which files are credentials and how they travel
+  (`CARRY_MODE` = `plain`). Switching to an encrypted bundle is a mode there
+  plus a pack/unpack step; the gate already fails a sealed repo that still
+  tracks a plain credential file.
+
 ## 3.654.0 - OpenCode's start-up lock race is retried once (X-329) (2026-09-24)
 
 - **Two OpenCode starts in the same second no longer lose one of them

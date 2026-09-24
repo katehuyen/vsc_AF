@@ -244,6 +244,7 @@ import {
 import { mergeMissing, PortableMap } from './core/portableState';
 import { realDirOf, reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { migrationGate } from './core/migrationGate';
+import { measureAgentRepo } from './service/agentRepo';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import { changedSince, fingerprint, watchedFiles, watchedStamps } from './core/slotWatch';
 import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
@@ -40458,8 +40459,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'adopted from globalState, merged not overwritten — S-61). Every failing item carries '
                 + '`actions` — bridge ops a program can run to put it right, in the shape the _setup '
                 + 'Doctor uses (X-209: id · label · op · args · danger) — or a `fix` a person does. '
+                + '‼️ X-286 — the FIRST two items are the agent repo the claude dir lives in: '
+                + '`repo:visibility` (an anonymous GitHub API read — PUBLIC fails the gate, because the repo '
+                + 'carries live sign-ins; an unreachable API is said, not failed) and `repo:credentials` '
+                + '(which accounts\' sign-ins travel in it, and in what mode — plain today, one module to seal). '
                 + 'Read-only: this op writes nothing; run the action it names. No arguments.',
-            handler: () => migrationGate({
+            handler: async () => {
+                const repo = await measureAgentRepo(claudeDir());
+                return migrationGate({
+                repo: () => repo,
                 roots: [
                     { name: 'claudeDir', path: claudeDir() },
                     { name: 'globalStorage', path: context.globalStorageUri.fsPath }
@@ -40481,7 +40489,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         legacyOnly: mergeMissing(held, legacy).added.length
                     };
                 })
-            })
+                });
+            }
         },
         {
             op: 'sentry.templates',

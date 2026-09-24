@@ -2521,6 +2521,8 @@ const { opencodeStatus, syncToOpencode } =
             && /unportableDirs\(/.test(gateBlock) && /mergeMissing\(held, legacy\)/.test(gateBlock));
         ok('…on the two roots without which nothing else means anything',
             /name: 'claudeDir', path: claudeDir\(\)/.test(gateBlock) && /name: 'globalStorage', path: context\.globalStorageUri\.fsPath/.test(gateBlock));
+        ok('‼️ X-286 — the agent repo is measured before the gate runs and handed to it',
+            /await measureAgentRepo\(claudeDir\(\)\)/.test(gateBlock) && /repo: \(\) => repo/.test(gateBlock));
 
         // ---------- X-290: sessions.rescan — the disk outran the watcher ----------
         const rescanBlock = src.slice(src.indexOf("op: 'sessions.rescan'"), src.indexOf("op: 'sessions.find'"));

@@ -1,3 +1,4 @@
+import type { AgentRepoCarry } from './credentialCarry';
 import type { SlotCompleteness } from './slotCompleteness';
 
 /**
@@ -29,7 +30,7 @@ export interface GateAction {
 export interface GateItem {
     /** stable handle: `root:claudeDir`, `slot:claude-x`, `twins`, `portable-dirs`, `state:titles` */
     id: string;
-    area: 'roots' | 'slots' | 'accounts' | 'state';
+    area: 'repo' | 'roots' | 'slots' | 'accounts' | 'state';
     ok: boolean;
     /** one line a card, a cockpit row or a Doctor line can print */
     detail: string;
@@ -74,6 +75,8 @@ export interface GateSources {
     unportable: () => { id: string; dir: string; tokenizable: boolean }[];
     /** the S-61 portable stores against the legacy globalState */
     stores: () => GateStore[];
+    /** X-286 — the agent repo the claude dir lives in, measured before the gate runs */
+    repo?: () => AgentRepoCarry | undefined;
     now?: () => number;
 }
 
@@ -166,6 +169,45 @@ export function migrationGate(src: GateSources): GateVerdict {
                 : `${st.name}: nothing to carry`));
     }
 
+    // (8) X-286 — the repo carries live sign-ins: public outranks every other item
+    if (src.repo) {
+        try {
+            const r = src.repo();
+            if (r) { items.unshift(...repoItems(r)); }
+        } catch (e) {
+            items.unshift(item('repo:visibility', 'repo', false, `the agent repo could not be read: ${String((e as Error)?.message ?? e)}`));
+        }
+    }
+
     const failed = items.filter(i => !i.ok).length;
     return { ok: failed === 0, passed: items.length - failed, failed, items, at: (src.now ?? Date.now)() };
+}
+
+function repoItems(r: AgentRepoCarry): GateItem[] {
+    if (!r.root) {
+        return [item('repo:credentials', 'repo', true, 'the claude dir lies in no git repo — git carries no sign-in')];
+    }
+    const c = r.carry;
+    const who = c.accounts.join(', ');
+    const vis = !r.remote
+        ? item('repo:visibility', 'repo', true, `${r.root} has no remote — nothing is published`)
+        : r.visibility === 'public'
+            ? item('repo:visibility', 'repo', false,
+                `the agent repo is PUBLIC (${r.why}) and carries ${c.entries.length} live credential file(s) — sign-ins of ${who || 'no account'}`,
+                'make it private now, then revoke every carried sign-in at the provider (claude.ai → Settings → Sessions): '
+                + 'a private switch does not un-read what was already public, and the tokens stay in git history')
+            : item('repo:visibility', 'repo', true, r.visibility === 'hidden'
+                ? `the agent repo is not visible to strangers (${r.why})`
+                : `visibility NOT MEASURED — ${r.why}`);
+    const plainInSealed = c.mode === 'sealed' ? c.entries : [];
+    const carried = plainInSealed.length
+        ? item('repo:credentials', 'repo', false,
+            `${plainInSealed.length} credential file(s) are tracked in plain text while the carry mode is sealed — ${plainInSealed.map(e => e.file).join(', ')}`,
+            'untrack them (git rm --cached) and let the seal step pack them')
+        : item('repo:credentials', 'repo', true, c.mode === 'sealed'
+            ? 'sign-ins travel sealed — no credential file is tracked in plain text'
+            : c.entries.length
+                ? `${c.entries.length} live credential file(s) travel in PLAIN text — sign-ins of ${who}; the repo must stay private`
+                : 'no credential file is tracked — a new machine signs in by hand');
+    return [vis, carried];
 }
