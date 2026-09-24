@@ -404,6 +404,12 @@ composing its own.
   every member on the same points, and a "neutral" member (Balanced) equals the
   defaults — both are pinned by `test_flex_presets.js`. Applying at Farm Settings
   MERGES into object settings; never write a whole `taskRetry` for one field.
+- A choice that is more than one value uses a SMART FORM from
+  `media/afFlexForms.js` (X-370) rather than a page's own: range
+  (`stepInRange` says where it stopped), tri (`triSelect` off the point's
+  `states`), soft/hard cap (`capVerdict`), suggestion (`suggestionFor` honours
+  turned-down keys), dead option (`deadReason` / `deadOptions` — grey WITH the
+  reason, and only on a stated false in `ENGINE_INPUT`).
 
 ## The index holds a PROJECTION, the store holds the record (X-129)
 

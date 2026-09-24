@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.666.0 - Smart choices instead of frozen ones: range, ask/auto/never, soft/hard cap, suggestion, honest dead option (X-370) (2026-09-24)
+
+- **Five shapes a preference can take (X-370),** in one shared component
+  (`media/afFlexForms.js`, host door `src/core/flexForms.ts`):
+  a **range** — you set floor and ceiling, the system moves inside and says so
+  at the edge; **ask / auto / never**; a **soft / hard cap** — soft asks before
+  going on, hard stops; a **suggestion chip** — a reasoned proposal you accept
+  or turn down, and a turned-down one is not offered again; an **honest dead
+  option** — a choice that cannot be met is greyed with the reason
+  ("Claude cannot open video"), never swapped for a silent fallback. Only what
+  is known about an engine greys anything; an engine nobody stated a fact
+  about stays selectable.
+- **Already in use:** the retry supervisor's "If it is not sure" box is now an
+  ask / auto / never choice (*ask me — hold, tell me · automatic — continue
+  (smart) · never — no retry*), drawn from the preference registry; stored
+  values are unchanged. Its money cap is decided as a hard cap by the same
+  component; its behaviour is unchanged.
+
 ## 3.665.0 - Presets: a named set of preferences, applied in one go (X-369) (2026-09-24)
 
 - **Built-in cost presets: Economy · Balanced · Quality (X-369).** Balanced is

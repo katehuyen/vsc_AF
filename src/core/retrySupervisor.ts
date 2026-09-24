@@ -17,6 +17,7 @@
  * cannot start a task, commit, push or close a backlog item. Its whole output
  * is the JSON below, and anything outside that contract is refused.
  */
+import { capVerdict } from './flexForms';
 
 export type SupervisorAction = 'resume' | 'retryOriginal' | 'wait' | 'stop' | 'needsUser';
 export const SUPERVISOR_ACTIONS: readonly SupervisorAction[] = ['resume', 'retryOriginal', 'wait', 'stop', 'needsUser'];
@@ -194,6 +195,9 @@ export function incidentKey(taskId: string, attempt: number, failedAt: number): 
 /** Whether another call may be made — the call cap and the money cap, said in words. */
 export function supervisorRefusal(p: SupervisorPolicy, used: { calls: number; spentUsd: number }): string {
     if (used.calls >= p.maxCalls) { return `the supervisor was already asked ${used.calls} time(s), its limit for this task`; }
-    if (p.budgetUsd !== undefined && used.spentUsd >= p.budgetUsd) { return `the supervisor's budget ($${p.budgetUsd.toFixed(2)}) is spent`; }
+    // the money cap is a HARD cap (X-370): reaching it stops the asking
+    if (p.budgetUsd !== undefined && capVerdict({ hard: p.budgetUsd }, used.spentUsd).level === 'hard') {
+        return `the supervisor's budget ($${p.budgetUsd.toFixed(2)}) is spent`;
+    }
     return '';
 }

@@ -60,7 +60,9 @@
             + list.map(e => C.option(e.id, e.label + (e.ready ? '' : ' — cannot run here'), {
                 selected: e.id === s.engine, disabled: !e.ready, detail: e.next || ''
             })).join('');
-        const fb = FALLBACKS.map(f => C.option(f[0], f[1], { selected: f[0] === s.lowConfidence })).join('');
+        // X-370 — a tri point: ask / auto / never, the stored values from the flex registry
+        const fb = window.AFFlexForms.triSelect('nt-supfallback', window.AFFlex.point('retry.supervisor.lowConfidence').states,
+            s.lowConfidence, C, { ask: 'hold, tell me', auto: 'continue (smart)', never: 'no retry' });
         const box = (id, label, value, ph, tip) => `<label class="ntf" title="${C.esc(tip)}"><span>${label}</span>`
             + `<input type="text" id="nt-${id}" value="${C.esc(value)}" placeholder="${C.esc(ph)}"></label>`;
         return `<label class="ntf" title="${C.esc(
@@ -78,7 +80,7 @@
             + box('supconf', 'Min confidence', s.minConfidence, '0.6',
                 'A decision it is less sure of than this (0–1) is not applied; the choice below is used instead.')
             + `<label class="ntf" title="${C.esc('What happens when its answer is below the confidence above, or it cannot be asked at all (its own limit, a timeout, a malformed answer).')}"><span>If it is not sure</span>`
-            + `<select id="nt-supfallback">${fb}</select></label>`;
+            + `${fb}</label>`;
     }
 
     /** Read the boxes back into the draft; `get(id)` answers an element's value or undefined when it is not on the page. */

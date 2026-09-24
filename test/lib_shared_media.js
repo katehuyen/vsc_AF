@@ -111,6 +111,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afBulk.js — the bulk hand (N-11): Notices' row box, row ✕ and bulk bar,
     // shared by the A2A pages and the Work Queue.
     'afBulk.js',
+    // afFlex.js + afFlexForms.js — the flex registry and its smart forms (X-367, X-370).
+    'afFlex.js', 'afFlexForms.js',
     // afSupervisor.js — the retry supervisor's boxes (M-13).
     'afSupervisor.js'];
 
