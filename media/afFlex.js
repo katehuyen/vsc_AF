@@ -71,6 +71,19 @@
         }, extra || {});
     }
 
+    /** A step's own judge (M-42): set on the step card's verify row, carried by the step's `verify`. */
+    function judgeStep(field, label, dflt) {
+        return {
+            id: 'judge.' + field, label: label, type: 'text', default: dflt, remembered: false,
+            levels: {
+                step: {
+                    surface: 'media/tasksPage.js#st-verify' + field[0].toUpperCase() + field.slice(1),
+                    bridge: 'workflows.add:steps.verify.' + field
+                }
+            }
+        };
+    }
+
     const POINTS = [
         supervisor('engine', 'Supervisor engine', 'text', '', 'engine'),
         supervisor('model', 'Supervisor model', 'text', '', 'model'),
@@ -81,6 +94,8 @@
         supervisor('lowConfidence', 'If the supervisor is not sure', 'tri', 'smart', 'fallback',
             { states: { ask: 'park', auto: 'smart', never: 'stop' } }),
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
+        judgeStep('engine', 'Judge engine', 'claude'),
+        judgeStep('model', 'Judge model', ''),
         setting('judge.unjudged', 'If no judge can look at it', 'tri', 'ask', 'agentFarm.judgeUnjudged',
             { states: { ask: 'ask', auto: 'pass', never: 'stop' } }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),

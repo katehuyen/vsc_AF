@@ -12,6 +12,9 @@
  */
 import * as path from 'path';
 import { deadReason } from './flexForms';
+import { flexPoint } from './flexPoints';
+import { resolveFlex } from './flexResolve';
+import { oneShotEngines } from './oneShot';
 
 export type Modality = 'image' | 'video' | 'audio' | 'pdf' | 'text';
 export type UnjudgedBehavior = 'ask' | 'pass' | 'stop';
@@ -26,8 +29,41 @@ const EXT: Record<string, Modality> = {
 
 export const assetModality = (file: string): Modality => EXT[path.extname(file).toLowerCase()] ?? 'text';
 
-/** The engine the judge args run. The judge is a `claude` one-shot today; a named engine is the seam for M-42 (2). */
-export const judgeEngine = (engine?: string): string => (engine || 'claude').toLowerCase();
+export const judgeEngine = (engine?: string): string => (engine || 'claude').trim().toLowerCase() || 'claude';
+
+/** A step's own judge: `verify.engine` / `verify.model` (flex points judge.engine · judge.model). */
+export interface StepJudge { engine?: string; model?: string }
+
+export interface JudgeWant { engine: string; model?: string; args: string; origin: string }
+
+const MODEL_FLAG = /--model(?:=|\s+)\S+/g;
+
+/**
+ * The judge a step gets and where each half came from. `settingArgs` is the
+ * judge.args value in force; the shipped default counts as built-in. Those args
+ * are Claude CLI flags, so they ride only on a claude judge, and a step's own
+ * model replaces the one they carry instead of stacking a second --model.
+ */
+export function judgeWant(step: StepJudge | undefined, settingArgs: string | undefined): JudgeWant {
+    const e = resolveFlex('judge.engine', { step: step?.engine });
+    const engine = judgeEngine(String(e.value));
+    const m = resolveFlex('judge.model', { step: step?.model });
+    const shipped = flexPoint('judge.args')?.default;
+    const a = resolveFlex('judge.args', { settings: settingArgs === shipped ? undefined : settingArgs });
+    const model = String(m.value || '').trim() || undefined;
+    let args = engine === 'claude' ? String(a.value || '').trim() : '';
+    if (model) { args = args.replace(MODEL_FLAG, '').replace(/\s+/g, ' ').trim(); }
+    const tail = model ? `model ${m.sentence}` : args ? `args ${a.sentence}` : '';
+    return { engine, ...(model ? { model } : {}), args, origin: `judge ${e.sentence}${tail ? ` · ${tail}` : ''}` };
+}
+
+/** Why a step's judge engine is refused at save time — '' when it can judge. */
+export function judgeEngineRefusal(engine: unknown): string {
+    if (engine === undefined || engine === null || String(engine).trim() === '') { return ''; }
+    const e = judgeEngine(String(engine));
+    const can = oneShotEngines();
+    return can.includes(e) ? '' : `"${e}" has no one-shot judge turn yet — a judge can run on: ${can.join(', ')}`;
+}
 
 /** Can this engine judge this asset? The refusal says why, in words. */
 export function visionRoute(file: string, engine?: string):

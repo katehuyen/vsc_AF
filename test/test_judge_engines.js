@@ -33,5 +33,29 @@ ok('the route is checked before the one-shot', body.indexOf('visionRoute(') > 0 
 ok('‼️ no "passed through" left in the vision judge', !/passed through/.test(body));
 ok('an unjudged step goes to settleUnjudged, not to the PASS branch', /judged\.unjudged\)\s*\{\s*await this\.settleUnjudged/.test(src));
 
+/* ---------- M-42 (2) — the judge is chosen per step, and says where it came from ---------- */
+const SHIPPED = '--model claude-haiku-4-5-20251001';
+const w0 = J.judgeWant(undefined, SHIPPED);
+eq('no step choice + shipped args → claude, built-in, args kept', [w0.engine, w0.model, w0.args], ['claude', undefined, SHIPPED]);
+ok('…and the origin says built-in for both halves', /^judge claude — built-in default · args --model claude-haiku-4-5-20251001 — built-in default$/.test(w0.origin));
+const w1 = J.judgeWant(undefined, '--model claude-sonnet-5 --verbose');
+ok('a Farm Settings judge args is named as such', /args --model claude-sonnet-5 --verbose — from Farm Settings/.test(w1.origin));
+const w2 = J.judgeWant({ model: 'claude-opus-5-5' }, '--model claude-sonnet-5 --verbose');
+eq('‼️ a step model replaces the args model, never a second --model', [w2.model, w2.args], ['claude-opus-5-5', '--verbose']);
+ok('…and the origin says the model came from this step', /model claude-opus-5-5 — from this step/.test(w2.origin));
+const w3 = J.judgeWant({ engine: 'Gemini' }, SHIPPED);
+eq('Claude flags never ride on another engine', [w3.engine, w3.args], ['gemini', '']);
+ok('…and the engine is named as this step\'s', /^judge Gemini — from this step/.test(w3.origin));
+eq('no engine = no refusal', J.judgeEngineRefusal(''), '');
+eq('claude can judge', J.judgeEngineRefusal('claude'), '');
+ok('‼️ an engine with no one-shot judge turn is refused by name', /"gemini" has no one-shot judge turn yet/.test(J.judgeEngineRefusal('gemini')));
+
+ok('‼️ no "passed through" left in the text judge', !/passed through/.test(src.slice(src.indexOf('private runJudge('), src.indexOf('private runVisionJudge('))));
+ok('‼️ a media step with no asset is unjudged, not passed', !/no downloaded asset to verify — passed through/.test(src));
+ok('both judges run on the step\'s own choice', (src.match(/judgeWant\(step, this\.opts\.judgeArgs\?\.\(\)\)/g) || []).length === 2);
+ok('the verdict line carries the judge and its origin', /\[\$\{judged\.judge\}\]/.test(src));
+const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+ok('the bridge refuses a judge engine at save time', /judgeEngineRefusal\(verifyIn\?\.engine\)/.test(ext));
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

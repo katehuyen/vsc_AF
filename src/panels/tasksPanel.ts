@@ -33,6 +33,7 @@ import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
 import { handleAfNav, htmlShell, promptSnippetMessage } from './base';
 import { full as afFull } from '../core/aftime';
 import { engineOf, engineTakesEffort } from '../core/consoleEngine';
+import { oneShotEngines } from '../core/oneShot';
 
 /**
  * Tasks — the agent-activity CONTROL PANEL.
@@ -989,7 +990,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
                 reportsCost: engineOf(e.id).reportsCost,
                 // X-330 — a task is a headless run unless it says otherwise, and
                 // there OpenCode takes its model's own variants.
-                takesEffort: engineTakesEffort(e.id, 'run')
+                takesEffort: engineTakesEffort(e.id, 'run'),
+                judges: oneShotEngines().includes(e.id)
             })),
             defaults: deps.launchDefaults(),
             // Only offered when the user actually has profiles: a picker whose
@@ -1060,6 +1062,8 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         contract: s.outputContract === 'json' ? 'json' : 'text',
         verifyCriteria: s.verify?.criteria ?? '',
         verifyRetries: s.verify?.retries ?? 1,
+        verifyEngine: s.verify?.engine ?? '',
+        verifyModel: s.verify?.model ?? '',
         parallel: !!s.parallel,
         whUrl: s.webhook?.url ?? '',
         whMethod: s.webhook?.method ?? 'POST',
@@ -1106,7 +1110,11 @@ export function stepFromDraft(
         parallel: raw.parallel === true ? true : undefined
     };
     const verify = str('verifyCriteria')
-        ? { criteria: str('verifyCriteria'), retries: Math.max(1, num('verifyRetries', 1)) }
+        ? {
+            criteria: str('verifyCriteria'), retries: Math.max(1, num('verifyRetries', 1)),
+            ...(str('verifyEngine') ? { engine: str('verifyEngine') } : {}),
+            ...(str('verifyModel') ? { model: str('verifyModel') } : {})
+        }
         : undefined;
     const named = (label: string): Pick<WorkflowStep, 'agentId' | 'agentName' | 'prompt' | 'mode'> =>
         ({ agentId: '', agentName: label, prompt: '', mode: 'headless' });

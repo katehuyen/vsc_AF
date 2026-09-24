@@ -104,7 +104,7 @@ function makeMediaTask(attempt) {
     eq('FAIL exhausted task failed', t.status, 'failed');
     eq('FAIL exhausted no regen', retried, null);
 
-    // No asset → pass-through (don't block)
+    // ‼️ M-42 — no asset is NOT a pass: nothing was looked at, so judge.unjudged decides.
     advanced = null;
     tm.runVisionJudge = async () => { throw new Error('should not be called'); };
     t = makeMediaTask(0);
@@ -112,7 +112,16 @@ function makeMediaTask(attempt) {
     const meta = media.readMediaMetas(outputsDir).find(m => m.taskId === t.id);
     fs.unlinkSync(meta.assetFiles[0]);
     await tm.verifyMediaThenAdvance(t, wf, wf.steps[0]);
-    eq('no asset → advance done', advanced, 'done');
+    eq('no asset, nobody to ask → it did not pass', [advanced, t.verified], ['failed', 'unjudged']);
+    ok('…and the archive says NOT JUDGED and why', /NOT JUDGED — there is no downloaded asset to look at/.test(fs.readFileSync(t.outputFile, 'utf8')));
+
+    advanced = null;
+    tm.opts.judgeUnjudged = () => 'pass';
+    t = makeMediaTask(0);
+    fs.unlinkSync(media.readMediaMetas(outputsDir).find(m => m.taskId === t.id).assetFiles[0]);
+    await tm.verifyMediaThenAdvance(t, wf, wf.steps[0]);
+    eq('no asset + judge.unjudged = pass → continues, said so', advanced, 'done');
+    delete tm.opts.judgeUnjudged;
 
     // finish() routes media+verify to the vision path (not the crashing text path)
     let calledVision = false;

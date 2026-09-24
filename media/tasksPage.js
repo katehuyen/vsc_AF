@@ -1137,7 +1137,7 @@
         const d = Object.assign({
             stype: 'agent', title: '', agent: '', prompt: '', smode: 'headless',
             onFail: 'stop', onFailStep: 1, runIf: '', contract: 'text',
-            verifyCriteria: '', verifyRetries: 1, parallel: false,
+            verifyCriteria: '', verifyRetries: 1, verifyEngine: '', verifyModel: '', parallel: false,
             whUrl: '', whMethod: 'POST', whBody: '', whHeader: '',
             whPoll: false, whPollUrl: '', whStatusField: 'status',
             whDone: 'succeeded|completed|complete|done|success', whInterval: 3,
@@ -1643,6 +1643,19 @@
 
     /** One <select>, from a launch.ts choice list. `id:''` is always "leave it
      *  alone", and it is spelled out rather than shown as an empty row. */
+    /** M-42 — this step's own judge (flex points judge.engine · judge.model); empty = the Farm Settings judge. */
+    function judgeRow(s) {
+        const engines = ((DATA.launch || {}).engines || []).filter(e => e.id !== 'claude').map(e => ({
+            id: e.id, label: e.label, off: !e.judges,
+            why: `A judge runs as a one-shot turn and ${e.label} has none yet, so it could not give a verdict.`
+        }));
+        const models = ntModels(s.verifyEngine || 'claude').filter(c => c.id);
+        return choiceSel('st-verifyEngine', 'Judge engine', [{ id: '', label: 'claude (default)' }].concat(engines),
+            s.verifyEngine || '', `${s.verifyEngine || 'claude'}\n\nWhich engine judges this step. A judge that cannot run or cannot open the asset gives no verdict — Farm Settings ▸ "If no judge can look at it" decides what happens then.`)
+            + choiceSel('st-verifyModel', 'Judge model', [{ id: '', label: 'Farm Settings judge args' }].concat(models),
+                s.verifyModel || '', `${s.verifyModel || 'the model in Farm Settings ▸ judge args'}\n\nThe model this step's judge runs on. Empty = the judge args in Farm Settings (claude-haiku by default).`);
+    }
+
     function choiceSel(id, label, list, value, title) {
         // ‼️ NO CHOICES = NO BOX (X-35). An engine that has no such setting —
         // Gemini has no reasoning effort at all — must not be given an empty
@@ -2435,7 +2448,7 @@
                     s.stype === 'media'
                         ? 'A vision model looks at the asset; FAIL regenerates it with the feedback. Empty = no check.'
                         : 'A cheap model judges the output; FAIL retries the step with the feedback. Empty = no check.', true)}
-                ${String(s.verifyCriteria || '').trim() ? numF('st-verifyRetries', 'Attempts on FAIL', s.verifyRetries, 'How many times it is redone before the step gives up.') : ''}
+                ${String(s.verifyCriteria || '').trim() ? numF('st-verifyRetries', 'Attempts on FAIL', s.verifyRetries, 'How many times it is redone before the step gives up.') + judgeRow(s) : ''}
             </div>` : ''}
             ${stepMsg ? `<div class="ntmsg warn">${C.esc(stepMsg)}</div>` : ''}
             <div class="ctl-row">
@@ -2463,7 +2476,7 @@
         // read and stored.
         ['stype', 'title', 'agent', 'prompt', 'smode', 'saccount',
             'sengine', 'smodel', 'seffort', 'spermissionMode', 'sproviderId', 'stier',
-            'onFail', 'runIf', 'contract', 'verifyCriteria',
+            'onFail', 'runIf', 'contract', 'verifyCriteria', 'verifyEngine', 'verifyModel',
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
             'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
@@ -4570,6 +4583,8 @@
                 ['stype', 'whMethod', 'whPoll', 'onFail'].forEach(id =>
                     byId('nt-st-' + id, 'change', () => { readStep(); render(); }));
                 byId('nt-st-verifyCriteria', 'change', () => { readStep(); render(); });
+                byId('nt-st-verifyEngine', 'change', () => { readStep(); composer.step.verifyModel = ''; render(); });
+                byId('nt-st-verifyModel', 'change', readStep);
             }
         }
 

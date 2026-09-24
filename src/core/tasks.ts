@@ -11,7 +11,7 @@ import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
 import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
-import { normalizeUnjudged, unjudgedOutcome, visionRoute } from './judgeEngines';
+import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionRoute } from './judgeEngines';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
     gateBlock, pauseExpired, Precondition
@@ -1156,7 +1156,7 @@ export interface WorkflowStep extends RunDimensions {
     /** 'json' runs the step with --output-format json and parses the result for handoff. */
     outputContract?: 'text' | 'json';
     /** Cheap-model quality gate: on FAIL the step is retried with the judge's feedback. */
-    verify?: { criteria: string; retries?: number };
+    verify?: { criteria: string; retries?: number } & StepJudge;
     /**
      * Webhook step: instead of claude, the step is an HTTP call. url/body/header
      * templates support {prev_output} {prev_text} {prev_json.x} {secret:NAME}.
@@ -5139,23 +5139,29 @@ export class TaskManager implements vscode.Disposable {
 
     // ---------- verification (A2) ----------
 
-    /** Cheap-model judge: returns PASS/FAIL + reason for a step output. */
-    private runJudge(cwd: string, criteria: string, body: string): Promise<{ pass: boolean; reason: string }> {
+    /**
+     * Cheap-model judge: PASS/FAIL + reason for a step output. ‼️ M-42 — a judge
+     * that could not run is `unjudged`, never a PASS nobody gave.
+     */
+    private runJudge(cwd: string, criteria: string, body: string, step?: StepJudge):
+        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string }> {
         return new Promise(resolve => {
-            const judgeArgs = (this.opts.judgeArgs?.() ?? '--model claude-haiku-4-5-20251001').trim();
+            const want = judgeWant(step, this.opts.judgeArgs?.());
+            const judge = want.origin;
             const prompt = sanitizePrompt(
                 `Sen bir kalite denetçisisin. Aşağıdaki ÇIKTI şu ÖLÇÜTÜ karşılıyor mu? ` +
                 `ÖLÇÜT: ${criteria} --- ÇIKTI: ${body.slice(0, 4000)} --- ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
-            void execOneShot({ cwd, args: judgeArgs, prompt, timeoutMs: 180_000 }).then(r => {
+            void execOneShot({ cwd, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000 }).then(r => {
                 if (r.error && !r.out) {
-                    resolve({ pass: true, reason: 'judge unavailable — passed through (' + r.error.slice(0, 80) + ')' });
+                    const why = 'the judge could not run (' + r.error.slice(0, 80) + ')';
+                    resolve({ pass: false, reason: why, unjudged: why, judge });
                     return;
                 }
                 const line = r.out.split('\n').find(l => l.trim()) ?? '';
                 const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
-                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
+                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge });
             });
         });
     }
@@ -5168,41 +5174,46 @@ export class TaskManager implements vscode.Disposable {
      * ‼️ M-42 — an asset the judging engine cannot open, or a judge that could
      * not run, is `unjudged` — never a PASS nobody looked at.
      */
-    private runVisionJudge(assetFile: string, criteria: string): Promise<{ pass: boolean; reason: string; unjudged?: string }> {
+    private runVisionJudge(assetFile: string, criteria: string, step?: StepJudge):
+        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string }> {
         return new Promise(resolve => {
-            const route = visionRoute(assetFile);
+            const want = judgeWant(step, this.opts.judgeArgs?.());
+            const judge = want.origin;
+            const route = visionRoute(assetFile, want.engine);
             if (!route.ok) {
-                resolve({ pass: false, reason: route.why, unjudged: route.why });
+                resolve({ pass: false, reason: route.why, unjudged: route.why, judge });
                 return;
             }
-            const judgeArgs = (this.opts.judgeArgs?.() ?? '--model claude-haiku-4-5-20251001').trim();
             const prompt = sanitizePrompt(
                 `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu Read aracıyla aç ve incele. ` +
                 `Şu ÖLÇÜTü karşılıyor mu? ÖLÇÜT: ${criteria}. ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
-            void execOneShot({ cwd: this.outputsDir, args: judgeArgs, prompt, timeoutMs: 180_000 }).then(r => {
+            void execOneShot({
+                cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000
+            }).then(r => {
                 if (r.error && !r.out) {
                     const why = 'the vision judge could not run (' + r.error.slice(0, 80) + ')';
-                    resolve({ pass: false, reason: why, unjudged: why });
+                    resolve({ pass: false, reason: why, unjudged: why, judge });
                     return;
                 }
                 const line = r.out.split('\n').filter(l => l.trim()).pop() ?? '';
                 const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
-                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
+                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge });
             });
         });
     }
 
     /** M-42 — a step no judge could look at: the user's judge.unjudged decides, never a silent PASS. */
-    private async settleUnjudged(task: FarmTask, w: FarmWorkflow, why: string, attempt: number): Promise<void> {
+    private async settleUnjudged(task: FarmTask, w: FarmWorkflow, why: string, attempt: number, label: string, judge?: string): Promise<void> {
         const behavior = normalizeUnjudged(this.opts.judgeUnjudged?.());
         const answer = behavior === 'ask' && this.opts.confirmApproval
-            ? await this.opts.confirmApproval({ title: `Vision QA could not judge "${task.title}"`, message: `${why}. Continue without a verdict?` })
+            ? await this.opts.confirmApproval({ title: `The judge could not judge "${task.title}"`, message: `${why}. Continue without a verdict?` })
             : undefined;
         const { pass, line } = unjudgedOutcome(behavior, why, answer);
         try {
-            fs.appendFileSync(task.outputFile as string, `\nVision verify (attempt ${attempt + 1}): ${line}\n`, 'utf8');
+            fs.appendFileSync(task.outputFile as string,
+                `\n${label} (attempt ${attempt + 1}): ${line}${judge ? ` [${judge}]` : ''}\n`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = 'unjudged';
         if (!pass) { task.status = 'failed'; }
@@ -5220,17 +5231,19 @@ export class TaskManager implements vscode.Disposable {
         const meta = readMediaMetas(this.outputsDir).find(m => m.taskId === task.id);
         const assetFile = meta?.assetFiles.find(f => fs.existsSync(f));
         const attempt = task.attempt ?? 0;
-        const judged = assetFile
-            ? await this.runVisionJudge(assetFile, step.verify!.criteria)
-            : { pass: true, reason: 'no downloaded asset to verify — passed through' };
-        if ('unjudged' in judged && judged.unjudged) {
-            await this.settleUnjudged(task, w, judged.unjudged, attempt);
+        if (!assetFile) {
+            await this.settleUnjudged(task, w, 'there is no downloaded asset to look at', attempt, 'Vision verify');
+            return;
+        }
+        const judged = await this.runVisionJudge(assetFile, step.verify!.criteria, step.verify);
+        if (judged.unjudged) {
+            await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Vision verify', judged.judge);
             return;
         }
         const { pass, reason } = judged;
         try {
             fs.appendFileSync(task.outputFile as string,
-                `\nVision verify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason}\n`, 'utf8');
+                `\nVision verify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = pass ? 'pass' : 'fail';
 
@@ -5263,11 +5276,15 @@ export class TaskManager implements vscode.Disposable {
         const agent = this.getAgents().find(a => a.id === task.agentId);
         const body = archivedOutputBody(fs.readFileSync(task.outputFile as string, 'utf8'));
         const attempt = task.attempt ?? 0;
-        const { pass, reason } = await this.runJudge(agent?.dir ?? process.cwd(),
-            step.verify!.criteria, body);
+        const judged = await this.runJudge(agent?.dir ?? process.cwd(), step.verify!.criteria, body, step.verify);
+        if (judged.unjudged) {
+            await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Verify', judged.judge);
+            return;
+        }
+        const { pass, reason } = judged;
         try {
             fs.appendFileSync(task.outputFile as string,
-                `\nVerify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason}\n`, 'utf8');
+                `\nVerify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = pass ? 'pass' : 'fail';
 

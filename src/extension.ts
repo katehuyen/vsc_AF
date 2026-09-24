@@ -229,6 +229,7 @@ import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, sessi
 import { providersOf, RUN_SELECTION_ARGS, runSelectionArgs, runSelected } from './core/runFilter';
 import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
+import { judgeEngineRefusal } from './core/judgeEngines';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -7839,6 +7840,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // chain fired. Same validator as `tasks.add`; the spread stays for the
         // webhook/media/browser blocks, which this does not touch.
         const dims = runDims(raw);
+        const verifyIn = raw.verify && typeof raw.verify === 'object' ? raw.verify as Record<string, unknown> : undefined;
+        const judgeNo = judgeEngineRefusal(verifyIn?.engine);
+        need(!judgeNo, `Step ${i + 1}: verify.engine — ${judgeNo}.`);
         return {
             ...passthrough,
             agentId: who.id, agentName: who.name,
@@ -15524,7 +15528,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?})} — advanced webhook/media/browser fields pass through as in the builder])',
+            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE})} — advanced webhook/media/browser fields pass through as in the builder])',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -15564,7 +15568,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'an unknown one is refused HERE rather than at fire time), '
                 + 'model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort()
                 + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("continue"|'
-                + '1-based step), runIf?, outputContract? ("json"), verify? ({criteria, retries?}), parallel?, '
+                + '1-based step), runIf?, outputContract? ("json"), verify? ({criteria, retries?, engine?, model?}), parallel?, '
                 + 'webhook?, media?, browser?, approval?, select?})',
             handler: (args) => {
                 const w = bridgeWorkflow(optStr(args, 'workflow') || argStr(args, 'id'));

@@ -710,6 +710,18 @@ const variants = () => ([
             r.query('#nt-stadd')[0].click();
         }
     },
+    // M-42 (2) — a step with a quality check grows its own judge row: engine (one with no judge turn is dead, said why) and model.
+    {
+        id: 'tasks-step-judge',
+        label: 'Tasks → a workflow step with a verify check, and its own judge engine + model (M-42)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Planı yaz', 'nt-st-verifyCriteria': 'en az 3 madde' }, 'nt-st-verifyCriteria');
+        }
+    },
     /**
      * ‼️ X-228 — …AND THE ONE BOX OF THE SIX THAT IS NOT DRAWN UNTIL SOMETHING
      * IS PICKED: THE TIER.
