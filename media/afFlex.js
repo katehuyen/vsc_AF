@@ -96,6 +96,18 @@
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
         judgeStep('engine', 'Judge engine', 'claude'),
         judgeStep('model', 'Judge model', ''),
+        // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
+        {
+            id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,
+            levels: {
+                workflow: { surface: 'media/afWorkflowInputs.js#wi-default', bridge: 'workflows.add:inputs.default' },
+                run: { surface: 'media/afWorkflowInputs.js#wi-run', bridge: 'workflows.run:inputs' }
+            }
+        },
+        {
+            id: 'trigger.inputs', label: 'What a trigger hands a workflow input', type: 'text', default: '', remembered: false,
+            levels: { run: { surface: 'media/afWorkflowInputs.js#wi-map', bridge: 'triggers.add:action.inputs' } }
+        },
         setting('judge.unjudged', 'If no judge can look at it', 'tri', 'ask', 'agentFarm.judgeUnjudged',
             { states: { ask: 'ask', auto: 'pass', never: 'stop' } }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),

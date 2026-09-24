@@ -1,3 +1,4 @@
+import { resolveInputs, WorkflowInput } from './workflowInputs';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -634,6 +635,8 @@ export interface MissionStep {
      *  workflow run for this step and observes it by its run id. */
     kind?: MissionActionKind;
     workflowId?: string;
+    /** M-38 — the input values the workflow run is started with */
+    inputs?: Record<string, string>;
     /** the real record a workflow step became — filled when the run starts */
     workflowRunId?: string;
     /**
@@ -1250,6 +1253,8 @@ export interface PlannerTaskReq {
      */
     kind?: MissionActionKind;
     workflowId?: string;
+    /** M-38 — the input values the workflow run is started with */
+    inputs?: Record<string, string>;
     /** ‼️ M-18 — what a `mission` unit is: the child objective to be born. */
     child?: ChildObjectiveReq;
     /** ‼️ M-19 — what a `conversation` unit is: the message this turn becomes. */
@@ -1355,7 +1360,7 @@ type PlannerDecisionCore =
      * not here, for the same reason a target id does — only the run knows what
      * this window actually has, and the lead is told the real list.
      */
-    | { action: 'run_workflow'; thought: string; workflow: string; ask?: string; criteria?: string[] }
+    | { action: 'run_workflow'; thought: string; workflow: string; ask?: string; criteria?: string[]; inputs?: Record<string, string> }
     /**
      * ‼️ M-18 — A NESTED OBJECTIVE IS A REAL RUN, not a bigger delegation. It
      * gets a lead of its own and comes back with a VERDICT rather than an
@@ -1725,8 +1730,12 @@ function parseRunWorkflow(c: ParseCtx): ParseResult {
     }
     const crit = readCriteriaIds(o.criteria, spec, '"run_workflow"', adaptive);
     if (!crit.ok) { return { ok: false, error: crit.error }; }
+    const inputs = o.inputs && typeof o.inputs === 'object' && !Array.isArray(o.inputs)
+        ? Object.fromEntries(Object.entries(o.inputs as Record<string, unknown>).map(([k, v]) => [k, String(v ?? '').slice(0, 2000)]))
+        : undefined;
     return done({
         action: 'run_workflow', thought, workflow,
+        ...(inputs && Object.keys(inputs).length ? { inputs } : {}),
         ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
         ...(crit.ids ? { criteria: crit.ids } : {})
     });
@@ -2237,6 +2246,15 @@ function prepareRunWorkflow(c: PrepareCtx): PrepareResult {
                 + '\nChoose one that exists or delegate the work. Reply with ONLY the JSON decision object.'
         };
     }
+    // ‼️ M-38 — a chain missing a required input is refused HERE, to the lead, with the reason.
+    const given = resolveInputs(wf.inputs, d.inputs);
+    if (!given.ok) {
+        return {
+            ledger: `R? run_workflow rejected — "${wf.title}" inputs`,
+            refusal: `"${wf.title}" cannot start: ${given.problems.join('; ')}.`
+                + '\nPass them as "inputs": {"<name>": "<value>"}, or choose another way. Reply with ONLY the JSON decision object.'
+        };
+    }
     return { tasks: [{
         agent: wf.title,
         title: d.ask ? `${wf.title} — ${d.ask.slice(0, 80)}` : `run workflow "${wf.title}"`,
@@ -2246,6 +2264,7 @@ function prepareRunWorkflow(c: PrepareCtx): PrepareResult {
         // serialised against other writers. The safe direction.
         readonly: false,
         kind: 'workflow', workflowId: wf.id,
+        ...(d.inputs ? { inputs: d.inputs } : {}),
         ...(d.criteria?.length ? { criteria: d.criteria } : {})
     }] };
 }
@@ -3266,7 +3285,7 @@ export interface MissionEngineDeps {
      * workflow store itself — it is the extension's, and a second reader of it
      * would be a second opinion about what exists.
      */
-    workflows?(): { id: string; title: string; steps: number }[];
+    workflows?(): { id: string; title: string; steps: number; inputs?: WorkflowInput[] }[];
     /**
      * ‼️ M-18 — THE PROJECT THIS RUN IS WORK FOR, if it is work for one.
      *
@@ -3928,7 +3947,9 @@ export class MissionEngine {
         const list = isAdaptive(this.spec) ? (this.deps.workflows?.() ?? []) : [];
         if (list.length) {
             blocks.push('## Workflows you may run\n'
-                + list.map(w => `- ${w.title} (${w.steps} step${w.steps === 1 ? '' : 's'})`).join('\n')
+                + list.map(w => `- ${w.title} (${w.steps} step${w.steps === 1 ? '' : 's'})`
+                    + (w.inputs?.length ? ` — inputs: ${w.inputs.map(i => `${i.name} (${i.type}${i.required ? ', required' : ''})`).join(', ')}` : '')).join('\n')
+                + '\nA workflow that lists inputs is given them as "inputs": {"<name>": "<value>"} on "run_workflow".'
                 + '\nThese are chains that already exist. Run one with "run_workflow" when it encodes the work you need;'
                 + ' you cannot compose a new one, and you do not drive its steps.\n');
         }
@@ -4914,6 +4935,7 @@ export class MissionEngine {
                     ...(intent ? { intent, ...(sources ? { sources } : {}) } : {}),
                     ...(t.kind && t.kind !== 'task' ? { kind: t.kind } : {}),
                     ...(t.workflowId ? { workflowId: t.workflowId } : {}),
+                    ...(t.inputs ? { inputs: t.inputs } : {}),
                     ...(t.child ? { child: t.child } : {}),
                     ...(t.message ? { message: t.message } : {}),
                     status: 'queued' as MissionStepStatus

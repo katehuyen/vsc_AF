@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.668.0 - Workflows take inputs, a dropped file reaches the first step; no judge passes what it never looked at (M-38, M-42) (2026-09-24)
+
+- **A workflow declares its inputs (M-38).** On the workflow form, a new Inputs
+  block: name, type (text · file · folder · choice · number · URL), default,
+  required, a line saying what it is. Any step reads one as `{input.name}` —
+  in its prompt, a webhook body, a browser goal, an approval message. A step
+  that reads an input nobody declared is refused when you save.
+- **Running one asks for them.** Pressing run on a workflow that takes inputs
+  opens its Run card under the row, each box already holding the last run's
+  value (else the input's default). From the palette or the tree, each input is
+  asked for in turn. A run missing a required input does not start and says
+  which one and why — the same sentence everywhere (page, palette, bridge,
+  trigger, mission).
+- **A trigger hands its firing to the workflow.** A watch trigger now knows
+  WHICH file changed: `{file}` works in any trigger prompt, and a trigger that
+  runs a workflow maps what it knows onto the workflow's inputs — `{file}`,
+  `{watch}`, `{payload}`, `{payload.a.b}` or plain text — on the trigger form.
+  Left unmapped, the changed file goes to the first file input and the watched
+  path to the first folder input. A trigger that cannot fill a required input
+  is skipped and says why on its row. Measured end to end: a file dropped into
+  a watched folder arrives in the first step's prompt.
+- **Missions can pass inputs.** An adaptive mission's lead sees each workflow's
+  inputs and passes them on `run_workflow` (`"inputs": {"clip": "…"}`); a chain
+  that would miss one is refused to the lead with the reason, before it starts.
+- **Bridge:** `workflows.add` / `workflows.update` take `inputs`,
+  `workflows.run` takes `inputs` (refused with the reason when one is missing),
+  `workflows.list` shows them and the last run's values, `triggers.add` /
+  `triggers.edit` take the mapping, and `triggers.fire` takes `file` / `payload`
+  to test it by hand (a skipped firing answers `fired:false` and the reason).
+- **The vision judge never PASSes what it could not look at (M-42).** It used to
+  hand every asset to Claude, which cannot open video or audio, and a judge
+  that could not run said "passed through" — a quality gate on a video step
+  passed with nothing looked at. Now an asset the judging engine cannot open,
+  a judge that could not run, and a media step with no downloaded asset are
+  NOT JUDGED, never PASS. What happens then is yours: Farm Settings ▸ Flow &
+  Content ▸ "If no judge can look at it" — ask me (default) · pass it through ·
+  stop. The text judge that could not run no longer passes either.
+- **Every step chooses its own judge (M-42).** A step with a quality check has
+  Judge engine and Judge model boxes; empty = the Farm Settings judge. An
+  engine that has no judge turn yet is shown dead with the reason and refused
+  on the bridge. Every verdict line in the run's output ends with which judge
+  gave it and where that choice came from.
+
 ## 3.667.0 - Farm Settings ▸ Flow & Content: every preference in one place, with where it came from (U-152) (2026-09-24)
 
 - **A new Farm Settings section, Flow & Content (U-152).** One row per

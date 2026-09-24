@@ -395,6 +395,21 @@ const plan = () => ([
     }
 ]);
 
+/** M-38 — a workflow row that takes inputs, and what its last run was given. */
+const wfWithInputs = () => ({
+    id: 'w9', kind: 'workflow', title: 'Klip kes',
+    when: 'when you run it (or a trigger does)', agentName: '', model: '', engine: '',
+    guard: '', hasGuard: false, switchable: false, enabled: true,
+    cost7d: 0, runs7d: 1, skipped7d: 0, skipRate: 0, lastRunAt: NOW - 7200e3,
+    lastNote: '1 step(s)', issues: [], overdue: '',
+    inputs: [
+        { name: 'clip', type: 'file', required: true, description: 'the clip to cut' },
+        { name: 'size', type: 'choice', choices: ['short', 'long'], default: 'short' }
+    ],
+    lastInputs: { clip: 'D:/in/2026-09-24_tanitim.mp4' },
+    detail: { prompt: '', target: '', timing: '', steps: [], missed: '', setup: [] }
+});
+
 const planData = () => {
     const d = data();
     return Object.assign(d, {
@@ -708,6 +723,50 @@ const variants = () => ([
             // `tasks-rounds-schedule`: the composer opens on a task.
             drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
             r.query('#nt-stadd')[0].click();
+        }
+    },
+    // M-38 — a workflow's Inputs block on its form: one file input (required), one choice with a default.
+    {
+        id: 'tasks-wf-inputs',
+        label: 'Tasks → a workflow form with its Inputs block — a required file, a choice with a default (M-38)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w9', title: 'Klip kes', stepIdx: null,
+                    steps: [{ stype: 'agent', title: 'Kes', agent: 'developer', prompt: 'Şu klibi kes: {input.clip} ({input.size})', smode: 'headless' }],
+                    inputs: [
+                        { name: 'clip', type: 'file', required: true, description: 'the clip to cut' },
+                        { name: 'size', type: 'choice', choices: ['short', 'long'], default: 'short' }
+                    ]
+                }
+            });
+        }
+    },
+    // M-38 — run pressed on a workflow that takes inputs: its Run card, prefilled from the last run.
+    {
+        id: 'tasks-wf-runcard',
+        label: 'Tasks → Plan → run on a workflow with inputs opens its Run card, prefilled from the last run (M-38)',
+        data: Object.assign(data(), {
+            tab: 'plan', plan: [wfWithInputs()],
+            workflows: [{ id: 'w9', title: 'Klip kes', steps: 1, inputs: wfWithInputs().inputs }]
+        }),
+        act: (r) => { r.query('[data-plan="run"][data-kind="workflow"]')[0].click(); }
+    },
+    // M-38 — a trigger that runs that workflow: what it hands each input when it fires.
+    {
+        id: 'tasks-wf-triggermap',
+        label: 'Tasks → a trigger running a workflow with inputs, and the mapping rows it grows (M-38)',
+        data: Object.assign(data(), {
+            tab: 'plan', plan: [wfWithInputs()],
+            workflows: [{ id: 'w9', title: 'Klip kes', steps: 1, inputs: wfWithInputs().inputs }]
+        }),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'trigger' }, 'nt-kind');
+            drive(r, { 'nt-act': 'workflow' }, 'nt-act');
+            drive(r, { 'nt-workflowId': 'w9' }, 'nt-workflowId');
         }
     },
     // M-42 (2) — a step with a quality check grows its own judge row: engine (one with no judge turn is dead, said why) and model.

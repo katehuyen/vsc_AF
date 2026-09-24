@@ -116,7 +116,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afFlexSettings.js — the Farm Settings "Flow & Content" card (U-152).
     'afFlexSettings.js',
     // afSupervisor.js — the retry supervisor's boxes (M-13).
-    'afSupervisor.js'];
+    'afSupervisor.js',
+    // afWorkflowInputs.js — a workflow's inputs: form block, Run card, trigger mapping (M-38).
+    'afWorkflowInputs.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

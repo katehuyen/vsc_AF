@@ -12,6 +12,7 @@ import { normalizeFinishSound } from './alertVoices';
 import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
 import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionRoute } from './judgeEngines';
+import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
     gateBlock, pauseExpired, Precondition
@@ -1208,6 +1209,8 @@ export interface Handoff {
     file?: string;
     text?: string;
     json?: unknown;
+    /** M-38 — the run's input values, set on every step from the run record */
+    inputs?: Record<string, string>;
 }
 
 export interface FarmTrigger {
@@ -1224,7 +1227,7 @@ export interface FarmTrigger {
     hookAgent?: string;
     action:
         | ({ kind: 'task'; agentId: string; agentName: string; title: string; prompt: string; mode: TaskMode } & RunDimensions)
-        | { kind: 'workflow'; workflowId: string }
+        | { kind: 'workflow'; workflowId: string; /** M-38 — input → {file} {watch} {payload} {payload.x} */ inputs?: Record<string, string> }
         /** F2: no fixed agent — the dispatcher routes each firing to the best agent. */
         | ({ kind: 'dispatch'; title: string; prompt: string; mode: TaskMode } & RunDimensions);
     debounceSec: number;
@@ -1249,6 +1252,10 @@ export interface FarmWorkflow {
     id: string;
     title: string;
     steps: WorkflowStep[];
+    /** M-38 — what it is given when it starts; a step reads one as {input.name} */
+    inputs?: WorkflowInput[];
+    /** M-38 — the last run's values, which the Run card is prefilled with (remembered) */
+    lastInputs?: Record<string, string>;
 }
 
 /**
@@ -1556,6 +1563,14 @@ interface StoreShape {
  * whose work it is, and — once there is one — how it ended. The task rows are
  * still what says whether it is running NOW; this says everything they cannot.
  */
+/** How a workflow run is started: its project, and (M-38) the input values it is given. */
+export interface WorkflowRunOpts {
+    projectId?: string | null;
+    inputs?: Record<string, unknown>;
+    /** who gave the values — a trigger's are named as such in the run's origin */
+    inputSource?: 'run' | 'trigger';
+}
+
 interface WorkflowRunRecord {
     workflowId: string;
     title: string;
@@ -1566,6 +1581,8 @@ interface WorkflowRunRecord {
      *  chain that reached its end, a first step whose agent was gone. Cleared
      *  when the run is resumed, because a resumed run has not ended. */
     ended?: { status: WorkflowRunStatus; reason?: string; stepIndex?: number; at: number };
+    /** M-38 — the input values the run started with; persisted so {input.x} survives a reload */
+    inputs?: Record<string, string>;
 }
 
 export interface TaskManagerOptions {
@@ -6002,8 +6019,8 @@ export class TaskManager implements vscode.Disposable {
 
     // ---------- workflows ----------
 
-    addWorkflow(title: string, steps: WorkflowStep[]): FarmWorkflow {
-        const workflow: FarmWorkflow = { id: newId(), title, steps };
+    addWorkflow(title: string, steps: WorkflowStep[], inputs?: WorkflowInput[]): FarmWorkflow {
+        const workflow: FarmWorkflow = { id: newId(), title, steps, ...(inputs?.length ? { inputs } : {}) };
         this.workflows.push(workflow);
         this.save();
         return workflow;
@@ -6086,7 +6103,7 @@ export class TaskManager implements vscode.Disposable {
      * thing that makes the run findable afterwards. `undefined` means nothing
      * started — an empty chain — rather than a run nobody can name.
      */
-    runWorkflow(w: FarmWorkflow, opts?: { projectId?: string | null }): string | undefined {
+    runWorkflow(w: FarmWorkflow, opts?: WorkflowRunOpts): string | undefined {
         const runId = this.prepareWorkflowRun(w, opts);
         if (!runId) { return undefined; }
         this.startWorkflowRun(runId, w);
@@ -6109,8 +6126,14 @@ export class TaskManager implements vscode.Disposable {
      * it, and does so once. Anything that has no bond to persist keeps calling
      * `runWorkflow` and cannot tell the difference.
      */
-    prepareWorkflowRun(w: FarmWorkflow, opts?: { projectId?: string | null }): string | undefined {
+    prepareWorkflowRun(w: FarmWorkflow, opts?: WorkflowRunOpts): string | undefined {
         if (!w.steps.length) { return undefined; }
+        // ‼️ M-38 — a run missing a required input does not start; the caller
+        // asks workflowRunRefusal first to say which one and why.
+        const given = resolveInputs(w.inputs, opts?.inputs, opts?.inputSource);
+        if (!given.ok) { return undefined; }
+        const typed = Object.keys(given.values).filter(k => given.origin[k] !== 'workflow');
+        if (typed.length) { w.lastInputs = Object.fromEntries(typed.map(k => [k, given.values[k]])); }
         const runId = newId();
         this.runCounts.set(runId, 0);
         // ‼️ M-18/X-73 — WHOSE WORK THIS CHAIN IS, DECIDED ONCE, HERE. A chain
@@ -6124,9 +6147,17 @@ export class TaskManager implements vscode.Disposable {
             workflowId: w.id, title: w.title, startedAt: Date.now(),
             project: (opts && 'projectId' in opts)
                 ? (opts.projectId ?? null)
-                : (this.opts.activeProjectId?.() ?? null)
+                : (this.opts.activeProjectId?.() ?? null),
+            ...(Object.keys(given.values).length ? { inputs: given.values } : {})
         });
         return runId;
+    }
+
+    /** M-38 — why this workflow cannot start with these inputs; '' when it can. */
+    workflowRunRefusal(w: FarmWorkflow, inputs?: Record<string, unknown>, source: 'run' | 'trigger' = 'run'): string {
+        if (!w.steps.length) { return `"${w.title}" has no steps — there was nothing to start.`; }
+        const v = resolveInputs(w.inputs, inputs, source);
+        return v.ok ? '' : `"${w.title}" did not start: ${v.problems.join('; ')}.`;
     }
 
     /**
@@ -6312,7 +6343,8 @@ export class TaskManager implements vscode.Disposable {
             }
             return typeof cur === 'string' ? cur : JSON.stringify(cur ?? '');
         });
-        return out;
+        // M-38 — last, so a value a run was given is never re-read as a {prev_*} placeholder
+        return fillInputs(out, handoff.inputs);
     }
 
     private runIfMatches(runIf: string, handoff: Handoff): boolean {
@@ -6329,6 +6361,7 @@ export class TaskManager implements vscode.Disposable {
 
     /** Advance a run to a step, honoring runIf conditions and the loop guard. */
     private routeToStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
+        handoff.inputs = this.runRecords.get(runId)?.inputs;
         if (index < 0 || index >= w.steps.length) {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);

@@ -34,6 +34,7 @@ import { handleAfNav, htmlShell, promptSnippetMessage } from './base';
 import { full as afFull } from '../core/aftime';
 import { engineOf, engineTakesEffort } from '../core/consoleEngine';
 import { oneShotEngines } from '../core/oneShot';
+import { checkTriggerMapping, checkWorkflowInputs, WorkflowInput } from '../core/workflowInputs';
 
 /**
  * Tasks — the agent-activity CONTROL PANEL.
@@ -220,6 +221,9 @@ interface PlanRow {
     id: string;
     kind: 'schedule' | 'trigger' | 'workflow' | 'template';
     title: string;
+    /** M-38 — a workflow's inputs and the last run's values (the Run card) */
+    inputs?: WorkflowInput[];
+    lastInputs?: Record<string, string>;
     /** when/how it fires, in the user's words */
     when: string;
     nextAt?: number;
@@ -611,6 +615,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
         rows.push({
             id: w.id, kind: 'workflow', title: w.title,
             when: 'when you run it (or a trigger does)',
+            inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {},
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -907,7 +912,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         // the key, so the option list was always empty — and editing a trigger
         // that already ran a workflow fell back to the first option, quietly
         // turning it into a task trigger on the next save.
-        workflows: m.workflows.map(w => ({ id: w.id, title: w.title, steps: w.steps.length })),
+        workflows: m.workflows.map(w => ({ id: w.id, title: w.title, steps: w.steps.length, inputs: w.inputs ?? [] })),
         // Production scenes a media step can file its assets under.
         scenes: deps.scenes ? deps.scenes() : [],
         // ---- what the New-task form offers. One vocabulary with the session
@@ -1452,6 +1457,7 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         watchPath: t.watchPath ?? '', hookEvent: t.hookEvent ?? 'stop',
         hookAgent: t.hookAgent ?? '', token: t.token ?? '',
         act: a.kind, workflowId: a.kind === 'workflow' ? a.workflowId : '',
+        wiMap: a.kind === 'workflow' ? { ...(a.inputs ?? {}) } : {},
         agent: a.kind === 'task' ? a.agentName : fallbackAgent,
         prompt: a.kind === 'workflow' ? '' : a.prompt,
         mode: a.kind === 'workflow' ? 'headless' : a.mode,
@@ -1733,8 +1739,8 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
-                : { mode2: 'new', steps: [], stepIdx: step === 'new' ? -1 : null, step: null });
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                : { mode2: 'new', steps: [], inputs: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
         const tpl = node?.template;
@@ -1911,7 +1917,9 @@ export class TasksPanel {
                 if (!m.workflows.some(w => w.id === str('workflowId'))) {
                     this.say('Pick the workflow this trigger runs.'); return;
                 }
-                action = { kind: 'workflow', workflowId: str('workflowId') };
+                const map = checkTriggerMapping(m.workflows.find(w => w.id === str('workflowId'))?.inputs, item.wiMap ?? undefined);
+                if (map.error) { this.say(`Inputs: ${map.error}.`); return; }
+                action = { kind: 'workflow', workflowId: str('workflowId'), ...(map.mapping ? { inputs: map.mapping } : {}) };
             } else if (act === 'dispatch') {
                 action = { kind: 'dispatch', title: str('title'), prompt: str('prompt'), mode, ...dims() };
             } else {
@@ -1960,6 +1968,8 @@ export class TasksPanel {
                 if (built.error) { this.say(built.error); return; }
                 steps.push(built.step as WorkflowStep);
             }
+            const ins = checkWorkflowInputs(item.inputs, steps);
+            if (ins.error) { this.say(`Inputs: ${ins.error}.`); return; }
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -1967,10 +1977,11 @@ export class TasksPanel {
             if (existing) {
                 existing.title = str('title');
                 existing.steps = steps;
+                if (ins.inputs.length) { existing.inputs = ins.inputs; } else { delete existing.inputs; }
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
-                m.addWorkflow(str('title'), steps);
+                m.addWorkflow(str('title'), steps, ins.inputs);
                 done(`Workflow “${str('title')}” created — ${note}`);
             }
             return;
@@ -2027,6 +2038,8 @@ export class TasksPanel {
         title?: string; cols?: unknown[];
         index?: number; task?: unknown; item?: unknown;
         quietFrom?: string; quietTo?: string; reason?: string; month?: string;
+        /** M-38 — the Run card's values for a workflow's inputs */
+        inputs?: Record<string, unknown>;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -2064,7 +2077,15 @@ export class TasksPanel {
                     case 'trigger:toggle': run('agentfarm.toggleTrigger', node); break;
                     case 'trigger:run': run('agentfarm.fireTrigger', node); break;
                     case 'trigger:edit': this.compose('trigger', msg.id); break;
-                    case 'workflow:run': run('agentfarm.runWorkflow', node); break;
+                    case 'workflow:run': {
+                        const w = node.workflow;
+                        const given = msg.inputs && typeof msg.inputs === 'object' ? msg.inputs as Record<string, unknown> : undefined;
+                        if (!w || !given) { run('agentfarm.runWorkflow', node); break; }
+                        const refusal = this.deps.manager.workflowRunRefusal(w, given);
+                        if (refusal) { this.say(refusal); break; }
+                        this.deps.manager.runWorkflow(w, Object.keys(given).length ? { inputs: given } : undefined);
+                        break;
+                    }
                     // ‼️ A workflow's Edit is the workflow — its name AND its
                     // chain. It used to be `addWorkflowStep`, so the one thing
                     // "edit" could not do on a workflow was edit it.

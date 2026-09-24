@@ -230,6 +230,7 @@ import { providersOf, RUN_SELECTION_ARGS, runSelectionArgs, runSelected } from '
 import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { judgeEngineRefusal } from './core/judgeEngines';
+import { checkTriggerMapping, checkWorkflowInputs } from './core/workflowInputs';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -6222,10 +6223,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // either never began or is owned by exactly one action.
                         // Starting it is idempotent, so the order can be
                         // replayed from wherever it broke.
-                        const wRunId = taskManager.prepareWorkflowRun(wf, { projectId: spec.projectId });
+                        const wRunId = taskManager.prepareWorkflowRun(wf, { projectId: spec.projectId, inputs: step.inputs });
                         if (!wRunId) {
                             step.status = 'failed';
-                            step.note = 'the workflow has no steps';
+                            step.note = taskManager.workflowRunRefusal(wf, step.inputs) || 'the workflow has no steps';
                             step.failure = missionFailure('target-missing', step, step.note);
                             continue;
                         }
@@ -6697,7 +6698,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // workflow added or deleted while a long objective is running would
         // otherwise be a list the lead is told about and cannot use.
         workflows: () => taskManager.workflows.map(w => ({
-            id: w.id, title: w.title, steps: w.steps.length
+            id: w.id, title: w.title, steps: w.steps.length, ...(w.inputs?.length ? { inputs: w.inputs } : {})
         })),
         ancestry: () => missionAncestry(run),
         // ‼️ M-19 — CAN THIS PARTICIPANT'S LANE REALLY BE CONTINUED? Resolved
@@ -7821,6 +7822,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * approval / select step carries no agent of its own — its `agentName` is
      * the label its run is filed under, which is why one is not demanded.
      */
+    /** M-38 — run a workflow by hand: each declared input is asked for, prefilled with the last run's value, else its default. */
+    const runWorkflowAsking = async (w: FarmWorkflow, given?: Record<string, unknown>): Promise<void> => {
+        const values: Record<string, unknown> = { ...(given ?? {}) };
+        if (!given) {
+            for (const i of w.inputs ?? []) {
+                const v = await vscode.window.showInputBox({
+                    title: `${w.title} — ${i.name}${i.required ? ' (required)' : ''}`,
+                    prompt: i.description || `${i.type} — a step reads it as {input.${i.name}}`,
+                    value: w.lastInputs?.[i.name] ?? i.default ?? '', ignoreFocusOut: true
+                });
+                if (v === undefined) { return; }
+                if (v !== '') { values[i.name] = v; }
+            }
+        }
+        const refusal = taskManager.workflowRunRefusal(w, values);
+        if (refusal) { void vscode.window.showWarningMessage(`Agent Farm: ${refusal}`); return; }
+        taskManager.runWorkflow(w, Object.keys(values).length ? { inputs: values } : undefined);
+    };
     const bridgeStep = (raw: Record<string, unknown>, i: number): WorkflowStep => {
         need(raw && typeof raw === 'object' && !Array.isArray(raw), `Step ${i + 1} must be an object.`);
         const stepTitle = String(raw.title ?? '').trim();
@@ -8776,14 +8795,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.list',
-            describe: 'Defined workflows. args: none',
+            describe: 'Defined workflows, with the inputs each takes (M-38). args: none',
             handler: () => taskManager.workflows.map(w => ({
-                id: w.id, title: w.title, steps: w.steps.length
+                id: w.id, title: w.title, steps: w.steps.length,
+                ...(w.inputs?.length ? { inputs: w.inputs } : {}),
+                ...(w.lastInputs ? { lastInputs: w.lastInputs } : {})
             }))
         },
         {
             op: 'workflows.run',
-            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project)',
+            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
@@ -8791,8 +8812,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // X-73: the run's project is settled at the start and every step
                 // of it — webhook and approval rows included — is filed there.
                 const proj = optStr(args, 'project');
-                const runId = taskManager.runWorkflow(w as FarmWorkflow,
-                    proj ? { projectId: proj === 'none' ? undefined : proj } : undefined);
+                const inputs = args.inputs && typeof args.inputs === 'object' && !Array.isArray(args.inputs)
+                    ? args.inputs as Record<string, unknown> : undefined;
+                const refusal = taskManager.workflowRunRefusal(w as FarmWorkflow, inputs);
+                need(!refusal, refusal);
+                const runId = taskManager.runWorkflow(w as FarmWorkflow, {
+                    ...(proj ? { projectId: proj === 'none' ? undefined : proj } : {}),
+                    ...(inputs ? { inputs } : {})
+                });
                 need(runId, `"${(w as FarmWorkflow).title}" has no steps — there was nothing to start.`);
                 return { started: (w as FarmWorkflow).title, runId };
             }
@@ -9983,7 +10010,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // duplicate; this handler is the UNION of the two, so nothing the
             // older shape accepted has been taken away.
             op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.'
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch}, {file} (the path that changed) and {payload}. A workflow action may map its firing onto the workflow\'s inputs: inputs? ({"<input>": "{file}" | "{watch}" | "{payload}" | "{payload.a.b}" | any text}) — unstated, the changed file goes to the first file input and the watched path to the first folder input. A webhook trigger returns its POST url.'
                 + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + BATON_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
@@ -10028,7 +10055,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const ref = from('workflow') || from('workflowId');
                     const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
                     need(w, 'Workflow not found — workflows.list shows current ones.');
-                    action = { kind: 'workflow', workflowId: (w as FarmWorkflow).id };
+                    const map = checkTriggerMapping((w as FarmWorkflow).inputs, nested ? nested.inputs : args.inputs);
+                    need(!map.error, `inputs: ${map.error}.`);
+                    action = { kind: 'workflow', workflowId: (w as FarmWorkflow).id, ...(map.mapping ? { inputs: map.mapping } : {}) };
                 } else if (actKind === 'dispatch') {
                     action = {
                         kind: 'dispatch', title: from('title') || title,
@@ -10142,13 +10171,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.fire',
-            describe: 'Fire a trigger now (manual test run of its action). args: id or title',
+            describe: 'Fire a trigger now (manual test run of its action). args: id or title, file? (the path handed to the action as {file} — what a watch trigger passes when a file changes), payload? (as a webhook would send it). A workflow trigger whose inputs cannot be filled is skipped: fired:false and the reason.',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
                 need(t, 'Trigger not found — triggers.list shows current ones.');
-                triggerManager.fire(t as FarmTrigger, 'manual');
-                return { fired: (t as FarmTrigger).title };
+                const fired = triggerManager.fire(t as FarmTrigger, 'manual', args.payload, optStr(args, 'file') || undefined);
+                return fired ? { fired: (t as FarmTrigger).title } : { fired: false, skipped: (t as FarmTrigger).lastSkipReason };
             }
         },
         {
@@ -15399,6 +15428,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (tr.action.kind !== 'workflow') { tr.action.title = newTitle; }
                     updated.push('title');
                 }
+                if (args.inputs !== undefined) {
+                    need(tr.action.kind === 'workflow', 'inputs maps a trigger\'s firing onto a workflow\'s inputs — this trigger runs no workflow.');
+                    const wa = tr.action as { kind: 'workflow'; workflowId: string; inputs?: Record<string, string> };
+                    const map = checkTriggerMapping(taskManager.workflows.find(x => x.id === wa.workflowId)?.inputs, args.inputs);
+                    need(!map.error, `inputs: ${map.error}.`);
+                    if (map.mapping) { wa.inputs = map.mapping; } else { delete wa.inputs; }
+                    updated.push('inputs');
+                }
                 if (optStr(args, 'prompt')) {
                     need(tr.action.kind !== 'workflow', 'A workflow trigger has no prompt — edit the workflow instead.');
                     if (tr.action.kind !== 'workflow') { tr.action.prompt = optStr(args, 'prompt'); }
@@ -15528,7 +15565,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE})} — advanced webhook/media/browser fields pass through as in the builder])',
+            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE})} — advanced webhook/media/browser fields pass through as in the builder]), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -15536,7 +15573,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const stepsIn = Array.isArray(args.steps) ? args.steps as Record<string, unknown>[] : [];
                 need(stepsIn.length, 'steps is required — at least one step.');
                 const steps: WorkflowStep[] = stepsIn.map(bridgeStep);
-                const w = taskManager.addWorkflow(title, steps);
+                const ins = checkWorkflowInputs(args.inputs, steps);
+                need(!ins.error, `inputs: ${ins.error}.`);
+                const w = taskManager.addWorkflow(title, steps, ins.inputs);
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }
         },
@@ -15544,7 +15583,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'workflows.update',
             describe: 'Rename a workflow and/or replace its whole step chain — the same save the page\'s '
                 + 'workflow form makes. args: id or title, newTitle?, steps? (the FULL list, same shape as '
-                + 'workflows.add; omit to leave the chain alone, [] to empty it)',
+                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them)',
             handler: (args) => {
                 const w = bridgeWorkflow(optStr(args, 'id') || argStr(args, 'title'));
                 const newTitle = optStr(args, 'newTitle');
@@ -15553,9 +15592,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `A workflow titled "${newTitle}" already exists.`);
                     w.title = newTitle;
                 }
-                if (Array.isArray(args.steps)) {
-                    w.steps = (args.steps as Record<string, unknown>[]).map(bridgeStep);
-                }
+                const steps = Array.isArray(args.steps) ? (args.steps as Record<string, unknown>[]).map(bridgeStep) : w.steps;
+                const ins = checkWorkflowInputs(args.inputs === undefined ? w.inputs : args.inputs, steps);
+                need(!ins.error, `inputs: ${ins.error}.`);
+                w.steps = steps;
+                if (ins.inputs.length) { w.inputs = ins.inputs; } else { delete w.inputs; }
                 taskManager.persist();
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }
@@ -38335,7 +38376,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode) => {
-            if (node?.kind === 'workflow') { taskManager.runWorkflow(node.workflow); }
+            if (node?.kind === 'workflow') { void runWorkflowAsking(node.workflow); }
         }),
 
         vscode.commands.registerCommand('agentfarm.renameWorkflow', (node?: TaskNode) => {

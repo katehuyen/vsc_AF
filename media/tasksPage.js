@@ -850,7 +850,11 @@
                 <button class="mini secondary" data-plan="edit" data-kind="${p.kind}" data-id="${p.id}" title="edit">edit</button>
                 <button class="mini secondary" data-plan="delete" data-kind="${p.kind}" data-id="${p.id}" title="delete">✕</button>
             </td>
-        </tr>${open ? planDetailHtml(p) : ''}`;
+        </tr>${wiRun && wiRun.id === p.id && window.AFWorkflowInputs ? `<tr class="detail"><td colspan="10"><div class="detailbox">
+            <div class="ntsub"><b>Run “${C.esc(p.title)}” with</b> <span class="muted">each box starts at the last run's value, else the input's default</span></div>
+            ${window.AFWorkflowInputs.runCard(p.inputs, p.lastInputs, C)}
+            <div class="ctl-row"><button id="nt-wi-go">Run with these</button><button class="secondary" id="nt-wi-cancel">Cancel</button></div>
+        </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
 
     function planDetailHtml(p) {
@@ -1059,6 +1063,8 @@
      * produce the same object.
      */
     let composer = null;      // null = closed; an object = the draft
+    let wiRun = null;         // M-38 — the open Run card: { id, values } of a workflow that takes inputs
+    const wfInputs = id => ((DATA.workflows || []).find(w => w.id === id) || {}).inputs || [];
     let composerMsg = '';     // a refusal or a confirmation, shown in the card
     let composerDup = false;  // the host says an identical task is already queued
     /**
@@ -1238,6 +1244,9 @@
         };
         const draft = Object.assign(base, seed || {});
         if (!Array.isArray(draft.steps)) { draft.steps = []; }
+        // M-38 — a workflow's inputs are kept as drafts; a trigger's mapping as {input: template}
+        draft.inputs = window.AFWorkflowInputs ? window.AFWorkflowInputs.toDrafts(draft.inputs) : [];
+        if (!draft.wiMap || typeof draft.wiMap !== 'object') { draft.wiMap = {}; }
         // A seed from "run that one again" or from a stored task can carry
         // anything; a rounds list that is not a list is no rounds.
         if (!Array.isArray(draft.rounds)) { draft.rounds = []; }
@@ -2054,6 +2063,7 @@
                     c.act, 'What happens when it fires.')}
                 ${c.act === 'workflow' ? pickSel('workflowId', 'Workflow', wfOpts, c.workflowId, 'Which chain runs.') : ''}
             </div>
+            ${c.act === 'workflow' && window.AFWorkflowInputs ? window.AFWorkflowInputs.mapRows(wfInputs(c.workflowId), c.wiMap, C) : ''}
             <div class="ntsec"><b>Brakes</b>
                 <span class="muted small">Frequency brakes. They cap how often it can fire; the guard above caps
                     WHETHER it should.</span></div>
@@ -2218,13 +2228,14 @@
         return `<div class="ntsec"><b>Steps</b>
             <span class="muted small">Each step runs after the one above and is handed its output —
                 <code>${PREV}</code> in a prompt inserts the previous step's output file,
-                <code>{prev_text}</code> its text and <code>{prev_json.x}</code> a field of it.</span></div>
+                <code>{prev_text}</code> its text, <code>{prev_json.x}</code> a field of it and <code>{input.name}</code> one of the inputs below.</span></div>
             ${c.steps.length
                 ? `<ol class="wfsteps">${list}</ol>`
                 : '<div class="ntmsg">No steps yet. A workflow with none is saved, but running it does nothing.</div>'}
             ${c.stepIdx === null
                 ? '<div class="ctl-row"><button class="secondary" id="nt-stadd">+ Add a step</button></div>'
-                : stepCardHtml(c)}`;
+                : stepCardHtml(c)}
+            ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}`;
     }
 
     /**
@@ -3269,7 +3280,9 @@
         }
         // One message for every other kind: the host knows which manager method
         // a kind belongs to, and the page does not have to.
-        post({ type: 'plan-save', item: withRetry(Object.assign({}, composer)) });
+        const item = withRetry(Object.assign({}, composer));
+        if (item.kind === 'workflow' && window.AFWorkflowInputs) { item.inputs = window.AFWorkflowInputs.fromDrafts(composer.inputs); }
+        post({ type: 'plan-save', item });
     }
 
     // -------------------------------------------------------------- RUN side
@@ -4186,8 +4199,31 @@
         // plan actions
         click('[data-plan]', e => {
             const el = e.currentTarget;
+            // M-38 — a workflow that takes inputs opens its Run card instead of starting blind
+            const ins = el.dataset.plan === 'run' && el.dataset.kind === 'workflow' ? wfInputs(el.dataset.id) : [];
+            if (ins.length) {
+                const p = DATA.plan.find(x => x.kind === 'workflow' && x.id === el.dataset.id) || {};
+                wiRun = { id: el.dataset.id, values: Object.fromEntries(ins.map(i => [i.name, (p.lastInputs || {})[i.name] ?? i.default ?? ''])) };
+                render();
+                return;
+            }
             post({ type: 'plan', act: el.dataset.plan, kind: el.dataset.kind, id: el.dataset.id });
         });
+        if (window.AFWorkflowInputs) {
+            window.AFWorkflowInputs.wire(document, {
+                drafts: composer && composer.kind === 'workflow' ? composer.inputs : null,
+                inputs: composer && composer.kind === 'trigger' ? wfInputs(composer.workflowId) : wiRun ? wfInputs(wiRun.id) : [],
+                mapping: composer && composer.kind === 'trigger' ? composer.wiMap : null,
+                runValues: wiRun && !(composer && composer.kind === 'trigger') ? wiRun.values : null,
+                redraw: () => { persist(); render(); }
+            });
+            click('#nt-wi-cancel', () => { wiRun = null; render(); });
+            click('#nt-wi-go', () => {
+                post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values) });
+                wiRun = null;
+                render();
+            });
+        }
         click('[data-add]', e => post({ type: 'plan-add', kind: e.currentTarget.dataset.add }));
 
         // selection + bulk
@@ -4314,7 +4350,7 @@
             // M-21 named on the continuation prompt, on a field two days old.
             ['agent', 'effort', 'permissionMode', 'project', 'cli',
                 'interactiveTarget', 'interactiveClose', 'finishSound', 'superpowers',
-                'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
+                'dow', 'missed', 'hookEvent', 'hookAgent'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These REDRAW, because they change which fields — or which
             // OPTIONS — exist: "weekly" adds a day picker, "watch" a path, a
@@ -4326,7 +4362,8 @@
             // referent at all: automatic retry is headless-only, so switching to
             // interactive must disable it in place rather than leave a live box
             // collecting a policy nothing will read.
-            ['every', 'ttype', 'act', 'guardKind', 'mode'].forEach(id =>
+            // (M-38 — the workflow a trigger runs decides which input rows it maps)
+            ['every', 'ttype', 'act', 'guardKind', 'mode', 'workflowId'].forEach(id =>
                 byId('nt-' + id, 'change', () => { readComposer(); render(); }));
             // ‼️ X-30 — the model redraws the Effort box AND settles what is in
             // it. Redrawing alone left the old word in the composer while the

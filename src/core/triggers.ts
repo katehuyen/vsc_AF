@@ -1,10 +1,12 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
 import { DispatchRule, dispatchText } from './dispatch';
 import { LiveEvent, LiveMonitor } from './live';
 import { FarmTrigger, RunDimensions, runExtras, TaskManager, TaskMode } from './tasks';
 import { normPath, safeReadFile, truncate } from './util';
+import { triggerInputs } from './workflowInputs';
 
 export interface DispatchOptions {
     judgeArgs: () => string;
@@ -20,6 +22,8 @@ export interface DispatchOptions {
 export class TriggerManager implements vscode.Disposable {
     private watchers = new Map<string, fs.FSWatcher>();       // triggerId -> watcher
     private debounces = new Map<string, NodeJS.Timeout>();    // triggerId -> pending fire
+    /** M-38 — the last path a watch saw change, handed to the firing as {file} */
+    private changed = new Map<string, string>();
     private disposables: vscode.Disposable[] = [];
     private armedKey = '';
 
@@ -55,7 +59,9 @@ export class TriggerManager implements vscode.Disposable {
             if (normPath(trigger.watchPath).includes(normPath(this.tasks.outputsDir))) { continue; }
             try {
                 const isDir = fs.statSync(trigger.watchPath).isDirectory();
-                const watcher = fs.watch(trigger.watchPath, { recursive: isDir }, () => {
+                const root = trigger.watchPath;
+                const watcher = fs.watch(root, { recursive: isDir }, (_ev, name) => {
+                    this.changed.set(trigger.id, isDir && name ? path.join(root, String(name)) : root);
                     this.debouncedFire(trigger.id);
                 });
                 this.watchers.set(trigger.id, watcher);
@@ -74,7 +80,9 @@ export class TriggerManager implements vscode.Disposable {
         if (prev) { clearTimeout(prev); }
         this.debounces.set(triggerId, setTimeout(() => {
             this.debounces.delete(triggerId);
-            this.tryFire(trigger, 'watch change');
+            const file = this.changed.get(triggerId);
+            this.changed.delete(triggerId);
+            this.tryFire(trigger, 'watch change', undefined, file);
         }, Math.max(1, trigger.debounceSec) * 1000));
     }
 
@@ -105,7 +113,7 @@ export class TriggerManager implements vscode.Disposable {
      * nothing to do with the job; without step 3 the only way to learn "there
      * was nothing to do" was to pay for a full agent wake-up.
      */
-    tryFire(trigger: FarmTrigger, reason: string, payload?: unknown): boolean {
+    tryFire(trigger: FarmTrigger, reason: string, payload?: unknown, file?: string): boolean {
         const now = Date.now();
         if (trigger.lastFiredAt && now - trigger.lastFiredAt < trigger.cooldownSec * 1000) {
             return false;
@@ -120,8 +128,7 @@ export class TriggerManager implements vscode.Disposable {
         if (gate) { return this.skip(trigger, gate.reason); }
         const pre = this.tasks.checkPrecondition(trigger.fireIf);
         if (!pre.ok) { return this.skip(trigger, pre.detail); }
-        this.fire(trigger, reason, payload);
-        return true;
+        return this.fire(trigger, reason, payload, file);
     }
 
     /** A suppressed firing: no agent woken, no cost — but never silent. */
@@ -130,39 +137,48 @@ export class TriggerManager implements vscode.Disposable {
         return false;
     }
 
-    fire(trigger: FarmTrigger, reason: string, payload?: unknown): void {
-        this.tasks.markTriggerFired(trigger);
+    fire(trigger: FarmTrigger, reason: string, payload?: unknown, file?: string): boolean {
         if (trigger.action.kind === 'workflow') {
-            const w = this.tasks.workflows.find(x => x.id === (trigger.action as { workflowId: string }).workflowId);
+            const act = trigger.action;
+            const w = this.tasks.workflows.find(x => x.id === act.workflowId);
             if (!w) {
+                this.tasks.markTriggerFired(trigger);
                 void vscode.window.showWarningMessage(
                     `Agent Farm: trigger "${trigger.title}" points to a missing workflow.`);
-                return;
+                return true;
             }
+            // ‼️ M-38 — what the trigger knows (the changed file, the watched
+            // path, a webhook's payload) becomes the run's inputs; a run that
+            // would miss a required one is skipped, and says which.
+            const inputs = triggerInputs(w.inputs, act.inputs, { watch: trigger.watchPath, file, payload });
+            const refusal = this.tasks.workflowRunRefusal(w, inputs, 'trigger');
+            if (refusal) { return this.skip(trigger, refusal); }
+            this.tasks.markTriggerFired(trigger);
             void vscode.window.showInformationMessage(
                 `Agent Farm: trigger "${trigger.title}" fired (${reason}) → workflow "${w.title}".`);
             // ‼️ X-73 — NOBODY WAS LOOKING WHEN THIS FIRED. A trigger goes off
             // on its own schedule, so the project the window happens to be
             // showing is not the chain's project: the key is passed EMPTY,
             // which is how a caller says "no project" rather than "inherit".
-            this.tasks.runWorkflow(w, { projectId: undefined });
-            return;
+            this.tasks.runWorkflow(w, { projectId: undefined, inputs, inputSource: 'trigger' });
+            return true;
         }
+        this.tasks.markTriggerFired(trigger);
         const action = trigger.action;
         const payloadStr = payload === undefined ? ''
             : (typeof payload === 'string' ? payload : JSON.stringify(payload)).slice(0, 500);
         const substitute = (s: string) =>
-            s.split('{watch}').join(trigger.watchPath ?? '').split('{payload}').join(payloadStr);
+            s.split('{watch}').join(trigger.watchPath ?? '').split('{file}').join(file ?? '').split('{payload}').join(payloadStr);
 
         if (action.kind === 'dispatch') {
             void this.fireDispatch(trigger, action, reason, substitute(action.prompt), payloadStr);
-            return;
+            return true;
         }
         const agent = this.getAgents().find(a => a.id === action.agentId);
         if (!agent) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: trigger "${trigger.title}" points to a missing agent.`);
-            return;
+            return true;
         }
         const prompt = substitute(action.prompt);
         // The project is the trigger's own declaration and nothing else: a
@@ -173,6 +189,7 @@ export class TriggerManager implements vscode.Disposable {
         void vscode.window.showInformationMessage(
             `Agent Farm: trigger "${trigger.title}" fired (${reason}) → task "${action.title}".`);
         this.tasks.startTask(task);
+        return true;
     }
 
     /** F2: route the firing to the best agent — rules first, cheap-model classifier as fallback. */
