@@ -3580,7 +3580,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } & Partial<RunDimensions>) => { sessionId: string; launchId?: string } | undefined)
         | undefined;
     let consoleTaskRead: ((id: string) => {
-        state: ConsoleStatus; answered: boolean; failed?: boolean; reason?: string;
+        state: ConsoleStatus | 'gone'; answered: boolean; failed?: boolean; reason?: string;
     } | undefined) | undefined;
 
     /**
@@ -28340,7 +28340,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     consoleTaskRead = id => {
         const s = consoleHost.get(id);
-        if (!s) { return undefined; }
+        // S-93 — a card id keeps its seat across resume and account moves, so
+        // an absent one was removed (forget) and its row must not hold the seat
+        if (!s) { return { state: 'gone', answered: false }; }
         return {
             state: s.status,
             answered: s.status === 'idle' && (s.turns || 0) > 0,

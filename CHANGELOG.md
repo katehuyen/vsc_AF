@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.661.0 - A removed Console card no longer holds its agent's seat (S-93) (2026-09-24)
+
+- **Removing a Console card ends the task row it hosted (S-93).** "End &
+  remove" (and any other way a card leaves the Console) used to leave the
+  task row it ran `running` until the next window reload: the queue could no
+  longer read the card and skipped the row every beat. With one run per agent,
+  that row kept the agent's seat, so a relay's successor sat parked "agent
+  busy" behind the leg it succeeded — measured at 80 minutes while every
+  account was free. The row now ends as `cancelled` the moment its card is
+  gone, which frees the seat at once, and the relay failsafe reads it as a
+  leg the user ended (the chain ends as done) instead of a crash to rescue.
+
 ## 3.660.0 - "Last touched" sees an edit; a relay can end cleanly in an agent folder; #perf and #secu (S-92, X-360, X-357, X-143) (2026-09-24)
 
 - **An edited item moves up in "last touched" (X-357).** Editing an item on

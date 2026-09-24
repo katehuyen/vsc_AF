@@ -1820,7 +1820,8 @@ export interface TaskManagerOptions {
      * session merely sitting idle because nothing has been said to it yet.
      */
     consoleTaskState?: (sessionId: string) => {
-        state: 'starting' | 'working' | 'idle' | 'ended' | 'error';
+        /** `gone` — the Console no longer holds the card: somebody removed it */
+        state: 'starting' | 'working' | 'idle' | 'ended' | 'error' | 'gone';
         answered: boolean; failed?: boolean; reason?: string;
         /** S-85 — the engine's session id, once the card has one */
         sessionId?: string;
@@ -4024,6 +4025,17 @@ export class TaskManager implements vscode.Disposable {
             const st = read(task.consoleSessionId);
             if (!st) { continue; }
             if (st.sessionId && task.hostedSessionId !== st.sessionId) { task.hostedSessionId = st.sessionId; named = true; }
+            // ‼️ S-93 — A REMOVED CARD ENDS ITS ROW. "End & remove" drops the card
+            // from the Console, and a row still `running` on it held its agent's
+            // one seat until the next reload: a relay's successor sat parked
+            // "agent busy" behind the very leg it succeeded (measured 80 min).
+            // `cancelled`, because a person ended it — and the failsafe reads
+            // that as "ended by the user" (batonLegFacts.ts), not as a crash.
+            if (st.state === 'gone') {
+                noteTaskEvent(task, 'finished', 'its Console card was removed — the conversation ended with it');
+                this.finish(task, 'cancelled');
+                continue;
+            }
             if (st.state === 'ended') {
                 noteTaskEvent(task, 'finished', `the Console session ended — ${st.reason || 'closed'}`);
                 this.finish(task, st.failed ? 'failed' : 'done');
