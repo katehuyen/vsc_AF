@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.662.0 - A supervisor can decide how a run continues after a limit (M-13) (2026-09-24)
+
+- **"What a retry is" gains a third answer: *let a supervisor decide* (M-13).**
+  Smart Continue still makes the retry row after a run that hit a usage limit
+  having done work, but the row is held and a bounded agent you choose reads
+  what the run left — the original task, the failure, the attempts so far, the
+  last turns of its conversation and the folder's git state — and answers with
+  one of: resume with a prompt, run the original again, wait until a time, stop,
+  or ask you. Its answer is checked before anything happens (a malformed or
+  out-of-policy answer, an unknown session, a wait with no end, a confidence
+  below your threshold are all refused), and whatever it fails to decide,
+  Smart Continue — or the fallback you picked — goes ahead.
+- **The form's supervisor boxes:** engine, model, calls per task (1–5), a money
+  cap, the minimum confidence and what to do when it is not sure. A supervisor
+  on the task's own plan waits for the reset (the same window just filled);
+  an independent one is asked at once. It runs read-only, is never asked twice
+  for the same incident (a restart mid-call falls back instead), and its cost
+  and session are recorded on the row's `supervision`, apart from the task's.
+- **Your word outranks it.** A supervised row offers *run now*, *smart* (let
+  Smart Continue go ahead) and ✎ (rewrite the prompt it will send); the same
+  three are the new bridge op `tasks.supervision`.
+
 ## 3.661.0 - A removed Console card no longer holds its agent's seat (S-93) (2026-09-24)
 
 - **Removing a Console card ends the task row it hosted (S-93).** "End &

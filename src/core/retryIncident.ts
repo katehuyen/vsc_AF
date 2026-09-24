@@ -27,6 +27,10 @@ const cap = (s: unknown, n: number): string => {
     const t = String(s ?? '').trim();
     return t.length <= n ? t : `${t.slice(0, n - 1)}…`;
 };
+const capEnd = (s: unknown, n: number): string => {
+    const t = String(s ?? '').replace(/^(\s*\n)+/, '').trimEnd();
+    return t.length <= n ? t : `${t.slice(0, n - 1)}…`;
+};
 /** The END of a conversation is what matters — cut from the front. */
 const tail = (s: unknown, n: number): string => {
     const t = String(s ?? '').trim();
@@ -45,7 +49,8 @@ export function buildIncident(o: IncidentBundle): IncidentBundle {
         },
         attempts: o.attempts.slice(-INCIDENT_CAPS.attempts).map(a => ({ ...a, why: cap(a.why, INCIDENT_CAPS.why) })),
         lastTurns: tail(o.lastTurns, INCIDENT_CAPS.lastTurns),
-        ...(o.changes ? { changes: { status: cap(o.changes.status, INCIDENT_CAPS.status), stat: cap(o.changes.stat, INCIDENT_CAPS.stat) } } : {}),
+        // ‼️ `git status --short` keeps its first column: trim() turns " M" (unstaged) into "M" (staged)
+        ...(o.changes ? { changes: { status: capEnd(o.changes.status, INCIDENT_CAPS.status), stat: cap(o.changes.stat, INCIDENT_CAPS.stat) } } : {}),
         ...(o.tests ? { tests: tail(o.tests, INCIDENT_CAPS.tests) } : {}),
         remaining: o.remaining
     };

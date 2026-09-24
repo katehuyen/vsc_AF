@@ -72,6 +72,8 @@ export interface OneShotWant {
     model?: string;
     /** Ask for the machine-readable envelope `envelope()` knows how to read. */
     json?: boolean;
+    /** M-13 — the turn may look but not change anything (claude: plan mode) */
+    readOnly?: boolean;
     /** Extra flags, already formed, for the shell form only. */
     args?: string;
     prompt?: string;
@@ -187,7 +189,8 @@ const asObj = (s: string): Record<string, unknown> | undefined => {
  */
 const claudeFlags = (want: OneShotWant): string[] => [
     ...(String(want.model ?? '').trim() ? ['--model', String(want.model).trim()] : []),
-    ...(want.json ? ['--output-format', 'json'] : [])
+    ...(want.json ? ['--output-format', 'json'] : []),
+    ...(want.readOnly ? ['--permission-mode', 'plan'] : [])
 ];
 
 const claudeAdapter: OneShotAdapter = {

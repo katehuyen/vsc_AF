@@ -437,8 +437,11 @@ import {
     previousOccurrenceKey, RouteSeal, routeOf, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
+import type { SupervisorPolicy } from './core/retrySupervisor';
+import { SupervisorRunner } from './core/supervisorRunner';
+import { incidentFrom, supervisorAsk } from './core/supervisorWire';
 import {
-    describeRetry, normalizeRetry, RETRY_DEFAULT_SAFETY_MIN, RETRY_MAX_ATTEMPTS,
+    describeRetry, normalizeRetry, resolveRetry, RETRY_DEFAULT_SAFETY_MIN, RETRY_MAX_ATTEMPTS,
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
 import { normalizeRounds, ROUND_DELAY_MAX_MIN } from './core/taskRounds';
@@ -3668,6 +3671,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(spec.mechanismId ? { mechanismId: spec.mechanismId } : {})
             }),
             consoleTaskState: id => consoleTaskRead?.(id),
+            // M-13 — room on the supervisor's own pick, read off the same meter the
+            // quota brake reads; no figure is 'unknown', never 'free'
+            supervisorRoom: p => {
+                try {
+                    const r = launchAccountPick({ engine: p.engine, ...(p.model ? { model: p.model } : {}) });
+                    if (r.refusal) { return 'full'; }
+                    const u = r.id ? accountUsage.current().find(x => x.slotId === r.id) : undefined;
+                    if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return 'unknown'; }
+                    return u.percent < 95 ? 'free' : 'full';
+                } catch { return 'unknown'; }
+            },
             // ‼️ X-176 — the sentry's one step, and how often an idling
             // campaign looks again. Both live out here because the manager owns
             // no vault path, no git and no backlog file; see `sentryTick`.
@@ -8591,6 +8605,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     `Task is ${task.status} — only a running task can be completed by hand.`);
                 taskManager.completeTask(task);
                 return { id: task.id, status: task.status, endedAt: task.endedAt ?? null };
+            }
+        },
+        {
+            op: 'tasks.supervision',
+            describe: 'M-13 — YOUR WORD ON A SUPERVISED RETRY ROW (retry behavior "supervisor"), which outranks the supervisor\'s. act=deterministic lets the row go as Smart Continue made it (only while nothing the supervisor decided has changed it) · act=run starts it NOW, dropping any wait, on `prompt` when given · act=edit only rewrites the prompt and leaves the row where it is. To stop it, tasks.cancel. The row\'s `supervision` (state, decision, note, spentUsd, the supervisor\'s own sessionId) is in tasks.get. args: id, act (deterministic|run|edit), prompt? (required for edit)',
+            handler: (args) => {
+                const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
+                need(t, 'Task not found — tasks.list shows current ids.');
+                const act = argStr(args, 'act');
+                need(act === 'deterministic' || act === 'run' || act === 'edit', `act is deterministic, run or edit — not "${act}"`);
+                const task = t as FarmTask;
+                const r = taskManager.answerSupervision(task, act as 'deterministic' | 'run' | 'edit', optStr(args, 'prompt'));
+                if (!r.ok) { throw new BridgeRefusal(r.why ?? 'refused', { step: 'supervision', id: task.id }); }
+                return { id: task.id, status: task.status, started: !!r.started, supervision: task.supervision ?? null, heldBy: task.deferredReason ?? null };
             }
         },
         {
@@ -16588,6 +16616,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // is declared further down, and a sweep can run before it exists
     const successorSessionOf = (t: FarmTask): string | undefined =>
         rowSessionId(t, card => { try { return consoleHost.get(card)?.sessionId; } catch { return undefined; } });
+
+    // ‼️ M-13 — the supervisor of a held retry: asked once per incident, read-only,
+    // on its own sign-in pick, and only by the window that runs tasks.
+    const supervisorAccount = (p: SupervisorPolicy): string | undefined => {
+        try { return launchAccountPick({ engine: p.engine, ...(p.model ? { model: p.model } : {}) }).id || undefined; } catch { return undefined; }
+    };
+    const supervisorRunner = new SupervisorRunner({
+        due: now => taskManager.supervisionDue(now),
+        begin: t => taskManager.beginSupervision(t),
+        settle: (t, o, m) => taskManager.settleSupervision(t, o, m),
+        find: id => taskManager.tasks.find(x => x.id === id),
+        policyOf: t => resolveRetry(t.retry, normalizeRetry(cfg().get<unknown>('taskRetry'))).supervisor,
+        incidentOf: incidentFrom({
+            all: () => taskManager.tasks,
+            sessionOf: t => successorSessionOf(t),
+            lastTurns: async sid => {
+                const hit = resolveSessionRef(index.allWithExternal(), sid);
+                if (!hit.ok || !fs.existsSync(hit.row.file)) { return ''; }
+                const data = buildViewerData(hit.row.file, { ...viewerDeps, maxMessages: () => 40 });
+                const page = readTranscriptPage(data['messages'] as ReadableStep[] | undefined, { roles: ['user', 'assistant'], from: -8 });
+                return 'error' in page ? '' : page.messages.map(m => `${m.role}: ${m.text}`).join('\n\n');
+            },
+            changes: async t => {
+                const c = await changesSummary(t.workDir || findAgent(t.agentId)?.dir || '');
+                return c.note ? undefined : { status: c.status, stat: c.stat };
+            },
+            retriesLeft: t => resolveRetry(t.retry, normalizeRetry(cfg().get<unknown>('taskRetry'))).max - (t.retryAttempt ?? 0)
+        }),
+        ask: supervisorAsk({ cwdOf: t => t.workDir || findAgent(t.agentId)?.dir || os.homedir(), accountFor: supervisorAccount }),
+        log: l => console.log(`[Agent Farm] ${l}`)
+    });
+    const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
+    context.subscriptions.push({ dispose: () => clearInterval(supervisorSweep) });
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,

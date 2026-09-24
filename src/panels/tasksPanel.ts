@@ -24,6 +24,7 @@ import {
 import { normalizeLegCeiling } from '../core/baton';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
+import { supervisorDraft } from '../core/retrySupervisor';
 import { describeRounds, normalizeRounds } from '../core/taskRounds';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { TaskRecord } from '../core/taskstats';
@@ -302,6 +303,8 @@ interface RunRow {
     tokens?: number;
     verified?: string;
     hasOutput: boolean;
+    /** M-13 — a queued retry the supervisor holds or decided; the row offers the user's word */
+    supervised?: boolean;
     outputFile?: string;
     sessionFile?: string;
     prompt: string;
@@ -779,6 +782,7 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             tokens: t.tokens,
             verified: t.verified,
             hasOutput: !!t.outputFile,
+            ...(t.status === 'queued' && t.supervision ? { supervised: true } : {}),
             outputFile: t.outputFile,
             sessionFile: t.costSessionFile,
             // ‼️ M-8 — the id, not just the path. A transcript file is named
@@ -1318,7 +1322,9 @@ export function retrySeed(r: RetryPolicy | undefined): Record<string, unknown> {
         // fresh run" with its continuation prompt gone — and saving that form
         // wrote the loss back. The two prompts the form has no box for are
         // carried through the draft untouched, so an edit cannot drop them.
-        retryBehavior: r.behavior === 'smart' ? 'smart' : 'simple',
+        retryBehavior: r.behavior === 'smart' || r.behavior === 'supervisor' ? r.behavior : 'simple',
+        // M-13 — who judges the continuation, as the form's text boxes
+        retrySupervisor: supervisorDraft(r.supervisor),
         retryContinuation: r.continuationPrompt ?? '',
         retryContinuation2: r.continuationPrompt2 ?? '',
         retryContinuationLater: r.continuationPromptLater ?? '',
@@ -2218,6 +2224,19 @@ export class TasksPanel {
                 // bridge's `tasks.unpark` and this button are one implementation.
                 else if (msg.act === 'unpark' && t.status === 'queued' && t.autoStart) {
                     m.unparkTask(t);
+                }
+                // M-13 — the user's word on a supervised row; one implementation with tasks.supervision
+                else if (msg.act === 'supDeterministic' || msg.act === 'supRun') {
+                    const r = m.answerSupervision(t, msg.act === 'supRun' ? 'run' : 'deterministic');
+                    if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: ${r.why}`); }
+                }
+                else if (msg.act === 'supEdit' && t.status === 'queued') {
+                    void vscode.window.showInputBox({ title: `${t.title} — the prompt this retry will send`, value: t.prompt, ignoreFocusOut: true })
+                        .then(v => {
+                            if (v === undefined) { return; }
+                            const r = m.answerSupervision(t, 'edit', v);
+                            if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: ${r.why}`); }
+                        });
                 }
                 // The rest exist as commands on the sidebar tree and had no way
                 // in from this page until the row grew a menu. Each one calls

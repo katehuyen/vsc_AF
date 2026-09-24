@@ -1216,6 +1216,8 @@
             retryContinuationLater: '', retryUnknown: 'park',
             // X-226 (round 2) — '' = stay on the run's sign-in at a limit.
             retryCarryOn: '',
+            // M-13 — the supervisor's boxes, all text until retryFromDraft (media/afSupervisor.js).
+            retrySupervisor: window.AFSupervisor.blank(),
             // ‼️ S-19 — a new session, or the next turn of one that exists.
             // 'new' is the default and always will be: a task that silently
             // joined somebody else's conversation would be the worst kind of
@@ -1542,13 +1544,18 @@
             + 'Smart: a retry after a run that had ALREADY DONE WORK is a CONTINUATION. It waits for the '
             + 'window, resumes THAT RUN\'S OWN conversation and sends the continuation prompt as the next '
             + 'turn. ‼️ Which of the two happens is decided by what the failed run\'s transcript proves, '
-            + 'never guessed — and a run whose transcript is not bound yet is HELD rather than repeated.')
+            + 'never guessed — and a run whose transcript is not bound yet is HELD rather than repeated.\n\n'
+            + 'Supervisor: smart, except that after a LIMIT a bounded agent you choose reads what the run left '
+            + 'and decides how it goes on — resume with a prompt, run the original again, wait, stop or ask you. '
+            + 'You see its decision on the row before it runs; when it cannot be asked or is unsure, smart applies.')
         }"><span>What a retry is</span>
                 ${sel('retrybehavior', c.retryBehavior || 'simple', [
             ['simple', 'a fresh run — send the work again'],
-            ['smart', 'continue it — pick up where it was cut off']
+            ['smart', 'continue it — pick up where it was cut off'],
+            ['supervisor', 'let a supervisor decide how to continue']
         ])}</label>
-            ${(c.retryBehavior === 'smart') ? `
+            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C) : ''}
+            ${(c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') ? `
             <label class="ntf wide" title="${C.esc(
             'Sent as the NEXT TURN of the run\'s own conversation, so it can be short — everything that '
             + 'run knew is still in front of it. Empty uses the built-in default: "carry on from where '
@@ -3096,6 +3103,9 @@
         v('unknownfallback', 'retryUnknown');
         // X-226 (round 2) — who carries on at a limit ('' = stay).
         v('retrycarryon', 'retryCarryOn');
+        composer.retrySupervisor = window.AFSupervisor.read(composer.retrySupervisor, id => {
+            const el = document.getElementById(id); return el ? el.value : undefined;
+        });
         b('retryresetaware', 'retryResetAware'); n('retrysafety', 'retrySafetyMin');
         // ‼️ S-19 — which conversation, and the box that narrows the list.
         v('conversation', 'conversation'); v('resumeid', 'resumeSessionId');
@@ -3151,6 +3161,10 @@
             const err = retryFormulaError(c.retryFormula || '');
             if (err) { return 'The retry formula was refused — ' + err; }
         }
+        if (c.retryMode === 'custom' && c.mode !== 'interactive' && c.retryBehavior === 'supervisor') {
+            const err = window.AFSupervisor.error(c.retrySupervisor);
+            if (err) { return err; }
+        }
         return '';
     }
 
@@ -3196,8 +3210,12 @@
         // ‼️ M-10 — SMART IS OPT-IN AND ONLY THE WORD TURNS IT ON. The host's
         // normalizer applies exactly the same rule, so a policy cannot mean one
         // thing in the form and another in the run.
-        if (c.retryBehavior === 'smart') {
-            out.behavior = 'smart';
+        // M-13 — supervisor is smart plus the agent that judges; with no engine
+        // named it IS smart, the same rule the host's normalizer applies.
+        const sup = c.retryBehavior === 'supervisor' ? window.AFSupervisor.toPolicy(c.retrySupervisor) : undefined;
+        if (sup) { out.supervisor = sup; }
+        if (c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') {
+            out.behavior = sup ? 'supervisor' : 'smart';
             const cp = String(c.retryContinuation || '').trim();
             if (cp) { out.continuationPrompt = cp; }
             // M-34 — the two later pick-up prompts have no box here; a policy
@@ -3600,7 +3618,10 @@
             <td class="acts">
                 ${r.archived ? '' : `${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
                     <button class="mini secondary" data-task="next" data-id="${r.id}" title="move to the front">↑</button>` : ''}
-                ${r.status === 'parked' ? `<button class="mini secondary" data-task="unpark" data-id="${r.id}" title="try to start it again">retry start</button>` : ''}
+                ${r.status === 'parked' && !r.supervised ? `<button class="mini secondary" data-task="unpark" data-id="${r.id}" title="try to start it again">retry start</button>` : ''}
+                ${r.supervised ? `<button class="mini secondary" data-task="supRun" data-id="${r.id}" title="Run this retry now, dropping any wait — your word outranks the supervisor's">run now</button>
+                    <button class="mini secondary" data-task="supDeterministic" data-id="${r.id}" title="Let it go as Smart Continue made it — only while nothing the supervisor decided has changed it">smart</button>
+                    <button class="mini secondary" data-task="supEdit" data-id="${r.id}" title="Rewrite the prompt this retry will send; the row stays where it is">✎</button>` : ''}
                 ${r.status === 'running' ? `<button class="mini secondary" data-task="terminal" data-id="${r.id}">terminal</button>` : ''}
                 ${live ? `<button class="mini secondary" data-task="cancel" data-id="${r.id}">cancel</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="rerun" data-id="${r.id}">re-run</button>` : ''}
@@ -4336,6 +4357,7 @@
                 render();
             });
             byId('nt-retrycarryon', 'change', () => { readComposer(); });
+            window.AFSupervisor.IDS.forEach(id => byId(id, 'change', () => { readComposer(); }));
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();

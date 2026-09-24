@@ -464,6 +464,8 @@ export function htmlShell(
     const a2a = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afA2A.js'));
     // N-11 — the bulk hand: row box, row ✕, the bar under the filters, day headers.
     const bulk = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afBulk.js'));
+    // M-13 — the retry supervisor's boxes (engine, model, calls, budget, confidence).
+    const supervisor = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSupervisor.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -522,6 +524,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>
 <script nonce="${nonce}" src="${bulk}"></script>
+<script nonce="${nonce}" src="${supervisor}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

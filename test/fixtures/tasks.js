@@ -552,6 +552,24 @@ const variants = () => ([
             drive(r, draft, 'nt-retrybehavior');
         }
     },
+    // M-13 — the supervisor's boxes exist only under behavior "supervisor".
+    {
+        id: 'tasks-retry-supervisor', label: 'Tasks → the New-task form, a retry a supervisor decides (M-13)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması — dosyaları filele', 'nt-retrymode': 'custom', 'nt-retrymax': '3' };
+            drive(r, draft, 'nt-retrymode');
+            Object.assign(draft, { 'nt-retrybehavior': 'supervisor' });
+            drive(r, draft, 'nt-retrybehavior');
+            Object.assign(draft, {
+                'nt-supengine': 'claude', 'nt-supmodel': 'haiku', 'nt-supcalls': '2',
+                'nt-supbudget': '0.5', 'nt-supconf': '0.7', 'nt-supfallback': 'park'
+            });
+            // the behavior box reads AND redraws; the supervisor boxes only read
+            drive(r, draft, 'nt-retrybehavior');
+        }
+    },
     /**
      * ‼️ S-82 — THE RELAY BLOCK, IN THE STATE THAT HAS TO EXPLAIN ITSELF.
      *

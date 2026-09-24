@@ -70,6 +70,16 @@ export function normalizeSupervisor(raw: unknown): SupervisorPolicy | undefined 
     };
 }
 
+/** A stored policy as the task form's boxes (media/afSupervisor.js): text, '' = not said. */
+export function supervisorDraft(raw: unknown): Record<string, string> {
+    const s = normalizeSupervisor(raw);
+    return {
+        engine: s?.engine ?? '', model: s?.model ?? '',
+        maxCalls: s ? String(s.maxCalls) : '', budgetUsd: s?.budgetUsd !== undefined ? String(s.budgetUsd) : '',
+        minConfidence: s ? String(s.minConfidence) : '', lowConfidence: s?.lowConfidence ?? 'smart'
+    };
+}
+
 export interface ContinuationDecision {
     action: SupervisorAction;
     /** absolute ms; required for `wait`, optional otherwise */

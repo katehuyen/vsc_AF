@@ -110,7 +110,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afA2A.js',
     // afBulk.js — the bulk hand (N-11): Notices' row box, row ✕ and bulk bar,
     // shared by the A2A pages and the Work Queue.
-    'afBulk.js'];
+    'afBulk.js',
+    // afSupervisor.js — the retry supervisor's boxes (M-13).
+    'afSupervisor.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

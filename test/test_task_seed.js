@@ -165,7 +165,9 @@ const DIMENSION_BOX = {
         continuationPrompt2: 'retryContinuation2', continuationPromptLater: 'retryContinuationLater',
         unknownProgressFallback: 'retryUnknown',
         // X-226 (round 2) — who carries on at a limit; '' = stay.
-        carryOn: 'retryCarryOn'
+        carryOn: 'retryCarryOn',
+        // M-13 — who judges the continuation (media/afSupervisor.js)
+        supervisor: 'retrySupervisor'
     };
     eq('‼️ every retry field has a box on the form, by name', fields.filter(f => !(f in RETRY_BOX)), []);
     const full = {
@@ -183,6 +185,11 @@ const DIMENSION_BOX = {
     eq('…and the two later prompts the form has no box for ride the draft',
         [seeded.retryContinuation2, seeded.retryContinuationLater], ['carry on twice', 'still']);
     eq('‼️ X-226 (round 2) — the handover choice comes back', seeded.retryCarryOn, '@emptiest');
+    const sup = P.retrySeed({ max: 2, behavior: 'supervisor', supervisor: { engine: 'codex', maxCalls: 3, minConfidence: 0.7, lowConfidence: 'park' } });
+    eq('‼️ M-13 — a supervised policy reopens as "supervisor", its judge in the boxes as text',
+        [sup.retryBehavior, sup.retrySupervisor.engine, sup.retrySupervisor.maxCalls, sup.retrySupervisor.minConfidence,
+            sup.retrySupervisor.lowConfidence, sup.retrySupervisor.budgetUsd],
+        ['supervisor', 'codex', '3', '0.7', 'park', '']);
     eq('…and a policy that never said comes back as "stay", "a fresh run" and "hold it"',
         [P.retrySeed({ max: 2 }).retryCarryOn, P.retrySeed({ max: 2 }).retryBehavior, P.retrySeed({ max: 2 }).retryUnknown],
         ['', 'simple', 'park']);

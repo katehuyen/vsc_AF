@@ -42,7 +42,7 @@ import {
 import { incidentKey, SupervisorPolicy, SupervisorRoom, supervisorWhen } from './retrySupervisor';
 import {
     isSupervisionOpen, SUPERVISION_ASK_CODE, SUPERVISION_HOLD_CODE, SUPERVISION_PARK_CODE,
-    SupervisionOutcome, supervisionEffect, TaskSupervision
+    SupervisionAct, SupervisionOutcome, supervisionEffect, TaskSupervision, userSupervision
 } from './retrySupervision';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
@@ -5325,6 +5325,21 @@ export class TaskManager implements vscode.Disposable {
         noteTaskEvent(task, 'retried', fx.event);
         this.startTask(task);
         this.save();
+    }
+
+    /** M-13 — the user's word on a supervised row (retrySupervision.userSupervision); a refusal says why. */
+    answerSupervision(task: FarmTask, act: SupervisionAct, prompt?: string): { ok: boolean; why?: string; started?: boolean } {
+        if (task.status !== 'queued') { return { ok: false, why: `the task is ${task.status} — only a queued row waits for a word` }; }
+        const fx = userSupervision(task, act, prompt);
+        if (!fx.ok) { return fx; }
+        if (fx.prompt) { task.prompt = fx.prompt; }
+        if (fx.state && task.supervision) { task.supervision = { ...task.supervision, state: fx.state, note: fx.event }; }
+        if (fx.clearWait) { delete task.notBefore; delete task.notBeforeWhy; }
+        noteTaskEvent(task, fx.release ? 'retried' : 'parked', fx.event);
+        let started = false;
+        if (fx.release) { this.clearPark(task); started = this.startTask(task); }
+        this.save();
+        return { ok: true, started };
     }
 
     cancelTask(task: FarmTask): void {
