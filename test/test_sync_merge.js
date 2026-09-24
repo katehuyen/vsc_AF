@@ -26,7 +26,10 @@ const cases = [
         { candidates: [{ id: 'w', addedAt: '2026-09-01T00:00:00Z', s: 'a' }] },
         { candidates: [{ id: 'w', addedAt: '2026-09-02T00:00:00Z', s: 'b' }] }],
     ['identical sides change nothing', { shape: 'items', list: 'items', key: 'id', time: 'ts' },
-        { rev: 1, items: [{ id: '1', ts: 1 }] }, { rev: 1, items: [{ id: '1', ts: 1 }] }]
+        { rev: 1, items: [{ id: '1', ts: 1 }] }, { rev: 1, items: [{ id: '1', ts: 1 }] }],
+    ['X-363 prefer: the chosen map key takes the source', { shape: 'map' }, { a: 'x', b: 'y' }, { b: 'Y', c: 'z' }, ['b']],
+    ['X-363 prefer: a chosen record wins even when the live one is newer', { shape: 'items', list: 'items', key: 'id', time: 'ts' },
+        { items: [{ id: '1', ts: 50, t: 'live' }, { id: '2', ts: 1 }] }, { items: [{ id: '1', ts: 10, t: 'src' }, { id: '2', ts: 2 }] }, ['1']]
 ];
 
 // ------------------------------------------------------------------ the body
@@ -40,14 +43,18 @@ const cases = [
     ok('items: rev is max + 1 on a change', r2.merged.rev === 5);
     const r5 = mergeT2(cases[5][1], cases[5][2], cases[5][3]);
     ok('identical sides: unchanged, rev kept', !r5.changed && r5.merged.rev === 1);
+    const p6 = mergeT2(cases[6][1], cases[6][2], cases[6][3], cases[6][4]);
+    ok('prefer: the chosen key takes the source and says so', p6.merged.b === 'Y' && p6.conflicts[0].kept === 'source' && p6.replaced === 1);
+    const p7 = mergeT2(cases[7][1], cases[7][2], cases[7][3], cases[7][4]);
+    ok('prefer: beats the newer live record; an unchosen record still follows K2', p7.merged.items[0].t === 'src' && p7.merged.items[1].ts === 2);
 }
 
 // --------------------------------------------------- the same answer as t2.js
 const engine = path.join(SETUP, 'sync', 't2.js');
 if (fs.existsSync(engine)) {
     const t2 = require(engine);
-    for (const [name, spec, live, src] of cases) {
-        const a = mergeT2(spec, live, src), b = t2.mergeT2(spec, live, src);
+    for (const [name, spec, live, src, prefer] of cases) {
+        const a = mergeT2(spec, live, src, prefer), b = t2.mergeT2(spec, live, src, prefer);
         ok('parity with t2.js: ' + name, JSON.stringify(a) === JSON.stringify(b));
     }
 } else {
@@ -104,6 +111,12 @@ if (fs.existsSync(classes)) {
     const back = await reg.dispatch('sync.merge', { items: [{ file: 'notices.json', source: arc, replace: true }] });
     ok('replace (rollback): the archived copy is taken verbatim', back.ok && back.result.results[0].restored
         && JSON.parse(fs.readFileSync(live, 'utf8')).notices.length === 1 && reloads === 2);
+
+    const theirs = path.join(dir, 'other', 'theirs.json');
+    fs.writeFileSync(theirs, JSON.stringify({ notices: [{ id: 'a', ts: 0, text: 'theirs' }] }));
+    const pref = await reg.dispatch('sync.merge', { items: [{ file: 'notices.json', source: theirs, prefer: ['a'] }] });
+    ok('op: prefer carries the user\'s choice — the older source record wins for that key',
+        pref.ok && pref.result.results[0].replaced === 1 && JSON.parse(fs.readFileSync(live, 'utf8')).notices[0].text === 'theirs');
 
     const junk = path.join(dir, 'junk.json');
     fs.writeFileSync(junk, '[1,2]');

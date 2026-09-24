@@ -19,7 +19,7 @@ export interface SyncTarget {
     reload(): void;
 }
 
-export interface SyncItem { file: string; source: string; archive?: string; spec?: T2Spec; replace?: boolean }
+export interface SyncItem { file: string; source: string; archive?: string; spec?: T2Spec; replace?: boolean; prefer?: string[] }
 
 export interface SyncItemResult {
     file: string; path: string; changed: boolean; added: number; replaced: number;
@@ -44,7 +44,8 @@ function itemsArg(args: Record<string, unknown>): SyncItem[] {
         source: String(x?.source ?? ''),
         archive: typeof x?.archive === 'string' && x.archive ? x.archive : undefined,
         spec: x?.spec && typeof x.spec === 'object' ? x.spec as T2Spec : undefined,
-        replace: x?.replace === true
+        replace: x?.replace === true,
+        prefer: Array.isArray(x?.prefer) ? (x.prefer as unknown[]).map(String) : undefined
     }));
 }
 
@@ -58,7 +59,7 @@ export function mergeInto(t: SyncTarget, it: SyncItem): SyncItemResult {
         const live = readJson(t.path);
         const m = it.replace
             ? { merged: src, added: 0, replaced: 0, conflicts: [], changed: JSON.stringify(live) !== JSON.stringify(src) }
-            : mergeT2(spec, live, src);
+            : mergeT2(spec, live, src, it.prefer);
         let archived = false;
         if (it.archive && fs.existsSync(t.path)) {
             fs.mkdirSync(path.dirname(it.archive), { recursive: true });
@@ -89,7 +90,8 @@ export function registerSyncMergeOps(bridge: BridgeRegistry, targets: SyncTarget
             + 'memory. The body is the same rule as _setup/sync/t2.js. Stores: ' + targets.map(t => t.file).join(', ')
             + '. args: items: [{ file (store name), source (abs path of the other copy), archive? (abs path — the live '
             + 'file is copied there first; must sit under a sync-archive folder), spec? ({shape:"map"|"items", list?, '
-            + 'key?, time?} — defaults to the store\'s own), replace? (true = take source verbatim: the rollback door) }]. '
+            + 'key?, time?} — defaults to the store\'s own), replace? (true = take source verbatim: the rollback door), '
+            + 'prefer? (string[] — keys the user chose the OTHER machine for: its value wins over K2) }]. '
             + 'Answers { results: [{ file, changed, added, replaced, conflicts, conflictKeys, bytes, archived } | { file, error }] } '
             + 'in the order asked. '
             + 'Then call sessions.rescan full=true for transcripts written beside it.',

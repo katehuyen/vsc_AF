@@ -9,7 +9,8 @@
  *
  * K2: the key set is the UNION; a key both sides hold with different values
  * keeps the NEWER when the record carries its own time field, else the LIVE one,
- * and the pair is listed — never silently lost.
+ * and the pair is listed — never silently lost. A key in `prefer` (the user chose
+ * the other machine for it, X-363) takes the SOURCE value outright.
  */
 
 export interface T2Spec {
@@ -22,7 +23,7 @@ export interface T2Spec {
     time?: string;
 }
 
-export interface T2Conflict { key: string; live: unknown; src: unknown; kept: 'live' }
+export interface T2Conflict { key: string; live: unknown; src: unknown; kept: 'live' | 'source' }
 
 export interface T2Outcome {
     merged: unknown;
@@ -43,24 +44,25 @@ function stamp(v: unknown, field: string | undefined): number | undefined {
     return typeof t === 'string' && !isNaN(Date.parse(t)) ? Date.parse(t) : undefined;
 }
 
-function decide(key: string, live: unknown, src: unknown, field: string | undefined, out: Tally): unknown {
+function decide(key: string, live: unknown, src: unknown, field: string | undefined, out: Tally, prefer: Set<string> | null): unknown {
     if (same(live, src)) { return live; }
+    if (prefer && prefer.has(String(key))) { out.replaced++; out.conflicts.push({ key, live, src, kept: 'source' }); return src; }
     const tl = stamp(live, field), ts = stamp(src, field);
     if (tl !== undefined && ts !== undefined && ts > tl) { out.replaced++; return src; }
     out.conflicts.push({ key, live, src, kept: 'live' });
     return live;
 }
 
-function mergeMap(live: Doc, src: Doc, spec: T2Spec, out: Tally): Doc {
+function mergeMap(live: Doc, src: Doc, spec: T2Spec, out: Tally, prefer: Set<string> | null): Doc {
     const merged: Doc = Object.assign({}, live);
     for (const k of Object.keys(src)) {
         if (!(k in merged)) { merged[k] = src[k]; out.added++; continue; }
-        merged[k] = decide(k, merged[k], src[k], spec.time, out);
+        merged[k] = decide(k, merged[k], src[k], spec.time, out, prefer);
     }
     return merged;
 }
 
-function mergeItems(live: Doc, src: Doc, spec: T2Spec, out: Tally): Doc {
+function mergeItems(live: Doc, src: Doc, spec: T2Spec, out: Tally, prefer: Set<string> | null): Doc {
     const list = spec.list || 'items', key = spec.key || 'id';
     const la = Array.isArray(live[list]) ? live[list] as Doc[] : [];
     const sa = Array.isArray(src[list]) ? src[list] as Doc[] : [];
@@ -71,7 +73,7 @@ function mergeItems(live: Doc, src: Doc, spec: T2Spec, out: Tally): Doc {
         if (k === undefined) { continue; }
         if (!at.has(k)) { at.set(k, items.length); items.push(x); out.added++; continue; }
         const i = at.get(k) as number;
-        items[i] = decide(String(k), items[i], x, spec.time, out) as Doc;
+        items[i] = decide(String(k), items[i], x, spec.time, out, prefer) as Doc;
     }
     const merged: Doc = Object.assign({}, live, { [list]: items });
     if (typeof live.rev === 'number' || typeof src.rev === 'number') {
@@ -80,9 +82,10 @@ function mergeItems(live: Doc, src: Doc, spec: T2Spec, out: Tally): Doc {
     return merged;
 }
 
-/** `live` undefined = no such file here yet. */
-export function mergeT2(spec: T2Spec, live: unknown, src: unknown): T2Outcome {
+/** `live` undefined = no such file here yet; `prefer` = keys whose SOURCE value wins. */
+export function mergeT2(spec: T2Spec, live: unknown, src: unknown, prefer?: readonly string[]): T2Outcome {
     const out: Tally = { added: 0, replaced: 0, conflicts: [] };
+    const want = prefer && prefer.length ? new Set(prefer.map(String)) : null;
     const s = (src ?? {}) as Doc;
     if (live === undefined) {
         const arr = s[spec.list || 'items'];
@@ -90,6 +93,6 @@ export function mergeT2(spec: T2Spec, live: unknown, src: unknown): T2Outcome {
         return { merged: src, added: n, replaced: 0, conflicts: [], changed: n > 0 };
     }
     const l = live as Doc;
-    const merged = spec.shape === 'items' ? mergeItems(l, s, spec, out) : mergeMap(l, s, spec, out);
+    const merged = spec.shape === 'items' ? mergeItems(l, s, spec, out, want) : mergeMap(l, s, spec, out, want);
     return Object.assign({ merged, changed: out.added + out.replaced > 0 }, out);
 }
