@@ -10,6 +10,7 @@
  */
 import { resolveFlex } from './flexResolve';
 import { ensureStepIds, unknownStepRefs } from './runContext';
+import { ForEachSpec, forEachRefusal } from './forEachStep';
 
 export type InputType = 'file' | 'folder' | 'text' | 'choice' | 'number' | 'url';
 export const INPUT_TYPES: readonly InputType[] = ['file', 'folder', 'text', 'choice', 'number', 'url'];
@@ -144,7 +145,7 @@ export function undeclaredInputRefs(texts: readonly unknown[], schema: readonly 
  * `{input.x}`, or (M-39) a `{steps.<id>…}` naming a step the chain lacks. Gives
  * every step its stable id on the way.
  */
-export function checkWorkflowInputs(raw: unknown, steps: { id?: string }[]): { inputs: WorkflowInput[]; error: string } {
+export function checkWorkflowInputs(raw: unknown, steps: { id?: string; forEach?: ForEachSpec; parallel?: boolean }[]): { inputs: WorkflowInput[]; error: string } {
     const n = normalizeInputs(raw);
     if (n.errors.length) { return { inputs: n.inputs, error: n.errors.join('; ') }; }
     const loose = undeclaredInputRefs(steps, n.inputs);
@@ -153,10 +154,11 @@ export function checkWorkflowInputs(raw: unknown, steps: { id?: string }[]): { i
     }
     ensureStepIds(steps);
     const lost = unknownStepRefs(steps, steps.map(s => s.id as string));
-    return {
-        inputs: n.inputs,
-        error: lost.length ? `a step reads ${lost.map(x => `{steps.${x}…}`).join(', ')}, but the workflow has no step with that id — it has ${steps.map(s => s.id).join(', ')}` : ''
-    };
+    if (lost.length) {
+        return { inputs: n.inputs, error: `a step reads ${lost.map(x => `{steps.${x}…}`).join(', ')}, but the workflow has no step with that id — it has ${steps.map(s => s.id).join(', ')}` };
+    }
+    const fe = steps.map((s, i) => [i, forEachRefusal(s, steps.slice(0, i).map(x => x.id as string))] as const).find(([, r]) => r);
+    return { inputs: n.inputs, error: fe ? `step ${fe[0] + 1}: ${fe[1]}` : '' };
 }
 
 /** A trigger's input mapping checked against the workflow it runs; undefined = none stated (the default mapping applies). */

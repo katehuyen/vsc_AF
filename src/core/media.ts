@@ -57,6 +57,8 @@ export interface MediaMeta {
     /** Wave B — visual-selection decisions (asset URLs the user kept / dropped). */
     selectedUrls?: string[];
     rejectedUrls?: string[];
+    /** M-41 — the local files its input named, and the provider URL each was sent as */
+    uploads?: { path: string; url: string; provider: string; cached: boolean }[];
 }
 
 /** Extensions the ingest watcher treats as media (mirrors the gallery's kinds). */

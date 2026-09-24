@@ -1071,6 +1071,13 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         verifyEngine: s.verify?.engine ?? '',
         verifyModel: s.verify?.model ?? '',
         parallel: !!s.parallel,
+        feList: s.forEach?.list ?? '',
+        feConc: s.forEach?.concurrency ?? '',
+        feFail: s.forEach?.onBranchFail ?? '',
+        feRetries: s.forEach?.retries ?? '',
+        feCap: s.forEach?.cap ?? '',
+        feCapMode: s.forEach?.capMode ?? '',
+        feBudget: s.forEach?.budgetUSD ?? '',
         whUrl: s.webhook?.url ?? '',
         whMethod: s.webhook?.method ?? 'POST',
         whBody: s.webhook?.body ?? '',
@@ -1091,6 +1098,22 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         selMin: s.select?.min ?? 1,
         selMax: s.select?.max ?? 0
     };
+}
+
+/** M-40 — the step card's For each boxes; a blank box is left unset so the built-in default applies. */
+function forEachFromDraft(str: (k: string) => string): WorkflowStep['forEach'] {
+    const list = str('feList');
+    if (!list) { return undefined; }
+    const num = (k: string): number | undefined => (str(k) === '' || !Number.isFinite(Number(str(k))) ? undefined : Number(str(k)));
+    const fe: NonNullable<WorkflowStep['forEach']> = { list };
+    const set = <K extends keyof typeof fe>(k: K, v: (typeof fe)[K] | undefined) => { if (v !== undefined) { fe[k] = v; } };
+    set('concurrency', num('feConc'));
+    set('onBranchFail', (str('feFail') || undefined) as typeof fe.onBranchFail);
+    set('retries', num('feRetries'));
+    set('cap', num('feCap'));
+    set('capMode', (str('feCapMode') || undefined) as typeof fe.capMode);
+    set('budgetUSD', num('feBudget'));
+    return fe;
 }
 
 /** The other direction. Returns the step, or the sentence the form should say
@@ -1115,7 +1138,8 @@ export function stepFromDraft(
         onFail: str('onFail') === 'continue' ? 'continue'
             : str('onFail') === 'goto' ? Math.max(1, num('onFailStep', 1)) : undefined,
         runIf: str('runIf') || undefined,
-        parallel: raw.parallel === true ? true : undefined
+        parallel: raw.parallel === true ? true : undefined,
+        forEach: forEachFromDraft(str)
     };
     const verify = str('verifyCriteria')
         ? {

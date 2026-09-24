@@ -21,6 +21,8 @@ export interface BoardStep {
     /** the quality check's verdict: pass · fail · unjudged */
     verdict?: string;
     costUSD?: number;
+    /** M-41 — local files the step uploaded, and the URL each became */
+    uploads?: { path: string; url: string }[];
     at: number;
 }
 
@@ -75,10 +77,10 @@ export function boardWrite(board: RunBoard | undefined, entry: BoardStep): RunBo
 export const boardCost = (board: RunBoard | undefined): number =>
     Object.values(board?.steps ?? {}).reduce((sum, s) => sum + (s.costUSD ?? 0), 0);
 
-const show = (v: unknown): string =>
+export const show = (v: unknown): string =>
     v === undefined || v === null ? '' : typeof v === 'string' ? v : JSON.stringify(v);
 
-function pick(obj: unknown, dotted: string): unknown {
+export function pick(obj: unknown, dotted: string): unknown {
     let cur = obj;
     for (const k of dotted.split('.')) {
         if (cur && typeof cur === 'object' && k in (cur as Record<string, unknown>)) { cur = (cur as Record<string, unknown>)[k]; }

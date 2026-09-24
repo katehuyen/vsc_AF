@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.668.0",
+  "version": "3.669.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9036,6 +9036,43 @@
             "Stop the step as failed."
           ],
           "description": "When a quality gate cannot judge an asset — the judge cannot open a video or audio file, or it could not run — what happens. It is never counted as a pass."
+        },
+        "agentFarm.mediaUploadAuto": {
+          "type": "string",
+          "default": "ask",
+          "enum": [
+            "ask",
+            "auto",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Ask me before a file from this computer is sent to the provider.",
+            "Upload it and use its URL, without asking.",
+            "Never — the step fails and says which file; {upload:<path>} still uploads."
+          ],
+          "markdownDescription": "A media step whose input names a file on this computer (`D:\\clips\\a.mp4`) — fal and Replicate only read https URLs, so the file is uploaded to the provider's storage and its URL sent instead. `{upload:<path>}` in the input always uploads. The same content is uploaded once."
+        },
+        "agentFarm.mediaUploadProvider": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "fal",
+            "replicate"
+          ],
+          "enumDescriptions": [
+            "The media step's own provider (a replicate: model uploads to Replicate, anything else to fal).",
+            "Always fal's storage.",
+            "Always Replicate's files."
+          ],
+          "description": "Where a local file in a media input is uploaded."
+        },
+        "agentFarm.mediaUploadRetentionDays": {
+          "type": "number",
+          "default": 7,
+          "minimum": 0,
+          "maximum": 365,
+          "markdownDescription": "How long fal keeps an uploaded file (days); after that it is uploaded again when a step needs it. `0` = fal's own default. Replicate sets its own expiry."
         },
         "agentFarm.workflowPrevTextChars": {
           "type": "number",

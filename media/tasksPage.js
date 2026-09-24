@@ -1144,6 +1144,7 @@
             stype: 'agent', title: '', agent: '', prompt: '', smode: 'headless',
             onFail: 'stop', onFailStep: 1, runIf: '', contract: 'text',
             verifyCriteria: '', verifyRetries: 1, verifyEngine: '', verifyModel: '', parallel: false,
+            feList: '', feConc: '', feFail: '', feRetries: '', feCap: '', feCapMode: '', feBudget: '',
             whUrl: '', whMethod: 'POST', whBody: '', whHeader: '',
             whPoll: false, whPollUrl: '', whStatusField: 'status',
             whDone: 'succeeded|completed|complete|done|success', whInterval: 3,
@@ -2108,6 +2109,7 @@
                             : (s.agent || '(no agent)') + ' · ' + (s.smode || 'headless');
         const flags = [];
         if (s.parallel) { flags.push('∥ runs in parallel'); }
+        if (String(s.feList || '').trim()) { flags.push('⑃ for each ' + s.feList); }
         if (s.runIf) { flags.push('only if ' + trunc(s.runIf, 24)); }
         if (s.onFail === 'continue') { flags.push('on fail: carry on'); }
         if (s.onFail === 'goto') { flags.push('on fail → step ' + (s.onFailStep || 1)); }
@@ -2462,6 +2464,7 @@
                 ], s.contract, 'A json contract runs it with --output-format json and parses the result.') : ''}
                 ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
             </div>
+            ${forEachRow(s)}
             ${wantsVerify ? `<div class="ntgrid">
                 ${textF('st-verifyCriteria', s.stype === 'media' ? 'Vision QA criteria' : 'Verify the output',
                     s.verifyCriteria,
@@ -2477,6 +2480,31 @@
                 <button id="nt-stsave">${isNew ? 'Add this step' : 'Keep the changes'}</button>
                 <button class="secondary" id="nt-stcancel">Discard</button>
             </div>
+        </div>`;
+    }
+
+    /** M-40 — the step runs once per element of a list; blank boxes are the built-in defaults. */
+    function forEachRow(s) {
+        const on = !!String(s.feList || '').trim();
+        const box = (id, label, value, ph, tip, stepAttr) => `<label class="ntf" title="${C.esc(tip)}"><span>${C.esc(label)}</span>
+            <input type="number" id="nt-${id}" step="${stepAttr || 1}" min="0" placeholder="${C.esc(ph)}" value="${C.esc(String(value == null ? '' : value))}"></label>`;
+        return `<div class="ntgrid">
+            ${textF('st-feList', 'For each', s.feList, '{steps.s1.json.parts}',
+                'Run this step once per element of a list: {steps.<id>.json.x} or {prev_json.x} (an array), {steps.<id>.text} or {prev_text} (one per line), {input.x}. Each run reads {item}, {item.field} and {index} (0-based); the next step gets every result in order as {prev_json.items}. Empty = it runs once.', true)}
+            ${on ? box('st-feConc', 'At once', s.feConc, '4', 'How many elements run at the same time. 1 = one after another. Empty = 4.') : ''}
+            ${on ? pickSel('st-feFail', 'A failed element', [
+                { id: '', label: 'Default — carry on' },
+                { id: 'continue', label: 'carry on — it is marked failed' },
+                { id: 'drop', label: 'drop the step — its If it fails applies' }
+            ], s.feFail || '', 'What one element that still fails after its retries does to the whole step.') : ''}
+            ${on ? box('st-feRetries', 'Retries', s.feRetries, '0', 'How many more times a failed element is run before it counts as failed. Empty = 0.') : ''}
+            ${on ? box('st-feCap', 'At most', s.feCap, '20', 'The most elements this step runs. Empty = 20.') : ''}
+            ${on ? pickSel('st-feCapMode', 'A longer list', [
+                { id: '', label: 'Default — the first ones' },
+                { id: 'soft', label: 'the first ones, said so' },
+                { id: 'hard', label: 'refuse — the step fails' }
+            ], s.feCapMode || '', 'What a list longer than At most does.') : ''}
+            ${on ? box('st-feBudget', '$ per element', s.feBudget, '0', 'An element that costs more than this counts as failed — measured when it ends, a running one is not cut. Empty or 0 = no limit.', '0.01') : ''}
         </div>`;
     }
 
@@ -2499,7 +2527,8 @@
             'sengine', 'smodel', 'seffort', 'spermissionMode', 'sproviderId', 'stier',
             'onFail', 'runIf', 'contract', 'verifyCriteria', 'verifyEngine', 'verifyModel',
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
-            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg'].forEach(v);
+            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg',
+            'feList', 'feConc', 'feFail', 'feRetries', 'feCap', 'feCapMode', 'feBudget'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
         ['parallel', 'whPoll'].forEach(b);
     }
@@ -3943,6 +3972,8 @@
                 .ntbaton input[type=number] { width:96px; }
                 .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
                 .ntf select, .ntf input { padding:3px 6px; }
+                .ntf input[type=number] { font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
+                    background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
                 .ntf textarea { font-family:inherit; font-size:13px; padding:6px 8px; resize:vertical; min-height:70px; }
                 /* ‼️ M-27 — THE ROUNDS. One row per prompt, and the row is read
                    left to right: which round it is, what it says, how long it
@@ -4637,6 +4668,10 @@
                 byId('nt-st-verifyCriteria', 'change', () => { readStep(); render(); });
                 byId('nt-st-verifyEngine', 'change', () => { readStep(); composer.step.verifyModel = ''; render(); });
                 byId('nt-st-verifyModel', 'change', readStep);
+                // M-40 - the list decides whether the policy boxes exist; the rest only read
+                byId('nt-st-feList', 'change', () => { readStep(); render(); });
+                ['feConc', 'feRetries', 'feCap', 'feBudget'].forEach(id => byId('nt-st-' + id, 'input', () => readStep()));
+                ['feFail', 'feCapMode'].forEach(id => byId('nt-st-' + id, 'change', () => readStep()));
             }
         }
 

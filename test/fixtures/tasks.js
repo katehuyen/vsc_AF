@@ -764,6 +764,18 @@ const variants = () => ([
             });
         }
     },
+    // M-40 — a step's For each row: the list typed, the six policy boxes it grows (blank = the default).
+    {
+        id: 'tasks-step-foreach',
+        label: 'Tasks → a workflow step run once per element of a list, and its policy boxes (M-40)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Parçayı işle', 'nt-st-prompt': 'parça {index}: {item}', 'nt-st-feList': '{steps.s1.json.parts}' }, 'nt-st-feList');
+        }
+    },
     // M-38 — run pressed on a workflow that takes inputs: its Run card, prefilled from the last run.
     {
         id: 'tasks-wf-runcard',

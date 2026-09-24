@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.669.0 - A run remembers every step, a step runs once per element of a list, a file on this computer reaches fal and Replicate (M-39, M-40, M-41) (2026-09-24)
+
+- **A workflow run keeps a board of every finished step (M-39).** Each step has
+  a stable id (`s1`, `s2`, … — it stays when steps move; a copied step gets a
+  new one), and any later step reads an earlier one by it: `{steps.s1.text}`,
+  `{steps.s1.json.a.b}`, `{steps.s1.file}`, `{steps.s1.verdict}`, plus
+  `{run.cost}` and `{run.note}`. `{prev_*}` works exactly as before. The board
+  is kept on the run record, so a resumed run still reads it, and
+  `workflows.status` answers with it. A step that reads an id the chain does
+  not have is refused when you save. How much `{prev_text}` carries is a
+  setting now (`agentFarm.workflowPrevTextChars`, default 1500).
+- **The step's id is on the step list.** A chip beside each step's title; its
+  panel lists the four references a later step can write.
+- **A step can run once per element of a list (M-40).** The step card's new
+  *For each* box takes a list — an earlier step's JSON array
+  (`{steps.split.json.parts}`, `{prev_json.parts}`), a text of one item per
+  line (`{steps.s1.text}`, `{prev_text}`) or an input (`{input.files}`). Each
+  element runs as its own branch whose prompt reads `{item}`, `{item.field}`
+  and `{index}` (0-based); the next step gets every result in list order as
+  `{prev_json.items}` (and on the board as `{steps.<id>.json.items}`).
+  Beside it: how many run at once (1 = one after another; default 4), what a
+  failed element does (carry on — it is marked failed — or drop the step, whose
+  *If it fails* then applies), retries per element, at most how many elements
+  (default 20; a longer list runs the first ones and says so, or refuses), and
+  a cost ceiling per element. Each row is named `[2/4]`. A reload keeps the
+  fan-out: resume runs only the elements that had not finished.
+- **A local file in a media input is uploaded (M-41).** fal and Replicate only
+  read https URLs, so a media step whose input named `D:\clips\a.mp4` sent them
+  a path they could not open. Now every value in the input that IS a file on
+  this computer — and every `{upload:<path>}` — is uploaded to the provider's
+  own storage (fal's CDN, Replicate's files) and its URL sent instead. The same
+  content is uploaded once: a second step, or a second run, gets the same URL
+  until it expires. Farm Settings: *Upload local files* (ask · auto · never —
+  default ask; `{upload:…}` always uploads), *Upload local files to* (the
+  step's own provider, fal or Replicate), *Keep an upload* (days, default 7).
+  What was uploaded is written on the step's output, its gallery entry and the
+  run's board. fal takes files up to 90 MB here.
+- **Bridge:** `workflows.add` / `workflows.update` take a step's `forEach`
+  (refused with the reason when the list reference or a policy value is wrong),
+  `workflows.status` shows a fan-out in flight as `forEach` and the board as
+  `board`, new `media.upload {path, provider?}`.
+
 ## 3.668.0 - Workflows take inputs, a dropped file reaches the first step; no judge passes what it never looked at (M-38, M-42) (2026-09-24)
 
 - **A workflow declares its inputs (M-38).** On the workflow form, a new Inputs

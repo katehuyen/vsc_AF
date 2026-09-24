@@ -84,6 +84,19 @@
         };
     }
 
+    /** A for-each step's own policy (M-40): set on the step card's For each row, carried by the step's `forEach`. */
+    function forEachPoint(field, label, type, dflt, box, extra) {
+        return Object.assign({
+            id: 'foreach.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: {
+                step: {
+                    surface: 'media/tasksPage.js#st-' + box,
+                    bridge: 'workflows.add:steps.forEach.' + (field === 'budgetUsd' ? 'budgetUSD' : field)
+                }
+            }
+        }, extra || {});
+    }
+
     const POINTS = [
         supervisor('engine', 'Supervisor engine', 'text', '', 'engine'),
         supervisor('model', 'Supervisor model', 'text', '', 'model'),
@@ -97,6 +110,12 @@
         setting('workflow.prevTextChars', '{prev_text} length', 'number', 1500, 'agentFarm.workflowPrevTextChars',
             { min: 200, max: 20000 }),
         judgeStep('engine', 'Judge engine', 'claude'),
+        forEachPoint('concurrency', 'For each — at once', 'number', 4, 'feConc', { min: 1, max: 16 }),
+        forEachPoint('onBranchFail', 'For each — a failed element', 'enum', 'continue', 'feFail', { options: ['continue', 'drop'] }),
+        forEachPoint('retries', 'For each — retries', 'number', 0, 'feRetries', { min: 0, max: 5 }),
+        forEachPoint('cap', 'For each — at most', 'number', 20, 'feCap', { min: 1, max: 200 }),
+        forEachPoint('capMode', 'For each — a longer list', 'enum', 'soft', 'feCapMode', { options: ['soft', 'hard'] }),
+        forEachPoint('budgetUsd', 'For each — $ per element', 'number', 0, 'feBudget', { min: 0 }),
         judgeStep('model', 'Judge model', ''),
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
         {
@@ -110,6 +129,9 @@
             id: 'trigger.inputs', label: 'What a trigger hands a workflow input', type: 'text', default: '', remembered: false,
             levels: { run: { surface: 'media/afWorkflowInputs.js#wi-map', bridge: 'triggers.add:action.inputs' } }
         },
+        setting('upload.auto', 'Upload local files', 'enum', 'ask', 'agentFarm.mediaUploadAuto', { options: ['ask', 'auto', 'never'] }),
+        setting('upload.provider', 'Upload local files to', 'enum', 'auto', 'agentFarm.mediaUploadProvider', { options: ['auto', 'fal', 'replicate'] }),
+        setting('upload.retentionDays', 'Keep an upload (days)', 'number', 7, 'agentFarm.mediaUploadRetentionDays', { min: 0, max: 365 }),
         setting('judge.unjudged', 'If no judge can look at it', 'tri', 'ask', 'agentFarm.judgeUnjudged',
             { states: { ask: 'ask', auto: 'pass', never: 'stop' } }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),

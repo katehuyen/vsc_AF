@@ -230,7 +230,7 @@ const CATEGORY_OF: Record<string, string> = {
     maxConcurrentPerAgent: 'tasks', quotaGuardPercent: 'tasks', queueAutoAdvance: 'tasks',
     dispatchRules: 'tasks', dispatchClassifier: 'tasks', modelPolicy: 'tasks',
     quotaDowngradePercent: 'tasks', quotaDowngradeModel: 'tasks',
-    judgeArgs: 'tasks', judgeUnjudged: 'tasks', workflowPrevTextChars: 'tasks', evalRunArgs: 'tasks', taskRetry: 'tasks',
+    judgeArgs: 'tasks', judgeUnjudged: 'tasks', workflowPrevTextChars: 'tasks', mediaUploadAuto: 'media', mediaUploadProvider: 'media', mediaUploadRetentionDays: 'media', evalRunArgs: 'tasks', taskRetry: 'tasks',
     /**
      * ‼️ X-193 — THE SENTRY IS ITS OWN SECTION, and thirteen settings is the
      * argument. They were filed under Tasks & Automation because each of them,

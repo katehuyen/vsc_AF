@@ -530,6 +530,7 @@ import {
 import { clearPort, portHolder } from './core/portScan';
 import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
+import { registerMediaUploadOps } from './core/mediaUploadBridge';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { EnginesPanel } from './panels/enginesPanel';
@@ -3927,6 +3928,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             mediaBaseUrl: (providerId) => providerId === 'replicate'
                 ? (cfg().get<string>('replicateBaseUrl', '') || undefined)
                 : (cfg().get<string>('mediaBaseUrl', '') || undefined),
+            // M-41 - a local file in a media input: whether it is sent, where, for how long
+            mediaUpload: () => ({
+                mode: cfg().get('mediaUploadAuto'), provider: cfg().get('mediaUploadProvider'),
+                retentionDays: cfg().get('mediaUploadRetentionDays')
+            }),
+            confirmUpload: async (paths, provider) => {
+                const pick = await vscode.window.showWarningMessage(
+                    `Agent Farm: a media step wants to send ${paths.length === 1 ? 'a file' : `${paths.length} files`} from this computer to ${provider}: ${paths.join(', ')}`,
+                    'Upload', 'Stop the step');
+                return pick === 'Upload';
+            },
             mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
             browserAllowHosts: () => cfg().get<string[]>('browserAllowHosts', []),
             confirmBrowser: ({ title, url, goal }) => {
@@ -15566,7 +15578,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE})} — advanced webhook/media/browser fields pass through as in the builder]), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
+            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach)} — advanced webhook/media/browser fields pass through as in the builder]), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -26418,6 +26430,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         runMedia: (title, model, input, opts) =>
             (taskManagerRef as TaskManager).runMediaAdhoc(title, model, input, opts),
         refresh: () => StudioPanel.refreshIfOpen()
+    });
+    registerMediaUploadOps(bridge, {
+        upload: (file, provider) => (taskManagerRef as TaskManager).uploadMediaFile(file, provider)
     });
 
     // ---------- B-8: the working infrastructure over the bridge ----------

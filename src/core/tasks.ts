@@ -14,6 +14,10 @@ import { execOneShot } from './oneShot';
 import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
+import * as FE from './forEachStep';
+import { flexPoint } from './flexPoints';
+import { resolveFlex } from './flexResolve';
+import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
     gateBlock, pauseExpired, Precondition
@@ -109,6 +113,10 @@ export interface FarmTask {
     workflowId?: string;
     workflowRunId?: string;
     stepIndex?: number;
+    /** M-40 — which element of its step's for-each list this row ran on */
+    branchIndex?: number;
+    /** M-41 — the local files a media step uploaded, and the URL each was sent as */
+    uploads?: { path: string; url: string; provider: string; cached: boolean }[];
     /** claude -p --output-format json when 'json' (structured handoff). */
     outputContract?: 'text' | 'json';
     /** verification attempt number (0 = first run). */
@@ -1205,6 +1213,8 @@ export interface WorkflowStep extends RunDimensions {
      * the group receives all their outputs merged (fan-in). Unset = sequential.
      */
     parallel?: boolean;
+    /** M-40 — run this step once per element of a list read off the run (src/core/forEachStep.ts). */
+    forEach?: FE.ForEachSpec;
 }
 
 /** What one step passes to the next. */
@@ -1216,6 +1226,8 @@ export interface Handoff {
     inputs?: Record<string, string>;
     /** M-39 — every finished step of the run, set on every step from the run record */
     board?: RunBoard;
+    /** M-40 — the element a for-each branch runs on */
+    branch?: { index: number; count: number; item: unknown };
 }
 
 export interface FarmTrigger {
@@ -1310,6 +1322,8 @@ export interface WorkflowRunState {
     handoff?: Handoff;
     /** M-39 — every finished step of the run by its stable id, and what it produced */
     board?: RunBoard;
+    /** M-40 — a for-each step in flight: its branches counted, and the policy it runs under */
+    forEach?: Record<string, unknown>;
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -1592,6 +1606,8 @@ interface WorkflowRunRecord {
     inputs?: Record<string, string>;
     /** M-39 — every finished step, by its stable id; persisted so a resumed run still reads it */
     board?: RunBoard;
+    /** M-40 — a for-each step in flight; persisted so a resume re-runs only unfinished branches */
+    forEach?: FE.ForEachRun;
 }
 
 export interface TaskManagerOptions {
@@ -1901,6 +1917,12 @@ export interface TaskManagerOptions {
     browserAllowHosts?: () => string[];
     /** Resolve to true to run the browser step; false cancels it. */
     confirmBrowser?: (info: { title: string; url: string; goal: string }) => Promise<boolean>;
+    /** M-41 — Farm Settings for local files in a media input: ask · auto · never, which provider, how long it is kept */
+    mediaUpload?: () => { mode?: unknown; provider?: unknown; retentionDays?: unknown };
+    /** M-41 — a person agrees to send these files to the provider (the `ask` answer) */
+    confirmUpload?: (paths: string[], provider: string) => Promise<boolean>;
+    /** M-41 — the upload endpoint override, for tests and self-hosted proxies */
+    mediaUploadBaseUrl?: (provider: string) => string | undefined;
     /** Human-in-the-loop workflow gate; resolve true to continue the chain, false to fail the step. */
     confirmApproval?: (info: { title: string; message: string }) => Promise<boolean>;
     /**
@@ -1975,6 +1997,9 @@ function putPlanRow<T extends PlanDefinition>(list: T[], at: number, item: T): n
     list.splice(Math.min(Math.max(at, 0), list.length), 0, item);
     return 1;
 }
+
+/** M-40 — a for-each branch says which element it is in its row title. */
+const branchTag = (h?: Handoff): string => (h?.branch ? ` [${h.branch.index + 1}/${h.branch.count}]` : '');
 
 export class TaskManager implements vscode.Disposable {
     tasks: FarmTask[] = [];
@@ -6297,6 +6322,7 @@ export class TaskManager implements vscode.Disposable {
             ...(!live && end?.stepIndex !== undefined ? { stoppedAtStep: end.stepIndex } : {}),
             ...(lastDone ? { handoff: this.computeHandoff(lastDone) } : {}),
             ...(rec?.board ? { board: rec.board } : {}),
+            ...(rec?.forEach ? { forEach: FE.forEachSummary(rec.forEach) } : {}),
             steps,
             costUSD: tasks.reduce((a, t) => a + (t.costUSD ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
@@ -6360,7 +6386,8 @@ export class TaskManager implements vscode.Disposable {
         });
         // M-39 — any earlier step, by its stable id; M-38 — the inputs last, so a value a run
         // was given is never re-read as a placeholder
-        return fillInputs(fillBoard(out, handoff.board), handoff.inputs);
+        const filled = fillInputs(fillBoard(out, handoff.board), handoff.inputs);
+        return handoff.branch ? FE.fillItem(filled, handoff.branch.item, handoff.branch.index) : filled;
     }
 
     private runIfMatches(runIf: string, handoff: Handoff): boolean {
@@ -6415,6 +6442,10 @@ export class TaskManager implements vscode.Disposable {
             this.routeToStep(w, index + 1, handoff, runId);
             return;
         }
+        if (step.forEach) {
+            this.startForEach(w, index, handoff, runId);
+            return;
+        }
         this.startWorkflowStep(w, index, handoff, runId);
     }
 
@@ -6454,10 +6485,11 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         const prompt = this.substitute(step.prompt, handoff);
-        const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+        const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}${branchTag(handoff)}`,
             prompt, step.mode,
             {
                 workflowId: w.id, workflowRunId: runId, stepIndex: index,
+                ...(handoff.branch ? { branchIndex: handoff.branch.index } : {}),
                 ...this.runProject(runId),
                 // ‼️ THE STEP'S OWN ENGINE, MODEL, EFFORT AND PERMISSIONS (X-35).
                 // A workflow step is a task, and it was the one kind of task that
@@ -6502,14 +6534,15 @@ export class TaskManager implements vscode.Disposable {
      */
     private stepTask(
         w: FarmWorkflow, index: number, runId: string, agentName: string,
-        rest: Partial<FarmTask> & Pick<FarmTask, 'prompt' | 'status'>
+        rest: Partial<FarmTask> & Pick<FarmTask, 'prompt' | 'status'>, handoff?: Handoff
     ): FarmTask {
         const step = w.steps[index];
         const task: FarmTask = {
             id: newId(), agentId: '', agentName,
-            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
+            title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title}${branchTag(handoff)}`,
             mode: 'headless', createdAt: Date.now(), startedAt: Date.now(),
             workflowId: w.id, workflowRunId: runId, stepIndex: index,
+            ...(handoff?.branch ? { branchIndex: handoff.branch.index } : {}),
             ...this.runProject(runId),
             ...rest
         };
@@ -6530,7 +6563,7 @@ export class TaskManager implements vscode.Disposable {
         const task = this.stepTask(w, index, runId, 'webhook', {
             prompt: `${method} ${hook.url}`,
             status: 'running'
-        });
+        }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -6596,7 +6629,7 @@ export class TaskManager implements vscode.Disposable {
             ...(retry
                 ? { title: `${w.title} ${index + 1}/${w.steps.length}: ${step.title} (retry ${retry.attempt})` }
                 : {})
-        });
+        }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -6604,11 +6637,21 @@ export class TaskManager implements vscode.Disposable {
 
         const provider = providerFor(media.model);
         const auth = (this.opts.mediaAuth?.(provider.id) ?? '').trim();
-        const input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
-        const info = {
+        let input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
+        const info: { model: string; stepTitle: string; workflowTitle: string; input: string; projectId?: string; sceneId?: string; note?: string; uploads?: FarmTask['uploads'] } = {
             model: media.model, stepTitle: step.title, workflowTitle: w.title,
             input, projectId: media.projectId, sceneId: media.sceneId
         };
+        const sent = await this.uploadLocalInput(input, provider.id);
+        if ('error' in sent) {
+            await this.completeMediaTask(task, info, { ok: false, error: `Media input: ${sent.error}.`, assetUrls: [] });
+            return;
+        }
+        if (sent.uploads.length) {
+            input = info.input = sent.input;
+            info.uploads = task.uploads = sent.uploads.map(u => ({ path: u.path, url: u.url, provider: u.provider, cached: u.cached }));
+            info.note = sent.uploads.map(u => `uploaded ${u.path} → ${u.url}${u.cached ? ' (already there)' : ''}`).join('; ');
+        }
 
         if (!auth || auth.includes('{secret:')) {
             await this.completeMediaTask(task, info, {
@@ -6654,7 +6697,7 @@ export class TaskManager implements vscode.Disposable {
         task: FarmTask,
         info: {
             model: string; stepTitle: string; workflowTitle?: string; input: string;
-            projectId?: string; sceneId?: string; note?: string;
+            projectId?: string; sceneId?: string; note?: string; uploads?: FarmTask['uploads'];
         },
         result: MediaResult,
         /** B2: reattached parallel branches must not drive the chain (fan-in state is gone). */
@@ -6710,7 +6753,8 @@ export class TaskManager implements vscode.Disposable {
             workflowTitle: info.workflowTitle,
             projectId: info.projectId,
             sceneId: info.sceneId,
-            source: 'fal'
+            source: 'fal',
+            ...(info.uploads?.length ? { uploads: info.uploads } : {})
         };
         try {
             fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
@@ -6799,7 +6843,7 @@ export class TaskManager implements vscode.Disposable {
             const task = this.stepTask(w, index, runId, step.agentName, {
                 agentId: step.agentId,
                 prompt: `browser: ${url}`, status: 'failed', endedAt: Date.now()
-            });
+            }, handoff);
             this.save();
             this.advanceWorkflow(task, 'failed');
         };
@@ -6842,7 +6886,7 @@ export class TaskManager implements vscode.Disposable {
         const message = this.substitute(step.approval!.message ?? '', handoff);
         const task = this.stepTask(w, index, runId, 'approval', {
             prompt: message || '(waiting for approval)', status: 'running'
-        });
+        }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -6894,7 +6938,7 @@ export class TaskManager implements vscode.Disposable {
         const task = this.stepTask(w, index, runId, 'select', {
             prompt: message || `(choose ${candidates.length} candidate asset(s))`,
             status: 'running'
-        });
+        }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -6964,6 +7008,7 @@ export class TaskManager implements vscode.Disposable {
         const w = this.workflows.find(x => x.id === task.workflowId);
         if (!w) { return; }
         const runId = task.workflowRunId ?? task.workflowId ?? '';
+        if (task.branchIndex !== undefined) { this.onForEachBranchDone(w, task, status, runId); return; }
         this.noteOnBoard(w, task, status, runId);
         // Single chokepoint for parallel fan-in: a branch of the active group
         // collects here instead of advancing the run on its own.
@@ -7009,8 +7054,140 @@ export class TaskManager implements vscode.Disposable {
             ...(h.file ? { file: h.file } : {}),
             ...(task.verified ? { verdict: task.verified } : {}),
             ...(task.costUSD ? { costUSD: task.costUSD } : {}),
+            ...(task.uploads?.length ? { uploads: task.uploads.map(u => ({ path: u.path, url: u.url })) } : {}),
             at: Date.now()
         });
+    }
+
+    // ---------- M-41: local files a media input names ----------
+
+    private uploadSettings(stepProvider?: string): { mode: AutoUpload; provider: UploadProvider; retentionDays: number } {
+        const raw = this.opts.mediaUpload?.() ?? {};
+        const r = (id: string, v: unknown) => resolveFlex(id, { settings: v === flexPoint(id)?.default ? undefined : v }).value;
+        const chosen = String(r('upload.provider', raw.provider));
+        const provider: UploadProvider = chosen === 'fal' || chosen === 'replicate' ? chosen : stepProvider === 'replicate' ? 'replicate' : 'fal';
+        return { mode: r('upload.auto', raw.mode) as AutoUpload, provider, retentionDays: Number(r('upload.retentionDays', raw.retentionDays)) };
+    }
+
+    private uploadOpts(provider: UploadProvider, retentionDays: number) {
+        return {
+            auth: (this.opts.mediaAuth?.(provider) ?? '').trim(), baseUrl: this.opts.mediaUploadBaseUrl?.(provider),
+            retentionDays, cacheFile: path.join(path.dirname(this.storageFile), 'media-uploads.json')
+        };
+    }
+
+    private uploadLocalInput(input: string, stepProvider: string) {
+        const s = this.uploadSettings(stepProvider);
+        return prepareMediaInput(input, s.provider, s.mode, this.uploadOpts(s.provider, s.retentionDays),
+            paths => this.opts.confirmUpload ? this.opts.confirmUpload(paths, s.provider) : Promise.resolve(false));
+    }
+
+    /** One file onto a provider's storage — the bridge's media.upload, by the step's own code. */
+    uploadMediaFile(file: string, provider?: UploadProvider): Promise<UploadDone> {
+        const s = this.uploadSettings(provider);
+        return uploadFile(file, provider ?? s.provider, this.uploadOpts(provider ?? s.provider, s.retentionDays));
+    }
+
+    // ---------- M-40: for-each steps (the planner is src/core/forEachStep.ts) ----------
+
+    /** Fan-outs this window started or resumed. A branch that lands after a reload only records. */
+    private forEachRuns = new Map<string, { run: FE.ForEachRun; base: Handoff }>();
+
+    private startForEach(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
+        const step = w.steps[index];
+        const rec = this.runRecords.get(runId);
+        let run = rec?.forEach && rec.forEach.stepIndex === index ? FE.resumeForEach(rec.forEach) : undefined;
+        if (run) {
+            // a branch row still queued from before the reload would run a second time beside its relaunch
+            for (const t of this.tasks.filter(x => x.workflowRunId === runId && x.stepIndex === index
+                && x.branchIndex !== undefined && (x.status === 'queued' || x.status === 'running'))) { this.cancelTask(t); }
+        } else {
+            const list = FE.resolveList(step.forEach!.list,
+                { board: handoff.board, prevText: handoff.text, prevJson: handoff.json, inputs: handoff.inputs });
+            const plan = 'items' in list ? FE.planForEach(list.items, FE.forEachPolicy(step.forEach!), index) : { refusal: list.error };
+            if ('refusal' in plan) { this.failForEach(w, index, handoff, runId, `for each: ${plan.refusal}`); return; }
+            run = plan.run;
+            if (run.total > run.branches.length) {
+                void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" step ${index + 1} — the list has ${run.total} items; running the first ${run.branches.length} (soft cap).`);
+            }
+        }
+        if (rec) { rec.forEach = run; }
+        const base: Handoff = { ...handoff };
+        delete base.branch;
+        this.forEachRuns.set(runId, { run, base });
+        this.handoffs.set(runId, base);
+        this.save();
+        if (run.branches.every(b => b.status === 'done' || b.status === 'failed')) { this.finishForEach(w, runId, false); return; }
+        this.launchBranches(w, runId);
+    }
+
+    private launchBranches(w: FarmWorkflow, runId: string): void {
+        const live = this.forEachRuns.get(runId);
+        if (!live) { return; }
+        const { run, base } = live;
+        for (const i of FE.launchable(run)) {
+            FE.markLaunched(run, i);
+            this.startWorkflowStep(w, run.stepIndex,
+                { ...base, branch: { index: i, count: run.branches.length, item: run.branches[i].item } }, runId);
+        }
+        this.save();
+    }
+
+    private onForEachBranchDone(w: FarmWorkflow, task: FarmTask, status: TaskStatus, runId: string): void {
+        const live = this.forEachRuns.get(runId);
+        const run = live?.run ?? this.runRecords.get(runId)?.forEach;
+        const i = task.branchIndex ?? -1;
+        if (!run || run.stepIndex !== task.stepIndex || run.branches[i]?.status !== 'running') { return; }
+        const h = this.computeHandoff(task);
+        const next = FE.branchEnded(run, i, {
+            ok: status === 'done', text: h.text, json: h.json, file: h.file, costUSD: task.costUSD,
+            reason: task.verified === 'fail' ? 'its quality check failed' : status
+        });
+        this.save();
+        if (!live) { return; } // landed after a reload: recorded, and the resume runs the rest
+        if (next === 'launch') { this.launchBranches(w, runId); return; }
+        this.finishForEach(w, runId, next === 'dropped');
+    }
+
+    /** Fan-in: every branch in list order onto the board and into the next step's handoff. */
+    private finishForEach(w: FarmWorkflow, runId: string, dropped: boolean): void {
+        const run = this.forEachRuns.get(runId)?.run ?? this.runRecords.get(runId)?.forEach;
+        if (!run) { return; }
+        this.forEachRuns.delete(runId);
+        const rec = this.runRecords.get(runId);
+        if (rec) { delete rec.forEach; }
+        const step = w.steps[run.stepIndex];
+        if (dropped) {
+            for (const t of this.tasks.filter(x => x.workflowRunId === runId && x.stepIndex === run.stepIndex
+                && x.branchIndex !== undefined && (x.status === 'running' || x.status === 'queued'))) { this.cancelTask(t); }
+        }
+        const merged: Handoff = FE.fanIn(run, step.title);
+        if (rec) {
+            rec.board = boardWrite(rec.board, {
+                id: stepKey(step, run.stepIndex), index: run.stepIndex, title: step.title,
+                status: dropped ? 'failed' : 'done', text: merged.text, json: merged.json,
+                costUSD: run.branches.reduce((a, b) => a + (b.costUSD ?? 0), 0), at: Date.now()
+            });
+        }
+        this.save();
+        if (dropped) { this.failForEach(w, run.stepIndex, merged, runId, `for each: ${run.dropped}`); return; }
+        this.routeToStep(w, run.stepIndex + 1, merged, runId);
+    }
+
+    /** A for-each step that could not run, or was dropped: the step's own onFail decides. */
+    private failForEach(w: FarmWorkflow, index: number, handoff: Handoff, runId: string, reason: string): void {
+        const onFail = w.steps[index]?.onFail ?? 'stop';
+        if (onFail === 'stop') {
+            this.runCounts.delete(runId);
+            this.handoffs.delete(runId);
+            this.endWorkflowRun(runId, 'failed', `step ${index + 1} ${reason}`, index);
+            this.opts.forward?.('workflow-failed', `Workflow "${w.title}" stopped at step ${index + 1} (${reason})`);
+            void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" stopped at step ${index + 1} — ${reason}.`);
+            return;
+        }
+        void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" step ${index + 1} — ${reason}; `
+            + (onFail === 'continue' ? 'continuing to the next step.' : `jumping to step ${onFail}.`));
+        this.routeToStep(w, onFail === 'continue' ? index + 1 : (onFail as number) - 1, handoff, runId);
     }
 
     // ---------- parallel groups (fan-out / fan-in) ----------
