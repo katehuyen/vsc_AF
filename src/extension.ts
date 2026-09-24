@@ -8064,8 +8064,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ‼️ M-3 — WHAT HAPPENS IF IT FAILS, and it is not a boolean.
                 + 'retry? ({max, delayMin, delay2Min, delay3Min, backoff, formula, capMin, when, '
                 + 'resetAware, safetyBufferMin, carryOn, prompt, behavior, supervisor} — '
-                + '(M-13: behavior "supervisor" + supervisor {engine, model?, agent?, maxCalls?, budgetUsd?, '
-                + 'minConfidence?, lowConfidence? smart|park|stop} lets that engine decide, read-only, how a run cut off '
+                + '(M-13: behavior "supervisor" + supervisor {engine; optional: model, agent, maxCalls, budgetUsd, '
+                + 'minConfidence, lowConfidence = smart|park|stop} lets that engine decide, read-only, how a run cut off '
                 + 'by a limit after doing work goes on; smart continue is its fallback) — how many times to try AGAIN '
                 + '(0 = never, max ' + RETRY_MAX_ATTEMPTS + '), how many minutes before the first one '
                 + '(max ' + RETRY_MAX_DELAY_MIN + '), and — M-10 — the second and third one by one '
