@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.659.0 - The merge into the running extension honours the user's choice of winner per key (X-363) (2026-09-24)
+
+- **`sync.merge` takes `prefer`.** When the user picks "the other machine
+  wins" for a conflicting record in the Cockpit's conflicts section, the
+  engine now carries that choice into the running extension too: a key listed
+  in an item's `prefer` takes the source value outright, even over a newer live
+  record, and is listed as `kept:'source'`. Every other key keeps the usual
+  rule. It is the same change as `_setup/sync/t2.js`, and
+  `test/test_sync_merge.js` runs the prefer cases through both bodies.
+
 ## 3.658.0 - Another machine's copy is merged into the running extension's stores, no reload (X-342) (2026-09-24)
 
 - **`sync.merge` — the store owner takes the merge.** When the migration
