@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.662.0",
+  "version": "3.663.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9066,11 +9066,13 @@
               "type": "string",
               "enum": [
                 "simple",
-                "smart"
+                "smart",
+                "supervisor"
               ],
               "enumDescriptions": [
                 "A retry is a FRESH run: the original prompt (or the one above) into a new conversation. The default, and what every policy written before this field means.",
-                "A retry after a run that had ALREADY DONE WORK is a CONTINUATION: wait for the window, resume that run's own session, and send the continuation prompt as the next turn."
+                "A retry after a run that had ALREADY DONE WORK is a CONTINUATION: wait for the window, resume that run's own session, and send the continuation prompt as the next turn.",
+                "`smart`, except that after a LIMIT cut off work the engine named in `supervisor` decides, read-only, how it goes on. Without `supervisor.engine` it is plain `smart`."
               ],
               "markdownDescription": "‼️ What a retry IS. `smart` decides between the two off what the failed run's own transcript proves it managed to do — it never guesses: a run that started nothing is retried normally, a run that was CUT OFF is resumed. A run whose transcript is not bound yet obeys `unknownProgressFallback`."
             },
@@ -9101,6 +9103,59 @@
                 "Hold it and put the question to you."
               ],
               "markdownDescription": "‼️ What `smart` does when nobody can yet say whether the failed run had done any work. The one thing that must not happen is the original prompt going out as if the run had been idle — which is why the default HOLDS rather than guessing."
+            },
+            "supervisor": {
+              "type": "object",
+              "markdownDescription": "Who decides how a run cut off by a LIMIT goes on when `behavior` is `supervisor`: it reads what the run left and answers resume · run the original again · wait · stop · ask you. It runs read-only and never commits, pushes or closes anything. Needs `engine`; the rest have defaults.",
+              "properties": {
+                "engine": {
+                  "type": "string",
+                  "description": "The engine that judges — claude, codex, gemini, agy… An engine on the same plan as the task is asked only after the reset."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The model it judges with. Empty = the engine's default."
+                },
+                "agent": {
+                  "type": "string",
+                  "description": "The agent folder it runs in, read-only. Empty = the task's own agent."
+                },
+                "maxCalls": {
+                  "type": "number",
+                  "default": 2,
+                  "minimum": 1,
+                  "maximum": 5,
+                  "description": "How many times it may be asked per task, all limits together. Past it, the deterministic continuation is used."
+                },
+                "budgetUsd": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Dollars across all its calls for one task. 0 or empty = no money cap (the call cap still holds)."
+                },
+                "minConfidence": {
+                  "type": "number",
+                  "default": 0.6,
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "A decision it is less sure of than this is not applied; lowConfidence decides instead."
+                },
+                "lowConfidence": {
+                  "type": "string",
+                  "default": "smart",
+                  "enum": [
+                    "smart",
+                    "park",
+                    "stop"
+                  ],
+                  "enumDescriptions": [
+                    "Continue deterministically, as smart would.",
+                    "Hold the task and ask you.",
+                    "Do not retry."
+                  ],
+                  "description": "What happens when its answer is below minConfidence, or it cannot be asked at all."
+                }
+              },
+              "additionalProperties": false
             },
             "carryOn": {
               "type": "string",

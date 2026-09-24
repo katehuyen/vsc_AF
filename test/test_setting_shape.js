@@ -56,7 +56,7 @@ const PROPS = manifest.contributes.configuration.properties;
 
     const form = S.shapeOf(PROPS['agentFarm.taskRetry']);
     ok('one object with declared properties is a FORM, not a list',
-        form && form.kind === 'form' && form.fields.length === 17);
+        form && form.kind === 'form' && form.fields.length === 18);
     ok('…and its example is an object, not an array',
         form.example && !Array.isArray(form.example) && typeof form.example === 'object');
 

@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.663.0 - The flex point registry: every preference, every level, checked (X-367) (2026-09-24)
+
+- **Every preference a user can set is now declared once, as a flex point
+  (X-367).** `media/afFlex.js` (typed door `src/core/flexPoints.ts`) names each
+  point's type, default and the levels it can be set at — built-in → Farm
+  Settings → agent → project → workflow → step → run start → live — and for
+  every level, the surface that sets it and the bridge key that sets it without
+  a page. The first points are the retry supervisor's seven fields (Farm
+  Settings and the task form) and four settings that lived on their own
+  (`judgeArgs`, `sentryLeaderModel`, `sentryLeaderBudgetUsd`,
+  `mediaBudgetMonthUSD`); none of their keys or defaults changed.
+- **`test_flex_points` resolves every declared level against the real files**:
+  the setting and its schema path must exist, the page box must exist, the op
+  must be registered and carry the field — and in the other direction, a
+  supervisor box on the task form or a field of the settings schema that no
+  point claims is red.
+- **Fixed on the way: the Farm Settings schema did not know the supervisor.**
+  `agentFarm.taskRetry` already honoured `behavior: "supervisor"` and a
+  `supervisor` object, but the schema offered only `simple` / `smart` and
+  refused the object, so the Settings form could not set it and VS Code flagged
+  it as an error. Both are declared now (engine, model, agent, maxCalls,
+  budgetUsd, minConfidence, lowConfidence), with the defaults the code uses.
+
 ## 3.662.0 - A supervisor can decide how a run continues after a limit (M-13) (2026-09-24)
 
 - **"What a retry is" gains a third answer: *let a supervisor decide* (M-13).**
