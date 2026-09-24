@@ -320,6 +320,21 @@ ok('‼️ U-74 — and a press and a key are watched, or a panel never yields',
     repaint();
     ok('‼️ a repaint mid-wait does not flash a free panel open',
         !four.w.classList.contains('af-on') && !four.w.classList.contains('af-open'));
+    // U-149: the wait itself must not die with the node it began on — no new
+    // pointerover ever comes under a still pointer.
+    runTimers();
+    ok('‼️ U-149 — the wait that outlived its trigger opens the one standing there now',
+        four.w.classList.contains('af-open') && !three.w.classList.contains('af-open'));
+
+    at = {}; timers.clear();
+    const five = mkFree();
+    at[key(75, 85)] = five.w;
+    fire('pointerover', { target: five.w, clientX: 75, clientY: 85 });
+    five.w.isConnected = false;
+    at = {};
+    runTimers();
+    ok('…and opens nothing when the redraw left no trigger under the pointer',
+        !five.w.classList.contains('af-open'));
 
     at = {}; timers.clear();
     documentStub.documentElement.clientWidth = undefined;

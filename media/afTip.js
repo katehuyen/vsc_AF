@@ -549,14 +549,23 @@
             // to.
             const ex = e.clientX, ey = e.clientY;
             openT = setTimeout(function () {
+                // U-149 — a page that redrew DURING the wait took `w` away under
+                // a still pointer, and no new pointerover ever comes: the wait
+                // belongs to whatever wrapper now stands where it began.
+                let tw = w;
+                if (!tw.isConnected) {
+                    const at = doc.elementFromPoint(ex, ey);
+                    tw = at && typeof at.closest === 'function' ? at.closest('.af-tipw.tip-free') : null;
+                    if (!tw) { return; }
+                }
                 // Re-asked at the end of the wait, not only at the start: the
                 // control can have been opened during it, pointer still still.
-                if (!w.isConnected || tipMuted(w) || w.classList.contains('af-mute')) { return; }
+                if (tipMuted(tw) || tw.classList.contains('af-mute')) { return; }
                 close();
-                openW = w;
+                openW = tw;
                 freeAtX = ex; freeAtY = ey;
-                w.classList.add('af-open');
-                place(w);
+                tw.classList.add('af-open');
+                place(tw);
             }, tipOpenMs(w));
         }, true);
 

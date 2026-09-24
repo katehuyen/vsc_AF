@@ -140,6 +140,11 @@
            pretending to be a word. */
         #testevent { font-size:11px; padding:1px 4px; border-radius:3px;
             vertical-align:baseline; max-width:190px; }
+        /* U-149 — the picker is a page setting, so it sits beside the heading
+           it governs rather than inside a sentence. */
+        .lanes-h { display:flex; align-items:center; gap:10px; }
+        .lanes-ctl { display:inline-flex; align-items:center; gap:4px; font-size:11px;
+            font-weight:normal; color:var(--vscode-descriptionForeground); }
         /* ‼️ U-81 — THE CARD'S TWO TEXT LINES ARE TWO DIFFERENT FACTS AND WERE
            DRAWN IDENTICALLY: the conversation's name above, the last thing asked
            below, same size, same grey, one under the other — so they read as one
@@ -213,9 +218,9 @@
      *
      * A per-row picker would be a fifth control in a gutter that is already four
      * boxes and a button wide, for a setting nobody changes twice in a sitting.
-     * It sits in the line that EXPLAINS the ⏱ instead — the one place a reader
-     * is already being told what that button does. MIRROR: the box is narrow,
-     * so its tooltip opens with what it is set to.
+     * It sits beside the Swim lanes heading, as a setting of the whole chart
+     * (U-149). MIRROR: the box is narrow, so its tooltip opens with what it is
+     * set to.
      */
     function testEventSelect() {
         const evs = DATA.alertEvents || [{ event: 'turn-ready', label: 'Turn finished' }];
@@ -957,7 +962,11 @@
     function hotHtml(box, tip, o) {
         const attrs = `style="left:${box.left.toFixed(3)}%;width:${box.width.toFixed(3)}%;`
             + `top:${box.top.toFixed(3)}%;height:${box.height.toFixed(3)}%;`
-            + `cursor:${o.cursor || (o.file ? 'pointer' : 'default')}"`;
+            + `cursor:${o.cursor || (o.file ? 'pointer' : 'default')}"`
+            // U-149 — a dot or a bar is READ far more than pressed; the 700ms a
+            // pressable trigger waits (U-74) outlived the page's own redraws.
+            // A box that IS a control keeps the slow open.
+            + (o.trigCls ? '' : ' data-aftip-open="200"');
         // ‼️ A-23 — A HOT BOX CAN CARRY A CONTROL, not only a hover. The gutter's
         // ♪ is drawn in SVG and answered in HTML like everything else here
         // (U-67), and the box that answers for it has to BE the control too:
@@ -1751,8 +1760,9 @@
                 guide: 'canli-gozlem'
             })}
             ${emptyHint}
-            <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds as ${testEventSelect()}. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click a dot or a bar</b> for <b>Copy Corpus</b> — that step's own words, whole, without opening anything — and the session's actions under it (rename · terminal · interrupt · end · clear).</div>`}
+            ${density || !laneCount ? `<h2>${density ? 'Activity density' : 'Swim lanes'}</h2>`
+                : `<h2 class="lanes-h">Swim lanes<span class="lanes-ctl">⏱ tests as ${testEventSelect()}</span></h2>`}
+            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}; <b>⏱</b> tries them in 3 seconds. Each row is one session with its own choices, firing even while this panel is closed (history-only rows have them disabled). <b>Hover</b> a name for its figures, a dot or bar for that moment; click opens the transcript there, right-click for <b>Copy Corpus</b> and the session's actions.</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}

@@ -246,7 +246,7 @@ ok('…and its figures are in there', /Session: #S1 · TOOL/.test(lastHtml)
     ok('so does the unnamed one', bySession.abcdef1234567890 === 4);
     ok('and every row carries a test control', svgGroups('af-alerttest').length === 4);
     ok('the page explains the controls are per session, not per agent',
-        /Every row is one session and carries its own choices/.test(lastHtml));
+        /Each row is one session with its own choices/.test(lastHtml));
 }
 ok('ops tooltip claims no shared rows', !/data-agent="ops"[\s\S]{0,600}has \d+ rows here/.test(lastHtml));
 
@@ -347,10 +347,10 @@ ok('S1 asks to turn its own sound OFF',
     // off the box, which is where it has to be right.
     const boxes = re => (lastHtml.match(re) || []).map(s => /data-file="([^"]*)" data-ts="(\d+)"/.exec(s))
         .filter(Boolean).map(m => ({ file: m[1], ts: Number(m[2]) }));
-    const dots = boxes(/lane-hotw lane-dot" style="[^"]*"><span class="lane-hot mark" data-file="[^"]*" data-ts="\d+"/g);
+    const dots = boxes(/lane-hotw lane-dot" style="[^"]*"[^>]*><span class="lane-hot mark" data-file="[^"]*" data-ts="\d+"/g);
     // A bar and the row's own label are the same wrapper; the row's box is the
     // one that names no moment (`data-ts="0"`), which is exactly what it means.
-    const bars = boxes(/lane-hotw" style="[^"]*"><span class="lane-hot mark" data-file="[^"]*" data-ts="\d+"/g)
+    const bars = boxes(/lane-hotw" style="[^"]*"[^>]*><span class="lane-hot mark" data-file="[^"]*" data-ts="\d+"/g)
         .filter(b => b.ts > 0);
     ok('‼️ X-41 — a mark whose EVENT carried no path takes its lane\'s',
         dots.length > 0 && dots.some(d => d.file === 'D:/t/S1.jsonl'));
@@ -407,7 +407,11 @@ ok('S1 asks to turn its own sound OFF',
     ok('‼️ nothing is left on a native title — the drawing carries no hover at all',
         !/<circle[^>]*><title>/.test(lastHtml) && !/height="14"[^>]*><title>/.test(lastHtml));
     ok('…and a point is its own click target, at its own moment',
-        /lane-hotw lane-dot" style="[^"]*"><span class="lane-hot mark" data-file="[^"]*" data-ts="[1-9]/.test(lastHtml));
+        /lane-hotw lane-dot" style="[^"]*"[^>]*><span class="lane-hot mark" data-file="[^"]*" data-ts="[1-9]/.test(lastHtml));
+    ok('‼️ U-149 — a dot opens its panel in 200ms, not the 700ms a pressable trigger waits',
+        /lane-hotw lane-dot" style="[^"]*" data-aftip-open="200"><span class="lane-hot mark"/.test(lastHtml));
+    ok('…while a hot box that IS a control keeps the slow open',
+        !/data-aftip-open="200"><span class="lane-hot mark af-toggle/.test(lastHtml));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

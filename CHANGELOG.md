@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.652.0 - Live Timeline dots and bars open their panel at once, even under a redraw (U-149) (2026-09-24)
+
+- **A dot or a bar opens its panel in 200ms (U-149).** Every lane box carries a
+  button role, so the tooltip component gave it the 700ms wait meant for
+  pressable controls — and the page redraws itself every few seconds, so the
+  wait often never ended. Lane dots and bars now open in 200ms; the row's own
+  toggle boxes keep the slower open.
+- **A redraw during the wait no longer kills it.** The free-panel open timer
+  gave up silently when the page replaced its trigger under a still pointer;
+  it now opens the trigger standing at the same point, and nothing when there
+  is none.
+- **The ⏱ subject picker left the paragraph.** It sits beside the Swim lanes
+  heading as `⏱ tests as [...]`, and the explanation under it is shorter.
+
 ## 3.651.0 - A card in a baton relay wears its leg in the session list (S-91) (2026-09-23)
 
 - **The relay leg is on the card, not only on the open session (S-91).** The
