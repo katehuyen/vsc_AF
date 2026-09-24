@@ -1065,6 +1065,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         onFailStep: typeof s.onFail === 'number' ? s.onFail : 1,
         runIf: s.runIf ?? '',
         contract: s.outputContract === 'json' ? 'json' : 'text',
+        sid: s.id ?? '',
         verifyCriteria: s.verify?.criteria ?? '',
         verifyRetries: s.verify?.retries ?? 1,
         verifyEngine: s.verify?.engine ?? '',
@@ -1109,6 +1110,8 @@ export function stepFromDraft(
     if (!title) { return { error: `Step ${n} has no title.` }; }
     const mode: TaskMode = str('smode') === 'interactive' ? 'interactive' : 'headless';
     const chain: Partial<WorkflowStep> = {
+        // M-39 — the step keeps its id through an edit, so {steps.<id>…} still finds it
+        id: str('sid') || undefined,
         onFail: str('onFail') === 'continue' ? 'continue'
             : str('onFail') === 'goto' ? Math.max(1, num('onFailStep', 1)) : undefined,
         runIf: str('runIf') || undefined,

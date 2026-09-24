@@ -9037,6 +9037,13 @@
           ],
           "description": "When a quality gate cannot judge an asset — the judge cannot open a video or audio file, or it could not run — what happens. It is never counted as a pass."
         },
+        "agentFarm.workflowPrevTextChars": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 200,
+          "maximum": 20000,
+          "markdownDescription": "How much of the previous step's text a workflow step's `{prev_text}` carries. Any earlier step's whole text (up to 20,000 characters) is also readable as `{steps.<id>.text}`."
+        },
         "agentFarm.taskRetry": {
           "type": "object",
           "default": {},

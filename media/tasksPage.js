@@ -2216,6 +2216,7 @@
             return `<li class="wfstep${c.stepIdx === i ? ' on' : ''}">
                 <span class="wfsi" title="${C.esc(d.hint)}">${d.icon}</span>
                 <span class="wfst"><b>${C.esc(s.title || '(untitled step)')}</b>
+                    ${s.sid ? `<code class="small" title="${C.esc(`${s.sid}\n\nThis step's id — a later step reads what it produced as {steps.${s.sid}.text}, {steps.${s.sid}.json.field} or {steps.${s.sid}.file}. It stays when steps move.`)}">${C.esc(s.sid)}</code>` : ''}
                     <span class="muted small">${C.esc(d.who)}${d.flags.length ? ' · ' + C.esc(d.flags.join(' · ')) : ''}</span></span>
                 <span class="wfsa">
                     <button class="mini secondary" data-st="up" data-i="${i}"${i === 0 ? ' disabled' : ''} title="move it up">↑</button>
@@ -2228,7 +2229,7 @@
         return `<div class="ntsec"><b>Steps</b>
             <span class="muted small">Each step runs after the one above and is handed its output —
                 <code>${PREV}</code> in a prompt inserts the previous step's output file,
-                <code>{prev_text}</code> its text, <code>{prev_json.x}</code> a field of it and <code>{input.name}</code> one of the inputs below.</span></div>
+                <code>{prev_text}</code> its text, <code>{prev_json.x}</code> a field of it, <code>{steps.s2.json.x}</code> any earlier step by its id and <code>{input.name}</code> one of the inputs below.</span></div>
             ${c.steps.length
                 ? `<ol class="wfsteps">${list}</ol>`
                 : '<div class="ntmsg">No steps yet. A workflow with none is saved, but running it does nothing.</div>'}
@@ -4566,7 +4567,8 @@
                     if (composer.stepIdx === i) { composer.stepIdx = null; composer.step = null; }
                     else if (composer.stepIdx > i) { composer.stepIdx--; }
                 } else if (act === 'dup') {
-                    steps.splice(i + 1, 0, Object.assign({}, steps[i]));
+                    // a copy is a new step: it gets its own id when the chain is saved
+                    steps.splice(i + 1, 0, Object.assign({}, steps[i], { sid: '' }));
                     if (composer.stepIdx > i) { composer.stepIdx++; }
                 } else if (act === 'up' || act === 'down') {
                     const j = act === 'up' ? i - 1 : i + 1;

@@ -9,6 +9,7 @@
  * it says which one and why. Pure: no vscode, no fs.
  */
 import { resolveFlex } from './flexResolve';
+import { ensureStepIds, unknownStepRefs } from './runContext';
 
 export type InputType = 'file' | 'folder' | 'text' | 'choice' | 'number' | 'url';
 export const INPUT_TYPES: readonly InputType[] = ['file', 'folder', 'text', 'choice', 'number', 'url'];
@@ -137,14 +138,24 @@ export function undeclaredInputRefs(texts: readonly unknown[], schema: readonly 
     return [...out];
 }
 
-/** A workflow's schema checked against its own steps: the kept inputs, and one sentence that refuses the save ('' = fine). */
-export function checkWorkflowInputs(raw: unknown, steps: readonly unknown[]): { inputs: WorkflowInput[]; error: string } {
+/**
+ * A workflow about to be saved, checked against what its steps read: the kept
+ * inputs, and one sentence that refuses the save ('' = fine) — an undeclared
+ * `{input.x}`, or (M-39) a `{steps.<id>…}` naming a step the chain lacks. Gives
+ * every step its stable id on the way.
+ */
+export function checkWorkflowInputs(raw: unknown, steps: { id?: string }[]): { inputs: WorkflowInput[]; error: string } {
     const n = normalizeInputs(raw);
     if (n.errors.length) { return { inputs: n.inputs, error: n.errors.join('; ') }; }
     const loose = undeclaredInputRefs(steps, n.inputs);
+    if (loose.length) {
+        return { inputs: n.inputs, error: `a step reads ${loose.map(x => `{input.${x}}`).join(', ')}, but the workflow declares no such input` };
+    }
+    ensureStepIds(steps);
+    const lost = unknownStepRefs(steps, steps.map(s => s.id as string));
     return {
         inputs: n.inputs,
-        error: loose.length ? `a step reads ${loose.map(x => `{input.${x}}`).join(', ')}, but the workflow declares no such input` : ''
+        error: lost.length ? `a step reads ${lost.map(x => `{steps.${x}…}`).join(', ')}, but the workflow has no step with that id — it has ${steps.map(s => s.id).join(', ')}` : ''
     };
 }
 

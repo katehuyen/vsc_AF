@@ -3612,6 +3612,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             portableRoots,
             judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
             judgeUnjudged: () => cfg().get<string>('judgeUnjudged', 'ask'),
+            prevTextChars: () => Math.min(20000, Math.max(200, cfg().get<number>('workflowPrevTextChars', 1500))),
             // ‼️ M-3 — the fleet-wide answer to "what happens when a run fails",
             // used by every task that does not state its own. Unset means the
             // shipped default, which is the behaviour this extension has always
@@ -8826,7 +8827,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.status',
-            describe: '‼️ WHERE ONE WORKFLOW RUN GOT TO, and what it produced — the answer to "did that chain finish?" without reading its tasks one by one. Returns status (running | done | failed | stopped), why it ended early when it did, every step with its task id and output file, the FINAL HANDOFF (the run\'s actual result: the file and text the last completed step passed on) and the whole run\'s cost and tokens added up once. Derived from the tasks, so it still answers after a window reload. args: runId (from workflows.run)',
+            describe: '‼️ WHERE ONE WORKFLOW RUN GOT TO, and what it produced — the answer to "did that chain finish?" without reading its tasks one by one. Returns status (running | done | failed | stopped), why it ended early when it did, every step with its task id and output file, the FINAL HANDOFF (the run\'s actual result: the file and text the last completed step passed on), the BOARD (M-39: every finished step by its stable id — text, json, file, verdict, cost — what {steps.<id>.…} reads) and the whole run\'s cost and tokens added up once. Derived from the tasks, so it still answers after a window reload. args: runId (from workflows.run)',
             handler: (args) => {
                 const st = taskManager.workflowRunState(argStr(args, 'runId'));
                 need(st, 'No workflow run with that id — its tasks may have been purged, or it never started.');
@@ -15565,7 +15566,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE})} — advanced webhook/media/browser fields pass through as in the builder]), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
+            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE})} — advanced webhook/media/browser fields pass through as in the builder]), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),

@@ -94,6 +94,8 @@
         supervisor('lowConfidence', 'If the supervisor is not sure', 'tri', 'smart', 'fallback',
             { states: { ask: 'park', auto: 'smart', never: 'stop' } }),
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
+        setting('workflow.prevTextChars', '{prev_text} length', 'number', 1500, 'agentFarm.workflowPrevTextChars',
+            { min: 200, max: 20000 }),
         judgeStep('engine', 'Judge engine', 'claude'),
         judgeStep('model', 'Judge model', ''),
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered

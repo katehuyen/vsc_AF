@@ -13,6 +13,7 @@ import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
 import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
+import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
     gateBlock, pauseExpired, Precondition
@@ -1141,6 +1142,8 @@ export interface FarmTemplate extends RunDimensions {
 }
 
 export interface WorkflowStep extends RunDimensions {
+    /** M-39 — stable across inserts and moves; later steps read it as {steps.<id>.…} */
+    id?: string;
     agentId: string;
     agentName: string;
     title: string;
@@ -1211,6 +1214,8 @@ export interface Handoff {
     json?: unknown;
     /** M-38 — the run's input values, set on every step from the run record */
     inputs?: Record<string, string>;
+    /** M-39 — every finished step of the run, set on every step from the run record */
+    board?: RunBoard;
 }
 
 export interface FarmTrigger {
@@ -1303,6 +1308,8 @@ export interface WorkflowRunState {
     /** ‼️ the run's RESULT: what the last completed step handed on. A parent
      *  reads a workflow through this and through nothing else. */
     handoff?: Handoff;
+    /** M-39 — every finished step of the run by its stable id, and what it produced */
+    board?: RunBoard;
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -1583,6 +1590,8 @@ interface WorkflowRunRecord {
     ended?: { status: WorkflowRunStatus; reason?: string; stepIndex?: number; at: number };
     /** M-38 — the input values the run started with; persisted so {input.x} survives a reload */
     inputs?: Record<string, string>;
+    /** M-39 — every finished step, by its stable id; persisted so a resumed run still reads it */
+    board?: RunBoard;
 }
 
 export interface TaskManagerOptions {
@@ -1590,6 +1599,8 @@ export interface TaskManagerOptions {
     judgeArgs?: () => string;
     /** M-42 — what a step no judge could look at does: ask (default) · pass · stop (`agentFarm.judgeUnjudged`) */
     judgeUnjudged?: () => string;
+    /** M-39 — how much of the previous step's text {prev_text} carries (`agentFarm.workflowPrevTextChars`, default 1500) */
+    prevTextChars?: () => number;
     /** ‼️ M-3 — the user's DEFAULT retry policy (`agentFarm.taskRetry`), used by
      *  every run that does not state one of its own. Read through a function
      *  because it is a setting: a window that has been open for a week must
@@ -2153,6 +2164,7 @@ export class TaskManager implements vscode.Disposable {
             this.schedules = Array.isArray(json.schedules) ? json.schedules : [];
             this.templates = Array.isArray(json.templates) ? json.templates : [];
             this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
+            for (const w of this.workflows) { ensureStepIds(w.steps ?? []); }
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
             this.automation = json.automation && typeof json.automation === 'object' ? json.automation : {};
             this.automationLog = Array.isArray(json.automationLog) ? json.automationLog : [];
@@ -2831,6 +2843,7 @@ export class TaskManager implements vscode.Disposable {
                         this.schedules = Array.isArray(json.schedules) ? json.schedules : [];
                         this.templates = Array.isArray(json.templates) ? json.templates : [];
                         this.workflows = Array.isArray(json.workflows) ? json.workflows : [];
+            for (const w of this.workflows) { ensureStepIds(w.steps ?? []); }
                         this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
                         this.onDidChangeEmitter.fire();
                     } catch { /* mid-write or gone — the next change retries */ }
@@ -2907,6 +2920,7 @@ export class TaskManager implements vscode.Disposable {
      * truncate the store either.
      */
     private writeStore(tasks: FarmTask[]): void {
+        for (const w of this.workflows) { ensureStepIds(w.steps); }
         fs.mkdirSync(path.dirname(this.storageFile), { recursive: true });
         // absolute machine paths leave as ${claudeDir}/${globalStorage}/${home}
         // tokens — the git-synced store stays valid on every machine
@@ -6282,6 +6296,7 @@ export class TaskManager implements vscode.Disposable {
             ...(!live && end?.reason ? { reason: end.reason } : {}),
             ...(!live && end?.stepIndex !== undefined ? { stoppedAtStep: end.stepIndex } : {}),
             ...(lastDone ? { handoff: this.computeHandoff(lastDone) } : {}),
+            ...(rec?.board ? { board: rec.board } : {}),
             steps,
             costUSD: tasks.reduce((a, t) => a + (t.costUSD ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
@@ -6333,7 +6348,7 @@ export class TaskManager implements vscode.Disposable {
 
     private substitute(prompt: string, handoff: Handoff): string {
         let out = prompt.split(PREV_OUTPUT_PLACEHOLDER).join(handoff.file ?? '');
-        out = out.split('{prev_text}').join((handoff.text ?? '').slice(0, 1500));
+        out = out.split('{prev_text}').join((handoff.text ?? '').slice(0, this.opts.prevTextChars?.() ?? 1500));
         out = out.replace(/\{prev_json\.([\w.]+)\}/g, (_m, fieldPath: string) => {
             let cur: unknown = handoff.json;
             for (const key of fieldPath.split('.')) {
@@ -6343,8 +6358,9 @@ export class TaskManager implements vscode.Disposable {
             }
             return typeof cur === 'string' ? cur : JSON.stringify(cur ?? '');
         });
-        // M-38 — last, so a value a run was given is never re-read as a {prev_*} placeholder
-        return fillInputs(out, handoff.inputs);
+        // M-39 — any earlier step, by its stable id; M-38 — the inputs last, so a value a run
+        // was given is never re-read as a placeholder
+        return fillInputs(fillBoard(out, handoff.board), handoff.inputs);
     }
 
     private runIfMatches(runIf: string, handoff: Handoff): boolean {
@@ -6362,6 +6378,7 @@ export class TaskManager implements vscode.Disposable {
     /** Advance a run to a step, honoring runIf conditions and the loop guard. */
     private routeToStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
         handoff.inputs = this.runRecords.get(runId)?.inputs;
+        handoff.board = this.runRecords.get(runId)?.board;
         if (index < 0 || index >= w.steps.length) {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
@@ -6947,6 +6964,7 @@ export class TaskManager implements vscode.Disposable {
         const w = this.workflows.find(x => x.id === task.workflowId);
         if (!w) { return; }
         const runId = task.workflowRunId ?? task.workflowId ?? '';
+        this.noteOnBoard(w, task, status, runId);
         // Single chokepoint for parallel fan-in: a branch of the active group
         // collects here instead of advancing the run on its own.
         const group = this.parallelGroups.get(runId);
@@ -6956,8 +6974,9 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         const stepIndex = task.stepIndex ?? 0;
+        const handoff = this.computeHandoff(task);
         if (status === 'done') {
-            this.routeToStep(w, stepIndex + 1, this.computeHandoff(task), runId);
+            this.routeToStep(w, stepIndex + 1, handoff, runId);
             return;
         }
         const onFail = w.steps[stepIndex]?.onFail ?? 'stop';
@@ -6974,7 +6993,24 @@ export class TaskManager implements vscode.Disposable {
         void vscode.window.showWarningMessage(
             `Agent Farm: workflow "${w.title}" step ${stepIndex + 1} failed — ` +
             (onFail === 'continue' ? 'continuing to next step.' : `jumping to step ${onFail}.`));
-        this.routeToStep(w, nextIndex, this.computeHandoff(task), runId);
+        this.routeToStep(w, nextIndex, handoff, runId);
+    }
+
+    /** M-39 — a finished step onto its run's board, under its stable id. */
+    private noteOnBoard(w: FarmWorkflow, task: FarmTask, status: TaskStatus, runId: string): void {
+        const rec = this.runRecords.get(runId);
+        if (!rec) { return; }
+        const i = task.stepIndex ?? 0;
+        const h = this.computeHandoff(task);
+        rec.board = boardWrite(rec.board, {
+            id: stepKey(w.steps[i], i), index: i, title: task.title, status,
+            ...(h.text !== undefined ? { text: h.text } : {}),
+            ...(h.json !== undefined ? { json: h.json } : {}),
+            ...(h.file ? { file: h.file } : {}),
+            ...(task.verified ? { verdict: task.verified } : {}),
+            ...(task.costUSD ? { costUSD: task.costUSD } : {}),
+            at: Date.now()
+        });
     }
 
     // ---------- parallel groups (fan-out / fan-in) ----------
