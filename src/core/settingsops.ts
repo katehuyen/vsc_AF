@@ -163,7 +163,7 @@ const CATEGORY_OF: Record<string, string> = {
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
     agentEngineDefaults: 'core',
-    modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', projects: 'core',
+    modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', flexPresets: 'core', projects: 'core',
     // projects — the umbrella everything else hangs under
     projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
     projectsArchiveRoot: 'core', projectTemplates: 'core',

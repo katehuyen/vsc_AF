@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.665.0 - Presets: a named set of preferences, applied in one go (X-369) (2026-09-24)
+
+- **Built-in cost presets: Economy · Balanced · Quality (X-369).** Balanced is
+  exactly the shipped defaults; Economy caps the retry supervisor at one call
+  and $0.50 and the sentry leader at $1 a day; Quality gives the judge a
+  stronger model, the supervisor three calls and the sentry leader $5 a day.
+  Engine-specific model names are left alone on purpose.
+- **Your own presets** live in `agentFarm.flexPresets`, global or bound to one
+  project (a project's own wins inside it). Every value is checked against its
+  preference before it is stored; built-in names cannot be taken or deleted.
+- **Applying a preset says so.** At Farm Settings each value is written into
+  its setting — merged into object settings such as `taskRetry`, never
+  replacing them — and every value's origin reads *"from Farm Settings
+  (preset: Economy)"*. At run start nothing is written: the answer is the
+  arguments to pass to the op that starts the run. Changing a value afterwards
+  never changes the preset; `presetDiff` reads it as *"Balanced + 2 changes"*.
+- **One library, three families.** Launch profiles and the sentry's
+  Mechanical · Intelligent · Hybrid keep working exactly as before; the library
+  lists them with the door that applies each.
+- **Bridge:** `presets.list`, `presets.save` (with `renameFrom`),
+  `presets.apply` (`level`, `dryRun`), `presets.delete`.
+
 ## 3.664.0 - A preference says where its value came from (X-368) (2026-09-24)
 
 - **One resolver for every flex point (X-368).** `resolveFlex` walks built-in →

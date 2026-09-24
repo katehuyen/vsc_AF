@@ -398,6 +398,12 @@ composing its own.
   shipped default is `builtin`, or every point would claim Farm Settings.
 - The launch resolvers keep their ladders; `ORIGIN_LEVEL` places each rung on the
   chain and `test_flex_resolve.js` derives their precedence by behaviour.
+- A PRESET (`src/core/flexPresets.ts`, X-369) is a named set of point values
+  applied at one level; the resolver's third argument names it, so the origin
+  reads "from Farm Settings (preset: Economy)". A built-in preset family keeps
+  every member on the same points, and a "neutral" member (Balanced) equals the
+  defaults — both are pinned by `test_flex_presets.js`. Applying at Farm Settings
+  MERGES into object settings; never write a whole `taskRetry` for one field.
 
 ## The index holds a PROJECTION, the store holds the record (X-129)
 

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.664.0",
+  "version": "3.665.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8380,6 +8380,48 @@
           "additionalProperties": false,
           "default": {},
           "markdownDescription": "How **every** interactive session starts — Start, Continue and Resume alike, from the tree, the palette or a keybinding. Set once instead of typing `--model` into a terminal all day. Every field is optional and an empty one emits no flag at all, so the default `{}` starts exactly the bare `claude` it always did. The **Start Session…** launcher (`ctrl+alt+s`) shows these as inherited values and can override them for one launch, or write itself back here."
+        },
+        "agentFarm.flexPresets": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Your own presets: a named set of preference values (flex points) applied together. The built-in ones — Economy · Balanced · Quality — are not stored here. Apply one with `presets.apply`; editing a value afterwards never changes the preset.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "values"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "The preset's name."
+              },
+              "values": {
+                "type": "object",
+                "description": "Flex point id → value, e.g. {\"retry.supervisor.maxCalls\": 1}. flex.list names every point."
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "global",
+                  "project"
+                ],
+                "description": "global = everywhere; project = only in the project named below."
+              },
+              "project": {
+                "type": "string",
+                "description": "The project id, for a project preset."
+              },
+              "describe": {
+                "type": "string",
+                "description": "One line on what it is for."
+              },
+              "family": {
+                "type": "string",
+                "description": "Presets that are alternatives to each other share a family (cost, …)."
+              }
+            }
+          }
         },
         "agentFarm.launchProfiles": {
           "type": "array",

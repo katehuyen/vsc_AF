@@ -26518,37 +26518,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch (e) { return { json: {}, parseError: String(e) }; }
     };
 
+    // One writer for every bridge op that writes a setting (settings.set, presets.*).
+    const writeUserSetting = async (key: string, value: unknown): Promise<void> => {
+        try {
+            await vscode.workspace.getConfiguration().update(key, value, vscode.ConfigurationTarget.Global);
+        } catch (e) {
+            const msg = String((e as Error)?.message ?? e);
+            // ‼️ VS Code can refuse a key this build's own manifest declares
+            // (measured on `agentFarm.budgetsUnlimited`). Reading it works —
+            // the reader falls back to the file — so the write falls back to
+            // the same file rather than handing the user a line to paste.
+            if (/not a registered configuration/i.test(msg)) {
+                const w = patchUserSetting(key, value);
+                if (w.ok && !w.shadowedBy) { return; }
+                if (w.ok) {
+                    throw new Error(`"${key}" was written to ${w.file}, but it is also set in `
+                        + `${w.shadowedBy}, which takes precedence in this window — change it there.`);
+                }
+                throw new Error(`${msg} This build DOES declare "${key}" — VS Code's `
+                    + `configuration registry dropped it in this window and no extension can put it `
+                    + `back from inside. Agent Farm tried to write the line into ${w.file} itself, `
+                    + `where the reader would have picked it up with no reload, and could not: `
+                    + `${w.error}. Reloading the window usually restores the registry; until then `
+                    + `add the line by hand:  "${key}": ${JSON.stringify(value ?? null)}`);
+            }
+            throw e;
+        }
+    };
+
     registerSettingsOps(bridge, {
         getAgents: () => agents,
         categories: settingsCategories,
         // ‼️ X-193 — the SAME two functions the settings page is handed.
         pathVarValues, previewPaths,
-        writeSetting: async (key, value) => {
-            try {
-                await vscode.workspace.getConfiguration().update(key, value, vscode.ConfigurationTarget.Global);
-            } catch (e) {
-                const msg = String((e as Error)?.message ?? e);
-                // ‼️ VS Code can refuse a key this build's own manifest declares
-                // (measured on `agentFarm.budgetsUnlimited`). Reading it works —
-                // the reader falls back to the file — so the write falls back to
-                // the same file rather than handing the user a line to paste.
-                if (/not a registered configuration/i.test(msg)) {
-                    const w = patchUserSetting(key, value);
-                    if (w.ok && !w.shadowedBy) { return; }
-                    if (w.ok) {
-                        throw new Error(`"${key}" was written to ${w.file}, but it is also set in `
-                            + `${w.shadowedBy}, which takes precedence in this window — change it there.`);
-                    }
-                    throw new Error(`${msg} This build DOES declare "${key}" — VS Code's `
-                        + `configuration registry dropped it in this window and no extension can put it `
-                        + `back from inside. Agent Farm tried to write the line into ${w.file} itself, `
-                        + `where the reader would have picked it up with no reload, and could not: `
-                        + `${w.error}. Reloading the window usually restores the registry; until then `
-                        + `add the line by hand:  "${key}": ${JSON.stringify(value ?? null)}`);
-                }
-                throw e;
-            }
-        },
+        writeSetting: writeUserSetting,
         readSetting: (key, fallback) => cfgValue(key.startsWith('agentFarm.') ? key : `agentFarm.${key}`, fallback),
         getProfiles: () => context.globalState.get<SettingsProfile[]>('agentfarm.settingsProfiles', []),
         setProfiles: async (list) => { await context.globalState.update('agentfarm.settingsProfiles', list); },
@@ -26605,6 +26608,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // X-368 — only what the user WROTE is the Farm Settings layer; the shipped default is `builtin`.
     registerFlexOps(bridge, {
+        writeSetting: writeUserSetting,
         readSetting: key => {
             const i = vscode.workspace.getConfiguration().inspect<unknown>(key);
             return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined;

@@ -25,6 +25,8 @@ export interface FlexResolved {
     overridden: { level: FlexLevel; value: unknown }[];
     /** values given but not counted, each with its reason */
     ignored: { level: FlexLevel; value: unknown; why: string }[];
+    /** the preset the winning value came from, when a preset was applied at that level */
+    preset?: string;
     /** the one line every surface writes: the value, where it came from, what it beat */
     sentence: string;
 }
@@ -66,7 +68,10 @@ export function showFlexValue(p: FlexPoint, v: unknown): string {
     return String(v);
 }
 
-export function resolveFlex(p: FlexPoint | string, layers: FlexLayers = {}): FlexResolved {
+/** `presets` names, per level, the preset whose values that level holds — it joins the origin. */
+export function resolveFlex(
+    p: FlexPoint | string, layers: FlexLayers = {}, presets: Partial<Record<FlexLevel, string>> = {}
+): FlexResolved {
     const point = typeof p === 'string' ? flexPoint(p) : p;
     if (!point) { throw new Error(`No flex point "${String(p)}".`); }
     const counted: { level: FlexLevel; value: unknown }[] = [];
@@ -90,9 +95,11 @@ export function resolveFlex(p: FlexPoint | string, layers: FlexLayers = {}): Fle
         ? `; ${FLEX_LEVEL_LABELS[overridden[0].level]} said ${showFlexValue(point, overridden[0].value)}`
         : top && JSON.stringify(point.default) !== JSON.stringify(value)
             ? `; built-in default ${showFlexValue(point, point.default)}` : '';
+    const preset = top ? presets[from] : undefined;
     return {
         point: point.id, value, from, overridden, ignored,
-        sentence: `${showFlexValue(point, value)} — ${ORIGIN[from]}${beaten}`
+        ...(preset ? { preset } : {}),
+        sentence: `${showFlexValue(point, value)} — ${ORIGIN[from]}${preset ? ` (preset: ${preset})` : ''}${beaten}`
     };
 }
 
