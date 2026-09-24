@@ -362,12 +362,19 @@ span.af-tipw { display: inline-block; max-width: 100%; }
    panel. */
 .af-tipw.tip-free > .af-tip { position: fixed; left: 0; top: 0; z-index: 60; max-height: 52vh; }
 .af-tipw.tip-free.af-open > .af-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
+/* U-146 — a free panel re-opened on a redrawn node was open already: no fade. */
+.af-tipw.tip-free.af-now > .af-tip { transition: none; }
 /* ‼️ The stand-in for a `:hover` a repaint took away — see afTip.js. A live
    table redrawing under a stationary pointer replaces the node you were on, and
    the browser does not put :hover back until you move; without this the panel
    you were reading closed by itself. No delay: it is already open, and fading
-   it in a second time would be a blink. */
-.af-tipw.af-on > .af-tip { visibility: visible; opacity: 1; transition-delay: 0s; }
+   it in a second time would be a blink.
+   ‼️ U-146 — AND NO FADE EITHER. The bridge asks `elementFromPoint` before it
+   adds this class, which computes the new node's panel CLOSED (opacity 0), so
+   a delay of 0 still ran the .08s fade from nothing. The Console strip redraws
+   every 120ms while a turn runs: its ⏳ panel was re-fading most of the time,
+   i.e. drawn half-transparent. */
+.af-tipw.af-on > .af-tip { visibility: visible; opacity: 1; transition: none; }
 /* ‼️ A PANEL THAT OPENS OFF THE PAGE SHOWS NOTHING. The default anchors to the
    trigger's left edge, which is right for a chip near the start of a row and
    wrong for the last column of one: a 760px box hung off a trigger that already

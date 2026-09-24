@@ -221,7 +221,7 @@
         // "it is already open"; none of them survives a press.
         w.classList.remove('af-on');
         w.classList.remove('af-hold');
-        w.classList.remove('af-open');
+        w.classList.remove('af-open', 'af-now');
         for (let i = 0; i < closers.length; i++) { closers[i](w); }
     }
 
@@ -519,7 +519,7 @@
 
         const close = () => {
             if (!openW) { return; }
-            openW.classList.remove('af-open');
+            openW.classList.remove('af-open', 'af-now');
             openW = null;
         };
 
@@ -626,7 +626,8 @@
                 close();
                 if (!w || w.classList.contains('af-mute') || tipMuted(w)) { return; }
                 openW = w;
-                w.classList.add('af-open');
+                // U-146: it was already open — back at once, not faded in again.
+                w.classList.add('af-open', 'af-now');
                 // The replacement is a different element in a redrawn section:
                 // measured again rather than given the old box.
                 place(w);

@@ -22,8 +22,8 @@ function mkEl(cls) {
         cls: new Set(String(cls || '').split(/\s+/).filter(Boolean))
     };
     el.classList = {
-        add: c => el.cls.add(c),
-        remove: c => el.cls.delete(c),
+        add: (...c) => c.forEach(x => el.cls.add(x)),
+        remove: (...c) => c.forEach(x => el.cls.delete(x)),
         contains: c => el.cls.has(c),
         toggle: (c, on) => (on ? el.cls.add(c) : el.cls.delete(c))
     };
@@ -306,6 +306,16 @@ ok('‼️ U-74 — and a press and a key are watched, or a panel never yields',
         two.t.style.left === '100px');
     ok('…and back at the line the reader had reached', two.t.scrollTop === 90);
     ok('the dead wrapper does not stay open behind it', !one.w.classList.contains('af-open'));
+    // U-146: the bridge asks elementFromPoint first, which computes the new
+    // panel CLOSED — so a re-open that fades runs from opacity 0 every redraw.
+    ok('‼️ U-146 — the re-opened panel is marked to come back at once, the first open is not',
+        two.w.classList.contains('af-now') && !one.w.classList.contains('af-now'));
+    {
+        const css = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'common.css'), 'utf8');
+        ok('‼️ U-146 — neither stand-in fades: af-on and a re-opened free panel have no transition',
+            /\.af-tipw\.af-on > \.af-tip \{[^}]*transition: none;/.test(css)
+            && /\.af-tipw\.tip-free\.af-now > \.af-tip \{ transition: none; \}/.test(css));
+    }
 
     // ‼️ AND THE OTHER HALF OF THE SAME BUG: the ordinary bridge must NOT put a
     // free panel back, because `af-on` shows one with no delay at all — a
@@ -535,7 +545,7 @@ ok('‼️ U-74 — and a press and a key are watched, or a panel never yields',
     ok('common.css honours the stand-in class',
         /\.af-tipw\.af-on\s*>\s*\.af-tip\s*\{[^}]*visibility:\s*visible/.test(css));
     ok('…with no delay — it is already open, and fading it in twice is a blink',
-        /\.af-tipw\.af-on\s*>\s*\.af-tip\s*\{[^}]*transition-delay:\s*0s/.test(css));
+        /\.af-tipw\.af-on\s*>\s*\.af-tip\s*\{[^}]*transition:\s*none/.test(css));
     // K-18: the classes the script writes have to mean something in the sheet,
     // and they have to come after the page-declared ones they may override.
     ok('‼️ …and the flip classes, which are what K-18 is',

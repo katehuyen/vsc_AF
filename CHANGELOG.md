@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.653.0 - A panel kept open across a redraw is drawn solid, not re-faded (U-146) (2026-09-24)
+
+- **The ⏳ background-task panel on the Console strip is no longer
+  see-through (U-146).** The strip redraws every 120ms while a turn runs, and
+  the component that keeps a panel open across a redraw first asked the page
+  what was under the pointer — which computed the new panel closed — and then
+  opened it with the ordinary 80ms fade. So the panel spent most of its life
+  fading in from nothing. A panel held open this way now appears at once, with
+  no fade; the same goes for a free-floating panel re-opened after a redraw
+  (the Console's session list, the Live Timeline, Toolbox and Missions rows).
+
 ## 3.652.0 - Live Timeline dots and bars open their panel at once, even under a redraw (U-149) (2026-09-24)
 
 - **A dot or a bar opens its panel in 200ms (U-149).** Every lane box carries a
