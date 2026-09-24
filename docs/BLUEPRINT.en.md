@@ -560,13 +560,30 @@ All of them open the Console with that agent **preselected in the composer**; **
 
 ### The composer has two modes
 
-- **New session:** agent · model · effort · permission-mode pickers + your text → **Start session**.
-- **Running session:** the agent/model/effort pickers are **gone** (they were decided when the process started and cannot change — dead boxes helped nobody). In their place a plain status line (`dev · haiku`) and **the one control that genuinely works live: the permission mode**.
+- **New session:** agent · model · effort · permission-mode pickers + your text → **Start session**. Toggling the **`⑂ Relay`** chip below the composer initiates the session directly as leg 1 of a baton chain.
+- **Running session:** the agent/model/effort pickers are **gone** (they were decided when the process started and cannot change — dead boxes helped nobody). In their place a plain status line (`dev · haiku`), live permission mode controls, and baton relay hands on the status strip: **`⑂→`** (*Pass now* — trigger handover immediately), **`✕⑂`** (*Stop chain* — halt subsequent relay legs), **`⑂+`** (*Attach relay* — seal running session as leg 1), **`↪`** (*Continue from handover* — open fresh composer from handover note), and the blue **`⑂ n`** indicator ([detailed architecture](#baton-relay)).
 
-**Bridge:** `console.start` · `console.send` (goes **into** a running turn; `hold:true` parks it) · `console.queue` (read what is held · `edit` · `drop` · `send` · `clear`) · `console.sessions` (reports `asking` when a turn is parked on a question) · `console.interrupt` · `console.setModel` · `console.setEffort` · `console.answer` (settles a parked *question* — never a tool permission, which stays the user's call) · `console.permissionMode` (with `retry`) · `console.close`.
+**Bridge:** `console.start` · `console.send` (goes **into** a running turn; `hold:true` parks it) · `console.queue` (read what is held · `edit` · `drop` · `send` · `clear`) · `console.sessions` (reports `asking` when a turn is parked on a question) · `console.interrupt` · `console.setModel` · `console.setEffort` · `console.answer` (settles a parked *question* — never a tool permission, which stays the user's call) · `console.permissionMode` (with `retry`) · `console.close` · `baton.status` · `baton.pass` · `baton.stop` · `baton.now` · `baton.attach`.
 
 > **Verification:** `test/smoke_console_live.js` drives **real** claude processes end to end (answer · mid-turn steering delivered inside the turn · hold + edit + hand-over · interrupt in flight · a refused write · the live grant · the retry that really writes the file · a clean close): **27/27 for $0.112**. It stays out of `npm test` because it spends money. The measurement also caught the one design error worth naming: the CLI emits **nothing at all** until its first stdin line, so holding the first message until the session "looks ready" deadlocks forever — the first message is now always sent.
 
+### Question Auto-Timer Resolution
+
+Prevents unattended sessions parked on `AskUserQuestion` prompts from blocking campaign queues indefinitely when no human is present (`src/core/autoAnswerTimers.ts`).
+
+- **Timeout Configuration:** `agentFarm.console.autoAnswer.timeoutSeconds` (default 300s, clamped 5–7200s; toggled with `agentFarm.console.autoAnswer.enabled`).
+- **Autonomous Selection Matrix (`src/core/autoAnswer.ts`):** Upon timeout expiry, chooses the option explicitly flagged `(Recommended)` / `(Önerilen)` by the agent, or falls back to the first available option.
+- **Destructive Action Safeguard (`destructive` Refusal):** Questions containing destructive verbs (`delete`, `drop`, `purge`, `remove`, `destroy`, etc.) in their title, body, or options refuse automated timer resolution by architecture (`refused: destructive`). Tool permission prompts (`PreToolUse`) never execute on a timer; human approval remains mandatory.
+- **Host-Resident Clock:** The timer lives in the Extension Host process rather than the webview, remaining fully active even when the Console webview is closed or navigating away.
+- **Agent and Ledger Transparency:** Answers route through `ConsoleHost.answer()`, explicitly informing the model that the selection was made via auto-timer rather than a human user. Transcripts record `⏱️ Zaman aşımı: önerilen seçenekler seçildi — <question> → <pick>`. The UI card displays a countdown (`⏳ 4:31 left — then "…" is chosen for you [Stop timer]`), which cancels immediately on any keystroke or manual click.
+
+### Background Task Rest and Steer (waiting-task & Steer)
+
+A dedicated operational state when an agent turn completes while leaving an asynchronous background command (test suite, long build, database migration) running (`src/core/liveMonitor.ts`).
+
+- **`waiting-task` State and Purple Card:** When a turn rests with background tasks running, status transitions to `waiting-task` instead of yellow "YOUR TURN". Renders a purple border (`var(--vscode-charts-purple)`), a `BACKGROUND` badge with a slow 4.2-second breathing animation (`animation: afdeep 4.2s`, honoring `prefers-reduced-motion: reduce`).
+- **Elimination of False Alarms:** The "turn-ready" chime is suppressed while waiting on background processes. Audio alerts fire only when the background command actually completes or when genuine user input/permission is required.
+- **`Steer` Mode:** The composer button transforms from Send into `Steer`, allowing the user to provide guidance or queue messages for delivery upon command completion.
 
 ### Slash Command Catalog (/ Picker — 3.333.0 — 3.338.0 — K-29 — K-36)
 
@@ -1059,35 +1076,91 @@ Every transcript already carried each `Edit` / `Write` / `MultiEdit` / `Notebook
 - The Sessions tables gain a **Files** column, counted during the index's existing parse — no extra cost.
 - **Bridge:** `sessions.files` (`detail:true` returns the hunks too).
 
-## Reaching the Farm from Outside — Web View and Chat {#disaridan-erisim}
+### Obsidian Tasks Metadata Syntax Protection
 
-*(3.26.0)* Agent Farm lived inside one VS Code window: nothing to look at from a phone, nothing at all while VS Code was closed (the headless service kept the farm **running** and showed nobody anything), and no way to write to it and get an answer.
+Ensures strict parsing of Obsidian Tasks format metadata icons (`📅`, `⏳`, `🛫`, `➕`, `✅`, `❌`, `🆔`, `⛔`, `🏁`) in backlog files without corrupting user handwritten task titles and descriptions (`src/core/projectBacklog.ts`).
 
-### The web view (read-only)
+- **Rationale:** Legacy parsing regexes greedily stripped valued metadata icons along with any non-whitespace tokens trailing them. This corrupted backlog titles: a title containing `'⏳ Yanıt bekleniyor'` was mutilated into `' bekleniyor'` (the icon consumed the word "Yanıt"), and bare `⛔` hold marks consumed the first word of subsequent descriptions (e.g. `"⛔ kullanıcı karar verecek"` became `"karar verecek"`).
+- **Strict Typed Validation:** Each icon now requires exact conformance to its expected token format:
+  - `📅`, `⏳`, `🛫`, `➕`, `✅`, `❌`: Stripped exclusively when followed by an exact `YYYY-MM-DD` date token. Dateless icons are recognized as intentional user text and preserved intact.
+  - `🆔`: Stripped exclusively when followed by a valid identifier pattern (`[A-Za-z0-9_-]+`).
+  - `⛔`: Stripped exclusively when followed by a comma-separated blocker code list; a bare `⛔` is interpreted solely as an inline `HOLD` flag and leaves subsequent prose untouched.
+  - `🏁`: Stripped exclusively when followed by `delete|keep`.
+- **Constitutional Guarantee:** Enforces Agent Constitution Section 6 and Principle 2 ("User-defined formats, icons, and names are never modified or corrupted without authorization") at the parser level.
 
-`agentFarm.web.enabled` serves one self-contained page: **what needs you · what is running · per-agent and per-project cost · recent sessions · notices** — sized for a thumb, refreshing itself.
+## Reaching the Farm from Outside — Mobile Web Cockpit and Chat Integration {#disaridan-erisim}
 
-It is a **snapshot contract**, not a second UI stack: the extension writes `web-snapshot.json` on a 20-second beat and whoever owns the port serves it. The page therefore **cannot disagree with the panel** — and **when VS Code closes the headless service takes the port over**, keeps serving the last snapshot it has, and says so on the page instead of pretending the figures are live. It hands the port straight back when VS Code returns.
+*(3.26.0 — 3.649.0)* Early versions of Agent Farm were confined inside a single VS Code window: impossible to observe from a phone, with no presence while VS Code was closed (the headless service kept the farm **running** but showed nobody anything), and with no mechanism to send a remote instruction and receive a response. The two-tier external access architecture brings the farm to your pocket via a lightweight, read-only mobile web cockpit and a fully interactive, two-way Telegram cockpit.
 
-Being the one surface that can face a network, its rules are strict:
+### Read-Only Mobile Web Cockpit (Port 8378) & Built-in QR Engine
 
-- **Off by default.**
-- **`127.0.0.1`** unless you opt into LAN (`agentFarm.web.bind: lan`).
-- **A token is mandatory.** No token and the server **refuses to start** rather than serving the farm to whoever asks. It travels as `?t=`, an `Authorization: Bearer` header, or the cookie the page sets — so a phone bookmark keeps working without the token in the address bar.
-- **Read-only by construction:** no route starts, stops or changes anything. Driving the farm is the bridge's job, behind your own machine boundary.
+Enabled via `agentFarm.web.enabled`, the built-in HTTP server provides a standalone, thumb-optimized, self-refreshing web application accessible from any mobile browser: **what needs you · what is running · per-agent and per-project spend · recent sessions · notices board**.
 
-**Open Web View…** generates the token, asks local-vs-network once, and hands you the URL (open in browser / copy).
+- **Snapshot Contract (`web-snapshot.json`):** The web interface issues no heavy database queries; the extension writes an atomic `web-snapshot.json` state dump every 20 seconds, and whoever owns the port serves it. The page **cannot disagree with the VS Code panel**.
+- **Headless Handover on VS Code Shutdown:** When VS Code exits, the background daemon (`agent-farm-headless`) seamlessly adopts port 8378, continues serving the last snapshot, and clearly indicates its state on the page (*"VS Code closed — last snapshot"*). When VS Code reopens, the port is handed back without conflict.
+- **Security & Mandatory Token:** Authentication is compulsory. If no token is configured, the server **refuses to start**. The token is carried via `?t=`, `Authorization: Bearer`, or an HTTP cookie established on first visit.
+- **Zero-Dependency Native QR Code Engine (`src/core/qr.ts`, `src/core/qrTables.ts`):** 
+  - Sending a URL containing an access token to an online QR generation service is an unacceptable credential leak. Agent Farm implements its own self-contained Galois Field GF(256), Reed-Solomon error correction (L/M/Q/H), and BCH masking algorithms.
+  - The rendered output is a pure SVG `<path>` element without scripts or external dependencies.
+- **‼️ "A QR Code is a Promise" and `local` Warning:**
+  - `webCockpit.ts` evaluates 6 connection states. When bound to loopback `127.0.0.1`, a QR code photographed by a phone camera will fail silently.
+  - Instead of drawing an unscannable symbol, the cockpit shifts to an **amber** warning state, replacing the QR code with an explanatory note (*"Bound to this machine only — select LAN for phone access"*). A QR code is generated only when `phoneReachable` evaluates to true.
+- **Dashboard Top-Bar `📱 Web` Button:** A dedicated `📱 Web` action button in the Dashboard header opens the LAN/Local binding and QR cockpit in one click (`webCockpit.ts`).
+- **Mobile Battery and Radio Optimization (`core/webpage.ts`):** 
+  - When the browser tab is hidden or backgrounded (`document.hidden`), the 15-second polling timer is immediately suspended (`poll(false)`), conserving phone battery and cellular radio wakeups.
+  - Upon returning to the foreground, an immediate single `fetch` executes and polling resumes.
+  - Full support for `viewport-fit=cover` with `env(safe-area-inset-*)` padding for notched phone displays.
+- **Bridge Operations:** `web.status`, `web.stop`, `web.bind`, `web.token.new`.
 
-### The chat channel (Telegram)
+### Two-Way Chat Cockpit — Telegram Integration
 
-**Connect Telegram…** takes a bot token (verified against Telegram *before* anything is saved) and stores it in the **secret vault** — never in settings.json. After that a chat talks to your agents: any message runs headlessly on the agent the chat is bound to, and the answer comes back in the same thread with the run's cost. No inbound port is opened — the farm long-polls outward.
+Beyond passive monitoring, a bidirectional Telegram bridge enables remote conversation steering, permission approvals, and session launches directly from mobile messaging.
 
-Commands: `/agent <name>` (bind this chat) · `/new <agent> [prompt]` (open a real Console session — numbered in `/sessions`, its turn cards sent here, the chat focused on it, every turn billed against the daily cap) · `/agents` · `/status` (running, blocked, today's spend) · `/cancel` · `/help`.
+**Connect Telegram…** prompts for a bot token, validates it against the Telegram API prior to saving, and securely stores it in the **secret vault** — never in plain text in `settings.json`. No inbound ports are opened; the extension conducts secure outbound long-polling.
 
-Two rails that are not optional:
+#### 1. Chat-to-Session Routing and Focus
+Messages sent from a chat are dynamically routed to their target Console session (`agentFarm.telegram.routing`):
+- `/focus <session-id>` locks the chat to a specific Console session card.
+- The focused session is marked in `/sessions` with a `← focus` tag.
+- If an agent has exactly one running session, inbound messages target it automatically.
 
-- **An allowlist.** A message from an unlisted chat gets no work done — it is answered with **its own chat id**, so allowing it is one copy-paste. An empty list means the bridge serves nobody.
-- **A daily cap.** `agentFarm.telegram.maxDailyUSD` (default $1): chat-started runs count against it and stop when it is reached, while `/status` keeps working. An unknown `/command` is never run as a prompt — it gets the help text.
+#### 2. Rich Turn Digest Cards on Mobile (core/telegramDigest.ts)
+Whenever an agent finishes a turn or requests input, a compact digest card (strictly within Telegram's 4096-character limit) is delivered to the chat:
+- **Direct Agent Words:** Avoids costly and lossy LLM paraphrasing; the agent's actual closing remarks are extracted and delivered verbatim.
+- **Status & Consumption:** Displays what the session is waiting on, tokens consumed, and session cost.
+- **Interactive Inline Buttons (≤64-byte callback payloads):**
+  - **Question Options:** Asynchronous multi-choice questions render as instant clickable buttons.
+  - **Permission Requests:** Tool permissions appear as immediate `Allow` / `Deny` buttons.
+  - **Execution Controls:** `Continue` (resume idle session), `Cancel` (interrupt active turn).
+  - **`📄 Diff` Button (`workdirChanges.ts`):** Instantly returns working directory git status (`status --short` and `diff --stat`).
+
+#### 3. Four Strict Execution Gates & Message Queue (core/telegramExecution.ts)
+Inbound chat messages pass through four sequential protective gates:
+1. **Session Liveness Gate:** Is the target conversation still active?
+2. **Daily Budget Shield:** Will the resulting turn exceed `agentFarm.telegram.maxDailyUSD` (default $1)? If spent, execution halts with a budget notification.
+3. **Destructive Command Pattern Filter (`riskyIntent`):** Prevents accidental catastrophic execution (`rm -rf`, `git reset --hard`, `git clean -f`, `git branch -D`, `DROP TABLE`, `del /s`, `format`). Risky syntax prompts for explicit confirmation, while natural language queries pass unobstructed.
+4. **Working State Gate:** Is a turn currently executing?
+   - `agentFarm.telegram.whenBusy: queue` (default): Messages typed while the agent is busy are queued in **saved chat state** (persisting across VS Code window reloads, up to 10 messages per session). When the active turn ends, the oldest queued message is automatically released.
+   - `agentFarm.telegram.whenBusy: steer`: Immediately injects the message into the active turn as a steering prompt.
+
+#### 4. Starting Real Console Sessions from Mobile — The 11th Launch Door
+While `/agent <name> <prompt>` executes a one-off headless task, **`/new <agent> [prompt]`** launches a full, interactive **Console Session** on the desktop host:
+- **Eleventh Launch Door:** Fully integrated into Agent Farm's launch parity manifest (`_REF/agentfarm-dev.md`).
+- Assigned an interactive session number in `/sessions`, automatically captures chat focus, and streams turn digest cards to the phone.
+- **Seeding (`seedLastLaunch`):** Seamlessly inherits the agent's most recent launch parameters (model, engine, effort, permissions, active project).
+- **Life-Cycle Budgeting:** Every turn executed by the session (whether initiated from mobile or desktop) is billed against `agentFarm.telegram.maxDailyUSD`. If the budget is exhausted, the launch gate rejects the command before spawning any process.
+- Calling bare `/new` targets the chat's currently bound agent.
+
+#### 5. Mobile Command Reference Summary
+- `/new <agent> [prompt]`: Starts a new interactive Console session.
+- `/agent <name>`: Binds the chat to a specific default agent.
+- `/focus <id>`: Binds chat focus to an active session.
+- `/sessions`: Lists active sessions and indicates focus (`← focus`).
+- `/status`: Reports running sessions, blocked questions, queued messages, and today's budget spend.
+- `/drop`: Clears queued mobile messages without disturbing the active turn.
+- `/agents`: Lists all available agents in the fleet.
+- `/cancel`: Interrupts the active turn immediately.
+- `/help`: Displays command help and usage guidelines.
 
 ### Why voice input is not here
 
@@ -1104,9 +1177,65 @@ VS Code's terminal isn't a real terminal — it's the **xterm.js** emulator runn
 
 ## Live Observation
 
-### The context discipline signal (3.538.0 — S-64)
+### Live Context & Quota Discipline Signals {#baglam-disiplini}
 
-The handover law binds a run to its context window — start nothing new at 35%, stop and hand over at 40% — and an agent cannot see its own fill. Agent Farm can: the Console host's live stream, the transcript's last real call, the session index. So the live hook that every account's Claude settings already carry does one more thing: when a session's window crosses a line, the listener answers that session's next `PostToolUse` (or `UserPromptSubmit`) with `CONTEXT CONVERGE 36% — …` / `CONTEXT HANDOVER 41% — …` as `additionalContext`, which Claude Code puts into the model's context before its next step. Once per line per window; a window that empties again (compaction) starts over. An engine whose hooks carry no such channel (Codex) gets the crossing **recorded as undelivered** rather than a sentence nobody read. The two lines are settings (`agentFarm.contextConvergePct` / `contextHandoverPct`, 0 = off) and the bridge reads and sets them — `sessions.contextGuard`, `sessions.contextGuard.set`; `console.sessions` rows carry `contextSignal`.
+*(3.538.0 — 3.624.0)* The foundational principle of the fleet constitution and handover law (`_REF/handover.md`) is that no multi-step agent run is allowed to push forward blindly until its context window or account quota is exhausted. However, LLM engines (Claude Code, Antigravity, Codex) have no native awareness of their own context fill percentage or quota status while running. To resolve this blindness, Agent Farm operates an engine-level **live monitoring and whispering (whisper)** architecture.
+
+#### Whispering via Live Hooks (PostToolUse / UserPromptSubmit)
+
+Agent Farm monitors the Console host's live event stream, the transcript's last real model call, and the session index with millisecond precision. When a session crosses a discipline threshold:
+1. The listener answers the agent's next tool execution (`PostToolUse`) or prompt submission (`UserPromptSubmit`) with an additional context payload: `{ hookSpecificOutput: { additionalContext: "..." } }`.
+2. The engine (Claude Code) places this hook output directly into the model's active window as **additional environment context** before its next step, rather than as a conversational user turn.
+3. Without human intervention, the whisper reaches the agent's ear right as it uses a tool.
+4. **Single Delivery Rule:** Delivery occurs exactly **once** per threshold per window (`delivered`). If a window empties (e.g., after compaction) and re-crosses a line, the threshold re-arms.
+5. **Channel-Less Engine Defense:** In engines whose hooks lack an additional context channel (e.g., Codex), the threshold crossing is logged as **`undelivered` (✕)** rather than pretending a message was received.
+
+#### Two-Dimensional Protection Thresholds
+
+Agent Farm monitors two independent resource boundaries:
+
+| Dimension | Measured Source | CONVERGE (Wrap Up) | HANDOVER (Stop & Hand Over) | Delivered Default Order |
+| :--- | :--- | :--- | :--- | :--- |
+| **Model Context Window** | Last model call tokens ÷ model context window ceiling | **≥ 35%** | **≥ 40%** | `35%`: Start nothing new, finish in-flight atomic step.<br>`40%`: Stop here, commit clean progress, write handover note and end run. |
+| **Account 5-Hour Quota** | The session's own assigned sign-in account (`five_hour`) | *Default off* (`0%`) | **≥ 90%** | `90%`: Account 5-hour window reached 90%. Commit clean progress, write handover note (or pass baton) and exit. |
+
+> **‼️ 5-Hour Window vs. Weekly Quota Isolation:** Prior to 3.624.0, quota whispering could conflate the 7-day weekly usage rate (`seven_day`) with the 5-hour window, mistakenly ordering a handover on a session whose 5-hour window was only at 34%. Strict isolation is enforced: quota whispering reads exclusively from the session's assigned **5-hour window**; weekly quota is never used as a handover trigger. Furthermore, quota usage is never read from the default home path (`~/.claude`); it strictly evaluates the session's own `CLAUDE_CONFIG_DIR` account slot.
+
+#### Colored Signal Dots (.sigdot) and Visual Status on the Status Row
+
+On the Console status row (`c-status`), beside the token and quota figures, 6px colored dots (`.sigdot`) display real-time discipline state:
+
+- 🟡 / 🟠 **Yellow / Orange Dot (`.ctxsig`, `#cca700`):** Lights up when the `CONVERGE` line (35% context) is crossed, signifying wrap-up instructions have been delivered.
+- 🔴 **Red Dot (`.ctxsig.stop` / `.ctxsig.bad`, `#f14c4c`):** Lights up when the `HANDOVER` line (40% context or 90% quota) is reached, commanding an immediate stop and handover; or indicates an `undelivered` crossing on a channel-less engine.
+- ⚪ / 🔘 **Grey / Neutral Dot (`.ctxsig.done`):** Displays when the agent has successfully committed clean progress, written its handover note, and ended the run.
+- **AFTip Panel:** Hovering over the dot or reading opens a comprehensive panel detailing current token fill, window ceiling, percentage, measurement source, and the exact order text delivered to the agent.
+
+#### ↪ Curved Arrow — Continue from Handover
+
+When a standard (non-relay) session reaches handover limits or closes after writing a handover note, a **`↪`** button appears on its status row:
+- **Preserves All Launch Dimensions:** Clicking `↪` opens the composer pre-populated with the predecessor's engine, model, effort level, permission mode, Superpowers flag, and project context.
+- **Smart Initial Prompt Generation:**
+  - If a handover note was written and detected live or from the transcript:  
+    `"The session before you (<sid>) reached the context handover line at 41% and was closed... Its handover note is <path> — read it first and continue from where it stops."`
+  - If the predecessor ended without writing a handover note (Failsafe):  
+    `"No handover note has been found for it — read what it did with 'af.js sessions.read id=<sid>' before you start."`
+- **Does Not Auto-Spawn:** The composer opens with the prompt staged in the box, giving the user an explicit opportunity to swap accounts (e.g., if the previous run stopped on quota) before sending.
+- **Handed-Over Conversations Are Never Resumed:** Resuming a conversation that stopped at handover is strictly prevented; a saturated context window would immediately collide with limits on turn one.
+
+#### Configurable Discipline Templates
+
+Discipline sentences are fully decoupled data, not hardcoded strings:
+- Managed under Settings ▸ **Handover Discipline** or via `sessions.contextGuard.set` across six branches:
+  - `converge` / `handover`: Standard session wrap-up and handover orders.
+  - `relayConverge` / `relayHandover`: Baton relay orders instructing the agent to invoke `baton.pass`.
+  - `relayPassedConverge` / `relayPassedHandover`: Orders for legs that already passed and only need to await clean termination.
+- The `{chain}` token in any order is dynamically replaced with the relay's chain and hop identifiers.
+
+#### Bridge Operations
+
+- `sessions.contextGuard` — Query all session context/quota signal records, threshold settings, latest percentages, and live card views (`args: id?, limit?`).
+- `sessions.contextGuard.set` — Update live thresholds (`convergePct`, `handoverPct`, `quotaHandoverPct`) and custom order templates (`orders`).
+- `console.continueFromHandover` — Open the composer pre-seeded from a session's handover note or transcript fallback (`id, open=true`).
 
 ### Sound Alerts, Audio Tones and Live Dialogue Speaker (3.299.0 — 3.314.0 — A-20 — A-26)
 
@@ -1625,6 +1754,59 @@ Below are the 5 foundational architectural differences between the two modes and
 - **Console Live Strip (`X-177`):** Houses the sentry indicator, active shift account badge, and inline `Pause / Resume` actions.
 - **Settings Sentry Section (`X-193`):** Dedicated cockpit for sentry templates, directory variables, and path previews.
 - **Bridge Operations:** `sentry.status`, `sentry.start`, `sentry.stop`, `sentry.pause`, `sentry.resume`, `sentry.templates`, `sentry.probe`.
+
+
+## Baton Relay — Continuous Handover Across Sessions {#baton-relay}
+
+*(3.620.0 — 3.651.0)* In long-running and multi-step engineering tasks, a single agent session will inevitably hit the model's context window limits (35–40% discipline thresholds) or the account's 5-hour quota ceiling (90% threshold). In standard session handovers (`handover note`), the session stops, writes a markdown note to disk, and waits for a human or a sentry round to spin up a new run. The **Baton Relay** turns this lifecycle into an autonomous relay race: when an agent approaches its limit, instead of burying its progress in a file note, it hands over the opening prompt for its successor in a single call (`baton.pass`). As soon as the predecessor ends, Agent Farm automatically spins up a fresh session (`leg n+1`) under the same launch dimensions and on the chain's designated account pool.
+
+### The Three Pillars
+
+The relay runs on three decoupled actors verified by tangible evidence:
+
+1. **The Whisper (Sentry):** Agent Farm → running runner. An agent cannot observe its own context fill directly. Agent Farm watches the live stream via hooks (`PostToolUse`); when context reaches 35% it whispers `CONVERGE` (wrap up the flight step), and at 40% context or 90% quota it delivers `HANDOVER`. When a session carries a baton, the whisper does not say "write a handover note"; it explicitly commands **"pass the baton: baton.pass"**.
+2. **The Baton:** Runner → Agent Farm. When deciding to hand over, the agent commits all clean progress to git, writes a payload containing what its successor starts from, and executes `node af.js baton.pass "@<file>"` (or JSON string), then ends its turn. Because Console cards and terminal sessions do not terminate automatically when a turn finishes, Agent Farm observes when the runner that passed has come to rest (no queued messages, no open questions, ~10s of quiet) and **ends the session cleanly itself**. A session is never killed while a turn is still executing.
+3. **The Receiver (Bed):** Agent Farm → fresh runner. Agent Farm verifies that the predecessor has genuinely ended (two legs never run concurrently). It then selects the best eligible sign-in from the chain's pool (`@emptiest`, etc.) and launches a fresh session (`leg 2/6`, etc.) preserving all original launch dimensions (`engine, model, effort, permissions, superpowers, project`). The entry point is the task board itself (`tasks.add baton:true`); there is no secondary hidden launcher.
+
+### Starting and Attaching Relays
+
+A baton relay can be initiated through three distinct doors or attached to an existing live run:
+
+- **Starting from Composer:** Toggle the **`⑂ Relay`** chip below the Console composer. Optionally set a custom leg ceiling (`max hops`) and account pool. When the prompt is sent, the run is immediately sealed as **Leg 1 (`⑂ 1`)**.
+- **Starting from Tasks Form:** Check the `⑂ Relay` option when creating a task on the Tasks page (`tasks.add baton:true`).
+- **Attaching to a Live Run (`⑂+ Attach relay`):** On any normal (non-relay) live session, clicking the `⑂+` button on its status row opens the attach strip. Choosing the pool and ceiling and clicking `⑂ Attach` seals the running session as **Leg 1** without restarting it (`baton.attach`). Its next limit whisper will instruct it to pass the baton instead of writing a note.
+
+### UI Surfaces and Live Controls
+
+The Console card and session tables feature dedicated controls when handling a relay:
+
+- **`⑂→` (Pass now):** A manual handover trigger that bypasses waiting for quota or context limits. When clicked, it injects an immediate `PASS NOW —` whisper into the session. The agent commits in-flight progress, invokes `baton.pass`, and the next leg is triggered.
+- **`✕⑂` (Stop chain):** The chain brake. Clicking it sets all waiting or parked batons in that chain to `stopped`. The running leg finishes its current work, but no successor leg will be spawned.
+- **`⑂ n` Chip & Detail Panel:** Renders a distinct blue `⑂ 1`, `⑂ 2` chip on the card's status row. Hovering it opens a rich panel displaying the `chainId`, current hop count, assigned account pool, and limit readings.
+- **Sessions Table `⑂` Column:** Across all session tables, a dedicated `⑂` column displays `⑂ n` exclusively for relay legs, remaining clean and blank for ordinary sessions.
+- **Status Bar Live Counter:** When a relay is actively executing, the status bar displays a live counter formatted as `⑂ 1/6`.
+
+### Automatic Brakes and Failsafes
+
+Four distinct safety mechanisms protect the relay from endless loops, token waste, or silent stalls:
+
+1. **Leg Ceiling (`agentFarm.batonMaxHops`):** The maximum number of legs permitted per chain (default 6; 0 = unlimited). When exceeded, `baton.pass` will not spawn a successor; the chain stops, the agent is instructed to write a fallback handover note, and Notices is informed.
+2. **Barren Chain Brake:** If two consecutive legs terminate on the exact same git commit (`HEAD`) without producing new commits, the chain halts immediately to prevent wasteful loops on unresolved errors.
+3. **Emergency Handover Failsafe (EMERGENCY HANDOVER):** If a leg terminates without passing (process crash, closed window, runtime error, or hitting limits before calling pass), Agent Farm inspects the failure. If the leg finished cleanly or was closed by the user, the chain ends normally (`done`). However, if uncommitted changes, an error, or an unfulfilled handover order are detected, Agent Farm automatically spawns the next leg under an **`EMERGENCY HANDOVER`** header, providing git status summaries and predecessor transcript links. If the emergency successor crashes within 30s without invoking tools, the chain halts permanently (`failed` loop protection).
+4. **Stalled Console Leg Closure:** Console cards stay rendered even after an engine rests. A leg that received a handover order but rests for 30s without passing is automatically closed by Agent Farm, allowing the emergency handover failsafe to rescue and advance the chain.
+
+### Smart Account Pool Inheritance
+
+- **Pool Locking:** Whichever account policy seeded the first leg (`@GelistirmeHavuzu`, `@emptiest`, etc.) is strictly enforced on all subsequent legs. If an agent attempts to pass to a different account, the system maintains the chain pool (`poolKept`).
+- **Automatic Parking:** If all accounts in the pool are quota-exhausted, the system never falls back to the primary personal sign-in; the relay is parked (`waiting-end`) until the earliest reset time (`resetsAt`), resuming automatically when the window clears.
+
+### Bridge Operations (CLI & IPC)
+
+- `baton.status` — Real-time ledger of all chains, active legs, parked batons, and stop reasons.
+- `baton.pass` — Runner's handover dispatch (`prompt`, optional `surface`, `account`, `note`).
+- `baton.stop` — Halts an entire chain (`chainId`) or individual baton.
+- `baton.now` — Bypasses parking delays to trigger a waiting baton immediately.
+- `baton.attach` — Seals an active run as Leg 1 of a new relay (`sessionId`, `account`, `maxHops`).
 
 
 ## MCP Management {#mcp-yonetimi}
@@ -2265,6 +2447,74 @@ On extension activation, `af.js` is automatically staged into the global storage
 5. **Raw File Drop (Alternative):**
    Write `<id>.request.json` and await `<id>.response.json`.
 
+### Bridge Guard and Search Interceptor (bridgeGuard)
+
+The Agent Farm ecosystem enforces architectural rules mechanically at the hook level rather than relying on passive written instructions (`src/core/bridgeGuard.ts`).
+
+- **Rationale:** CLI engine internal session directories and schemas change across releases. Searching the disk for session identifiers using `grep`, `glob`, `find`, `rg`, `ls`, `dir`, or `Select-String` leads to blind recursive scans that burn model context and quota. Farm data is never hunted on disk; it is queried through the bridge.
+- **Mechanical Interception (`PreToolUse` Hook):** Whenever an agent attempts a disk search containing a session ID (a 36-character full UUID or an 8-character known hex prefix), the `PreToolUse` hook interceptor triggers `denyResponseBody` and blocks the tool execution (`permissionDecision: 'deny'`).
+- **Guiding Refusal Directive:** The agent receives a concise, actionable one-line directive explaining what the identifier is and which bridge call to execute instead:
+  ```text
+  "<id>" is a session id, and Agent Farm data is asked of the bridge, never hunted for on disk.
+  Run `af.js sessions.find q=<id>` instead (answers file, engine, agent, cwd),
+  and `af.js sessions.read id=<id>` hands over the conversation itself.
+  ```
+- **Escape Hatch (`af:allow-id`):** When raw disk search or legitimate transcript file analysis is strictly required, including the `af:allow-id` token anywhere in the command or pattern bypasses the guard for that invocation. Bridge calls (`af.js`, `sessions.find`, `sessions.read`) are never intercepted.
+- **Engine Coverage Transparency (`bridgeGuardCoverage`):** Engine capabilities (`claude-hook`, `codex-hook`, or unsupported `none`) are tracked and reported explicitly so unmonitored engines are never assumed to be guarded.
+
+### Evidence-Based Session Identification (sessions.whoami)
+
+An agent executing within the farm runs several layers below the driving CLI process (CLI → Shell → `node af.js`). When calling the bridge, resolving "Which session am I?" is determined purely from immutable evidence rather than guessing from the working directory (`src/core/whoami.ts`).
+
+- **Directory Guessing Prohibited:** Having multiple concurrent sessions within the same working directory (`cwd`) is standard operating procedure. Guessing identity from folder path is rejected by architecture.
+- **Three-Tier Evidence Resolution:**
+  1. **Argument (`arg`):** Explicit session ID passed directly in the call arguments (`session`).
+  2. **Environment (`env`):** CLI process environment variable (`envSessionId`) forwarded transparently by the `af.js` helper.
+  3. **Process Registry Ancestry (`registry`):** `af.js` forwards its parent process ID (`ppid`). The host inspects active CLI registry files (`<config-dir>/sessions/<pid>.json`) and traverses the caller's process tree; the closest ancestor CLI process confirms the true session identity (`sessionId`, `pid`, `depth`).
+- **Applications:** Ensures flawless context inheritance for baton handovers (`baton.pass`), session sealing (`baton.seal`), and notice responses without requiring manual identity prompts.
+
+### Normalized Multi-Engine Transcript Reader (sessions.read)
+
+Different AI CLI engines persist conversation steps in vastly different structures and vocabularies (Claude `assistant`, Console `agent`/`result`, OpenCode SQLite databases, etc.). The `sessions.read` bridge operation normalizes all conversation history into a unified schema (`src/core/sessionRead.ts`).
+
+- **Unified Role Model (`ReadRole`):** `user`, `assistant`, `tool`, `toolResult`, `system`. Input accepts engine-specific aliases (`human`, `prompt`, `agent`, `model`, `call`, `result`) and normalizes them into canonical roles.
+- **Single Source with Transcript Webview:** Employs the identical `buildData` engine used by the visual transcript webview; what the user sees in the UI and what the agent reads over the bridge are guaranteed identical.
+- **Pagination and Context Safeguards:**
+  - `limit`: Steps per page (default 50, maximum 500).
+  - `from`: Offset index; negative values target trailing steps (e.g. `from=-10`).
+  - `turn`: Filters steps to a specific conversation turn.
+  - `maxChars`: Per-step character clipping (default 4000 chars); reports `clipped` byte count when truncation occurs.
+  - Response metadata includes `matched`, `returned`, `clipped`, and `next` cursor.
+
+### Markdown Document Export Operations (*.export and mdTable)
+
+All visual Markdown export controls in the Agent Farm UI and their corresponding bridge operations share unified document generation cores. Documents produced by human clicks and agent bridge calls cannot diverge.
+
+- **Unified Table Engine (`src/core/mdTable.ts`):** Handles table escaping for pipes (`|`) and line breaks, prevents ragged rows with automatic column padding, and critically preserves falsy values like `0` and `false` rather than blanking them. Columns are derived dynamically from row records (`tableOfRecords`), automatically incorporating new fields.
+- **`tasks.export`:** Exports the entire task board (`taskRows()`) as a structured Markdown table, reporting `costUSD`, status, agent, engine, session ID, and duration.
+- **`turns.export`:** Exports the conversation transcript table (matching `turnsPanel.ts`), formatting turn headers, user input, assistant output, tool calls, and tool outputs hierarchically. Defaults to 50 turns with `matched` and `truncated` counters.
+- **`tasks.analytics.export`:** Generates Markdown reports from task analytics and cost summaries (`media/taskAnalytics.js`), mirroring `reports.tasks` data in tabular format.
+
+### Isolated Git Worktree Parallel Orchestration (parallel.run)
+
+Orchestrates concurrent multi-task execution for an agent while maintaining strict filesystem isolation using git worktrees (`src/core/parallelRuns.ts`).
+
+- **Twin Doors, Shared Core:** The command palette `"Agent Farm: Run Parallel…"` action and the bridge operation `parallel.run` execute through identical `planParallel` and `launchParallel` implementations.
+- **Filesystem Isolation via Worktrees:** Generates independent temporary `git worktree` instances and `af/<worktree>-<stamp>` branches off the agent repository, preventing file collisions.
+- **Concurrency & Resource Limits:**
+  - Accepts up to 6 prompts (`PARALLEL_MAX = 6`); prompts beyond the limit are reported under `dropped`.
+  - Concurrency is throttled by `agentFarm.maxConcurrentPerAgent`; tasks execute either concurrently or in sequential order (`serial`), preserving worktree isolation in both modes.
+- **Plan-First Default (`dryRun: true`):** Defaults to `dryRun: true`. Calling `parallel.run` returns repository validation (`gitRepo`), planned branch names, and serial/concurrent status without spawning tasks. Actual execution requires explicit `dryRun: false`.
+- **Mandatory Commit Discipline:** Appends a mandatory commit directive (`" — İş bittiğinde değişiklikleri anlamlı bir mesajla commit et."`) to each task prompt, enabling clean worktree merges via `"Worktree Runs…"`.
+
+### Zero Parity Gap Guarantee (parity.manifest.json)
+
+A fundamental architectural tenet of Agent Farm is complete parity: every action accessible to a human in the UI must be programmatically accessible to an agent via the bridge.
+
+- **Strict Zero Gap Budget (`gapBudget: 0`):** `parity.manifest.json` maps every UI panel, button, and command to corresponding bridge operations (`ops`). No unmapped capabilities are permitted.
+- **Explicit Documented Exemptions (`exempt`):** Capabilities without bridge counterparts are strictly limited to pure viewport navigation (`navigation` exemptions that move UI focus without altering system state).
+- **Automated Parity Quality Gate (`test_parity.js`):** The automated test suite executes `test_parity.js` on every build. Adding a UI feature without a matching bridge operation or an approved manifest exemption immediately fails CI. No feature can remain inaccessible to autonomous agents.
+
 ## Standing Duties {#nobet-gorevleri}
 
 The system for the **continuity agreements** you make with agents: "check this file every turn, do what's needed if a reply came", "check this folder every day, triage if files have piled up" — stay-on-alert tasks. Over time these multiply and get muddled — which folder was it, what was the task, every turn or every day? This system gathers them all in one place.
@@ -2623,13 +2873,122 @@ Against signal fatigue: instead of ten separate warnings, once a week a three-se
 
 ## Notices and the Work Queue — the agent↔you channel {#notices-kuyruk}
 
-A two-way async channel; **🔔 Notices | 📥 Queue** are two tabs in the global nav, sharing one attention badge in the status bar.
+A two-way async channel; presented across global navigation in a unified four-tab strip: **🔔 Notices | 📥 Queue | 🤖 A2A Notes | ⚡ A2A Tasks** (with a visual divider between pairs). Status bar attention badge (colored bell for Notices/Queue; quiet grey badge only on their respective tabs for A2A).
 
 **Notices (agent → you):** every agent leaves **one row per thing it wants to tell you**. Two axes: `type` (update · report · result · reminder · suggestion · warning · question) and `level` (1 routine → 4 ultra). Long content travels on two legs: the **summary** on the board plus a full report written into `10_REPORT` behind it ("📄 Open full report"). The `question` type carries an async lifecycle: the agent asks, you answer in the UI (→answered) or close it unanswered (→declined), and the agent applies the answer and resolves it on its next turn. For **ageing**, see [the Living page](#yasam-panosu).
 
-**Work Queue (you → agent):** the frictionless channel for fixes you notice while working (`Ctrl+Alt+A`); items **do not disappear until handled**. Pipeline: `captured → grouped → delegated → done` (+ `blocked` = a question for you, the only attention-grabbing state; `dropped` = invalid). A non-terminal item **cannot be deleted** — a bad entry moves to `dropped`, which counts as handled. A notice converts to a queue item in one click (`queue.fromNotice`), answering a question creates one automatically, and the item links back through `sourceNoticeId`.
+**Work Queue (you → agent):** the frictionless channel for fixes you notice while working (`Ctrl+Alt+A`); items **do not disappear until handled**. Pipeline: `captured → grouped → delegated → done` (+ `blocked` = a question for you, the only attention-grabbing state; `dropped` = invalid). A non-terminal item **cannot be deleted** — a bad entry moves to `dropped`, which counts as handled.
+
+**Full Notice Conversion to Queue Item:** Converting a notice to a queue item ("Add to queue" button or user answering an async question) no longer preserves just the title; the complete notice snapshot is preserved: `sourceNoticeAgent`, `type`, `body`, `sections`, `reportPath`, and `projectId`. Built via a single pure function (`core/noticeToQueue.ts`). The item is automatically routed back to the asking agent's queue (notices generated by Agent Farm itself remain unrouted). The queue card displays a `❓ Question: <title> · from <agent>` badge, and clicking **▸ Original** expands the full original notice body, sections, and report button inline. Agents inspect `queue.list { sourceNoticeAgent: "<me>" }` to discover answers to their own questions (both Notices and Queue boards are checked at `[session-start]`).
 
 **Maturity engine — `queue.maturity` (3.18.1).** The grouping/maturity decision (group · wait · delegate) moved from prose into code: it applies the thresholds (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) and returns `{ actionable, reason, ripe[], ungrouped, starving[] }`. **`starving` is what `queue.groups` cannot show you:** an item that was never grouped has no `groupId`, so a sweep reading only the group digest concludes "the queue is idle" while the user's own answer rots past the ceiling — which is exactly what happened. **Every sweep starts with `queue.maturity`.**
+
+## A2A (Agent-to-Agent) Protocol — Inter-Agent Communication and Work Handoff {#a2a-protokolu}
+
+Notices is the agent→human board, and the Work Queue is the human→agent channel. **A2A (Agent-to-Agent)** is an independent protocol (`a2a.*` bridge operations) designed for agents across the fleet to leave **technical notes for each other**, **delegate and hand off tasks**, and **preserve cross-session technical memory** without cluttering Notices or distracting the user.
+
+A2A data is stored in Agent Farm's `globalStorage` (`a2a-notes.json` and `a2a-tasks.json`), queried strictly via the bridge API rather than by touching raw files.
+
+### Two Distinct Concepts: Note vs Task
+
+The A2A architecture separates passive knowledge from active work:
+
+1. **Note (`a2a.notes.*`) — PASSIVE:**
+   - A technical fact, discovery, dependency warning, locked database notice, transient API error, or task completion result.
+   - Not assigned to anyone; any agent whose coordinates match may read it.
+   - An agent reading a note marks it read *for that agent alone*. Calling `a2a.notes.resolve` closes the note for everyone.
+   - Promotion: If a note turns out to require action, it is promoted to a task once via `a2a.tasks.fromNote` (a second conversion of the same note is refused by name).
+
+2. **Task (`a2a.tasks.*`) — CLAIMED:**
+   - Actionable work that must be claimed and executed by exactly one agent.
+   - Operates on a **lease** model: the claiming agent is granted a 30-minute window. The agent must periodically send `heartbeat` updates; otherwise, the lease expires and the task is returned to `queued`.
+   - Lifecycle states: `queued → claimed → running → done | failed | blocked | cancelled`.
+
+### 5-Axis Coordinate System and Strictness Matrix
+
+A pure matching engine (`src/core/a2aMatch.ts`) evaluates five coordinates:
+
+- **`project`**: Scope boundary. `*` represents a fleet-wide broadcast; otherwise matches the workspace project. **‼️ Project contains in every mode; no strictness setting ever crosses project boundaries.**
+- **`targetRole`**: Addressee (role, capability, or specific agent name).
+- **`subsystem` / `workdir` and `topic`**: Describe the subject; act as ranking factors except under `hard`.
+- **`targetSession`**: Session lineage; a resumed session preserves its identifier.
+- **`requires`**: Capability filter (`write_tools`, `browser`, `shell` etc.); strictly validated as lowercase `[a-z0-9_-]+`, with invalid names refused upon creation.
+
+| Coordinate Axis | `hard` | `preferred` (during grace) | `preferred` (after grace) | `any` |
+|---|---|---|---|---|
+| **`project`** | must | must | must | must |
+| **`role` · `session`** | must | must | rank | rank |
+| **`subsystem` · `topic`** | must | rank | rank | rank |
+
+**Grace Window (`agentFarm.a2a.preferredGraceHours`, default 2h):** Under `preferred`, a task is reserved exclusively for the target role during the grace window. If another agent attempts to claim it, the engine refuses with structured data: `reserved for its target role`, the exact opening timestamp (`opensAt`), and mismatched `axes`, preventing wasteful polling. Once the window elapses, the task becomes claimable by other capable agents in the project.
+
+**Multi-Process Concurrency Protection (Claim Race):** When multiple independent Node processes attempt to claim the same task simultaneously, atomic file locking ensures exactly one winner emerges, while all competing processes receive informative refusal errors. `a2a.tasks.next` returns the closest coordinate fit first, oldest within a tie.
+
+### Task Lifecycle and Loop Guard
+
+1. **Claim:** `a2a.tasks.claim id=…` (or `a2a.tasks.next claim=true`).
+2. **Heartbeat:** `a2a.tasks.heartbeat id=… progress="one line"`. Extends the lease every few turns. The return value MUST be inspected: directives issued by human supervisors arrive here.
+3. **Finish:** `a2a.tasks.finish id=… state=done|failed|blocked result="summary"`. Automatically leaves a **result note** for the originating agent; no Notices spam is generated for the user.
+4. **Handoff & Loop Guard:** If an agent cannot complete a task but knows another specialist can, it calls `a2a.tasks.handoff id=… targetRole=…`. **‼️ The third consecutive handoff is strictly refused by the system, placing the task into `blocked` state.** This mechanical loop guard prevents endless inter-agent bouncing. Blocked work requires human intervention to reroute.
+
+### ‼️ Human Supervisor Directive — Supreme Override
+
+The human supervisor's command (`humanDirective`: `steer` | `veto` | `constraint`) is the highest authority:
+
+- **Absolute Precedence:** A supervisor directive (`⚠️ [HUMAN SUPERVISOR DIRECTIVE]`) outranks the constitution, the agent's system prompt, and the task's original instructions. In case of conflict, the directive is obeyed without hesitation.
+- **First Key Delivery:** When an agent inspects or claims a directed item (`a2a.tasks.claim`, `a2a.tasks.next`, `a2a.tasks.heartbeat`, `a2a.notes.get`), the **FIRST key** of the API response is `supervisor`. It cannot be overlooked.
+- **Live Injection:** If a supervisor directive is applied while a task is running, it is delivered immediately on the next `heartbeat`.
+- **Supervisor Cockpit:** Hovering over any card reveals a `+` button that opens an inline `AFForm` panel directly beneath the row (`src/core/a2aSupervisor.ts`).
+  - A colored 👤 badge indicates the directive type (amber = steer, blue = constraint, red = veto) with tooltip preview.
+  - Notes allow setting or removing directives.
+  - Tasks allow setting directives, **Re-route** (handoff with loop guard counter reset), and **⚡ Run Now** (`a2a.tasks.runNow`). `Run Now` opens a dedicated Console session for the named agent and claims the task through standard claim mechanics.
+
+### Baton Handovers on the A2A Board and Board Hygiene
+
+The baton relay (`baton.pass`) records handovers not just in internal machine logs (`batons.json`), but posts them onto the A2A board:
+
+- **Baton Cards:** Created with `category: 'baton'`, `topic: chainId` (`chn_...`), and `strictness: 'hard'` addressing the specific successor agent.
+- **Auto-Resolution:** The moment the successor session starts running, the handover card is automatically marked `resolved`.
+- **Hygiene Policy (`a2aHygiene.ts`):** Resolved cards initiate a 48-hour expiration timer (`resolvedAt`). When a chain terminates (`done` / `failed` / stopped), a 24-hour TTL is stamped on all its cards, and the background sweep cleans them up.
+- **Pinning (📌 Pin):** Pinned cards are immune to all automatic sweeps and expirations; only explicit manual deletion removes them (`a2a.notes.pin`, `a2a.notes.delete`).
+- **Board UI Controls:**
+  - **Tri-State Relay Switch:** `⑂ Batons: all` → `hidden` → `only`.
+  - **Chain Lock:** Clicking a card's `⑂ chn_...` chip locks the view to that specific race, clearing unrelated filters and ordering cards chronologically (oldest-first).
+  - **Selective Deletion:** `✕ Delete` on open cards, row checkboxes with `🗑 Delete` (selected or shown), and `● Clear resolved` for closed cards.
+
+### Four-Tab Agent Inbox UI
+
+Unified navigation across `🔔 Notices | 📥 Queue | 🤖 A2A Notes | ⚡ A2A Tasks`:
+- **Common Card Grammar (`afA2A.js`):** Project chips, workdir segment indicators, 30-minute lease progress bar (green/amber/red).
+- **A2A Notes Page (`a2aNotesPanel.ts`):** Resolve/reopen, convert to task (`a2a.tasks.fromNote`), markdown file links, facts table.
+- **A2A Tasks Page (`a2aTasksPanel.ts`):** Open/closed tabs, cancel, lease tracking, progress reporting, and cross-links.
+- **Session-Start Habit:** Agents invoke `a2a.status` on startup to review unread notes, claimable tasks, and active leases in a single call (`DUTIES.md` `[session-start]` watch).
+
+### A2A Bridge Operations Reference
+
+| Category | Operation | Description |
+|---|---|---|
+| **Status** | `a2a.status` | Returns unread notes, claimable tasks, and held leases for an agent in a single call. |
+| **Notes** | `a2a.notes.list` | Lists notes with filters (`unreadOnly`, `category`, `project`, `topic`, `strictness`). |
+| | `a2a.notes.get` | Gets note details; marks `read` for caller; returns `supervisor` as first key if present. |
+| | `a2a.notes.add` | Creates a new technical note (`project`, `targetRole`, `subsystem`, `topic`, `ttlHours`). |
+| | `a2a.notes.resolve` | Marks note resolved; starts 48-hour expiration timer. |
+| | `a2a.notes.pin` | Toggles pin state (pinned notes are protected from sweep). |
+| | `a2a.notes.delete` / `.deleteMany` / `.clear` | Deletes notes individually, in batches, or by category/topic. |
+| | `a2a.notes.sweep` | Cleans up resolved, expired notes (protects pinned notes). |
+| **Tasks** | `a2a.tasks.list` | Lists tasks with filters (`status`, `project`, `targetRole`, `subsystem`). |
+| | `a2a.tasks.get` | Gets task details; returns `supervisor` as first key if present. |
+| | `a2a.tasks.add` | Queues a new task (`instructions`, `targetRole`, `strictness`, `requires`). |
+| | `a2a.tasks.claim` | Claims a task with a 30-min lease; race-safe atomic lock; `supervisor` first key. |
+| | `a2a.tasks.next` | Picks and ranks the best-fit task; `claim=true` claims it immediately. |
+| | `a2a.tasks.heartbeat` | Renews task lease, reports progress; receives live supervisor directives. |
+| | `a2a.tasks.finish` | Completes a task (`done` / `failed` / `blocked`); leaves result note for creator. |
+| | `a2a.tasks.handoff` | Hands off task to another role; blocked on 3rd handoff by loop guard. |
+| | `a2a.tasks.cancel` | Cancels a task. |
+| | `a2a.tasks.fromNote` | Promotes an A2A note into a single task. |
+| | `a2a.tasks.reroute` | User op: reroutes task to new coordinates and resets loop guard counter. |
+| | `a2a.tasks.runNow` | User op: launches Console session and runs task immediately. |
+| **Supervisor** | `a2a.directive.set` / `.remove` | Sets or removes human supervisor directive (`steer`, `veto`, `constraint`). |
 
 ## The Living Page {#yasam-panosu}
 
@@ -3263,6 +3622,69 @@ Completed phases (all 2026-07-08):
 **What comes next lives in a separate, detailed document:** from the command palette, **Agent Farm: Open Development Plan** — the far-sighted development plan: event triggers, verify steps, the MCP panel, the n8n/webhook bridge, the multimedia production pipeline (a content factory with Kling/Seedance/Nano Banana-class models), smart oversight, multiple machines and the visionary horizon. Coding follows the priority order in that plan.
 
 ## Release Notes
+
+### 3.646.0 — 3.654.0 — OpenCode Startup Lock Race Recovery, Reasoning Variants, Wiki Category Merging, and Full Notice Queue Conversion (2026-09-23 — 2026-09-24)
+
+- **OpenCode Startup Lock Race Retry (3.654.0):** Two OpenCode sessions starting in the same second no longer crash on SQLite first-use migrations (`CREATE TABLE ...` / `database is locked`). Runs failing with lock collisions are automatically retried once after 2s.
+- **Persistent Inspection Panels Across Redraws (3.652.0 — 3.653.0):** Background task panels on the Console strip and Live Timeline hover panels no longer re-fade or flicker during 120ms redraw intervals; panels render solid immediately and lane tools open within 200ms.
+- **Relay Leg Chip in Sessions List (3.651.0):** Session cards in the left rail display the `⑂ N` chip on their secondary line; hovering reveals chain ID, predecessors, successors, and chain brakes.
+- **Search Shard Consistency (3.650.0):** Resolves a race condition where asynchronous deletion of stale search shards overwrote freshly rebuilt shards, ensuring deterministic search indexing.
+- **Telegram Live Console Launcher Door (3.649.0):** `/new <agent> [prompt]` opens an interactive Console session directly from Telegram, streaming turn cards to the chat, supporting remote steering, and enforcing lifetime daily budgets (`maxDailyUSD`).
+- **Wiki Category Renaming and Merge Engine (3.648.0):** Atomically updates the root directory, `index.md` heading, and candidate topics. Existing target names trigger collision-checked directory and index merges with provenance preservation.
+- **OpenCode Reasoning Variants (3.647.0):** Exposes model-specific `--variant` levels (low, medium, high, etc.) on the New Task form, rejecting unsupported variants before launch.
+- **Full Notice Conversion to Queue Item (3.646.0):** Preserves complete notice state (body, options, sections, report links, originating agent) when moving notices to the work queue (`▸ Original`).
+
+### 3.633.0 — 3.645.0 — Background Task Waiting State (waiting-task), A2A Baton Cards, and Obsidian Syntax Protection (2026-09-22 — 2026-09-23)
+
+- **Background Command Rest and Purple Status (3.644.0):** Turns waiting on in-flight background commands transition to `waiting-task` instead of yellow "YOUR TURN". Renders a purple border, a `BACKGROUND` badge with slow breathing animation (4.2s), and switches the composer to `Steer` mode without false chime alerts.
+- **Baton Handovers on A2A Board and Board Hygiene (3.633.0 — 3.635.0):** Relays post handover cards to A2A; cards auto-resolve upon successor activation. Pinned cards are immune to sweeps, and finished chains clean up after 24 hours.
+- **Console Status Strip Minimalism (3.632.0):** Refactors status indicators into quiet 6px dots (`.sigdot`) and compact action chips.
+- **Obsidian Tasks Metadata Syntax Protection (3.630.0):** Restricts Tasks metadata icons (`📅`, `⏳`, `⛔`, `🆔`) to strictly consume valid tokens, preventing dateless or bare icons from stripping user title words.
+- **A2A Supervisor Cockpit & Run Now (3.604.0):** Provides inline supervisor directives (`steer`, `veto`, `constraint`), agent re-routing, and one-click session launching via `Run Now`.
+
+### 3.620.0 — 3.632.0 — Baton Relay, Markdown Export Suite, and Zero Parity Gap Guarantee (2026-09-21 — 2026-09-22)
+
+- **Autonomous Baton Relay Engine (3.620.0):** Seamless session-to-session handover via `baton.pass`, spawning fresh successor legs without manual notes.
+- **Interactive Relay Controls:** Composer `⑂ Relay` switch, New Task `⑂ Relay` checkbox, `⑂+ Attach relay` for live sessions, `⑂→ Pass now` manual trigger, and `✕⑂ Stop chain` emergency brake.
+- **Four Safety Brakes:** Leg ceiling (`maxHops`), barren chain brake (halting on zero-commit repetitions), `EMERGENCY HANDOVER` crash recovery, and auto-closing resting Console cards.
+- **Unified Markdown Export Suite (3.627.0 — 3.628.0):** `tasks.export`, `turns.export`, `tasks.analytics.export`, and `sessions.export` built over a shared table engine (`mdTable`).
+- **Zero Parity Gap Budget (3.629.0):** All UI panel functions mirrored as bridge operations or explicit navigation exemptions; `gapBudget` locked at 0.
+
+### 3.605.0 — 3.619.0 — Question Auto-Timer, Session Identity Resolution, and A2A Matching Engine (2026-09-21)
+
+- **Question Auto-Timer Resolution (3.618.0):** Automatically resolves unattended `AskUserQuestion` prompts after a timeout (default 300s) using recommended options, blocking destructive prompts.
+- **Evidence-Based Session Identity (`sessions.whoami` - 3.619.0):** Resolves caller identity from process registry hierarchy and environment variables rather than guessing from folders.
+- **5-Axis A2A Coordinate Matching (3.603.0):** Evaluates tasks across project, role, subsystem, session, and requires dimensions with a 2-hour grace window.
+- **Four-Tab Agent Inbox UI (3.603.0):** Unifies Notices, Work Queue, A2A Notes, and A2A Tasks in a shared card grammar.
+
+### 3.586.0 — 3.604.0 — A2A Protocol, Supervisor Directives, and Telegram Cockpit (2026-09-20 — 2026-09-21)
+
+- **A2A Protocol Core:** Decouples passive technical notes (`a2a.notes.*`) from claimed 30-minute leased tasks (`a2a.tasks.*`).
+- **Human Supervisor Directive:** Outranks system instructions and task prompts; delivered as the first key in API responses.
+- **Loop Guard:** Mechanically rejects a 3rd consecutive handoff, locking runaway tasks in `blocked` state.
+- **Telegram Two-Way Remote Cockpit:** Enables mobile session routing, interactive question responses, approval gates, and zero-dependency local QR server (port 8378).
+
+### 3.570.0 — 3.585.0 — Dedicated Accounts Page, Antigravity Quotas, and Unified Multi-Wall Charts (2026-09-19 — 2026-09-20)
+
+- **Dedicated Accounts Page (3.583.0):** Separates account management into its own view (`agentfarm.openAccounts`) sharing a unified handler.
+- **Antigravity Quota Ingestion (3.580.0):** Pulls live quota metrics directly from the `/usage` endpoint.
+- **Unified Multi-Wall Quota Charts (3.572.0):** Combines 5-hour and 7-day usage limits into unified visualizations.
+- **Handover Account Preference (3.570.0):** Prompts user choice for quota-exhausted continuations.
+
+### 3.548.0 — 3.569.0 — Multi-Provider Route Architecture, Model Context Ceilings, and Security Boundaries (2026-09-18 — 2026-09-19)
+
+- **Provider Isolation and Mixed Cost Tracking:** Segregates billing windows across Kimi, MiniMax, and Claude, explicitly tagging mixed financial totals.
+- **Dynamic Context Ceiling Discovery (3.564.0 — 3.566.0):** Reads and visualizes model-published context ceilings on Console cards.
+- **Fixed Height Session Cards (3.553.0):** Eliminates layout shifts during live streaming.
+- **Route Filtering (3.569.0):** Filters session lists by provider routes alongside engine filters.
+
+### 3.532.0 — 3.547.0 — Bridge Search Interceptor, Live Context Discipline, and Handover Continuation (2026-09-17 — 2026-09-18)
+
+- **Bridge Search Guard (`bridgeGuard` - 3.541.0 — 3.542.0):** Intercepts disk-based session ID searches, routing callers to bridge operations with an `af:allow-id` bypass.
+- **Live Context & Quota Whispering (3.538.0 — 3.540.0):** Injects live `CONVERGE` (35%) and `HANDOVER` (40% context / 90% quota) signals, enforcing clean restarts for limit-exhausted runs.
+- **Continue from Handover (3.544.0):** Opens a pre-seeded composer session directly from a handover note (`↪`).
+- **Normalized Transcript Reader (`sessions.read` - 3.536.0):** Bridges transcript access across all AI engines into canonical role schemas.
+- **Decoupled Quota Polling (3.532.0):** Backgrounds quota synchronization on independent per-account intervals.
 
 ### 3.531.0 — X-324 / X-106: Strategy Selector for Smart Account Policies (Chain vs. Emptiest Pool) and Launch Dimensions on Console Tasks (2026-09-17)
 

@@ -609,12 +609,30 @@ Bunların hepsi Console'u o ajan **kompozitörde seçili** olarak açar; **sen b
 
 ### Kompozitör iki moddur
 
-- **Yeni oturum:** ajan · model · efor · izin modu seçicileri + metin → **Start session**.
-- **Çalışan oturum:** ajan/model/efor artık **gösterilmez** (süreç başlarken kararlaştırıldılar, değiştirilemezler; ölü kutu koymanın anlamı yok). Yerlerinde düz bir durum satırı (`dev · haiku`) ve **gerçekten canlı çalışan tek kontrol: izin modu**.
+- **Yeni oturum:** ajan · model · efor · izin modu seçicileri + metin → **Start session**. Kompozitör altındaki **`⑂ Relay`** anahtarı açılarak oturum doğrudan bir baton zinciri olarak başlatılabilir.
+- **Çalışan oturum:** ajan/model/efor artık **gösterilmez** (süreç başlarken kararlaştırıldılar, değiştirilemezler; ölü kutu koymanın anlamı yok). Yerlerinde düz bir durum satırı (`dev · haiku`), canlı izin modu seçicisi ve alt durum şeridinde röle kontrolleri yer alır: **`⑂→`** (*Pass now* — beklemeden devret), **`✕⑂`** (*Stop chain* — zinciri durdur), **`⑂+`** (*Attach relay* — çalışan oturumu 1. ayak olarak röleye bağla), **`↪`** (*Continue from handover* — devir notundan taze kompozitör aç) ve mavi **`⑂ n`** rozeti ([ayrıntılı mimari](#baton-relay)).
 
-**Köprü:** `console.start` · `console.send` (tur çalışıyorsa **turun içine** gider; `hold:true` bekletir) · `console.queue` (bekletilenleri oku · `edit` · `drop` · `send` · `clear`) · `console.sessions` (tur bir soruda bekliyorsa `asking` döner) · `console.interrupt` · `console.setModel` · `console.setEffort` · `console.answer` (bekleyen bir *soruyu* çözer — bir araç iznini asla; o kullanıcının kararı olarak kalır) · `console.permissionMode` (`retry` ile) · `console.close`.
+**Köprü:** `console.start` · `console.send` (tur çalışıyorsa **turun içine** gider; `hold:true` bekletir) · `console.queue` (bekletilenleri oku · `edit` · `drop` · `send` · `clear`) · `console.sessions` (tur bir soruda bekliyorsa `asking` döner) · `console.interrupt` · `console.setModel` · `console.setEffort` · `console.answer` (bekleyen bir *soruyu* çözer — bir araç iznini asla; o kullanıcının kararı olarak kalır) · `console.permissionMode` (`retry` ile) · `console.close` · `baton.status` · `baton.pass` · `baton.stop` · `baton.now` · `baton.attach`.
 
 > **Doğrulama:** `test/smoke_console_live.js` **gerçek** claude süreçleriyle uçtan uca koşar (cevap · tur içine yönlendirme · bekletme + düzenleme + teslim · uçuşta kesme · reddedilen yazma · canlı izin verme · tekrar deneyip dosyayı gerçekten yazma · temiz kapanış): **27/27, $0,112**. Para harcadığı için `npm test`'in dışında tutulur. Ölçüm bir tasarım hatasını da yakaladı: **CLI ilk stdin satırını alana kadar hiçbir şey yayınlamıyor**, dolayısıyla ilk mesajı "oturum hazır görünene kadar" kuyrukta tutmak sonsuza kadar kilitleniyordu — ilk mesaj artık daima gönderilir.
+
+### Otomatik Soru Çözümleyici (Auto-Timer Resolution)
+
+Konsol oturumlarında `AskUserQuestion` ile kullanıcıya soru sorulduğunda, kullanıcı bilgisayar başında değilse oturumun sonsuza kadar askıda kalmasını ve nöbet turlarının kilitlenmesini önleyen otonom zamanlayıcı mekanizmasıdır (`src/core/autoAnswerTimers.ts`).
+
+- **Süre Sınırı ve Ayarlar:** `agentFarm.console.autoAnswer.timeoutSeconds` (varsayılan 300 saniye, 5 ile 7200 sn arası kelepçeli; `agentFarm.console.autoAnswer.enabled` ile açılıp kapatılır).
+- **Akıllı Tercih Matrisi (`src/core/autoAnswer.ts`):** Süre dolduğunda ajanın kendisinin `(Recommended)` veya `(Önerilen)` olarak işaretlediği seçenek, bu etiket yoksa ilk seçenek otomatik olarak seçilir.
+- **Yıkıcı Eylem Koruması (`destructive` Engeli):** Soru başlığında, metninde veya seçeneklerinde silme/yıkma (`delete`, `drop`, `purge`, `remove`, `destroy` vb.) ifadeleri geçen sorularda zamanlayıcı devreye girmez; işlem güvenlik gerekçesiyle durdurulur (`refused: destructive`). Ayrıca araç izinlerinde (`PreToolUse`) zamanlayıcı asla çalıştırılmaz, daima insanın açık onayı beklenir.
+- **Host Sürecinde Çalışan Saat:** Sayacın yaşam alanı webview değil, Extension Host sürecidir. Kullanıcı Console sekmesini kapatmış veya başka sayfaya geçmiş olsa dahi zamanlayıcı arka planda işlemeye devam eder.
+- **Ajan ve Kayıt Şeffaflığı:** Cevap doğrudan `ConsoleHost.answer()` üzerinden iletilir; yanıtta ajana seçimin insan tarafından değil otomatik zaman aşımı mekanizmasıyla yapıldığı bildirilir. Transkript satırına `⏱️ Zaman aşımı: önerilen seçenekler seçildi — <soru> → <seçenek>` damgalanır. Kart üzerinde `⏳ 4:31 kaldı — sonra "..." seçilecek [Zamanlayıcıyı durdur]` geri sayımı çizilir; klavyeye basıldığında veya elle seçim yapıldığında zamanlayıcı anında iptal olur.
+
+### Arka Plan Komutunda Bekleme ve Yönlendirme (waiting-task & Steer)
+
+Ajan bir turu tamamlayıp arka planda uzun süren bir kabuk komutu (test paketi, build, migrasyon vb.) bıraktığında devreye giren özel arayüz durumudur (`src/core/liveMonitor.ts`).
+
+- **`waiting-task` Durumu ve Mor Kart:** Ajan arkasında çalışan bir komut bırakıp beklemeye geçtiğinde oturum durumu sarı "Sıra Sizde" yerine mor renkli `waiting-task` durumuna geçer. Kartın sol şeridi mor renge bürünür (`var(--vscode-charts-purple)`), rozetinde `BACKGROUND` yazar ve 4.2 saniyelik yavaş bir nefes alma animasyonu (`animation: afdeep 4.2s`, `prefers-reduced-motion` destekli) çalışır.
+- **Yanıltıcı Bildirimlerin Önlenmesi:** Bu durumda "sıra sizde" zili (`turn-ready`) asla çalmaz; oturum arka plandaki komutun sonucunu bekler. Yalnızca komut bittiğinde ya da gerçek bir soru/izin gerektiğinde sesli uyarı verilir.
+- **Send Yerine `Steer` (Yönlendirme):** Kompozitör bu sırada normal mesaj göndermek yerine `Steer` (Yönlendir) modunda çalışır; kullanıcı isterse komut koşarken ajana yönlendirici müdahalede bulunabilir veya komut bittiğinde işlenmek üzere mesajı kuyruğa alabilir.
 
 ## İş Ne Kadar Tutuyor — iki rakam ve dokuz adım türü {#ne-kadar-tutuyor}
 
@@ -1099,37 +1117,91 @@ Her oturumun transkripti `Edit` / `Write` / `MultiEdit` / `NotebookEdit` çağr�
   Dosyada arşiv başlığı yoksa bu çip çizilmez.
 - **Sıralamalar ve Zaman Eksenleri (X-48, 3.174.0):** `Queue order` (dosyadaki doğal sıra), `family` (ana-alt iş hiyerarşisi), `opened` (açılış zamanı), `last touched` (son çalışma zamanı — `backlog-track.jsonl` defterinden okunur) ve `closed` (kapanış zamanı).
 
+### Obsidian Tasks Metadata Sözdizimi Koruması
 
+Backlog satırlarında yer alan Obsidian Tasks formatındaki özel ikonlar (`📅`, `⏳`, `🛫`, `➕`, `✅`, `❌`, `🆔`, `⛔`, `🏁`) ayrıştırılırken, kullanıcının el yazısı başlık ve açıklamalarının bozulmasını önleyen katı sözdizimi ayrıştırma disiplinidir (`src/core/projectBacklog.ts`).
 
-## Dışarıdan Erişim — Web Görünümü ve Sohbet Kanalı {#disaridan-erisim}
+- **Gerekçe:** Eski ayrıştırma mantığı, metadatalı bir ikondan sonra gelen herhangi bir boşluksuz kelimeyi o ikonun değeri kabul edip siliyordu. Bu durum, başlığında `'⏳ Yanıt bekleniyor'` geçen bir kalemin `' bekleniyor'` haline gelmesine ya da yalın `⛔` blokaj işaretinin arkasındaki `"⛔ kullanıcı karar verecek"` ifadesinin ilk kelimesini yutarak `"karar verecek"` şeklinde kırpılmasına yol açıyordu.
+- **Katı Biçim Denetimi:** Her ikon artık yalnızca kendi veri türüyle tam eşleştiğinde tüketilir:
+  - `📅`, `⏳`, `🛫`, `➕`, `✅`, `❌`: Yalnızca arkasından gelen geçerli bir `YYYY-MM-DD` tarih deseniyle birlikte temizlenir. Tarih taşımayan yalın ikonlar kullanıcının kendi metni sayılır ve cümleden asla silinmez.
+  - `🆔`: Yalnızca geçerli kimlik deseniyle (`[A-Za-z0-9_-]+`) birlikte tüketilir.
+  - `⛔`: Yalnızca virgülle ayrılmış blokaj kod listesiyle birlikte tüketilir; yalın `⛔` ikonu satır içi tutma (`HOLD`) bayrağı olarak okunur ve arkasındaki kelimelere dokunulmaz.
+  - `🏁`: Yalnızca `delete|keep` değerleriyle birlikte tüketilir.
+- **Anayasa İlkesi:** Agent Constitution Madde 6 ve İlke 2 ("Kullanıcının elle belirlediği isimler, ikonlar ve formatlar asla bozulamaz") kod seviyesinde güvenceye alınmıştır.
 
-*(3.26.0)* Agent Farm tek bir VS Code penceresinin içindeydi: telefondan bakılamıyor, VS Code kapalıyken hiçbir yüzey kalmıyordu (headless servis çiftliği **çalıştırıyor** ama kimseye **göstermiyordu**), ve dışarıdan bir mesaj yazıp cevap almanın yolu yoktu.
+## Dışarıdan Erişim — Mobil Web Kokpiti ve Sohbet Entegrasyonu {#disaridan-erisim}
 
-### Web görünümü (salt okunur)
+*(3.26.0 — 3.649.0)* Agent Farm'ın ilk sürümleri yalnızca tek bir VS Code penceresinin içindeydi: telefondan bakılamıyor, VS Code kapalıyken hiçbir yüzey kalmıyordu (headless servis çiftliği **çalıştırıyor** ama kimseye **göstermiyordu**), ve dışarıdan bir mesaj yazıp cevap almanın yolu yoktu. Geliştirilen iki katmanlı uzaktan erişim mimarisi, çiftliği hem salt okunur mobil web paneli hem de tam teşekküllü iki yönlü sohbet kokpiti ile cebe taşır.
 
-`agentFarm.web.enabled` tek, kendi kendine yeten bir sayfa sunar: **ne seni bekliyor · ne çalışıyor · ajan ve proje başına maliyet · son oturumlar · notices** — başparmak için boyutlanmış, kendini tazeleyen.
+### Salt Okunur Mobil Web Kokpiti (Port 8378) ve Yerel QR Motoru
 
-Tasarım ikinci bir arayüz yığını değil, bir **snapshot sözleşmesidir**: eklenti 20 saniyede bir `web-snapshot.json` yazar, portu kim tutuyorsa onu sunar. Bu yüzden sayfa panelle **asla çelişemez** — ve **VS Code kapanınca portu headless servis devralır**, elindeki son snapshot'ı sunmaya devam eder ve bunu sayfada açıkça söyler ("VS Code kapalı"). VS Code dönünce portu geri verir.
+`agentFarm.web.enabled` ayarı ile etkinleştirilen yerel HTTP sunucusu, doğrudan cep telefonu tarayıcılarına uygun, başparmak ergonomisine göre boyutlandırılmış ve otomatik yenilenen tek bir hafif web uygulaması sunar: **ne seni bekliyor · ne çalışıyor · ajan ve proje başına harcama · son oturumlar · notices panosu**.
 
-Ağa bakan tek yüzey olduğu için kuralları sert:
+- **Snapshot Sözleşmesi (`web-snapshot.json`):** Web arayüzü sunucuya ağır veritabanı sorguları atmaz; eklenti arka planda 20 saniyede bir `web-snapshot.json` durum dökümü yazar ve portu kim tutuyorsa onu servis eder. Bu sayede sayfa VS Code ile **asla çelişmez**.
+- **VS Code Kapanışında Headless Devri:** VS Code kapatıldığında portu işletim sistemi arka plan servisi (`agent-farm-headless`) devralır, elindeki son snapshot'ı sunmaya devam eder ve sayfada bunu açıkça belirtir (*"VS Code kapalı — son durum"*). VS Code yeniden açıldığında port çatışmasız geri devredilir.
+- **Güvenlik ve Token Mekanizması:** Token zorunludur. Token yoksa sunucu **kesinlikle başlamaz**. Token `?t=` parametresi, `Authorization: Bearer` başlığı veya sayfanın kurduğu çerez ile taşınır.
+- **Sıfır Bağımlılıklı Yerli QR Kod Motoru (`src/core/qr.ts`, `src/core/qrTables.ts`):** 
+  - Token taşıyan bir URL'nin internetteki harici QR servislerine gönderilmesi kesin bir güvenlik ihlalidir. Agent Farm, hiçbir harici npm bağımlılığı olmadan kendi Galois Field GF(256), Reed-Solomon hata düzeltme (L/M/Q/H) ve BCH maskeleme algoritmasını çalıştırır.
+  - Çıktı tamamen saf SVG `<path>` vektörüdür; betik içermez, harici referans taşımaz.
+- **‼️ "QR Kod Bir Sözdür" ve `local` Uyarısı:**
+  - `webCockpit.ts` bağlantıyı 6 farklı durumda denetler. Sunucu `127.0.0.1` (loopback) üzerinde dinliyorsa, telefon kamerasıyla taranacak bir QR kod telefonda hiçbir zaman açılamaz.
+  - Sistem, taranamayacak bir QR kodu sahte bir başarıyla ekrana çizmek yerine **kehribar (amber)** renge geçer; QR alanına *"Sadece bu makineye bağlı — telefonun erişmesi için LAN seçilmelidir"* uyarısını yazar. QR kod ancak `phoneReachable` (LAN adresi açık ve geçerli) olduğunda çizilir.
+- **Dashboard Üst Şerit `📱 Web` Butonu:** Dashboard başlığında doğrudan `📱 Web` düğmesi yer alır; tek tıkla LAN/Local bağlama durumunu ve QR kokpitini açar (`webCockpit.ts`).
+- **Mobil Pil ve Ağ Koruması (`core/webpage.ts`):** 
+  - Sayfa arka planda veya kilitli ekranda kaldığında (`document.hidden`), 15 saniyelik `setInterval` döngüsü anında durdurulur (`poll(false)`). Telefonun telsizi ve pili boş yere harcanmaz.
+  - Sayfa tekrar öne geldiğinde tek bir anlık `fetch` yapılır ve periyodik yoklama yeniden başlatılır.
+  - `viewport-fit=cover` çentikli telefon ekranları için `env(safe-area-inset-*)` kenar dolguları ile kusursuz hizalanır.
+- **Köprü Operasyonları:** `web.status`, `web.stop`, `web.bind`, `web.token.new`.
 
-- **Varsayılan kapalı.**
-- **`127.0.0.1`** — LAN'a açmak (`agentFarm.web.bind: lan`) bilinçli bir tercihtir.
-- **Token zorunlu.** Token yoksa sunucu **başlamaz** (açık sunmaz). `?t=`, `Authorization: Bearer` ya da sayfanın kurduğu çerezle taşınır — telefondaki yer imi adres çubuğunda token olmadan da çalışsın diye.
-- **Yapısı gereği salt okunur:** hiçbir rota bir şey başlatmaz, durdurmaz, değiştirmez. Çiftliği sürmek köprünün işidir, makinenin kendi sınırının içinde.
+### Çift Yönlü Sohbet Kokpiti — Telegram Entegrasyonu
 
-**Open Web View…** komutu token'ı üretir, "yalnız bu makine mi / ağdaki cihazlar da mı" diye bir kez sorar ve URL'yi verir (tarayıcıda aç / kopyala).
+Salt okunur web görünümünün ötesinde, telefon üzerinden ajanları yönetmek, onay vermek ve konuşmaları yönlendirmek için tam donanımlı bir Telegram köprüsü kurulmuştur.
 
-### Sohbet kanalı (Telegram)
+**Connect Telegram…** bot token'ını alır, kaydetmeden önce Telegram API'sine doğrulatır ve **sır kasasına (secret vault)** yazar — `settings.json` içine asla düz metin yazılmaz. Dışarıya port açılmaz; çiftlik dışarı doğru güvenli `long-polling` yapar.
 
-**Connect Telegram…** bot token'ını alır (kaydetmeden önce Telegram'a doğrulatır) ve **sır kasasına** yazar — settings.json'a asla. Sonrası: bir sohbet ajanlarınla konuşur; yazdığın her mesaj, sohbetin bağlı olduğu ajanda **headless** koşar ve cevap maliyetiyle birlikte aynı iş parçacığına döner. Dışarıya port açılmaz — çiftlik dışarı doğru long-polling yapar.
+#### 1. Sohbetten Oturuma Yönlendirme ve Odak
+Bir telefondan gelen mesajın masaüstündeki hangi oturuma ait olduğu otomatik çözümlenir (`agentFarm.telegram.routing`):
+- `/focus <session-id>`: Sohbeti belirli bir Console kartına kilitler.
+- Odaklanılan oturum `/sessions` listesinde `← focus` işaretiyle gösterilir.
+- Ajan tek bir aktif oturuma sahipse mesaj doğrudan oraya akar.
 
-Komutlar: `/agent <ad>` (sohbeti bir ajana bağla) · `/agents` · `/status` (ne çalışıyor, ne seni bekliyor, bugünkü harcama) · `/cancel` · `/help`.
+#### 2. Telefona Zengin Tur Kartı Olarak Dönüş (core/telegramDigest.ts)
+Ajan bir turu tamamladığında veya durakladığında telefona 4096 karakter sınırına sadık zengin bir kart gönderilir:
+- **Ajanın Kendi Sözleri:** LLM ile yeniden özetleme (paraphrase) maliyeti ödenmez (her tur için fazladan API harcaması ve anlam kayması engellenir); modelin turun sonundaki kendi kapanış cümleleri filtrelenerek aktarılır.
+- **Durum ve Maliyet:** Ajanın ne beklediği, turda kaç token harcandığı ve oturumun anlık maliyeti.
+- **Etkileşimli Butonlar (Inline Keyboard, ≤64 bayt):**
+  - **Soru Seçenekleri:** Ajanın sorduğu asenkron sorular kart altında doğrudan tıklanabilir seçenek butonları olarak belirir.
+  - **İzin Onayları:** İzin istekleri `Allow` / `Deny` butonlarıyla cepte tek dokunuşla onaylanır veya reddedilir.
+  - **Komuta Butonları:** `Continue` (boşta oturumu devam ettir), `Cancel` (çalışan turu durdur/interrupt).
+  - **`📄 Diff` Butonu (`workdirChanges.ts`):** Tek dokunuşla ajanın çalışma dizinindeki Git durumunu (`status --short` ve `diff --stat`) telefona döker.
 
-İki ray isteğe bağlı değildir:
+#### 3. Dört Katı Yürütme Kapısı ve Mesaj Kuyruğu (core/telegramExecution.ts)
+Telefonda yazılan bir mesaj rastgele içeriye fırlatılmaz; sırasıyla şu dört emniyet kapısından geçer:
+1. **Oturum Varlığı Kapısı:** Hedef oturum hala hayatta mı?
+2. **Günlük Bütçe Kalkanı:** Mesajın başlatacağı tur, `agentFarm.telegram.maxDailyUSD` (varsayılan $1) tavanını aşıyor mu? Tavan dolmuşsa komut çalıştırılmaz, bütçe uyarısı verilir.
+3. **Yıkıcı Komut Şekil Filtresi (`riskyIntent`):** `rm -rf`, `git reset --hard`, `git clean -f`, `git branch -D`, `DROP TABLE`, `del /s`, `format` gibi doğrudan veri kaybı yaratacak kabuk komut kalıpları derhal durdurulur ve kullanıcıdan onay istenir. Düz İngilizce/Türkçe yönergeler serbestçe geçer.
+4. **Çalışma Durumu Kapısı:** Ajan o anda çalışıyor mu?
+   - `agentFarm.telegram.whenBusy: queue` (varsayılan): Ajan meşgulken yazılan mesajlar kaybolmaz; **kaydedilen sohbet durumunda (`saved chat state`)** sıraya alınır (oturum başına 10 mesaja kadar). VS Code penceresi reload edilse dahi kuyruk korunur. Tur bittiğinde kuyruktaki en eski mesaj otomatik olarak yeni tur olarak başlatılır.
+   - `agentFarm.telegram.whenBusy: steer`: Çalışan tura anında canlı yönlendirme olarak enjekte edilir.
 
-- **Allowlist.** Listede olmayan bir sohbete iş yapılmaz; cevap olarak **kendi chat id'si** söylenir, böylece izin vermek tek kopyalama işidir. Liste boşsa köprü kimseye çalışmaz.
-- **Günlük tavan.** `agentFarm.telegram.maxDailyUSD` (varsayılan $1) — sohbetten başlayan koşular buna sayılır ve tavan dolunca durur; `/status` çalışmaya devam eder. Tanınmayan bir `/komut` asla prompt olarak koşturulmaz, yardım metniyle cevaplanır.
+#### 4. Telefondan Gerçek Console Oturumu Başlatma — 11. Lansman Kapısı
+Eski `/agent <ad> <istem>` komutu salt arka planda tek seferlik headless bir görev çalıştırırken; **`/new <ajan> [istem]`** komutu masaüstünde tam teşekküllü bir **Console Oturumu** açar:
+- **11. Başlatma Kapısı:** Eklentinin 11 resmi başlatma kapısından biridir; tüm başlatma paritesini (`_REF/agentfarm-dev.md`) taşır.
+- Oturum `/sessions` içinde numaralandırılır, sohbet odağı doğrudan ona kilitlenir ve tur kartları anında telefona akmaya başlar.
+- **Tohumlama (Seeding):** Ajanın son kullanıldığı lansmandaki tüm ayarları (model, motor, effort, izin seviyesi, aktif proje) otomatik devralınır (`seedLastLaunch`).
+- **Ömür Boyu Bütçelendirme:** Oturumun açıldığı andan kapandığı ana kadar aldığı her tur, telefondan veya pencereden başlatılmış olmasına bakılmaksızın `agentFarm.telegram.maxDailyUSD` tavanına yazılır. Günlük bütçe bitmişse oturum hiç başlatılmaz ve telefona nedeni söylenir.
+- Parametresiz `/new` doğrudan o sohbetin bağlı olduğu ajanı açar.
+
+#### 5. Telefon Komut Seti Özeti
+- `/new <ajan> [istem]`: Konsolda yeni bir oturum başlatır.
+- `/agent <ad>`: Sohbeti varsayılan bir ajana bağlar.
+- `/focus <id>`: Sohbet odağını çalışan belirli bir oturuma kilitler.
+- `/sessions`: Açık oturumları listeler, hangisinin odakta olduğunu (`← focus`) gösterir.
+- `/status`: Çalışan oturumlar, bekleyen sorular, kuyruktaki mesaj sayısı ve günlük bütçe harcaması.
+- `/drop`: Çalışan oturumu bozmadan o oturuma ait telefon mesaj kuyruğunu temizler.
+- `/agents`: Çiftlikte tanımlı ajanların listesini sunar.
+- `/cancel`: Odaktaki çalışan turun yürütmesini derhal keser.
+- `/help`: Kılavuzu ve tüm komutları açıklar.
 
 ### Sesli giriş neden burada değil
 
@@ -1146,9 +1218,65 @@ VS Code'un terminali gerçek bir terminal değildir — Chromium içinde çalı�
 
 ## Canlı Gözlem
 
-### Bağlam disiplini sinyali (3.538.0 — S-64)
+### Canlı Bağlam ve Kota Disiplini Sinyalleri {#baglam-disiplini}
 
-Devir yasası bir koşuyu bağlam penceresine bağlar — %35'te yeni işe girme, %40'ta dur ve devret — ama ajan kendi doluluğunu göremez. Agent Farm görebilir: Console host'un canlı akışı, transkriptin son gerçek çağrısı, oturum indeksi. Bu yüzden her hesabın Claude ayarlarındaki canlı hook bir iş daha yapar: bir oturumun penceresi çizgiyi geçince dinleyici o oturumun bir sonraki `PostToolUse` (ya da `UserPromptSubmit`) hook'una `CONTEXT CONVERGE 36% — …` / `CONTEXT HANDOVER 41% — …` cümlesini `additionalContext` olarak cevaplar; Claude Code bunu modelin bağlamına bir sonraki adımdan önce koyar. Her çizgi için pencere başına bir kez; boşalan pencere (compaction) baştan başlar. Hook'u böyle bir kanal taşımayan motorda (Codex) geçiş **iletilmedi olarak kaydedilir**, kimsenin okumadığı bir cümle gönderilmez. İki çizgi ayardır (`agentFarm.contextConvergePct` / `contextHandoverPct`, 0 = kapalı) ve köprü okur-yazar — `sessions.contextGuard`, `sessions.contextGuard.set`; `console.sessions` satırları `contextSignal` taşır.
+*(3.538.0 — 3.624.0)* Anayasanın ve devir protokolünün (`_REF/handover.md`) en temel ilkesi: Çok adımlı çalışan hiçbir ajan oturumunun context penceresi veya hesap kotası tükenene kadar kontrolsüzce ilerlemesine izin verilmemesidir. Ancak LLM motorları (Claude Code, Antigravity, Codex) çalışırken ne bağlam penceresinin doluluk oranını ne de hesabın kota durumunu kendi gözleriyle görebilir. Bu körlüğü ortadan kaldırmak için Agent Farm, motor seviyesinde bir **canlı izleme ve fısıldama (whisper)** altyapısı kurmuştur.
+
+#### Canlı Kancadan Kulağa Fısıldama Mimarisi (PostToolUse / UserPromptSubmit)
+
+Eklenti, Console host'un canlı olay akışını, diske düşen transkriptin son model çağrısını ve oturum indeksini milisaniyelik hassasiyetle izler. Bir oturum belirlenen disiplin eşiklerinden birini aştığı an:
+1. Dinleyici, ajanın çalıştırdığı bir sonraki araç çağrısının (`PostToolUse`) veya kullanıcı girişinin (`UserPromptSubmit`) kanca yanıtına özel bir payload ekler: `{ hookSpecificOutput: { additionalContext: "..." } }`.
+2. Motor (Claude Code), bu kanca çıktısını kullanıcının yazdığı bir sohbet mesajı olarak değil, doğrudan çalışma ortamından gelen bir **sistem bağlamı (additional context)** olarak modelin aktif penceresine yerleştirir.
+3. Kullanıcı klavyeye dokunmadan, ajan araç kullandığı anda kulağına fısıltı ulaşır.
+4. **Tek Seferlik İletim Kuralı:** Her eşik çizgisi için pencere başına yalnızca **bir kez** iletim yapılır (`delivered`). Boşalan bir pencere (compaction sonrası) çizgiyi tekrar geçerse kural baştan silahlanır.
+5. **Kancasız Motor Koruması:** Kancası böyle bir ek bağlam kanalı taşımayan motorlarda (ör. Codex) bu geçiş oturum kaydında **`undelivered` (✕)** olarak işaretlenir; okunmayan fısıltılar varmış gibi davranılmaz.
+
+#### Çift Boyutlu Koruma Eşikleri
+
+Sistem iki ayrı duvarı bağımsız olarak denetler:
+
+| Koruma Boyutu | Ölçülen Kaynak | CONVERGE (Toparlan) | HANDOVER (Dur ve Devret) | Fısıldanan Varsayılan Emir |
+| :--- | :--- | :--- | :--- | :--- |
+| **Model Context Penceresi** | Son model çağrısının token yükü ÷ modelin context pencere tavanı | **≥ %35** | **≥ %40** | `%35`: Yeni alt göreve başlama, elindeki atomik adımı bitir.<br>`%40`: Burada dur, temiz kodları commit'le, devir notunu yaz ve oturumu sonlandır. |
+| **Hesabın 5 Saatlik Kotası** | Oturumun `CLAUDE_CONFIG_DIR` ile bağlandığı kendi hesabı (`five_hour`) | *Varsayılan kapalı* (`%0`) | **≥ %90** | `%90`: Hesabın 5 saatlik kullanım penceresi %90'a ulaştı. Temiz işi commit'le, devir notunu yaz (veya batondaysan bayrağı devret) ve çık. |
+
+> **‼️ 5 Saatlik Pencere vs. Haftalık Kota Ayrımı:** 3.624.0 öncesinde kota fısıltısı, haftalık kullanım oranını (`seven_day`) 5 saatlik pencere sanarak kotası %34 olan bir oturuma erkenden durdurma emri verebiliyordu. Bu ayrım kesinleştirildi: Fısıltı daima oturumun çalıştığı hesabın **5 saatlik kullanım penceresini** okur; haftalık kota asla devir tetiği yapılmaz. Ayrıca kota bilgisi asla ev dizininden (`~/.claude`) okunmaz; oturum hangi hesap slotunda açıldıysa o slotun dizinindeki kimlik kullanılır.
+
+#### Alt Şeritte Renkli Sinyal Noktaları (.sigdot) ve Görsel Durumlar
+
+Console alt şeridinde (`c-status`), context ve kota rakamlarının yanında 6 piksellik renkli durum noktaları (`.sigdot`) belirir:
+
+- 🟡 / 🟠 **Sarı / Turuncu Nokta (`.ctxsig`, `#cca700`):** `CONVERGE` eşiği (%35 context) geçildiğinde yanar. Ajanın toparlanma emrini aldığını gösterir.
+- 🔴 **Kırmızı Nokta (`.ctxsig.stop` / `.ctxsig.bad`, `#f14c4c`):** `HANDOVER` eşiği (%40 context veya %90 kota) geçildiğinde yanar. Ajana durdurma ve devretme emrinin iletildiğini; veya kanalsız motorda sinyalin iletilemediğini (`undelivered`) gösterir.
+- ⚪ / 🔘 **Gri / Nötr Nokta (`.ctxsig.done`):** Ajan devir emrini dinleyip devir notunu yazdığında ve oturumu kapattığında yanar. Alarm durumunun başarıyla kapandığını ifade eder.
+- **AFTip Paneli:** Noktanın veya rakamın üzerine gelindiğinde; bağlamın o anki token büyüklüğü, pencere tavanı, doluluk yüzdesi, ölçüm kaynağı ve ajana fısıldanan tam emir metni zengin bir panelde açılır.
+
+#### ↪ Kıvrık Ok — Devirden Tek Tıkla Devam Etme (Continue from Handover)
+
+Normal (bayrak yarışında olmayan) bir oturum devir sınırına ulaşıp kapandığında, alt şeritte **`↪`** butonu belirir:
+- **Tüm Lansman Boyutlarının Korunumu:** Tıklandığında ajanın motor, model, efor seviyesi, izin modu, Superpowers bayrağı ve proje bağlamını hafızadan alarak taze bir kompozitör açar.
+- **Akıllı İlk Prompt Üretimi:**
+  - Eğer oturum canlı kancadan veya transkriptten yakalanan bir devir notu bıraktıysa:  
+    `"The session before you (<sid>) reached the context handover line at %41 and was closed... Its handover note is <path> — read it first and continue from where it stops."`
+  - Eğer oturum devir notu bırakamadan kapandıysa (Failsafe):  
+    `"No handover note has been found for it — read what it did with 'af.js sessions.read id=<sid>' before you start."`
+- **Süreç Başlatılmaz, Kutuda Bekler:** Kompozitör prompt hazır şekilde açılır ama süreci kendiliğinden başlatmaz; çünkü kota nedeniyle devir yapmış bir oturumun yeni koşusunda kullanıcının hesap değiştirmek isteyebileceği gözetilir.
+- **Devredilen Konuşma Asla Resume Edilmez:** Devir noktasına gelmiş bir oturumu `--resume` ile tekrar canlandırmak yasaktır; çünkü bağlamı dolu bir pencere ilk turda doğrudan duvara toslar.
+
+#### Ayarlanabilir Disiplin Şablonları (DisciplineOrders)
+
+Eşikler ve fısıldanan emirler koda gömülü sabit metinler değildir:
+- Ayarlar sayfasında **Handover Discipline** kartından veya `sessions.contextGuard.set` köprü op'undan 6 farklı dalda özelleştirilebilir:
+  - `converge` / `handover`: Normal oturumlara giden toparlanma ve devir emirleri.
+  - `relayConverge` / `relayHandover`: Baton rölesi koşan oturumlara giden fısıltılar (`baton.pass` yönlendirmesi).
+  - `relayPassedConverge` / `relayPassedHandover`: Bayrağı zaten devretmiş ama turun bitmesini bekleyen oturumlara giden emirler.
+- Metin içindeki `{chain}` şablonu, rölenin kendi zincir ve etap numarasıyla dinamik olarak doldurulur.
+
+#### Köprü Operasyonları
+
+- `sessions.contextGuard` — Tüm oturumların bağlam/kota sinyal kayıtları, eşik ayarları, son okuma yüzdeleri ve canlı kart görünümü dökümü (`args: id?, limit?`).
+- `sessions.contextGuard.set` — Canlı eşikleri (`convergePct`, `handoverPct`, `quotaHandoverPct`) ve emir metinlerini (`orders`) ayarlama.
+- `console.continueFromHandover` — Belirtilen oturumun devir notundan veya transkriptinden devam kompozitörünü açma (`id, open=true`).
 
 ### Sesli Bildirimler, Uyarı Tonları ve Canlı Diyalog Okuyucu (DialogueSpeaker) (3.299.0 — 3.314.0 — A-20 — A-26)
 
@@ -1669,6 +1797,59 @@ Otonom nöbet, sıradan bir zamanlanmış görev değildir; kendi durumunu, kota
 - **Console Canlı Şeridi (`X-177`):** Nöbet açıkken Konsol üst şeridinde nöbet rozeti, aktif hesap ve duraklatma (`Pause / Resume`) kontrolleri yer alır.
 - **Ayarlar Nöbet Bölümü (`X-193`):** Nöbet şablonları, devir notu arama yolları ve klasör önizlemeleri Ayarlar sayfasında müstakil bir kartta yönetilir.
 - **Köprü Operasyonları:** `sentry.status`, `sentry.start`, `sentry.stop`, `sentry.pause`, `sentry.resume`, `sentry.templates`, `sentry.probe`.
+
+
+## Baton Rölesi — Oturumdan Oturuma Kesintisiz Bayrak Devri {#baton-relay}
+
+*(3.620.0 — 3.651.0)* Uzun ve çok adımlı geliştirme işlerinde tek bir oturumun model context penceresini (%35–40 disiplin eşikleri) veya hesabın 5 saatlik kullanım kotasını (%90 eşiği) tüketerek duvara çarpması kaçınılmazdır. Klasik oturum devrinde (`handover note`), oturum durur, diskte bir devir notu bırakır ve kullanıcının ya da nöbetçinin taze bir oturum açmasını bekler. **Baton Rölesi (Baton Relay)**, bu süreci otonom bir bayrak yarışına çevirir: Ajan devir eşiğine geldiğinde işi bir dosya notuna gömmek yerine, halefinin ilk açılış mesajı olacak sözü tek bir çağrıyla (`baton.pass`) sisteme devreder; Agent Farm eski oturum kapandığı anda taze bir oturumu (`leg n+1`) aynı parametrelerle ve belirlenen hesap havuzundan otomatik olarak başlatır.
+
+### Üç Ayaklı Çark Mimarisi
+
+Sistem birbirinden bağımsız çalışan ama birbirini kanıtla tetikleyen üç aktör üzerinde yürür:
+
+1. **Fısıltı (The Whisper / Sentry):** Agent Farm → koşan ajan. Ajan çalışırken token doluluğunu kendi gözüyle göremez. Agent Farm, canlı kancadan (`PostToolUse`) oturumu anlık izler; context %35'e ulaştığında `CONVERGE` (toparlan), %40'a ulaştığında veya 5 saatlik kota %90'a vurduğunda `HANDOVER` emrini fısıldar. Eğer oturum bir röle zincirindeyse, fısıltı "devir notu yaz" demez; doğrudan **"bayrağı devret: baton.pass"** emrini verir.
+2. **Bayrak (The Baton):** Ajan → Agent Farm. Ajan devir kararı aldığında diskte dosya aramaz; o ana kadarki temiz kodları git'e commit'ler, ardından halefinin doğrudan işe başlamasını sağlayacak talimatı içeren bir payload hazırlayarak `node af.js baton.pass "@<dosya>"` (veya JSON dizesi) komutunu çalıştırır ve kendi turunu sonlandırır. Konsol ve terminal oturumları tur bitince kendiliğinden kapanmadığı için, Agent Farm bayrağı teslim eden oturumun durulduğunu gördüğünde (kuyrukta mesaj yok, açık soru yok, 10 saniye sükûnet) oturumu **kendisi temizce kapatır**. Tur sürerken oturum asla öldürülmez.
+3. **Yatak (The Receiver / Bed):** Agent Farm → yeni koşucu. Agent Farm eski oturumun gerçekten kapandığını kanıtla doğrular (aynı anda çift oturum açılmaz). Ardından zincirin belirlenmiş hesap havuzundaki (`@emptiest` vb.) en uygun hesabı seçerek taze bir oturumu (`leg 2/6` vb.) aynı motor, model, efor, izin modu, Superpowers ve proje boyutlarıyla (`launchDimensions`) başlatır. Başlatıcı doğrudan görev panosudur (`tasks.add baton:true`); sistemde ikinci bir gizli başlatıcı yoktur.
+
+### Zinciri Başlatma ve Canlıya Bağlama Yolları
+
+Bir baton rölesi üç farklı kapıdan başlatılabilir veya koşan bir işe sonradan eklenebilir:
+
+- **Kompozitörden Başlatma:** Console mesaj kutusunun (composer) altındaki **`⑂ Relay`** anahtarı açılır. İsteğe bağlı olarak bu zincire özel etap tavanı (`max hops`) ve hesap havuzu seçilir. İlk mesaj gönderildiğinde oturum doğrudan **1. Etap (`⑂ 1`)** olarak mühürlenir.
+- **Görev Formundan Başlatma:** Tasks sayfasında yeni görev eklerken (`New Task`) `⑂ Relay` kutusu işaretlenir (`tasks.add baton:true`).
+- **Çalışan Oturumu Röleye Bağlama (`⑂+ Attach relay`):** Normal (rölesiz) başlamış canlı bir oturumun alt şeridindeki `⑂+` butonuna basıldığında bir ayar şeridi açılır. Buradan havuz ve tavan seçilerek `⑂ Attach` dendiğinde, koşan oturum yeniden başlatılmaksızın anında **Leg 1** olarak zincire mühürlenir (`baton.attach`). Sonraki limit uyarısında devir notu yerine bayrak devri emri alır.
+
+### Arayüz ve Canlı Kumanda Araçları
+
+Console kartı ve oturum listeleri, bir röle bindiğinde şu özel kontrollerle donatılır:
+
+- **`⑂→` (Pass now):** Oturumun kota veya bağlam limitlerine çarpmasını beklemeden, kullanıcı eliyle anında devir başlatma düğmesidir. Tıklandığında ajana `PASS NOW —` başlığıyla devir fısıltısı enjekte edilir. Ajan elindeki adımı commit'leyip `baton.pass` çağırır ve sonraki ayak hemen uyanır.
+- **`✕⑂` (Stop chain):** Zincir frenidir. Tıklandığında o zincire ait bekleyen veya park edilmiş tüm bayrakları `stopped` durumuna çeker. Koşan mevcut oturum kendi işini bitirir fakat arkasından yeni bir etap açılmaz.
+- **`⑂ n` Etiketi ve Durum Paneli:** Kartın alt şeridinde mavi renkte `⑂ 1`, `⑂ 2` rozeti çizer. Üzerine gelindiğinde (AFTip) zincir kimliğini (`chainId`), kaçıncı devirde (`hop`) olduğunu, hesap havuzunu ve limit durumunu döker.
+- **Oturumlar Tablosu `⑂` Sütunu:** Tüm oturum listelerinde `⑂` başlığı altında yalnız röle taşıyan satırlarda `⑂ n` rozeti görünür; diğer satırlar temiz boş bırakılır.
+- **Durum Çubuğu Canlı Göstergesi:** Aktif koşan zincir için durum çubuğunda `⑂ 1/6` formatında canlı sayaç tutulur.
+
+### Otomatik Frenler ve Güvenlik Mekanizmaları
+
+Zincirin sonsuz bir döngüde token yakmasını veya sahipsiz kalmasını engelleyen dörtlü güvenlik ağı vardır:
+
+1. **Etap Tavanı (`agentFarm.batonMaxHops`):** Bir zincirin koşabileceği maksimum etap sayısıdır (varsayılan 6; 0 = sınırsız). Tavan aşıldığında `baton.pass` çağrısı yeni bir oturum açmaz, zincir durur, ajana devir notu yazması fısıldanır ve Notices'a bildirim bırakılır.
+2. **Kısır Zincir Freni (Barren Chain Brake):** Arka arkaya koşan iki etap git üzerinde hiçbir yeni commit üretmeden sonlandıysa (aynı `git HEAD`), zincir kilitlenir. Böylece yerinde sayan ya da çözemediği bir hatada döngüye giren ajanların hesabı eritmesi önlenir.
+3. **Acil Kurtarma Emniyet Kilidi (EMERGENCY HANDOVER):** Bir etap `baton.pass` çağırmadan aniden biterse (süreç çökmesi, pencere kapanması, hata veya devir emri aldığı halde bayrağı geçemeden tükenmesi), Agent Farm devreye girer. Oturum temiz bittiyse veya kullanıcı eliyle kapatıldıysa zincir doğal olarak sonlanır (`done`). Ancak ortada commit'lenmemiş kirli iş, açık bir hata veya ulaşmış bir devir emri varsa, Agent Farm sonraki etabı kendisi **`EMERGENCY HANDOVER`** başlığıyla ayağa kaldırır; önceki oturumun `git status` dökümünü ve son transkript adımlarını halefe enjekte eder. Halef 30 saniye içinde hiçbir araç çağırmadan çökerse zincir kalıcı olarak durdurulur (`failed` - döngü koruması).
+4. **Hareketsiz Konsol Etabı Kapanışı:** Konsol kartları süreç bitse de ekranda kalır. Devir emri verilmiş ama bayrağı geçmeden öylece duran bir konsol etabını Agent Farm 30 saniyelik sükûnetten sonra otomatik olarak kapatır; böylece acil kurtarma mekanizması devreye girip zinciri sıradaki ayağa taşıyabilir.
+
+### Akıllı Hesap Havuzu Mirası
+
+- **Havuz Kilidi:** Zincirin ilk etabı hangi hesap kuralıyla açıldıysa (`@GelistirmeHavuzu`, `@emptiest` vb.), sonraki bütün etaplar istisnasız bu havuzdan beslenir. Ajan devir çağrısında başka bir hesap adı geçirse dahi sistem havuzu korur (`poolKept`).
+- **Park Etme:** Havuzdaki tüm hesapların kullanım kotaları dolmuşsa, sistem ana hesabı harcamaz; zincir ilk hesabın sıfırlanma saatine (`resetsAt`) kadar park edilir (`waiting-end`), saati gelince otomatik uyanır.
+
+### Köprü Operasyonları (Bridge API)
+
+- `baton.status` — Tüm zincirlerin, aktif etapların, park edilmiş bayrakların ve durma gerekçelerinin canlı listesi.
+- `baton.pass` — Koşan etabın bayrağı devretme kapısı (`prompt`, opsiyonel `surface`, `account`, `note`).
+- `baton.stop` — Belirli bir zinciri (`chainId`) veya bayrağı durdurma freni.
+- `baton.now` — Park edilmiş bir bayrağı bekleme süresini atlayarak derhal çalıştırma.
+- `baton.attach` — Canlı bir oturumu Leg 1 olarak mühürleyip röleye bağlama (`sessionId`, `account`, `maxHops`).
 
 
 ## MCP Yönetimi
@@ -2286,6 +2467,74 @@ Eklenti her başlatıldığında, `af.js` CLI yardımcısını platformun global
 5. **Klasik Ham Dosya Bırakma (Alternatif):**
    Gerekli hallerde istek `<bridgeDir>/<id>.request.json` olarak yazılıp `<id>.response.json` beklenerek de doğrudan kullanılabilir.
 
+### Köprü Koruyucu ve Arama Filtresi (bridgeGuard)
+
+Agent Farm ekosisteminde kural ihlallerini sessizce izlemek yerine mekanik olarak denetleyen kanca seviyesinde bir güvenlik katmanı bulunur (`src/core/bridgeGuard.ts`).
+
+- **Gerekçe:** CLI motorlarının (Claude, OpenCode vb.) dahili oturum dosya düzenleri değişkendir ve doğrudan disk üzerinde oturum aramak (`grep`, `glob`, `find`, `rg`, `ls`, `dir`, `Select-String`) dakikalarca süren kör aramalarla bağlamı ve kota bütçesini tüketir. Agent Farm verileri dosya sisteminden elle taranmaz; daima köprüye sorulur.
+- **Mekanik Engelleme (`PreToolUse` Kancası):** Ajan oturum kimliği içeren (36 karakterli tam UUID veya kayıtlı 8 karakterli kısa hex hash) bir arama yapmaya kalktığında, `PreToolUse` kanca seviyesinde `denyResponseBody` devreye girerek takım çağrısını (`permissionDecision: 'deny'`) durdurur.
+- **Yönlendirici Ret Yanıtı:** Ajanın terminaline veya bağlamına arama yerine doğrudan köprü çağrısını gösteren net tek satırlık bir direktif yazılır:
+  ```text
+  "<id>" is a session id, and Agent Farm data is asked of the bridge, never hunted for on disk.
+  Run `af.js sessions.find q=<id>` instead (answers file, engine, agent, cwd),
+  and `af.js sessions.read id=<id>` hands over the conversation itself.
+  ```
+- **Kaçış Kapısı (`af:allow-id`):** Meşru bir dosya analizi veya ham disk erişimi zorunlu olduğunda, komut satırına veya arama desenine `af:allow-id` ibaresi eklendiğinde filtre o çağrı için güvenle devre dışı bırakılır. Ayrıca halihazırda köprüyü kullanan (`af.js`, `sessions.find`, `sessions.read`) komutlar asla durdurulmaz.
+- **Motor Bazlı Kapsama (`bridgeGuardCoverage`):** Kancanın hangi CLI motoru üzerinde etkin olduğu (`claude-hook`, `codex-hook` veya desteksiz `none`) dinamik olarak raporlanır; desteklenmeyen motorlar sessizce geçiştirilmez.
+
+### Oturum Kimlik Tespiti (sessions.whoami)
+
+Çiftlikte çalışan bir ajan, CLI motorunun alt süreçleri altında (CLI → Shell → `node af.js`) yürütülür. Bir ajan köprüyü aradığında "Ben şu an hangi oturumum?" sorusu çalışma klasöründen tahmin edilerek değil, doğrudan somut kanıtlara dayanılarak çözülür (`src/core/whoami.ts`).
+
+- **Klasör Tahmini Kesinlikle Yasaktır:** Aynı çalışma klasöründe (`cwd`) birden fazla eşzamanlı oturumun bulunması doğal bir durumdur. Klasör eşleşmesine dayalı kimliklendirme mimari olarak reddedilir.
+- **Üç Kademeli Kanıt Çözümlemesi:**
+  1. **Argüman (`arg`):** Çağrıcının parametre olarak açıkça ilettiği oturum ID'si (`session`).
+  2. **Ortam Değişkeni (`env`):** CLI motorunun kendi süreç ortamına enjekte ettiği ve `af.js` yardımcısının otomatik olarak köprüye taşıdığı oturum kimliği (`envSessionId`).
+  3. **Süreç Sicili ve Soy Ağacı Eşleşmesi (`registry`):** `af.js`, kendisini başlatan ebeveyn işlem kimliğini (`ppid`) gönderir. Sunucu, CLI'nin canlı oturum kayıt defterindeki (`<config-dir>/sessions/<pid>.json`) tüm etkin süreçleri tarar; çağıran sürecin ata zincirindeki en yakın CLI süreci oturumun gerçek sahibi olarak doğrulanır.
+- **Kullanım Alanı:** Baton bayrak devri (`baton.pass`), oturum mühürleme (`baton.seal`) ve bildirim yanıtlama mekanizmalarında ajanın kendisini tanıtmasına gerek kalmadan bağlamın eksiksiz korunmasını sağlar.
+
+### Çoklu-Motor Transkript Okuyucu (sessions.read)
+
+Farklı yapay zekâ CLI motorları transkript kayıtlarını tamamen farklı veri yapılarında ve farklı terminolojilerle saklar (Claude `assistant`, Console `agent`/`result`, OpenCode SQLite veri tabanı vb.). `sessions.read` operasyonu, tüm motorların konuşma geçmişini tek bir ortak modele normalize eder (`src/core/sessionRead.ts`).
+
+- **Ortak Rol Modeli (`ReadRole`):** `user`, `assistant`, `tool`, `toolResult`, `system`. Girdide `human`, `prompt`, `agent`, `model`, `call`, `result` gibi motor takma adları kabul edilir; çıktıda daima standart roller döndürülür.
+- **Görsel Arayüzle Tam Eşitlik:** Ayrı bir ayrıştırıcı yazmak yerine görsel transkript sayfasının `buildData` motoru kullanılır; böylece arayüzde görünen ile ajanın köprüden okuduğu kayıt harfi harfine aynıdır.
+- **Sayfalama ve Bağlam Koruması (Pagination & Clipping):**
+  - `limit`: Sayfa başına adım sayısı (varsayılan 50, tavan 500).
+  - `from`: Belirli bir adımdan itibaren okuma. Negatif değerler son adımları hedefler (örn. `from=-10`).
+  - `turn`: Yalnızca belirli bir turun adımlarını seçebilme.
+  - `maxChars`: Adım başına metin kırpma sınırı (varsayılan 4000 karakter). Taşma olduğunda `clipped` alanı gerçek bayt uzunluğunu raporlar.
+  - Yanıtta `matched`, `returned`, `clipped` ve bir sonraki sayfa imleci olan `next` sunulur.
+
+### Markdown Belge Dışa Aktarım Operasyonları (*.export ve mdTable)
+
+Agent Farm arayüzündeki tüm Markdown dışa aktarma düğmeleri ile köprü operasyonları aynı veri inşa çekirdeğini paylaşır. Arayüzün ürettiği belge ile ajanın köprü üzerinden aldığı belge arasında hiçbir fark olamaz.
+
+- **Ortak Tablo İnşa Çekirdeği (`src/core/mdTable.ts`):** Tablo üretiminde boru (`|`) işaretleri ve satır sonları güvenle kaçırılır; eksik alanlar ragged (düzensiz) bırakılmayıp boşluklarla hizalanır. En kritik kural: `0` ve `false` gibi falsy değerler eksik veri sanılıp yutulmaz, açıkça tablo hücresine yazılır. Sütunlar doğrudan kayıtlardan türetilir (`tableOfRecords`), yeni bir alan eklendiğinde tablo otomatik olarak genişler.
+- **`tasks.export`:** Görev tahtasındaki tüm kayıtları (`taskRows()`) Markdown tablosu olarak diske döker. Maliyet (`costUSD`), durum, ajan, motor, oturum ID ve süre alanlarını standart bir tablo olarak dışa aktarır.
+- **`turns.export`:** Belirli bir oturumun veya filtrelenmiş turların konuşma dökümünü (`turnsPanel.ts` görünümünde olduğu gibi) dışa aktarır. Her turun başlığı, kullanıcı mesajı, model yanıtı, araç çağrıları ve araç sonuçları hiyerarşik Markdown başlıkları altında yapılandırılır. Varsayılan olarak 50 tur sınırı ve `matched` / `truncated` sayaçları ile döner.
+- **`tasks.analytics.export`:** Görev ve maliyet analitiği sayfasının özet metriklerini ve periyot tablolarını doğrudan Markdown raporu olarak dışa aktarır (`reports.tasks` veri çıktısının tablo karşılığı).
+
+### İzole Git Worktree ile Paralel Görev Yürütme (parallel.run)
+
+Aynı ajan üzerinde birden fazla görevi eşzamanlı olarak yürütmek için çalışma dizinini kirletmeden tam git izolasyonu sağlayan paralel yürütme motorudur (`src/core/parallelRuns.ts`).
+
+- **Çift Kapı, Tek Çekirdek:** Komut paletindeki `"Agent Farm: Run Parallel…"` komutu ile köprüdeki `parallel.run` operasyonu tamamen aynı `planParallel` ve `launchParallel` fonksiyonlarından beslenir.
+- **İzole Git Dizinleri (Worktree):** Her prompt için ana depodan bağımsız geçici bir `git worktree` ve `af/<worktree>-<stamp>` dalı açılır. Böylece görevler birbirinin kod değişikliklerini ezmez.
+- **Eşzamanlılık ve Kota Disiplini:**
+  - Tek seferde en fazla 6 prompt (`PARALLEL_MAX = 6`) kabul edilir; fazlası `dropped` dizisine aktarılır ve raporlanır.
+  - Görevler ajanın `agentFarm.maxConcurrentPerAgent` limitine göre gerçekten paralel ya da kuyrukta sıralı (`serial`) başlatılır; dizinler her iki durumda da izole kalır.
+- **Önce Plan, Sonra Çalıştırma (`dryRun: true` Varsayılanı):** `parallel.run` çağrıldığında varsayılan olarak `dryRun: true` döner. Hiçbir dizin veya görev oluşturulmadan önce depo geçerliliği (`gitRepo`), oluşturulacak dallar ve eşzamanlılık durumu ajan tarafından incelenebilir. Gerçek çalıştırma için açıkça `dryRun: false` verilmelidir.
+- **Otomatik Commit Zorunluluğu:** Başlatılan her headless görevin promptuna otomatik olarak `" — İş bittiğinde değişiklikleri anlamlı bir mesajla commit et."` direktifi eklenir; böylece worktree birleştirmeleri (`Worktree Runs…`) sorunsuz tamamlanabilir.
+
+### Sıfır Parite Açığı Güvencesi (parity.manifest.json)
+
+Agent Farm mimarisinin temel taahhütlerinden biri "Arayüzde elle yapılabilen her eylemin ajanın köprüsü üzerinden de yapılabilmesidir".
+
+- **Parite Bütçesi Kesinlikle Sıfırdır (`gapBudget: 0`):** `parity.manifest.json` dosyası, eklentideki tüm UI panellerini, butonlarını ve eylemlerini karşılık gelen köprü operasyonları (`ops`) ile birebir eşler. Açıkta kalan tek bir işlev dahi bırakılamaz.
+- **Açık Gerekçeli Muafiyetler (`exempt`):** Köprü karşılığı olmayan tek eylemler, yalnızca insan gözünü ekranda gezdiren salt görsel gezinmelerdir (`navigation` türü muafiyetler — örneğin sadece paneli öne getiren veya imleci odaklayan komutlar).
+- **Mekanik Test Kapısı (`test_parity.js`):** CI ve yerel test paketinde `test_parity.js` çalıştırılır. Yeni bir arayüz özelliği eklendiğinde karşılık gelen köprü op'u yazılmamışsa veya parite manifestosuna işlenmemişse derleme ve testler anında başarısız olur. Sistemde "unutulmuş veya ajana kapalı arayüz özelliği" var olamaz.
+
 ## Webhook Köprüsü
 
 Dış dünya bağlantısının evrensel kapısı (0.9.0): n8n, Make, Zapier — webhook konuşan her şey.
@@ -2669,13 +2918,122 @@ Sinyal yorgunluğuna karşı: on ayrı uyarı yerine haftada bir, üç cümlelik
 
 ## Notices ve İş Kuyruğu — ajan↔kullanıcı kanalı {#notices-kuyruk}
 
-İki yönlü asenkron kanal; global gezinmede **🔔 Notices | 📥 Queue** iki sekme, durum çubuğunda tek dikkat rozeti.
+İki yönlü asenkron kanal; global gezinmede artık dörtlü bir şerit halinde sunulur: **🔔 Notices | 📥 Queue | 🤖 A2A Notes | ⚡ A2A Tasks** (ikili çiftler arasında görsel ayraç ile). Durum çubuğunda dikkat rozeti (Notices/Queue için renkli çan; A2A için sadece kendi sekmelerinde sessiz gri rozet).
 
 **Notices (ajan → sen):** her ajan sana söyleyeceği **tek şey için tek satır** bırakır. İki eksen: `type` (update · report · result · reminder · suggestion · warning · question) ve `level` (1 rutin → 4 ultra). Uzun içerik iki bacaklı gider: panoda **özet**, arkasında `10_REPORT`'a yazılan **tam rapor** ("📄 Open full report"). `question` tipi asenkron soru-cevap taşır: ajan sorar, sen UI'dan cevaplarsın (→answered) ya da cevapsız kaparsın (→declined), ajan bir sonraki turunda cevabı uygular ve kaydı kapatır. **Yaşlanma** için bkz. [Yaşam Panosu](#yasam-panosu).
 
-**İş Kuyruğu (sen → ajan):** kullanırken fark ettiğin düzeltmeleri sürtünmesiz düşürdüğün kanal (`Ctrl+Alt+A`); kayıtlar **halledilene kadar kaybolmaz**. Boru hattı: `captured → grouped → delegated → done` (+ `blocked` = sana soru, tek dikkat çeken durum; `dropped` = geçersiz). Terminal olmayan bir kayıt **silinemez** — hatalı giriş `dropped`'a taşınır, o da "halledildi" sayılır. Bir notice tek tıkla kuyruk kaydına çevrilebilir (`queue.fromNotice`), bir soruyu cevaplamak otomatik kayıt açar; kayıt kaynağına `sourceNoticeId` ile geri bağlanır.
+**İş Kuyruğu (sen → ajan):** kullanırken fark ettiğin düzeltmeleri sürtünmesiz düşürdüğün kanal (`Ctrl+Alt+A`); kayıtlar **halledilene kadar kaybolmaz**. Boru hattı: `captured → grouped → delegated → done` (+ `blocked` = sana soru, tek dikkat çeken durum; `dropped` = geçersiz). Terminal olmayan bir kayıt **silinemez** — hatalı giriş `dropped`'a taşınır, o da "halledildi" sayılır.
 
-**Olgunluk motoru — `queue.maturity` (3.18.1).** Gruplama/olgunluk kararı (grupla · bekle · delege et) düzyazıdan koda taşındı: eşikleri (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) uygulayıp `{ actionable, reason, ripe[], ungrouped, starving[] }` döndürür. **`starving`, `queue.groups`'un gösteremediği şeydir:** hiç gruplanmamış bir kaydın `groupId`'si yoktur, yani yalnız grup özetine bakan bir süpürme, kullanıcının kendi cevabı tavanı aşmış hâlde çürürken "kuyruk boş" sonucuna varır — gerçekte olan buydu. **Her süpürme `queue.maturity` ile başlar.**
+**Bildirimden Tam Kuyruk Kaydı Üretme:** Bir notice kuyruğa aktarıldığında ("Add to queue" düğmesi veya bir sorunun kullanıcı tarafından yanıtlanması) artık sadece başlık aktarılmaz; tüm bildirim gövdesi, bölümleri ve rapor bağlantısı eksiksiz aktarılır (`sourceNoticeAgent`, `type`, `body`, `sections`, `reportPath`, proje kimliği). Tek bir saf fonksiyon (`core/noticeToQueue.ts`) üzerinden inşa edilir. İş, soruyu soran ajanın kuyruğuna otomatik yönlendirilir (Agent Farm'ın kendi ürettiği sistem bildirimleri hedefsiz kalır). Kuyruk kartında `❓ Question: <başlık> · from <ajan>` rozeti belirir ve **▸ Original** tıklandığında orijinal bildirim gövdesi, alt bölümleri ve rapor açma düğmesi kart içinde açılır. Ajanlar `queue.list { sourceNoticeAgent: "<ben>" }` ile kendi sorularının yanıtlarını kuyruktan takip eder (`[session-start]` anında hem Notices hem Queue taranır).
+
+Olgunluk motoru — `queue.maturity` (3.18.1). Gruplama/olgunluk kararı (grupla · bekle · delege et) düzyazıdan koda taşındı: eşikleri (`agentFarm.queue.groupSize`, `queue.maxAgeHours`) uygulayıp `{ actionable, reason, ripe[], ungrouped, starving[] }` döndürür. **`starving`, `queue.groups`'un gösteremediği şeydir:** hiç gruplanmamış bir kaydın `groupId`'si yoktur, yani yalnız grup özetine bakan bir süpürme, kullanıcının kendi cevabı tavanı aşmış hâlde çürürken "kuyruk boş" sonucuna varır — gerçekte olan buydu. **Her süpürme `queue.maturity` ile başlar.**
+
+## A2A (Agent-to-Agent) Protokolü — Ajanlar Arası İletişim ve İş Devri {#a2a-protokolu}
+
+Notices panosu ajan→insan, İş Kuyruğu insan→ajan kanalıdır. **A2A (Agent-to-Agent)** ise filodaki ajanların insanı gereksiz yere meşgul etmeden ve Notices gürültüsü yaratmadan **birbirlerine teknik not bırakmaları**, **iş devretmeleri** ve **oturumlar arası teknik hafıza taşımaları** için kurulan bağımsız protokoldür (`a2a.*` köprü operasyonları).
+
+Veriler Agent Farm'ın `globalStorage` alanında (`a2a-notes.json` ve `a2a-tasks.json`) tutulur ve doğrudan dosyalara değil, köprü API'sine danışılır.
+
+### İki Ayrı Nesne: Not (Note) vs Görev (Task)
+
+A2A dünyasında iki farklı varlık vardır, birbirine karıştırılamaz:
+
+1. **Not (`a2a.notes.*`) — PASİF:**
+   - Bir teknik gerçek, keşif, kütüphane uyarısı, kilitlenen veritabanı tablosu, geçici API arızası veya tamamlanan bir görevin teknik sonuç raporudur.
+   - Kimseye özel olarak atanmaz; koordinatları uyan her ajan okuyabilir.
+   - Bir ajanın notu okuması onu yalnızca *o ajan için* okundu (`read`) yapar. `a2a.notes.resolve` ise notu herkes için kapatır.
+   - İşe dönüştürme: Bir notun fiili bir iş gerektirdiği anlaşılırsa `a2a.tasks.fromNote` ile tek bir göreve dönüştürülür. İkinci bir dönüştürme çağrısı isim çakışması gerekçesiyle engellenir.
+
+2. **Görev (`a2a.tasks.*`) — SAHİPLİ (CLAIMED):**
+   - Mutlaka bir ajanın üzerinde hak iddia etmesi (`claim`) gereken fiili bir iştir.
+   - Sahiplik bir **kiralama (lease)** modelidir: talep eden ajana 30 dakikalık bir süre tanınır. Ajan belirli aralıklarla `heartbeat` sinyali göndermezse kira düşer ve görev yeniden havuza (`queued`) iade edilir.
+   - Yaşam döngüsü: `queued → claimed → running → done | failed | blocked | cancelled`.
+
+### 5 Boyutlu Koordinat Sistemi ve Katılık (Strictness) Matrisi
+
+Bir notun veya görevin kime ait olduğunu belirleyen 5 eksenli bir eşleştirme motoru (`src/core/a2aMatch.ts`) çalışır:
+
+- **`project`**: İşi/notu kapsar. `*` tüm filoya genel yayındır; aksi halde çalışma alanının aktif projesidir. **‼️ Proje her modda zorunlu bir filtredir; hiçbir gevşeklik proje sınırını aşamaz.**
+- **`targetRole`**: Muhatabı belirler (bir rol, yetenek kümesi veya doğrudan ajan adı).
+- **`subsystem` / `workdir` ve `topic`**: İşi tanımlar; sıralama puanını etkiler.
+- **`targetSession`**: Oturum soykütüğü (lineage); oturum devam ettirildiğinde ID korunur.
+- **`requires`**: Yetenek filtresi (`write_tools`, `browser`, `shell` vb.); küçük harfli `[a-z0-9_-]+` ile sıkı doğrulanır, geçersiz yetenekler kayıtta reddedilir.
+
+| Koordinat Ekseni | `hard` | `preferred` (zarafet süresi içinde) | `preferred` (zarafet süresi sonrası) | `any` |
+|---|---|---|---|---|
+| **`project`** | zorunlu (`must`) | zorunlu (`must`) | zorunlu (`must`) | zorunlu (`must`) |
+| **`role` · `session`** | zorunlu (`must`) | zorunlu (`must`) | sıralama (`rank`) | sıralama (`rank`) |
+| **`subsystem` · `topic`** | zorunlu (`must`) | sıralama (`rank`) | sıralama (`rank`) | sıralama (`rank`) |
+
+**Zarafet Süresi (`agentFarm.a2a.preferredGraceHours`, varsayılan 2 saat):** `preferred` modunda bir görev, ilk 2 saat boyunca yalnızca hedef role ayrılmıştır. Bu pencere içinde başka bir ajan işi almaya çalışırsa motor talebi reddeder ve yanıtta yapılandırılmış veri döndürür: `reserved for its target role`, açılacağı kesin zaman damgası (`opensAt`) ve eşleşmeyen eksenler (`axes`). Böylece ajan boş yere döngüde polling yapmaz. Süre dolduğunda iş projedeki diğer uygun ajanların talebine açılır.
+
+**Çoklu Süreç Eşzamanlılık Koruması (Claim Race):** Birden fazla bağımsız Node sürecinin aynı salisede aynı görevi talep etmesi durumunda işletim sistemi düzeyinde dosya kilidi devreye girer; tam olarak tek bir süreç görevi alır, diğer tüm süreçler gerekçeli ret yanıtı alır. `a2a.tasks.next` ise en yüksek koordinat puanına sahip en eski işi ilk sıraya getirir.
+
+### Görev Yaşam Döngüsü ve Döngü Koruması (Loop Guard)
+
+1. **Talep:** `a2a.tasks.claim id=…` (veya `a2a.tasks.next claim=true`).
+2. **Nabız (Heartbeat):** `a2a.tasks.heartbeat id=… progress="tek satır"`. Her birkaç turda bir kira yenilenir. Yanıt mutlaka okunur: insan denetçinin koyduğu direktifler ajana burada ulaşır.
+3. **Tamamlama:** `a2a.tasks.finish id=… state=done|failed|blocked result="açıklama"`. Görevi başlatan ajana otomatik bir **sonuç notu** (`result note`) bırakılır; kullanıcıya ayrıca Notices spam'i atılmaz.
+4. **Devir (Handoff) ve Döngü Koruması:** Ajan işi tamamlayamıyor ama başka bir ajanın yapabileceğini biliyorsa `a2a.tasks.handoff id=… targetRole=…` ile görevi devreder. **‼️ Üçüncü devir denemesi sistemce kesin olarak reddedilir ve görev `blocked` durumuna çekilir.** Ajanlar arası sonsuz paslaşma döngüsü bu mekanik emniyetle imkânsız kılınmıştır. Bloke olan iş yalnızca insan kararıyla yeniden yönlendirilebilir.
+
+### ‼️ İnsan Denetçi Direktifi — En Üstün Hiyerarşik İrade
+
+Sistemdeki en yüksek öncelik kullanıcının canlı sözüdür (`humanDirective`: `steer` | `veto` | `constraint`):
+
+- **Mutlak Üstünlük:** Bir karta eklenen denetçi direktifi (`⚠️ [HUMAN SUPERVISOR DIRECTIVE]`); Anayasa'dan, ajanın kendi talimatlarından ve görevin orijinal metninden daha üstündür. Çelişki durumunda tereddütsüz direktif uygulanır.
+- **İlk Anahtar Teslimatı:** Direktif taşıyan bir karta erişildiğinde (`a2a.tasks.claim`, `a2a.tasks.next`, `a2a.tasks.heartbeat`, `a2a.notes.get`), API yanıtının **İLK anahtarı** `supervisor` olarak döner. Ajan bu bloğu görmezden gelemez.
+- **Canlı Araya Girme:** Çalışmakta olan bir göreve sonradan direktif verilirse, bu emir bir sonraki `heartbeat` çağrısında ajana anında teslim edilir.
+- **Denetçi Kokpiti:** Kartların üstüne gelindiğinde beliren `+` butonu ile satırın altında satıra ait bir `AFForm` paneli açılır (`src/core/a2aSupervisor.ts`).
+  - Kart üzerinde türüne göre renkli 👤 rozeti görünür (kehribar = yönlendirme/steer, mavi = kısıt/constraint, kırmızı = veto).
+  - Notlar için doğrudan direktif verilir veya kaldırılır.
+  - Görevler için direktif vermenin yanında **Re-route** (döngü sayacını sıfırlayarak işi başka hedefe aktarma) ve **⚡ Run Now** (`a2a.tasks.runNow`) bulunur. `Run Now` tıklandığında hedef ajan adına bir Console oturumu açılır ve görev normal talep (`claim`) mekanizmasıyla başlatılır.
+
+### Baton Devirlerinin A2A Panosunda Yaşaması ve Hijyen
+
+Baton rölesi (`baton.pass`), oturumdan oturuma bayrak devrederken devir notlarını yalnızca arka plandaki `batons.json` dosyasına yazmaz; aynı zamanda A2A panosuna asar:
+
+- **Baton Kartları:** `category: 'baton'`, `topic: chainId` (`chn_...`) ve `strictness: 'hard'` koordinatlarıyla doğrudan hedef ajana asılır.
+- **Otomatik Kapanma:** Halef oturum başarıyla çalışmaya başladığı an, devir kartı anında `resolved` durumuna geçer.
+- **Hijyen Motoru (`a2aHygiene.ts`):** Çözümlenen kartlar 48 saatlik silinme sayacı başlatır (`resolvedAt`). Yarış bittiğinde (`done` / `failed` / iptal) tüm ilişkili devir kartlarına 24 saatlik TTL basılır ve otomatik süpürme (`sweep`) bunları temizler.
+- **İğneleme (📌 Pin):** İğnelenen bir not hiçbir otomatik temizlik veya süre aşımıyla silinemez; sadece kullanıcı eliyle silinebilir (`a2a.notes.pin`, `a2a.notes.delete`).
+- **Pano Arayüzü Denetimleri:**
+  - **Üç Durumlu Röle Düğmesi:** `⑂ Batons: all` → `hidden` → `only`.
+  - **Zincir Kilidi (Chain Lock):** Karttaki `⑂ chn_...` çipine tıklandığında sayfa o zincire kilitlenir, diğer filtreler kapanır ve koşu kronolojik olarak (en eskiden en yeniye) sıralanır.
+  - **Seçimli ve Görüneni Silme:** Açık kartta `✕ Delete`, satır onay kutuları ile `🗑 Delete` (seçilenleri veya hiç seçilmediyse filtrelenen tüm görünenleri), ve yalnızca kapalı kartları temizleyen `● Clear resolved`.
+
+### Dört Sekmeli Ajan Gelen Kutusu
+
+Global gezinmede tek şeritte toplanan `🔔 Notices | 📥 Queue | 🤖 A2A Notes | ⚡ A2A Tasks` arayüzü:
+- **Ortak Kart Grameri (`afA2A.js`):** Proje çipleri, mutlak dizin uç segmentleri, 30 dakikalık kira geri sayım çubuğu (yeşil/kehribar/kırmızı renk geçişli).
+- **A2A Notes Sayfası (`a2aNotesPanel.ts`):** Çöz/Yeniden aç, göreve dönüştür (`a2a.tasks.fromNote`), Markdown dosya bağlantıları ve facts tablosu.
+- **A2A Tasks Sayfası (`a2aTasksPanel.ts`):** Açık/kapalı sekmeleri, iptal etme, kira süresi, ilerleme bildirimleri ve çapraz bağlantılar.
+- **Oturum Başlangıç Refleksi:** Her ajan oturum açılışında `a2a.status` çağrısı yaparak okunmamış teknik notları, alabileceği görevleri ve elindeki kiraları tek bir çağrıyla kontrol eder (`DUTIES.md` içindeki `[session-start]` nöbeti).
+
+### A2A Köprü Operasyonları Referansı
+
+| Kategori | Operasyon | Açıklama |
+|---|---|---|
+| **Durum** | `a2a.status` | Ajanın rol ve yeteneklerine göre okunmamış notlar, alınabilir görevler ve aktif kiraları tek çağrıda döner. |
+| **Notlar** | `a2a.notes.list` | Notları listeler (`unreadOnly`, `category`, `project`, `topic`, `strictness` süzgeçleri). |
+| | `a2a.notes.get` | Not detayını okur; okuyan ajan için `read` işaretler; varsa `supervisor` ilk anahtardır. |
+| | `a2a.notes.add` | Yeni teknik not yazar (`project`, `targetRole`, `subsystem`, `topic`, `ttlHours`). |
+| | `a2a.notes.resolve` | Notu çözümlendi işaretler; 48 saatlik silinme saatini başlatır. |
+| | `a2a.notes.pin` | Notu iğneler veya iğneyi kaldırır (iğneli not süpürmeden korunur). |
+| | `a2a.notes.delete` / `.deleteMany` / `.clear` | Notları tekli, çoklu veya kategori/topic bazında temizler. |
+| | `a2a.notes.sweep` | Çözümlenmiş ve süresi dolmuş notları temizler (iğnelileri korur). |
+| **Görevler** | `a2a.tasks.list` | Görevleri listeler (`status`, `project`, `targetRole`, `subsystem`). |
+| | `a2a.tasks.get` | Görev detayını döner; varsa `supervisor` ilk anahtardır. |
+| | `a2a.tasks.add` | Yeni görev ekler (`instructions`, `targetRole`, `strictness`, `requires`). |
+| | `a2a.tasks.claim` | Görevi kiralar (30 dk lease); yarış korumalı atomik kilit; `supervisor` ilk anahtar. |
+| | `a2a.tasks.next` | En uygun görevi seçip sıralar; `claim=true` ile doğrudan kiralar. |
+| | `a2a.tasks.heartbeat` | Görev kirasını yeniler, ilerleme raporlar; canlı direktifleri teslim alır. |
+| | `a2a.tasks.finish` | Görevi sonlandırır (`done` / `failed` / `blocked`); köken ajana sonuç notu bırakır. |
+| | `a2a.tasks.handoff` | Görevi başka ajana devreder; 3. devirde döngü koruması görevi bloke eder. |
+| | `a2a.tasks.cancel` | Görevi iptal eder. |
+| | `a2a.tasks.fromNote` | Notu tek seferlik göreve dönüştürür. |
+| | `a2a.tasks.reroute` | Kullanıcı işlemi: görevi döngü korumasını sıfırlayarak yeni koordinata yönlendirir. |
+| | `a2a.tasks.runNow` | Kullanıcı işlemi: Console oturumu başlatıp görevi doğrudan çalıştırır. |
+| **Denetçi** | `a2a.directive.set` / `.remove` | İnsan denetçi direktifi ekler veya kaldırır (`steer`, `veto`, `constraint`). |
 
 ## Yaşam Panosu {#yasam-panosu}
 
@@ -3312,6 +3670,69 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 3.646.0 — 3.654.0 — OpenCode Kilit Yarışı Kurtarması, Muhakeme Varyantları, Wiki Kategori Birleştirme ve Tam Bildirim Dönüşümü (2026-09-23 — 2026-09-24)
+
+- **OpenCode Başlangıç Kilit Yarışı Otomatik Yeniden Denemesi (3.654.0):** Aynı saniye içinde başlayan iki OpenCode oturumunun ilk kullanım SQLite göçünde (`CREATE TABLE ...` / `database is locked`) çökmesi engellendi. İlk saniyelerde bu hatayla düşen oturumlar 2 saniye sonra otomatik olarak bir kez daha denenir.
+- **Kesintisiz İnceleme Panelleri ve Yeniden Çizim İyileştirmeleri (3.652.0 — 3.653.0):** Konsol şeridindeki arka plan paneli ve Canlı Zaman Çizelgesi hover panellerinin her 120ms'lik yeniden çizimde kaybolması ve titremesi engellendi; şeritler kararmadan anında ve 200ms içinde açılır.
+- **Oturum Listesinde Röle Rozeti (3.651.0):** Sol oturum listesindeki kartlara aktif baton etabını gösteren `⑂ N` rozeti eklendi; üzerine gelindiğinde zincir, halef ve fren detayları gösterilir.
+- **Arama Şardı Bütünlüğü (3.650.0):** Transkript değişikliklerinde eski şardların asenkron silinirken yeni yazılan şardları ezmesi önlendi; arama indeksleme hızı kararlı hale getirildi.
+- **Telefondan Canlı Konsol Başlatma (3.649.0):** Telegram üzerinden `/new <ajan> [prompt]` komutuyla doğrudan gerçek bir Konsol oturumu açma kapısı eklendi; oturum kartları sohbete akar, telefondan yönlendirilebilir (`steer`) ve günlük bütçe tavanı (`maxDailyUSD`) ile korunur.
+- **Wiki Kategori Yeniden Adlandırma ve Çatışmasız Birleştirme (3.648.0):** Kök klasör, `index.md` başlığı ve aday havuzu konuları tek hamlede taşınır; hedef isim zaten varsa sayfalar çatışma kontrolünden geçirilerek güvenle birleştirilir.
+- **OpenCode Muhakeme Seviyeleri (3.647.0):** Modelin kendi yayımladığı muhakeme varyantları (`--variant`: low, medium, high vb.) headless görev formunda seçilebilir hale getirildi; modelin desteklemediği seviyeler başlatma anında reddedilir.
+- **Tam Bildirim Kuyruk Dönüşümü (3.646.0):** Bir bildirimi görev kuyruğuna taşırken yalnızca başlık değil; tüm gövde, soru seçenekleri, bölümler, rapor yolu ve soruyu soran ajan eksiksiz korunur (`▸ Original`).
+
+### 3.633.0 — 3.645.0 — Arka Plan Komutunda Bekleme Durumu (waiting-task), A2A Baton Kartları ve Obsidian Sözdizimi Koruması (2026-09-22 — 2026-09-23)
+
+- **Arka Plan Komutunda Bekleme ve Mor Kart (3.644.0):** Bir tur arkasında çalışan bir kabuk komutu bıraktığında, oturum durumu sarı "Sıra Sizde" yerine mor renkli `waiting-task` durumuna geçer. Rozetinde `BACKGROUND` yazar, 4.2 saniyelik yavaş bir nefes animasyonu çalışır ve yanıltıcı bildirim zili çalmaz. Kompozitör `Steer` moduna geçer.
+- **A2A Panosunda Baton Handovers ve Temizlik Politikası (3.633.0 — 3.635.0):** Baton rölesi devirleri A2A panosuna `category: 'baton'` olarak asılır; halef oturum başladığı anda otomatik çözülür. 📌 Pinli kartlar otomatik temizlikten muaf tutulur; biten zincirlerin kartları 24 saat sonra temizlenir.
+- **Konsol Durum Şeridi Minimalizmi (3.632.0):** Durum şeridi tek bir sakin çizgiye kavuşturuldu; limit sinyalleri 6px noktalara (`.sigdot`), eylemler kompakt çiplere dönüştürüldü.
+- **Backlog İkon Sözdizimi Koruması (3.630.0):** Obsidian Tasks metadataları (`📅`, `⏳`, `⛔`, `🆔`) yalnızca kendi katı formatındaki değerleri tüketir; tarihsiz veya yalın ikonların kullanıcının başlık kelimelerini yutması engellendi.
+- **A2A Süpervizör Kokpiti ve Run Now (3.604.0):** Her A2A kartının altında doğrudan süpervizör direktifi verme, işi başka uzmana devretme (`Re-route`) ve tek tıkla yeni Konsol açarak görevi derhal çalıştırma (`Run Now`) kontrolleri sunuldu.
+
+### 3.620.0 — 3.632.0 — Baton Rölesi, Markdown Dışa Aktarma ve Sıfır Parite Açığı Garantisi (2026-09-21 — 2026-09-22)
+
+- **Baton Rölesi Çekirdeği ve Otonom Bayrak Devri (3.620.0):** Limitlere yaklaşan oturumların halefine talimat bırakarak temizce devretmesini sağlayan `baton.pass` operasyonu ve otomatik devir çarkı devreye alındı.
+- **Röle Başlatma ve Yönetim Kontrolleri:** Kompozitörde `⑂ Relay` anahtarı, Tasks formunda `⑂ Relay` kutusu, canlı oturumda `⑂+ Attach relay`, anında devir için `⑂→ Pass now`, zinciri durdurmak için `✕⑂ Stop chain`.
+- **Dörtlü Emniyet Kilidi:** Etap tavanı (`maxHops`), arka arkaya commit üretmeyen zincirleri durduran kısır zincir freni (`barren chain brake`), çöken veya kaza yapan oturumları kurtaran `EMERGENCY HANDOVER` mekanizması ve sahipsiz konsol kartlarının otomatik kapatılması.
+- **Markdown Dışa Aktarım Operasyonları (3.627.0 — 3.628.0):** Görev panosu (`tasks.export`), konuşma turları (`turns.export`), analitik raporları (`tasks.analytics.export`) ve oturum dışa aktarımı (`sessions.export`) ortak tablo inşa çekirdeği (`mdTable`) üzerinden köprüye bağlandı.
+- **Sıfır Parite Açığı (3.629.0):** Arayüzdeki tüm buton ve aksiyonlar köprü operasyonları ile birebir eşitlendi; parite bütçesi sıfırlandı (`gapBudget: 0`). Terminal onarımı, çalışma örnekleri ve dışa aktarım komutları köprüye eklendi.
+
+### 3.605.0 — 3.619.0 — Otomatik Soru Çözümleyici, Oturum Kimliği Çözümleme ve A2A Eşleştirme Motoru (2026-09-21)
+
+- **Otomatik Soru Çözümleyici (3.618.0):** AskUserQuestion ile bekleyen gözetimsiz oturumlarda süre dolduğunda (varsayılan 300 sn) ajanın önerdiği veya ilk seçeneğin otomatik seçilmesi sağlandı; yıkıcı eylem içeren sorularda otomatik seçim mimari olarak durdurulur.
+- **Kanıta Dayalı Oturum Tespiti (`sessions.whoami` - 3.619.0):** Çağıran ajanın hangi oturumda çalıştığı çalışma klasöründen tahmin edilmek yerine; açık argüman, ortam değişkeni ve canlı süreç kayıt defteri taranarak kanıtla belirlenir.
+- **A2A Eşleştirme Motoru (3.603.0):** Proje, rol, alt sistem, oturum ve yetenek eksenlerinde 5 boyutlu görev eşleme algoritması ve 2 saatlik intifa süresi (`grace window`) devreye girdi.
+- **Dört Sekmeli Ajan Gelen Kutusu (3.603.0):** Bildirimler, Görev Kuyruğu, A2A Notları ve A2A Görevleri ortak kart dilinde birleştirildi.
+
+### 3.586.0 — 3.604.0 — A2A Protokolü, İnsan Süpervizör Direktifi ve Telegram Kokpiti (2026-09-20 — 2026-09-21)
+
+- **A2A Protokolü Çekirdeği:** Ajanlar arası pasif bilgi notları (`a2a.notes.*`) ve 30 dakikalık kiralama süresiyle devralınan aktif görevler (`a2a.tasks.*`) ayrıştırıldı.
+- **İnsan Süpervizör Direktifi (Supreme Override):** Kullanıcının verdiği yönlendirme (`steer`), veto (`veto`) veya kısıtlama (`constraint`) direktifleri sistemdeki tüm anayasa kurallarının üstünde en yüksek öncelik olarak kabul edildi; yanıtlarda birinci anahtar olarak dönüldü.
+- **Döngü Koruması (Loop Guard):** Ajanlar arası görev paslaşmalarında 3. ardışık devir mekanik olarak engellenerek görev kilitlendi (`blocked`).
+- **Telegram İki Yönlü Kokpit ve QR Sunucu:** Cep telefonundan soru yanıtlama, canlı onay kapıları, oturum odaklama ve yerel ağ web sunucusu (port 8378) devreye alındı.
+
+### 3.570.0 — 3.585.0 — Ayrı Hesaplar Sayfası, Antigravity Kotaları ve Çoklu Kota Grafikleri (2026-09-19 — 2026-09-20)
+
+- **Ayrı Hesaplar Sayfası (3.583.0):** Hesap yönetimi Engines panelinden bağımsız, kendi müstakil sayfasına (`agentfarm.openAccounts`) kavuştu.
+- **Antigravity Kota Okuma (3.580.0):** Antigravity motorunun kullanım verileri doğrudan yerel `/usage` uç noktasından okunarak takip edildi.
+- **Birleşik Kota Grafikleri (3.572.0):** Hesap kartlarında 5 saatlik ve haftalık kota pencereleri tek bir görsel grafikte birleştirildi.
+- **Sınırda Hesap Tercihi (3.570.0):** Kotası tükenen bir oturumun hangi hesapla devam edeceği kullanıcı tercihine bağlandı.
+
+### 3.548.0 — 3.569.0 — Çoklu Sağlayıcı Rota Mimarisi, Bağlam Tavanı ve Güvenlik Sınırları (2026-09-18 — 2026-09-19)
+
+- **Sağlayıcı Ayrımı ve Kota Pencereleri:** Kimi, MiniMax ve Claude üzerinden koşan işlerin farklı hesap pencerelerine yazılması ve karışık maliyetlerin (`mixed`) raporda şeffafça ayrıştırılması sağlandı.
+- **Model Bağlam Tavanı Tespiti (3.564.0 — 3.566.0):** Konsol kartında modelin yayımladığı gerçek bağlam tavanı canlı olarak gösterilmeye başlandı.
+- **Oturum Kartlarında Sabit Yükseklik (3.553.0):** Konuşma uzadıkça ve loglar aktıkça kartların ekranda zıplaması önlendi.
+- **Rota Filtreleme (3.569.0):** Oturum listelerinde motora ek olarak sağlayıcı rotası bazında filtreleme eklendi.
+
+### 3.532.0 — 3.547.0 — Köprü Disk Araması Koruması, Bağlam Disiplini Sinyalleri ve Devirden Devam Etme (2026-09-17 — 2026-09-18)
+
+- **Köprü Arama Koruyucusu (`bridgeGuard` - 3.541.0 — 3.542.0):** Oturum kimliklerinin diskte `grep`/`find` ile aranması `PreToolUse` kancasında engellendi; ajana tek satırda köprü komutları gösterildi (`af:allow-id` kaçış kapısı ile).
+- **Canlı Bağlam ve Kota Disiplini Sinyalleri (3.538.0 — 3.540.0):** Canlı kanca üzerinden %35 bağlamda toparlanma (`CONVERGE`), %40 bağlam veya %90 5 saatlik kotada devir (`HANDOVER`) fısıltısı enjekte edildi; devir emri alan oturumun yeniden başlatılmasında temiz oturum kuralı getirildi.
+- **Devir Notundan Devam Et (`Continue from Handover` - 3.544.0):** Durdurulan oturum kartında tek tıkla devir notu içeriğiyle taze bir kompozitör oturumu açılması sağlandı (`↪`).
+- **Tüm Motorlar İçin Transkript Okuyucu (`sessions.read` - 3.536.0):** Tüm CLI motorlarının konuşma adımları ortak bir modelde köprüye açıldı.
+- **Bağımsız Kota Nabzı (3.532.0):** Her hesap kendi periyodunda arka planda kota okuyarak ağ çakışmalarını önledi.
 
 ### 3.531.0 — X-324 / X-106: Özel Hesap Politikalarında Strateji Seçici (Zincirleme vs. En Boş Havuz) ve Konsol Görevlerinde Lansman Boyutları (2026-09-17)
 
