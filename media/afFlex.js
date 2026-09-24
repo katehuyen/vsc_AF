@@ -81,6 +81,8 @@
         supervisor('lowConfidence', 'If the supervisor is not sure', 'tri', 'smart', 'fallback',
             { states: { ask: 'park', auto: 'smart', never: 'stop' } }),
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
+        setting('judge.unjudged', 'If no judge can look at it', 'tri', 'ask', 'agentFarm.judgeUnjudged',
+            { states: { ask: 'ask', auto: 'pass', never: 'stop' } }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),
         setting('sentry.leaderBudgetUsd', 'Sentry leader budget $/day', 'number', 2,
             'agentFarm.sentryLeaderBudgetUsd', { min: 0 }),

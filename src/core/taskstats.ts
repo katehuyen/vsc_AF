@@ -38,7 +38,8 @@ export interface TaskRecord {
     fromTrigger?: string;
     workflowId?: string;
     attempt?: number;
-    verified?: 'pass' | 'fail';
+    /** `unjudged` (M-42) counts as neither a pass nor a fail */
+    verified?: 'pass' | 'fail' | 'unjudged';
     /** Z4: matched-transcript token cost (headless runs). */
     costUSD?: number;
     mediaCost?: number;

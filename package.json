@@ -9022,6 +9022,21 @@
           "default": "--model claude-haiku-4-5-20251001",
           "description": "CLI arguments for internal verification (judge) calls — keep this on a cheap model."
         },
+        "agentFarm.judgeUnjudged": {
+          "type": "string",
+          "default": "ask",
+          "enum": [
+            "ask",
+            "pass",
+            "stop"
+          ],
+          "enumDescriptions": [
+            "Hold the step and ask me whether to continue without a verdict.",
+            "Let it continue, marked NOT JUDGED in its output.",
+            "Stop the step as failed."
+          ],
+          "description": "When a quality gate cannot judge an asset — the judge cannot open a video or audio file, or it could not run — what happens. It is never counted as a pass."
+        },
         "agentFarm.taskRetry": {
           "type": "object",
           "default": {},

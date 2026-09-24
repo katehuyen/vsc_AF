@@ -3609,6 +3609,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             portableRoots,
             judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
+            judgeUnjudged: () => cfg().get<string>('judgeUnjudged', 'ask'),
             // ‼️ M-3 — the fleet-wide answer to "what happens when a run fails",
             // used by every task that does not state its own. Unset means the
             // shipped default, which is the behaviour this extension has always
