@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.656.0 - The migration gate names the agent repo's largest files and fails on one no backup carries (X-285) (2026-09-24)
+
+- **The large-file valve reaches the acceptance gate (X-285).** GitHub warns at
+  50 MB per file and refuses a push carrying one over 100 MB — a single such file
+  means no backup at all. `migration.verify` now carries `repo:big-files`: the
+  five largest committed files of the agent repo, always named (one
+  `git ls-tree` call, no stat walk); 50–90 MB is said, a committed file of
+  90 MB or more fails, and so does an untracked file of 50 MB or more — the one
+  the daily backup had to leave out, which used to vanish without a word.
+- Thresholds live in `src/core/repoWeight.ts` and are mirrored by the
+  `_setup\doctor\BigFiles.ps1` module Doctor and the daily backup use.
+
 ## 3.655.0 - The acceptance gate says when the agent repo is public, and whose sign-ins it carries (X-286) (2026-09-24)
 
 - **A public agent repo now fails the migration gate, first (X-286).** The

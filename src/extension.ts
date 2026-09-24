@@ -40462,7 +40462,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '‼️ X-286 — the FIRST two items are the agent repo the claude dir lives in: '
                 + '`repo:visibility` (an anonymous GitHub API read — PUBLIC fails the gate, because the repo '
                 + 'carries live sign-ins; an unreachable API is said, not failed) and `repo:credentials` '
-                + '(which accounts\' sign-ins travel in it, and in what mode — plain today, one module to seal). '
+                + '(which accounts\' sign-ins travel in it, and in what mode — plain today, one module to seal), '
+                + 'then X-285 `repo:big-files` (the five largest committed files; a committed file of 90 MB or more, '
+                + 'or an untracked one of 50 MB or more — in no backup — fails; 50–90 MB is said). '
                 + 'Read-only: this op writes nothing; run the action it names. No arguments.',
             handler: async () => {
                 const repo = await measureAgentRepo(claudeDir());

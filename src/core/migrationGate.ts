@@ -1,4 +1,5 @@
 import type { AgentRepoCarry } from './credentialCarry';
+import { BIG_FAIL_MB, BIG_WARN_MB, bigVerdict, RepoWeight, WeighedFile } from './repoWeight';
 import type { SlotCompleteness } from './slotCompleteness';
 
 /**
@@ -209,5 +210,23 @@ function repoItems(r: AgentRepoCarry): GateItem[] {
             : c.entries.length
                 ? `${c.entries.length} live credential file(s) travel in PLAIN text — sign-ins of ${who}; the repo must stay private`
                 : 'no credential file is tracked — a new machine signs in by hand');
-    return [vis, carried];
+    return r.weight ? [vis, carried, weightItem(r.weight)] : [vis, carried];
+}
+
+/** X-285 — a committed file over the FAIL line, or a big file in no backup, fails; 50–90 MB is said. */
+function weightItem(w: RepoWeight): GateItem {
+    const list = (fs: WeighedFile[]) => fs.map(f => `${f.file} (${f.mb} MB)`).join(' | ');
+    if (w.leftOut.length) {
+        return item('repo:big-files', 'repo', false,
+            `${w.leftOut.length} file(s) of ${BIG_WARN_MB} MB or more are in NO backup — ${list(w.leftOut)}`,
+            'too big for GitHub: they live only on this disk until the local vault (X-335) carries them');
+    }
+    const worst = w.top.length ? bigVerdict(w.top[0].mb) : 'ok';
+    if (worst === 'fail') {
+        return item('repo:big-files', 'repo', false,
+            `a committed file is ${BIG_FAIL_MB} MB or more — ${list(w.top.filter(f => f.mb >= BIG_FAIL_MB))}`,
+            'GitHub refuses a push over 100 MB: the next backup would fail as a whole. Move the file out of the repo or into the local vault');
+    }
+    return item('repo:big-files', 'repo', true,
+        (worst === 'warn' ? `GitHub warns over ${BIG_WARN_MB} MB — ` : 'largest committed: ') + (w.top.length ? list(w.top) : 'nothing committed'));
 }

@@ -1,9 +1,11 @@
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as https from 'https';
+import * as path from 'path';
 import {
     AgentRepoCarry, credentialCarry, CREDENTIAL_PATHSPECS, remoteRepo, visibilityFromStatus
 } from '../core/credentialCarry';
+import { largestBlobs, leftOutBig, RepoWeight } from '../core/repoWeight';
 
 const git = (cwd: string, args: string[]) => new Promise<string>(resolve =>
     cp.execFile('git', ['-C', cwd, ...args], { windowsHide: true, timeout: 15000, maxBuffer: 8 << 20 },
@@ -20,6 +22,18 @@ const anonymousStatus = (owner: string, repo: string) => new Promise<number | un
     req.on('error', () => resolve(undefined));
 });
 
+/** X-285 — committed sizes in one git call; untracked files are few, so they are stat'ed. */
+async function weigh(root: string): Promise<RepoWeight> {
+    const top = largestBlobs(await git(root, ['ls-tree', '-r', '-l', '-z', 'HEAD']));
+    const untracked = (await git(root, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
+        .map(file => {
+            let bytes = 0;
+            try { bytes = fs.statSync(path.join(root, file)).size; } catch { bytes = 0; }
+            return { file, bytes };
+        });
+    return { top, leftOut: leftOutBig(untracked) };
+}
+
 /** X-286 — the repo the claude dir's link lands in, its carried sign-ins and whether strangers can read it. */
 export async function measureAgentRepo(claudeDir: string): Promise<AgentRepoCarry> {
     const none: AgentRepoCarry = { root: '', remote: '', visibility: 'unknown', why: '', carry: credentialCarry([]) };
@@ -29,7 +43,7 @@ export async function measureAgentRepo(claudeDir: string): Promise<AgentRepoCarr
     if (!root) { return none; }
     const tracked = (await git(root, ['ls-files', '-z', '--', ...CREDENTIAL_PATHSPECS])).split('\0').filter(Boolean);
     const remote = (await git(root, ['remote', 'get-url', 'origin'])).trim();
-    const base = { root, remote, carry: credentialCarry(tracked) };
+    const base = { root, remote, carry: credentialCarry(tracked), weight: await weigh(root) };
     if (!remote) { return { ...base, visibility: 'unknown', why: 'no origin remote' }; }
     const r = remoteRepo(remote);
     if (!r) { return { ...base, visibility: 'unknown', why: `origin is not a URL this can read: ${remote}` }; }

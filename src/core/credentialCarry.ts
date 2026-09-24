@@ -9,6 +9,8 @@
  * unpack step in `_setup\Link-Folders.ps1`; no caller learns a second rule.
  */
 
+import type { RepoWeight } from './repoWeight';
+
 export type CarryMode = 'plain' | 'sealed';
 
 export const CARRY_MODE: CarryMode = 'plain';
@@ -49,6 +51,8 @@ export interface AgentRepoCarry {
     /** how the visibility was read, or why it could not be */
     why: string;
     carry: CredentialCarry;
+    /** X-285 — the largest committed files and the big ones left outside every backup */
+    weight?: RepoWeight;
 }
 
 const slash = (p: string) => p.replace(/\\/g, '/');
