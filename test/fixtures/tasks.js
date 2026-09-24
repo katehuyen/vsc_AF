@@ -744,6 +744,26 @@ const variants = () => ([
             });
         }
     },
+    // M-39 — three steps, each with its id chip; the second chip's panel open (a step read two steps back).
+    {
+        id: 'tasks-wf-stepids',
+        label: 'Tasks → a workflow form: every step shows its id chip, the second one\'s panel open (M-39)',
+        tip: 'wfsidw:2',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w10', title: 'Rapor zinciri', stepIdx: null,
+                    steps: [
+                        { sid: 's1', stype: 'agent', title: 'Veriyi topla', agent: 'developer', prompt: 'JSON ver', smode: 'headless' },
+                        { sid: 's2', stype: 'agent', title: 'Özetle', agent: 'developer', prompt: '{prev_text}', smode: 'headless' },
+                        { sid: 's3', stype: 'agent', title: 'Yayınla', agent: 'developer', prompt: '{steps.s1.json.title}: {steps.s2.text}', smode: 'headless' }
+                    ]
+                }
+            });
+        }
+    },
     // M-38 — run pressed on a workflow that takes inputs: its Run card, prefilled from the last run.
     {
         id: 'tasks-wf-runcard',

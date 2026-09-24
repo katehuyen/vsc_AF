@@ -2215,8 +2215,17 @@
             const d = stepSummary(s);
             return `<li class="wfstep${c.stepIdx === i ? ' on' : ''}">
                 <span class="wfsi" title="${C.esc(d.hint)}">${d.icon}</span>
-                <span class="wfst"><b>${C.esc(s.title || '(untitled step)')}</b>
-                    ${s.sid ? `<code class="small" title="${C.esc(`${s.sid}\n\nThis step's id — a later step reads what it produced as {steps.${s.sid}.text}, {steps.${s.sid}.json.field} or {steps.${s.sid}.file}. It stays when steps move.`)}">${C.esc(s.sid)}</code>` : ''}
+                <span class="wfst"><span class="wfsh"><b>${C.esc(s.title || '(untitled step)')}</b>
+                    ${s.sid ? window.AFTip.wrap(`<code class="small wfsid">${C.esc(s.sid)}</code>`,
+                        `Step id ${s.sid} — step ${i + 1} of ${c.steps.length}`,
+                        window.AFTip.lines([
+                            `Text: {steps.${s.sid}.text}`,
+                            `JSON field: {steps.${s.sid}.json.field}`,
+                            `File: {steps.${s.sid}.file}`,
+                            `Verdict: {steps.${s.sid}.verdict}`,
+                            window.AFTip.GAP,
+                            'A later step reads what this one produced by this id. It stays when steps move; a copied step gets a new one.'
+                        ]), 'wfsidw') : ''}</span>
                     <span class="muted small">${C.esc(d.who)}${d.flags.length ? ' · ' + C.esc(d.flags.join(' · ')) : ''}</span></span>
                 <span class="wfsa">
                     <button class="mini secondary" data-st="up" data-i="${i}"${i === 0 ? ' disabled' : ''} title="move it up">↑</button>
@@ -3972,7 +3981,11 @@
                    a LIST, so the form has to show the list — the wizard it
                    replaces asked for step 4 without ever showing steps 1–3. */
                 .wfsteps { list-style:none; margin:8px 0; padding:0;
-                    border:1px solid var(--vscode-panel-border); border-radius:7px; overflow:hidden; }
+                    border:1px solid var(--vscode-panel-border); border-radius:7px; }
+                .wfstep:first-child { border-radius:6px 6px 0 0; }
+                .wfstep:last-child { border-radius:0 0 6px 6px; }
+                .wfstep:only-child { border-radius:6px; }
+                .wfsh { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; min-width:0; }
                 .wfstep { display:flex; gap:9px; align-items:flex-start; padding:6px 9px; font-size:12px;
                     counter-increment:wfs; }
                 .wfstep + .wfstep { border-top:1px solid var(--vscode-panel-border); }
