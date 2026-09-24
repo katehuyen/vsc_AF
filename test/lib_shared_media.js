@@ -113,6 +113,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afBulk.js',
     // afFlex.js + afFlexForms.js — the flex registry and its smart forms (X-367, X-370).
     'afFlex.js', 'afFlexForms.js',
+    // afFlexSettings.js — the Farm Settings "Flow & Content" card (U-152).
+    'afFlexSettings.js',
     // afSupervisor.js — the retry supervisor's boxes (M-13).
     'afSupervisor.js'];
 

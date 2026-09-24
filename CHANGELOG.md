@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.667.0 - Farm Settings ▸ Flow & Content: every preference in one place, with where it came from (U-152) (2026-09-24)
+
+- **A new Farm Settings section, Flow & Content (U-152).** One row per
+  preference that has a Farm Settings value — built from the preference
+  registry, so a preference added later gets its row without anybody touching
+  the page. A value you set is drawn solid with a ↺ that puts it back; an
+  inherited one is drawn faint. The third column is where the value came from,
+  in the same sentence everywhere ("4 — from Farm Settings; built-in default
+  2"); hover any label for the setting it lives in and its default.
+- **A value inside an object setting is written into it.** Setting the retry
+  supervisor's calls writes `taskRetry.supervisor.maxCalls` and keeps every
+  other field of `taskRetry`; ↺ removes only that field.
+- **The preset library on the same card:** Economy · Balanced · Quality and
+  your own, each marked ● when every value matches it or read as "Balanced + 2
+  changes"; Apply writes a preset, ✕ deletes one of yours, and "Save as preset"
+  keeps every value in the table under a name.
+- **Bridge:** `flex.set {point, level?, value?}` (Farm Settings is the level
+  with a store today; `null` = back to inherited). The card's buttons call the
+  same actions as `flex.set` and `presets.*`.
+
 ## 3.666.0 - Smart choices instead of frozen ones: range, ask/auto/never, soft/hard cap, suggestion, honest dead option (X-370) (2026-09-24)
 
 - **Five shapes a preference can take (X-370),** in one shared component

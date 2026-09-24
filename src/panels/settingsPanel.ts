@@ -6,6 +6,8 @@ import {
     parseImportedProfiles, pathPreviews, SettingsProfile, SettingsCategory
 } from '../core/settingsops';
 import { PreviewedPath } from '../core/pathVars';
+import { FlexDeps, flexSettingsState } from '../core/flexActions';
+import { flexCardMessage } from './settingsFlex';
 import {
     CC_CATALOG, buildClaudeModel, coerceClaudeValue, patchClaudeSettings,
     validateRawClaudeSettings
@@ -37,6 +39,8 @@ export interface AgentFolderReport {
 
 export interface FarmSettingsDeps {
     extensionUri: vscode.Uri;
+    /** U-152 — the flex points and presets card; the same deps the flex.* / presets.* ops use */
+    flex?: FlexDeps;
     /** the agentFarm.* schema straight from package.json — the page renders it.
      *  `x-af-browse` is how a setting declares itself a path and earns a
      *  Browse… button (see SettingSpec.browse for why not `format`). */
@@ -598,7 +602,9 @@ export class FarmSettingsPanel {
             // source its schema names (`x-af-values`). A hand-written list of
             // keys on the page would go stale the first time a setting is added;
             // a source declared in the manifest travels with the setting.
-            valueSources: { agent: this.deps.agentNames?.() ?? [] }
+            valueSources: { agent: this.deps.agentNames?.() ?? [] },
+            // U-152 — derived from the flex registry on every draw: a new point gains its row here.
+            flex: this.deps.flex ? flexSettingsState(this.deps.flex) : null
         };
     }
 
@@ -648,6 +654,9 @@ export class FarmSettingsPanel {
             warn: t => void vscode.window.showWarningMessage('Agent Farm: ' + t),
             refresh: () => this.refresh()
         })) { return; }
+        // U-152 — a written value refreshes through onDidChangeConfiguration, like `set`.
+        if (this.deps.flex && await flexCardMessage(msg, this.deps.flex, error =>
+            void this.panel.webview.postMessage({ type: 'error', key: 'flex', error: error.slice(0, 300) }))) { return; }
         switch (msg.type) {
             case 'set': {
                 const key = String(msg.key ?? '');

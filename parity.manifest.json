@@ -5713,6 +5713,51 @@
       ]
     },
     {
+      "capability": "settingsFlex.ts#flexReset",
+      "ui": [
+        "page:settingsFlex.ts#flexReset"
+      ],
+      "ops": [
+        "flex.set"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#flexSet",
+      "ui": [
+        "page:settingsFlex.ts#flexSet"
+      ],
+      "ops": [
+        "flex.set"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#presetApply",
+      "ui": [
+        "page:settingsFlex.ts#presetApply"
+      ],
+      "ops": [
+        "presets.apply"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#presetDelete",
+      "ui": [
+        "page:settingsFlex.ts#presetDelete"
+      ],
+      "ops": [
+        "presets.delete"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#presetSave",
+      "ui": [
+        "page:settingsFlex.ts#presetSave"
+      ],
+      "ops": [
+        "presets.save"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#afnav",
       "ui": [
         "page:settingsPanel.ts#afnav"

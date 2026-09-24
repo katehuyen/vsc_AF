@@ -410,6 +410,11 @@ composing its own.
   `states`), soft/hard cap (`capVerdict`), suggestion (`suggestionFor` honours
   turned-down keys), dead option (`deadReason` / `deadOptions` — grey WITH the
   reason, and only on a stated false in `ENGINE_INPUT`).
+- What can be DONE with points and presets lives once, in
+  `src/core/flexActions.ts` (U-152): the bridge ops (`flex.set`, `presets.*`)
+  and the Farm Settings ▸ Flow & Content card (`panels/settingsFlex.ts`,
+  `media/afFlexSettings.js`) both call it. The card's rows come from
+  `flexSettingsState`, derived from the registry — never list points on a page.
 
 ## The index holds a PROJECTION, the store holds the record (X-129)
 

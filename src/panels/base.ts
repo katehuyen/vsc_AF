@@ -469,6 +469,8 @@ export function htmlShell(
     // X-370 — the flex registry and its smart forms, which afSupervisor.js draws with.
     const flex = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlex.js'));
     const flexForms = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexForms.js'));
+    // U-152 — the Farm Settings "Flow & Content" card.
+    const flexSettings = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexSettings.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -529,6 +531,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${bulk}"></script>
 <script nonce="${nonce}" src="${flex}"></script>
 <script nonce="${nonce}" src="${flexForms}"></script>
+<script nonce="${nonce}" src="${flexSettings}"></script>
 <script nonce="${nonce}" src="${supervisor}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>

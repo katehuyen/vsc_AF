@@ -3047,6 +3047,7 @@
                 .alertmine .wikirel { flex:0 0 180px; }
                 .alertmine button { flex:none; margin-left:2px; }
                 ${window.AFTelegram.css()}
+                ${window.AFFlexSettings.css()}
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -3082,6 +3083,7 @@
                                 : c.id === 'access' ? accessSection(c)
                                     : c.id === 'sentry' ? sentrySection(c)
                                         : c.id === 'discipline' ? disciplineSection(c)
+                                        : c.id === 'flow' ? window.AFFlexSettings.html(DATA.flex, C, errors.flex)
                                             : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
         `;
@@ -3105,6 +3107,8 @@
         // U-84 — the bridge card's own controls, wired by the component that
         // drew them. Safe on a draw that has no card: every lookup finds nothing.
         window.AFTelegram.wire(m => vscode.postMessage(m));
+        // U-152 — the Flow & Content card; a new attempt clears the last refusal.
+        window.AFFlexSettings.wire(m => { delete errors.flex; vscode.postMessage(m); });
         const dcMode = document.getElementById('docopenmode');
         if (dcMode) { dcMode.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'defaultMode', value: dcMode.value })); }
         const dcCmd = document.getElementById('docopencmd');

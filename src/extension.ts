@@ -26607,13 +26607,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     // X-368 — only what the user WROTE is the Farm Settings layer; the shipped default is `builtin`.
-    registerFlexOps(bridge, {
+    const flexDeps = {
         writeSetting: writeUserSetting,
-        readSetting: key => {
+        readSetting: (key: string): unknown => {
             const i = vscode.workspace.getConfiguration().inspect<unknown>(key);
             return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined;
         }
-    });
+    };
+    registerFlexOps(bridge, flexDeps);
 
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
@@ -38663,6 +38664,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (arg?: { focus?: string }) => {
                 FarmSettingsPanel.show({
                     extensionUri: context.extensionUri,
+                    flex: flexDeps,
                     schema: () => {
                         // live schema from our own manifest — a new setting shows
                         // up on this page with zero extra code

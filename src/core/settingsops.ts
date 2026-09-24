@@ -163,7 +163,7 @@ const CATEGORY_OF: Record<string, string> = {
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
     agentEngineDefaults: 'core',
-    modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', flexPresets: 'core', projects: 'core',
+    modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', flexPresets: 'flow', projects: 'core',
     // projects — the umbrella everything else hangs under
     projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
     projectsArchiveRoot: 'core', projectTemplates: 'core',
@@ -347,6 +347,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['discipline', 'Handover Discipline'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
+    ['flow', 'Flow & Content — preferences and presets'],
     ['sentry', 'Sentry — unattended campaigns'],
     ['media', 'Media & Browser'],
     ['search', 'Search & Semantic'],
