@@ -74,6 +74,8 @@ export interface Baton {
     note?: string;
     /** S-78 — the passing folder's git HEAD at the pass; the barren brake compares these */
     head?: string;
+    /** S-92 — the same folder's `git status --short` then; the failsafe counts only what the leg added */
+    dirt?: string;
     /** S-82 — on a seal only: this chain's own leg ceiling (0 = none); absent = agentFarm.batonMaxHops */
     maxLegs?: number;
     /** S-83 — the failsafe opened this hop for a leg that ended without passing: why */

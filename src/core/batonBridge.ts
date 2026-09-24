@@ -13,6 +13,7 @@
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
 import { BATON_DEFAULT_MAX_LEGS, Baton, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
 import { batonBrake } from './batonBrake';
+import { markFolder } from './batonLegFacts';
 import { attachRelay } from './batonAttach';
 import { BatonBoard } from './batonBoard';
 import { chainMaxLegs } from './batonSeal';
@@ -35,6 +36,8 @@ export interface BatonBridgeDeps {
     startNow?: (b: Baton, by: string) => { ok: true; baton: Baton } | { ok: false; why: string };
     /** S-78 — the passing folder's git HEAD, for the barren brake */
     headOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-92 — the passing folder's `git status --short`, for the failsafe */
+    dirtOf?: (cwd: string) => Promise<string | undefined>;
     /** S-78 — agentFarm.batonMaxHops; absent = BATON_DEFAULT_MAX_LEGS */
     maxLegs?: () => number;
     /** S-78 — a brake stopped a chain: one of the two things a relay tells Notices (S-77) */
@@ -121,8 +124,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                         step: 'pass', sessionId: who.sessionId, source: who.source, launchId: launchId ?? null
                     });
                 }
-                const head = deps.headOf ? await deps.headOf(res.baton.from.cwd).catch(() => undefined) : undefined;
-                const accepted: Baton = head ? { ...res.baton, head } : res.baton;
+                const accepted: Baton = await markFolder(res.baton, deps.headOf, deps.dirtOf);
                 const brake = batonBrake(accepted, deps.store.all(),
                     chainMaxLegs(deps.store.all(), accepted.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
                 if (brake) {

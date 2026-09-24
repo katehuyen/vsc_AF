@@ -20,6 +20,7 @@ import { BatonBoard } from './batonBoard';
 import { FirstLeg, sealFirstLeg } from './batonSeal';
 import { LegEndFacts } from './batonFailsafe';
 import { LegEndWatch, NoticeLevel } from './batonLegEnd';
+import { markFolder } from './batonLegFacts';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
 
@@ -103,6 +104,8 @@ export interface BatonRunnerDeps {
     manifestOf?: (launchId: string) => LaunchManifest | undefined;
     /** the folder's git HEAD, recorded on the seal for the barren brake */
     headOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-92 — the folder's `git status --short`, recorded on a seal and a rescue for the failsafe */
+    dirtOf?: (cwd: string) => Promise<string | undefined>;
     /** S-84 — the A2A board the chain's handover cards live on; absent = no cards */
     board?: BatonBoard;
 }
@@ -124,7 +127,7 @@ export class BatonRunner {
         this.legs = new LegEndWatch({
             store: deps.store, legFacts: deps.legFacts,
             isEnded: (sid, o) => endedVerdict(deps.evidence({ ...o, from: { ...o.from, sessionId: sid } })).ended,
-            launchIdOf: deps.launchIdOf, manifestOf: deps.manifestOf, headOf: deps.headOf, maxLegs: deps.maxLegs,
+            launchIdOf: deps.launchIdOf, manifestOf: deps.manifestOf, headOf: deps.headOf, dirtOf: deps.dirtOf, maxLegs: deps.maxLegs,
             notify: deps.notify, now: () => this.now(), log: l => this.log(l), settleMs: deps.settleMs
         }, (b, why) => this.release(b, why));
     }
@@ -255,8 +258,8 @@ export class BatonRunner {
             sealed.push(r.baton);
             this.log(`baton ${r.baton.id}: ${r.baton.why}`);
             const seal = r.baton;
-            void this.deps.headOf?.(seal.from.cwd)
-                .then(head => { if (head) { this.deps.store.put({ ...seal, head }); } })
+            void markFolder(seal, this.deps.headOf, this.deps.dirtOf)
+                .then(m => { if (m.head || m.dirt) { this.deps.store.put(m); } })
                 .catch(() => undefined);
         }
         return sealed;

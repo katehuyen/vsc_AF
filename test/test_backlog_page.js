@@ -1348,7 +1348,8 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('‼️ opening the menu writes nothing at all',
         !r.posted.some(m => m.type === 'backlogSet'));
     ok('the menu offers every canonical type, and "no type"',
-        r.els('blpick').length === 9 && r.els('blpick')[0].dataset.blpick === '');
+        r.els('blpick').length === 11 && r.els('blpick')[0].dataset.blpick === ''
+        && ['perf', 'secu'].every(k => r.els('blpick').some(e => e.dataset.blpick === k)));
     ok('…and marks the one the item already carries',
         r.els('blpick').some(e => e.classes.has('on')));
     r.els('blpick').find(e => e.dataset.blpick === 'ux').click();

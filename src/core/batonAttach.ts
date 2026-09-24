@@ -6,6 +6,7 @@
  * ⑂ Pass now, which the console.send op already is for an agent).
  */
 import { BATON_DEFAULT_MAX_LEGS, Baton, BatonRelay, batonRelayOf, normalizeLegCeiling } from './baton';
+import { markFolder } from './batonLegFacts';
 import { chainMaxLegs, sealFirstLeg } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { DisciplineOrders, orderFor } from './contextGuard';
@@ -16,6 +17,8 @@ export interface AttachDeps {
     launchIdOf: (sessionId: string) => string | undefined;
     manifests: () => readonly LaunchManifest[];
     headOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-92 — the folder's `git status --short` at the seal, for the failsafe */
+    dirtOf?: (cwd: string) => Promise<string | undefined>;
     /** the setting's leg ceiling, for the sentence */
     maxLegs?: () => number;
     now?: () => number;
@@ -62,8 +65,7 @@ export async function attachRelay(deps: AttachDeps, ask: AttachAsk): Promise<Att
     });
     if (!r) { return { ok: false, step: 'attach', why: `session ${sid.slice(0, 8)} is already in a chain — baton.status session=${sid} shows it.` }; }
     if (!r.ok) { return { ok: false, step: 'seal', why: r.why, data: { sessionId: sid, launchId: launchId ?? null } }; }
-    const head = deps.headOf ? await deps.headOf(r.baton.from.cwd).catch(() => undefined) : undefined;
-    const sealed: Baton = head ? { ...r.baton, head } : r.baton;
+    const sealed: Baton = await markFolder(r.baton, deps.headOf, deps.dirtOf);
     deps.store.put(sealed);
     const cap = chainMaxLegs([sealed], sealed.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS);
     return {

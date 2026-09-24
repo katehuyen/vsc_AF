@@ -13,6 +13,7 @@
 import { BATON_DEFAULT_MAX_LEGS, Baton, moveBaton, newBatonId, passBaton } from './baton';
 import { batonBrake } from './batonBrake';
 import { closingRecord, failsafeVerdict, LegEndFacts, legOpener, rescueEvidence } from './batonFailsafe';
+import { markFolder } from './batonLegFacts';
 import { chainMaxLegs } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
@@ -28,6 +29,8 @@ export interface LegEndDeps {
     launchIdOf?: (sessionId: string) => string | undefined;
     manifestOf?: (launchId: string) => LaunchManifest | undefined;
     headOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-92 — the folder's `git status --short` as the rescued leg opens on it */
+    dirtOf?: (cwd: string) => Promise<string | undefined>;
     maxLegs?: () => number;
     notify?: (title: string, body: string, key: string, level?: NoticeLevel, type?: 'info' | 'warning') => void;
     now: () => number;
@@ -100,8 +103,7 @@ export class LegEndWatch {
             state: 'waiting-end', why: 'the session has ended', createdAt: now, updatedAt: now
         };
         draft = { ...draft, rescue: why, note: `failsafe — ${why}` };
-        const head = this.deps.headOf ? await this.deps.headOf(draft.from.cwd).catch(() => undefined) : undefined;
-        if (head) { draft = { ...draft, head }; }
+        draft = await markFolder(draft, this.deps.headOf, this.deps.dirtOf);
         const all = this.deps.store.all();
         const brake = batonBrake(draft, all, chainMaxLegs(all, draft.chainId, this.deps.maxLegs ? this.deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
         if (brake) {

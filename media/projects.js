@@ -1850,6 +1850,8 @@
                 .pj-trk-kind.t-feat { background:var(--vscode-charts-blue,#3794ff); }
                 .pj-trk-kind.t-ux { background:var(--vscode-charts-green,#3fb950); }
                 .pj-trk-kind.t-research { background:var(--vscode-charts-purple,#b180d7); }
+                .pj-trk-kind.t-perf { background:var(--vscode-charts-orange,#d18616); }
+                .pj-trk-kind.t-secu { background:var(--vscode-terminal-ansiCyan,#11a8cd); }
                 .pj-trk-kind.t-chore, .pj-trk-kind.t-debt, .pj-trk-kind.t-doc, .pj-trk-kind.t-idea {
                     background:none; color:inherit; opacity:.7;
                     border:1px solid var(--vscode-widget-border,#4443); }
@@ -2582,6 +2584,8 @@
                 .pj-bl-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:#fff; }
                 .pj-bl-kind.t-feat { background:var(--vscode-charts-blue,#3794ff); color:#fff; }
                 .pj-bl-kind.t-ux { background:var(--vscode-charts-green,#3fb950); color:#fff; }
+                .pj-bl-kind.t-perf { background:var(--vscode-charts-orange,#d18616); color:#fff; }
+                .pj-bl-kind.t-secu { background:var(--vscode-terminal-ansiCyan,#11a8cd); color:#fff; }
                 .pj-bl-kind.t-chore, .pj-bl-kind.t-debt, .pj-bl-kind.t-doc, .pj-bl-kind.t-idea {
                     background:var(--vscode-charts-yellow,#d7ba7d); color:#000; }
                 .pj-bl-kind.settable { cursor:pointer; border:none; font-family:inherit; }
@@ -3311,6 +3315,8 @@
         { id: 'research', label: 'research / measure', desc: 'Research / measure — deliverable is an answer, report or benchmark, not code' },
         { id: 'feat', label: 'development', desc: 'Development — adds new capability, mechanism or feature' },
         { id: 'ux', label: 'UI / UX', desc: 'UI / UX — layout, ergonomics, readability, theme and workflow clarity' },
+        { id: 'perf', label: 'performance', desc: 'Performance — speed, memory, load time and token / quota spend' },
+        { id: 'secu', label: 'security', desc: 'Security — authorisation, permissions, secrets and safe defaults' },
         { id: 'chore', label: 'chore', desc: 'Chore — routine maintenance, dependency bumps and packaging' },
         { id: 'debt', label: 'tech debt', desc: 'Tech debt — refactoring, code cleanup and internal simplification' },
         { id: 'doc', label: 'docs', desc: 'Docs / wiki — documentation, guides and architectural notes' },

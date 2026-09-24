@@ -232,8 +232,9 @@ function fakeState() {
     // A declared id (the Console owns its own; a resume was TOLD one) is known
     // at the spawn; the ordinary headless id is deduced from the transcript.
     // Both doors, or the field works on one shape of run and not the other.
+    // X-360: the Console's own id is the engine's (hostedSessionId), never the card's.
     ok('a declared id is preferred over a deduced one',
-        /t\.consoleSessionId \|\| t\.resumeSessionId \|\| t\.runSessionId \|\| ''/.test(extTs));
+        /t\.hostedSessionId \|\| t\.resumeSessionId \|\| t\.runSessionId \|\| ''/.test(extTs));
     // ‼️ `\s*` AND NOT `\n` — the checkout decides the line ending, not the
     // author. This read `…();\n` and passed for as long as the file happened to
     // be sitting in the working tree with LF endings; the first time git wrote

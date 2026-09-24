@@ -276,8 +276,12 @@ const TAG = /(?:^|\s)#([\p{L}\d/_-]+)/giu;
  * `research` is the one that had no name before: measuring, reproducing,
  * investigating — work whose deliverable is an ANSWER, not a change. Filing it
  * as `#chore` (its only previous home) made it invisible next to the fixes.
+ *
+ * X-143 — `perf` (speed, memory, token spend) and `secu` (security,
+ * authorisation, permissions): two questions a fix is also sorted by, which
+ * `#bug` and `#debt` were hiding.
  */
-export const BACKLOG_KINDS = ['bug', 'research', 'feat', 'ux', 'chore', 'debt', 'idea', 'doc'];
+export const BACKLOG_KINDS = ['bug', 'research', 'feat', 'ux', 'perf', 'secu', 'chore', 'debt', 'idea', 'doc'];
 
 /**
  * WHO PUT THIS LINE HERE — a second axis, deliberately NOT one of the kinds.

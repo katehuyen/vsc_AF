@@ -163,7 +163,7 @@ try {
 {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('‼️ the launch binding the host publishes carries the declared spawn id',
-        /sessionId:\s*t\.resumeSessionId\s*\|\|\s*t\.consoleSessionId\s*\|\|\s*t\.spawnSessionId/.test(src));
+        /sessionId:\s*t\.resumeSessionId\s*\|\|\s*t\.hostedSessionId\s*\|\|\s*t\.spawnSessionId/.test(src));
 }
 
 console.log(`test_task_session_id: ${pass} passed, ${fail} failed`);

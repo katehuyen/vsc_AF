@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.660.0 - "Last touched" sees an edit; a relay can end cleanly in an agent folder; #perf and #secu (S-92, X-360, X-357, X-143) (2026-09-24)
+
+- **An edited item moves up in "last touched" (X-357).** Editing an item on
+  the Backlog page (✎) or putting it on hold (⛔) now records a `touch` in the
+  track ledger, and so do `projects.backlog.set` and `.hold` when they really
+  change something. A line reworded, re-tagged or re-prioritised in Obsidian
+  (or in the editor the ↗ opens) is found by the reconcile pass and recorded
+  as a `touch` from outside, dated by the file's last save. Agent Farm's own
+  writes move the comparison baseline for the lines they changed, so they are
+  never mistaken for outside edits, and an outside edit moves the last touch
+  but never the item's opening date.
+- **A relay leg in an agent folder is no longer "dirty" by default (S-92).**
+  The failsafe counted the engines' own transcripts and databases under
+  `_run_folder_move/` as uncommitted work, so every leg that ended cleanly in
+  an agent folder was rescued and no such chain could end as done. The folder's
+  `git status` is now recorded when a leg opens (pass, seal, rescue, attach),
+  and only lines that are new since then — and outside the engines' pool —
+  count.
+- **A Console task's card id is no longer taken for its session (X-360).** The
+  launch binding, the finish sound / mute and the origin map read the engine's
+  own id (`hostedSessionId`) instead of the card's `cs…` id, so a Console task's
+  origin hover and its "silent" setting work outside the relay too.
+- **Two new work types: `#perf` and `#secu` (X-143).** Performance (speed,
+  memory, token spend) and security (authorisation, permissions, secrets) join
+  the canonical set: offered in the type menu, the capture form and the filter
+  chips, each with its own colour and tooltip.
+
 ## 3.659.0 - The merge into the running extension honours the user's choice of winner per key (X-363) (2026-09-24)
 
 - **`sync.merge` takes `prefer`.** When the user picks "the other machine

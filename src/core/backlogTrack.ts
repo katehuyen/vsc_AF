@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogItem, BacklogState, isLive } from './projectBacklog';
 import { localDay, localStamp } from './projectDocs';
+import { isOutsideEdit, outsideEdit, rawKey, snapshotInto } from './backlogEdits';
 
 /**
  * The backlog TRACK — which session, and which turn of it, an item was worked in.
@@ -576,7 +577,10 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
     // ‼️ X-357 — EXCEPT A BIRTH. An `opened` noticed from outside is the only
     // date a line typed straight into the file will ever have; its time is an
     // upper bound on when it was written, which is what an ordering needs.
-    const timed = mine.filter(r => r.event === 'opened' || !(r.uncertain === 'none' && NOTICED.includes(r.by)));
+    // …AND AN EDIT, dated the same way (backlogEdits.ts). It moves the last
+    // touch, never the birth: an old line reworded today was not opened today.
+    const timed = mine.filter(r => r.event === 'opened' || isOutsideEdit(r) || !(r.uncertain === 'none' && NOTICED.includes(r.by)));
+    const born = timed.filter(r => !isOutsideEdit(r));
     return {
         code,
         runs, loose,
@@ -584,7 +588,7 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
         turns: runs.reduce((n, r) => n + r.turns.length, 0),
         sessions: runs.length,
         turnsUnknown: runs.filter(r => !r.turns.length).length,
-        firstTs: timed.length ? timed[0].ts : 0,
+        firstTs: born.length ? born[0].ts : 0,
         lastTs: timed.length ? timed[timed.length - 1].ts : 0,
         ...(closed ? { closed } : {}),
         // ‼️ X-36 — every reopen is a round, whichever door did it. Only the
@@ -650,9 +654,7 @@ export function trackedCodes(records: TrackRecord[]): string[] {
  * how they start disagreeing.
  */
 export function snapshotBacklog(items: BacklogItem[]): Map<string, string> {
-    const out = new Map<string, string>();
-    for (const i of items) { if (i.code && i.text) { out.set(i.code, i.text); } }
-    return out;
+    return snapshotInto(new Map<string, string>(), items);
 }
 
 /**
@@ -743,8 +745,10 @@ export function reconcileOutside(
         // orderings sank the newest item to the bottom. It is a birth only when
         // the snapshot of the last read exists AND lacks it — without one (a
         // first read) every old undated line would be stamped "new" today.
+        // X-357 — a line rewritten outside since the last read is a touch; a state change below says more
+        const edited = (): void => { const e = outsideEdit(item, mine, seen, writtenBy, now); if (e) { out.push(e); } };
         if (!mine.length && isLive(item.state)) {
-            if (seen && !seen.has(item.code)) {
+            if (seen && !seen.has(item.code) && !seen.has(rawKey(item.code))) {
                 const at = writtenBy && writtenBy > 0 && writtenBy < now ? writtenBy : now;
                 out.push({
                     code: item.code, event: 'opened', ts: at,
@@ -753,15 +757,15 @@ export function reconcileOutside(
                         ? 'added outside Agent Farm, straight into the file; dated by the file\'s last save, the latest it can have been written'
                         : 'added outside Agent Farm, straight into the file; this is when it was noticed'
                 });
-            }
+            } else { edited(); }
             continue;
         }
         let implied: BacklogState | undefined;
         for (const r of mine) { implied = stateOfEvent(r.event) ?? implied; }
         // Nothing recorded and nothing to record: an item with history that is
-        // still open where the history left it has nothing new to say.
-        if (implied === undefined && isLive(item.state)) { continue; }
-        if (implied === item.state) { continue; }
+        // still open where the history left it has nothing new to say — unless its line was rewritten.
+        if (implied === undefined && isLive(item.state)) { edited(); continue; }
+        if (implied === item.state) { edited(); continue; }
         const event: TrackEvent = item.state === 'done' ? 'done'
             : item.state === 'cancelled' ? 'cancelled'
                 : item.state === 'doing' ? 'doing' : 'reopen';

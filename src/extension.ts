@@ -303,7 +303,7 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs } from './core/baton';
+import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
@@ -355,6 +355,7 @@ import {
     TRACK_EVENTS, TRACK_LIVE_WINDOW_MS, TRACK_NOTE_MAX, TRACK_PREV_MAX, TrackDoubt, TrackEvent,
     TrackRecord, TrackSource, TrackSummary, turnSpan
 } from './core/backlogTrack';
+import { adoptOwnWrite } from './core/backlogEdits';
 import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
 } from './core/projectPlan';
@@ -4182,7 +4183,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // themselves in the same folder could have been claimed (S-41).
                 // …and X-321: a fresh headless Claude run was TOLD its id at
                 // the spawn (`--session-id`), which is a declaration too.
-                sessionId: t.resumeSessionId || t.consoleSessionId || t.spawnSessionId,
+                // ‼️ X-360 — the Console's id is `hostedSessionId`; `consoleSessionId`
+                // is the CARD's (cs…) and no session carries it.
+                sessionId: t.resumeSessionId || t.hostedSessionId || t.spawnSessionId,
                 // …and once the cost matcher has named the transcript, that is a
                 // recorded fact too — it survives the restart in the same row.
                 transcriptFile: t.costSessionFile,
@@ -4240,7 +4243,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!want) { continue; }
             // Declared first (the Console owns its id, a resume was TOLD one),
             // deduced last — the same order `publishLaunchBindings` trusts them in.
-            const sid = t.consoleSessionId || t.resumeSessionId || t.runSessionId || '';
+            // X-360 — a card id (consoleSessionId) is not a session: turnAlerts keys on the engine's
+            const sid = t.hostedSessionId || t.resumeSessionId || t.runSessionId || '';
             if (!sid) { continue; }
             const key = `${t.id}:${sid}`;
             if (finishSoundDone.has(key)) { continue; }
@@ -13914,13 +13918,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
                 const on = args.on === undefined ? true : args.on === true || optStr(args, 'on') === 'true';
+                let before: BacklogItem | undefined;
                 let after: BacklogItem | undefined;
                 const out = editProjectDoc(folder, file, src => {
+                    before = findBacklogItem(src, target).item;
                     const res = setBacklogHold(src, target, on);
                     if (res.item) { after = res.item; }
                     return res;
                 });
                 projectDocWritten(project.id);
+                if (before && after && before.raw.trimEnd() !== after.raw.trimEnd()) {
+                    trackEdited(project.id, folder, after.code, 'agent', on ? 'put on hold' : 'taken off hold');
+                }
                 return {
                     project: project.name, file: relDoc(folder, out.file),
                     on, note: out.note ?? null,
@@ -13973,6 +13982,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 projectDocWritten(project.id);
                 const updated = before && after ? backlogAxesChanged(before, after) : asked;
+                if (after && updated.length) { trackEdited(project.id, folder, after.code, 'agent', `set ${updated.join(', ')}`); }
                 return {
                     project: project.name, file: relDoc(folder, out.file),
                     item: after ? backlogOut(after) : null,
@@ -16528,6 +16538,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     }
     setBatonSource(() => batonStore.all());
+    const gitShortStatus = async (cwd: string) => { const c = await changesSummary(cwd); return c.note ? undefined : c.status; };
     // S-82 — what attaching a relay reads, handed to baton.attach and the Console card's ⑂ Attach relay alike
     const batonAttachDeps = {
         store: batonStore,
@@ -16535,6 +16546,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             || index.allWithExternal().find(x => x.sessionId === sid)?.launchId,
         manifests: () => launchManifests(),
         headOf: (cwd: string) => headCommit(cwd),
+        dirtOf: gitShortStatus,
         maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))
     };
     registerBatonOps(bridge, {
@@ -16661,8 +16673,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             readNote: file => ({ ts: fs.statSync(file).mtimeMs, text: fs.readFileSync(file, 'utf8') }),
             toolCalls: sid => live.sessions().find(x => x.sessionId === sid)?.toolCalls,
-            cwdOf: sid => batonStore.all().find(x => x.state === 'started' && x.toSessionId === sid)?.from.cwd,
-            gitStatus: async cwd => { const c = await changesSummary(cwd); return c.note ? undefined : c.status; }
+            cwdOf: sid => openerOf(batonStore.all(), sid)?.from.cwd,
+            gitStatus: gitShortStatus,
+            openDirt: sid => openerOf(batonStore.all(), sid)?.dirt
         }),
         launchIdOf: batonAttachDeps.launchIdOf,
         maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
@@ -16689,7 +16702,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             })()
         ],
         manifestOf: launchId => manifestOf(launchManifests(), { launchId }),
-        headOf: cwd => headCommit(cwd)
+        headOf: cwd => headCommit(cwd),
+        dirtOf: gitShortStatus
     });
     // S-77 — ONE status-bar item for the relay running right now; hidden while none runs.
     const batonBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);
@@ -27154,7 +27168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // launch binding's slower clock-and-folder path was its only way in.
             // A resumed run and a Console-hosted one both KNOW their session id
             // at the spawn; taking it here is the same fact, minutes earlier.
-            const declared = t.resumeSessionId || t.consoleSessionId;
+            const declared = t.resumeSessionId || t.hostedSessionId;
             if (!f && !declared) { continue; }
             // ‼️ THE ID COMES FROM THE INDEX, NOT FROM THE FILENAME (X-35). Only
             // Claude names a transcript after its session; Codex writes
@@ -31285,6 +31299,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         need(next.ok, next.error ?? 'nothing to write');
         const written = writeProjectDoc(folder, rel, next.text as string, read.mtimeMs);
         need(written.ok, written.error ?? 'the write failed');
+        try { ownBacklogWrite(folder, file, read.text ?? '', next.text as string); } catch { /* a baseline, never the write */ }
         return { file, ...(next.note ? { note: next.note } : {}) };
     };
 
@@ -32352,10 +32367,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * means "nobody recorded it" — never "long ago"; every reader keeps those
      * behind the dated ones rather than sorting them to one end.
      *
-     * ‼️ WHAT `touchedAt` HONESTLY IS: the last thing RECORDED. Rewording a line
-     * in Obsidian without moving its checkbox is not an event and does not land
-     * here, so the axis answers "last worked on" and the hover says exactly that
-     * rather than promising a file-modification time nothing measures per item.
+     * ‼️ WHAT `touchedAt` HONESTLY IS: the last thing RECORDED. Since X-357 an
+     * edit is recorded too — the page's ✎ and ⛔ and `backlog.set`/`.hold` by
+     * their door, a line rewritten in Obsidian by the reconcile pass, dated by
+     * the file's last save (backlogEdits.ts).
      */
     const backlogTimes = (folder: string): ((i: BacklogItem) => {
         openedAt: number | null; touchedAt: number | null;
@@ -32524,6 +32539,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             fs.writeFileSync(BACKLOG_SEEN_FILE, blob, 'utf8');
             outsideSeenBlob = blob;
         } catch { /* a cache we could not write costs one round's wording */ }
+    };
+
+    /** X-357 — our own write to a backlog moves the baseline of the lines IT changed, so the watcher never files them as outside edits. */
+    const ownBacklogWrite = (folder: string, file: string, before: string, after: string): void => {
+        const seen = outsideSeen.get(folder);
+        if (!seen || before === after) { return; }
+        const role = scanRoles(folder).backlog;
+        if (!role || path.resolve(role).toLowerCase() !== path.resolve(file).toLowerCase()) { return; }
+        if (adoptOwnWrite(seen, before, after)) { saveOutsideSeen(); }
     };
 
     /**
@@ -32857,6 +32881,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (readTracks(folder).some(r => r.code === want)) { return; }
             recordTrack({ projectId, folder, code: want, event: 'opened', by });
         } catch { /* the item is written; the stamp is the convenience */ }
+    };
+
+    /**
+     * ‼️ X-357 — AN EDIT BY A DOOR IS A TOUCH, recorded by the door that made it.
+     * "Last touched" reads the ledger, and a line reworded, re-tagged or put on
+     * hold moved no checkbox — so the item the user had just edited stayed where
+     * it was in the ordering. Only a write that really changed an axis counts;
+     * never fatal, for the same reason as `trackOpened`.
+     */
+    const trackEdited = (projectId: string, folder: string, code: string | undefined, by: TrackSource, note: string): void => {
+        const want = String(code ?? '').trim().toUpperCase();
+        if (!projectId || !folder || !want) { return; }
+        try { recordTrack({ projectId, folder, code: want, event: 'touch', by, note }); } catch { /* the edit is written */ }
     };
 
     /**
@@ -33665,6 +33702,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return { error: String((e as Error)?.message ?? e) };
                 }
             };
+            // X-357 — one item's line rewritten from the page: a touch when the line really changed
+            const editItem = (
+                id: string, target: BacklogTarget,
+                change: (text: string) => { ok: boolean; text?: string; error?: string; note?: string },
+                what?: string
+            ): { error?: string; note?: string } => {
+                let before: BacklogItem | undefined;
+                let after: BacklogItem | undefined;
+                const res = edit(id, text => {
+                    before = findBacklogItem(text, target).item;
+                    const r = change(text);
+                    if (r.ok && typeof r.text === 'string') {
+                        // new words can stop a text-addressed target matching; the code cannot
+                        after = (before?.code ? findBacklogItem(r.text, { code: before.code }).item : undefined)
+                            ?? findBacklogItem(r.text, target).item;
+                    }
+                    return r;
+                });
+                if (!res.error && before && after && before.raw.trimEnd() !== after.raw.trimEnd()) {
+                    const axes = backlogAxesChanged(before, after);
+                    trackEdited(id, (projectStore.get(id)?.folder ?? '').trim(), after.code ?? before.code, 'panel',
+                        what ?? `edited on the Backlog page${axes.length ? `: ${axes.join(', ')}` : ''}`);
+                }
+                return res;
+            };
             return {
                 /**
                  * ‼️ `at` MAKES THIS TWO EDITS IN ONE WRITE, and that is the
@@ -33759,9 +33821,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * button somebody will press twice in a minute.
                  */
                 backlogHold: (id: string, target: BacklogTarget, on: boolean) =>
-                    edit(id, text => setBacklogHold(text, target, on)),
+                    editItem(id, target, text => setBacklogHold(text, target, on), on ? 'put on hold' : 'taken off hold'),
                 backlogSet: (id: string, target: BacklogTarget, fields: Record<string, unknown>) =>
-                    edit(id, text => setBacklogFields(text, target, {
+                    editItem(id, target, text => setBacklogFields(text, target, {
                         ...(BACKLOG_PRIORITIES.includes(fields.priority as BacklogPriority)
                             ? { priority: fields.priority as BacklogPriority } : {}),
                         ...(Object.prototype.hasOwnProperty.call(fields, 'effort')

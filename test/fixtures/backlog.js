@@ -33,6 +33,9 @@ const items = () => [
     item('U-45', 'Motor matrisinde ücretsiz sağlayıcıların kotası ayrı sütun olsun.', { onHold: true, effort: 'M' }),
     item('P-13', 'Track Closed at damgası tıklanıp ilgili turnü açabilsin.'),
     item('M-4', 'Archive closed hem hepsini hem girilen günden eski olanları arşivleyebilsin.', { kinds: ['feat'], effort: 'M' }),
+    // X-143 — the two kinds added later, so their colours are judged beside the rest
+    item('U-49', 'Oturum listesi açılışta iki saniye donuyor.', { kinds: ['perf'], effort: 'S' }),
+    item('U-50', 'Köprü dosyaları başka kullanıcıya okunur olmasın.', { kinds: ['secu'] }),
     item('U-40', 'Dün kapanan satır', { state: 'done', closedAt: T - 86400000 }),
     item('U-39', 'Bir ay önce kapanan satır', { state: 'done', closedAt: T - 30 * 86400000 }),
     // U-58 — and a closing that was not a finish, beside two that were: the
