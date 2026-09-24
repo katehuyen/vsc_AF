@@ -722,5 +722,26 @@ const typeFilter = (p, text, caret) => {
         !p.html().includes('id="cat-engines"'));
 }
 
+{
+    // U-150 — the auto-answer rows answer the words a person types for them,
+    // and Escape empties the box the way the ✕ does.
+    const S = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
+    const props = require(path.join(__dirname, '..', 'package.json')).contributes.configuration.properties;
+    const aa = {};
+    ['agentFarm.console.autoAnswer.enabled', 'agentFarm.console.autoAnswer.timeoutSeconds']
+        .forEach(k => { aa[k] = props[k]; });
+    const p = runPage(fx.script, Object.assign(fx.data(), {
+        engines: ENGINES, docOpen: DOCOPEN,
+        categories: S.buildSettingsModel(aa, k => aa[k].default)
+    }));
+    typeFilter(p, 'soru');
+    ok('U-150: "soru" finds the auto-answer rows', /console\.autoAnswer\.timeoutSeconds/.test(p.html()));
+    typeFilter(p, 'timeout question');
+    ok('U-150: "timeout question" finds them too', /console\.autoAnswer\.enabled/.test(p.html()));
+    el(p, 'filter').fire('keydown', { key: 'Escape' });
+    ok('U-150: Escape clears the filter', el(p, 'filter').value === ''
+        && p.html().includes('id="cat-engines"'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

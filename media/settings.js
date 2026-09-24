@@ -85,6 +85,10 @@
         } catch { return String(v); }
     }
 
+    // What a person types looking for the auto-answer rows, whose keys say neither.
+    const AUTOANSWER_TERMS = 'soru sorular question questions ask askuserquestion timeout zaman aşımı '
+        + 'otomatik cevap yanıt answer unanswered default pick choose wait';
+
     function matches(it) {
         if (!filter) { return true; }
         // The saved-prompts row answers to the words a person would actually
@@ -93,7 +97,8 @@
         const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS
             : /^agentFarm\.wiki/.test(it.key) ? ' ' + WIKI_TERMS
                 : /^agentFarm\.superpowers/.test(it.key) ? ' ' + SP_TERMS
-                    : /^agentFarm\.telegram/.test(it.key) ? ' ' + TG_TERMS : '';
+                    : /^agentFarm\.telegram/.test(it.key) ? ' ' + TG_TERMS
+                        : /^agentFarm\.console\.autoAnswer/.test(it.key) ? ' ' + AUTOANSWER_TERMS : '';
         return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
     }
 
@@ -3369,6 +3374,19 @@
             el.setSelectionRange(Math.min(at == null ? end : at, end),
                 Math.min(to == null ? end : to, end));
         });
+        filterEl.addEventListener('keydown', ev => {
+            if (ev.key !== 'Escape' || !filterEl.value) { return; }
+            ev.preventDefault();
+            filterEl.value = '';
+            filterEl.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        window.AFFilter.clearable(filterEl);
+        // the wrapper takes the box's place, so it takes the box's width too
+        const clrWrap = filterEl.parentNode;
+        if (clrWrap && clrWrap.className === 'af-clr') {
+            clrWrap.style.width = '100%';
+            clrWrap.style.maxWidth = '420px';
+        }
         document.querySelectorAll('.catnav a').forEach(a =>
             a.addEventListener('click', () => {
                 const h = document.getElementById('cat-' + a.dataset.cat);

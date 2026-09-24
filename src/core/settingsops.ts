@@ -344,7 +344,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['display', 'Display & Labels'],
     ['prompts', 'Saved prompts'],
     ['live', 'Live Monitoring & Alerts'],
-    ['discipline', 'Handover Discipline — the lines and their words'],
+    ['discipline', 'Handover Discipline'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
     ['sentry', 'Sentry — unattended campaigns'],
