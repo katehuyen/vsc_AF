@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.664.0 - A preference says where its value came from (X-368) (2026-09-24)
+
+- **One resolver for every flex point (X-368).** `resolveFlex` walks built-in →
+  Farm Settings → agent → project → workflow → step → run start → live: the
+  highest level that was given a value wins, a blank box inherits, and a value
+  at a level the point cannot be set at — or one its type cannot hold — is
+  reported with its reason instead of being used. Every answer carries one
+  sentence the surfaces will print: *"opus — set for this run; Farm Settings
+  said sonnet"*.
+- **The Farm Settings layer is only what you wrote.** An untouched setting
+  stays the built-in default, so nothing claims to come from Settings when it
+  did not.
+- **The launch resolvers that already exist are placed on the same chain**
+  (member = step, mission = workflow, agent, fleet defaults and
+  `taskExtraArgs` = Farm Settings, the engine's own settings and the CLI =
+  built-in); their behaviour is unchanged, and a test derives their ladders and
+  checks they agree.
+- **Bridge:** `flex.list` (the registry, optionally with `applies` under given
+  facts) and `flex.get` (one point: value, the level that won, what it beat,
+  what was ignored and why, the sentence).
+
 ## 3.663.0 - The flex point registry: every preference, every level, checked (X-367) (2026-09-24)
 
 - **Every preference a user can set is now declared once, as a flex point

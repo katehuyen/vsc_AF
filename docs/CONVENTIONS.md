@@ -375,6 +375,30 @@ proves that somebody once wrote the code correctly, not that the rule holds.**
 When a fourth list appears, copy the shape of those tests: find the anchor text,
 cut the object literal by brace balance, look for each field name inside it.
 
+## A preference is a FLEX POINT, declared once (X-367 / X-368)
+
+Anything a user can choose — a model, a cap, a threshold, "ask / auto / never" —
+is a point in `media/afFlex.js` (typed door `src/core/flexPoints.ts`). A point
+names its type, its default (the `builtin` rung) and every level it can be set at,
+and **each level names the surface that sets it and the bridge key that sets it
+without a page** — per level, because `settings.set` and `tasks.add` are different
+doors to one point. The chain is built-in → Farm Settings → agent → project →
+workflow → step → run start → live; `resolveFlex` (`src/core/flexResolve.ts`)
+walks it, a blank inherits, and a value at an undeclared level or of the wrong
+type is returned in `ignored`, never used. Every surface prints the resolver's
+`sentence` ("opus — set for this run; Farm Settings said sonnet") rather than
+composing its own.
+
+- A new preference box, setting or bridge argument gets its point **in the same
+  commit**. `test_flex_points.js` resolves every declared level against the real
+  files and the other way round: an unclaimed supervisor box or
+  `taskRetry.supervisor` schema field is red. Widen that reverse check when a new
+  surface family joins.
+- The Farm Settings layer is what the USER wrote (`inspect`), never `get` — the
+  shipped default is `builtin`, or every point would claim Farm Settings.
+- The launch resolvers keep their ladders; `ORIGIN_LEVEL` places each rung on the
+  chain and `test_flex_resolve.js` derives their precedence by behaviour.
+
 ## The index holds a PROJECTION, the store holds the record (X-129)
 
 **`SessionIndex` keeps every session that ever ran, in the extension host's one

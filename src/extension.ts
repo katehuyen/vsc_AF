@@ -112,6 +112,7 @@ import {
     afConfig, cfgRefusal, cfgValue, cfgValueRaw, installSettingsDoor, patchUserSetting
 } from './core/settingsDoor';
 import { registerSettingsOps } from './core/settingsBridge';
+import { registerFlexOps } from './core/flexBridge';
 import { matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
@@ -26600,6 +26601,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return { warnings, files: pack.files.length };
         },
         normPath
+    });
+
+    // X-368 — only what the user WROTE is the Farm Settings layer; the shipped default is `builtin`.
+    registerFlexOps(bridge, {
+        readSetting: key => {
+            const i = vscode.workspace.getConfiguration().inspect<unknown>(key);
+            return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined;
+        }
     });
 
     // ---------- DALGA 1: the Console's session host ----------
