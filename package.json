@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.657.0",
+  "version": "3.658.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8203,7 +8203,11 @@
         },
         "agentFarm.telegram.digest": {
           "type": "string",
-          "enum": ["focused", "all", "off"],
+          "enum": [
+            "focused",
+            "all",
+            "off"
+          ],
           "default": "focused",
           "enumDescriptions": [
             "A chat hears the turn cards of the conversation it is focused on (/focus), or of the only live one — where a reply from it would go.",
@@ -8214,7 +8218,10 @@
         },
         "agentFarm.telegram.whenBusy": {
           "type": "string",
-          "enum": ["queue", "steer"],
+          "enum": [
+            "queue",
+            "steer"
+          ],
           "default": "queue",
           "enumDescriptions": [
             "The message waits and goes in as the next turn's first words, and the chat is told so. Survives a window reload.",

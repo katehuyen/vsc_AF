@@ -545,7 +545,7 @@ export class WikiStore {
 
     constructor(private file: string) { this.load(); }
 
-    private load(): void {
+    load(): void {
         try {
             const json = JSON.parse(fs.readFileSync(this.file, 'utf8')) as { candidates?: WikiCandidate[] };
             this.candidates = Array.isArray(json.candidates) ? json.candidates : [];

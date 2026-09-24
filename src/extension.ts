@@ -39,6 +39,7 @@ import { PARALLEL_MAX, launchParallel, parallelPrompts, planParallel } from './c
 import { applyDistilled, distillFile, scanContradictions } from './core/distill';
 import { MemoryIndexReport, registerMemoryOps } from './core/memoryBridge';
 import { registerA2AOps } from './core/a2aBridge';
+import { registerSyncMergeOps } from './core/syncMergeOps';
 import { A2ANotesStore } from './core/a2aNotes';
 import { A2ATask, A2ATasksStore, A2A_TERMINAL } from './core/a2aTasks';
 import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
@@ -17161,6 +17162,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // N-6 — the A2A pair. Each door hands the page the SAME stores the bridge
     // ops write, and each cross-link opens the other board focused on a row.
     const a2aChanged = (): void => { A2ANotesPanel.refreshIfOpen(); A2ATasksPanel.refreshIfOpen(); pushHeaderCounts(); };
+    {
+        // X-342 — the spec defaults mirror _setup/sync-classes.json; test_sync_merge.js holds them to it.
+        const gs = context.globalStorageUri.fsPath;
+        const items = (list: string, time: string) => ({ shape: 'items' as const, list, key: 'id', time });
+        registerSyncMergeOps(bridge, [
+            { file: 'session-titles.json', path: path.join(stateDir, 'session-titles.json'), spec: { shape: 'map' }, reload: syncPortableState },
+            { file: 'session-marks.json', path: path.join(stateDir, 'session-marks.json'), spec: { shape: 'map' }, reload: syncPortableState },
+            { file: 'wiki_candidates.json', path: path.join(gs, 'wiki_candidates.json'), spec: items('candidates', 'addedAt'), reload: () => { wikiStore.load(); WikiPanel.refreshIfOpen(); } },
+            { file: 'a2a-notes.json', path: path.join(gs, 'a2a-notes.json'), spec: items('items', 'ts'), reload: () => { a2aNotes.load(); a2aChanged(); } },
+            { file: 'a2a-tasks.json', path: path.join(gs, 'a2a-tasks.json'), spec: items('items', 'ts'), reload: () => { a2aTasks.load(); a2aChanged(); } },
+            { file: 'notices.json', path: path.join(gs, 'notices.json'), spec: items('notices', 'ts'), reload: () => { noticesStore.load(); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); } },
+            { file: 'work-queue.json', path: path.join(gs, 'work-queue.json'), spec: items('items', 'ts'), reload: () => { workQueueStore.load(); QueuePanel.refreshIfOpen(); } }
+        ]);
+    }
     const showA2ANotesPanel = (focusId?: string): void => A2ANotesPanel.show({
         extensionUri: context.extensionUri,
         notes: a2aNotes, tasks: a2aTasks,

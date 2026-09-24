@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.658.0 - Another machine's copy is merged into the running extension's stores, no reload (X-342) (2026-09-24)
+
+- **`sync.merge` — the store owner takes the merge.** When the migration
+  engine (`_setup/sync`, Smart Merge) merges another machine's agent folder
+  while VS Code is open, the keyed stores this extension holds in memory —
+  session titles and marks, notices, the work queue, A2A notes and tasks, wiki
+  candidates — are no longer deferred until VS Code is closed. The engine hands
+  them to the extension, which merges each under the store's lock, archives the
+  live file first, writes atomically and re-reads it, so the pages show the new
+  rows at once and no later save of a stale copy undoes the sync. `replace:true`
+  is the same door backwards: the engine's rollback restores an archived store
+  through it instead of writing under the running extension.
+- **One rule, two bodies, measured alike.** The merge rule (key union; the same
+  key with two values keeps the newer when the record has its own time, else
+  the live one, and the pair is listed) lives in `src/core/syncMerge.ts`, a port
+  of `_setup/sync/t2.js`. `test/test_sync_merge.js` runs the same cases through
+  both and checks the store table against `_setup/sync-classes.json` whenever
+  the agent tree is on the machine.
+- **Then the lists catch up.** After a merge through the extension the engine
+  calls `sessions.rescan full=true` and `projects.rescan`, so the other
+  machine's sessions appear without a window reload. The engine only uses the
+  bridge when the target folder's store IS the running extension's folder; a
+  merge into any other tree never touches the live stores.
+
 ## 3.657.0 - A2A Tasks, A2A Notes and the Work Queue get Notices' bulk hand; Farm Settings filter clears in one press (N-11, U-150) (2026-09-24)
 
 - **One bulk hand on every list page (N-11).** A2A Notes, A2A Tasks and the
