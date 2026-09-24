@@ -33,6 +33,7 @@ import { ResumeRoute } from './resumeGate';
 import {
     OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
 } from './opencoderun';
+import { opencodeLockRetryDelay, opencodeLockRetryNote } from './opencodeLockRetry';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import {
     classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, HandoverEvidence,
@@ -1966,6 +1967,8 @@ export class TaskManager implements vscode.Disposable {
     private externalWatch = new Set<string>();
     private externalTimer?: NodeJS.Timeout;
     private processes = new Map<string, cp.ChildProcess>();      // taskId -> headless process
+    /** X-329: tasks whose OpenCode run already had its one start-up-lock retry. */
+    private opencodeLockRetried = new Set<string>();
     private handoffs = new Map<string, Handoff>();               // workflowRunId -> last handoff
     // workflowRunId -> the parallel group currently fanning out on that run.
     private parallelGroups = new Map<string, {
@@ -4106,7 +4109,8 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** Headless tasks run as child processes so stdout/stderr land in an archived output file. */
-    private spawnHeadless(task: FarmTask, agent: AgentInfo): void {
+    private spawnHeadless(task: FarmTask, agent: AgentInfo, retryNote?: string): void {
+        const spawnedAt = Date.now();
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -4192,7 +4196,8 @@ export class TaskManager implements vscode.Disposable {
             (task.permissionMode ? `- Permission mode: ${task.permissionMode}\n` : '') +
             (task.workDir ? `- Workdir: ${task.workDir}\n` : '') +
             `- Prompt: ${task.prompt}\n\n---\n\n`;
-        fs.writeFileSync(outFile, header, 'utf8');
+        // X-329: a retry keeps the first attempt's record and says why it ran again.
+        if (retryNote) { fs.appendFileSync(outFile, retryNote, 'utf8'); } else { fs.writeFileSync(outFile, header, 'utf8'); }
         const stream = fs.createWriteStream(outFile, { flags: 'a' });
 
         const p = sanitizePrompt(task.prompt);
@@ -4413,7 +4418,11 @@ export class TaskManager implements vscode.Disposable {
                 if (id) { bound = id; this.setRunProgress(task.id, { sessionId: id }); }
             }
         });
-        child.stderr?.on('data', chunk => put(chunk));
+        let errSeen = '';
+        child.stderr?.on('data', chunk => {
+            put(chunk);
+            if (opencodeRun && errSeen.length < 8192) { errSeen += String(chunk); }
+        });
         child.on('error', err => {
             drain();
             stream.write(`\n\n---\n[spawn error] ${scrub.text(String(err))}\n`);
@@ -4423,6 +4432,21 @@ export class TaskManager implements vscode.Disposable {
         });
         child.on('close', code => {
             const mins = task.startedAt ? Math.round((Date.now() - task.startedAt) / 60000) : 0;
+            const lockWait = opencodeRun && task.status === 'running'
+                ? opencodeLockRetryDelay({ exitCode: code, ranMs: Date.now() - spawnedAt,
+                    output: seen + errSeen, retried: this.opencodeLockRetried.has(task.id) })
+                : 0;
+            if (lockWait) {
+                this.opencodeLockRetried.add(task.id);
+                drain();
+                stream.end();
+                this.processes.delete(task.id);
+                setTimeout(() => {
+                    if (task.status !== 'running') { return; }
+                    this.spawnHeadless(task, agent, opencodeLockRetryNote(seen + errSeen));
+                }, lockWait);
+                return;
+            }
             drain();
             stream.write(`\n\n---\nFinished: ${new Date().toLocaleString()} · exit ${code ?? '?'} · ${mins} min\n`);
             stream.end();

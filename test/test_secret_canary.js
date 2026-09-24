@@ -244,7 +244,7 @@ const rt = adapter.resolveRuntime(sel);
     ok('‼️ a task\'s output file is written through the scrubber',
         /const scrub = new SecretScrubber\(secretValuesOf\(routeRuntime\?\.spawnEnv\)\)/.test(tasks)
         && /child\.stdout\?\.on\('data', chunk => \{\s*put\(chunk\);/.test(tasks)
-        && /child\.stderr\?\.on\('data', chunk => put\(chunk\)\)/.test(tasks));
+        && /child\.stderr\?\.on\('data', chunk => (put\(chunk\)\)|\{\s*put\(chunk\);)/.test(tasks));
     ok('…with nothing injected, the raw bytes are written exactly as before',
         /if \(!scrub\.active\) \{ stream\.write\(chunk\); return; \}/.test(tasks));
     ok('…and what is held back is flushed before the footer, on both endings',

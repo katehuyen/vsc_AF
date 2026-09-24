@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.654.0 - OpenCode's start-up lock race is retried once (X-329) (2026-09-24)
+
+- **Two OpenCode starts in the same second no longer lose one of them
+  (X-329).** On a fresh data home the two race OpenCode's first-use migration
+  and one used to die within ~1.5 s with `database is locked` or
+  `Failed query: CREATE TABLE …` — the task row simply failed. A run that dies
+  that way in its first seconds is now started once more after 2 s; a second
+  failure is shown as it is. Both doors do it: a headless task (its output
+  file keeps the first attempt and says why it ran again) and the Console's
+  shared OpenCode process (a card opened during the wait joins the retry).
+
 ## 3.653.0 - A panel kept open across a redraw is drawn solid, not re-faded (U-146) (2026-09-24)
 
 - **The ⏳ background-task panel on the Console strip is no longer

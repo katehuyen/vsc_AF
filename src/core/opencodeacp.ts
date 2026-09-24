@@ -37,6 +37,7 @@
  */
 
 import { StringDecoder } from 'string_decoder';
+import { opencodeLockRetryDelay } from './opencodeLockRetry';
 import {
     OPENCODE_ACP_PROTOCOL, OpencodeCapabilities, OpencodeConfigOption,
     opencodeAcpArgs, opencodeCapabilities, opencodeCapabilityRefusal, opencodeConfigOptions,
@@ -193,8 +194,34 @@ export class OpencodeRuntime {
     async ready(cwd: string): Promise<OpencodeCapabilities> {
         if (this.disposed) { throw new Error('The OpenCode runtime has been shut down.'); }
         if (this.handshake) { return this.handshake; }
-        this.handshake = this.start(cwd);
+        this.handshake = this.startWithLockRetry(cwd);
         try { return await this.handshake; } catch (e) { this.handshake = undefined; throw e; }
+    }
+
+    /**
+     * X-329 — a start that dies on the data home's first-use lock (another
+     * OpenCode process migrating the same fresh home) is tried ONCE more after
+     * ~2 s. The retry is installed as the handshake, so a card opened during
+     * the wait joins it instead of spawning a second process.
+     */
+    private async startWithLockRetry(cwd: string): Promise<OpencodeCapabilities> {
+        const at = Date.now();
+        try {
+            return await this.start(cwd);
+        } catch (e) {
+            const wait = this.phase === 'refused' || this.disposed ? 0 : opencodeLockRetryDelay({
+                exitCode: 1, ranMs: Date.now() - at,
+                output: `${this.stderr}\n${e instanceof Error ? e.message : String(e)}`, retried: false
+            });
+            if (!wait) { throw e; }
+            const again = (async () => {
+                await new Promise(r => setTimeout(r, wait));
+                if (this.disposed) { throw e; }
+                return this.start(cwd);
+            })();
+            this.handshake = again;
+            return again;
+        }
     }
 
     private async start(cwd: string): Promise<OpencodeCapabilities> {
