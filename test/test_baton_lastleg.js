@@ -243,6 +243,35 @@ ok('pressing on again changes nothing', (() => { const r = L.setLastLeg(braked, 
             && entry && /args: session\? .*chain\? .*on\? \(default true\)/.test(entry.describe));
     }
 
+    console.log('\n== S-100 live: a brake pressed while the seal is still reading git ==');
+    {
+        const { BatonRunner } = require(path.join(OUT, 'batonRunner.js'));
+        const { applyLastLeg } = require(path.join(OUT, 'batonLastLegOp.js'));
+        const store = new BatonStore();
+        let answer;
+        const git = new Promise(res => { answer = res; });
+        const manifest = {
+            launchId: 'lch_1', at: NOW - 1000, engine: 'claude', requested: { model: 'haiku' }, agentId: 'dev', agentName: 'basit',
+            identity: { engine: 'claude', providerId: 'anthropic', origin: 'builtin', scope: 'machine' },
+            mechanism: 'task', mechanismId: 'tsk_1', cwd: 'D:\\repo', account: 'claude-kate', surface: 'console'
+        };
+        const runner = new BatonRunner({
+            store, door: () => { throw new Error('no door here'); }, evidence: () => ({ registered: true, live: 'alive', registers: true }),
+            log: () => undefined, now: () => NOW,
+            firstLegs: () => [{ taskId: 'tsk_1', sessionId: 'sess-one-0001', launchId: 'lch_1', account: '@emptiest', title: 'S-100' }],
+            manifestOf: () => manifest,
+            headOf: () => git
+        });
+        ok('the first leg is sealed before git has answered', runner.follow().length === 1 && !store.all()[0].head);
+        const braked = applyLastLeg({ store, now: () => NOW + 2500 }, 'sess-one-0001', true, 'S-100 live test');
+        ok('…and the brake is pressed in that gap', braked.ok && braked.brake === 'on');
+        answer('cb22a3ba');
+        await git; await new Promise(r => setImmediate(r));
+        const s0 = store.all().find(b => b.hop === 0);
+        ok('‼️ git\'s late answer adds the HEAD and keeps the brake (measured live: the flag was wiped 2.5 s after the seal)',
+            s0.head === 'cb22a3ba' && s0.lastLeg && s0.lastLeg.by === 'S-100 live test' && L.brakeStateOf(store.all(), 'sess-one-0001') === 'on');
+    }
+
     console.log(`test_baton_lastleg.js: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.672.0 - ⑂⊣ Last leg holds when it is pressed in the first seconds of a relay (S-100) (2026-09-25)
+
+- **The brake no longer slips off a relay's first leg.** A chain's first leg
+  reads its folder's git state a moment after it is sealed, and that reading
+  used to be written back over the whole record — so ⑂⊣ Last leg (or
+  `baton.lastLeg`) pressed in those first seconds was silently undone: the card
+  went back to unpressed, the leg was told to pass the baton, and a successor
+  opened. The reading is now added to the record as it stands, and the brake
+  stays pressed. Found by the live test of 3.671.0.
+
 ## 3.671.0 - A workflow's supervisor wakes on an event, a person steers a running workflow, and a baton relay has a soft brake on the leg that is running (M-45, M-46, S-95) (2026-09-25)
 
 - **The supervisor wakes on an event, not only at a checkpoint step (M-45).**

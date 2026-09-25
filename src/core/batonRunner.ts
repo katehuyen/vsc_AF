@@ -20,7 +20,7 @@ import { BatonBoard } from './batonBoard';
 import { FirstLeg, sealFirstLeg } from './batonSeal';
 import { LegEndFacts } from './batonFailsafe';
 import { LegEndWatch, NoticeLevel } from './batonLegEnd';
-import { markFolder } from './batonLegFacts';
+import { markStored } from './batonLegFacts';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
 
@@ -257,10 +257,7 @@ export class BatonRunner {
             this.deps.store.put(r.baton);
             sealed.push(r.baton);
             this.log(`baton ${r.baton.id}: ${r.baton.why}`);
-            const seal = r.baton;
-            void markFolder(seal, this.deps.headOf, this.deps.dirtOf)
-                .then(m => { if (m.head || m.dirt) { this.deps.store.put(m); } })
-                .catch(() => undefined);
+            void markStored(this.deps.store, r.baton, this.deps.headOf, this.deps.dirtOf).catch(() => undefined);
         }
         return sealed;
     }

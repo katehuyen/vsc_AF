@@ -61,7 +61,7 @@ console.log('\n== the folder photographed at the open ==');
         /markFolder\(res\.baton, deps\.headOf, deps\.dirtOf\)/.test(read('core/batonBridge.ts'))
         && /markFolder\(r\.baton, deps\.headOf, deps\.dirtOf\)/.test(read('core/batonAttach.ts'))
         && /markFolder\(draft, this\.deps\.headOf, this\.deps\.dirtOf\)/.test(read('core/batonLegEnd.ts'))
-        && /markFolder\(seal, this\.deps\.headOf, this\.deps\.dirtOf\)/.test(read('core/batonRunner.ts'))
+        && /markStored\(this\.deps\.store, r\.baton, this\.deps\.headOf, this\.deps\.dirtOf\)/.test(read('core/batonRunner.ts'))
         && /dirtOf: deps\.dirtOf/.test(read('core/batonRunner.ts')));
     const ext = read('extension.ts');
     ok('the window hands the reader to the pass, the seal and the failsafe',

@@ -10,6 +10,7 @@
  */
 import { LegEndFacts } from './batonFailsafe';
 import type { Baton } from './baton';
+import type { BatonStore } from './batonStore';
 
 export interface LegFactSources {
     /** the Console card for the session, if it has one */
@@ -60,6 +61,17 @@ export async function markFolder<B extends Pick<Baton, 'from' | 'head' | 'dirt'>
     const read = (f?: FolderRead) => f ? f(b.from.cwd).catch(() => undefined) : Promise.resolve(undefined);
     const [head, dirt] = await Promise.all([read(headOf), read(dirtOf)]);
     return { ...b, ...(head ? { head } : {}), ...(dirt ? { dirt } : {}) };
+}
+
+/**
+ * The same reading for a record ALREADY STORED: git answers later, so the
+ * answer is laid onto the record as it is then, never onto the copy that was
+ * stored — a brake pressed in between (S-100, measured live) must survive.
+ */
+export async function markStored(store: Pick<BatonStore, 'all' | 'put'>, b: Baton, headOf?: FolderRead, dirtOf?: FolderRead): Promise<void> {
+    const m = await markFolder(b, headOf, dirtOf);
+    const cur = store.all().find(x => x.id === b.id);
+    if (cur && (m.head || m.dirt)) { store.put({ ...cur, ...(m.head ? { head: m.head } : {}), ...(m.dirt ? { dirt: m.dirt } : {}) }); }
 }
 
 /** The Console's own word for a card the user closed (consolehost.ts). */
