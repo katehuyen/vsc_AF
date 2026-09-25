@@ -240,6 +240,9 @@ import { workflowLiveCommand } from './workflowLiveUi';
 import { setWorkflowSupervisor, supervisorRunRefusal, WorkflowSupervisor } from './core/supervisorRun';
 import { askEscalationOf, escalateAsk, leaderAskPrompt } from './core/workflowMission';
 import { resolveFlex } from './core/flexResolve';
+import { RECIPE_PRESETS, RECIPES } from './core/mediaRecipes';
+import { toolCall } from './core/toolCall';
+import { runRecipe } from './core/toolRun';
 import { userPresets } from './core/flexActions';
 import { findPreset, presetArgs } from './core/flexPresets';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
@@ -8903,6 +8906,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const r = taskManager.steerRun(argStr(args, 'runId'), args.kind, argStr(args, 'text'), 'bridge');
                 need(!r.error, `${r.error}.`);
                 return r;
+            }
+        },
+        {
+            op: 'tools.recipes',
+            describe: 'M-49 — THE TOOL STEP\'S RECIPES: zero-token local media work run by ffmpeg (split, concat, extractAudio, muxAudio, reframe, burnSubtitles, keyframes, loudnorm, transcode). Returns each recipe with its parameters (name, type, default, range or options, what it is for) and the named presets. No args.',
+            handler: () => ({ recipes: RECIPES, presets: RECIPE_PRESETS })
+        },
+        {
+            op: 'tools.run',
+            describe: 'M-49 — RUN ONE MEDIA RECIPE NOW, no model and no token: ffmpeg is spawned with an argument list, never a shell. Returns {ok, outputs, runs, ms, durationSec?, error?, stderrTail?}; no ffmpeg = ok false with the reason. args: recipe (tools.recipes lists them), input? (the file; every recipe but concat), params? ({name: value} — defaults fill the rest, a value out of range is refused by name), preset? (a named parameter set; params beat it), outDir? (default: the tool.outDir flex point, else an af-tool folder beside the input), overwrite? (never | always | suffix; default the tool.overwrite flex point)',
+            handler: async (args) => {
+                const c = toolCall(args, {
+                    outDir: String(resolveFlex('tool.outDir', { settings: cfg().get('toolOutDir') }).value ?? ''),
+                    overwrite: String(resolveFlex('tool.overwrite', { settings: cfg().get('toolOverwrite') }).value ?? 'never')
+                });
+                need(!('error' in c), 'error' in c ? c.error : '');
+                return runRecipe(c as Exclude<typeof c, { error: string }>);
             }
         },
         {

@@ -128,6 +128,10 @@
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
         setting('workflow.prevTextChars', '{prev_text} length', 'number', 1500, 'agentFarm.workflowPrevTextChars',
             { min: 200, max: 20000 }),
+        // M-49 — where a tool step writes, and what it does with a file already there (src/core/toolCall.ts)
+        setting('tool.outDir', 'Tool step — output folder', 'text', '', 'agentFarm.toolOutDir'),
+        setting('tool.overwrite', 'Tool step — an output already there', 'enum', 'never', 'agentFarm.toolOverwrite',
+            { options: ['never', 'suffix', 'always'] }),
         // M-47 — a mission's workflow: its supervisor's question goes to the lead, to you, or the lead first (src/core/workflowMission.ts)
         setting('workflow.askEscalation', 'Inside a mission — who answers the supervisor', 'enum', 'leader-then-human', 'agentFarm.workflowAskEscalation',
             { options: ['leader-then-human', 'leader', 'human'] }),

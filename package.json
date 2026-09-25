@@ -9103,6 +9103,22 @@
           "maximum": 20000,
           "markdownDescription": "How much of the previous step's text a workflow step's `{prev_text}` carries. Any earlier step's whole text (up to 20,000 characters) is also readable as `{steps.<id>.text}`."
         },
+        "agentFarm.toolOutDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Where a **tool** step (and `tools.run`) writes what an ffmpeg recipe makes. Empty = an `af-tool` folder beside the input. A step or a call can name its own."
+        },
+        "agentFarm.toolOverwrite": {
+          "type": "string",
+          "enum": ["never", "suffix", "always"],
+          "enumDescriptions": [
+            "An output already there refuses the step, saying which file.",
+            "An output already there gets a new name (-2, -3, …).",
+            "An output already there is replaced."
+          ],
+          "default": "never",
+          "markdownDescription": "What a **tool** step does when a file it would write is already there."
+        },
         "agentFarm.workflowAskEscalation": {
           "type": "string",
           "enum": ["leader-then-human", "leader", "human"],
