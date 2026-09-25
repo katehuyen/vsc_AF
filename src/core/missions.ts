@@ -1,4 +1,5 @@
 import { resolveInputs, WorkflowInput } from './workflowInputs';
+import { wakeFromArg, WakeSpec } from './workflowWake';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -637,6 +638,8 @@ export interface MissionStep {
     workflowId?: string;
     /** M-38 — the input values the workflow run is started with */
     inputs?: Record<string, string>;
+    /** M-47 — the run's own wake conditions, from the lead's "wake" or a preset */
+    wake?: WakeSpec;
     /** the real record a workflow step became — filled when the run starts */
     workflowRunId?: string;
     /**
@@ -1255,6 +1258,8 @@ export interface PlannerTaskReq {
     workflowId?: string;
     /** M-38 — the input values the workflow run is started with */
     inputs?: Record<string, string>;
+    /** M-47 — the run's own wake conditions */
+    wake?: WakeSpec;
     /** ‼️ M-18 — what a `mission` unit is: the child objective to be born. */
     child?: ChildObjectiveReq;
     /** ‼️ M-19 — what a `conversation` unit is: the message this turn becomes. */
@@ -1360,7 +1365,7 @@ type PlannerDecisionCore =
      * not here, for the same reason a target id does — only the run knows what
      * this window actually has, and the lead is told the real list.
      */
-    | { action: 'run_workflow'; thought: string; workflow: string; ask?: string; criteria?: string[]; inputs?: Record<string, string> }
+    | { action: 'run_workflow'; thought: string; workflow: string; ask?: string; criteria?: string[]; inputs?: Record<string, string>; wake?: unknown; preset?: string }
     /**
      * ‼️ M-18 — A NESTED OBJECTIVE IS A REAL RUN, not a bigger delegation. It
      * gets a lead of its own and comes back with a VERDICT rather than an
@@ -1736,6 +1741,9 @@ function parseRunWorkflow(c: ParseCtx): ParseResult {
     return done({
         action: 'run_workflow', thought, workflow,
         ...(inputs && Object.keys(inputs).length ? { inputs } : {}),
+        // M-47 — flex values: checked in prepare, where the presets can be read
+        ...(o.wake !== undefined && o.wake !== null && o.wake !== '' ? { wake: o.wake } : {}),
+        ...(typeof o.preset === 'string' && o.preset.trim() ? { preset: o.preset.trim().slice(0, 80) } : {}),
         ...(typeof o.ask === 'string' && o.ask.trim() ? { ask: o.ask.trim().slice(0, MAX_PROMPT_CHARS) } : {}),
         ...(crit.ids ? { criteria: crit.ids } : {})
     });
@@ -2255,6 +2263,25 @@ function prepareRunWorkflow(c: PrepareCtx): PrepareResult {
                 + '\nPass them as "inputs": {"<name>": "<value>"}, or choose another way. Reply with ONLY the JSON decision object.'
         };
     }
+    // M-47 — a preset's run-level values first, the lead's own "wake" above them
+    let wakeRaw = d.wake;
+    if (d.preset) {
+        const p = deps.runPreset?.(d.preset);
+        if (!p || p.error) {
+            return {
+                ledger: `R? run_workflow rejected — preset "${d.preset}"`,
+                refusal: `${p?.error ?? 'presets cannot be read here'}. Name a preset that exists, or leave "preset" out. Reply with ONLY the JSON decision object.`
+            };
+        }
+        if (wakeRaw === undefined) { wakeRaw = p.wake; }
+    }
+    const wk = wakeRaw === undefined ? {} : wakeFromArg(wakeRaw);
+    if (wk.error) {
+        return {
+            ledger: `R? run_workflow rejected — "${wf.title}" wake`,
+            refusal: `"wake" is refused: ${wk.error}. Use "mechanical", "smart" or "hybrid", or leave it out. Reply with ONLY the JSON decision object.`
+        };
+    }
     return { tasks: [{
         agent: wf.title,
         title: d.ask ? `${wf.title} — ${d.ask.slice(0, 80)}` : `run workflow "${wf.title}"`,
@@ -2265,6 +2292,7 @@ function prepareRunWorkflow(c: PrepareCtx): PrepareResult {
         readonly: false,
         kind: 'workflow', workflowId: wf.id,
         ...(d.inputs ? { inputs: d.inputs } : {}),
+        ...(wk.wake ? { wake: wk.wake } : {}),
         ...(d.criteria?.length ? { criteria: d.criteria } : {})
     }] };
 }
@@ -3286,6 +3314,8 @@ export interface MissionEngineDeps {
      * would be a second opinion about what exists.
      */
     workflows?(): { id: string; title: string; steps: number; inputs?: WorkflowInput[] }[];
+    /** M-47 — a flex preset's run-level values, by name (the mission's project first) */
+    runPreset?(name: string): { wake?: unknown; error?: string };
     /**
      * ‼️ M-18 — THE PROJECT THIS RUN IS WORK FOR, if it is work for one.
      *
@@ -3950,6 +3980,8 @@ export class MissionEngine {
                 + list.map(w => `- ${w.title} (${w.steps} step${w.steps === 1 ? '' : 's'})`
                     + (w.inputs?.length ? ` — inputs: ${w.inputs.map(i => `${i.name} (${i.type}${i.required ? ', required' : ''})`).join(', ')}` : '')).join('\n')
                 + '\nA workflow that lists inputs is given them as "inputs": {"<name>": "<value>"} on "run_workflow".'
+                + '\nYou may also set when its supervisor is woken, "wake": "mechanical" | "smart" | "hybrid", or apply a saved preset by name, "preset": "<name>" (your own "wake" beats the preset\'s).'
+                + ' If its supervisor asks a question while it runs, it may come to you first: answer it only when the objective settles it.'
                 + '\nThese are chains that already exist. Run one with "run_workflow" when it encodes the work you need;'
                 + ' you cannot compose a new one, and you do not drive its steps.\n');
         }
@@ -4936,6 +4968,7 @@ export class MissionEngine {
                     ...(t.kind && t.kind !== 'task' ? { kind: t.kind } : {}),
                     ...(t.workflowId ? { workflowId: t.workflowId } : {}),
                     ...(t.inputs ? { inputs: t.inputs } : {}),
+                    ...(t.wake ? { wake: t.wake } : {}),
                     ...(t.child ? { child: t.child } : {}),
                     ...(t.message ? { message: t.message } : {}),
                     status: 'queued' as MissionStepStatus

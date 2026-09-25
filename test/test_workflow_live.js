@@ -80,7 +80,8 @@ ok('…it blocks, and it cannot be cleared away', N.blockingCount(needs) >= 1 &&
     ok('workflows.decide calls the manager', /taskManager\.decideRun\(/.test(block('workflows.decide')));
     ok('the palette command is registered on the same door', /registerCommand\('agentfarm\.workflowLive'[\s\S]{0,200}taskManager\.steerRun\([\s\S]{0,160}taskManager\.setRunLive\(/.test(ext));
     ok('the phone word goes through steerRun with by=telegram', /steerRun\(run\.runId, cmd\.word, pw\.text, 'telegram'\)/.test(ext));
-    ok('askChoice is the three doors now', /askChoice: \(question, options, ctx\) => workflowAsks\.ask\(/.test(ext));
+    // M-47 — the three doors are the person's side of askWorkflowQuestion (a mission's lead may be asked first)
+    ok('askChoice is the three doors now', /askChoice: \(question, options, ctx\) => askWorkflowQuestion\(/.test(ext) && /human: \(\) => workflowAsks\.ask\(/.test(ext));
     ok('flex.set level=live reaches setRunLive', /setLive: \(runId: string, point: string, value: unknown\)/.test(ext));
 }
 

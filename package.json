@@ -9103,6 +9103,17 @@
           "maximum": 20000,
           "markdownDescription": "How much of the previous step's text a workflow step's `{prev_text}` carries. Any earlier step's whole text (up to 20,000 characters) is also readable as `{steps.<id>.text}`."
         },
+        "agentFarm.workflowAskEscalation": {
+          "type": "string",
+          "enum": ["leader-then-human", "leader", "human"],
+          "enumDescriptions": [
+            "The mission's lead is asked first; a question it leaves open comes to you.",
+            "Only the lead is asked; a question it leaves open goes unanswered and the run carries on the mechanical way.",
+            "It comes straight to you, as a workflow you started yourself does."
+          ],
+          "default": "leader-then-human",
+          "markdownDescription": "When a workflow a **mission** started has a supervisor that asks a question (`ask_user` at a checkpoint), who is asked. A workflow you started yourself always asks you. Whoever answered is written on the run's board, which the mission reads with the result."
+        },
         "agentFarm.taskRetry": {
           "type": "object",
           "default": {},

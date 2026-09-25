@@ -135,7 +135,7 @@ export const PRIMITIVES: readonly MissionPrimitive[] = [
         rules: [
             '"run_workflow" runs a chain that ALREADY EXISTS — you cannot compose one, and you do not drive its steps. '
             + 'To you it is one unit of work: it finishes, fails or stops short, and what comes back is what its last '
-            + 'completed step produced. Use it when the chain already encodes the work; delegate when it does not.'
+            + 'completed step produced, with the run\'s board of every step beside it. Use it when the chain already encodes the work; delegate when it does not.'
         ]
     },
     {

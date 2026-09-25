@@ -238,6 +238,10 @@ import { actionOption, askKeyboard, askText, parseAskTap } from './core/workflow
 import { WorkflowAsks } from './workflowAskDoors';
 import { workflowLiveCommand } from './workflowLiveUi';
 import { setWorkflowSupervisor, supervisorRunRefusal, WorkflowSupervisor } from './core/supervisorRun';
+import { askEscalationOf, escalateAsk, leaderAskPrompt } from './core/workflowMission';
+import { resolveFlex } from './core/flexResolve';
+import { userPresets } from './core/flexActions';
+import { findPreset, presetArgs } from './core/flexPresets';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -3979,7 +3983,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return promise;
             },
             // M-46 — a checkpoint supervisor's question on three doors; the first answer wins
-            askChoice: (question, options, ctx) => workflowAsks.ask(ctx?.runId ?? '', ctx?.workflowTitle ?? 'workflow', question, options),
+            // M-47 — …and a run a mission started asks the mission's lead first
+            askChoice: (question, options, ctx) => askWorkflowQuestion(ctx?.runId ?? '', ctx?.workflowTitle ?? 'workflow', question, options),
             confirmApproval: ({ title, message }) => {
                 // Workflow human-gate: notification + Needs You panel race, first settle wins.
                 const { id, promise } = approvalQueue.add({ title, goal: message, kind: 'approval' });
@@ -5521,7 +5526,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const st = taskManager.workflowRunState(refId);
             return st ? {
                 status: st.status, costUSD: st.costUSD, tokens: st.tokens,
-                ...(st.handoff?.file ? { outputFile: st.handoff.file } : {})
+                // M-47 — an ended run reads as its final handoff WITH the run's board
+                ...(taskManager.missionHandoffFile(refId) ? { outputFile: taskManager.missionHandoffFile(refId) } : {})
             } : undefined;
         }
         if (kind === 'mission') {
@@ -6099,6 +6105,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             });
 
+    /** M-47 — a workflow supervisor's question: a run a mission started asks its lead first, as workflow.askEscalation says. */
+    const askWorkflowQuestion = async (runId: string, title: string, question: string, options: string[]): Promise<string | undefined> => {
+        const run = runId ? missionStore.runs.find(r => r.rounds.some(x => x.steps.some(s => s.workflowRunId === runId))) : undefined;
+        const spec = run ? missionStore.spec(run.specId) : undefined;
+        const got = await escalateAsk({
+            mode: askEscalationOf(resolveFlex('workflow.askEscalation', { settings: cfg().get('workflowAskEscalation') }).value),
+            options,
+            human: () => workflowAsks.ask(runId, title, question, options),
+            ...(run && spec ? {
+                leader: async () => {
+                    const r = await missionPlannerCallOnce(spec, run)(leaderAskPrompt({ goal: spec.goal, workflow: title, question, options }));
+                    const round = run.rounds.find(x => x.steps.some(s => s.workflowRunId === runId));
+                    if (r.costUSD) { run.totalCostUSD += r.costUSD; if (round) { round.plannerCostUSD += r.costUSD; } missionStore.save(); }
+                    return r.ok ? r.raw : undefined;
+                }
+            } : {})
+        });
+        taskManager.noteOnRun(runId, `supervisor asked "${question.slice(0, 120)}" — ${got.note}${got.answer !== undefined ? `: ${got.answer.slice(0, 120)}` : ''}`);
+        return got.answer;
+    };
+
     /** Planner call with one built-in recovery: a lead that burns its turn cap
      *  on tools gets a single "decide NOW" nudge in the same session before the
      *  round is declared failed. */
@@ -6256,7 +6283,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // either never began or is owned by exactly one action.
                         // Starting it is idempotent, so the order can be
                         // replayed from wherever it broke.
-                        const wRunId = taskManager.prepareWorkflowRun(wf, { projectId: spec.projectId, inputs: step.inputs });
+                        const wRunId = taskManager.prepareWorkflowRun(wf, { projectId: spec.projectId, inputs: step.inputs, ...(step.wake ? { wake: step.wake } : {}) });
                         if (!wRunId) {
                             step.status = 'failed';
                             step.note = taskManager.workflowRunRefusal(wf, step.inputs) || 'the workflow has no steps';
@@ -6441,7 +6468,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             if (!st) { allDone = false; continue; }
                             step.costUSD = st.costUSD;
                             step.tokens = st.tokens;
-                            step.outputFile = st.handoff?.file;
+                            step.outputFile = taskManager.missionHandoffFile(step.workflowRunId);
                             if (st.status === 'running') { allDone = false; continue; }
                             const settled = st.status === 'done' ? 'done' : 'failed';
                             if (step.status !== settled) {
@@ -6456,7 +6483,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                     outcome: settled,
                                     ...(st.costUSD ? { costUSD: st.costUSD } : {}),
                                     ...(st.tokens ? { tokens: st.tokens } : {}),
-                                    ...(st.handoff?.file ? { outputFile: st.handoff.file } : {}),
+                                    ...(step.outputFile ? { outputFile: step.outputFile } : {}),
                                     ...(st.reason ? { text: st.reason } : {})
                                 });
                             }
@@ -6733,6 +6760,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflows: () => taskManager.workflows.map(w => ({
             id: w.id, title: w.title, steps: w.steps.length, ...(w.inputs?.length ? { inputs: w.inputs } : {})
         })),
+        // M-47 — the preset's run-level values, the same reading presets.apply level=run makes
+        runPreset: (name) => {
+            const p = findPreset(userPresets(flexDeps), name, spec.projectId);
+            return p ? { wake: presetArgs(p, 'run').ops['workflows.run']?.wake } : { error: `there is no preset "${name}"` };
+        },
         ancestry: () => missionAncestry(run),
         // ‼️ M-19 — CAN THIS PARTICIPANT'S LANE REALLY BE CONTINUED? Resolved
         // by the SAME ladder a delegation's engine is (`resolveDelegateRun`),

@@ -26,6 +26,7 @@ import { kindOfStep, mechanicalWords, resolveWake, wakeDirective, wakeFacts, Wak
 import { applyLive, decisionFromArg, landWords, liveLines, livePatch, pendingWords, RunLive, wordFromArg, WordSource, wordsForBrief } from './workflowLive';
 import { flexPoint } from './flexPoints';
 import { SupervisorCall, supervisorCall, supervisorTrail, SupervisorTrail } from './supervisorTrail';
+import { missionHandoffText } from './workflowMission';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
 import {
@@ -6204,6 +6205,28 @@ export class TaskManager implements vscode.Disposable {
             const rec = this.runRecords.get(id);
             return { ...supervisorTrail(id, this.tasks, rec), running: going(id), workflowTitle: rec?.title ?? '' };
         });
+    }
+
+    /** M-47 — a line on the run's board (who answered its supervisor's question); the mission reads it with the board. */
+    noteOnRun(runId: string, note: string): void {
+        const rec = this.runRecords.get(runId);
+        if (!rec) { return; }
+        rec.board = { steps: rec.board?.steps ?? {}, notes: [...(rec.board?.notes ?? []), note].slice(-20) };
+        this.save();
+    }
+
+    /** M-47 — what a mission reads for a run: once it has ended, the final handoff with the run's board beside it. */
+    missionHandoffFile(runId: string): string | undefined {
+        const st = this.workflowRunState(runId);
+        if (!st || st.status === 'running' || !Object.keys(st.board?.steps ?? {}).length) { return st?.handoff?.file; }
+        const f = path.join(this.outputsDir, `${runId}.mission.md`);
+        try {
+            if (!fs.existsSync(f)) {
+                fs.mkdirSync(this.outputsDir, { recursive: true });
+                fs.writeFileSync(f, missionHandoffText(st.title, st.handoff?.text, st.board), 'utf8');
+            }
+            return f;
+        } catch { return st.handoff?.file; }
     }
 
     /** Loop guard: total step executions per workflow run. */

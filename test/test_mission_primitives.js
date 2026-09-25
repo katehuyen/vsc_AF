@@ -523,6 +523,44 @@ async function runWorkflowTest() {
         prompts[0].indexOf('## Workflows you may run') < prompts[0].indexOf('## How to answer'));
 }
 
+// M-47 — the lead hands a run flex values: its own "wake", or a preset whose run-level values apply
+async function runWorkflowFlexTest() {
+    console.log('\n-- run_workflow takes flex values: wake, a preset, and a preset that does not exist');
+    const go = async (extra, presets) => {
+        const run = newRun();
+        let i = 0;
+        const prompts = [];
+        const planner = {
+            prompts,
+            runPlanner: async (prompt) => {
+                prompts.push(prompt);
+                i++;
+                return i === 1
+                    ? { ok: true, raw: JSON.stringify({ ...reflect(), thought: 'chain', action: 'run_workflow', workflow: 'Nightly build', ...extra }) }
+                    : { ok: true, raw: JSON.stringify(FINISH) };
+            }
+        };
+        const { d } = deps(planner, {}, {
+            workflows: () => [{ id: 'w1', title: 'Nightly build', steps: 3 }],
+            runPreset: name => (presets[name] ? { wake: presets[name] } : { error: 'there is no preset "' + name + '"' }),
+            delegateWave: async (_run, steps) => { for (const s of steps) { s.status = 'done'; } }
+        });
+        await new M.MissionEngine(spec(), run, [], d).execute();
+        return { run, prompts, step: run.rounds[0] && run.rounds[0].steps[0] };
+    };
+    let r = await go({ wake: 'hybrid' }, {});
+    ok('‼️ the lead\'s wake reaches the workflow unit', r.step && Array.isArray(r.step.wake) && r.step.wake.length > 0);
+    ok('…and the lead was told it may set one, or a preset', /"wake": "mechanical" \| "smart" \| "hybrid"/.test(r.prompts[0]) && /"preset": "<name>"/.test(r.prompts[0]));
+    r = await go({ preset: 'Dikkatli' }, { Dikkatli: 'smart' });
+    ok('a preset\'s run-level wake applies', r.step && Array.isArray(r.step.wake) && r.step.wake.length > 0);
+    r = await go({ preset: 'Dikkatli', wake: 'mechanical' }, { Dikkatli: 'smart' });
+    ok('the lead\'s own wake beats the preset\'s', r.step && JSON.stringify(r.step.wake) === '[]');
+    r = await go({ preset: 'Yok' }, {});
+    ok('‼️ an unknown preset is refused to the lead, by name', /there is no preset "Yok"/.test(r.prompts[1] || '') && r.run.ledger.some(l => /run_workflow rejected — preset "Yok"/.test(l)));
+    r = await go({ wake: 'sometimes' }, {});
+    ok('a wake it cannot read is refused to the lead', /"wake" is refused/.test(r.prompts[1] || ''));
+}
+
 async function unknownWorkflowTest() {
     console.log('\n-- naming a chain that does not exist is a rejection with the real list');
     const run = newRun();
@@ -817,6 +855,7 @@ async function classicUntouchedTest() {
     await unknownTargetTest();
     await staleAfterReviseTest();
     await runWorkflowTest();
+    await runWorkflowFlexTest();
     await unknownWorkflowTest();
     await noWorkflowsTest();
     await nestedMissionTest();

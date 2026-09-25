@@ -128,6 +128,9 @@
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
         setting('workflow.prevTextChars', '{prev_text} length', 'number', 1500, 'agentFarm.workflowPrevTextChars',
             { min: 200, max: 20000 }),
+        // M-47 — a mission's workflow: its supervisor's question goes to the lead, to you, or the lead first (src/core/workflowMission.ts)
+        setting('workflow.askEscalation', 'Inside a mission — who answers the supervisor', 'enum', 'leader-then-human', 'agentFarm.workflowAskEscalation',
+            { options: ['leader-then-human', 'leader', 'human'] }),
         judgeStep('engine', 'Judge engine', 'claude'),
         forEachPoint('concurrency', 'For each — at once', 'number', 4, 'feConc', { min: 1, max: 16 }),
         forEachPoint('onBranchFail', 'For each — a failed element', 'enum', 'continue', 'feFail', { options: ['continue', 'drop'] }),
