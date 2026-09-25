@@ -40,7 +40,7 @@ S.setWorkflowSupervisor(ww, {}); ok('nothing stated removes it', ww.supervisor =
 
 /* ---------- ceilings ---------- */
 const base = { history: [], retries: {}, directives: [] };
-ok('calls per run', /used its 2 supervisor calls/.test(S.turnRefusal({ ...base, calls: 2 }, w)));
+ok('calls per run (M-48: the shared ceiling)', /used its 2 calls for this run/.test(S.turnRefusal({ ...base, calls: 2 }, w)));
 ok('a hard budget', /hard ceiling/.test(S.turnRefusal({ ...base, calls: 1, costUSD: 0.6 }, w)));
 const soft = { ...w, budgetMode: 'soft', maxCalls: 9 };
 ok('a soft budget is never a refusal…', S.turnRefusal({ ...base, costUSD: 0.6 }, soft) === '');
@@ -138,7 +138,7 @@ eq('a later visit counts on', v.key, 's2#2');
     complete(queued(wf.id)[0], 'iki'); await tick();
     const second = mgr.tasks.find(x => x.workflowRunId === run && x.stepIndex === 3);
     ok('‼️ past the calls ceiling the checkpoint goes mechanical without a call, and says why',
-        got.length === 1 && /(mechanical: the run has used its 1 supervisor call)/.test(fs.readFileSync(second.outputFile, 'utf8')));
+        got.length === 1 && /(mechanical: the supervisor has used its 1 call for this run)/.test(fs.readFileSync(second.outputFile, 'utf8')));
     eq('…and the run carries on', queued(wf.id).map(x => x.stepIndex), [4]);
 
     got.length = 0;

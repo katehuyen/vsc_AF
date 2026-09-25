@@ -7,8 +7,10 @@
  * exist, is the retry spent, is the insert within its ceiling, is there money
  * left, is it the same decision again) and either passes it to the engine or
  * says, in one sentence, why the run goes the mechanical way instead. A broken
- * answer is never guessed at. Pure.
+ * answer is never guessed at. Reading the answer and the confidence gate are the
+ * shared supervisor core (src/core/decisionCore.ts, M-48). Pure.
  */
+import { answerObject, underConfidence } from './decisionCore';
 
 export type DecisionKind = 'proceed' | 'retry' | 'jump' | 'insert' | 'ask_user' | 'stop';
 export const DECISION_KINDS: readonly DecisionKind[] = ['proceed', 'retry', 'jump', 'insert', 'ask_user', 'stop'];
@@ -57,25 +59,10 @@ export type DecisionVerdict =
 /** The decision a repeat lock refuses: the same one this many times in a row. */
 export const REPEAT_LOCK = 3;
 
-/** The first balanced JSON object in a model's answer; prose around it is allowed, a second object is not read. */
-function firstObject(text: string): string | null {
-    const s = String(text ?? '');
-    const start = s.indexOf('{');
-    if (start < 0) { return null; }
-    let depth = 0, inStr = false, esc = false;
-    for (let i = start; i < s.length; i++) {
-        const c = s[i];
-        if (inStr) { if (esc) { esc = false; } else if (c === '\\') { esc = true; } else if (c === '"') { inStr = false; } continue; }
-        if (c === '"') { inStr = true; } else if (c === '{') { depth++; } else if (c === '}' && --depth === 0) { return s.slice(start, i + 1); }
-    }
-    return null;
-}
-
 export function parseDecision(answer: string): { decision: SupervisorDecision } | { error: string } {
-    const body = firstObject(answer);
-    if (!body) { return { error: 'the supervisor\'s answer holds no JSON object' }; }
-    let j: Record<string, unknown>;
-    try { j = JSON.parse(body) as Record<string, unknown>; } catch (e) { return { error: `the supervisor's JSON does not parse — ${String((e as Error).message).slice(0, 80)}` }; }
+    const a = answerObject(answer);
+    if (!a.ok) { return { error: a.error }; }
+    const j = a.raw;
     const kind = String(j.decision ?? '').trim() as DecisionKind;
     if (!DECISION_KINDS.includes(kind)) { return { error: `"${j.decision ?? ''}" is not a decision — it is one of ${DECISION_KINDS.join(', ')}` }; }
     const d: SupervisorDecision = { decision: kind };
@@ -130,12 +117,8 @@ export function checkDecision(d: SupervisorDecision, ctx: DecisionContext, lim: 
     if (d.decision !== 'proceed' && tail.length === REPEAT_LOCK - 1 && tail.every(h => h === key)) {
         return no(`the same decision (${key}) ${REPEAT_LOCK} times in a row — the repeat lock takes the mechanical way`);
     }
-    if (d.confidence !== undefined && d.confidence < lim.minConfidence) {
-        return {
-            ok: false, action: lim.lowConfidence, decision: d,
-            reason: `the supervisor is ${Math.round(d.confidence * 100)}% sure; the threshold is ${Math.round(lim.minConfidence * 100)}%`
-        };
-    }
+    const unsure = underConfidence(d.confidence, lim.minConfidence);
+    if (unsure) { return { ok: false, action: lim.lowConfidence, decision: d, reason: unsure }; }
     return { ok: true, decision: target && !d.target ? { ...d, target } : d };
 }
 

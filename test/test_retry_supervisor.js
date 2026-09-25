@@ -59,7 +59,7 @@ ok('limit domains: a Claude slot each, other engines one each', S.limitDomain('c
 
 console.log('\n== once per incident, within the caps ==');
 ok('the incident key is stable', S.incidentKey('tsk_1', 1, NOW) === S.incidentKey('tsk_1', 1.0, NOW) && S.incidentKey('tsk_1', 1, NOW) !== S.incidentKey('tsk_1', 2, NOW));
-ok('the call cap refuses', /already asked 2/.test(S.supervisorRefusal(P, { calls: 2, spentUsd: 0 })));
+ok('the call cap refuses (M-48: the shared ceiling)', /used its 2 calls for this task/.test(S.supervisorRefusal(P, { calls: 2, spentUsd: 0 })));
 ok('the budget refuses', /budget/.test(S.supervisorRefusal(Q, { calls: 0, spentUsd: 0.5 })) && S.supervisorRefusal(Q, { calls: 1, spentUsd: 0.1 }) === '');
 
 console.log('\n== the incident it is shown ==');

@@ -107,7 +107,9 @@ const { supervisorRefusal, normalizeSupervisor } = require(path.join(ROOT, 'out'
     ok('at the cap, it stops', /budget \(\$1\.00\) is spent/.test(supervisorRefusal(p, { calls: 0, spentUsd: 1 })));
     eq('no budget = no money cap', supervisorRefusal(normalizeSupervisor({ engine: 'claude' }), { calls: 0, spentUsd: 99 }), '');
     const src = fs.readFileSync(path.join(ROOT, 'src', 'core', 'retrySupervisor.ts'), 'utf8');
-    ok('…decided by capVerdict, not a comparison of its own', /capVerdict\(\{ hard: p\.budgetUsd \}/.test(src));
+    // M-48 — the ceiling is the supervisors' shared core now; the cap is still capVerdict's, not a comparison of its own
+    const core = fs.readFileSync(path.join(ROOT, 'src', 'core', 'decisionCore.ts'), 'utf8');
+    ok('…decided by capVerdict, not a comparison of its own', /ceilingRefusal\(\{/.test(src) && /capVerdict\(\{ hard: c\.budgetUSD \}/.test(core));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

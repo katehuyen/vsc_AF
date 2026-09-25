@@ -17,7 +17,7 @@
  * cannot start a task, commit, push or close a backlog item. Its whole output
  * is the JSON below, and anything outside that contract is refused.
  */
-import { capVerdict } from './flexForms';
+import { answerObject, AnswerObject, ceilingRefusal, underConfidence } from './decisionCore';
 
 export type SupervisorAction = 'resume' | 'retryOriginal' | 'wait' | 'stop' | 'needsUser';
 export const SUPERVISOR_ACTIONS: readonly SupervisorAction[] = ['resume', 'retryOriginal', 'wait', 'stop', 'needsUser'];
@@ -92,21 +92,8 @@ export interface ContinuationDecision {
 }
 
 /** The engine's answer as text → the one JSON object in it. A fenced block, prose around it: tolerated; two objects or none: refused. */
-export function parseDecision(text: string): { ok: true; raw: Record<string, unknown> } | { ok: false; error: string } {
-    const s = String(text ?? '');
-    const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(s);
-    const body = fenced ? fenced[1] : s;
-    if (body.trim().startsWith('[')) { return { ok: false, error: 'the supervisor answered with a list, not one decision' }; }
-    const a = body.indexOf('{');
-    const b = body.lastIndexOf('}');
-    if (a < 0 || b <= a) { return { ok: false, error: 'the supervisor answered with no JSON object' }; }
-    try {
-        const v = JSON.parse(body.slice(a, b + 1));
-        if (!v || typeof v !== 'object' || Array.isArray(v)) { return { ok: false, error: 'the supervisor\'s JSON is not an object' }; }
-        return { ok: true, raw: v as Record<string, unknown> };
-    } catch (e) {
-        return { ok: false, error: `the supervisor's JSON could not be read (${String((e as Error).message ?? e).slice(0, 80)})` };
-    }
+export function parseDecision(text: string): AnswerObject {
+    return answerObject(text);
 }
 
 export interface DecisionContext {
@@ -150,7 +137,7 @@ export function validateDecision(raw: Record<string, unknown>, ctx: DecisionCont
 
 /** Below the threshold the decision is recorded and NOT applied. */
 export function confident(d: ContinuationDecision, p: SupervisorPolicy): boolean {
-    return d.confidence >= p.minConfidence;
+    return !underConfidence(d.confidence, p.minConfidence);
 }
 
 /** Engines that share one plan window share one limit: a Claude slot is its own, every other engine its own. */
@@ -194,10 +181,6 @@ export function incidentKey(taskId: string, attempt: number, failedAt: number): 
 
 /** Whether another call may be made — the call cap and the money cap, said in words. */
 export function supervisorRefusal(p: SupervisorPolicy, used: { calls: number; spentUsd: number }): string {
-    if (used.calls >= p.maxCalls) { return `the supervisor was already asked ${used.calls} time(s), its limit for this task`; }
-    // the money cap is a HARD cap (X-370): reaching it stops the asking
-    if (p.budgetUsd !== undefined && capVerdict({ hard: p.budgetUsd }, used.spentUsd).level === 'hard') {
-        return `the supervisor's budget ($${p.budgetUsd.toFixed(2)}) is spent`;
-    }
-    return '';
+    // M-48 — the shared ceiling; the money cap is a HARD cap here (X-370)
+    return ceilingRefusal({ calls: used.calls, maxCalls: p.maxCalls, spentUSD: used.spentUsd, budgetUSD: p.budgetUsd, per: 'task' });
 }

@@ -13,6 +13,7 @@
  * the spawn.
  */
 import * as cp from 'child_process';
+import { ceilingRefusal, softBudgetNote } from './decisionCore';
 import { resolveFlex } from './flexResolve';
 import { oneShotArgv, oneShotEnv, oneShotEnvelope } from './oneShot';
 import type { ModelAssist } from './sentryPrompt';
@@ -127,17 +128,12 @@ export const ASSIST_KEEP = 20;
 /** Why no further supervisor call is made on this run — '' = one may be made. */
 export function turnRefusal(s: SupervisorState, lim: SupervisorLimits): string {
     if (s.off) { return s.off; }
-    if ((s.calls ?? 0) >= lim.maxCalls) { return `the run has used its ${lim.maxCalls} supervisor call${lim.maxCalls === 1 ? '' : 's'}`; }
-    if (lim.budgetUSD > 0 && lim.budgetMode === 'hard' && (s.costUSD ?? 0) >= lim.budgetUSD) {
-        return `the supervisor has spent its $${lim.budgetUSD.toFixed(2)} (a hard ceiling)`;
-    }
-    return '';
+    return ceilingRefusal({ calls: s.calls ?? 0, maxCalls: lim.maxCalls, spentUSD: s.costUSD ?? 0, budgetUSD: lim.budgetUSD, budgetMode: lim.budgetMode, per: 'run' });
 }
 
 /** A soft budget passed: said on the row, never enforced. */
 export function softNote(s: SupervisorState, lim: SupervisorLimits): string {
-    return lim.budgetUSD > 0 && lim.budgetMode === 'soft' && (s.costUSD ?? 0) >= lim.budgetUSD
-        ? `the supervisor is over its soft $${lim.budgetUSD.toFixed(2)} budget ($${(s.costUSD ?? 0).toFixed(2)})` : '';
+    return softBudgetNote({ spentUSD: s.costUSD ?? 0, budgetUSD: lim.budgetUSD, budgetMode: lim.budgetMode });
 }
 
 /** One turn onto the run: counted, costed, kept as a ModelAssist; failures in a row turn the supervisor off. */

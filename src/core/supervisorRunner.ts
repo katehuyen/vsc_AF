@@ -13,6 +13,7 @@
 import type { FarmTask } from './tasks';
 import { IncidentBundle, supervisorPrompt } from './retryIncident';
 import { confident, parseDecision, SupervisorPolicy, supervisorRefusal, validateDecision } from './retrySupervisor';
+import { underConfidence } from './decisionCore';
 import { SupervisionOutcome } from './retrySupervision';
 
 export interface SupervisorAnswer { text: string; costUsd?: number; sessionId?: string; error?: string }
@@ -82,7 +83,7 @@ export class SupervisorRunner {
         });
         if (!checked.ok) { fallback(`its decision was refused — ${checked.error}`, extra); return; }
         if (!confident(checked.decision, p)) {
-            fallback(`its confidence ${checked.decision.confidence.toFixed(2)} is below ${p.minConfidence.toFixed(2)} ("${checked.decision.action}": ${checked.decision.reason.slice(0, 120)})`, extra);
+            fallback(`${underConfidence(checked.decision.confidence, p.minConfidence)} ("${checked.decision.action}": ${checked.decision.reason.slice(0, 120)})`, extra);
             return;
         }
         this.deps.settle(row, { kind: 'decision', decision: checked.decision },

@@ -96,12 +96,12 @@ console.log('\n== the runner ==');
     const fb = async (answer, rowO, pol) => { const h = harness(answer, rowO, pol); await Promise.all(h.runner.sweep()); return h.settled[0]; };
     ok('broken JSON → the fallback, saying why', (await fb({ text: 'resume please' })).o.note.includes('no JSON'));
     ok('a refused decision → the fallback', /before the limit resets/.test((await fb({ text: '{"action":"wait","notBefore":500,"reason":"r","confidence":1}' })).o.note));
-    ok('‼️ low confidence → the fallback, naming the numbers', /0\.50 is below 0\.70/.test((await fb({ text: '{"action":"stop","reason":"r","confidence":0.5}' })).o.note));
+    ok('‼️ low confidence → the fallback, naming the numbers (M-48: the shared gate)', /50% sure; the threshold is 70%/.test((await fb({ text: '{"action":"stop","reason":"r","confidence":0.5}' })).o.note));
     ok('‼️ the supervisor\'s own failure (its limit) → the fallback, no recursion', /run failed: usage limit/.test((await fb({ text: '', error: 'usage limit reached' })).o.note));
     ok('a call that throws → the fallback', /could not be asked/.test((await fb(async () => { throw new Error('ENOENT codex'); })).o.note));
     ok('‼️ found "asking" after a restart → the fallback, never a second call',
         /never asked twice/.test((await fb({ text: '{}' }, { supervision: { key: 'k1', state: 'asking', at: 0, atWhy: '', failedTask: 't1', calls: 1 } })).o.note));
-    ok('out of calls → the fallback', /already asked/.test((await fb({ text: '{}' }, { supervision: { key: 'k1', state: 'pending', at: 0, atWhy: '', failedTask: 't1', calls: 2 } })).o.note));
+    ok('out of calls → the fallback (M-48: the shared ceiling)', /used its 2 calls for this task/.test((await fb({ text: '{}' }, { supervision: { key: 'k1', state: 'pending', at: 0, atWhy: '', failedTask: 't1', calls: 2 } })).o.note));
     ok('the policy\'s own fallback is used', (await fb({ text: 'x' }, {}, Object.assign({}, policy, { lowConfidence: 'park' }))).o.fallback === 'park');
 
     console.log('\n== the TaskManager holds a supervised retry ==');
