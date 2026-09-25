@@ -1412,8 +1412,6 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'caCopy', title: 'Copy what it is asking', act: 'caCopy',
         when: CONSOLE_ASK, group: '5_copy@1'
     },
-    // S-103 — the card's ⑂⊣: the chain's legs (the host command reads afChainId)
-    { command: 'agentfarm.batonLegs', when: "webviewSection == 'afConsoleLastLeg'", group: '1_open@1' },
 
     // =====================================================================
     // AN AGENT — all host commands, so every surface that publishes an agent

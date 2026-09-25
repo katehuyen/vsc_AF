@@ -73,20 +73,30 @@ function barLine(b: Baton, leg: number, max: string, fmt: (t: number) => string)
 }
 
 /**
+ * The chains running right now, each by its newest baton, newest first: a live
+ * baton, or a started leg whose session `alive` still sees AND whose opener it
+ * is — a second seal on one session (S-103) is a chain nothing passes through.
+ */
+export function runningChains(list: readonly Baton[], alive: (sessionId: string) => boolean): Baton[] {
+    const top = new Map<string, Baton>();
+    for (const b of list) {
+        const t = top.get(b.chainId);
+        if (!t || b.hop > t.hop || (b.hop === t.hop && b.updatedAt > t.updatedAt)) { top.set(b.chainId, b); }
+    }
+    return [...top.values()]
+        .filter(n => isLive(n) || (n.state === 'started' && !!n.toSessionId && alive(n.toSessionId)
+            && openerOf(list, n.toSessionId)?.id === n.id))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
  * ‼️ S-77 — THE ONE STATUS-BAR ITEM: the relay running right now, or nothing.
- * A chain runs while its newest baton is live (waiting for its session to
- * end, or parked) or is a started leg whose session `alive` still sees. With
- * several, the newest speaks and `+N` counts the rest; each has its line.
+ * With several chains the newest speaks and `+N` counts the rest; each has its line.
  */
 export function batonBarView(
     list: readonly Baton[], maxLegs: number, alive: (sessionId: string) => boolean, fmt: (t: number) => string = hhmm
 ): BatonBarView | undefined {
-    const byChain = new Map<string, Baton[]>();
-    for (const b of list) { byChain.set(b.chainId, [...(byChain.get(b.chainId) ?? []), b]); }
-    const running = [...byChain.values()]
-        .map(bs => [...bs].sort((a, b) => b.hop - a.hop || b.updatedAt - a.updatedAt)[0])
-        .filter(n => isLive(n) || (n.state === 'started' && !!n.toSessionId && alive(n.toSessionId)))
-        .sort((a, b) => b.updatedAt - a.updatedAt);
+    const running = runningChains(list, alive);
     if (!running.length) { return undefined; }
     const top = running[0];
     const cap = (b: Baton) => chainMaxLegs(list, b.chainId, maxLegs);
@@ -101,9 +111,9 @@ export function batonBarView(
             '',
             ...lines,
             '',
-            maxLegs > 0 ? `Ceiling: ${maxLegs} legs a chain (agentFarm.batonMaxHops).` : 'No leg ceiling (agentFarm.batonMaxHops = 0).',
+            `Click: the chain's legs — one more, fewer, no ceiling, last leg (baton.setLegs chain=${top.chainId}).`,
             `Brake: ⑂⊣ Last leg on the running card (baton.lastLeg), ✕⑂ Stop chain while a successor waits (baton.stop chain=${top.chainId}).`,
-            `Click: the chain's legs — one more, fewer, no ceiling, last leg (baton.setLegs chain=${top.chainId}).`
+            maxLegs > 0 ? `A new chain starts at ${maxLegs} legs (agentFarm.batonMaxHops).` : 'A new chain starts with no leg ceiling (agentFarm.batonMaxHops = 0).'
         ].join('\n'),
         chainId: top.chainId,
         ...(top.state === 'started' && top.toSessionId ? { sessionId: top.toSessionId }

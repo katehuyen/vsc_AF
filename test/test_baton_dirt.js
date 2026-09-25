@@ -59,7 +59,7 @@ console.log('\n== the folder photographed at the open ==');
     const read = (f) => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8');
     ok('every door a leg opens through photographs the folder',
         /markFolder\(res\.baton, deps\.headOf, deps\.dirtOf\)/.test(read('core/batonBridge.ts'))
-        && /markFolder\(r\.baton, deps\.headOf, deps\.dirtOf\)/.test(read('core/batonAttach.ts'))
+        && /deps\.store\.put\(r\.baton\);\s*await markStored\(deps\.store, r\.baton, deps\.headOf, deps\.dirtOf\)/.test(read('core/batonAttach.ts'))
         && /markFolder\(draft, this\.deps\.headOf, this\.deps\.dirtOf\)/.test(read('core/batonLegEnd.ts'))
         && /markStored\(this\.deps\.store, r\.baton, this\.deps\.headOf, this\.deps\.dirtOf\)/.test(read('core/batonRunner.ts'))
         && /dirtOf: deps\.dirtOf/.test(read('core/batonRunner.ts')));

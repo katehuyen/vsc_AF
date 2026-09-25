@@ -58,12 +58,12 @@ ok('two passes from one run: the newest speaks', twice.lines.some(l => /waits fo
     ok('a running leg: ⑂ leg/ceiling, its session the click target',
         run.text === '⑂ 3/6' && run.sessionId === 's3-long-id' && run.chainId === 'chn_1'
         && /^Baton relay — one chain running/.test(run.tooltip) && /Chain chn_1 — leg 3 of 6 running \(session s3-long-\)/.test(run.tooltip)
-        && /Ceiling: 6 legs a chain \(agentFarm\.batonMaxHops\)/.test(run.tooltip) && /baton\.stop chain=chn_1/.test(run.tooltip));
+        && /A new chain starts at 6 legs \(agentFarm\.batonMaxHops\)/.test(run.tooltip) && /baton\.stop chain=chn_1/.test(run.tooltip));
     const park = V.batonBarView([b('b1', 'parked', 2, 's2', { extra: { wakeAt: NOW + 3600000 } })], 6, none, fmt);
     ok('a parked leg carries its wake time on the bar — ⑂ 3/6 · 14:37', park.text === '⑂ 3/6 · 14:37' && /leg 3 of 6 parked .* wakes at 14:37/.test(park.tooltip) && !park.sessionId);
     const wait = V.batonBarView([b('b1', 'waiting-end', 1, 's1')], 0, none, fmt);
     ok('a baton waiting on its session: the leg it opens, no ceiling written when there is none, the passing session clicked',
-        wait.text === '⑂ 2' && wait.sessionId === 's1' && /leg 2 opens when session s1 ends/.test(wait.tooltip) && /No leg ceiling/.test(wait.tooltip));
+        wait.text === '⑂ 2' && wait.sessionId === 's1' && /leg 2 opens when session s1 ends/.test(wait.tooltip) && /A new chain starts with no leg ceiling/.test(wait.tooltip));
     const many = V.batonBarView([
         b('b1', 'waiting-end', 1, 's1', { at: NOW - 9000 }),
         { ...b('c1', 'parked', 4, 'x4', { at: NOW }), chainId: 'chn_2', wakeAt: NOW }

@@ -6,7 +6,7 @@
  * ⑂ Pass now, which the console.send op already is for an agent).
  */
 import { BATON_DEFAULT_MAX_LEGS, Baton, BatonRelay, batonRelayOf, normalizeLegCeiling } from './baton';
-import { markFolder } from './batonLegFacts';
+import { markStored } from './batonLegFacts';
 import { chainMaxLegs, sealFirstLeg } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { DisciplineOrders, orderFor } from './contextGuard';
@@ -65,8 +65,11 @@ export async function attachRelay(deps: AttachDeps, ask: AttachAsk): Promise<Att
     });
     if (!r) { return { ok: false, step: 'attach', why: `session ${sid.slice(0, 8)} is already in a chain — baton.status session=${sid} shows it.` }; }
     if (!r.ok) { return { ok: false, step: 'seal', why: r.why, data: { sessionId: sid, launchId: launchId ?? null } }; }
-    const sealed: Baton = await markFolder(r.baton, deps.headOf, deps.dirtOf);
-    deps.store.put(sealed);
+    // S-103 — stored BEFORE git is read: a second seal of the same session (a
+    // relay the card still wanted) arriving during that read must see this one.
+    deps.store.put(r.baton);
+    await markStored(deps.store, r.baton, deps.headOf, deps.dirtOf);
+    const sealed: Baton = deps.store.all().find(b => b.id === r.baton.id) ?? r.baton;
     const cap = chainMaxLegs([sealed], sealed.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS);
     return {
         ok: true, baton: sealed,

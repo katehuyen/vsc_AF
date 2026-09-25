@@ -118,12 +118,14 @@ for (const bad of ['', 'x', '2.5', -1, null, undefined]) {
     const bar = V.batonBarView(base, 6, () => true);
     ok('the bar reads the chain\'s own ceiling and says a click changes it', bar.text === '⑂ 2/12' && /Click: the chain's legs .*baton\.setLegs chain=chn_1/.test(bar.tooltip));
     const js = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
-    ok('the ⑂⊣ button carries its own right-click section', /AFCtx\.obj\('afConsoleLastLeg', \{ afChainId: v\.chainId, afSessionId: s\.sessionId \}\)/.test(js));
+    ok('‼️ a right-click on ⑂⊣ IS the legs menu: no VS Code context section (Cut · Copy · Paste) on the button',
+        !/afConsoleLastLeg/.test(js) && /byId\('c-baton-lastleg', 'contextmenu', ev => \{\s*ev\.preventDefault\(\);\s*ev\.stopPropagation\(\);/.test(js));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     ok('the command is contributed', pkg.contributes.commands.some(x => x.command === 'agentfarm.batonLegs' && x.title === 'Chain Legs…'));
-    ok('and drawn on the ⑂⊣ right-click', pkg.contributes.menus['webview/context'].some(x => x.command === 'agentfarm.batonLegs' && /afConsoleLastLeg/.test(x.when)));
+    ok('…and no longer drawn in a webview context menu', !pkg.contributes.menus['webview/context'].some(x => x.command === 'agentfarm.batonLegs'));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('the status bar opens the legs menu for its chain', /batonBar\.command = \{ command: 'agentfarm\.batonLegs'.*arguments: \[\{ chainId: v\.chainId \}\]/.test(ext));
+    ok('the card\'s right-click opens the same menu over the same body', /batonLegs: \(chainId: string\) => pickChainLegs\(batonLegsDeps, \{ chainId \}, \(chain, n\) => applyChainLegs\(batonLegsDeps, chain, n\)\)/.test(ext));
 }
 
 // ---------- the op ----------

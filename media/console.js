@@ -5825,6 +5825,13 @@
                     vscode.postMessage({ type: 'batonLastLeg', id: DATA.selected, on: v.brake === 'off' });
                 }
             });
+            // S-103 — the right-click IS the legs menu, so VS Code's own (Cut · Copy · Paste) never opens here
+            byId('c-baton-lastleg', 'contextmenu', ev => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const v = s && s.batonView;
+                if (v && v.chainId && (v.brake === 'off' || v.brake === 'on')) { vscode.postMessage({ type: 'batonLegs', chainId: v.chainId }); }
+            });
         }
         if (slot('c-relay', relayStripHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
@@ -6007,25 +6014,24 @@
         const st = s.batonView && s.batonView.brake;
         if (!s.sessionId || !st || st === 'passed' || (dead && st !== 'locked')) { return ''; }
         const T = window.AFTip;
+        const v = s.batonView;
         const on = st !== 'off';
         const locked = st === 'locked';
+        const cap = typeof v.max === 'number' ? (v.max > 0 ? `leg ${v.leg} of ${v.max}` : `leg ${v.leg}, no ceiling`) : '';
         const head = locked ? 'Last leg: braked — the chain ended at this leg'
-            : on ? 'Last leg: ON — this leg is the chain\'s last' : 'Last leg: off — the chain goes on';
-        // S-103 — right-click: the chain's legs (agentfarm.batonLegs reads afChainId)
-        const v = s.batonView;
-        const ctx = locked ? '' : ' ' + window.AFCtx.attr(window.AFCtx.obj('afConsoleLastLeg', { afChainId: v.chainId, afSessionId: s.sessionId }));
-        const cap = typeof v.max === 'number' ? (v.max > 0 ? `leg ${v.leg} of ${v.max}` : `leg ${v.leg} — no ceiling`) : '';
-        return cardTip(`<button${ctx} class="stchip lastleg${on ? ' on' : ''}" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="${on}"${locked ? ' disabled' : ''}>⑂⊣</button>`,
+            : (on ? 'Last leg: ON' : 'Last leg: off') + (cap ? ` · ${cap}` : '');
+        return cardTip(`<button class="stchip lastleg${on ? ' on' : ''}" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="${on}"${locked ? ' disabled' : ''}>⑂⊣</button>`,
             head,
-            T.lines([
-                cap && !locked ? `Ceiling: ${cap} — right-click for the chain's legs: one more, fewer, a number, no ceiling.` : '',
-                locked ? 'Its pass was braked: no successor opened, and the handover note is where the work goes on.'
-                    : on ? 'Press again to take it back — nothing was written anywhere else, so the chain goes on as if untouched.'
-                        : 'Press to make the leg running now the chain\'s LAST: at its handover line it is told to write the handover note instead of passing the baton, and no successor opens.',
-                locked ? '' : 'The window closes at the pass. Once a successor is waiting, ✕⑂ Stop chain is the brake.',
+            T.lines(locked ? [
+                'Its pass was braked: no successor opened, and the handover note is where the work goes on.',
                 T.GAP,
-                locked ? 'Agent door: baton.status chain=' + s.batonView.chainId
-                    : 'Agent door: baton.lastLeg session=' + s.sessionId + ' on=' + (on ? 'false' : 'true')
+                'Agent door: baton.status chain=' + v.chainId
+            ] : [
+                on ? 'Click: take it back — the chain goes on as if untouched.'
+                    : 'Click: make this leg the last — it writes the handover note instead of passing the baton.',
+                'Right-click: the chain\'s legs — one more, fewer, a number, no ceiling.',
+                T.GAP,
+                'Agent door: baton.lastLeg session=' + s.sessionId + ' on=' + (on ? 'false' : 'true') + ' · baton.setLegs chain=' + v.chainId
             ]), 'tip-lastleg', 'Last leg');
     }
 

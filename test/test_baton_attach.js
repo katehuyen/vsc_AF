@@ -93,6 +93,37 @@ function setup(o = {}) {
             p2.ok && p2.result.braked === 'ceiling' && /2 of its 2 legs/.test(p2.result.sentence));
     }
 
+    // S-103 — measured live: the card's ⑂ Attach (5) and the session's own
+    // baton.attach (20) landed 0.8 s apart while git was still being read, and
+    // both sealed — two chains on one run, the bar drawing both.
+    {
+        let release;
+        const gate = new Promise(r => { release = r; });
+        const { store, reg } = setup({ headOf: () => gate.then(() => 'c0ffee12') });
+        const first = reg.dispatch('baton.attach', { maxHops: 5 }, { sessionId: 'sess-A' });
+        const second = reg.dispatch('baton.attach', { maxHops: 20 }, { sessionId: 'sess-A' });
+        await new Promise(r => setTimeout(r, 20));
+        release();
+        const [a, b] = await Promise.all([first, second]);
+        ok('‼️ two attaches racing the git read: the first seals, the second is refused by name',
+            a.ok && !b.ok && /already in chain/.test(b.error) && store.all().length === 1 && store.all()[0].maxLegs === 5);
+        ok('…and the HEAD read later is laid onto the stored seal', store.all()[0].head === 'c0ffee12');
+    }
+    {
+        const store = new BatonStore();
+        const seal = (id, at, max) => ({
+            id, chainId: 'chn_' + id, hop: 0, state: 'started', prompt: 'p', why: 'w',
+            from: { sessionId: 'sess-A', agentId: 'dev', engine: 'claude', cwd: 'D:\\repo' },
+            inherit: { surface: 'console' }, want: { surface: 'inherit', account: '@emptiest' },
+            toSessionId: 'sess-A', maxLegs: max, createdAt: at, updatedAt: at
+        });
+        store.put(seal('old', NOW - 900, 5), seal('new', NOW - 100, 20));
+        const bar = V.batonBarView(store.all(), 6, sid => sid === 'sess-A');
+        ok('‼️ a run sealed twice before the fix: the bar draws the ONE chain its passes use (openerOf), no +1',
+            bar && bar.chainId === 'chn_new' && bar.text === '⑂ 1/20' && !/chn_old/.test(bar.tooltip));
+        ok('…and the legs menu lists the same one', V.runningChains(store.all(), () => true).map(b => b.chainId).join() === 'chn_new');
+    }
+
     console.log(`test_baton_attach.js: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

@@ -2,7 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.675.0 - The migration gate weighs the agent repo in seconds, not minutes (X-401) (2026-09-25)
+## 3.675.0 - The migration gate weighs the agent repo in seconds, not minutes, and a chain attached twice at once stays one chain (X-401, S-104) (2026-09-25)
+
+- **A session turned into a relay after it started is one chain, never two
+  (S-104).** Pressing ⑂ Attach on the card while the session's own agent ran
+  `baton.attach` sealed two chains 0.8 s apart (measured: 5 legs and 20), so
+  the status bar drew two and the legs menu changed the wrong one. The seal is
+  now stored before git is read, so the second attach is refused as "already
+  in chain" and the first one's ceiling stands. The status bar and the legs
+  menu now list only the chain a session's passes really use.
+- **Right-click on ⑂⊣ opens the legs menu directly.** VS Code's own menu
+  (Cut · Copy · Paste) no longer comes first. The ⑂⊣ hover opens with where
+  the chain stands (*Last leg: off · leg 2 of 12*), then one line each for
+  **Click** and **Right-click**. The status bar's hover names the setting's
+  number as what a *new* chain starts at, so it is not mistaken for this one's.
 
 - **`migration.verify` reads the largest committed files in ~4 s instead of
   ~259 s.** It used to ask git for every file's size (`ls-tree -l`), which reads

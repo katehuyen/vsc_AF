@@ -1477,7 +1477,8 @@ function lastLegData(state) {
     const flag = state === 'off' ? {} : { lastLeg: { at: NOW - 600000, by: 'the user (Console card)' } };
     const list = [mk('b1', 'started', 1, '22597c33-aaaa', { toSessionId: sid, ...flag })];
     if (state === 'locked') { list.push(mk('b2', 'stopped', 2, sid, { why: 'braked — last leg' })); }
-    d.sessions[0].batonView = V.batonCardView(list, sid);
+    // the host always hands the card the setting's ceiling (S-103), so the scene does too
+    d.sessions[0].batonView = V.batonCardView(list, sid, 12);
     return d;
 }
 

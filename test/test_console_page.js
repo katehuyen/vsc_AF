@@ -1361,7 +1361,7 @@ const intentOf = (o) => Object.assign({
         /id="c-baton-lastleg" aria-label="Last leg" aria-pressed="false">⑂⊣</.test(status())
         && status().indexOf('id="c-baton-lastleg"') < status().indexOf('id="c-transcript"'));
     ok('…MIRROR: its panel opens with the state, then says what pressing does',
-        /Last leg: off — the chain goes on/.test(status()) && /write the handover note instead of passing the baton/.test(status())
+        /Last leg: off/.test(status()) && /Click: make this leg the last — it writes the handover note instead of passing the baton/.test(status())
         && /baton\.lastLeg session=[^ ]+ on=true/.test(status()));
     posted.length = 0;
     els['c-baton-lastleg'].listeners.click();
@@ -1370,7 +1370,7 @@ const intentOf = (o) => Object.assign({
     push(data(CONVO.slice(), { batonView: leg('on') }));
     ok('pressed: drawn pressed, and the panel says how to take it back',
         /class="stchip lastleg on" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="true">/.test(status())
-        && /Last leg: ON/.test(status()) && /Press again to take it back/.test(status()));
+        && /Last leg: ON/.test(status()) && /Click: take it back/.test(status()));
     posted.length = 0;
     els['c-baton-lastleg'].listeners.click();
     ok('…and a second press releases it', posted.length === 1 && posted[0].on === false);
@@ -1385,13 +1385,23 @@ const intentOf = (o) => Object.assign({
     ok('‼️ a view with no brake draws none', !/c-baton-lastleg/.test(status()));
     // S-103 — the same ⑂⊣ carries the chain's legs on its right-click, and its panel names the ceiling
     push(data(CONVO.slice(), { batonView: Object.assign(leg('off'), { max: 12 }) }));
-    ok('S-103: ⑂⊣ carries its own right-click section with the chain and the session',
-        /<button data-vscode-context="[^"]*afConsoleLastLeg[^"]*chn_muq2k1[^"]*" class="stchip lastleg"/.test(status())
-        && /Ceiling: leg 2 of 12 — right-click for the chain&#39;s legs|Ceiling: leg 2 of 12 — right-click for the chain's legs/.test(status()));
+    ok('S-103: ⑂⊣ has no VS Code context section, and its panel MIRRORS the leg and names the right-click',
+        /<button class="stchip lastleg" id="c-baton-lastleg"/.test(status()) && !/afConsoleLastLeg/.test(status())
+        && /Last leg: off · leg 2 of 12/.test(status())
+        && /Right-click: the chain(&#39;|')s legs — one more, fewer, a number, no ceiling\./.test(status())
+        && /baton\.setLegs chain=chn_muq2k1/.test(status()));
+    let prevented = 0;
+    const rclick = { preventDefault: () => { prevented++; }, stopPropagation: () => { prevented++; } };
+    posted.length = 0;
+    els['c-baton-lastleg'].listeners.contextmenu(rclick);
+    ok('‼️ a right-click opens the legs menu for THIS chain at once, and VS Code\'s own menu (Cut · Copy · Paste) never opens',
+        prevented === 2 && posted.length === 1 && posted[0].type === 'batonLegs' && posted[0].chainId === 'chn_muq2k1');
     push(data(CONVO.slice(), { batonView: Object.assign(leg('off'), { max: 0 }) }));
-    ok('…no ceiling is said as such', /Ceiling: leg 2 — no ceiling/.test(status()));
+    ok('…no ceiling is said as such', /Last leg: off · leg 2, no ceiling/.test(status()));
     push(data(CONVO.slice(), { batonView: leg('locked') }));
-    ok('…a locked brake has no legs menu (the chain ended there)', !/afConsoleLastLeg/.test(status()));
+    posted.length = 0;
+    if (els['c-baton-lastleg'].listeners.contextmenu) { els['c-baton-lastleg'].listeners.contextmenu(rclick); }
+    ok('…a locked brake opens no legs menu (the chain ended there)', !/Right-click:/.test(status()) && posted.length === 0);
     ok('the pressed state has its own colour and frame, not only an attribute',
         /#c-status \.stchip\.lastleg\.on \{[^}]*editorWarning-foreground/.test(allHtml()));
 

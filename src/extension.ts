@@ -28540,6 +28540,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'stopped by the user — ✕ on the Console card', Date.now(), batonBoard).length,
         // S-99 — the card's ⑂⊣ runs baton.lastLeg's own body
         batonLastLeg: (sessionId: string, on: boolean) => applyLastLeg({ store: batonStore }, sessionId, on, 'the user (Console card)'),
+        // S-103 — a right-click on ⑂⊣ opens the legs menu, written by baton.setLegs's own body
+        batonLegs: (chainId: string) => pickChainLegs(batonLegsDeps, { chainId }, (chain, n) => applyChainLegs(batonLegsDeps, chain, n)),
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
         estimateCost: (model: string, u: Usage) => pricing.costFor(model, u),
         projects: () => projectStore.all().map(p => ({

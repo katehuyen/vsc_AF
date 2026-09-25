@@ -1044,7 +1044,7 @@
       "capability": "batonLegs",
       "ui": [
         "cmd:agentfarm.batonLegs",
-        "ctx:agentfarm.batonLegs"
+        "page:consolePanel.ts#batonLegs"
       ],
       "ops": [
         "baton.setLegs"

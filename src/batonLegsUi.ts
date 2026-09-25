@@ -5,9 +5,9 @@
  * the same body as baton.setLegs.
  */
 import * as vscode from 'vscode';
-import { Baton, isLive } from './core/baton';
 import { SetLegsResult, chainLegs, legsChoices, legsTitle, parseLegs } from './core/batonLegs';
 import { LegsDeps } from './core/batonLegsOp';
+import { runningChains } from './core/batonView';
 
 export interface LegsUiDeps extends LegsDeps {
     alive: (sessionId: string) => boolean;
@@ -17,30 +17,18 @@ export interface LegsUiDeps extends LegsDeps {
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
-/** Chains still running, newest first: a live baton, or a started leg whose session is alive. */
-function runningChains(list: readonly Baton[], alive: (sid: string) => boolean): Baton[] {
-    const top = new Map<string, Baton>();
-    for (const b of list) {
-        const t = top.get(b.chainId);
-        if (!t || b.hop > t.hop || (b.hop === t.hop && b.updatedAt > t.updatedAt)) { top.set(b.chainId, b); }
-    }
-    return [...top.values()]
-        .filter(b => isLive(b) || (b.state === 'started' && !!b.toSessionId && alive(b.toSessionId)))
-        .sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
 const say = (r: { ok: true; sentence: string } | { ok: false; why: string }): void => {
     if (r.ok) { void vscode.window.showInformationMessage(`Agent Farm: ${r.sentence}`); }
     else { void vscode.window.showWarningMessage(`Agent Farm: ${r.why}`); }
 };
 
 /**
- * `arg`: the ⑂⊣ right-click's context (afChainId), the status bar's { chainId },
+ * `arg`: { chainId } from a right-click on the card's ⑂⊣ or from the status bar,
  * or nothing (the palette). `apply` is baton.setLegs's own body (applyChainLegs).
  */
 export async function pickChainLegs(d: LegsUiDeps, arg: unknown, apply: (chainId: string, maxLegs: unknown) => SetLegsResult): Promise<void> {
     const a = arg && typeof arg === 'object' ? arg as Record<string, unknown> : {};
-    let chainId = str(a.afChainId) || str(a.chainId);
+    let chainId = str(a.chainId);
     if (!chainId) {
         const running = runningChains(d.store.all(), d.alive);
         if (!running.length) { void vscode.window.showInformationMessage('Agent Farm: no baton relay is running.'); return; }
