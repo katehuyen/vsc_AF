@@ -15,6 +15,10 @@ import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionRoute }
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
 import * as FE from './forEachStep';
+import {
+    anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
+    stepsFromInsert, superviseCheckpoint
+} from './checkpointStep';
 import { flexPoint } from './flexPoints';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
@@ -1215,6 +1219,8 @@ export interface WorkflowStep extends RunDimensions {
     parallel?: boolean;
     /** M-40 — run this step once per element of a list read off the run (src/core/forEachStep.ts). */
     forEach?: FE.ForEachSpec;
+    /** M-43 — the supervisor is woken here, whatever happened (src/core/checkpointStep.ts). No agent. */
+    checkpoint?: CheckpointSpec;
 }
 
 /** What one step passes to the next. */
@@ -1273,6 +1279,9 @@ export interface FarmWorkflow {
     inputs?: WorkflowInput[];
     /** M-38 — the last run's values, which the Run card is prefilled with (remembered) */
     lastInputs?: Record<string, string>;
+    /** M-43 — what the chain is for, and how its supervisor tells it got there */
+    goal?: string;
+    criteria?: string[];
 }
 
 /**
@@ -1608,9 +1617,17 @@ interface WorkflowRunRecord {
     board?: RunBoard;
     /** M-40 — a for-each step in flight; persisted so a resume re-runs only unfinished branches */
     forEach?: FE.ForEachRun;
+    /** M-43 — the run's own copy of the chain: the supervisor's patches and inserted steps */
+    edits?: RunEdits;
+    /** M-43 — the supervisor's decisions so far (`<decision>:<target>`), retries per step, the person's answers */
+    supervisor?: { history: string[]; retries: Record<string, number>; directives: string[] };
 }
 
 export interface TaskManagerOptions {
+    /** M-43 — a question with options put to a person; undefined = not answered */
+    askChoice?: (question: string, options: string[]) => Promise<string | undefined>;
+    /** M-43 — replaces the checkpoint's one-shot supervisor call (tests) */
+    superviseTurn?: (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
     /** CLI args for internal judge calls — always a cheap model. */
     judgeArgs?: () => string;
     /** M-42 — what a step no judge could look at does: ask (default) · pass · stop (`agentFarm.judgeUnjudged`) */
@@ -2239,7 +2256,7 @@ export class TaskManager implements vscode.Disposable {
                     // the group's fan-in state died with the window. The run is
                     // paused: the startup resume offer skips it, and completion
                     // re-offers it explicitly (see reattachMediaTask).
-                    const step = this.workflows.find(x => x.id === t.workflowId)?.steps[t.stepIndex ?? -1];
+                    const step = this.runView(t.workflowId, t.workflowRunId)?.steps[t.stepIndex ?? -1];
                     if (step?.parallel) { this.parallelReattachRuns.add(t.workflowRunId ?? ''); }
                     // ‼️ M-21 — and it says so on the row. A reattach is the one
                     // thing that happens to a task while nobody is looking, and
@@ -2499,7 +2516,7 @@ export class TaskManager implements vscode.Disposable {
         const out = [];
         for (const r of this.interrupted) {
             if (this.parallelReattachRuns.has(r.runId)) { continue; }
-            const w = this.workflows.find(x => x.id === r.workflowId);
+            const w = this.runView(r.workflowId, r.runId);
             if (!w) { continue; }
             out.push({
                 runId: r.runId,
@@ -2658,7 +2675,7 @@ export class TaskManager implements vscode.Disposable {
         }
         // B9: the cancelled task was archived by the MAX_TASKS overflow — resume
         // from the stored coordinates instead of silently doing nothing.
-        const w = this.workflows.find(x => x.id === r.workflowId);
+        const w = this.runView(r.workflowId, r.runId);
         if (!w || r.stepIndex >= w.steps.length) {
             void vscode.window.showWarningMessage(
                 'Agent Farm: this run can no longer be resumed — its workflow or step is gone.');
@@ -4603,7 +4620,7 @@ export class TaskManager implements vscode.Disposable {
 
         // Workflow chaining takes precedence over plain queue auto-advance.
         if (task.workflowId !== undefined && task.stepIndex !== undefined) {
-            const w = this.workflows.find(x => x.id === task.workflowId);
+            const w = this.runView(task.workflowId, task.workflowRunId);
             const step = w?.steps[task.stepIndex];
             if (w && step?.verify && status === 'done' && task.outputFile) {
                 // Media steps get a VISION judge on the produced asset; regular
@@ -5978,7 +5995,7 @@ export class TaskManager implements vscode.Disposable {
      * from the previous step's output in the same run (empty for the first step).
      */
     resumeWorkflowFromTask(task: FarmTask): void {
-        const w = this.workflows.find(x => x.id === task.workflowId);
+        const w = this.runView(task.workflowId, task.workflowRunId);
         if (!w || task.stepIndex === undefined) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: the workflow for "${task.title}" no longer exists.`);
@@ -6261,7 +6278,7 @@ export class TaskManager implements vscode.Disposable {
             };
         }
         tasks.sort((a, b) => (a.stepIndex ?? 0) - (b.stepIndex ?? 0) || (a.startedAt ?? 0) - (b.startedAt ?? 0));
-        const w = this.workflows.find(x => x.id === tasks[0].workflowId);
+        const w = this.runView(tasks[0].workflowId, tasks[0].workflowRunId);
         const steps: WorkflowRunStep[] = tasks.map(t => ({
             index: t.stepIndex ?? 0,
             title: t.title,
@@ -6403,7 +6420,14 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** Advance a run to a step, honoring runIf conditions and the loop guard. */
+    /** M-43 — the workflow as THIS run sees it: the stored one with the run's patches and inserted steps. */
+    private runView(workflowId: string | undefined, runId: string | undefined, fallback?: FarmWorkflow): FarmWorkflow | undefined {
+        const w = this.workflows.find(x => x.id === workflowId) ?? fallback;
+        return w && runId ? applyRunEdits(w, this.runRecords.get(runId)?.edits) : w;
+    }
+
     private routeToStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
+        w = this.runView(w.id, runId, w) as FarmWorkflow;
         handoff.inputs = this.runRecords.get(runId)?.inputs;
         handoff.board = this.runRecords.get(runId)?.board;
         if (index < 0 || index >= w.steps.length) {
@@ -6471,6 +6495,10 @@ export class TaskManager implements vscode.Disposable {
         }
         if (step.select) {
             void this.runSelectStep(w, index, handoff, runId);
+            return;
+        }
+        if (step.checkpoint) {
+            void this.runCheckpointStep(w, index, handoff, runId);
             return;
         }
         const agent = this.getAgents().find(a => a.id === step.agentId);
@@ -6769,7 +6797,7 @@ export class TaskManager implements vscode.Disposable {
     /** F2: resume polling a media job whose window died mid-render. */
     private async reattachMediaTask(task: FarmTask): Promise<void> {
         const job = task.mediaJob!;
-        const w = this.workflows.find(x => x.id === task.workflowId);
+        const w = this.runView(task.workflowId, task.workflowRunId);
         const step = task.stepIndex !== undefined ? w?.steps[task.stepIndex] : undefined;
         const info = {
             model: step?.media?.model ?? task.prompt,
@@ -6991,6 +7019,81 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
+    /**
+     * M-43 — a checkpoint: the supervisor is woken here and its decision routes
+     * the run (src/core/checkpointStep.ts). Refused, broken or unanswered =
+     * carry on, and the row says why. The upstream handoff passes through.
+     */
+    private async runCheckpointStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const cp = w.steps[index].checkpoint!;
+        const rec = this.runRecords.get(runId);
+        const sup = rec ? (rec.supervisor ??= { history: [], retries: {}, directives: [] }) : { history: [], retries: {}, directives: [] };
+        const task = this.stepTask(w, index, runId, 'checkpoint', { prompt: cp.message || '(the supervisor decides here)', status: 'running' }, handoff);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+
+        const ids = w.steps.map((s, i) => stepKey(s, i));
+        const here = ids[index], before = index > 0 ? ids[index - 1] : here;
+        const limits = checkpointLimits(cp);
+        const judge = judgeWant(undefined, this.opts.judgeArgs?.());
+        const ask = this.opts.superviseTurn ?? (async (prompt: string, tier: 0 | 1) => {
+            const model = tier ? escalateModel(judge.model, judge.args) : judge.model;
+            if (tier && !model) { return { out: '', error: 'there is no stronger model to escalate to' }; }
+            const want = tier ? judgeWant({ engine: judge.engine, model }, this.opts.judgeArgs?.()) : judge;
+            const r = await execOneShot({ cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt: sanitizePrompt(prompt), timeoutMs: 300_000 });
+            return { out: r.out, error: r.error, model: want.model ?? want.origin };
+        });
+        const own = cp.message ? [cp.message] : [];
+        const out = await superviseCheckpoint({
+            workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: index > 0 ? before : undefined,
+            costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (t.costUSD ?? 0), 0),
+            directives: [...own, ...sup.directives], stepIds: ids, limits
+        }, { stepIds: ids, currentStep: before, retries: sup.retries, history: sup.history }, {
+            ask, pick: this.opts.askChoice,
+            confirm: this.opts.confirmApproval ? (title, message) => this.opts.confirmApproval!({ title, message }) : undefined
+        });
+        sup.directives = out.directives.slice(own.length);
+        const d = out.decision;
+        let route = checkpointRoute(d, ids, index, before);
+        let mechanical = out.mechanical;
+        if (route.go === 'insert') {
+            const made = rec ? stepsFromInsert(route.steps, anchorAgent(w.steps, index), here, ids) : { error: 'the run has no record to insert into' };
+            if ('error' in made) { mechanical = made.error; route = { go: 'next' }; } else {
+                rec!.edits = { ...rec!.edits, inserts: [...(rec!.edits?.inserts ?? []), { after: here, steps: made }] };
+            }
+        } else if (route.go === 'step' && rec) {
+            const target = ids[route.index];
+            if (d?.decision === 'retry') { sup.retries[target] = (sup.retries[target] ?? 0) + 1; }
+            if (route.patch) { rec.edits = { ...rec.edits, patches: { ...rec.edits?.patches, [target]: { ...rec.edits?.patches?.[target], ...route.patch } } }; }
+        }
+        if (d) { sup.history.push(`${d.decision}:${d.target ?? ''}`); }
+        const said = d ? `${d.decision}${d.target ? ` ${d.target}` : ''}${d.why ? ` — ${d.why}` : ''}` : 'carry on';
+        const text = `Checkpoint: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}`;
+        try {
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Checkpoint step\n- Limits: ${limits.origin}\n\n---\n\n` +
+                `${out.log.map(l => `- ${l}`).join('\n')}\n\n**${text}**\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · ${route.go === 'stop' ? 'STOPPED' : 'OK'}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        if (rec) { rec.board = boardWrite(rec.board, { id: here, index, title: task.title, status: 'done', text, ...(d ? { json: d } : {}), at: Date.now() }); }
+        task.status = 'done';
+        task.endedAt = Date.now();
+        this.save();
+        this.pump();
+        if (route.go === 'stop') {
+            this.runCounts.delete(runId);
+            this.handoffs.delete(runId);
+            this.endWorkflowRun(runId, 'stopped', `the supervisor stopped the run at step ${index + 1}: ${route.why}`, index);
+            void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" — the supervisor stopped it at step ${index + 1}.`);
+        } else if (route.go === 'step') {
+            const view = this.runView(w.id, runId, w) as FarmWorkflow;
+            this.routeToStep(view, route.index, route.index <= index ? handoffFromBoard(rec?.board, view.steps, route.index) : handoff, runId);
+        } else {
+            this.routeToStep(w, index + 1, handoff, runId);
+        }
+    }
+
     /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */
     runMediaAdhoc(title: string, model: string, input: string, link?: { projectId?: string; sceneId?: string }): void {
         const w: FarmWorkflow = {
@@ -7005,9 +7108,9 @@ export class TaskManager implements vscode.Disposable {
     }
 
     private advanceWorkflow(task: FarmTask, status: TaskStatus): void {
-        const w = this.workflows.find(x => x.id === task.workflowId);
-        if (!w) { return; }
         const runId = task.workflowRunId ?? task.workflowId ?? '';
+        const w = this.runView(task.workflowId, runId);
+        if (!w) { return; }
         if (task.branchIndex !== undefined) { this.onForEachBranchDone(w, task, status, runId); return; }
         this.noteOnBoard(w, task, status, runId);
         // Single chokepoint for parallel fan-in: a branch of the active group

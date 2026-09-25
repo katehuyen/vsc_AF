@@ -776,6 +776,36 @@ const variants = () => ([
             drive(r, { 'nt-st-title': 'Parçayı işle', 'nt-st-prompt': 'parça {index}: {item}', 'nt-st-feList': '{steps.s1.json.parts}' }, 'nt-st-feList');
         }
     },
+    // M-43 — a checkpoint step's card: its message, the six decisions ticked (the default), and the limits they grow.
+    {
+        id: 'tasks-step-checkpoint',
+        label: 'Tasks → a workflow checkpoint step: what the supervisor may decide here, and its limits (M-43)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Kontrol', 'nt-st-stype': 'checkpoint' }, 'nt-st-stype');
+        }
+    },
+    // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
+    {
+        id: 'tasks-wf-goal',
+        label: 'Tasks → a workflow form: a checkpoint on the step list, the goal and one success criterion (M-43)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w11', title: 'Klip', stepIdx: null, goal: '34 saniyelik dikey klip, paylaşmaya hazır', criteria: '35 saniyenin altında',
+                    steps: [
+                        { sid: 's1', stype: 'agent', title: 'Senaryo', agent: 'developer', prompt: 'yaz', smode: 'headless' },
+                        { sid: 's2', stype: 'checkpoint', title: 'Kontrol', cpMsg: 'Senaryo kısa ve markaya uygun mu?' }
+                    ]
+                }
+            });
+        }
+    },
     // M-38 — run pressed on a workflow that takes inputs: its Run card, prefilled from the last run.
     {
         id: 'tasks-wf-runcard',

@@ -118,7 +118,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afSupervisor.js — the retry supervisor's boxes (M-13).
     'afSupervisor.js',
     // afWorkflowInputs.js — a workflow's inputs: form block, Run card, trigger mapping (M-38).
-    'afWorkflowInputs.js'];
+    'afWorkflowInputs.js',
+    // afCheckpoint.js — a checkpoint step's card row, and a workflow's goal + criteria (M-43).
+    'afCheckpoint.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

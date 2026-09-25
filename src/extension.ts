@@ -231,6 +231,7 @@ import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { judgeEngineRefusal } from './core/judgeEngines';
 import { checkTriggerMapping, checkWorkflowInputs } from './core/workflowInputs';
+import { setWorkflowGoal } from './core/checkpointStep';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -3960,6 +3961,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 return promise;
             },
+            // M-43 — a checkpoint supervisor's question: one of its options, or a typed answer
+            askChoice: (question, options) => Promise.resolve(options.length
+                ? vscode.window.showQuickPick(options, { title: `Agent Farm — the supervisor asks: ${question}`, ignoreFocusOut: true })
+                : vscode.window.showInputBox({ title: 'Agent Farm — the supervisor asks', prompt: question, ignoreFocusOut: true })),
             confirmApproval: ({ title, message }) => {
                 // Workflow human-gate: notification + Needs You panel race, first settle wins.
                 const { id, promise } = approvalQueue.add({ title, goal: message, kind: 'approval' });
@@ -7859,7 +7864,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         need(stepTitle, `Step ${i + 1}: title is required.`);
         const prompt = String(raw.prompt ?? '').trim();
         const label = raw.webhook ? 'webhook' : raw.media ? 'media'
-            : raw.approval ? 'approval' : raw.select ? 'select' : '';
+            : raw.approval ? 'approval' : raw.select ? 'select' : raw.checkpoint ? 'checkpoint' : '';
         need(prompt || label || raw.browser, `Step ${i + 1}: prompt is required.`);
         const { agent: agentRef, ...passthrough } = raw;
         const who = label && !String(agentRef ?? '').trim()
@@ -15578,7 +15583,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach)} — advanced webhook/media/browser fields pass through as in the builder]), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
+            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on)} — advanced webhook/media/browser fields pass through as in the builder]), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -15589,6 +15594,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const ins = checkWorkflowInputs(args.inputs, steps);
                 need(!ins.error, `inputs: ${ins.error}.`);
                 const w = taskManager.addWorkflow(title, steps, ins.inputs);
+                if (args.goal !== undefined || args.criteria !== undefined) { setWorkflowGoal(w, args.goal, args.criteria); taskManager.persist(); }
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }
         },
@@ -15596,7 +15602,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'workflows.update',
             describe: 'Rename a workflow and/or replace its whole step chain — the same save the page\'s '
                 + 'workflow form makes. args: id or title, newTitle?, steps? (the FULL list, same shape as '
-                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them)',
+                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them), goal?, criteria? (as workflows.add; "" removes them)',
             handler: (args) => {
                 const w = bridgeWorkflow(optStr(args, 'id') || argStr(args, 'title'));
                 const newTitle = optStr(args, 'newTitle');
@@ -15610,6 +15616,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!ins.error, `inputs: ${ins.error}.`);
                 w.steps = steps;
                 if (ins.inputs.length) { w.inputs = ins.inputs; } else { delete w.inputs; }
+                setWorkflowGoal(w, args.goal === undefined ? w.goal : args.goal, args.criteria === undefined ? w.criteria : args.criteria);
                 taskManager.persist();
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }

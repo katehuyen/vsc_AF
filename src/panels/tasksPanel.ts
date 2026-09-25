@@ -21,6 +21,7 @@ import {
     RunDimensions, ScheduleKind, scheduleDue, settledKeyAfterEdit,
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
+import { checkpointFromDraft, checkpointSeed, setWorkflowGoal } from '../core/checkpointStep';
 import { normalizeLegCeiling } from '../core/baton';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
@@ -626,7 +627,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
                 prompt: '', target: `${w.steps.length} step chain`, timing: '',
                 setup: [{ label: 'Steps', value: String(w.steps.length) }],
                 steps: w.steps.map((s, i) =>
-                    `${i + 1}. ${s.title}${s.parallel ? ' ∥' : ''} — ${s.agentName || (s.approval ? 'approval gate' : s.select ? 'selection gate' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser' : s.mode)}`),
+                    `${i + 1}. ${s.title}${s.parallel ? ' ∥' : ''} — ${s.agentName || (s.approval ? 'approval gate' : s.select ? 'selection gate' : s.checkpoint ? 'checkpoint' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser' : s.mode)}`),
                 missed: ''
             }
         });
@@ -1025,11 +1026,11 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
  * next to the manager, exactly like the schedule and trigger seeds above — the
  * page never learns the model's shape and the model never learns the form's.
  */
-const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select'];
+const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint'];
 
 function stepSeed(s: WorkflowStep): Record<string, unknown> {
     const stype = s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
-        : s.approval ? 'approval' : s.select ? 'select' : 'agent';
+        : s.approval ? 'approval' : s.select ? 'select' : s.checkpoint ? 'checkpoint' : 'agent';
     const hdr = Object.entries(s.webhook?.headers ?? {})[0];
     const scene = s.media?.projectId
         ? s.media.projectId + (s.media.sceneId ? '/' + s.media.sceneId : '')
@@ -1096,7 +1097,8 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         apMsg: s.approval?.message ?? '',
         selMsg: s.select?.message ?? '',
         selMin: s.select?.min ?? 1,
-        selMax: s.select?.max ?? 0
+        selMax: s.select?.max ?? 0,
+        ...checkpointSeed(s.checkpoint)
     };
 }
 
@@ -1199,6 +1201,9 @@ export function stepFromDraft(
         return {
             step: { ...named('approval'), title, ...chain, approval: { message: str('apMsg') || undefined } }
         };
+    }
+    if (stype === 'checkpoint') {
+        return { step: { ...named('checkpoint'), title, ...chain, checkpoint: checkpointFromDraft(str) } };
     }
     if (stype === 'select') {
         const min = Math.max(1, num('selMin', 1));
@@ -1766,7 +1771,7 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
                 : { mode2: 'new', steps: [], inputs: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
@@ -2005,10 +2010,12 @@ export class TasksPanel {
                 existing.title = str('title');
                 existing.steps = steps;
                 if (ins.inputs.length) { existing.inputs = ins.inputs; } else { delete existing.inputs; }
+                setWorkflowGoal(existing, item.goal, item.criteria);
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
-                m.addWorkflow(str('title'), steps, ins.inputs);
+                setWorkflowGoal(m.addWorkflow(str('title'), steps, ins.inputs), item.goal, item.criteria);
+                m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);
             }
             return;

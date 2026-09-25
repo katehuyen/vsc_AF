@@ -1133,7 +1133,8 @@
         { id: 'media', icon: '🎬', label: 'media — fal.ai / Replicate render' },
         { id: 'browser', icon: '🧭', label: 'browser — an agent drives a site' },
         { id: 'approval', icon: '✋', label: 'approval — the chain waits for you' },
-        { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' }
+        { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' },
+        { id: 'checkpoint', icon: '◆', label: 'checkpoint — the supervisor decides here' }
     ];
     const PREV = '{prev_output}';
 
@@ -1151,7 +1152,7 @@
             mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mScene: '',
             bUrl: '', bGoal: '', bHosts: '',
             apMsg: '', selMsg: '', selMin: 1, selMax: 0
-        }, seed || {});
+        }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, seed || {});
         // A webhook or media step carries no real agent, so switching one to
         // "agent" would land on an empty picker that LOOKS filled — the select
         // draws the first name whatever the draft says.
@@ -2106,6 +2107,7 @@
                 : s.stype === 'browser' ? (s.agent || '?') + ' → ' + trunc(s.bUrl || '(no url)', 34)
                     : s.stype === 'approval' ? 'the chain waits for you'
                         : s.stype === 'select' ? 'keep ' + (s.selMin || 1) + (s.selMax ? '–' + s.selMax : ' or more')
+                        : s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.summary(s)
                             : (s.agent || '(no agent)') + ' · ' + (s.smode || 'headless');
         const flags = [];
         if (s.parallel) { flags.push('∥ runs in parallel'); }
@@ -2247,7 +2249,8 @@
             ${c.stepIdx === null
                 ? '<div class="ctl-row"><button class="secondary" id="nt-stadd">+ Add a step</button></div>'
                 : stepCardHtml(c)}
-            ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}`;
+            ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}
+            ${window.AFCheckpoint ? window.AFCheckpoint.goalEditor(c, C) : ''}`;
     }
 
     /**
@@ -2444,6 +2447,7 @@
                 ${numF('st-selMin', 'Keep at least', s.selMin, 'The fewest assets you may pick.')}
                 ${numF('st-selMax', 'Keep at most', s.selMax, '0 = no ceiling.')}
             </div>` : ''}
+            ${s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.row(s, C) : ''}
             <div class="ntsec"><b>How it behaves in the chain</b>
                 <span class="muted small">These are the same on every kind of step — they are about the CHAIN,
                     not about what this step does.</span></div>
@@ -2464,7 +2468,7 @@
                 ], s.contract, 'A json contract runs it with --output-format json and parses the result.') : ''}
                 ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
             </div>
-            ${forEachRow(s)}
+            ${s.stype === 'checkpoint' ? '' : forEachRow(s)}
             ${wantsVerify ? `<div class="ntgrid">
                 ${textF('st-verifyCriteria', s.stype === 'media' ? 'Vision QA criteria' : 'Verify the output',
                     s.verifyCriteria,
@@ -2531,6 +2535,7 @@
             'feList', 'feConc', 'feFail', 'feRetries', 'feCap', 'feCapMode', 'feBudget'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
         ['parallel', 'whPoll'].forEach(b);
+        if (s.stype === 'checkpoint' && window.AFCheckpoint) { window.AFCheckpoint.read(s, g); }
     }
 
     /** What a step cannot be saved without — said inside the step card. */
@@ -4630,6 +4635,7 @@
                 stepMsg = '';
                 render();
             });
+            if (window.AFCheckpoint) { window.AFCheckpoint.wireGoal(byId, () => composer); }
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
@@ -4672,6 +4678,7 @@
                 byId('nt-st-feList', 'change', () => { readStep(); render(); });
                 ['feConc', 'feRetries', 'feCap', 'feBudget'].forEach(id => byId('nt-st-' + id, 'input', () => readStep()));
                 ['feFail', 'feCapMode'].forEach(id => byId('nt-st-' + id, 'change', () => readStep()));
+                if (window.AFCheckpoint) { window.AFCheckpoint.wire(byId, readStep, render); }
             }
         }
 

@@ -97,6 +97,14 @@
         }, extra || {});
     }
 
+    /** A checkpoint's own limits (M-43): set on the step card's Checkpoint row, carried by the step's `checkpoint`. */
+    function checkpointPoint(field, label, type, dflt, box, extra) {
+        return Object.assign({
+            id: 'checkpoint.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: { step: { surface: 'media/afCheckpoint.js#st-' + box, bridge: 'workflows.add:steps.checkpoint.' + field } }
+        }, extra || {});
+    }
+
     const POINTS = [
         supervisor('engine', 'Supervisor engine', 'text', '', 'engine'),
         supervisor('model', 'Supervisor model', 'text', '', 'model'),
@@ -117,6 +125,12 @@
         forEachPoint('capMode', 'For each — a longer list', 'enum', 'soft', 'feCapMode', { options: ['soft', 'hard'] }),
         forEachPoint('budgetUsd', 'For each — $ per element', 'number', 0, 'feBudget', { min: 0 }),
         judgeStep('model', 'Judge model', ''),
+        checkpointPoint('allowed', 'Checkpoint — decisions it may take', 'text', 'proceed,retry,jump,insert,ask_user,stop', 'cpAllowed'),
+        checkpointPoint('maxInsert', 'Checkpoint — steps it may insert', 'number', 2, 'cpMaxInsert', { min: 0, max: 5 }),
+        checkpointPoint('insertKinds', 'Checkpoint — kinds it may insert', 'text', 'agent,approval', 'cpKinds'),
+        checkpointPoint('maxRetries', 'Checkpoint — retries per step', 'number', 2, 'cpRetries', { min: 0, max: 5 }),
+        checkpointPoint('minConfidence', 'Checkpoint — confidence threshold', 'number', 0.6, 'cpConf', { min: 0, max: 1 }),
+        checkpointPoint('lowConfidence', 'Checkpoint — below the threshold', 'enum', 'ask', 'cpLow', { options: ['ask', 'mechanical', 'escalate'] }),
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
         {
             id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,
