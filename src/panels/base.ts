@@ -471,6 +471,8 @@ export function htmlShell(
     const checkpoint = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afCheckpoint.js'));
     // M-45 — the wake conditions: the workflow form's block, the step card's override, the Run card
     const wake = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afWake.js'));
+    // U-153 — the supervisor strip: one row per checkpoint visit (Live Timeline, a run row's badge)
+    const svStrip = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSupervisorStrip.js'));
     // X-370 — the flex registry and its smart forms, which afSupervisor.js draws with.
     const flex = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlex.js'));
     const flexForms = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexForms.js'));
@@ -541,6 +543,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${workflowInputs}"></script>
 <script nonce="${nonce}" src="${checkpoint}"></script>
 <script nonce="${nonce}" src="${wake}"></script>
+<script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

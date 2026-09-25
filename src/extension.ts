@@ -8873,6 +8873,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'workflows.supervisor.status',
+            describe: 'U-153 — WHAT THE SUPERVISOR DID ON A RUN, one row per checkpoint visit, the same rows the Live Timeline strip draws: trigger (checkpoint or the wake conditions that fired), decision + badge (proceed ✓ · retry ↻ · jump ⤳ · insert ＋ · ask_user ? · stop ■ · → mechanical), target, why, confidence, costUSD, model (who answered; you = your own decision), limitsOrigin + supervisorOrigin (which level each setting came from), sessionId + at (the supervisor conversation and the moment). Per run: calls, costUSD (the supervisor total, apart from the steps), live (the run live settings), running. args: runId? (omit = every run still going)',
+            handler: (args) => {
+                const runId = optStr(args, 'runId');
+                const out = taskManager.supervisorStatus(runId);
+                need(!runId || out.length > 0, `No workflow run "${runId}" — workflows.live lists the running ones.`);
+                return out;
+            }
+        },
+        {
             op: 'workflows.live',
             describe: 'M-46 — change a RUNNING workflow from the next step boundary on; the running step is never cut. No runId = the running runs with their live settings. args: runId?, wake? (mechanical | smart | hybrid | a condition list, as workflows.add), model? (the supervisor model; empty = the workflow one), budgetUSD?, maxCalls?, callMe? (true = the next supervisor decision is put to you first), pause? (true = hold at the next boundary, false = resume), addCheckpoint? (true, or what it should look at — a checkpoint right after the running step, on this run only). What was set reads "changed live".',
             handler: (args) => {
@@ -37834,11 +37844,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind !== 'task') { return; }
             TasksPanel.retryCompose(tasksDeps, node.task.id);
         }),
-        vscode.commands.registerCommand('agentfarm.workflowLive', () => workflowLiveCommand({
+        vscode.commands.registerCommand('agentfarm.workflowLive', (runId?: unknown) => workflowLiveCommand({
             liveRuns: () => taskManager.liveRuns(),
             steerRun: (id, kind, text, by) => taskManager.steerRun(id, kind, text, by),
             setRunLive: (id, args) => taskManager.setRunLive(id, args)
-        })),
+        }, typeof runId === 'string' && runId ? runId : undefined)),
         vscode.commands.registerCommand('agentfarm.resumeWorkflow', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.resumeWorkflowFromTask(node.task); }
         }),

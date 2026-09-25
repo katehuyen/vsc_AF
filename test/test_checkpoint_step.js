@@ -154,6 +154,11 @@ const host = (answers, extra) => {
     eq('proceed carries on, the handoff passing through the checkpoint', q.map(t => [t.stepIndex, t.prompt]), [[2, 'yayınla: kısa']]);
     const rs = mgr.workflowRunState(run);
     eq('the decisions are on the board and in the run record', rs.board.steps.s2.json.decision, 'proceed');
+    // U-153 — the supervisor's trail: one row per visit, the rows the strip and workflows.supervisor.status read
+    const tr = mgr.supervisorStatus(run)[0];
+    eq('‼️ U-153 one trail row per checkpoint visit, in order', tr.rows.map(r => [r.badge, r.word, r.step, r.why || '', r.confidence]), [['↻', 'retry s1', 2, 'uzun', 0.9], ['✓', 'proceed', 2, '', 0.9]]);
+    ok('…each says what fired it and where its settings came from', tr.rows.every(r => r.trigger === 'checkpoint' && r.limitsOrigin && r.supervisorOrigin && r.at > 0));
+    ok('…and the run row carries it, the step rows do not', mgr.workflowRuns(3600000).find(x => x.runId === run).supervisor.rows.length === 2);
 
     w = chain('Ekle');
     run = mgr.runWorkflow(w);
@@ -185,6 +190,7 @@ const host = (answers, extra) => {
     eq('a broken answer carries on', q.map(t => t.stepIndex), [2]);
     const cpTask = mgr.tasks.find(t => t.workflowRunId === run && t.stepIndex === 1);
     ok('…and the checkpoint row says it went mechanical, and why', /mechanical: .*no JSON object/.test(fs.readFileSync(cpTask.outputFile, 'utf8')));
+    eq('…its trail row is the mechanical badge, the reason its long form', mgr.supervisorStatus(run)[0].rows.map(r => [r.badge, /^carried on the mechanical way — .*no JSON object/.test(r.word)]), [['→', true]]);
 
     fs.rmSync(tmp, { recursive: true, force: true });
     console.log(`${pass} passed, ${fail} failed`);

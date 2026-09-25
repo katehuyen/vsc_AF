@@ -1766,6 +1766,7 @@
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}
+            ${window.AFSupervisorStrip ? window.AFSupervisorStrip.section(runsData) : ''}
             <h2>Live sessions (${shownSessions.length}${engineSel === 'all' ? '' : ' of ' + DATA.sessions.length})</h2>
             <div class="grid">${sessionCards || `<p class="muted">${engineSel === 'all' ? 'No sessions tracked yet.' : 'No ' + window.AFEngine.label(engineSel) + ' session is being tracked right now.'}</p>`}</div>
             <p class="footnote">Events arrive via local hooks (127.0.0.1 only, nothing leaves this machine). Right-click a session card <b>or its swim-lane row</b> for its actions (rename, open, terminal, interrupt, end, clear). Clear takes a session off this page whole — card and row — without touching the session. Stuck detection and permission alerts are configurable in settings.</p>
@@ -1816,6 +1817,7 @@
                 // live card: land on the latest activity, not the top of the file
                 type: 'openSession', file: b.dataset.open, ts: Number(b.dataset.ts) || 0
             })));
+        if (window.AFSupervisorStrip) { window.AFSupervisorStrip.wire(document, m => vscode.postMessage(m)); }
         document.querySelectorAll('.mark').forEach(el =>
             el.addEventListener('click', () => {
                 if (el.dataset.file) {

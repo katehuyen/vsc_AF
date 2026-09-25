@@ -25,6 +25,7 @@ import {
 import { kindOfStep, mechanicalWords, resolveWake, wakeDirective, wakeFacts, WakeSpec, wakeVerdict } from './workflowWake';
 import { applyLive, decisionFromArg, landWords, liveLines, livePatch, pendingWords, RunLive, wordFromArg, WordSource, wordsForBrief } from './workflowLive';
 import { flexPoint } from './flexPoints';
+import { SupervisorCall, supervisorCall, supervisorTrail, SupervisorTrail } from './supervisorTrail';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
 import {
@@ -137,6 +138,8 @@ export interface FarmTask {
     wokeBy?: string[];
     /** M-45 — how the step it was woken after had ended: what the mechanical path goes on from */
     wokeAfter?: TaskStatus;
+    /** U-153 — what the supervisor decided on this checkpoint visit (src/core/supervisorTrail.ts) */
+    supervisorCall?: SupervisorCall;
     /** estimated cost of a media step (USD). */
     mediaCost?: number;
     /** why a requested start is waiting (concurrency / quota) — the sentence a
@@ -6160,6 +6163,8 @@ export class TaskManager implements vscode.Disposable {
     workflowRuns(sinceMs: number): {
         runId: string; title: string;
         steps: { title: string; agentName: string; status: TaskStatus; startedAt?: number; endedAt?: number }[];
+        /** U-153 — set once the supervisor has been asked on this run */
+        supervisor?: SupervisorTrail & { running: boolean };
     }[] {
         const cutoff = Date.now() - sinceMs;
         const byRun = new Map<string, FarmTask[]>();
@@ -6182,11 +6187,23 @@ export class TaskManager implements vscode.Disposable {
                     status: t.status,
                     startedAt: t.startedAt,
                     endedAt: t.endedAt
-                }))
+                })),
+                ...this.supervisorStatus(runId)
+                    .filter(s => s.rows.length).map(supervisor => ({ supervisor }))[0]
             });
         }
         runs.sort((a, b) => (b.steps[0]?.startedAt ?? 0) - (a.steps[0]?.startedAt ?? 0));
         return runs;
+    }
+
+    /** U-153 — the supervisor's trail on one run, or on every run still going (src/core/supervisorTrail.ts). */
+    supervisorStatus(runId?: string): (SupervisorTrail & { running: boolean; workflowTitle: string })[] {
+        const going = (id: string) => this.tasks.some(t => t.workflowRunId === id && (t.status === 'running' || t.status === 'queued'));
+        const ids = runId ? [runId] : [...new Set(this.tasks.filter(t => t.workflowRunId && going(t.workflowRunId)).map(t => t.workflowRunId!))];
+        return ids.filter(id => this.runRecords.has(id) || this.tasks.some(t => t.workflowRunId === id)).map(id => {
+            const rec = this.runRecords.get(id);
+            return { ...supervisorTrail(id, this.tasks, rec), running: going(id), workflowTitle: rec?.title ?? '' };
+        });
     }
 
     /** Loop guard: total step executions per workflow run. */
@@ -7098,7 +7115,10 @@ export class TaskManager implements vscode.Disposable {
                 const r = await execOneShot({ cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt: sanitizePrompt(prompt), timeoutMs: o.timeoutMs });
                 return { ok: !!r.out.trim(), raw: r.out, ...(r.error ? { error: r.error } : {}) };
             };
-        const ask = human ? async () => ({ out: JSON.stringify(human), model: 'you' }) : this.opts.superviseTurn ?? (async (prompt: string, tier: 0 | 1) => {
+        let answeredBy: string | undefined;
+        type Ask = (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
+        const ask: Ask = async (prompt, tier) => { const r = await ask0(prompt, tier); answeredBy = r.model ?? answeredBy; return r; };
+        const ask0: Ask = human ? async () => ({ out: JSON.stringify(human), model: 'you' }) : this.opts.superviseTurn ?? (async (prompt: string, tier: 0 | 1) => {
             const model = tier ? escalateModel(model0) : model0;
             if (tier && !model) { return { out: '', error: 'there is no stronger model to escalate to' }; }
             const t = await sessionTurn(sup, sl, prompt, model ?? '', call, Date.now);
@@ -7151,6 +7171,10 @@ export class TaskManager implements vscode.Disposable {
         if (d) { sup.history.push(`${d.decision}:${d.target ?? ''}`); }
         const said = d ? `${d.decision}${d.target ? ` ${d.target}` : ''}${d.why ? ` — ${d.why}` : ''}` : 'carry on';
         const text = `${wake ? `Woken by ${wake.said}` : 'Checkpoint'}: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}${soft ? ` · ${soft}` : ''}`;
+        task.supervisorCall = supervisorCall({
+            trigger: wake ? `woken by ${wake.said}` : 'checkpoint', decision: d, mechanical, model: answeredBy,
+            limitsOrigin: limits.origin, supervisorOrigin: sl.origin, sessionId: sup.sessionId, at: Date.now()
+        });
         try {
             fs.writeFileSync(outFile, `# ${task.title}\n\n- ${wake ? `Woken after step ${index + 1} (${wake.after}) — wake conditions: ${wake.from}` : 'Checkpoint step'}\n${words.length ? `- Your word(s) landed here: ${words.map(x => `${x.kind}: ${x.text}`).join(' | ')}\n` : ''}${human ? '- Your own decision, applied instead of asking the supervisor\n' : ''}- Limits: ${limits.origin}\n- Supervisor: ${sl.origin}` +
                 `${sup.calls ? ` · ${sup.calls} call(s) this run, $${(sup.costUSD ?? 0).toFixed(4)}` : ''}\n\n---\n\n` +

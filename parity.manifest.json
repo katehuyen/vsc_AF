@@ -7800,7 +7800,8 @@
     {
       "capability": "workflowLive",
       "ui": [
-        "cmd:agentfarm.workflowLive"
+        "cmd:agentfarm.workflowLive",
+        "page:timeline.ts#workflowLive"
       ],
       "ops": [
         "workflows.live",

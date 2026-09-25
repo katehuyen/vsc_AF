@@ -22,6 +22,7 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { checkpointFromDraft, checkpointSeed, setWorkflowGoal } from '../core/checkpointStep';
+import { trailRow, TrailRow } from '../core/supervisorTrail';
 import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, supervisorSeed } from '../core/supervisorRun';
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
@@ -313,6 +314,8 @@ interface RunRow {
     tokens?: number;
     verified?: string;
     hasOutput: boolean;
+    /** U-153 — a checkpoint visit: what the workflow supervisor decided here */
+    supervisor?: TrailRow;
     /** M-13 — a queued retry the supervisor holds or decided; the row offers the user's word */
     supervised?: boolean;
     outputFile?: string;
@@ -794,6 +797,7 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             verified: t.verified,
             hasOutput: !!t.outputFile,
             ...(t.status === 'queued' && t.supervision ? { supervised: true } : {}),
+            ...(t.supervisorCall ? { supervisor: trailRow({ ...t, supervisorCall: t.supervisorCall }) } : {}),
             outputFile: t.outputFile,
             sessionFile: t.costSessionFile,
             // ‼️ M-8 — the id, not just the path. A transcript file is named

@@ -122,7 +122,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afCheckpoint.js — a checkpoint step's card row, and a workflow's goal + criteria (M-43).
     'afCheckpoint.js',
     // afWake.js — what wakes a workflow's supervisor after a step: form block, step override, Run card (M-45).
-    'afWake.js'];
+    'afWake.js',
+    // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).
+    'afSupervisorStrip.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

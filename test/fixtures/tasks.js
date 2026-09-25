@@ -446,6 +446,15 @@ const drive = (r, draft, fireId) => {
 
 const variants = () => ([
     { id: 'tasks', label: 'Tasks → Runs — four engines, and a cost column that tells the truth', data: data() },
+    // U-153 — ONE checkpoint visit on the Runs table: the decision badge under the title, its figures on the title's hover
+    { id: 'tasks-run-checkpoint', label: 'Tasks → Runs — a workflow checkpoint visit: the supervisor decision on the row (U-153)', data: Object.assign(data(), { runs: [{
+        id: 'rcp', title: 'Klip hattı 3/5: checkpoint', agentName: 'checkpoint', mode: 'headless', status: 'done',
+        source: 'Klip hattı', sourceKind: 'workflow', when: min(4), durMin: 0.3, detail: '', costUSD: 0.0187,
+        engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rcp.md', prompt: 'Başlık kısa mı?',
+        supervisor: { taskId: 'rcp', step: 3, title: 'Klip hattı 3/5: checkpoint', trigger: 'checkpoint', badge: '↻', decision: 'retry', target: 's2',
+            word: 'retry s2', why: 'Başlık 90 karakteri aşıyor; daha kısa bir başlıkla yeniden çalıştır.', confidence: 0.81, costUSD: 0.0187,
+            model: 'claude-haiku-4-5', limitsOrigin: 'allowed: the step · the rest: built-in', supervisorOrigin: 'model: the workflow · the rest: built-in', at: Date.now() - 240000 }
+    }] }) },
     { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() },
     // ‼️ M-33 — THE BULK BAR EXISTS IN NO OTHER STATE. It is hidden until
     // something is ticked, so a picture of the Plan tab at rest shows none of

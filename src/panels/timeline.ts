@@ -313,7 +313,15 @@ export class TimelinePanel {
                     // ts = clicked mark/segment time — the viewer scrolls right there.
                     void vscode.commands.executeCommand('agentfarm.openSession', msg.file,
                         typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
+                } else if (typeof msg.sessionId === 'string' && msg.sessionId) {
+                    // U-153 — a supervisor row knows its conversation by id, not by file
+                    void vscode.commands.executeCommand('agentfarm.openSession', { sessionId: msg.sessionId },
+                        typeof msg.ts === 'number' && msg.ts > 0 ? msg.ts : undefined);
                 }
+                break;
+            case 'workflowLive':
+                void vscode.commands.executeCommand('agentfarm.workflowLive',
+                    typeof msg.runId === 'string' && msg.runId ? msg.runId : undefined);
                 break;
             case 'focusTerminal':
                 void vscode.commands.executeCommand('agentfarm.focusSessionTerminal', {

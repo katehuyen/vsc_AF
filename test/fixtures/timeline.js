@@ -376,6 +376,36 @@ const data = base;
  *  page with one engine selected. A filter that only narrows the cards and
  *  leaves the other engines' swim lanes above them is the bug, not the fix — so
  *  the lanes have to be in the picture as well. */
+
+// U-153 — the supervisor strip. Every badge once, a woken visit that went the
+// mechanical way, and a visit nobody could open (no conversation id).
+const SV_ORIGIN = { limitsOrigin: 'allowed: the step · the rest: built-in', supervisorOrigin: 'model: the workflow · budget: changed live · the rest: built-in' };
+const SV_ROWS = [
+    ['✓', 'proceed', '', 'Metin tek satır ve kısa; yayına geçilebilir.', 0.92, 0.0213, 'claude-haiku-4-5'],
+    ['↻', 'retry', 's1', 'Başlık 90 karakteri aşıyor; aynı adımı daha kısa bir başlıkla yeniden çalıştır.', 0.81, 0.0187, 'claude-haiku-4-5'],
+    ['⤳', 'jump', 's5', 'Kapak zaten var; kapak adımını atla.', 0.74, 0.0161, 'claude-haiku-4-5'],
+    ['＋', 'insert', '', 'Altyazı eksik; bir altyazı adımı ekle.', 0.88, 0.0232, 'claude-sonnet-5'],
+    ['?', 'ask_user', '', 'İki kapak da uygun; seçimi sana bırakıyorum.', 0.55, 0.0198, 'claude-haiku-4-5'],
+    ['■', 'stop', '', 'Kaynak klip bozuk; devam etmek boşa harcama olur.', 0.97, 0.0205, 'claude-haiku-4-5']
+].map(([badge, decision, target, why, confidence, costUSD, model], i) => Object.assign({
+    taskId: 'cp' + i, step: i + 2, title: 'Klip ' + (i + 2) + '/9: checkpoint', trigger: 'checkpoint',
+    badge, decision, why, confidence, costUSD, model, sessionId: 'sv' + i + '-0000-4000-8000-000000000000',
+    word: (decision === 'ask_user' ? 'ask you' : decision) + (target ? ' ' + target : ''), at: NOW - (40 - i * 5) * 60000
+}, target ? { target } : {}, SV_ORIGIN)).concat([Object.assign({
+    taskId: 'cpw', step: 8, title: 'Klip 8/9: supervisor, woken by a failed step', trigger: 'woken by a failed step',
+    badge: '→', mechanical: 'the run is past its $0.10 supervisor budget (hard)',
+    word: 'carried on the mechanical way — the run is past its $0.10 supervisor budget (hard)', at: NOW - 6 * 60000
+}, SV_ORIGIN)]);
+const svRuns = n => [{
+    runId: 'run-klip', title: 'Klip hattı',
+    steps: [0, 1, 2, 3].map(i => ({ title: 'Klip ' + (i + 1) + '/9', agentName: 'developer', status: i < 3 ? 'done' : 'running', startedAt: NOW - (45 - i * 10) * 60000, endedAt: i < 3 ? NOW - (37 - i * 10) * 60000 : undefined })),
+    supervisor: {
+        runId: 'run-klip', rows: SV_ROWS.slice(0, n), running: true,
+        calls: n === 1 ? 1 : 6, costUSD: SV_ROWS.slice(0, n).reduce((a, r) => a + (r.costUSD || 0), 0),
+        live: n === 1 ? [] : ['supervisor budgetUSD: 0.1 — changed live', 'pausing at the next step boundary — changed live']
+    }
+}];
+
 const variants = () => ([
     /**
      * ‼️ THE SMALLEST FIRST (audit B-01.2). Six rows and a filtered six were the
@@ -396,6 +426,9 @@ const variants = () => ([
         })
     },
     { id: 'timeline', label: 'Live Timeline — every engine at once', data: base() },
+    // U-153 — ONE visit first (a run's first checkpoint), then every badge, a mechanical visit and live settings
+    { id: 'timeline-supervisor-one', label: 'Live Timeline — a workflow run whose supervisor was asked once (U-153)', data: Object.assign(base(), { sessions: sessions().slice(0, 1), events: [], workflowRuns: svRuns(1) }) },
+    { id: 'timeline-supervisor', label: 'Live Timeline — the supervisor strip: every decision badge, a mechanical visit, live settings (U-153)', data: Object.assign(base(), { sessions: sessions().slice(0, 1), events: [], workflowRuns: svRuns(7) }) },
     {
         // U-148 — a turn that ended with a command still running behind it,
         // beside one that really is your turn: purple and breathing vs yellow.
