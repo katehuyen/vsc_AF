@@ -208,6 +208,8 @@ const data = () => ({
     agents: ['developer', 'manager', 'basit', 'psikolog'],
     perAgentLimit: 1,
     workflows: [],
+    // M-45 — what the wake editor builds itself from, as the host sends it
+    wakeDict: require('../../out/core/workflowWake.js').wakeDictionary(),
     scenes: [],
     launch: {
         models: [{ id: '', label: 'Default', detail: 'the agent\'s own model setting' }],
@@ -802,6 +804,55 @@ const variants = () => ([
                         { sid: 's1', stype: 'agent', title: 'Senaryo', agent: 'developer', prompt: 'yaz', smode: 'headless' },
                         { sid: 's2', stype: 'checkpoint', title: 'Kontrol', cpMsg: 'Senaryo kısa ve markaya uygun mu?' }
                     ]
+                }
+            });
+        }
+    },
+    // M-45 — the workflow form's Wake block: ONE condition of the user's own (the smallest arity), then the hybrid preset's three.
+    {
+        id: 'tasks-wf-wake-one',
+        label: 'Tasks → a workflow form waking its supervisor on one condition of its own (M-45)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w12', title: 'Klip', stepIdx: null, goal: '', criteria: '',
+                    steps: [{ sid: 's1', stype: 'agent', title: 'Senaryo', agent: 'developer', prompt: 'yaz', smode: 'headless' }],
+                    wake: [{ id: 'pahali', field: 'cost.step', operator: 'gt', value: 0.5 }]
+                }
+            });
+        }
+    },
+    {
+        id: 'tasks-wf-wake-hybrid',
+        label: 'Tasks → a workflow form on the Hybrid preset: a failed check, a failed step, the run past $2 (M-45)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w13', title: 'Klip', stepIdx: null, goal: '', criteria: '',
+                    steps: [{ sid: 's1', stype: 'agent', title: 'Senaryo', agent: 'developer', prompt: 'yaz', smode: 'headless' }],
+                    wake: require('../../out/core/workflowWake.js').wakePresetConditions('hybrid')
+                }
+            });
+        }
+    },
+    // M-45 — a step's own override on its card: its own condition instead of the workflow's hybrid.
+    {
+        id: 'tasks-step-wake',
+        label: 'Tasks → a workflow step overriding the wake conditions after it (M-45)',
+        data: data(),
+        act: (r) => {
+            const own = [{ id: 'bos', field: 'asset.count', operator: 'eq', value: 0 }];
+            const step = { sid: 's1', stype: 'media', title: 'Görsel', mModel: 'fal-ai/flux/schnell', mInput: '{}', wake: own };
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w14', title: 'Klip', stepIdx: 0, goal: '', criteria: '',
+                    wake: require('../../out/core/workflowWake.js').wakePresetConditions('hybrid'),
+                    steps: [step], step: JSON.parse(JSON.stringify(step))
                 }
             });
         }

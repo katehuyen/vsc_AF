@@ -232,6 +232,7 @@ import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnv
 import { judgeEngineRefusal } from './core/judgeEngines';
 import { checkTriggerMapping, checkWorkflowInputs } from './core/workflowInputs';
 import { setWorkflowGoal } from './core/checkpointStep';
+import { setWorkflowWake, wakeDictionary, wakeFromArg } from './core/workflowWake';
 import { setWorkflowSupervisor, supervisorRunRefusal, WorkflowSupervisor } from './core/supervisorRun';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -7881,12 +7882,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const verifyIn = raw.verify && typeof raw.verify === 'object' ? raw.verify as Record<string, unknown> : undefined;
         const judgeNo = judgeEngineRefusal(verifyIn?.engine);
         need(!judgeNo, `Step ${i + 1}: verify.engine — ${judgeNo}.`);
+        const { wake: _wakeIn, ...rest } = passthrough;
+        const wk = raw.checkpoint ? {} : wakeFromArg(raw.wake);
+        need(!wk.error, `Step ${i + 1}: ${wk.error}.`);
         return {
-            ...passthrough,
+            ...rest,
             agentId: who.id, agentName: who.name,
             title: stepTitle, prompt,
             mode: raw.mode === 'interactive' ? 'interactive' : 'headless',
-            ...dims
+            ...dims,
+            ...(wk.wake ? { wake: wk.wake } : {})
         } as WorkflowStep;
     };
     /**
@@ -8823,7 +8828,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.run',
-            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason)',
+            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason), wake? (M-45 — this run only: "mechanical" | "smart" | "hybrid" | a condition list, as workflows.add; beats the workflow\'s and its steps\')',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
@@ -8835,13 +8840,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? args.inputs as Record<string, unknown> : undefined;
                 const refusal = taskManager.workflowRunRefusal(w as FarmWorkflow, inputs);
                 need(!refusal, refusal);
+                const wk = wakeFromArg(args.wake);
+                need(!wk.error, `${wk.error}.`);
                 const runId = taskManager.runWorkflow(w as FarmWorkflow, {
                     ...(proj ? { projectId: proj === 'none' ? undefined : proj } : {}),
-                    ...(inputs ? { inputs } : {})
+                    ...(inputs ? { inputs } : {}),
+                    ...(wk.wake ? { wake: wk.wake } : {})
                 });
                 need(runId, `"${(w as FarmWorkflow).title}" has no steps — there was nothing to start.`);
                 return { started: (w as FarmWorkflow).title, runId };
             }
+        },
+        {
+            op: 'workflows.wakeFields',
+            describe: 'M-45 — what a workflow\'s wake conditions can read: every field (with its type, closed values and meaning), every operator (and the field types it applies to) and the three presets with the conditions each one fills in. args: none',
+            handler: () => wakeDictionary()
         },
         {
             op: 'workflows.status',
@@ -15584,7 +15597,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on)} — advanced webhook/media/browser fields pass through as in the builder]), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
+            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on), wake? (wake conditions for this step alone, shaped as the workflow wake below; omit = the workflow ones, "mechanical" = none after this step)} — advanced webhook/media/browser fields pass through as in the builder]), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), wake? (M-45 — what wakes the supervisor after a step ends: "mechanical" (never — the default), "smart" (every step), "hybrid" (a failed quality check, a failed step, the run past $2) or a condition list [{id, field, operator, value?} | {id, all:[…]}] over workflows.wakeFields; ORed. Nothing fires = the mechanical path unchanged; something fires = the supervisor decides as at a checkpoint, and the row names the condition), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -15596,7 +15609,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!ins.error, `inputs: ${ins.error}.`);
                 const supNo = supervisorRunRefusal(args.supervisor as WorkflowSupervisor | undefined);
                 need(!supNo, `${supNo}.`);
+                const wk = wakeFromArg(args.wake);
+                need(!wk.error, `${wk.error}.`);
                 const w = taskManager.addWorkflow(title, steps, ins.inputs);
+                if (wk.wake) { setWorkflowWake(w, wk.wake); taskManager.persist(); }
                 if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); taskManager.persist(); }
                 if (args.goal !== undefined || args.criteria !== undefined) { setWorkflowGoal(w, args.goal, args.criteria); taskManager.persist(); }
                 return { id: w.id, title: w.title, steps: w.steps.length };
@@ -15606,7 +15622,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'workflows.update',
             describe: 'Rename a workflow and/or replace its whole step chain — the same save the page\'s '
                 + 'workflow form makes. args: id or title, newTitle?, steps? (the FULL list, same shape as '
-                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them), goal?, criteria? (as workflows.add; "" removes them), supervisor? (the whole object, as workflows.add; {} removes it)',
+                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them), goal?, criteria? (as workflows.add; "" removes them), supervisor? (the whole object, as workflows.add; {} removes it), wake? (as workflows.add; "mechanical" removes it)',
             handler: (args) => {
                 const w = bridgeWorkflow(optStr(args, 'id') || argStr(args, 'title'));
                 const newTitle = optStr(args, 'newTitle');
@@ -15620,7 +15636,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!ins.error, `inputs: ${ins.error}.`);
                 const supNo = args.supervisor === undefined ? '' : supervisorRunRefusal(args.supervisor as WorkflowSupervisor);
                 need(!supNo, `${supNo}.`);
+                const wk = wakeFromArg(args.wake);
+                need(!wk.error, `${wk.error}.`);
                 w.steps = steps;
+                if (args.wake !== undefined) { setWorkflowWake(w, wk.wake); }
                 if (ins.inputs.length) { w.inputs = ins.inputs; } else { delete w.inputs; }
                 setWorkflowGoal(w, args.goal === undefined ? w.goal : args.goal, args.criteria === undefined ? w.criteria : args.criteria);
                 if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); }

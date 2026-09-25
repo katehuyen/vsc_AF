@@ -853,6 +853,7 @@
         </tr>${wiRun && wiRun.id === p.id && window.AFWorkflowInputs ? `<tr class="detail"><td colspan="10"><div class="detailbox">
             <div class="ntsub"><b>Run “${C.esc(p.title)}” with</b> <span class="muted">each box starts at the last run's value, else the input's default</span></div>
             ${window.AFWorkflowInputs.runCard(p.inputs, p.lastInputs, C)}
+            ${window.AFWake ? `<div class="ntgrid">${window.AFWake.runRow(p.wakeMode, wiRun.wake, DATA.wakeDict, C)}</div>` : ''}
             <div class="ctl-row"><button id="nt-wi-go">Run with these</button><button class="secondary" id="nt-wi-cancel">Cancel</button></div>
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
@@ -2250,7 +2251,8 @@
                 ? '<div class="ctl-row"><button class="secondary" id="nt-stadd">+ Add a step</button></div>'
                 : stepCardHtml(c)}
             ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}
-            ${window.AFCheckpoint ? window.AFCheckpoint.goalEditor(c, C) : ''}`;
+            ${window.AFCheckpoint ? window.AFCheckpoint.goalEditor(c, C) : ''}
+            ${window.AFWake ? window.AFWake.workflowBlock(c, DATA.wakeDict, C) : ''}`;
     }
 
     /**
@@ -2469,6 +2471,7 @@
                 ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
             </div>
             ${s.stype === 'checkpoint' ? '' : forEachRow(s)}
+            ${s.stype !== 'checkpoint' && window.AFWake ? window.AFWake.stepRow(s, c.wake, DATA.wakeDict, C) : ''}
             ${wantsVerify ? `<div class="ntgrid">
                 ${textF('st-verifyCriteria', s.stype === 'media' ? 'Vision QA criteria' : 'Verify the output',
                     s.verifyCriteria,
@@ -3979,6 +3982,13 @@
                 .ntf select, .ntf input { padding:3px 6px; }
                 .ntf input[type=number] { font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
                     background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
+                /* M-45 - the wake editor: the preset the set IS, and one condition per row */
+                .chip.on { opacity:1; border-color:var(--vscode-focusBorder); background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent); }
+                .wkchips { display:flex; gap:4px; align-items:center; margin:2px 0 6px; }
+                .wkchips .chip { color:var(--vscode-foreground); }
+                .wkrow { display:flex; gap:6px; align-items:center; margin:3px 0; }
+                .wkrow input { width:120px; padding:3px 6px; font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
+                    background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
                 .ntf textarea { font-family:inherit; font-size:13px; padding:6px 8px; resize:vertical; min-height:70px; }
                 /* ‼️ M-27 — THE ROUNDS. One row per prompt, and the row is read
                    left to right: which round it is, what it says, how long it
@@ -4268,8 +4278,10 @@
                 redraw: () => { persist(); render(); }
             });
             click('#nt-wi-cancel', () => { wiRun = null; render(); });
+            const wkSel = document.getElementById('nt-wi-wake');
+            if (wkSel && wiRun) { wkSel.addEventListener('change', e => { wiRun.wake = e.target.value; }); }
             click('#nt-wi-go', () => {
-                post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values) });
+                post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), ...(wiRun.wake ? { wake: wiRun.wake } : {}) });
                 wiRun = null;
                 render();
             });
@@ -4636,6 +4648,7 @@
                 render();
             });
             if (window.AFCheckpoint) { window.AFCheckpoint.wireGoal(byId, () => composer); }
+            if (window.AFWake) { window.AFWake.wireWorkflow(byId, () => composer, DATA.wakeDict, render); }
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
@@ -4679,6 +4692,7 @@
                 ['feConc', 'feRetries', 'feCap', 'feBudget'].forEach(id => byId('nt-st-' + id, 'input', () => readStep()));
                 ['feFail', 'feCapMode'].forEach(id => byId('nt-st-' + id, 'change', () => readStep()));
                 if (window.AFCheckpoint) { window.AFCheckpoint.wire(byId, readStep, render); }
+                if (window.AFWake && composer.step) { window.AFWake.wireStep(byId, () => composer.step, DATA.wakeDict, render); }
             }
         }
 

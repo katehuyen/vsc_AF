@@ -147,6 +147,15 @@
         checkpointPoint('maxRetries', 'Checkpoint — retries per step', 'number', 2, 'cpRetries', { min: 0, max: 5 }),
         checkpointPoint('minConfidence', 'Checkpoint — confidence threshold', 'number', 0.6, 'cpConf', { min: 0, max: 1 }),
         checkpointPoint('lowConfidence', 'Checkpoint — below the threshold', 'enum', 'ask', 'cpLow', { options: ['ask', 'mechanical', 'escalate'] }),
+        // M-45 — what wakes the supervisor after a step: [] = mechanical (src/core/workflowWake.ts)
+        {
+            id: 'workflow.wake', label: 'Wake the supervisor', type: 'conditions', default: [], remembered: false,
+            levels: {
+                workflow: { surface: 'media/afWake.js#wf-wake', bridge: 'workflows.add:wake' },
+                step: { surface: 'media/afWake.js#st-wake', bridge: 'workflows.add:steps.wake' },
+                run: { surface: 'media/afWake.js#wi-wake', bridge: 'workflows.run:wake' }
+            }
+        },
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
         {
             id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,

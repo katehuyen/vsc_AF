@@ -120,7 +120,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afWorkflowInputs.js — a workflow's inputs: form block, Run card, trigger mapping (M-38).
     'afWorkflowInputs.js',
     // afCheckpoint.js — a checkpoint step's card row, and a workflow's goal + criteria (M-43).
-    'afCheckpoint.js'];
+    'afCheckpoint.js',
+    // afWake.js — what wakes a workflow's supervisor after a step: form block, step override, Run card (M-45).
+    'afWake.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

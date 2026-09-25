@@ -22,6 +22,7 @@ import {
 import {
     CUT_OFF, enterVisit, SessionCall, sessionTurn, softNote, spawnSessionCall, supervisorRunLimits, SupervisorState, turnRefusal, WorkflowSupervisor
 } from './supervisorRun';
+import { kindOfStep, mechanicalWords, resolveWake, wakeDirective, wakeFacts, WakeSpec, wakeVerdict } from './workflowWake';
 import { flexPoint } from './flexPoints';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
@@ -131,6 +132,10 @@ export interface FarmTask {
     /** result of the verify step, when the step had one. */
     /** M-42 — `unjudged`: no judge could look at it; never read as a pass */
     verified?: 'pass' | 'fail' | 'unjudged';
+    /** M-45 — this row is the supervisor woken after its step, by these conditions (src/core/workflowWake.ts) */
+    wokeBy?: string[];
+    /** M-45 — how the step it was woken after had ended: what the mechanical path goes on from */
+    wokeAfter?: TaskStatus;
     /** estimated cost of a media step (USD). */
     mediaCost?: number;
     /** why a requested start is waiting (concurrency / quota) — the sentence a
@@ -1224,6 +1229,8 @@ export interface WorkflowStep extends RunDimensions {
     forEach?: FE.ForEachSpec;
     /** M-43 — the supervisor is woken here, whatever happened (src/core/checkpointStep.ts). No agent. */
     checkpoint?: CheckpointSpec;
+    /** M-45 — what wakes the supervisor after this step; unset = the workflow's (src/core/workflowWake.ts) */
+    wake?: WakeSpec;
 }
 
 /** What one step passes to the next. */
@@ -1287,6 +1294,8 @@ export interface FarmWorkflow {
     criteria?: string[];
     /** M-44 — the run's supervisor session: model, effort, sign-in, its ceilings (src/core/supervisorRun.ts) */
     supervisor?: WorkflowSupervisor;
+    /** M-45 — what wakes the supervisor after a step; unset = mechanical (src/core/workflowWake.ts) */
+    wake?: WakeSpec;
 }
 
 /**
@@ -1599,11 +1608,21 @@ interface StoreShape {
  * still what says whether it is running NOW; this says everything they cannot.
  */
 /** How a workflow run is started: its project, and (M-38) the input values it is given. */
+/** M-45 — the supervisor woken after a step: which conditions fired, and the path "proceed" stands for */
+interface WakeCall {
+    fired: string[]; said: string; from: string; after: TaskStatus;
+    /** the mechanical path in words, for the supervisor's brief */
+    plan: string;
+    mechanical: () => void;
+}
+
 export interface WorkflowRunOpts {
     projectId?: string | null;
     inputs?: Record<string, unknown>;
     /** who gave the values — a trigger's are named as such in the run's origin */
     inputSource?: 'run' | 'trigger';
+    /** M-45 — this run's own wake conditions, above the workflow's and its steps' */
+    wake?: WakeSpec;
 }
 
 interface WorkflowRunRecord {
@@ -1626,6 +1645,8 @@ interface WorkflowRunRecord {
     edits?: RunEdits;
     /** M-43 — the supervisor's decisions so far (`<decision>:<target>`), retries per step, the person's answers */
     supervisor?: SupervisorState;
+    /** M-45 — the wake conditions the run was started with */
+    wake?: WakeSpec;
 }
 
 export interface TaskManagerOptions {
@@ -6015,6 +6036,14 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         const runId = task.workflowRunId ?? newId();
+        if (task.wokeBy) {
+            const sup = this.runRecords.get(runId)?.supervisor;
+            if (sup) { sup.inFlight = undefined; }
+            this.runCounts.set(runId, 0);
+            void vscode.window.showInformationMessage(`Agent Farm: resuming workflow "${w.title}" after step ${stepIndex + 1} — the supervisor's call was cut off, so it goes the mechanical way.`);
+            this.mechanicalAdvance(w, stepIndex, task.wokeAfter ?? 'done', this.rebuildHandoff(runId, stepIndex + 1), runId);
+            return;
+        }
         const handoff = this.rebuildHandoff(runId, stepIndex);
         this.runCounts.set(runId, 0);
         void vscode.window.showInformationMessage(
@@ -6211,7 +6240,8 @@ export class TaskManager implements vscode.Disposable {
             project: (opts && 'projectId' in opts)
                 ? (opts.projectId ?? null)
                 : (this.opts.activeProjectId?.() ?? null),
-            ...(Object.keys(given.values).length ? { inputs: given.values } : {})
+            ...(Object.keys(given.values).length ? { inputs: given.values } : {}),
+            ...(opts?.wake ? { wake: opts.wake } : {})
         });
         return runId;
     }
@@ -7031,22 +7061,25 @@ export class TaskManager implements vscode.Disposable {
      * the run (src/core/checkpointStep.ts). Refused, broken or unanswered =
      * carry on, and the row says why. The upstream handoff passes through.
      */
-    private async runCheckpointStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
-        const cp = w.steps[index].checkpoint!;
+    private async runCheckpointStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string, wake?: WakeCall): Promise<void> {
+        const cp: CheckpointSpec = wake ? {} : w.steps[index].checkpoint!;
         const rec = this.runRecords.get(runId);
         const sup: SupervisorState = rec ? (rec.supervisor ??= { history: [], retries: {}, directives: [] }) : { history: [], retries: {}, directives: [] };
-        const task = this.stepTask(w, index, runId, 'checkpoint', { prompt: cp.message || '(the supervisor decides here)', status: 'running' }, handoff);
+        const task = this.stepTask(w, index, runId, 'checkpoint', wake ? {
+            prompt: `Woken after step ${index + 1} by ${wake.said}`, status: 'running', wokeBy: wake.fired, wokeAfter: wake.after,
+            title: `${w.title} ${index + 1}/${w.steps.length}: supervisor, woken by ${wake.fired.join(', ')}`
+        } : { prompt: cp.message || '(the supervisor decides here)', status: 'running' }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
         this.save();
 
         const ids = w.steps.map((s, i) => stepKey(s, i));
-        const here = ids[index], before = index > 0 ? ids[index - 1] : here;
+        const here = ids[index], before = wake ? here : index > 0 ? ids[index - 1] : here;
         const limits = checkpointLimits(cp);
         // M-44 — one session per run (src/core/supervisorRun.ts); a reload that cut this visit's call off is not asked again
         const sl = supervisorRunLimits(w.supervisor);
-        const visit = enterVisit(sup, here);
+        const visit = enterVisit(sup, wake ? `${here}~wake` : here);
         Object.assign(sup, visit.state);
         const spent0 = sup.costUSD ?? 0;
         this.save();
@@ -7066,10 +7099,10 @@ export class TaskManager implements vscode.Disposable {
             this.save();
             return { out: t.out, error: t.error, model: model || 'the CLI default' };
         });
-        const own = cp.message ? [cp.message] : [];
+        const own = wake ? [wakeDirective(w.steps[index].title, index + 1, wake.after, wake.said, wake.plan)] : cp.message ? [cp.message] : [];
         const shut = visit.cutOff ? CUT_OFF : this.opts.superviseTurn ? '' : turnRefusal(sup, sl);
         const out = shut ? { mechanical: shut, log: [`mechanical — ${shut}`], directives: [...own, ...sup.directives], decision: undefined } : await superviseCheckpoint({
-            workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: index > 0 ? before : undefined,
+            workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: wake || index > 0 ? before : undefined,
             costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (t.costUSD ?? 0), 0),
             directives: [...own, ...sup.directives], stepIds: ids, limits
         }, { stepIds: ids, currentStep: before, retries: sup.retries, history: sup.history }, {
@@ -7096,14 +7129,14 @@ export class TaskManager implements vscode.Disposable {
         }
         if (d) { sup.history.push(`${d.decision}:${d.target ?? ''}`); }
         const said = d ? `${d.decision}${d.target ? ` ${d.target}` : ''}${d.why ? ` — ${d.why}` : ''}` : 'carry on';
-        const text = `Checkpoint: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}${soft ? ` · ${soft}` : ''}`;
+        const text = `${wake ? `Woken by ${wake.said}` : 'Checkpoint'}: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}${soft ? ` · ${soft}` : ''}`;
         try {
-            fs.writeFileSync(outFile, `# ${task.title}\n\n- Checkpoint step\n- Limits: ${limits.origin}\n- Supervisor: ${sl.origin}` +
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- ${wake ? `Woken after step ${index + 1} (${wake.after}) — wake conditions: ${wake.from}` : 'Checkpoint step'}\n- Limits: ${limits.origin}\n- Supervisor: ${sl.origin}` +
                 `${sup.calls ? ` · ${sup.calls} call(s) this run, $${(sup.costUSD ?? 0).toFixed(4)}` : ''}\n\n---\n\n` +
                 `${out.log.map(l => `- ${l}`).join('\n')}\n\n**${text}**\n\n---\n` +
                 `Finished: ${new Date().toLocaleString()} · ${route.go === 'stop' ? 'STOPPED' : 'OK'}\n`, 'utf8');
         } catch { /* archive gone */ }
-        if (rec) { rec.board = boardWrite(rec.board, { id: here, index, title: task.title, status: 'done', text, ...(d ? { json: d } : {}), at: Date.now() }); }
+        if (rec && !wake) { rec.board = boardWrite(rec.board, { id: here, index, title: task.title, status: 'done', text, ...(d ? { json: d } : {}), at: Date.now() }); }
         task.status = 'done';
         task.endedAt = Date.now();
         this.save();
@@ -7116,9 +7149,31 @@ export class TaskManager implements vscode.Disposable {
         } else if (route.go === 'step') {
             const view = this.runView(w.id, runId, w) as FarmWorkflow;
             this.routeToStep(view, route.index, route.index <= index ? handoffFromBoard(rec?.board, view.steps, route.index) : handoff, runId);
+        } else if (wake && route.go === 'next') {
+            wake.mechanical();
         } else {
             this.routeToStep(w, index + 1, handoff, runId);
         }
+    }
+
+    /** M-45 — do the run's wake conditions fire after this step? Undefined = the mechanical path. */
+    private wakeCheck(w: FarmWorkflow, task: FarmTask, status: TaskStatus, runId: string): Omit<WakeCall, 'mechanical' | 'plan'> | undefined {
+        const i = task.stepIndex ?? 0;
+        const step = w.steps[i];
+        const rec = this.runRecords.get(runId);
+        if (!step || step.checkpoint || !rec || task.wokeBy) { return undefined; }
+        const r = resolveWake({ workflow: w.wake, step: step.wake, run: rec.wake });
+        if (!r.conditions.length) { return undefined; }
+        const rows = this.tasks.filter(t => t.workflowRunId === runId);
+        const kind = kindOfStep(step);
+        const h = this.computeHandoff(task);
+        const v = wakeVerdict(r.conditions, wakeFacts({
+            kind, status, attempt: rows.filter(t => t.stepIndex === i && !t.wokeBy && t.branchIndex === undefined).length,
+            startedAt: task.startedAt, endedAt: task.endedAt ?? Date.now(), costUSD: task.costUSD ?? task.mediaCost,
+            verified: task.verified, runCostUSD: rows.reduce((a, t) => a + (t.costUSD ?? 0), 0),
+            assets: kind === 'media' && h.file ? 1 : 0, output: h.text
+        }));
+        return v.fired.length ? { fired: v.fired, said: v.said, from: r.sentence, after: status } : undefined;
     }
 
     /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */
@@ -7150,6 +7205,18 @@ export class TaskManager implements vscode.Disposable {
         }
         const stepIndex = task.stepIndex ?? 0;
         const handoff = this.computeHandoff(task);
+        // M-45 — the run's wake conditions; nothing fires = the mechanical path, exactly as before
+        const woke = this.wakeCheck(w, task, status, runId);
+        const mechanical = () => this.mechanicalAdvance(w, stepIndex, status, handoff, runId);
+        if (woke) {
+            const plan = mechanicalWords(status, stepIndex, w.steps.length, w.steps[stepIndex]?.onFail);
+            void this.runCheckpointStep(w, stepIndex, handoff, runId, { ...woke, plan, mechanical });
+            return;
+        }
+        mechanical();
+    }
+
+    private mechanicalAdvance(w: FarmWorkflow, stepIndex: number, status: TaskStatus, handoff: Handoff, runId: string): void {
         if (status === 'done') {
             this.routeToStep(w, stepIndex + 1, handoff, runId);
             return;

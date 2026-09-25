@@ -24,6 +24,7 @@ import {
 import { checkpointFromDraft, checkpointSeed, setWorkflowGoal } from '../core/checkpointStep';
 import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, supervisorSeed } from '../core/supervisorRun';
 import { normalizeLegCeiling } from '../core/baton';
+import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -226,6 +227,8 @@ interface PlanRow {
     /** M-38 — a workflow's inputs and the last run's values (the Run card) */
     inputs?: WorkflowInput[];
     lastInputs?: Record<string, string>;
+    /** M-45 — which preset its wake conditions are (the Run card's "the workflow's") */
+    wakeMode?: string;
     /** when/how it fires, in the user's words */
     when: string;
     nextAt?: number;
@@ -617,7 +620,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
         rows.push({
             id: w.id, kind: 'workflow', title: w.title,
             when: 'when you run it (or a trigger does)',
-            inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {},
+            inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {}, wakeMode: wakeMode(w.wake),
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -915,6 +918,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         // that already ran a workflow fell back to the first option, quietly
         // turning it into a task trigger on the next save.
         workflows: m.workflows.map(w => ({ id: w.id, title: w.title, steps: w.steps.length, inputs: w.inputs ?? [] })),
+        // M-45 — the wake editor builds itself from this (src/core/workflowWake.ts)
+        wakeDict: wakeDictionary(),
         // Production scenes a media step can file its assets under.
         scenes: deps.scenes ? deps.scenes() : [],
         // ---- what the New-task form offers. One vocabulary with the session
@@ -1099,7 +1104,8 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         selMsg: s.select?.message ?? '',
         selMin: s.select?.min ?? 1,
         selMax: s.select?.max ?? 0,
-        ...checkpointSeed(s.checkpoint)
+        ...checkpointSeed(s.checkpoint),
+        ...(s.wake ? { wake: s.wake } : {})
     };
 }
 
@@ -1134,6 +1140,8 @@ export function stepFromDraft(
     const stype = str('stype') || 'agent';
     const title = str('title');
     if (!title) { return { error: `Step ${n} has no title.` }; }
+    const wake = stype === 'checkpoint' ? {} : wakeFromArg(raw.wake);
+    if (wake.error) { return { error: `Step ${n} ("${title}"): ${wake.error}.` }; }
     const mode: TaskMode = str('smode') === 'interactive' ? 'interactive' : 'headless';
     const chain: Partial<WorkflowStep> = {
         // M-39 — the step keeps its id through an edit, so {steps.<id>…} still finds it
@@ -1142,7 +1150,8 @@ export function stepFromDraft(
             : str('onFail') === 'goto' ? Math.max(1, num('onFailStep', 1)) : undefined,
         runIf: str('runIf') || undefined,
         parallel: raw.parallel === true ? true : undefined,
-        forEach: forEachFromDraft(str)
+        forEach: forEachFromDraft(str),
+        ...(wake.wake ? { wake: wake.wake } : {})
     };
     const verify = str('verifyCriteria')
         ? {
@@ -1772,8 +1781,8 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
-                : { mode2: 'new', steps: [], inputs: [], stepIdx: step === 'new' ? -1 : null, step: null });
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), wake: w.wake ?? [], stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                : { mode2: 'new', steps: [], inputs: [], wake: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
         const tpl = node?.template;
@@ -2006,6 +2015,8 @@ export class TasksPanel {
             const ws = supervisorFromDraft(item);
             const wsNo = supervisorRunRefusal(ws);
             if (wsNo) { this.say(`Supervisor: ${wsNo}.`); return; }
+            const wk = wakeFromArg(item.wake);
+            if (wk.error) { this.say(`Wake: ${wk.error}.`); return; }
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -2016,12 +2027,14 @@ export class TasksPanel {
                 if (ins.inputs.length) { existing.inputs = ins.inputs; } else { delete existing.inputs; }
                 setWorkflowGoal(existing, item.goal, item.criteria);
                 setWorkflowSupervisor(existing, ws);
+                setWorkflowWake(existing, wk.wake);
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
                 const made = m.addWorkflow(str('title'), steps, ins.inputs);
                 setWorkflowGoal(made, item.goal, item.criteria);
                 setWorkflowSupervisor(made, ws);
+                setWorkflowWake(made, wk.wake);
                 m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);
             }
@@ -2081,6 +2094,8 @@ export class TasksPanel {
         quietFrom?: string; quietTo?: string; reason?: string; month?: string;
         /** M-38 — the Run card's values for a workflow's inputs */
         inputs?: Record<string, unknown>;
+        /** M-45 — the Run card's "this run only" wake preset */
+        wake?: string;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -2124,7 +2139,9 @@ export class TasksPanel {
                         if (!w || !given) { run('agentfarm.runWorkflow', node); break; }
                         const refusal = this.deps.manager.workflowRunRefusal(w, given);
                         if (refusal) { this.say(refusal); break; }
-                        this.deps.manager.runWorkflow(w, Object.keys(given).length ? { inputs: given } : undefined);
+                        const wk = wakeFromArg(msg.wake);
+                        if (wk.error) { this.say(`Wake: ${wk.error}.`); break; }
+                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}) } : undefined);
                         break;
                     }
                     // ‼️ A workflow's Edit is the workflow — its name AND its
