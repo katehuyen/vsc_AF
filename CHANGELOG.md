@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.671.0 - A workflow's supervisor wakes on an event, a person steers a running workflow, and a baton relay has a soft brake on the leg that is running (M-45, M-46, S-95) (2026-09-25)
+
+- **The supervisor wakes on an event, not only at a checkpoint step (M-45).**
+  The workflow form's new *Wake* block: *Mechanical* (no conditions — no
+  supervisor call, zero tokens), *Smart* (after every step) or *Hybrid* (a
+  failed quality check, a failed step, the run past $2), or your own conditions
+  built from the dictionary. A step card can override it (*Wake after it*), and
+  the Run card can set it for one run. A step that wakes the supervisor gets a
+  "supervisor, woken by …" row naming the conditions; it may carry on, retry,
+  jump, insert or stop exactly as at a checkpoint, and a run where nothing fires
+  hands every step exactly what a mechanical run does. Sequential steps only.
+  Bridge: `workflows.add` / `workflows.update` / `workflows.run` take `wake`,
+  `workflows.wakeFields` lists the dictionary.
+- **Your hand on a running workflow (M-46).** *Steer a Running Workflow…* in
+  the command palette, Telegram `/steer`, `/veto`, `/constraint`, and the
+  bridge (`workflows.steer`): your words open the supervisor's next decision as
+  its highest rule — a mechanical run is woken for them — and the row says where
+  they landed. Live settings take effect from the next step boundary (wake,
+  supervisor model, budget, calls, pause and resume, *call me* for the next
+  decision, a checkpoint inserted after the running step); `workflows.decide`
+  makes a decision by hand with no supervisor call. A supervisor's question
+  reaches you in three places — a window notification, a *Needs You* row with
+  one button per option, and a Telegram message with buttons — and the first
+  answer wins.
+- **⑂⊣ Last leg — the brake on a baton relay's running leg (S-95).** The
+  Console card of a leg that is running carries the brake for the whole leg,
+  not only in the seconds after it has passed. Pressed, the button stays down
+  with a warning-coloured frame and the chip reads ⑂ 2⊣: when this leg reaches
+  its handover line it is told to write the handover note instead of passing
+  the baton, and nothing opens after it — a pass is answered *braked* and the
+  safety net closes the chain there instead of rescuing it. Pressed again
+  before the pass, the chain carries on as if it had never been touched; once
+  a braked pass is recorded the button is locked. What the braked leg is told
+  is two new boxes in Settings ▸ Handover Discipline
+  (`relayBrakedConverge` / `relayBrakedHandover`). For agents: `baton.lastLeg
+  session=<id>|chain=<id> on=true|false`; `baton.status` shows the flag.
+
 ## 3.670.0 - A checkpoint step asks the supervisor where the run goes next; one supervisor session per run; a turn that only waits is purple (M-43, M-44, U-148) (2026-09-25)
 
 - **A workflow step can be a checkpoint (M-43).** It runs no agent: it hands
