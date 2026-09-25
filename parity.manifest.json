@@ -1041,6 +1041,16 @@
       ]
     },
     {
+      "capability": "batonLegs",
+      "ui": [
+        "cmd:agentfarm.batonLegs",
+        "ctx:agentfarm.batonLegs"
+      ],
+      "ops": [
+        "baton.setLegs"
+      ]
+    },
+    {
       "capability": "browsePackGallery",
       "ui": [
         "cmd:agentfarm.browsePackGallery"
@@ -1153,6 +1163,15 @@
         "kind": "navigation",
         "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
       }
+    },
+    {
+      "capability": "cleanupStuck",
+      "ui": [
+        "cmd:agentfarm.cleanupStuck"
+      ],
+      "ops": [
+        "farm.cleanup"
+      ]
     },
     {
       "capability": "clearDoneTasks",
@@ -7316,6 +7335,16 @@
       ]
     },
     {
+      "capability": "timeline.ts#workflowLive",
+      "ui": [
+        "page:timeline.ts#workflowLive"
+      ],
+      "ops": [
+        "workflows.live",
+        "workflows.steer"
+      ]
+    },
+    {
       "capability": "toggleDuty",
       "ui": [
         "cmd:agentfarm.toggleDuty"
@@ -7798,19 +7827,9 @@
       ]
     },
     {
-      "capability": "cleanupStuck",
-      "ui": [
-        "cmd:agentfarm.cleanupStuck"
-      ],
-      "ops": [
-        "farm.cleanup"
-      ]
-    },
-    {
       "capability": "workflowLive",
       "ui": [
-        "cmd:agentfarm.workflowLive",
-        "page:timeline.ts#workflowLive"
+        "cmd:agentfarm.workflowLive"
       ],
       "ops": [
         "workflows.live",

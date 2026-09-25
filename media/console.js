@@ -6011,9 +6011,14 @@
         const locked = st === 'locked';
         const head = locked ? 'Last leg: braked — the chain ended at this leg'
             : on ? 'Last leg: ON — this leg is the chain\'s last' : 'Last leg: off — the chain goes on';
-        return cardTip(`<button class="stchip lastleg${on ? ' on' : ''}" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="${on}"${locked ? ' disabled' : ''}>⑂⊣</button>`,
+        // S-103 — right-click: the chain's legs (agentfarm.batonLegs reads afChainId)
+        const v = s.batonView;
+        const ctx = locked ? '' : ' ' + window.AFCtx.attr(window.AFCtx.obj('afConsoleLastLeg', { afChainId: v.chainId, afSessionId: s.sessionId }));
+        const cap = typeof v.max === 'number' ? (v.max > 0 ? `leg ${v.leg} of ${v.max}` : `leg ${v.leg} — no ceiling`) : '';
+        return cardTip(`<button${ctx} class="stchip lastleg${on ? ' on' : ''}" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="${on}"${locked ? ' disabled' : ''}>⑂⊣</button>`,
             head,
             T.lines([
+                cap && !locked ? `Ceiling: ${cap} — right-click for the chain's legs: one more, fewer, a number, no ceiling.` : '',
                 locked ? 'Its pass was braked: no successor opened, and the handover note is where the work goes on.'
                     : on ? 'Press again to take it back — nothing was written anywhere else, so the chain goes on as if untouched.'
                         : 'Press to make the leg running now the chain\'s LAST: at its handover line it is told to write the handover note instead of passing the baton, and no successor opens.',

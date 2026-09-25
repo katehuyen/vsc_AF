@@ -26,6 +26,8 @@ export interface BatonCardView {
     stoppable: boolean;
     /** S-99 — the soft brake of this run's leg (baton.lastLeg); absent = no running leg to brake */
     brake?: BrakeState;
+    /** S-103 — the chain's leg ceiling (0 = none), when the caller gave the setting's */
+    max?: number;
 }
 
 const short = (id: string | undefined): string => String(id ?? '').slice(0, 8);
@@ -100,7 +102,8 @@ export function batonBarView(
             ...lines,
             '',
             maxLegs > 0 ? `Ceiling: ${maxLegs} legs a chain (agentFarm.batonMaxHops).` : 'No leg ceiling (agentFarm.batonMaxHops = 0).',
-            `Brake: ⑂⊣ Last leg on the running card (baton.lastLeg), ✕⑂ Stop chain while a successor waits (baton.stop chain=${top.chainId}).`
+            `Brake: ⑂⊣ Last leg on the running card (baton.lastLeg), ✕⑂ Stop chain while a successor waits (baton.stop chain=${top.chainId}).`,
+            `Click: the chain's legs — one more, fewer, no ceiling, last leg (baton.setLegs chain=${top.chainId}).`
         ].join('\n'),
         chainId: top.chainId,
         ...(top.state === 'started' && top.toSessionId ? { sessionId: top.toSessionId }
@@ -113,7 +116,7 @@ export function batonBarView(
  * predecessor) and the one it left (its successor). Undefined for a session
  * no baton touched.
  */
-export function batonCardView(list: readonly Baton[], sessionId: string): BatonCardView | undefined {
+export function batonCardView(list: readonly Baton[], sessionId: string, fallbackMax?: number): BatonCardView | undefined {
     const sid = String(sessionId ?? '').trim();
     if (!sid) { return undefined; }
     const opener = openerOf(list, sid);
@@ -138,12 +141,16 @@ export function batonCardView(list: readonly Baton[], sessionId: string): BatonC
     const last = brake === 'on' || brake === 'locked';
     if (brake === 'on') { lines.push('Last leg: braked by the user — at its handover line it writes the note, and no successor opens.'); }
     if (brake === 'locked') { lines.push('Last leg: braked by the user — the chain ended at this leg.'); }
+    const max = fallbackMax === undefined ? undefined : chainMaxLegs(list, chainId, fallbackMax);
+    if (max !== undefined) {
+        lines.push(`Ceiling: ${max > 0 ? `${max} legs` : 'none'} — change it: right-click ⑂⊣, or click ⑂ in the status bar (baton.setLegs chain=${chainId}).`);
+    }
     lines.push(stoppable
         ? `Brake: baton.stop chain=${chainId} — recorded, never deleted.`
         : 'The chain ends when the work is done and nobody passes.');
     return {
         chainId, leg, chip: `⑂ ${leg}${last ? LAST_LEG_MARK : ''}`,
         head: `Baton relay — leg ${leg}${last ? ' · last leg' : ''}${left && isLive(left) ? ' · successor waiting' : ''}`,
-        lines, stoppable, ...(brake ? { brake } : {})
+        lines, stoppable, ...(brake ? { brake } : {}), ...(max !== undefined ? { max } : {})
     };
 }

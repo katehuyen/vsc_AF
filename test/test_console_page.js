@@ -1383,6 +1383,15 @@ const intentOf = (o) => Object.assign({
         /id="c-baton-stop"/.test(status()) && !/c-baton-lastleg/.test(status()));
     push(data(CONVO.slice(), { batonView: relay(false) }));
     ok('‼️ a view with no brake draws none', !/c-baton-lastleg/.test(status()));
+    // S-103 — the same ⑂⊣ carries the chain's legs on its right-click, and its panel names the ceiling
+    push(data(CONVO.slice(), { batonView: Object.assign(leg('off'), { max: 12 }) }));
+    ok('S-103: ⑂⊣ carries its own right-click section with the chain and the session',
+        /<button data-vscode-context="[^"]*afConsoleLastLeg[^"]*chn_muq2k1[^"]*" class="stchip lastleg"/.test(status())
+        && /Ceiling: leg 2 of 12 — right-click for the chain&#39;s legs|Ceiling: leg 2 of 12 — right-click for the chain's legs/.test(status()));
+    push(data(CONVO.slice(), { batonView: Object.assign(leg('off'), { max: 0 }) }));
+    ok('…no ceiling is said as such', /Ceiling: leg 2 — no ceiling/.test(status()));
+    push(data(CONVO.slice(), { batonView: leg('locked') }));
+    ok('…a locked brake has no legs menu (the chain ended there)', !/afConsoleLastLeg/.test(status()));
     ok('the pressed state has its own colour and frame, not only an attribute',
         /#c-status \.stchip\.lastleg\.on \{[^}]*editorWarning-foreground/.test(allHtml()));
 

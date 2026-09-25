@@ -323,6 +323,8 @@ import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
+import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
+import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
@@ -16763,7 +16765,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             contextSignalView: contextSignalView((sid && contextGuard.record(sid)) || undefined, contextGuard.thresholds(), relTime),
             bridgeGuardView: bridgeGuardView(bridgeGuardLog.forSession(sid), relTime) ?? null,
             batonView: (() => {
-                try { return (sid && batonCardView(batonStore.all(), sid)) || null; } catch { return null; }
+                try { return (sid && batonCardView(batonStore.all(), sid, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')))) || null; } catch { return null; }
             })()
         };
     }
@@ -16996,11 +16998,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!v) { batonBar.hide(); return; }
         batonBar.text = v.text;
         batonBar.tooltip = v.tooltip;
-        batonBar.command = v.sessionId
-            ? { command: 'agentfarm.openConsole', title: 'Open the running leg', arguments: [{ sessionId: v.sessionId }] }
-            : undefined;
+        batonBar.command = { command: 'agentfarm.batonLegs', title: 'The chain\'s legs', arguments: [{ chainId: v.chainId }] };
         batonBar.show();
     };
+    // S-103 — a running chain's legs: baton.setLegs, the ⑂⊣ right-click, the status bar and the palette share applyChainLegs
+    const batonLegsDeps: LegsUiDeps = {
+        store: batonStore,
+        fallback: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
+        changed: () => { updateBatonBar(); ConsolePanel.refreshIfOpen(); },
+        alive: batonLegAlive,
+        lastLeg: (sid, on) => {
+            const r = applyLastLeg({ store: batonStore }, sid, on, 'the user (legs menu)');
+            updateBatonBar(); ConsolePanel.refreshIfOpen();
+            return r;
+        },
+        openLeg: sid => { void vscode.commands.executeCommand('agentfarm.openConsole', { sessionId: sid }); }
+    };
+    registerLegsOp(bridge, batonLegsDeps);
     // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
     // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
     const batonLegFacts = (sid: string): PassedLegFacts => {
@@ -37913,6 +37927,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TasksPanel.retryCompose(tasksDeps, node.task.id);
         }),
         vscode.commands.registerCommand('agentfarm.cleanupStuck', () => stale.review()),
+        vscode.commands.registerCommand('agentfarm.batonLegs', (arg?: unknown) =>
+            pickChainLegs(batonLegsDeps, arg, (chain, n) => applyChainLegs(batonLegsDeps, chain, n))),
         vscode.commands.registerCommand('agentfarm.workflowLive', (runId?: unknown) => workflowLiveCommand({
             liveRuns: () => taskManager.liveRuns(),
             steerRun: (id, kind, text, by) => taskManager.steerRun(id, kind, text, by),

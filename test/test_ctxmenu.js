@@ -242,8 +242,10 @@ if (FIX) {
         }
         // The catalogue owns the webview menu and its submenus outright; in the
         // command palette it owns only its own hidings and leaves the rest.
+        // The palette's kept entries are already in `list` — splice only the hidings, or they land twice.
         const keep = key === 'commandPalette' ? el => !mine(el.command) : () => false;
-        step(`menus["${key}"]`, t => spliceArray(t, ['contributes', 'menus', key], list, keep));
+        const add = key === 'commandPalette' ? CAT.ctxPaletteHiding() : list;
+        step(`menus["${key}"]`, t => spliceArray(t, ['contributes', 'menus', key], add, keep));
     }
 
     // ‼️ Nothing is written until the result is proved. A splice that landed in

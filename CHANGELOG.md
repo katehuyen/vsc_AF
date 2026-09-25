@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.674.0 - A running chain's legs can be changed, one decision core for both supervisors, and ffmpeg recipes with the workflow's tool step (S-103, M-48, M-49 parts 1–2) (2026-09-25)
+
+- **Change how many legs a running chain may run (S-103).** A chain's leg
+  ceiling used to be fixed the moment it started — it could be braked, but
+  never raised. Now: right-click **⑂⊣** on the running Console card, click the
+  **⑂ n/N** item in the status bar, or run *Agent Farm: Chain Legs…*. The menu's
+  title says where the chain stands (*leg 2 of 12*); its rows are **One more
+  leg**, **Three more legs**, **One leg fewer**, **Set a number…**, **No
+  ceiling**, and **This leg is the last** (the same soft brake as pressing ⑂⊣).
+  The number is written onto the chain's own record at once, the next pass
+  reads it, and a reload keeps it. It can never drop below the leg that is
+  running — the lowest is "this leg is the last". The card's ⑂⊣ hover shows
+  the ceiling. For agents: `baton.setLegs` (`chain=` or `session=`, `maxLegs=`
+  or `add=`; without either it only reads).
+- **One decision core for both supervisors (M-48).** The retry supervisor
+  (what a run cut off at its limit does next) and the workflow checkpoint
+  supervisor now read a model's answer, enforce their call and money ceilings
+  and word "not sure enough" through one shared core, so the two cannot drift.
+- **ffmpeg recipes and the workflow's tool step (M-49, first two parts).**
+  Zero-token local media work: nine recipes (split, concat, extract audio, mux
+  audio, reframe, burn subtitles, keyframes, loudness, transcode) with typed,
+  ranged parameters and presets, run without a shell. A workflow step can now
+  be a **tool** step — no model; the recipe's result is the step's output for
+  the next step. Bridge: `tools.recipes`, `tools.run`. The third part of M-49
+  is still open.
+
 ## 3.673.0 - What is stuck and cleaning it, the supervisor strip, and a mission's workflow (S-101, U-153, M-47) (2026-09-25)
 
 - **What is stuck, and cleaning it in one go (S-101).** Task rows, Console
