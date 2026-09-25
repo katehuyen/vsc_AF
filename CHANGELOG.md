@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.675.0 - The migration gate weighs the agent repo in seconds, not minutes (X-401) (2026-09-25)
+
+- **`migration.verify` reads the largest committed files in ~4 s instead of
+  ~259 s.** It used to ask git for every file's size (`ls-tree -l`), which reads
+  every blob header out of the pack — 259 s on the agent repo, so the gate's
+  "large files" item came back unread and Doctor's 8-second bridge call ended in
+  "still working after 8000ms". The index already knows each file's size: the
+  sizes now come from there, and only the files it does not hold unchanged
+  (staged edits, never-refreshed entries) are asked of git, in one batch. Same
+  five files as Doctor's own backup section. A read that fails is still said as
+  "could not be read", never as "nothing committed".
+
 ## 3.674.0 - A running chain's legs can be changed, one decision core for both supervisors, and ffmpeg recipes with the workflow's tool step (S-103, M-48, M-49 parts 1–2) (2026-09-25)
 
 - **Change how many legs a running chain may run (S-103).** A chain's leg

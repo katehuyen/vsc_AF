@@ -224,7 +224,7 @@ function weightItem(w: RepoWeight): GateItem {
     if (w.unread) {
         return item('repo:big-files', 'repo', false,
             `the committed file sizes could not be read (${w.unread}) — nothing was measured, so nothing is passed`,
-            'run migration.verify again; if it repeats, run git ls-tree -r -l HEAD in the agent repo by hand');
+            'run migration.verify again; if it repeats, run git ls-tree -r HEAD in the agent repo by hand (quick — the sizes come from the index)');
     }
     const worst = w.top.length ? bigVerdict(w.top[0].mb) : 'ok';
     if (worst === 'fail') {

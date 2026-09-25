@@ -24,14 +24,67 @@ export interface RepoWeight {
 
 const mb = (bytes: number) => Math.round(bytes / 1048576 * 10) / 10;
 
-/** `git ls-tree -r -l -z HEAD` → the largest blobs. Gitlinks and trees carry no size and are skipped. */
-export function largestBlobs(lsTreeZ: string, top = 5): WeighedFile[] {
-    const rows: WeighedFile[] = [];
-    for (const rec of lsTreeZ.split('\0')) {
-        const m = /^\d+ blob [0-9a-f]+\s+(\d+)\t([\s\S]+)$/.exec(rec);
-        if (m) { rows.push({ file: m[2], mb: mb(Number(m[1])) }); }
+/*
+ * X-401 — `ls-tree -r -l HEAD` reads every blob header out of the pack: 259 s on the agent
+ * repo. The index already caches each entry's size, so only the blobs it does not hold
+ * unchanged are asked of `cat-file --batch-check`. Same path as BigFiles.ps1 Get-TrackedSizes;
+ * both lists are read with core.quotepath=off, so a quoted path is quoted alike in each.
+ */
+
+/** `git ls-tree -r HEAD` → path → blob hash. Gitlinks carry no blob and are skipped. */
+export function headBlobs(lsTree: string): Map<string, string> {
+    const head = new Map<string, string>();
+    for (const ln of lsTree.split('\n')) {
+        const t = ln.indexOf('\t');
+        const meta = t > 0 ? ln.slice(0, t).split(' ') : [];
+        if (meta[1] === 'blob') { head.set(ln.slice(t + 1), meta[2]); }
     }
-    return rows.sort((a, b) => b.mb - a.mb).slice(0, top);
+    return head;
+}
+
+/**
+ * `git ls-files -s --debug` → path → bytes, for entries whose index hash IS the HEAD blob.
+ * The index size is the checked-out file's, so a CRLF checkout reads a little over the blob.
+ * Size 0 means the index never stat'ed the file — it is asked instead.
+ */
+export function indexSizes(lsFilesDebug: string, head: Map<string, string>): Map<string, number> {
+    const sizes = new Map<string, number>();
+    let path: string | undefined;
+    for (const ln of lsFilesDebug.split('\n')) {
+        if (!ln.startsWith(' ')) {
+            const t = ln.indexOf('\t');
+            const p = ln.slice(t + 1);
+            path = t > 0 && head.get(p) === ln.slice(0, t).split(' ')[1] ? p : undefined;
+            continue;
+        }
+        if (path === undefined) { continue; }
+        const m = /size: (\d+)/.exec(ln);
+        if (!m) { continue; }
+        if (Number(m[1]) > 0) { sizes.set(path, Number(m[1])); }
+        path = undefined;
+    }
+    return sizes;
+}
+
+/** `git cat-file --batch-check` → hash → bytes. A `<hash> missing` line carries no size. */
+export function batchSizes(out: string): Map<string, number> {
+    const sizes = new Map<string, number>();
+    for (const ln of out.split('\n')) {
+        const f = ln.split(' ');
+        if (f.length >= 3 && /^\d+$/.test(f[2])) { sizes.set(f[0], Number(f[2])); }
+    }
+    return sizes;
+}
+
+/** The HEAD blobs whose size neither the index nor the batch answered are left out. */
+export function largestBlobs(head: Map<string, string>, cached: Map<string, number>,
+    asked: Map<string, number>, top = 5): WeighedFile[] {
+    const rows: { file: string; bytes: number }[] = [];
+    for (const [file, hash] of head) {
+        const bytes = cached.get(file) ?? asked.get(hash);
+        if (bytes !== undefined) { rows.push({ file, bytes }); }
+    }
+    return rows.sort((a, b) => b.bytes - a.bytes).slice(0, top).map(r => ({ file: r.file, mb: mb(r.bytes) }));
 }
 
 export function leftOutBig(untracked: { file: string; bytes: number }[]): WeighedFile[] {

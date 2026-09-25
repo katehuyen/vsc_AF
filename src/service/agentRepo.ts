@@ -5,7 +5,7 @@ import * as path from 'path';
 import {
     AgentRepoCarry, credentialCarry, CREDENTIAL_PATHSPECS, remoteRepo, visibilityFromStatus
 } from '../core/credentialCarry';
-import { largestBlobs, leftOutBig, RepoWeight } from '../core/repoWeight';
+import { batchSizes, headBlobs, indexSizes, largestBlobs, leftOutBig, RepoWeight } from '../core/repoWeight';
 
 const git = (cwd: string, args: string[]) => new Promise<string>(resolve =>
     cp.execFile('git', ['-C', cwd, ...args], { windowsHide: true, timeout: 15000, maxBuffer: 8 << 20 },
@@ -22,24 +22,44 @@ const anonymousStatus = (owner: string, repo: string) => new Promise<number | un
     req.on('error', () => resolve(undefined));
 });
 
+/** A git read that says why it failed; `input` goes to stdin, which execFile cannot feed. */
+const gitRead = (root: string, args: string[], input = '') => new Promise<{ out: string; err: string }>(resolve => {
+    const p = cp.spawn('git', ['-C', root, '-c', 'core.quotepath=off', ...args], { windowsHide: true });
+    let out = '', errText = '', failed = '';
+    const timer = setTimeout(() => { failed = `git ${args[0]} timed out after 60 s`; p.kill(); }, 60000);
+    p.stdout.setEncoding('utf8').on('data', (d: string) => { out += d; });
+    p.stderr.setEncoding('utf8').on('data', (d: string) => { errText += d; });
+    p.stdin.on('error', () => undefined);
+    p.on('error', e => { failed = failed || String(e.message); });
+    p.on('close', code => {
+        clearTimeout(timer);
+        const err = failed || (code === 0 ? '' : `git ${args[0]} exit ${code}: ${errText.split('\n')[0]}`);
+        resolve({ out: err ? '' : out, err: err.slice(0, 160) });
+    });
+    p.stdin.end(input);
+});
+
 /**
- * X-285 — committed sizes in one git call; untracked files are few, so they are stat'ed.
- * A failed read is carried as `unread`: right after a window reload the call timed out and
- * came back empty, and the gate read that as "nothing committed" — a pass it never measured.
+ * X-285 / X-401 — committed sizes from HEAD + the index, the rest in one batch; untracked files
+ * are few, so they are stat'ed. A failed read is carried as `unread`: right after a window reload
+ * the call timed out and came back empty, and the gate read that as "nothing committed" — a pass
+ * it never measured. A failed index read only costs speed: every blob is then asked.
  */
 async function weigh(root: string): Promise<RepoWeight> {
-    const tree = await new Promise<{ out: string; err: string }>(resolve =>
-        cp.execFile('git', ['-C', root, 'ls-tree', '-r', '-l', '-z', 'HEAD'],
-            { windowsHide: true, timeout: 60000, maxBuffer: 64 << 20 },
-            (err, out) => resolve({ out: err ? '' : String(out), err: err ? String(err.message).split('\n')[0].slice(0, 160) : '' })));
-    const top = largestBlobs(tree.out);
+    const tree = await gitRead(root, ['ls-tree', '-r', 'HEAD']);
+    const head = headBlobs(tree.out);
+    const cached = indexSizes((await gitRead(root, ['ls-files', '-s', '--debug'])).out, head);
+    const ask = [...new Set([...head].filter(([file]) => !cached.has(file)).map(([, hash]) => hash))];
+    const batch = ask.length ? await gitRead(root, ['cat-file', '--batch-check'], ask.join('\n') + '\n') : { out: '', err: '' };
+    const top = largestBlobs(head, cached, batchSizes(batch.out));
+    const unread = tree.err || batch.err;
     const untracked = (await git(root, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
         .map(file => {
             let bytes = 0;
             try { bytes = fs.statSync(path.join(root, file)).size; } catch { bytes = 0; }
             return { file, bytes };
         });
-    return { top, leftOut: leftOutBig(untracked), ...(tree.err ? { unread: tree.err } : {}) };
+    return { top, leftOut: leftOutBig(untracked), ...(unread ? { unread } : {}) };
 }
 
 /** X-286 — the repo the claude dir's link lands in, its carried sign-ins and whether strangers can read it. */
