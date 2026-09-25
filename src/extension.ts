@@ -316,6 +316,7 @@ import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
+import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
@@ -16920,6 +16921,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // S-77 — ONE status-bar item for the relay running right now; hidden while none runs.
     const batonBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);
     context.subscriptions.push(batonBar);
+    // S-101 — what a restart does not clear: the status-bar chip, the once-a-day notice and farm.cleanup
+    const stale = wireStale(context, bridge, {
+        tasks: () => taskManager.tasks,
+        cards: () => consoleHost.list(),
+        batons: () => batonStore.all(),
+        cancelTask: id => { const t = taskManager.tasks.find(x => x.id === id); if (t) { taskManager.cancelTask(t); } },
+        closeCard: id => { consoleHost.forget(id); ConsolePanel.refreshIfOpen(); },
+        stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard); }
+    }, (title, body) => {
+        noticesStore.add({ agentName: 'agent-farm', type: 'report', level: 2, title, body, sourceKey: `stale:${Date.now()}` });
+        NoticesPanel.refreshIfOpen();
+        updateNoticesBadge();
+    });
     const batonLegAlive = (sid: string): boolean => {
         if (live.sessions().some(s => s.sessionId === sid && s.status !== 'ended')) { return true; }
         // the Console host is declared further down; a hook event can land before it exists
@@ -17988,6 +18002,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                      */
                     bootPlanned: !!stamp && stamp.at <= bootAt && bootAt - stamp.at <= 120_000,
                     pid: process.pid,
+                    // S-101 — what has waited 24h+ (farm.cleanup lists and cleans it)
+                    stale: stale.summary(),
                     sessions: {
                         live: live.length, list: live,
                         // ‼️ X-266 — the twin state read off the CLI's own registry,
@@ -37844,6 +37860,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind !== 'task') { return; }
             TasksPanel.retryCompose(tasksDeps, node.task.id);
         }),
+        vscode.commands.registerCommand('agentfarm.cleanupStuck', () => stale.review()),
         vscode.commands.registerCommand('agentfarm.workflowLive', (runId?: unknown) => workflowLiveCommand({
             liveRuns: () => taskManager.liveRuns(),
             steerRun: (id, kind, text, by) => taskManager.steerRun(id, kind, text, by),

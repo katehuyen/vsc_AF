@@ -828,6 +828,12 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "agentfarm.cleanupStuck",
+        "title": "Clean Up Stuck Items…",
+        "category": "Agent Farm",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "agentfarm.runTaskNext",
         "title": "Run Next",
         "category": "Agent Farm",

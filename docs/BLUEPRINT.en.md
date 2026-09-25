@@ -1808,6 +1808,7 @@ Four distinct safety mechanisms protect the relay from endless loops, token wast
 - `baton.stop` — Halts an entire chain (`chainId`) or individual baton.
 - `baton.now` — Bypasses parking delays to trigger a waiting baton immediately.
 - `baton.lastLeg` — The soft brake (S-95): makes the leg running now the chain's last (`on=true`) or takes it back (`on=false`) until it passes. Braked, its handover order names the note, its pass is answered `braked` and the failsafe stays out. The Console card's ⑂⊣ Last leg runs the same body.
+- `farm.cleanup` — What is stuck (S-101): task rows queued and never started, rows "running" with nothing working, relay batons still waiting and idle Console cards — anything waiting 24h+, which a restart does not clear. Lists by default; `apply=true` (optionally `ids=`) cancels / stops / closes them, deleting nothing. The status-bar 🧹 chip (shown only while something is stuck), its review picker and the once-a-day notice's "Clean now" run the same body; `farm.health` carries the count as `stale`.
 - `baton.attach` — Seals an active run as Leg 1 of a new relay (`sessionId`, `account`, `maxHops`).
 
 

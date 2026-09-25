@@ -1851,6 +1851,7 @@ Zincirin sonsuz bir döngüde token yakmasını veya sahipsiz kalmasını engell
 - `baton.stop` — Belirli bir zinciri (`chainId`) veya bayrağı durdurma freni.
 - `baton.now` — Park edilmiş bir bayrağı bekleme süresini atlayarak derhal çalıştırma.
 - `baton.lastLeg` — Yumuşak fren (S-95): koşan etabı zincirin son etabı yapar (`on=true`) ya da devir anına kadar geri alır (`on=false`). Frenliyken devir emri not yazdırır, `baton.pass` `braked` döner, emniyet kilidi karışmaz. Konsol kartındaki ⑂⊣ Last leg aynı gövdeyi çalıştırır.
+- `farm.cleanup` — Takılı kalanlar (S-101): hiç başlamamış kuyruk satırları, hiçbir şey çalışmadığı hâlde "running" kalan satırlar, hâlâ bekleyen bayraklar ve boşta Konsol kartları — 24 saati geçen, yeniden başlatmanın temizlemediği her şey. Varsayılan yalnız listeler; `apply=true` (istenirse `ids=`) iptal eder / durdurur / kapatır, hiçbir şey silinmez. Durum çubuğundaki 🧹 çipi (yalnız takılı bir şey varken görünür), inceleme listesi ve günde en fazla bir kez gelen bildirimin "Clean now" düğmesi aynı gövdeyi çalıştırır; `farm.health` sayıyı `stale` olarak verir.
 - `baton.attach` — Canlı bir oturumu Leg 1 olarak mühürleyip röleye bağlama (`sessionId`, `account`, `maxHops`).
 
 

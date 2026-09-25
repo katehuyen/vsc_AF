@@ -7798,6 +7798,15 @@
       ]
     },
     {
+      "capability": "cleanupStuck",
+      "ui": [
+        "cmd:agentfarm.cleanupStuck"
+      ],
+      "ops": [
+        "farm.cleanup"
+      ]
+    },
+    {
       "capability": "workflowLive",
       "ui": [
         "cmd:agentfarm.workflowLive",
