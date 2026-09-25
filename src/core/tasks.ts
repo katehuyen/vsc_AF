@@ -23,6 +23,7 @@ import {
     CUT_OFF, enterVisit, SessionCall, sessionTurn, softNote, spawnSessionCall, supervisorRunLimits, SupervisorState, turnRefusal, WorkflowSupervisor
 } from './supervisorRun';
 import { kindOfStep, mechanicalWords, resolveWake, wakeDirective, wakeFacts, WakeSpec, wakeVerdict } from './workflowWake';
+import { applyLive, decisionFromArg, landWords, liveLines, livePatch, pendingWords, RunLive, wordFromArg, WordSource, wordsForBrief } from './workflowLive';
 import { flexPoint } from './flexPoints';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
@@ -1647,11 +1648,15 @@ interface WorkflowRunRecord {
     supervisor?: SupervisorState;
     /** M-45 — the wake conditions the run was started with */
     wake?: WakeSpec;
+    /** M-46 — what a person set while it ran: words for its supervisor, live settings (src/core/workflowLive.ts) */
+    live?: RunLive;
+    /** M-46 — the finished step's row the run is held after, when it was paused at a boundary */
+    pausedTask?: string;
 }
 
 export interface TaskManagerOptions {
     /** M-43 — a question with options put to a person; undefined = not answered */
-    askChoice?: (question: string, options: string[]) => Promise<string | undefined>;
+    askChoice?: (question: string, options: string[], ctx?: { runId: string; workflowTitle: string }) => Promise<string | undefined>;
     /** M-43 — replaces the checkpoint's one-shot supervisor call (tests) */
     superviseTurn?: (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
     /** M-44 — replaces the supervisor session's real spawn (tests) */
@@ -7078,7 +7083,9 @@ export class TaskManager implements vscode.Disposable {
         const here = ids[index], before = wake ? here : index > 0 ? ids[index - 1] : here;
         const limits = checkpointLimits(cp);
         // M-44 — one session per run (src/core/supervisorRun.ts); a reload that cut this visit's call off is not asked again
-        const sl = supervisorRunLimits(w.supervisor);
+        const sl = supervisorRunLimits(w.supervisor, rec?.live?.supervisor);
+        const words = pendingWords(rec?.live);
+        const human = rec?.live?.decision;
         const visit = enterVisit(sup, wake ? `${here}~wake` : here);
         Object.assign(sup, visit.state);
         const spent0 = sup.costUSD ?? 0;
@@ -7091,7 +7098,7 @@ export class TaskManager implements vscode.Disposable {
                 const r = await execOneShot({ cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt: sanitizePrompt(prompt), timeoutMs: o.timeoutMs });
                 return { ok: !!r.out.trim(), raw: r.out, ...(r.error ? { error: r.error } : {}) };
             };
-        const ask = this.opts.superviseTurn ?? (async (prompt: string, tier: 0 | 1) => {
+        const ask = human ? async () => ({ out: JSON.stringify(human), model: 'you' }) : this.opts.superviseTurn ?? (async (prompt: string, tier: 0 | 1) => {
             const model = tier ? escalateModel(model0) : model0;
             if (tier && !model) { return { out: '', error: 'there is no stronger model to escalate to' }; }
             const t = await sessionTurn(sup, sl, prompt, model ?? '', call, Date.now);
@@ -7099,17 +7106,31 @@ export class TaskManager implements vscode.Disposable {
             this.save();
             return { out: t.out, error: t.error, model: model || 'the CLI default' };
         });
-        const own = wake ? [wakeDirective(w.steps[index].title, index + 1, wake.after, wake.said, wake.plan)] : cp.message ? [cp.message] : [];
-        const shut = visit.cutOff ? CUT_OFF : this.opts.superviseTurn ? '' : turnRefusal(sup, sl);
-        const out = shut ? { mechanical: shut, log: [`mechanical — ${shut}`], directives: [...own, ...sup.directives], decision: undefined } : await superviseCheckpoint({
+        const own = [...wordsForBrief(words), ...(wake ? [wakeDirective(w.steps[index].title, index + 1, wake.after, wake.said, wake.plan)] : cp.message ? [cp.message] : [])];
+        const shut = visit.cutOff ? CUT_OFF : human || this.opts.superviseTurn ? '' : turnRefusal(sup, sl);
+        let out = shut ? { mechanical: shut, log: [`mechanical — ${shut}`], directives: [...own, ...sup.directives], decision: undefined } : await superviseCheckpoint({
             workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: wake || index > 0 ? before : undefined,
             costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (t.costUSD ?? 0), 0),
             directives: [...own, ...sup.directives], stepIds: ids, limits
         }, { stepIds: ids, currentStep: before, retries: sup.retries, history: sup.history }, {
-            ask, pick: this.opts.askChoice,
+            ask, pick: this.opts.askChoice ? (q, o) => this.opts.askChoice!(q, o, { runId, workflowTitle: w.title }) : undefined,
             confirm: this.opts.confirmApproval ? (title, message) => this.opts.confirmApproval!({ title, message }) : undefined
         });
         sup.directives = out.directives.slice(own.length);
+        // M-46 — the words landed here; a decision of yours is spent; "ask me too" puts this one to you first
+        if (rec?.live) {
+            if (words.length) { rec.live = landWords(rec.live, wake ? `after step ${index + 1} (woken)` : `step ${index + 1} (checkpoint)`); }
+            if (human) { delete rec.live.decision; }
+            if (rec.live.callMe && out.decision && !human) {
+                rec.live.callMe = false;
+                const d0 = out.decision;
+                const yes = this.opts.confirmApproval ? await this.opts.confirmApproval({
+                    title: `Workflow "${w.title}" — its supervisor decided: ${d0.decision}${d0.target ? ' ' + d0.target : ''}`, message: d0.why ?? ''
+                }) : true;
+                if (!yes) { out = { ...out, decision: undefined, mechanical: 'you turned the supervisor\'s decision down' }; }
+            }
+            this.save();
+        }
         sup.inFlight = undefined;
         const spent = (sup.costUSD ?? 0) - spent0;
         if (spent > 0) { task.costUSD = spent; }
@@ -7131,7 +7152,7 @@ export class TaskManager implements vscode.Disposable {
         const said = d ? `${d.decision}${d.target ? ` ${d.target}` : ''}${d.why ? ` — ${d.why}` : ''}` : 'carry on';
         const text = `${wake ? `Woken by ${wake.said}` : 'Checkpoint'}: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}${soft ? ` · ${soft}` : ''}`;
         try {
-            fs.writeFileSync(outFile, `# ${task.title}\n\n- ${wake ? `Woken after step ${index + 1} (${wake.after}) — wake conditions: ${wake.from}` : 'Checkpoint step'}\n- Limits: ${limits.origin}\n- Supervisor: ${sl.origin}` +
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- ${wake ? `Woken after step ${index + 1} (${wake.after}) — wake conditions: ${wake.from}` : 'Checkpoint step'}\n${words.length ? `- Your word(s) landed here: ${words.map(x => `${x.kind}: ${x.text}`).join(' | ')}\n` : ''}${human ? '- Your own decision, applied instead of asking the supervisor\n' : ''}- Limits: ${limits.origin}\n- Supervisor: ${sl.origin}` +
                 `${sup.calls ? ` · ${sup.calls} call(s) this run, $${(sup.costUSD ?? 0).toFixed(4)}` : ''}\n\n---\n\n` +
                 `${out.log.map(l => `- ${l}`).join('\n')}\n\n**${text}**\n\n---\n` +
                 `Finished: ${new Date().toLocaleString()} · ${route.go === 'stop' ? 'STOPPED' : 'OK'}\n`, 'utf8');
@@ -7156,14 +7177,107 @@ export class TaskManager implements vscode.Disposable {
         }
     }
 
+    // ---------- M-46: a person's hand on a running workflow (src/core/workflowLive.ts) ----------
+
+    /** Runs that can still take a word or a live setting: a step open, or held at a boundary. */
+    liveRuns(): { runId: string; title: string; where: string; paused: boolean; live: string[] }[] {
+        const out: { runId: string; title: string; where: string; paused: boolean; live: string[] }[] = [];
+        for (const [runId, rec] of this.runRecords) {
+            if (rec.ended) { continue; }
+            const open = this.tasks.filter(t => t.workflowRunId === runId && (t.status === 'running' || t.status === 'queued'));
+            if (!open.length && !rec.pausedTask) { continue; }
+            const at = open.length ? Math.max(...open.map(t => t.stepIndex ?? 0)) + 1 : undefined;
+            out.push({ runId, title: rec.title, where: rec.pausedTask ? 'paused' : `step ${at}`, paused: !!rec.pausedTask, live: liveLines(rec.live) });
+        }
+        return out;
+    }
+
+    private liveRecord(runId: string): WorkflowRunRecord | { error: string } {
+        const rec = this.runRecords.get(runId);
+        return rec && this.liveRuns().some(r => r.runId === runId) ? rec
+            : { error: `run "${runId}" is not running — workflows.status says where it got to` };
+    }
+
+    private boundaryOf(runId: string): string {
+        const r = this.liveRuns().find(x => x.runId === runId);
+        return r?.paused ? 'the resume' : `the end of ${r?.where ?? 'the running step'}`;
+    }
+
+    /** A word for the run's supervisor; it wakes it at the next step boundary and opens that brief. */
+    steerRun(runId: string, kind: unknown, text: unknown, by: WordSource): { error?: string; note?: string } {
+        const rec = this.liveRecord(runId);
+        if ('error' in rec) { return rec; }
+        const word = wordFromArg(kind, text, by, Date.now());
+        if ('error' in word) { return word; }
+        rec.live = { ...rec.live, words: [...(rec.live?.words ?? []), word] };
+        this.save();
+        return { note: `your ${word.kind} waits for its supervisor — it is read at ${this.boundaryOf(runId)}` };
+    }
+
+    /** The person's own decision for the next boundary, applied instead of asking the supervisor. */
+    decideRun(runId: string, raw: unknown): { error?: string; note?: string } {
+        const rec = this.liveRecord(runId);
+        if ('error' in rec) { return rec; }
+        const d = decisionFromArg(raw);
+        if (d.error) { return { error: d.error }; }
+        rec.live = { ...rec.live, decision: d.decision };
+        this.save();
+        return { note: `your ${String(d.decision!.decision)} is applied at ${this.boundaryOf(runId)}, instead of asking the supervisor` };
+    }
+
+    /** A live setting — from the next step boundary on; the running step is never cut. */
+    setRunLive(runId: string, args: Record<string, unknown>): { error?: string; note?: string } {
+        const rec = this.liveRecord(runId);
+        if ('error' in rec) { return rec; }
+        const p = livePatch(args);
+        if (!p.patch) { return { error: p.error ?? 'nothing to change' }; }
+        const { addCheckpoint, ...patch } = p.patch;
+        const notes: string[] = [];
+        if (addCheckpoint !== undefined) {
+            const r = this.addLiveCheckpoint(runId, rec, addCheckpoint);
+            if (r.error) { return r; }
+            notes.push(r.note!);
+        }
+        rec.live = applyLive(rec.live, patch);
+        this.save();
+        if (patch.pause === false && rec.pausedTask) {
+            const t = this.tasks.find(x => x.id === rec.pausedTask);
+            delete rec.pausedTask;
+            this.save();
+            if (t) { notes.push('resumed'); this.advanceWorkflow(t, t.status); }
+        }
+        return { note: [...notes, ...liveLines(rec.live)].join(' · ') || 'set' };
+    }
+
+    /** A checkpoint right after the running step, on the run's own copy of the chain. */
+    private addLiveCheckpoint(runId: string, rec: WorkflowRunRecord, message: string): { error?: string; note?: string } {
+        const view = this.runView(rec.workflowId, runId) as FarmWorkflow | undefined;
+        if (!view) { return { error: 'the workflow is gone' }; }
+        const open = this.tasks.filter(t => t.workflowRunId === runId && t.stepIndex !== undefined
+            && (t.status === 'running' || t.status === 'queued' || t.id === rec.pausedTask));
+        if (!open.length) { return { error: 'no step is running to put a checkpoint after' }; }
+        const i = Math.max(...open.map(t => t.stepIndex!));
+        const ids = view.steps.map((s, k) => stepKey(s, k));
+        let n = 1, id = `${ids[i]}c${n}`.slice(0, 32);
+        while (ids.includes(id)) { id = `${ids[i]}c${++n}`.slice(0, 32); }
+        const step: WorkflowStep = {
+            id, agentId: '', agentName: 'checkpoint', title: 'Checkpoint (added live)', prompt: '', mode: 'headless',
+            checkpoint: message ? { message } : {}
+        };
+        rec.edits = { ...rec.edits, inserts: [...(rec.edits?.inserts ?? []), { after: ids[i], steps: [step] }] };
+        return { note: `a checkpoint runs after step ${i + 1}` };
+    }
+
     /** M-45 — do the run's wake conditions fire after this step? Undefined = the mechanical path. */
     private wakeCheck(w: FarmWorkflow, task: FarmTask, status: TaskStatus, runId: string): Omit<WakeCall, 'mechanical' | 'plan'> | undefined {
         const i = task.stepIndex ?? 0;
         const step = w.steps[i];
         const rec = this.runRecords.get(runId);
         if (!step || step.checkpoint || !rec || task.wokeBy) { return undefined; }
-        const r = resolveWake({ workflow: w.wake, step: step.wake, run: rec.wake });
-        if (!r.conditions.length) { return undefined; }
+        const r = resolveWake({ workflow: w.wake, step: step.wake, run: rec.wake, live: rec.live?.wake });
+        // M-46 — a person's waiting word or decision wakes it at this boundary, whatever the conditions say
+        const human = [...(pendingWords(rec.live).length ? ['your-word'] : []), ...(rec.live?.decision ? ['your-decision'] : [])];
+        if (!r.conditions.length && !human.length) { return undefined; }
         const rows = this.tasks.filter(t => t.workflowRunId === runId);
         const kind = kindOfStep(step);
         const h = this.computeHandoff(task);
@@ -7173,7 +7287,10 @@ export class TaskManager implements vscode.Disposable {
             verified: task.verified, runCostUSD: rows.reduce((a, t) => a + (t.costUSD ?? 0), 0),
             assets: kind === 'media' && h.file ? 1 : 0, output: h.text
         }));
-        return v.fired.length ? { fired: v.fired, said: v.said, from: r.sentence, after: status } : undefined;
+        const fired = [...human, ...v.fired];
+        const said = [...human.map(h => h === 'your-word' ? 'your-word (a word of yours was waiting)' : 'your-decision (you decided this boundary)'),
+            ...(v.said ? [v.said] : [])].join(', ');
+        return fired.length ? { fired, said, from: r.sentence, after: status } : undefined;
     }
 
     /** Gallery Re-run/Vary: run a single media job outside any stored workflow. */
@@ -7205,6 +7322,14 @@ export class TaskManager implements vscode.Disposable {
         }
         const stepIndex = task.stepIndex ?? 0;
         const handoff = this.computeHandoff(task);
+        // M-46 — paused at the next boundary: the finished step is kept, the run waits for a resume
+        const held = this.runRecords.get(runId);
+        if (held?.live?.pause) {
+            held.pausedTask = task.id;
+            this.save();
+            void vscode.window.showInformationMessage(`Agent Farm: workflow "${w.title}" is paused after step ${stepIndex + 1}, as you asked. Resume: Agent Farm: Steer a Running Workflow, or workflows.live pause=false.`);
+            return;
+        }
         // M-45 — the run's wake conditions; nothing fires = the mechanical path, exactly as before
         const woke = this.wakeCheck(w, task, status, runId);
         const mechanical = () => this.mechanicalAdvance(w, stepIndex, status, handoff, runId);

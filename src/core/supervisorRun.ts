@@ -52,8 +52,8 @@ const FIELDS: [keyof WorkflowSupervisor, string][] = [
 const orUnset = (v: unknown): unknown => (typeof v === 'string' && !v.trim() ? undefined : v);
 
 /** The run's supervisor limits, each through its flex point `workflow.supervisor.*`. */
-export function supervisorRunLimits(ws: WorkflowSupervisor | undefined): SupervisorLimits {
-    const r = Object.fromEntries(FIELDS.map(([k, id]) => [k, resolveFlex(`workflow.supervisor.${id}`, { workflow: orUnset(ws?.[k]) })]));
+export function supervisorRunLimits(ws: WorkflowSupervisor | undefined, live?: Partial<WorkflowSupervisor>): SupervisorLimits {
+    const r = Object.fromEntries(FIELDS.map(([k, id]) => [k, resolveFlex(`workflow.supervisor.${id}`, { workflow: orUnset(ws?.[k]), live: orUnset(live?.[k]) })]));
     return {
         model: String(r.model.value ?? ''), effort: String(r.effort.value ?? ''), account: String(r.account.value ?? ''),
         maxCalls: Number(r.maxCalls.value), budgetUSD: Number(r.budgetUSD.value), budgetMode: r.budgetMode.value as BudgetMode,

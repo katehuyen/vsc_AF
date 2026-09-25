@@ -31,6 +31,7 @@
         'permission':       { icon: '🛡️', label: 'PERMISSION',  cls: 'urgent' },
         'browser-approval': { icon: '🌐', label: 'APPROVAL',     cls: 'urgent' },
         'mission':          { icon: '🎯', label: 'MISSION',      cls: 'urgent' },
+        'question':         { icon: '❓', label: 'QUESTION',     cls: 'urgent' },
         'interrupted':      { icon: '✂️', label: 'INTERRUPTED',  cls: 'warn' },
         'stalled':          { icon: '⏳', label: 'STALLED',      cls: 'warn' },
         'conflict':         { icon: '⇄',  label: 'CONFLICT',     cls: 'warn' }

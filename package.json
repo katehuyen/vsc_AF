@@ -822,6 +822,12 @@
         "icon": "$(debug-continue)"
       },
       {
+        "command": "agentfarm.workflowLive",
+        "title": "Steer a Running Workflow…",
+        "category": "Agent Farm",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "agentfarm.runTaskNext",
         "title": "Run Next",
         "category": "Agent Farm",

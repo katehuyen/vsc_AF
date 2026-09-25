@@ -12,7 +12,10 @@ import { FlexPreset, presetLibrary } from './flexPresets';
 import { FlexLayers, resolveFlex, settingsLayer } from './flexResolve';
 import { PRESETS as SENTRY_PRESETS } from './sentryPolicy';
 
-export type FlexBridgeDeps = FlexDeps;
+export type FlexBridgeDeps = FlexDeps & {
+    /** M-46 — a running workflow's own value (level live); absent = this window has no runs to set */
+    setLive?: (runId: string, point: string, value: unknown) => unknown;
+};
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -71,12 +74,15 @@ export function registerFlexOps(bridge: BridgeRegistry, deps: FlexBridgeDeps): v
         },
         {
             op: 'flex.set',
-            describe: 'Set one flex point (U-152): {point, level? (settings — the only level with a store today; a run\'s '
+            describe: 'Set one flex point (U-152): {point, level? (settings, or live with runId — a RUNNING workflow: workflow.wake and workflow.supervisor.model / budgetUsd / maxCalls, from its next step on (M-46); a run\'s '
                 + 'own value is passed to the op that starts it), value? (omit or null = back to inherited)}. The value is '
                 + 'checked against the point; one inside an object setting (agentFarm.taskRetry) is written into it, the '
                 + 'other fields kept. Returns the point resolved.',
             handler: async (args) => {
                 const level = levelArg(args);
+                if (level === 'live' && deps.setLive) {
+                    return deps.setLive(argStr(args, 'runId'), argStr(args, 'point'), args.value === null ? undefined : args.value);
+                }
                 need(level === 'settings', `${FLEX_LEVEL_LABELS[level]} values have no store yet — pass them to the op that `
                     + 'starts the run (presets.apply level=run returns those args).');
                 return setFlexSetting(deps, argStr(args, 'point'), args.value === null ? undefined : args.value);

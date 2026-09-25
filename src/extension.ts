@@ -233,6 +233,10 @@ import { judgeEngineRefusal } from './core/judgeEngines';
 import { checkTriggerMapping, checkWorkflowInputs } from './core/workflowInputs';
 import { setWorkflowGoal } from './core/checkpointStep';
 import { setWorkflowWake, wakeDictionary, wakeFromArg } from './core/workflowWake';
+import { liveArgOfPoint, phoneRunList, phoneWord } from './core/workflowLive';
+import { actionOption, askKeyboard, askText, parseAskTap } from './core/workflowAsk';
+import { WorkflowAsks } from './workflowAskDoors';
+import { workflowLiveCommand } from './workflowLiveUi';
 import { setWorkflowSupervisor, supervisorRunRefusal, WorkflowSupervisor } from './core/supervisorRun';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -1123,6 +1127,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // G1: browser-step approvals waiting for a human, mirrored into the Needs You queue.
     const approvalQueue = new ApprovalQueue();
+    // M-46 — a workflow supervisor's question on three doors: the window, Needs You, the phone
+    const workflowAsks = new WorkflowAsks({
+        changed: () => needsEmitter.fire(),
+        phone: q => {
+            const c = chatCfg();
+            if (!c.enabled) { return; }
+            for (const chat of c.allow) { void chatSend(chat, askText(q), undefined, askKeyboard(q)); }
+        }
+    });
     const needsEmitter = new vscode.EventEmitter<void>();
     context.subscriptions.push(needsEmitter);
     approvalQueue.onChange = () => needsEmitter.fire();
@@ -3963,10 +3976,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 return promise;
             },
-            // M-43 — a checkpoint supervisor's question: one of its options, or a typed answer
-            askChoice: (question, options) => Promise.resolve(options.length
-                ? vscode.window.showQuickPick(options, { title: `Agent Farm — the supervisor asks: ${question}`, ignoreFocusOut: true })
-                : vscode.window.showInputBox({ title: 'Agent Farm — the supervisor asks', prompt: question, ignoreFocusOut: true })),
+            // M-46 — a checkpoint supervisor's question on three doors; the first answer wins
+            askChoice: (question, options, ctx) => workflowAsks.ask(ctx?.runId ?? '', ctx?.workflowTitle ?? 'workflow', question, options),
             confirmApproval: ({ title, message }) => {
                 // Workflow human-gate: notification + Needs You panel race, first settle wins.
                 const { id, promise } = approvalQueue.add({ title, goal: message, kind: 'approval' });
@@ -8849,6 +8860,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 need(runId, `"${(w as FarmWorkflow).title}" has no steps — there was nothing to start.`);
                 return { started: (w as FarmWorkflow).title, runId };
+            }
+        },
+        {
+            op: 'workflows.steer',
+            describe: 'M-46 — A WORD FOR A RUNNING WORKFLOW SUPERVISOR (the humanDirective language): it wakes the supervisor at the next step boundary and opens that brief as the highest rule; the row it lands on says so. args: runId (workflows.live with no runId lists the running ones), kind? (steer | veto | constraint, default steer), text',
+            handler: (args) => {
+                const r = taskManager.steerRun(argStr(args, 'runId'), args.kind, argStr(args, 'text'), 'bridge');
+                need(!r.error, `${r.error}.`);
+                return r;
+            }
+        },
+        {
+            op: 'workflows.live',
+            describe: 'M-46 — change a RUNNING workflow from the next step boundary on; the running step is never cut. No runId = the running runs with their live settings. args: runId?, wake? (mechanical | smart | hybrid | a condition list, as workflows.add), model? (the supervisor model; empty = the workflow one), budgetUSD?, maxCalls?, callMe? (true = the next supervisor decision is put to you first), pause? (true = hold at the next boundary, false = resume), addCheckpoint? (true, or what it should look at — a checkpoint right after the running step, on this run only). What was set reads "changed live".',
+            handler: (args) => {
+                const id = optStr(args, 'runId');
+                if (!id) { return { runs: taskManager.liveRuns() }; }
+                const { runId: _id, ...rest } = args;
+                const r = taskManager.setRunLive(id, rest);
+                need(!r.error, `${r.error}.`);
+                return r;
+            }
+        },
+        {
+            op: 'workflows.decide',
+            describe: 'M-46 — YOUR OWN DECISION for a running workflow at its next step boundary, applied instead of asking its supervisor, under the same contract and limits. args: runId, decision (proceed | retry | jump | insert | stop), target? (a step id, for retry and jump), patch? ({prompt?, input?, model?, engine?}), insert? ([{kind: agent | approval, title, prompt}]), why?',
+            handler: (args) => {
+                const { runId, ...d } = args;
+                const r = taskManager.decideRun(String(runId ?? ''), d);
+                need(!r.error, `${r.error}.`);
+                return r;
             }
         },
         {
@@ -18910,7 +18952,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         insights,
         // F1: cut runs live in the queue too — the startup toast is easy to miss.
         interruptedRuns: taskManager.interruptedRuns(),
-        missionWaits: missionWaits()
+        missionWaits: missionWaits(),
+        workflowQuestions: workflowAsks.list()
     });
 
     // Cleared rows: the key stays only while its row is still produced, so a
@@ -23571,6 +23614,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---------- G1/G5: Needs You queue + kanban board ----------
 
     const handleNeedAction = async (actionId: string, item: NeedItem): Promise<void> => {
+        // M-46 — a workflow supervisor's question: one button per option, or a typed answer
+        const wq = item.ref.questionId ? actionOption(actionId) : undefined;
+        if (wq !== undefined) {
+            const q = workflowAsks.get(item.ref.questionId!);
+            if (!q) { return; }
+            const a = wq === 'text' ? await workflowAsks.pick(q) : q.options[wq];
+            if (a !== undefined) { workflowAsks.settle(q.id, a); }
+            return;
+        }
         switch (actionId) {
             case 'approve':
             case 'reject':
@@ -26703,6 +26755,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // X-368 — only what the user WROTE is the Farm Settings layer; the shipped default is `builtin`.
     const flexDeps = {
+        // M-46 — flex.set level=live: a running workflow's own value, through the same door as workflows.live
+        setLive: (runId: string, point: string, value: unknown) => {
+            const a = liveArgOfPoint(point, value);
+            need(!('error' in a), `${String((a as { error?: string }).error)}.`);
+            const r = taskManager.setRunLive(runId, a as Record<string, unknown>);
+            need(!r.error, `${r.error}.`);
+            return r;
+        },
         writeSetting: writeUserSetting,
         readSetting: (key: string): unknown => {
             const i = vscode.workspace.getConfiguration().inspect<unknown>(key);
@@ -29763,6 +29823,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const token = vault.get(TELEGRAM_SECRET);
         if (!token) { return; }
         const ack = (text?: string) => answerCallbackQuery(token, cb.id, text);
+        // M-46 — a workflow supervisor's question, answered from the phone; the first answer wins
+        const wtap = parseAskTap(cb.data);
+        if (wtap) {
+            const q = workflowAsks.get(wtap.id);
+            const a = q?.options[wtap.option];
+            const ok = a !== undefined && workflowAsks.settle(wtap.id, a);
+            await ack(ok ? `Answered: ${a}` : 'Already answered, or the question is gone.');
+            if (ok) { await chatSend(msg.chatId, `✅ "${q!.workflowTitle}" — you answered: ${a}`); }
+            return;
+        }
         const tap = parseTap(cb.data);
         if (!tap) { await ack('Not a button I know.'); return; }
         const s = consoleHost.get(tap.id);
@@ -29980,6 +30050,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             } else {
                 await chatSend(msg.chatId, 'Nothing from this chat is running. /cancel <number> stops a live turn.');
             }
+            return;
+        }
+        // M-46 — a word for a running workflow's supervisor, from the phone
+        if (cmd.kind === 'word') {
+            const runs = taskManager.liveRuns();
+            const pw = phoneWord(cmd.arg);
+            const run = pw.index ? runs[pw.index - 1] : runs.length === 1 ? runs[0] : undefined;
+            if (!pw.text || !run) {
+                await chatSend(msg.chatId, `/${cmd.word} [n] <what the run should do>\n\n${phoneRunList(runs)}`);
+                return;
+            }
+            const r = taskManager.steerRun(run.runId, cmd.word, pw.text, 'telegram');
+            await chatSend(msg.chatId, r.error ? `⚠ ${r.error}.` : `✅ "${run.title}" — ${r.note}.`);
             return;
         }
         if (cmd.kind === 'sessions') {
@@ -37746,6 +37829,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (node?.kind !== 'task') { return; }
             TasksPanel.retryCompose(tasksDeps, node.task.id);
         }),
+        vscode.commands.registerCommand('agentfarm.workflowLive', () => workflowLiveCommand({
+            liveRuns: () => taskManager.liveRuns(),
+            steerRun: (id, kind, text, by) => taskManager.steerRun(id, kind, text, by),
+            setRunLive: (id, args) => taskManager.setRunLive(id, args)
+        })),
         vscode.commands.registerCommand('agentfarm.resumeWorkflow', (node?: TaskNode) => {
             if (node?.kind === 'task') { taskManager.resumeWorkflowFromTask(node.task); }
         }),

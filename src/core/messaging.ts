@@ -63,6 +63,8 @@ export type ChatCommand =
     | { kind: 'sessions' }
     /** U-113 — where plain messages from this chat go. Empty arg = ask */
     | { kind: 'focus'; arg: string }
+    /** M-46 — a word for a running workflow's supervisor: `[n] text` */
+    | { kind: 'word'; word: 'steer' | 'veto' | 'constraint'; arg: string }
     | { kind: 'prompt'; text: string };
 
 /** Telegram's getUpdates payload → the messages we care about. */
@@ -142,6 +144,7 @@ export function parseCommand(text: string): ChatCommand {
     if (cmd === 'new') { return { kind: 'new', agent: arg }; }
     if (cmd === 'sessions') { return { kind: 'sessions' }; }
     if (cmd === 'focus') { return { kind: 'focus', arg }; }
+    if (cmd === 'steer' || cmd === 'veto' || cmd === 'constraint') { return { kind: 'word', word: cmd, arg }; }
     // an unknown slash command is not a prompt — running it would be a guess
     return { kind: 'help' };
 }
@@ -185,6 +188,7 @@ export const HELP_TEXT = [
     '/agents — the agents and what each one thinks with',
     '/status — the farm: what is running, what needs you, today\'s cost, what is left on each plan',
     '/cancel — stop the run this chat started · /cancel <number> stops a live turn',
+    '/steer [n] <text> — a word for a running workflow\'s supervisor, read at its next step (/veto, /constraint too)',
     '/help — this message',
     '',
     'A /agent run is headless; a /new session is a Console conversation. Both carry',

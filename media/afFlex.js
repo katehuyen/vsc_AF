@@ -106,10 +106,13 @@
     }
 
     /** A workflow's supervisor (M-44): set on the workflow form's Supervisor row, carried by the workflow's `supervisor`. */
-    function wfSupervisor(field, label, type, dflt, box, extra) {
+    function wfSupervisor(field, label, type, dflt, box, extra, liveBox) {
+        const key = field === 'budgetUsd' ? 'budgetUSD' : field;
+        const levels = { workflow: { surface: 'media/afCheckpoint.js#wf-' + box, bridge: 'workflows.add:supervisor.' + key } };
+        // M-46 — the few a running workflow takes live (src/workflowLiveUi.ts)
+        if (liveBox) { levels.live = { surface: 'src/workflowLiveUi.ts#' + liveBox, bridge: 'workflows.live:' + key }; }
         return Object.assign({
-            id: 'workflow.supervisor.' + field, label: label, type: type, default: dflt, remembered: false,
-            levels: { workflow: { surface: 'media/afCheckpoint.js#wf-' + box, bridge: 'workflows.add:supervisor.' + (field === 'budgetUsd' ? 'budgetUSD' : field) } }
+            id: 'workflow.supervisor.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels
         }, extra || {});
     }
 
@@ -133,11 +136,11 @@
         forEachPoint('capMode', 'For each — a longer list', 'enum', 'soft', 'feCapMode', { options: ['soft', 'hard'] }),
         forEachPoint('budgetUsd', 'For each — $ per element', 'number', 0, 'feBudget', { min: 0 }),
         judgeStep('model', 'Judge model', ''),
-        wfSupervisor('model', 'Workflow supervisor model', 'text', '', 'supModel'),
+        wfSupervisor('model', 'Workflow supervisor model', 'text', '', 'supModel', null, 'wl-model'),
         wfSupervisor('effort', 'Workflow supervisor effort', 'text', '', 'supEffort'),
         wfSupervisor('account', 'Workflow supervisor sign-in', 'text', '', 'supAccount'),
-        wfSupervisor('maxCalls', 'Workflow supervisor — calls per run', 'number', 10, 'supCalls', { min: 1, max: 50 }),
-        wfSupervisor('budgetUsd', 'Workflow supervisor — budget $', 'number', 0, 'supBudget', { min: 0 }),
+        wfSupervisor('maxCalls', 'Workflow supervisor — calls per run', 'number', 10, 'supCalls', { min: 1, max: 50 }, 'wl-calls'),
+        wfSupervisor('budgetUsd', 'Workflow supervisor — budget $', 'number', 0, 'supBudget', { min: 0 }, 'wl-budget'),
         wfSupervisor('budgetMode', 'Workflow supervisor — over the budget', 'enum', 'soft', 'supBudgetMode', { options: ['soft', 'hard'] }),
         wfSupervisor('maxFailures', 'Workflow supervisor — failures in a row', 'number', 3, 'supFailures', { min: 1, max: 10 }),
         wfSupervisor('timeoutMin', 'Workflow supervisor — minutes per call', 'number', 5, 'supTimeout', { min: 1, max: 30 }),
@@ -153,7 +156,8 @@
             levels: {
                 workflow: { surface: 'media/afWake.js#wf-wake', bridge: 'workflows.add:wake' },
                 step: { surface: 'media/afWake.js#st-wake', bridge: 'workflows.add:steps.wake' },
-                run: { surface: 'media/afWake.js#wi-wake', bridge: 'workflows.run:wake' }
+                run: { surface: 'media/afWake.js#wi-wake', bridge: 'workflows.run:wake' },
+                live: { surface: 'src/workflowLiveUi.ts#wl-wake', bridge: 'workflows.live:wake' }
             }
         },
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered

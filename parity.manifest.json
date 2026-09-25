@@ -7789,6 +7789,16 @@
       ]
     },
     {
+      "capability": "workflowLive",
+      "ui": [
+        "cmd:agentfarm.workflowLive"
+      ],
+      "ops": [
+        "workflows.live",
+        "workflows.steer"
+      ]
+    },
+    {
       "capability": "worktreeRuns",
       "ui": [
         "cmd:agentfarm.worktreeRuns"
