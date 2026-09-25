@@ -95,12 +95,12 @@ Bu desen tekil ve canlı bir çalışma seansında zararsız gibi görünse de, 
 
 ---
 
-## 5. Kesin Kural ve Kullanım Sınırı (ÖNEMLİ UYARI)
+## 5. Kesin Kural ve Kullanım Sınırı
 
-> ⚠️ **UYARI — KULLANICI ÖZELLİKLE TALEP ETMEDİKÇE KESİNLİKLE BAŞVURULMAMALIDIR:**  
-> Kullanıcı özellikle bu tekniği açıkça istemediği durumlarda; bir insan gelip cevap verene kadar oturumları kalıcı olarak tıkayacağı, süreçleri askıda bırakacağı ve tüm sistemi kilitleyeceği için **son derece riskli ve zararlı bir uygulamadır.**
+> ⚠️ **UYARI — KULLANICI AÇIKÇA TALEP ETMEDİKÇE KULLANILMAMALIDIR:**  
+> Kullanıcı tarafından özellikle bu yöntem talep edilmediği sürece, insan yanıtı gelene kadar oturumları kalıcı olarak bloke edeceği ve ardışık süreçleri durduracağı için **sistem kararlılığı açısından riskli bir yöntemdir ve kaçınılmalıdır.**
 > 
-> Normal ve standart soru sorma mekanizmaları (ekranda interaktif soru sorma veya standart bildirim/devir akışı) zaten mevcuttur. Ajanların kendi inisiyatifiyle "akıllılık edip" oturumu böyle bir uyku döngüsüne sokması **kesinlikle yasaktır ve başvurulmaması gereken bir anti-pattern'dir.**
+> Standart soru sorma ve bildirim mekanizmaları mevcuttur. Otonom veya yarı otonom yürütülen süreçlerde oturumun uyku döngüsüne alınması yasaktır.
 
-1. **Özellikle Talep Edilmedikçe Kullanılamaz:** Yalnızca ve yalnızca kullanıcı doğrudan "bunu bekleme betiği ve Monitor ile uyutarak dinle" derse uygulanabilir; bunun haricinde hiçbir ajan kendi kendine bu yola sapamaz.
-2. **Otonom Akışlarda (Baton Relay, Nöbet, Headless Misyonlar):** Oturumlar asla insan için süresiz kilitlenemez. Normal soru akışı izlenir, gerekirse önerilen varsayılanla devam edilir veya oturum temizce devredilip/kapatılıp sonlandırılır; oturum uykuda açık bırakılamaz.
+1. **Açık Talep Şartı:** Yalnızca kullanıcının açıkça bu bekleme yöntemini belirttiği özel durumlar için geçerlidir; harici durumlarda ajanlar tarafından otonom olarak devreye alınamaz.
+2. **Otonom Akışlar (Baton Relay, Nöbet, Headless Misyonlar):** Oturumlar insan yanıtı için açık ve uykuda bırakılamaz. Standart soru akışı uygulanır; zaman aşımı durumunda önerilen varsayılan ile ilerlenir veya oturum uygun şekilde kapatılarak devredilir.
