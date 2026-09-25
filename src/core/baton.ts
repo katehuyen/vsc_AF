@@ -55,6 +55,12 @@ export interface BatonWant {
     account: string;
 }
 
+/** S-96 — who set the brake on a running leg, and when. Removing it is the whole release. */
+export interface BatonLastLeg {
+    at: number;
+    by: string;
+}
+
 export interface Baton {
     id: string;
     chainId: string;
@@ -82,6 +88,8 @@ export interface Baton {
     rescue?: string;
     /** S-84 — the A2A card this pass hung on the board (batonBoard.ts) */
     a2aNoteId?: string;
+    /** S-96 — on the opener of a RUNNING leg only: the user made that leg the chain's last (batonLastLeg.ts) */
+    lastLeg?: BatonLastLeg;
     createdAt: number;
     updatedAt: number;
 }
@@ -351,6 +359,8 @@ export interface BatonRelay {
     hop: number;
     /** it has already left a live baton — the only step left is to end */
     passed: boolean;
+    /** S-96 — the user made this leg the chain's last: the order is the note, not the pass */
+    braked?: boolean;
 }
 
 /**
@@ -367,7 +377,7 @@ export function batonRelayOf(list: readonly Baton[], sessionId: string): BatonRe
     const opener = openerOf(list, sid);
     if (!opener) { return undefined; }
     if (list.some(b => b.chainId === opener.chainId && b.state === 'stopped' && b.hop > opener.hop)) { return undefined; }
-    return { chainId: opener.chainId, hop: opener.hop + 1, passed: false };
+    return { chainId: opener.chainId, hop: opener.hop + 1, passed: false, ...(opener.lastLeg ? { braked: true } : {}) };
 }
 
 /**

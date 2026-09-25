@@ -8,6 +8,10 @@
  */
 import { Baton, isLive, openerOf } from './baton';
 import { chainMaxLegs, isSeal } from './batonSeal';
+import { BrakeState, brakeStateOf } from './batonLastLeg';
+
+/** S-99 — the mark a leg the user made the chain's last carries after its number, wherever the number is drawn. */
+export const LAST_LEG_MARK = '⊣';
 
 export interface BatonCardView {
     chainId: string;
@@ -20,6 +24,8 @@ export interface BatonCardView {
     lines: string[];
     /** a live baton in the chain the user can brake (baton.stop chain=) */
     stoppable: boolean;
+    /** S-99 — the soft brake of this run's leg (baton.lastLeg); absent = no running leg to brake */
+    brake?: BrakeState;
 }
 
 const short = (id: string | undefined): string => String(id ?? '').slice(0, 8);
@@ -57,7 +63,7 @@ export interface BatonBarView {
 function barLine(b: Baton, leg: number, max: string, fmt: (t: number) => string): string {
     const at = `Chain ${b.chainId} — leg ${leg}${max}`;
     switch (b.state) {
-        case 'started': return `${at} running (session ${short(b.toSessionId)}).`;
+        case 'started': return `${at} running (session ${short(b.toSessionId)})${b.lastLeg ? ' — its last leg: braked by the user' : ''}.`;
         case 'waiting-end': return `${at} opens when session ${short(b.from.sessionId)} ends.`;
         case 'parked': return `${at} parked — every account is full; wakes ${b.wakeAt ? 'at ' + fmt(b.wakeAt) : 'at the first reset'}.`;
         default: return `${at} recorded, not yet accepted.`;
@@ -87,14 +93,14 @@ export function batonBarView(
     const more = running.length > 1 ? ` +${running.length - 1}` : '';
     const lines = running.map(b => barLine(b, b.hop + 1, cap(b) > 0 ? ` of ${cap(b)}` : '', fmt));
     return {
-        text: `⑂ ${top.hop + 1}${max}${wake}${more}`,
+        text: `⑂ ${top.hop + 1}${top.state === 'started' && top.lastLeg ? LAST_LEG_MARK : ''}${max}${wake}${more}`,
         tooltip: [
             `Baton relay — ${running.length === 1 ? 'one chain' : running.length + ' chains'} running`,
             '',
             ...lines,
             '',
             maxLegs > 0 ? `Ceiling: ${maxLegs} legs a chain (agentFarm.batonMaxHops).` : 'No leg ceiling (agentFarm.batonMaxHops = 0).',
-            `Brake: ✕ Stop chain on the card, or baton.stop chain=${top.chainId}.`
+            `Brake: ⑂⊣ Last leg on the running card (baton.lastLeg), ✕⑂ Stop chain while a successor waits (baton.stop chain=${top.chainId}).`
         ].join('\n'),
         chainId: top.chainId,
         ...(top.state === 'started' && top.toSessionId ? { sessionId: top.toSessionId }
@@ -128,12 +134,16 @@ export function batonCardView(list: readonly Baton[], sessionId: string): BatonC
     ];
     if (left?.note) { lines.push(`Note: ${left.note}`); }
     const stoppable = chain.some(isLive);
+    const brake = brakeStateOf(list, sid);
+    const last = brake === 'on' || brake === 'locked';
+    if (brake === 'on') { lines.push('Last leg: braked by the user — at its handover line it writes the note, and no successor opens.'); }
+    if (brake === 'locked') { lines.push('Last leg: braked by the user — the chain ended at this leg.'); }
     lines.push(stoppable
         ? `Brake: baton.stop chain=${chainId} — recorded, never deleted.`
         : 'The chain ends when the work is done and nobody passes.');
     return {
-        chainId, leg, chip: `⑂ ${leg}`,
-        head: `Baton relay — leg ${leg}${left && isLive(left) ? ' · successor waiting' : ''}`,
-        lines, stoppable
+        chainId, leg, chip: `⑂ ${leg}${last ? LAST_LEG_MARK : ''}`,
+        head: `Baton relay — leg ${leg}${last ? ' · last leg' : ''}${left && isLive(left) ? ' · successor waiting' : ''}`,
+        lines, stoppable, ...(brake ? { brake } : {})
     };
 }

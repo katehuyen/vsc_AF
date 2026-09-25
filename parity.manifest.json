@@ -1360,6 +1360,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#batonLastLeg",
+      "ui": [
+        "page:consolePanel.ts#batonLastLeg"
+      ],
+      "ops": [
+        "baton.lastLeg"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#batonPassNow",
       "ui": [
         "page:consolePanel.ts#batonPassNow"

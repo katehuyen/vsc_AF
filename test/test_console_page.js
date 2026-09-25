@@ -1353,6 +1353,39 @@ const intentOf = (o) => Object.assign({
     push(data(CONVO.slice(), { batonView: null }));
     ok('‼️ a run no baton touched has neither', !/batonsig|c-baton-stop/.test(status()));
 
+    // S-99 — THE SOFT BRAKE, drawn for the whole leg: a toggle whose pressed
+    // state is the host's (`brake`), never a guess the page keeps.
+    const leg = (brake, stoppable) => Object.assign(relay(!!stoppable), brake ? { brake } : {});
+    push(data(CONVO.slice(), { batonView: leg('off') }));
+    ok('S-99: a running leg draws ⑂⊣ Last leg, not pressed — before ✕⑂ and Open transcript',
+        /id="c-baton-lastleg" aria-label="Last leg" aria-pressed="false">⑂⊣</.test(status())
+        && status().indexOf('id="c-baton-lastleg"') < status().indexOf('id="c-transcript"'));
+    ok('…MIRROR: its panel opens with the state, then says what pressing does',
+        /Last leg: off — the chain goes on/.test(status()) && /write the handover note instead of passing the baton/.test(status())
+        && /baton\.lastLeg session=[^ ]+ on=true/.test(status()));
+    posted.length = 0;
+    els['c-baton-lastleg'].listeners.click();
+    ok('…pressing it asks the host to brake THIS card', posted.length === 1 && posted[0].type === 'batonLastLeg'
+        && posted[0].id === 'cs1' && posted[0].on === true);
+    push(data(CONVO.slice(), { batonView: leg('on') }));
+    ok('pressed: drawn pressed, and the panel says how to take it back',
+        /class="stchip lastleg on" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="true">/.test(status())
+        && /Last leg: ON/.test(status()) && /Press again to take it back/.test(status()));
+    posted.length = 0;
+    els['c-baton-lastleg'].listeners.click();
+    ok('…and a second press releases it', posted.length === 1 && posted[0].on === false);
+    push(data(CONVO.slice(), { batonView: leg('locked') }));
+    ok('locked after a braked pass: drawn disabled, pointing at baton.status, a press sends nothing',
+        /aria-pressed="true" disabled>⑂⊣</.test(status()) && /baton\.status chain=chn_muq2k1/.test(status())
+        && (posted.length = 0, els['c-baton-lastleg'].listeners.click && els['c-baton-lastleg'].listeners.click(), posted.length === 0));
+    push(data(CONVO.slice(), { batonView: leg('passed', true) }));
+    ok('‼️ once a successor waits, ✕⑂ Stop chain is the brake and ⑂⊣ steps aside',
+        /id="c-baton-stop"/.test(status()) && !/c-baton-lastleg/.test(status()));
+    push(data(CONVO.slice(), { batonView: relay(false) }));
+    ok('‼️ a view with no brake draws none', !/c-baton-lastleg/.test(status()));
+    ok('the pressed state has its own colour and frame, not only an attribute',
+        /#c-status \.stchip\.lastleg\.on \{[^}]*editorWarning-foreground/.test(allHtml()));
+
     // S-91 — THE CARD IN THE LIST CARRIES THE LEG TOO, on line 2 right after
     // the sign-in pill (first when there is none), with the chain in its panel.
     const cards = () => (els['c-list'] ? els['c-list']._html : '');

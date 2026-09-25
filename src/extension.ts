@@ -315,6 +315,7 @@ import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, read
 import { registryMatch, whoami } from './core/whoami';
 import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
+import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
@@ -10931,7 +10932,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.contextGuard.set',
-            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. ‼️ S-80 — `orders` sets WHAT those lines say (agentFarm.disciplineOrders): an object with any of converge, handover, relayConverge, relayHandover, relayPassedConverge, relayPassedHandover; `{chain}` becomes the relay\'s chain and hop, and a branch set to "" goes back to its built-in sentence. The lead words and the reading in front of the order are the law\'s and are not settable. Answers the thresholds and the orders in force after the write. args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?, orders? (object, or its JSON)',
+            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. ‼️ S-80 — `orders` sets WHAT those lines say (agentFarm.disciplineOrders): an object with any of converge, handover, relayConverge, relayHandover, relayPassedConverge, relayPassedHandover, relayBrakedConverge, relayBrakedHandover (S-97: a leg the user braked as the chain\'s last); `{chain}` becomes the relay\'s chain and hop, and a branch set to "" goes back to its built-in sentence. The lead words and the reading in front of the order are the law\'s and are not settable. Answers the thresholds and the orders in force after the write. args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?, orders? (object, or its JSON)',
             handler: async (args) => {
                 const cur = contextGuard.thresholds();
                 const next = normalizeThresholds({
@@ -16740,6 +16741,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // S-78 — the two automatic brakes (headOf, maxLegs) ride in batonAttachDeps
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
     });
+    // S-98 — the user's soft brake: the op and the Console card share applyLastLeg
+    registerLastLegOp(bridge, { store: batonStore });
 
     // S-70 / S-71 — the release and the door. The three end signals (hook
     // SessionEnd, Console host exit, terminal close) all arrive as the live
@@ -28443,6 +28446,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Console card', Date.now(), batonBoard).length,
+        // S-99 — the card's ⑂⊣ runs baton.lastLeg's own body
+        batonLastLeg: (sessionId: string, on: boolean) => applyLastLeg({ store: batonStore }, sessionId, on, 'the user (Console card)'),
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
         estimateCost: (model: string, u: Usage) => pricing.costFor(model, u),
         projects: () => projectStore.all().map(p => ({

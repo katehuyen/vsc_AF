@@ -8760,6 +8760,16 @@
               "type": "string",
               "default": "Your baton is already passed ({chain}): commit anything left and end the run now — the successor opens once this session has ended (_REF/handover.md).",
               "description": "The handover line for a relay runner that has already passed its baton: commit and end, the successor is waiting on this session."
+            },
+            "relayBrakedConverge": {
+              "type": "string",
+              "default": "The user braked your {chain} — this is its LAST leg: start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, then write the handover note instead of passing the baton (_REF/handover.md).",
+              "description": "The converge line for a relay leg the user braked as the chain's last (the brake on its Console card, or baton.lastLeg): it ends with the handover note, not a pass."
+            },
+            "relayBrakedHandover": {
+              "type": "string",
+              "default": "The user braked your {chain} — this is its LAST leg, so do NOT call baton.pass: stop here, finish nothing further, commit the clean progress, write the handover note (_REF/handover.md, section 4) and end the run — no successor opens; a person continues from the note.",
+              "description": "The handover line for a relay leg the user braked as the chain's last: no successor opens, so it names the note, as outside a relay."
             }
           },
           "additionalProperties": false

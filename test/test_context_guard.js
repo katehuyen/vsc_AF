@@ -280,8 +280,8 @@ console.log('\n== S-76 — in a baton relay the order is "pass the baton", outsi
 console.log('\n== S-80 — the ORDER is a setting; the lead words are the law\'s and are not ==');
 {
     const D = G.DEFAULT_DISCIPLINE_ORDERS;
-    eq('the six branches are the whole vocabulary', Object.keys(D).sort(),
-        ['converge', 'handover', 'relayConverge', 'relayHandover', 'relayPassedConverge', 'relayPassedHandover']);
+    eq('the eight branches are the whole vocabulary', Object.keys(D).sort(),
+        ['converge', 'handover', 'relayBrakedConverge', 'relayBrakedHandover', 'relayConverge', 'relayHandover', 'relayPassedConverge', 'relayPassedHandover']);
     eq('nothing set is the built-in set, unchanged', G.normalizeOrders(undefined), D);
     eq('a blank branch — empty or spaces — keeps its own sentence', G.normalizeOrders({ converge: '   ', handover: '' }), D);
     ok('a branch that IS set wins, trimmed', G.normalizeOrders({ converge: '  Park it.  ' }).converge === 'Park it.');
@@ -306,6 +306,23 @@ console.log('\n== S-80 — the ORDER is a setting; the lead words are the law\'s
         G.orderFor('handover', passed, { relayPassedHandover: 'END.' }) === 'END.'
         && G.orderFor('converge', passed, { relayPassedHandover: 'END.' })
         === D.relayPassedConverge.replace('{chain}', 'baton relay — chain chn_a, hop 2'));
+    // S-97 — a leg the user braked as the chain's last goes back to the note
+    const brakedRun = { chainId: 'chn_a', hop: 2, passed: false, braked: true };
+    ok('a braked leg is told the note, never the pass, and that no successor opens',
+        /LAST leg, so do NOT call baton\.pass/.test(G.orderFor('handover', brakedRun))
+        && /write the handover note \(_REF\/handover\.md, section 4\)/.test(G.orderFor('handover', brakedRun))
+        && /no successor opens/.test(G.orderFor('handover', brakedRun))
+        && !/Write \{ "prompt"/.test(G.orderFor('handover', brakedRun)));
+    ok('…its converge line ends with the note too, the chain named',
+        /then write the handover note instead of passing the baton/.test(G.orderFor('converge', brakedRun))
+        && G.orderFor('converge', brakedRun).startsWith('The user braked your baton relay — chain chn_a, hop 2 — this is its LAST leg'));
+    ok('…the braked pair are settings like the rest',
+        G.orderFor('handover', brakedRun, { relayBrakedHandover: 'Son etap: notu yaz.' }) === 'Son etap: notu yaz.'
+        && G.orderFor('handover', run, { relayBrakedHandover: 'Son etap: notu yaz.' }) !== 'Son etap: notu yaz.');
+    ok('‼️ a leg that already passed is told to end even if a braked flag rides along',
+        G.orderFor('handover', { ...passed, braked: true }) === G.orderFor('handover', passed));
+    ok('the quota line takes the braked order through the same door',
+        /LAST leg/.test(G.quotaSignalText('handover', 91, 'kate', brakedRun)) && /LAST leg/.test(G.contextSignalText('handover', 41, brakedRun)));
 
     const guardWith = (orders) => new G.ContextGuard({
         thresholds: () => ({ convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 }),

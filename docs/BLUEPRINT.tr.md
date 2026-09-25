@@ -1266,10 +1266,11 @@ Normal (bayrak yarışında olmayan) bir oturum devir sınırına ulaşıp kapan
 #### Ayarlanabilir Disiplin Şablonları (DisciplineOrders)
 
 Eşikler ve fısıldanan emirler koda gömülü sabit metinler değildir:
-- Ayarlar sayfasında **Handover Discipline** kartından veya `sessions.contextGuard.set` köprü op'undan 6 farklı dalda özelleştirilebilir:
+- Ayarlar sayfasında **Handover Discipline** kartından veya `sessions.contextGuard.set` köprü op'undan 8 farklı dalda özelleştirilebilir:
   - `converge` / `handover`: Normal oturumlara giden toparlanma ve devir emirleri.
   - `relayConverge` / `relayHandover`: Baton rölesi koşan oturumlara giden fısıltılar (`baton.pass` yönlendirmesi).
   - `relayPassedConverge` / `relayPassedHandover`: Bayrağı zaten devretmiş ama turun bitmesini bekleyen oturumlara giden emirler.
+  - `relayBrakedConverge` / `relayBrakedHandover`: Kullanıcının zincirin son etabı yaptığı (frenlediği, `baton.lastLeg`) etaba giden emirler: bayrak devri yok, devir notu yazılır.
 - Metin içindeki `{chain}` şablonu, rölenin kendi zincir ve etap numarasıyla dinamik olarak doldurulur.
 
 #### Köprü Operasyonları
@@ -1849,6 +1850,7 @@ Zincirin sonsuz bir döngüde token yakmasını veya sahipsiz kalmasını engell
 - `baton.pass` — Koşan etabın bayrağı devretme kapısı (`prompt`, opsiyonel `surface`, `account`, `note`).
 - `baton.stop` — Belirli bir zinciri (`chainId`) veya bayrağı durdurma freni.
 - `baton.now` — Park edilmiş bir bayrağı bekleme süresini atlayarak derhal çalıştırma.
+- `baton.lastLeg` — Yumuşak fren (S-95): koşan etabı zincirin son etabı yapar (`on=true`) ya da devir anına kadar geri alır (`on=false`). Frenliyken devir emri not yazdırır, `baton.pass` `braked` döner, emniyet kilidi karışmaz. Konsol kartındaki ⑂⊣ Last leg aynı gövdeyi çalıştırır.
 - `baton.attach` — Canlı bir oturumu Leg 1 olarak mühürleyip röleye bağlama (`sessionId`, `account`, `maxHops`).
 
 

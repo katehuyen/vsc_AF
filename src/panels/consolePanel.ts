@@ -492,6 +492,8 @@ export interface ConsoleDeps {
     batonMaxLegs?(): number;
     /** S-77 — the card's ✕: every live baton of the chain stops, recorded (`stopBatons`). Answers how many. */
     batonStopChain(chainId: string): number;
+    /** S-99 — the card's ⑂⊣: this run's leg becomes the chain's last, or not (baton.lastLeg's body, applyLastLeg) */
+    batonLastLeg?(sessionId: string, on: boolean): { ok: true; sentence: string } | { ok: false; why: string };
     /**
      * What the tokens a running turn has spent are worth, at the rates the rest
      * of the extension prices everything else with.
@@ -2762,6 +2764,16 @@ export class ConsolePanel {
                 void vscode.window.showInformationMessage(n
                     ? `Agent Farm: baton chain ${chain} stopped — ${n} baton${n === 1 ? '' : 's'} recorded as stopped, no further leg opens.`
                     : `Agent Farm: nothing in baton chain ${chain} was still waiting — it had already ended.`);
+                this.refresh();
+                break;
+            }
+            // S-99 — ⑂⊣ Last leg: a toggle, pressed state drawn from the store on the refresh
+            case 'batonLastLeg': {
+                const s = host.get(str('id'));
+                if (!s?.sessionId || !this.deps.batonLastLeg) { break; }
+                const r = this.deps.batonLastLeg(s.sessionId, msg.on === true);
+                void (r.ok ? vscode.window.showInformationMessage(`Agent Farm: ${r.sentence}`)
+                    : vscode.window.showWarningMessage(`Agent Farm: ${r.why}`));
                 this.refresh();
                 break;
             }

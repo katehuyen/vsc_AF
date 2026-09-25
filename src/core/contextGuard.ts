@@ -124,11 +124,12 @@ export function contextSignalText(level: ContextLevel, pct: number, relay?: Bato
  *
  * The thresholds were already settings; the SENTENCE those thresholds deliver
  * was not, and a percentage nobody can retune is only half of a rule that has
- * to survive a change of project, engine or fleet discipline. The six branches
+ * to survive a change of project, engine or fleet discipline. The eight branches
  * below are the whole vocabulary — outside a relay the order is the handover
  * note, as the law always said; a runner of a baton relay passes the baton
- * instead (its successor's first message IS the handover), and one that already
- * passed is only told to end.
+ * instead (its successor's first message IS the handover), one that already
+ * passed is only told to end, and one the user braked as the chain's last
+ * (S-96) goes back to the note.
  *
  * The lead words (`CONTEXT HANDOVER`, `QUOTA CONVERGE`, …) and the reading are
  * deliberately NOT here: `_REF/handover.md` waits for exactly those, so they
@@ -141,9 +142,12 @@ export interface DisciplineOrders {
     relayHandover: string;
     relayPassedConverge: string;
     relayPassedHandover: string;
+    /** S-97 — a relay leg the user braked as the chain's last: it ends with the note, as outside a relay */
+    relayBrakedConverge: string;
+    relayBrakedHandover: string;
 }
 
-/** `{chain}` in any of the six is replaced by the relay's own chain and hop. */
+/** `{chain}` in any of the branches is replaced by the relay's own chain and hop. */
 export const ORDER_CHAIN_TOKEN = '{chain}';
 
 export const DEFAULT_DISCIPLINE_ORDERS: DisciplineOrders = {
@@ -159,7 +163,12 @@ export const DEFAULT_DISCIPLINE_ORDERS: DisciplineOrders = {
     relayPassedConverge: `Your baton is already passed (${ORDER_CHAIN_TOKEN}): start nothing new, finish the step in flight and end the run `
         + '— the successor opens once this session has ended (_REF/handover.md).',
     relayPassedHandover: `Your baton is already passed (${ORDER_CHAIN_TOKEN}): commit anything left and end the run now `
-        + '— the successor opens once this session has ended (_REF/handover.md).'
+        + '— the successor opens once this session has ended (_REF/handover.md).',
+    relayBrakedConverge: `The user braked your ${ORDER_CHAIN_TOKEN} — this is its LAST leg: start nothing new — no new sub-task, `
+        + 'no broad reads — finish the atomic step in flight, then write the handover note instead of passing the baton (_REF/handover.md).',
+    relayBrakedHandover: `The user braked your ${ORDER_CHAIN_TOKEN} — this is its LAST leg, so do NOT call baton.pass: stop here, `
+        + 'finish nothing further, commit the clean progress, write the handover note (_REF/handover.md, section 4) and end the run '
+        + '— no successor opens; a person continues from the note.'
 };
 
 /** A blank or missing branch is the built-in one: an empty box is "leave it alone". */
@@ -177,9 +186,11 @@ export function orderFor(level: ContextLevel, relay?: BatonRelay, orders?: Parti
     const chain = relay ? `baton relay — chain ${relay.chainId}, hop ${relay.hop}` : '';
     const text = relay?.passed
         ? (level === 'handover' ? o.relayPassedHandover : o.relayPassedConverge)
-        : relay
-            ? (level === 'handover' ? o.relayHandover : o.relayConverge)
-            : (level === 'handover' ? o.handover : o.converge);
+        : relay?.braked
+            ? (level === 'handover' ? o.relayBrakedHandover : o.relayBrakedConverge)
+            : relay
+                ? (level === 'handover' ? o.relayHandover : o.relayConverge)
+                : (level === 'handover' ? o.handover : o.converge);
     return text.split(ORDER_CHAIN_TOKEN).join(chain);
 }
 

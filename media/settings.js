@@ -1857,7 +1857,7 @@
         },
         {
             title: 'What it is told',
-            why: 'The lead words (CONTEXT HANDOVER, QUOTA CONVERGE…) and the reading in front of them are the law\'s and stay fixed — this is the order that follows them. Six branches, because a run carrying a baton passes it instead of writing a note. Leave a branch empty and its built-in sentence stays in charge; {chain} becomes the relay\'s own chain and hop.',
+            why: 'The lead words (CONTEXT HANDOVER, QUOTA CONVERGE…) and the reading in front of them are the law\'s and stay fixed — this is the order that follows them. Eight branches, because a run carrying a baton passes it instead of writing a note — and a leg the user braked as the chain\'s last goes back to the note. Leave a branch empty and its built-in sentence stays in charge; {chain} becomes the relay\'s own chain and hop.',
             keys: ['disciplineOrders']
         },
         {

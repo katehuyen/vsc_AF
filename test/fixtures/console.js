@@ -1267,6 +1267,30 @@ module.exports = {
             data: batonData()
         },
         {
+            id: 'console-lastleg-off',
+            label: 'Console — S-99: a running relay leg, ⑂⊣ Last leg OFF on the strip for the whole leg, its panel open',
+            tip: 'tip-lastleg',
+            data: lastLegData('off')
+        },
+        {
+            id: 'console-lastleg-on',
+            label: 'Console — S-99: ⑂⊣ Last leg PRESSED — drawn pressed, ⑂ 2⊣ on the strip, its panel says how to take it back',
+            tip: 'tip-lastleg',
+            data: lastLegData('on')
+        },
+        {
+            id: 'console-lastleg-card',
+            label: 'Console — S-99: the braked leg on the CARD in the list: ⑂ 2⊣, "last leg" in the chain panel',
+            tip: 'tip-batoncard',
+            data: lastLegData('on')
+        },
+        {
+            id: 'console-lastleg-locked',
+            label: 'Console — S-99: a braked pass recorded — ⑂⊣ locked, the chain ended at this leg',
+            tip: 'tip-lastleg',
+            data: lastLegData('locked')
+        },
+        {
             id: 'console-baton-card-bare',
             label: 'Console — S-91: a relay card with no sign-in pill: ⑂ 2 alone at the start of line 2',
             data: (() => { const d = batonData(); d.sessions[0].accountAxis = false; return d; })()
@@ -1434,6 +1458,26 @@ function batonData(handover) {
         mk('b1', 'started', 1, '22597c33-aaaa', { toSessionId: sid }),
         mk('b2', 'waiting-end', 2, sid, { note: 'S-77 surfaces, card chip done' })
     ], sid);
+    return d;
+}
+
+/** S-99 — a RUNNING leg that has not passed: its ⑂⊣ Last leg brake off, on, or locked after a braked pass. */
+function lastLegData(state) {
+    const V = require('../../out/core/batonView.js');
+    const d = ctxSignalData('converge');
+    const sid = d.sessions[0].sessionId || 's-this';
+    d.sessions[0].sessionId = sid;
+    d.sessions[0].contextSignalView = null;
+    const mk = (id, st, hop, from, extra) => ({
+        id, chainId: 'chn_muq2k1', hop, state: st, prompt: 'p', why: 'w',
+        from: { sessionId: from, agentId: 'd:/zone/agent/ajanlar/developer', engine: 'claude', cwd: 'D:\\x', launchId: 'l' },
+        inherit: { surface: 'console' }, want: { surface: 'inherit', account: '@emptiest' },
+        createdAt: NOW, updatedAt: NOW, ...extra
+    });
+    const flag = state === 'off' ? {} : { lastLeg: { at: NOW - 600000, by: 'the user (Console card)' } };
+    const list = [mk('b1', 'started', 1, '22597c33-aaaa', { toSessionId: sid, ...flag })];
+    if (state === 'locked') { list.push(mk('b2', 'stopped', 2, sid, { why: 'braked — last leg' })); }
+    d.sessions[0].batonView = V.batonCardView(list, sid);
     return d;
 }
 

@@ -12,7 +12,7 @@
  */
 import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './bridge';
 import { BATON_DEFAULT_MAX_LEGS, Baton, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
-import { batonBrake } from './batonBrake';
+import { BatonBrake, batonBrake } from './batonBrake';
 import { markFolder } from './batonLegFacts';
 import { attachRelay } from './batonAttach';
 import { BatonBoard } from './batonBoard';
@@ -65,6 +65,8 @@ export function pickLive(store: BatonStore, args: Record<string, unknown>, allow
 
 const PROMPT_PREVIEW = 300;
 
+const BRAKE_TITLE: Record<BatonBrake['kind'], string> = { ceiling: 'leg ceiling', user: 'last leg, braked by the user', barren: 'barren chain' };
+
 /** A baton as the bridge shows it — the prompt previewed, the successor's surface resolved. */
 /** THE USER'S BRAKE, one body for the bridge op and the card's ✕ (S-74 · S-77): recorded, never deleted. */
 export function stopBatons(store: BatonStore, list: readonly Baton[], why: string, at: number, board?: BatonBoard): Baton[] {
@@ -97,6 +99,7 @@ export function batonView(b: Baton): Record<string, unknown> {
         ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
         ...(b.rescue ? { rescue: b.rescue } : {}),
         ...(b.a2aNoteId ? { a2aNoteId: b.a2aNoteId } : {}),
+        ...(b.lastLeg ? { lastLeg: b.lastLeg } : {}),
         wakeAt: b.wakeAt ?? null, taskId: b.taskId ?? null, toSessionId: b.toSessionId ?? null,
         createdAt: b.createdAt, updatedAt: b.updatedAt
     };
@@ -132,7 +135,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                     const stopped = moved.ok ? moved.baton : accepted;
                     deps.store.put(stopped, ...res.superseded);
                     deps.notify?.(
-                        `Baton chain stopped — ${brake.kind === 'ceiling' ? 'leg ceiling' : 'barren chain'} (${stopped.chainId})`,
+                        `Baton chain stopped — ${BRAKE_TITLE[brake.kind]} (${stopped.chainId})`,
                         `${brake.why} The runner (session ${who.sessionId.slice(0, 8)}) was told to write a handover note instead, so a person can pick the work up. `
                         + (brake.kind === 'ceiling'
                             ? 'agentFarm.batonMaxHops sets the ceiling (0 = none).'

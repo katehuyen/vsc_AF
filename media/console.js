@@ -359,6 +359,11 @@
             border:0; border-radius:4px; background:none; opacity:.85;
             color:var(--vscode-textLink-foreground); cursor:pointer; }
         #c-status .stchip:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#5a5d5e50); }
+        /* S-99: the last-leg brake is a toggle, so its pressed state is drawn, not implied. */
+        #c-status .stchip.lastleg.on { opacity:1; color:var(--vscode-editorWarning-foreground,#cca700);
+            background:var(--vscode-inputValidation-warningBackground,#cca70026);
+            box-shadow:inset 0 0 0 1px var(--vscode-editorWarning-foreground,#cca700); }
+        #c-status .stchip.lastleg:disabled { cursor:default; opacity:.7; }
         #c-status #c-continue { font-size:12px; }
         #c-status .batonsig { font-size:13px; line-height:1; }
         /* S-82: the attach strip under a card's status row, and the composer's relay chip. */
@@ -3244,6 +3249,7 @@
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${continueBtnHtml(s)}
+            ${lastLegBtnHtml(s, dead)}
             ${batonStopBtnHtml(s)}
             ${relayBtnHtml(s, dead)}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
@@ -5813,6 +5819,12 @@
             });
             byId('c-baton-pass', 'click', () => vscode.postMessage({ type: 'batonPassNow', id: DATA.selected }));
             byId('c-baton-attach', 'click', () => { relayOpen = relayOpen === DATA.selected ? '' : DATA.selected; paint(); });
+            byId('c-baton-lastleg', 'click', () => {
+                const v = s && s.batonView;
+                if (v && (v.brake === 'off' || v.brake === 'on')) {
+                    vscode.postMessage({ type: 'batonLastLeg', id: DATA.selected, on: v.brake === 'off' });
+                }
+            });
         }
         if (slot('c-relay', relayStripHtml(s))) {
             const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
@@ -5983,6 +5995,33 @@
                 window.AFTip.GAP,
                 'Agent door: baton.stop chain=' + v.chainId
             ]), 'tip-batonstop', 'Stop chain');
+    }
+
+    /**
+     * S-99 — the soft brake on this card's leg, drawn for the WHOLE leg: pressed,
+     * the leg is the chain's last (baton.lastLeg); pressed again before the pass,
+     * as if never touched. Locked once a braked pass is recorded; while a
+     * successor waits the brake is ✕⑂ Stop chain, so this one steps aside.
+     */
+    function lastLegBtnHtml(s, dead) {
+        const st = s.batonView && s.batonView.brake;
+        if (!s.sessionId || !st || st === 'passed' || (dead && st !== 'locked')) { return ''; }
+        const T = window.AFTip;
+        const on = st !== 'off';
+        const locked = st === 'locked';
+        const head = locked ? 'Last leg: braked — the chain ended at this leg'
+            : on ? 'Last leg: ON — this leg is the chain\'s last' : 'Last leg: off — the chain goes on';
+        return cardTip(`<button class="stchip lastleg${on ? ' on' : ''}" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="${on}"${locked ? ' disabled' : ''}>⑂⊣</button>`,
+            head,
+            T.lines([
+                locked ? 'Its pass was braked: no successor opened, and the handover note is where the work goes on.'
+                    : on ? 'Press again to take it back — nothing was written anywhere else, so the chain goes on as if untouched.'
+                        : 'Press to make the leg running now the chain\'s LAST: at its handover line it is told to write the handover note instead of passing the baton, and no successor opens.',
+                locked ? '' : 'The window closes at the pass. Once a successor is waiting, ✕⑂ Stop chain is the brake.',
+                T.GAP,
+                locked ? 'Agent door: baton.status chain=' + s.batonView.chainId
+                    : 'Agent door: baton.lastLeg session=' + s.sessionId + ' on=' + (on ? 'false' : 'true')
+            ]), 'tip-lastleg', 'Last leg');
     }
 
     /**

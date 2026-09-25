@@ -1225,10 +1225,11 @@ When a standard (non-relay) session reaches handover limits or closes after writ
 #### Configurable Discipline Templates
 
 Discipline sentences are fully decoupled data, not hardcoded strings:
-- Managed under Settings ▸ **Handover Discipline** or via `sessions.contextGuard.set` across six branches:
+- Managed under Settings ▸ **Handover Discipline** or via `sessions.contextGuard.set` across eight branches:
   - `converge` / `handover`: Standard session wrap-up and handover orders.
   - `relayConverge` / `relayHandover`: Baton relay orders instructing the agent to invoke `baton.pass`.
   - `relayPassedConverge` / `relayPassedHandover`: Orders for legs that already passed and only need to await clean termination.
+  - `relayBrakedConverge` / `relayBrakedHandover`: Orders for a leg the user braked as the chain's last (`baton.lastLeg`): no pass, the handover note instead.
 - The `{chain}` token in any order is dynamically replaced with the relay's chain and hop identifiers.
 
 #### Bridge Operations
@@ -1806,6 +1807,7 @@ Four distinct safety mechanisms protect the relay from endless loops, token wast
 - `baton.pass` — Runner's handover dispatch (`prompt`, optional `surface`, `account`, `note`).
 - `baton.stop` — Halts an entire chain (`chainId`) or individual baton.
 - `baton.now` — Bypasses parking delays to trigger a waiting baton immediately.
+- `baton.lastLeg` — The soft brake (S-95): makes the leg running now the chain's last (`on=true`) or takes it back (`on=false`) until it passes. Braked, its handover order names the note, its pass is answered `braked` and the failsafe stays out. The Console card's ⑂⊣ Last leg runs the same body.
 - `baton.attach` — Seals an active run as Leg 1 of a new relay (`sessionId`, `account`, `maxHops`).
 
 

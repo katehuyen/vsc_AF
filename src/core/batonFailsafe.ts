@@ -74,6 +74,10 @@ export function failsafeVerdict(list: readonly Baton[], f: LegEndFacts): Failsaf
         return { act: 'none', why: `chain ${opener.chainId} already went on or was stopped past this leg` };
     }
     const leg = opener.hop + 1;
+    // S-96 — the user already said this leg is the last: its note is the end they asked for, never evidence for a rescue.
+    if (opener.lastLeg) {
+        return { act: 'done', opener, why: `leg ${leg} was the chain's last — ${opener.lastLeg.by} braked it, so the failsafe stays out and the chain ends here` };
+    }
     if (f.byUser) {
         return { act: 'done', opener, why: `leg ${leg} was ended by the user — the failsafe stays out, and the chain ends here` };
     }
