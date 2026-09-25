@@ -3389,6 +3389,13 @@ const intentOf = (o) => Object.assign({
     click({ preventDefault() { }, target: { closest: () => null } });
     ok('…a click elsewhere on the strip posts nothing', posted.length === 0);
 
+    // U-148 (in-turn) — the turn is running, but blocked in a call that only waits on the background
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now() - 60000, backgroundTasks: tasks.slice(0, 1), waitingOn: 'until grep -q ok log; do sleep 5; done' }));
+    ok('‼️ U-148: a turn blocked in a wait is the purple waiting phase, not "working"',
+        /class="srow p-wait[^"]*"/.test(html()) && /waiting on background/.test(html()));
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: Date.now() - 60000, backgroundTasks: tasks.slice(0, 1) }));
+    ok('…and a turn that works beside its background is still working', /class="srow p-agent[^"]*"/.test(html()));
+
     // the turn is over, one is still out there
     push(data(CONVO.slice(), {
         status: 'idle', backgroundTasks: tasks.slice(0, 1),

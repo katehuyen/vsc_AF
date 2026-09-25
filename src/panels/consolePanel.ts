@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { turnWaitingOn } from '../core/turnWait';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -1275,6 +1276,8 @@ export class ConsolePanel {
                 // list as it came; the strip draws one chip per task and the
                 // Interrupt button says it will end them with the turn.
                 backgroundTasks: s.backgroundTasks ?? [],
+                // U-148 — a working turn blocked in a call that only waits on it
+                waitingOn: turnWaitingOn(s),
                 pendingPermission: s.pendingPermission ?? null,
                 // the question the turn is parked on — the card and the composer
                 // both need it, and it outranks everything else on the page

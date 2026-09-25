@@ -1362,6 +1362,10 @@
         if (s.pendingPermission) { return { id: 'blocked', label: 'needs permission', cls: 'p-blocked' }; }
         if (s.status === 'starting') { return { id: 'opening', label: 'starting…', cls: 'p-open' }; }
         if ((s.queued || []).length) { return { id: 'held', label: 'a message is held', cls: 'p-agent' }; }
+        // U-148 — a turn blocked in a call that only waits (a sleep loop, TaskOutput) is waiting too
+        if (s.status === 'working' && s.waitingOn) {
+            return { id: 'wait', label: (s.backgroundTasks || []).length ? 'waiting on background' : 'waiting', cls: 'p-wait' };
+        }
         if (s.status === 'working') { return { id: 'agent', label: 'working', cls: 'p-agent' }; }
         // U-148 — the turn is over but a command it started still runs, and
         // the CLI wakes the session by itself when it ends: not your turn.

@@ -65,6 +65,7 @@
  */
 
 import { BYPASS, bypassVerdict, EffectivePermission, permissionFlags } from './permissionmode';
+import { isWaitCall } from './turnWait';
 import { addUsage, contextAfter, emptyUsage, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { isQuotableContextPath, quoteContextPath } from './projectContext';
 import { mergeReported } from './slashCommands';
@@ -73,6 +74,8 @@ import { StepKind, stepKindForTool } from './stepkind';
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
 
 export interface ConsoleToolUse {
+    /** U-148 — the call only waits on something already running (src/core/turnWait.ts) */
+    wait?: boolean;
     id?: string;
     name: string;
     /** short human-readable argument (file path, command, query…) */
@@ -1538,7 +1541,7 @@ export function reduceEvent(
                     ...next, lastTs: now, turnSteps: (next.turnSteps ?? 0) + 1,
                     messages: [...next.messages, {
                         id: nextId(), ts: now, role: 'tool',
-                        tool: { id: typeof b.id === 'string' ? b.id : undefined, name, detail: shortArg(name, input), file },
+                        tool: { id: typeof b.id === 'string' ? b.id : undefined, name, detail: shortArg(name, input), file, ...(isWaitCall(name, input) ? { wait: true } : {}) },
                         kind: stepKindForTool(name), ...takeCharge()
                     }]
                 };
