@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.670.0 - A checkpoint step asks the supervisor where the run goes next; one supervisor session per run; a turn that only waits is purple (M-43, M-44, U-148) (2026-09-25)
+
+- **A workflow step can be a checkpoint (M-43).** It runs no agent: it hands
+  the supervisor a brief of the run so far and does what the answer says —
+  carry on, retry a step (optionally with a patched prompt, input, model or
+  engine), jump to a step, insert agent or approval steps right after it, ask
+  you a question and decide once more with your answer, or stop the run with
+  the reason. The step card says what it may decide (*May decide*), how many
+  steps it may insert and of which kind, how many retries per step, and what a
+  low-confidence answer does (ask you once, escalate once to the next model up,
+  or carry on). Anything refused, broken or unanswered carries on and the row
+  says why ("mechanical: …").
+- **A run keeps its own copy of the chain.** Patches and inserted steps live on
+  the run; the saved workflow never changes, and a resumed run reads the same
+  copy.
+- **A workflow has a goal and success criteria.** The workflow form's new Goal
+  block; `workflows.add` / `workflows.update` take `goal` and `criteria`. The
+  supervisor judges every checkpoint against them.
+- **One supervisor session per run (M-44).** The run's first checkpoint opens a
+  read-only session; later checkpoints resume it and send only the new brief,
+  so it remembers what it already decided. A session that dies is replaced by a
+  fresh one seeded with a short ledger of its earlier decisions. Every call is
+  recorded on the run (model, time, cost) and its cost appears on the
+  checkpoint's own row.
+- **The supervisor has ceilings.** The workflow form's new *Supervisor* row
+  (and `workflows.add` / `workflows.update` `supervisor`): model (empty = the
+  judge's), effort, account, calls per run (10), budget with a soft or hard
+  limit, failures in a row before it is switched off (3), and a timeout per
+  call (5 min). Past a ceiling the checkpoint goes the mechanical way without a
+  call and says why. A reload that cut a call off is not asked again.
+- **The supervisor runs lean.** No tools, no MCP servers and a short system
+  prompt of its own: one checkpoint turn on haiku cost $0.0104 instead of
+  $0.153. A real two-checkpoint run cost $0.0285.
+- **A turn that only waits is purple (U-148).** A session that backgrounds a
+  command and then blocks inside its own turn — a wait loop, a bare sleep, a
+  blocking task read — now shows *waiting on background* on its Console card
+  instead of *working*. The Live Timeline and the sidebar tree are unchanged.
+
 ## 3.669.0 - A run remembers every step, a step runs once per element of a list, a file on this computer reaches fal and Replicate (M-39, M-40, M-41) (2026-09-24)
 
 - **A workflow run keeps a board of every finished step (M-39).** Each step has
