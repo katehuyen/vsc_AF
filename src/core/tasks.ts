@@ -27,6 +27,9 @@ import { applyLive, decisionFromArg, landWords, liveLines, livePatch, pendingWor
 import { flexPoint } from './flexPoints';
 import { SupervisorCall, supervisorCall, supervisorTrail, SupervisorTrail } from './supervisorTrail';
 import { missionHandoffText } from './workflowMission';
+import { fillTool, toolCall, ToolStepSpec } from './toolCall';
+import { runRecipe, ToolResult } from './toolRun';
+import type { RecipeCall } from './mediaRecipes';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
 import {
@@ -1193,6 +1196,8 @@ export interface WorkflowStep extends RunDimensions {
      * `headers` (auth for queued APIs) and `poll` (submit→poll any queued API —
      * Gemini long-running ops etc. — without a bespoke media provider).
      */
+    /** M-49 — a local ffmpeg recipe, no model; its result is the step's JSON (src/core/toolCall.ts) */
+    tool?: ToolStepSpec;
     webhook?: {
         url: string; method?: string; body?: string;
         headers?: Record<string, string>;
@@ -1663,6 +1668,10 @@ export interface TaskManagerOptions {
     askChoice?: (question: string, options: string[], ctx?: { runId: string; workflowTitle: string }) => Promise<string | undefined>;
     /** M-43 — replaces the checkpoint's one-shot supervisor call (tests) */
     superviseTurn?: (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
+    /** M-49 — the tool step's output folder and overwrite policy (the tool.* flex points) */
+    toolDefaults?: () => { outDir: string; overwrite: string };
+    /** M-49 — replaces the ffmpeg runner (tests) */
+    runTool?: (c: RecipeCall) => Promise<ToolResult>;
     /** M-44 — replaces the supervisor session's real spawn (tests) */
     supervisorSession?: SessionCall;
     /** CLI args for internal judge calls — always a cheap model. */
@@ -6563,6 +6572,10 @@ export class TaskManager implements vscode.Disposable {
             this.runWebhookStep(w, index, handoff, runId);
             return;
         }
+        if (step.tool) {
+            void this.runToolStep(w, index, handoff, runId);
+            return;
+        }
         if (step.media) {
             void this.runMediaStep(w, index, handoff, runId);
             return;
@@ -6721,6 +6734,27 @@ export class TaskManager implements vscode.Disposable {
                 `# ${task.title}\n\n- Webhook: ${method} ${hook.url}\n\n---\n\n[request error] ${String(err)}\n`, 'utf8');
             this.finish(task, 'failed');
         });
+    }
+
+    /** M-49 — a local ffmpeg recipe, no model: the result (outputs, runs, duration) is the step's JSON on the board. */
+    private async runToolStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const spec = step.tool!;
+        const task = this.stepTask(w, index, runId, 'tool', { prompt: `tool: ${spec.recipe ?? spec.preset ?? '?'}`, status: 'running' }, handoff);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+        const c = toolCall(fillTool(spec, s => this.substitute(s, handoff)), this.opts.toolDefaults?.() ?? { outDir: '', overwrite: 'never' });
+        const r: ToolResult = 'error' in c
+            ? { ok: false, recipe: String(spec.recipe ?? spec.preset ?? ''), outputs: [], runs: 0, ms: 0, error: c.error }
+            : await (this.opts.runTool ?? runRecipe)(c);
+        try {
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Tool: ${r.recipe}${r.error ? ` — ${r.error}` : ''}\n\n---\n\n${JSON.stringify(r, null, 2)}\n\n---\n`
+                + `Finished: ${new Date().toLocaleString()} · ${r.ok ? 'OK' : 'FAILED'}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: tool step "${step.title}" failed — ${r.error}`); }
+        this.finish(task, r.ok ? 'done' : 'failed');
     }
 
     /** C1: a chain step that generates media via the fal.ai queue API. */

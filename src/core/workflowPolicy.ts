@@ -31,7 +31,7 @@ export interface WorkflowFacts {
 export const WORKFLOW_FIELDS: FieldSpec[] = [
     { field: 'always', type: 'boolean', describe: 'always true — the one condition "wake it every step" is made of' },
     {
-        field: 'step.kind', type: 'enum', values: ['agent', 'webhook', 'media', 'browser', 'approval', 'select', 'checkpoint'],
+        field: 'step.kind', type: 'enum', values: ['agent', 'webhook', 'media', 'browser', 'approval', 'select', 'checkpoint', 'tool'],
         describe: 'what kind of step just ended'
     },
     { field: 'step.status', type: 'enum', values: ['done', 'failed', 'cancelled'], describe: 'how it ended' },

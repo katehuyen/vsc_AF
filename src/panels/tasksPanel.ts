@@ -23,6 +23,7 @@ import {
 } from '../core/tasks';
 import { checkpointFromDraft, checkpointSeed, setWorkflowGoal } from '../core/checkpointStep';
 import { trailRow, TrailRow } from '../core/supervisorTrail';
+import { toolStepFromJson } from '../core/toolCall';
 import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, supervisorSeed } from '../core/supervisorRun';
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
@@ -1036,10 +1037,10 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
  * next to the manager, exactly like the schedule and trigger seeds above — the
  * page never learns the model's shape and the model never learns the form's.
  */
-const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint'];
+const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool'];
 
 function stepSeed(s: WorkflowStep): Record<string, unknown> {
-    const stype = s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
+    const stype = s.tool ? 'tool' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
         : s.approval ? 'approval' : s.select ? 'select' : s.checkpoint ? 'checkpoint' : 'agent';
     const hdr = Object.entries(s.webhook?.headers ?? {})[0];
     const scene = s.media?.projectId
@@ -1105,6 +1106,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         bGoal: s.browser?.goal ?? '',
         bHosts: (s.browser?.allowHosts ?? []).join(', '),
         apMsg: s.approval?.message ?? '',
+        toolJson: s.tool ? JSON.stringify(s.tool) : '',
         selMsg: s.select?.message ?? '',
         selMin: s.select?.min ?? 1,
         selMax: s.select?.max ?? 0,
@@ -1218,6 +1220,11 @@ export function stepFromDraft(
     }
     if (stype === 'checkpoint') {
         return { step: { ...named('checkpoint'), title, ...chain, checkpoint: checkpointFromDraft(str) } };
+    }
+    if (stype === 'tool') {
+        const t = toolStepFromJson(str('toolJson'));
+        if ('error' in t) { return { error: `Step ${n} ("${title}"): ${t.error}.` }; }
+        return { step: { ...named('tool'), title, ...chain, tool: t.tool } };
     }
     if (stype === 'select') {
         const min = Math.max(1, num('selMin', 1));

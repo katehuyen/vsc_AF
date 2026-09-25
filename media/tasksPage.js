@@ -1135,7 +1135,8 @@
         { id: 'browser', icon: '🧭', label: 'browser — an agent drives a site' },
         { id: 'approval', icon: '✋', label: 'approval — the chain waits for you' },
         { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' },
-        { id: 'checkpoint', icon: '◆', label: 'checkpoint — the supervisor decides here' }
+        { id: 'checkpoint', icon: '◆', label: 'checkpoint — the supervisor decides here' },
+        { id: 'tool', icon: '🛠', label: 'tool — a local ffmpeg recipe, no model' }
     ];
     const PREV = '{prev_output}';
 
@@ -1152,7 +1153,7 @@
             whDone: 'succeeded|completed|complete|done|success', whInterval: 3,
             mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mScene: '',
             bUrl: '', bGoal: '', bHosts: '',
-            apMsg: '', selMsg: '', selMin: 1, selMax: 0
+            apMsg: '', selMsg: '', selMin: 1, selMax: 0, toolJson: ''
         }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, seed || {});
         // A webhook or media step carries no real agent, so switching one to
         // "agent" would land on an empty picker that LOOKS filled — the select
@@ -2443,6 +2444,10 @@
                 ${textF('st-apMsg', 'Message', s.apMsg, 'Review the output before it goes live',
                                             'Shown when the chain stops to ask you. {prev_text} is substituted.', true)}
             </div>` : ''}
+            ${s.stype === 'tool' ? `<div class="ntgrid">
+                ${textF('st-toolJson', 'Recipe', s.toolJson, '{"recipe":"split","input":"{input.clip}","params":{"segmentSec":10}}',
+                    'The recipe as JSON: recipe (split, concat, extractAudio, muxAudio, reframe, burnSubtitles, keyframes, loudnorm, transcode) or preset, input, params, outDir?, overwrite? (never, suffix, always). Templates such as {input.clip}, {prev_json.outputs.0} and {steps.<id>.json.outputs} are filled when it runs; tools.recipes lists every parameter.', true)}
+            </div>` : ''}
             ${s.stype === 'select' ? `<div class="ntgrid">
                 ${textF('st-selMsg', 'Message', s.selMsg, 'Pick the frames that go on to video',
                                                 'Shown above the gallery picker. {prev_text} is substituted.', true)}
@@ -2534,7 +2539,7 @@
             'sengine', 'smodel', 'seffort', 'spermissionMode', 'sproviderId', 'stier',
             'onFail', 'runIf', 'contract', 'verifyCriteria', 'verifyEngine', 'verifyModel',
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
-            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg',
+            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg', 'toolJson',
             'feList', 'feConc', 'feFail', 'feRetries', 'feCap', 'feCapMode', 'feBudget'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
         ['parallel', 'whPoll'].forEach(b);
@@ -4655,7 +4660,7 @@
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
                     'mModel', 'mInput', 'bUrl', 'bGoal', 'bHosts',
-                    'apMsg', 'selMsg', 'selMin', 'selMax'].forEach(id =>
+                    'apMsg', 'selMsg', 'selMin', 'selMax', 'toolJson'].forEach(id =>
                         byId('nt-st-' + id, 'input', () => readStep()));
                 // ‼️ X-224 — `saccount` reads back like the other pickers here.
                 // It does NOT redraw: nothing else on the card depends on it, and
