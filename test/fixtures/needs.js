@@ -88,8 +88,19 @@ const input = () => ({
     }]
 });
 
-const data = () => {
-    const items = N.buildNeedsQueue(input()).map(item => ({
+/** M-46 — one supervisor question alone: the arity the user really gets. */
+const QUESTION = {
+    id: 'wq-1', runId: 'run-12', workflowTitle: 'ZEN release train', askedAt: T - 2 * 60000,
+    question: 'The store review came back with one warning about host permissions.\nShip now with the warning, or hold the release for a fix?',
+    options: ['Ship now', 'Hold for a fix', 'Ship, and open an issue for the warning']
+};
+const FREE_QUESTION = {
+    id: 'wq-2', runId: 'run-13', workflowTitle: 'nightly wiki compile', askedAt: T - 60000,
+    question: 'Which folder should the harvest go to tonight?', options: []
+};
+
+const data = (inp = input()) => {
+    const items = N.buildNeedsQueue(inp).map(item => ({
         ...item, key: N.needKey(item), clearable: N.isClearable(item)
     }));
     return { items, hidden: 0, generatedAt: T };
@@ -115,6 +126,16 @@ module.exports = {
             label: 'Needs You — the rows opened: the whole text, selectable',
             data: data(),
             act: expandAll
+        },
+        {
+            id: 'needs-question',
+            label: 'Needs You — a workflow supervisor asks, one question with its options (M-46)',
+            data: data({ liveSessions: [], approvals: [], insights: [], workflowQuestions: [QUESTION] })
+        },
+        {
+            id: 'needs-question-free',
+            label: 'Needs You — a supervisor question with no options: a free answer (M-46)',
+            data: data({ liveSessions: [], approvals: [], insights: [], workflowQuestions: [FREE_QUESTION] })
         }
     ]
 };
