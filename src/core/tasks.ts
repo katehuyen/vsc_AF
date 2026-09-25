@@ -19,6 +19,9 @@ import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
 } from './checkpointStep';
+import {
+    CUT_OFF, enterVisit, SessionCall, sessionTurn, softNote, spawnSessionCall, supervisorRunLimits, SupervisorState, turnRefusal, WorkflowSupervisor
+} from './supervisorRun';
 import { flexPoint } from './flexPoints';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
@@ -1282,6 +1285,8 @@ export interface FarmWorkflow {
     /** M-43 — what the chain is for, and how its supervisor tells it got there */
     goal?: string;
     criteria?: string[];
+    /** M-44 — the run's supervisor session: model, effort, sign-in, its ceilings (src/core/supervisorRun.ts) */
+    supervisor?: WorkflowSupervisor;
 }
 
 /**
@@ -1620,7 +1625,7 @@ interface WorkflowRunRecord {
     /** M-43 — the run's own copy of the chain: the supervisor's patches and inserted steps */
     edits?: RunEdits;
     /** M-43 — the supervisor's decisions so far (`<decision>:<target>`), retries per step, the person's answers */
-    supervisor?: { history: string[]; retries: Record<string, number>; directives: string[] };
+    supervisor?: SupervisorState;
 }
 
 export interface TaskManagerOptions {
@@ -1628,6 +1633,8 @@ export interface TaskManagerOptions {
     askChoice?: (question: string, options: string[]) => Promise<string | undefined>;
     /** M-43 — replaces the checkpoint's one-shot supervisor call (tests) */
     superviseTurn?: (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
+    /** M-44 — replaces the supervisor session's real spawn (tests) */
+    supervisorSession?: SessionCall;
     /** CLI args for internal judge calls — always a cheap model. */
     judgeArgs?: () => string;
     /** M-42 — what a step no judge could look at does: ask (default) · pass · stop (`agentFarm.judgeUnjudged`) */
@@ -7027,7 +7034,7 @@ export class TaskManager implements vscode.Disposable {
     private async runCheckpointStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
         const cp = w.steps[index].checkpoint!;
         const rec = this.runRecords.get(runId);
-        const sup = rec ? (rec.supervisor ??= { history: [], retries: {}, directives: [] }) : { history: [], retries: {}, directives: [] };
+        const sup: SupervisorState = rec ? (rec.supervisor ??= { history: [], retries: {}, directives: [] }) : { history: [], retries: {}, directives: [] };
         const task = this.stepTask(w, index, runId, 'checkpoint', { prompt: cp.message || '(the supervisor decides here)', status: 'running' }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
@@ -7037,16 +7044,31 @@ export class TaskManager implements vscode.Disposable {
         const ids = w.steps.map((s, i) => stepKey(s, i));
         const here = ids[index], before = index > 0 ? ids[index - 1] : here;
         const limits = checkpointLimits(cp);
+        // M-44 — one session per run (src/core/supervisorRun.ts); a reload that cut this visit's call off is not asked again
+        const sl = supervisorRunLimits(w.supervisor);
+        const visit = enterVisit(sup, here);
+        Object.assign(sup, visit.state);
+        const spent0 = sup.costUSD ?? 0;
+        this.save();
         const judge = judgeWant(undefined, this.opts.judgeArgs?.());
+        const model0 = sl.model || judge.model || (/--model(?:=|\s+)(\S+)/.exec(judge.args)?.[1] ?? '');
+        const call: SessionCall = judge.engine === 'claude' ? (this.opts.supervisorSession ?? spawnSessionCall(this.outputsDir))
+            : async (prompt, o) => {
+                const want = judgeWant({ engine: judge.engine, ...(o.model ? { model: o.model } : {}) }, this.opts.judgeArgs?.());
+                const r = await execOneShot({ cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt: sanitizePrompt(prompt), timeoutMs: o.timeoutMs });
+                return { ok: !!r.out.trim(), raw: r.out, ...(r.error ? { error: r.error } : {}) };
+            };
         const ask = this.opts.superviseTurn ?? (async (prompt: string, tier: 0 | 1) => {
-            const model = tier ? escalateModel(judge.model, judge.args) : judge.model;
+            const model = tier ? escalateModel(model0) : model0;
             if (tier && !model) { return { out: '', error: 'there is no stronger model to escalate to' }; }
-            const want = tier ? judgeWant({ engine: judge.engine, model }, this.opts.judgeArgs?.()) : judge;
-            const r = await execOneShot({ cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt: sanitizePrompt(prompt), timeoutMs: 300_000 });
-            return { out: r.out, error: r.error, model: want.model ?? want.origin };
+            const t = await sessionTurn(sup, sl, prompt, model ?? '', call, Date.now);
+            Object.assign(sup, t.state);
+            this.save();
+            return { out: t.out, error: t.error, model: model || 'the CLI default' };
         });
         const own = cp.message ? [cp.message] : [];
-        const out = await superviseCheckpoint({
+        const shut = visit.cutOff ? CUT_OFF : this.opts.superviseTurn ? '' : turnRefusal(sup, sl);
+        const out = shut ? { mechanical: shut, log: [`mechanical — ${shut}`], directives: [...own, ...sup.directives], decision: undefined } : await superviseCheckpoint({
             workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: index > 0 ? before : undefined,
             costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (t.costUSD ?? 0), 0),
             directives: [...own, ...sup.directives], stepIds: ids, limits
@@ -7055,6 +7077,10 @@ export class TaskManager implements vscode.Disposable {
             confirm: this.opts.confirmApproval ? (title, message) => this.opts.confirmApproval!({ title, message }) : undefined
         });
         sup.directives = out.directives.slice(own.length);
+        sup.inFlight = undefined;
+        const spent = (sup.costUSD ?? 0) - spent0;
+        if (spent > 0) { task.costUSD = spent; }
+        const soft = softNote(sup, sl);
         const d = out.decision;
         let route = checkpointRoute(d, ids, index, before);
         let mechanical = out.mechanical;
@@ -7070,9 +7096,10 @@ export class TaskManager implements vscode.Disposable {
         }
         if (d) { sup.history.push(`${d.decision}:${d.target ?? ''}`); }
         const said = d ? `${d.decision}${d.target ? ` ${d.target}` : ''}${d.why ? ` — ${d.why}` : ''}` : 'carry on';
-        const text = `Checkpoint: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}`;
+        const text = `Checkpoint: ${said}${mechanical ? ` (mechanical: ${mechanical})` : ''}${soft ? ` · ${soft}` : ''}`;
         try {
-            fs.writeFileSync(outFile, `# ${task.title}\n\n- Checkpoint step\n- Limits: ${limits.origin}\n\n---\n\n` +
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Checkpoint step\n- Limits: ${limits.origin}\n- Supervisor: ${sl.origin}` +
+                `${sup.calls ? ` · ${sup.calls} call(s) this run, $${(sup.costUSD ?? 0).toFixed(4)}` : ''}\n\n---\n\n` +
                 `${out.log.map(l => `- ${l}`).join('\n')}\n\n**${text}**\n\n---\n` +
                 `Finished: ${new Date().toLocaleString()} · ${route.go === 'stop' ? 'STOPPED' : 'OK'}\n`, 'utf8');
         } catch { /* archive gone */ }

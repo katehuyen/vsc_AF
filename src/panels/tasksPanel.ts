@@ -22,6 +22,7 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { checkpointFromDraft, checkpointSeed, setWorkflowGoal } from '../core/checkpointStep';
+import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, supervisorSeed } from '../core/supervisorRun';
 import { normalizeLegCeiling } from '../core/baton';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
@@ -1771,7 +1772,7 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
                 : { mode2: 'new', steps: [], inputs: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
@@ -2002,6 +2003,9 @@ export class TasksPanel {
             }
             const ins = checkWorkflowInputs(item.inputs, steps);
             if (ins.error) { this.say(`Inputs: ${ins.error}.`); return; }
+            const ws = supervisorFromDraft(item);
+            const wsNo = supervisorRunRefusal(ws);
+            if (wsNo) { this.say(`Supervisor: ${wsNo}.`); return; }
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -2011,10 +2015,13 @@ export class TasksPanel {
                 existing.steps = steps;
                 if (ins.inputs.length) { existing.inputs = ins.inputs; } else { delete existing.inputs; }
                 setWorkflowGoal(existing, item.goal, item.criteria);
+                setWorkflowSupervisor(existing, ws);
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
-                setWorkflowGoal(m.addWorkflow(str('title'), steps, ins.inputs), item.goal, item.criteria);
+                const made = m.addWorkflow(str('title'), steps, ins.inputs);
+                setWorkflowGoal(made, item.goal, item.criteria);
+                setWorkflowSupervisor(made, ws);
                 m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);
             }

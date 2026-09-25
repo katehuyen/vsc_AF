@@ -74,6 +74,9 @@ export interface OneShotWant {
     json?: boolean;
     /** M-13 — the turn may look but not change anything (claude: plan mode) */
     readOnly?: boolean;
+    /** M-44 — the reasoning effort, and the conversation to continue (claude: --effort, --resume) */
+    effort?: string;
+    resume?: string;
     /** Extra flags, already formed, for the shell form only. */
     args?: string;
     prompt?: string;
@@ -190,7 +193,9 @@ const asObj = (s: string): Record<string, unknown> | undefined => {
 const claudeFlags = (want: OneShotWant): string[] => [
     ...(String(want.model ?? '').trim() ? ['--model', String(want.model).trim()] : []),
     ...(want.json ? ['--output-format', 'json'] : []),
-    ...(want.readOnly ? ['--permission-mode', 'plan'] : [])
+    ...(want.readOnly ? ['--permission-mode', 'plan'] : []),
+    ...(String(want.effort ?? '').trim() ? ['--effort', String(want.effort).trim()] : []),
+    ...(String(want.resume ?? '').trim() ? ['--resume', String(want.resume).trim()] : [])
 ];
 
 const claudeAdapter: OneShotAdapter = {

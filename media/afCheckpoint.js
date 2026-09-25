@@ -12,6 +12,17 @@
         ['insert', 'insert steps'], ['ask_user', 'ask you'], ['stop', 'stop the run']
     ];
     const ALLOWED = 'st-cpAllowed', LOW = 'st-cpLow';
+    // M-44 — the run's supervisor session, set on the workflow form: [box id, draft key, label, placeholder, tip, number?]
+    const SUP = [
+        ['wf-supModel', 'supModel', 'Model', 'the judge\'s', 'The model the supervisor runs on. Empty = the judge\'s cheap model. Escalation goes one step up (haiku → sonnet → opus).'],
+        ['wf-supEffort', 'supEffort', 'Effort', 'default', 'How hard it thinks (low · medium · high · xhigh · max). Empty = the CLI\'s own.'],
+        ['wf-supAccount', 'supAccount', 'Sign-in', 'the resolver\'s', 'Which account pays for its turns — a slot name or a policy (@emptiest). Empty = the resolver decides.'],
+        ['wf-supCalls', 'supCalls', 'Calls per run', '10', 'The most supervisor turns one run may make; past it the run goes the mechanical way and says so.', true],
+        ['wf-supBudget', 'supBudget', 'Budget $', '0', 'What its turns may cost per run. 0 = no budget.', true],
+        ['wf-supFailures', 'supFailures', 'Failures in a row', '3', 'This many failed turns in a row switch it off for the run.', true],
+        ['wf-supTimeout', 'supTimeout', 'Minutes per call', '5', 'A turn that takes longer is cut and counts as failed.', true]
+    ];
+    const SUP_MODE = 'wf-supBudgetMode';
     const IDS = ['cpMsg', 'cpMaxInsert', 'cpKinds', 'cpRetries', 'cpConf', 'cpLow'];
 
     function blank() { return { cpMsg: '', cpAllowed: '', cpMaxInsert: '', cpKinds: '', cpRetries: '', cpConf: '', cpLow: '' }; }
@@ -74,12 +85,22 @@
                     <input type="text" id="nt-wf-goal" value="${C.esc(c.goal || '')}" placeholder="A 34-second vertical clip, ready to post"></label>
                 <label class="ntf wide" title="${C.esc('One per line. The supervisor holds the run against them.')}"><span>Success criteria</span>
                     <textarea id="nt-wf-criteria" rows="2" placeholder="under 35 seconds&#10;captions on every line">${C.esc(c.criteria || '')}</textarea></label>
+            </div>
+            <div class="ntsec"><b>Supervisor</b>
+            <span class="muted small">Who answers at the checkpoints: one read-only session per run, resumed from checkpoint to checkpoint. Blank = the built-in.</span></div>
+            <div class="ntgrid">
+                ${SUP.map(([id, key, label, ph, tip, isNum]) => `<label class="ntf" title="${C.esc(tip)}"><span>${C.esc(label)}</span>
+                    <input type="${isNum ? 'number' : 'text'}" id="nt-${id}"${isNum ? ' min="0" step="any"' : ''} placeholder="${C.esc(ph)}" value="${C.esc(c[key] == null ? '' : String(c[key]))}"></label>`).join('')}
+                <label class="ntf" title="${C.esc('What passing the budget does: soft = it is said on the row and the supervisor carries on; hard = no further turn this run.')}"><span>Over the budget</span>
+                    <select id="nt-${SUP_MODE}">${[['', 'Default — say it (soft)'], ['soft', 'say it (soft)'], ['hard', 'stop asking (hard)']].map(([id, label]) => C.option(id, label, { selected: id === (c.supBudgetMode || '') })).join('')}</select></label>
             </div>`;
     }
 
     function wireGoal(byId, draft) {
         byId('nt-wf-goal', 'input', e => { const d = draft(); if (d) { d.goal = e.target.value; } });
         byId('nt-wf-criteria', 'input', e => { const d = draft(); if (d) { d.criteria = e.target.value; } });
+        SUP.forEach(([id, key]) => byId('nt-' + id, 'input', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
+        byId('nt-' + SUP_MODE, 'change', e => { const d = draft(); if (d) { d.supBudgetMode = e.target.value; } });
     }
 
     window.AFCheckpoint = { KINDS, IDS, blank, row, summary, read, wire, goalEditor, wireGoal };
