@@ -2,6 +2,46 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.673.0 - What is stuck and cleaning it, the supervisor strip, and a mission's workflow (S-101, U-153, M-47) (2026-09-25)
+
+- **What is stuck, and cleaning it in one go (S-101).** Task rows, Console
+  cards and relay batons are kept on disk so no work is lost across a reload —
+  which also means a row nobody will ever start survives every restart (eight
+  of them had waited 1–17 days here). Anything waiting 24 hours or more is now
+  counted as possibly stuck; a shorter wait is somebody's pause and is left
+  alone. Four kinds: task rows queued and never started, rows still "running"
+  with nothing working, relay batons still waiting, idle Console cards.
+  - **Where you see it:** a 🧹 chip in the status bar, shown only while
+    something is stuck — its tooltip counts each kind and its oldest; a click
+    opens the review (every item ticked, untick what should stay, Enter cleans
+    the rest). Also *Agent Farm: Clean Up Stuck Items…* in the command palette.
+  - **You are told:** once something has waited 24 hours, a notice lists every
+    item with its age, and a notification offers **Clean now** (one click) or
+    **Review…**. At most one a day, however many different things are open.
+  - **Nothing is deleted:** rows are cancelled, batons stopped, cards closed —
+    a closed card's conversation can be resumed.
+  - For agents: `farm.cleanup` lists (`apply=true` cleans, `ids=` picks);
+    `farm.health` carries the count as `stale`.
+- **What a workflow's supervisor decided, on one strip (U-153).** Every
+  checkpoint visit now keeps its own decision — trigger, decision, target, why,
+  confidence, who answered, the level its settings came from. The Live
+  Timeline has a *Supervisor* section under Workflow runs: one strip per run
+  with the supervisor's own cost apart from the steps and the run's live
+  settings, one row per visit (✓ proceed · ↻ retry · ⤳ jump · ＋ insert ·
+  ? ask · ■ stop · → mechanical), the full figures on hover, and a click opens
+  the supervisor conversation at that moment. ⚙ Live on a running run opens
+  its live settings. The Runs table shows the badge and the decision under a
+  checkpoint row's title. Bridge: `workflows.supervisor.status`.
+- **A mission's workflow is the mission's (M-47).** A mission's lead can now
+  start a workflow with a *wake* (mechanical · smart · hybrid · conditions) and
+  a saved flex *preset*; an unknown preset or wake is refused to the lead by
+  name. When that run's supervisor has a question, the lead is asked first and
+  must answer with one of the options word for word — otherwise the question
+  comes to you (setting *Workflow Ask Escalation*: leader-then-human · leader ·
+  human). Whoever answered is written on the run's board, and the mission reads
+  back the whole run — final handoff, every step's status, verdict and cost,
+  and its notes — not only the last step's output.
+
 ## 3.672.0 - ⑂⊣ Last leg holds when it is pressed in the first seconds of a relay (S-100) (2026-09-25)
 
 - **The brake no longer slips off a relay's first leg.** A chain's first leg
