@@ -5,6 +5,7 @@
  * Pure.
  */
 import * as path from 'path';
+import { resolveFlex } from './flexResolve';
 import { Overwrite, OVERWRITES, RECIPE_PRESETS, recipe, RecipeCall } from './mediaRecipes';
 
 export function toolCall(args: Record<string, unknown>, dflt: { outDir: string; overwrite: string }): RecipeCall | { error: string } {
@@ -70,6 +71,28 @@ export function fillTool(t: ToolStepSpec, sub: (s: string) => string): Record<st
         ...(t.overwrite ? { overwrite: t.overwrite } : {}),
         params: Object.fromEntries(Object.entries(t.params ?? {}).map(([k, v]) => [k, k === 'files' && typeof v === 'string' ? listOf(sub(v)) : fill(v)]))
     };
+}
+
+/**
+ * What a tool step runs with where it leaves a box blank, and why: `settings` is the
+ * Farm Settings layer as the USER wrote it (undefined = untouched). One line per
+ * value in the flex chain's own words, for the step's output.
+ */
+export function toolResolved(t: ToolStepSpec, settings: { outDir?: unknown; overwrite?: unknown }): { defaults: { outDir: string; overwrite: string }; why: string[] } {
+    const outDir = resolveFlex('tool.outDir', { settings: settings.outDir });
+    const overwrite = resolveFlex('tool.overwrite', { settings: settings.overwrite });
+    const preset = t.preset ? RECIPE_PRESETS.find(p => p.name.toLowerCase() === String(t.preset).toLowerCase()) : undefined;
+    const r = recipe(String(t.recipe ?? preset?.recipe ?? ''));
+    const why = (r?.params ?? []).map(q => {
+        const own = t.params?.[q.name];
+        const fromPreset = preset && preset.recipe === r!.id ? preset.params[q.name] : undefined;
+        const mine = own !== undefined && own !== '';
+        const res = resolveFlex(`tool.${r!.id}.${q.name}`, { step: mine ? own : fromPreset }, !mine && fromPreset !== undefined ? { step: preset!.name } : {});
+        return `${q.name}: ${res.sentence}`;
+    });
+    why.push(`outDir: ${resolveFlex('tool.outDir', { settings: settings.outDir, step: t.outDir }).sentence}`);
+    why.push(`overwrite: ${resolveFlex('tool.overwrite', { settings: settings.overwrite, step: t.overwrite }).sentence}`);
+    return { defaults: { outDir: String(outDir.value ?? ''), overwrite: String(overwrite.value ?? 'never') }, why };
 }
 
 /** A template that became a JSON list (a split's outputs) is that list; anything else, one line a file. */

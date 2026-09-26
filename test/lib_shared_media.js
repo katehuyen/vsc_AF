@@ -111,6 +111,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afBulk.js — the bulk hand (N-11): Notices' row box, row ✕ and bulk bar,
     // shared by the A2A pages and the Work Queue.
     'afBulk.js',
+    // afRecipes.js — the tool step's recipes as data (M-49); afFlex.js reads it, so it comes first.
+    'afRecipes.js',
     // afFlex.js + afFlexForms.js — the flex registry and its smart forms (X-367, X-370).
     'afFlex.js', 'afFlexForms.js',
     // afFlexSettings.js — the Farm Settings "Flow & Content" card (U-152).
@@ -121,6 +123,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afWorkflowInputs.js',
     // afCheckpoint.js — a checkpoint step's card row, and a workflow's goal + criteria (M-43).
     'afCheckpoint.js',
+    // afTool.js — a tool step's card row: recipe, preset, input, its parameters (M-49).
+    'afTool.js',
     // afWake.js — what wakes a workflow's supervisor after a step: form block, step override, Run card (M-45).
     'afWake.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).

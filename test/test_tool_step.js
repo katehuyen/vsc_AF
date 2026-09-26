@@ -30,7 +30,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const agentDir = path.join(tmp, 'agent'); fs.mkdirSync(agentDir, { recursive: true });
     const calls = [];
     const mgr = new TaskManager(path.join(tmp, 'c.json'), () => [{ id: 'a1', name: 'yazar', dir: agentDir }], () => false, () => '', {
-        quotaCheck: () => 'hold', toolDefaults: () => ({ outDir: path.join(tmp, 'o'), overwrite: 'suffix' }),
+        quotaCheck: () => 'hold', toolSettings: () => ({ outDir: path.join(tmp, 'o'), overwrite: 'suffix' }),
         runTool: async c => { calls.push(c); return { ok: true, recipe: c.recipe, outputs: [path.join(c.outDir, 'p1.mp4'), path.join(c.outDir, 'p2.mp4')], runs: 2, ms: 5 }; }
     });
     const tick = async () => { for (let i = 0; i < 30; i++) { await new Promise(r => setImmediate(r)); } };

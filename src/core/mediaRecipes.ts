@@ -9,8 +9,6 @@ import * as path from 'path';
 
 export type RecipeId = 'split' | 'concat' | 'extractAudio' | 'muxAudio' | 'reframe' | 'burnSubtitles' | 'keyframes' | 'loudnorm' | 'transcode';
 export type Overwrite = 'never' | 'always' | 'suffix';
-export const OVERWRITES: readonly Overwrite[] = ['never', 'always', 'suffix'];
-
 export interface RecipeParam {
     name: string;
     type: 'number' | 'text' | 'enum' | 'file' | 'files';
@@ -23,39 +21,26 @@ export interface RecipeParam {
 }
 
 export interface Recipe { id: RecipeId; label: string; describe: string; input: boolean; params: RecipeParam[] }
+export interface RecipePreset { name: string; recipe: RecipeId; params: Record<string, unknown> }
 
-const n = (name: string, dflt: number, min: number, max: number, describe: string): RecipeParam => ({ name, type: 'number', default: dflt, min, max, describe });
-const e = (name: string, dflt: string, options: string[], describe: string): RecipeParam => ({ name, type: 'enum', default: dflt, options, describe });
+interface RecipesModule {
+    OVERWRITES: Overwrite[];
+    RECIPES: Recipe[];
+    PRESETS: RecipePreset[];
+    inherited(recipeId: string, presetName: string | undefined, name: string): { value: unknown; from: 'preset' | 'builtin'; preset?: string };
+}
 
-export const RECIPES: readonly Recipe[] = [
-    { id: 'split', label: 'Split into parts', input: true, describe: 'Cut the input into parts of a fixed length, optionally overlapping; each part is re-encoded so it starts on its own frame.',
-        params: [n('segmentSec', 10, 1, 3600, 'Seconds per part.'), n('overlapSec', 0, 0, 60, 'Seconds each part repeats of the one before.')] },
-    { id: 'concat', label: 'Join parts', input: false, describe: 'Join files end to end, in the order given (stream copy: they must share codecs and size).',
-        params: [{ name: 'files', type: 'files', required: true, describe: 'The files to join, in order.' }, { name: 'name', type: 'text', default: 'joined.mp4', describe: 'The output file name.' }] },
-    { id: 'extractAudio', label: 'Extract the audio', input: true, describe: 'Write the input\'s sound track on its own.',
-        params: [e('format', 'm4a', ['m4a', 'wav', 'mp3'], 'The audio file type.')] },
-    { id: 'muxAudio', label: 'Put audio back', input: true, describe: 'Lay an audio file under the input\'s picture (the original sound, say), shifted by an offset for sync.',
-        params: [{ name: 'audio', type: 'file', required: true, describe: 'The audio file to lay under the picture.' }, n('offsetSec', 0, -60, 60, 'Seconds the audio is shifted: positive = later.')] },
-    { id: 'reframe', label: 'Reframe', input: true, describe: 'Change the aspect: crop to it from the centre, or fit inside it with bars.',
-        params: [e('aspect', '9:16', ['16:9', '9:16', '1:1'], 'The target aspect.'), e('mode', 'crop', ['crop', 'pad'], 'crop = fill the frame, losing the sides · pad = keep all, add bars.'), n('height', 1920, 240, 4320, 'The output height in pixels (pad).')] },
-    { id: 'burnSubtitles', label: 'Burn in subtitles', input: true, describe: 'Draw a subtitle file (.srt, .ass) onto the picture.',
-        params: [{ name: 'subtitles', type: 'file', required: true, describe: 'The subtitle file.' }] },
-    { id: 'keyframes', label: 'Key frames', input: true, describe: 'Save stills: N evenly spaced, or one at each scene change.',
-        params: [e('mode', 'count', ['count', 'scene'], 'count = N evenly spaced · scene = at each cut.'), n('count', 8, 1, 200, 'How many (count).'), n('threshold', 0.3, 0.05, 0.9, 'How big a change is a cut (scene).')] },
-    { id: 'loudnorm', label: 'Normalise loudness', input: true, describe: 'Bring the sound to a broadcast loudness (EBU R128); the picture is copied untouched.',
-        params: [n('lufs', -16, -36, -5, 'Target integrated loudness (LUFS): -16 for the web, -23 for broadcast.'), n('truePeak', -1.5, -9, 0, 'Ceiling for peaks (dBTP).')] },
-    { id: 'transcode', label: 'Transcode', input: true, describe: 'Re-encode to a codec and quality.',
-        params: [e('codec', 'h264', ['h264', 'h265', 'vp9'], 'The video codec.'), n('crf', 23, 0, 51, 'Quality: lower is better and bigger.'), e('preset', 'medium', ['ultrafast', 'fast', 'medium', 'slow'], 'Speed against size.'), n('audioKbps', 160, 32, 512, 'Audio bitrate.')] }
-];
+// The catalogue is data the page reads too: media/afRecipes.js — this is its typed door.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const impl: RecipesModule = require(path.join(__dirname, '..', '..', 'media', 'afRecipes.js'));
 
+export const OVERWRITES: readonly Overwrite[] = impl.OVERWRITES;
+export const RECIPES: readonly Recipe[] = impl.RECIPES;
 export const recipe = (id: string): Recipe | undefined => RECIPES.find(r => r.id === id);
-
 /** Named parameter sets (M-49 presets) — the one a production reaches for, not a copy of a recipe. */
-export const RECIPE_PRESETS: readonly { name: string; recipe: RecipeId; params: Record<string, unknown> }[] = [
-    { name: 'Omni Flash parts', recipe: 'split', params: { segmentSec: 10, overlapSec: 0 } },
-    { name: 'Vertical short (9:16)', recipe: 'reframe', params: { aspect: '9:16', mode: 'crop' } },
-    { name: 'Web loudness', recipe: 'loudnorm', params: { lufs: -16, truePeak: -1.5 } }
-];
+export const RECIPE_PRESETS: readonly RecipePreset[] = impl.PRESETS;
+/** A parameter's value when a step leaves it blank: the preset's, else the recipe's own. */
+export const inheritedParam = impl.inherited;
 
 export interface RecipeCall {
     recipe: string;

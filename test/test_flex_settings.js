@@ -26,7 +26,7 @@ const store = (init) => {
 
 // The page, in a sandbox, with a stand-in for the few helpers it uses.
 const sandbox = { window: { AFTip: { wrap: (t) => t } } };
-for (const f of ['afFlex.js', 'afFlexForms.js', 'afFlexSettings.js']) {
+for (const f of ['afRecipes.js', 'afFlex.js', 'afFlexForms.js', 'afFlexSettings.js']) {
     vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'media', f), 'utf8'), sandbox);
 }
 const Page = sandbox.window.AFFlexSettings;

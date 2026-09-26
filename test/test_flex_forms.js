@@ -88,7 +88,7 @@ const { supervisorRefusal, normalizeSupervisor } = require(path.join(ROOT, 'out'
 
     // ‼️ REAL USE: the supervisor's "if it is not sure" box, drawn from the registry's tri states.
     const sandbox = { window: {} };
-    for (const f of ['afFlex.js', 'afFlexForms.js', 'afSupervisor.js']) {
+    for (const f of ['afRecipes.js', 'afFlex.js', 'afFlexForms.js', 'afSupervisor.js']) {
         vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'media', f), 'utf8'), sandbox);
     }
     const html = sandbox.window.AFSupervisor.row({ engine: 'claude', lowConfidence: 'park' }, [], C);

@@ -22,10 +22,12 @@
 // read it); `src/core/flexPoints.ts` is its typed door.
 (function (factory) {
     'use strict';
-    const api = factory();
+    // the tool step's recipes (M-49) — on a page afRecipes.js is loaded first
+    const recipes = typeof window !== 'undefined' && window.AFRecipes ? window.AFRecipes : require('./afRecipes.js');
+    const api = factory(recipes);
     if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
     if (typeof window !== 'undefined') { window.AFFlex = api; }
-})(function () {
+})(function (RECIPES) {
     'use strict';
 
     /** Lowest to highest precedence — the order a value is resolved in. */
@@ -116,6 +118,15 @@
         }, extra || {});
     }
 
+    /** A tool step's own choice (M-49): set on the step card's tool row, carried by the step's `tool`; some have a Farm Settings default too. */
+    function toolPoint(field, label, type, dflt, box, extra) {
+        const x = Object.assign({}, extra || {});
+        const levels = { step: { surface: 'media/afTool.js#st-' + box, bridge: 'workflows.add:steps.tool.' + field } };
+        if (x.settings) { levels.settings = { surface: 'setting:' + x.settings, bridge: 'settings.set:' + x.settings }; }
+        delete x.settings;
+        return Object.assign({ id: 'tool.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, x);
+    }
+
     const POINTS = [
         supervisor('engine', 'Supervisor engine', 'text', '', 'engine'),
         supervisor('model', 'Supervisor model', 'text', '', 'model'),
@@ -129,9 +140,20 @@
         setting('workflow.prevTextChars', '{prev_text} length', 'number', 1500, 'agentFarm.workflowPrevTextChars',
             { min: 200, max: 20000 }),
         // M-49 — where a tool step writes, and what it does with a file already there (src/core/toolCall.ts)
-        setting('tool.outDir', 'Tool step — output folder', 'text', '', 'agentFarm.toolOutDir'),
-        setting('tool.overwrite', 'Tool step — an output already there', 'enum', 'never', 'agentFarm.toolOverwrite',
-            { options: ['never', 'suffix', 'always'] }),
+        toolPoint('outDir', 'Tool step — output folder', 'text', '', 'tOutDir', { settings: 'agentFarm.toolOutDir' }),
+        toolPoint('overwrite', 'Tool step — an output already there', 'enum', 'never', 'tOverwrite',
+            { settings: 'agentFarm.toolOverwrite', options: ['never', 'suffix', 'always'] }),
+        toolPoint('recipe', 'Tool step — recipe', 'text', '', 'tRecipe'),
+        toolPoint('preset', 'Tool step — recipe preset', 'text', '', 'tPreset'),
+        toolPoint('input', 'Tool step — input file', 'text', '', 'tInput'),
+        // every recipe parameter, its default the recipe's own (media/afRecipes.js)
+        ...RECIPES.RECIPES.flatMap(r => r.params.map(q => ({
+            id: RECIPES.paramPoint(r.id, q.name), label: r.label + ' — ' + q.name,
+            type: q.type === 'number' || q.type === 'enum' ? q.type : 'text',
+            default: q.default === undefined ? '' : q.default, remembered: false,
+            ...(q.options ? { options: q.options } : {}), ...(q.min !== undefined ? { min: q.min, max: q.max } : {}),
+            levels: { step: { surface: 'media/afTool.js#st-tp', bridge: 'workflows.add:steps.tool.params' } }
+        }))),
         // M-47 — a mission's workflow: its supervisor's question goes to the lead, to you, or the lead first (src/core/workflowMission.ts)
         setting('workflow.askEscalation', 'Inside a mission — who answers the supervisor', 'enum', 'leader-then-human', 'agentFarm.workflowAskEscalation',
             { options: ['leader-then-human', 'leader', 'human'] }),

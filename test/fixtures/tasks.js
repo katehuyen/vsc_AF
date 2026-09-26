@@ -799,6 +799,34 @@ const variants = () => ([
             drive(r, { 'nt-st-title': 'Kontrol', 'nt-st-stype': 'checkpoint' }, 'nt-st-stype');
         }
     },
+    // M-49 — a tool step just switched to: the recipe picker alone (the smallest card).
+    {
+        id: 'tasks-step-tool-empty',
+        label: 'Tasks → a workflow tool step before a recipe is picked (M-49)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Parçala', 'nt-st-stype': 'tool' }, 'nt-st-stype');
+        }
+    },
+    // M-49 — a split with its preset: blank boxes show the preset's values, one box overridden.
+    {
+        id: 'tasks-step-tool',
+        label: 'Tasks → a workflow tool step: split, the Omni Flash preset, one parameter overridden (M-49)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Parçala', 'nt-st-stype': 'tool' }, 'nt-st-stype');
+            drive(r, { 'nt-st-tRecipe': 'split' }, 'nt-st-tRecipe');
+            drive(r, { 'nt-st-tPreset': 'Omni Flash parts' }, 'nt-st-tPreset');
+            // typed boxes are read on `input`; a change on the overwrite picker reads them all and redraws
+            drive(r, { 'nt-st-tInput': '{input.clip}', 'nt-st-tp-overlapSec': '1' }, 'nt-st-tOverwrite');
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',
