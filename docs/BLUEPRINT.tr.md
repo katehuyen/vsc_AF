@@ -1665,6 +1665,23 @@ Kurulu bir zinciri silip yeniden kurmana gerek yok (0.7.0):
 
 Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her zincir kendi şeridinde, adımlar numaralı bloklar halinde — yeşil = bitti, mavi = çalışıyor, kırmızı = başarısız. Bloğun üzerine gel: adım adı, ajan ve süre. İki ajanın birbirine iş devrettiğini kelimenin tam anlamıyla izlersin.
 
+## Denetimli Akış {#denetimli-akis}
+
+İş akışı (sabit zincir) ile misyon (plan yapan lider) arasında: **zincir iskelet olarak kalır, senin seçtiğin noktalarda bir yönetici onu yönlendirir** (X-365, G ve H dalgaları). Bir iş akışı söylemedikçe hiçbiri açık değildir; hiçbir şey söylemeyen iş akışı eskisi gibi koşar — *mekanik* yol.
+
+| Parça | Ne yapar |
+|---|---|
+| **Checkpoint adımı** (M-43) | Ajansız bir adım. Koşu orada durur ve yöneticiden yönlendirmesi istenir: `proceed` · `retry` · `jump` · `insert` (ajan ya da onay adımı) · `ask_user` · `stop`. Kontrol noktası başına: `message` (neye bakacağı), izinli eylemler (`allowed`), `maxInsert` (0–5), `insertKinds`, adım başına `maxRetries`, `minConfidence` (altındaki karar uygulanmaz). Karar JSON'dur ve uygulanmadan önce doğrulanır. |
+| **Uyanma** (M-45) | Bir adım bitince yöneticiyi ne uyandırır: `mechanical` (hiç — varsayılan), `smart` (her adım), `hybrid` (başarısız kalite kontrolü, başarısız adım, $2'yi geçen koşu) ya da `workflows.wakeFields` üzerinde bir koşul listesi. Hiçbiri tutmazsa mekanik yol; biri tutarsa yönetici kontrol noktasındaki gibi karar verir ve satır koşulu adıyla söyler. |
+| **Yönetici** (M-44) | Koşu başına tek kalıcı oturum; çağrı tavanı, bütçe ve sorulamadığında ya da sorulmaması gerektiğinde mekanik düşüş. |
+| **Akışı beslemek** (M-35) | Girdiler (`workflows.run {inputs}`, tetiğin yükü), koşu belleği (`{steps.<id>.json.x}`, `{run.x}`), liste üzerinde for-each dağılımı, sağlayıcıya yüklenen yerel dosyalar, modaliteye duyarlı hakem. |
+| **Canlı yönlendirme** (M-46) | Bir insan koşan akışı yönlendirebilir ve ayarlarını canlı değiştirebilir (Needs you, Telegram). |
+| **Misyonlar** (M-47) | Bir misyonun `run_workflow`'u akışa girdilerini verir; yönetici misyonun liderine yükselir. |
+| **Tek koşul motoru** (X-371) | Uyanma koşulları ve nöbet politikaları `policyEngine`'i paylaşır. |
+| **Yönetici şeridi** (U-153) | Koşu sayfası her kararı, nedenini, maliyetini ve kökenini gösterir. |
+
+Retry supervisor (M-13; kesilen bir görevin nasıl devam edeceğine karar verir) aynı çekirdeğin özel hâlidir (M-48). Yukarıdaki her seçim bir esneme noktasıdır: Farm Settings'te, iş akışı formunda, adım kartında, koşuda ya da canlı verilen değer `core/flexResolve.ts` ile kökeniyle birlikte çözülür.
+
 ## Missions {#missions}
 
 İş akışları önceden çizilir: her adım, dal ve sıçrama koşu başlamadan sabittir. **Mission** (2.62.0) bunun tersidir — bir **hedef**, bir **lead ajan** ve bir **ekip** verirsin; sıradaki adımın ne olacağına **çalışma anında**, tur tur, önceki sonuçlara bakılarak karar verilir. "Orkestratör analiz eder, coder yazar, reviewer inceler, tester testleri koşar, lead hepsini birleştirir" — bunu önce DAG olarak çizmeden. Başarısız bir delegasyon misyonu öldürmez; lead'in üzerine yeniden plan kurduğu bilgidir.
