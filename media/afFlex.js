@@ -147,6 +147,17 @@
         }, extra || {});
     }
 
+    /** X-424 — studio.library.*: the Farm setting, then the Studio wall's own filter row (live — never remembered). */
+    function slPoint(field, label, type, dflt, key, extra) {
+        return Object.assign({
+            id: 'studio.library.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.' + key, bridge: 'settings.set:agentFarm.' + key },
+                live: { surface: 'media/afStudioLibrary.js#sl-' + field, bridge: 'studio.library:' + field }
+            }
+        }, extra || {});
+    }
+
     /** X-419 — library.enrich.*: the Farm setting, then the workflow form's Library block. */
     function enPoint(field, label, type, dflt, key, box, extra) {
         return Object.assign({
@@ -234,6 +245,11 @@
         aqPoint('stages', 'Airtable input — stages searched', 'text', 'asset, final', 'airtableInputStages'),
         aqPoint('limit', 'Airtable input — most records', 'number', 20, 'airtableInputLimit', { min: 1, max: 200 }),
         aqPoint('sort', 'Airtable input — order', 'enum', 'newest', 'airtableInputSort', { options: ['newest', 'oldest', 'name'] }),
+        // X-424 — which records the Studio wall shows (src/core/studioLibrary.ts)
+        slPoint('base', 'Studio wall — database', 'text', '', 'studioLibraryBase'),
+        slPoint('stages', 'Studio wall — stages shown', 'text', '', 'studioLibraryStages'),
+        slPoint('kind', 'Studio wall — kind', 'enum', '', 'studioLibraryKind', { options: ['', 'image', 'video', 'audio'] }),
+        slPoint('success', 'Studio wall — outcome', 'enum', '', 'studioLibrarySuccess', { options: ['', 'passed', 'failed'] }),
         // X-419 — a model fills the records' meaning (src/core/enrichSpec.ts)
         enPoint('when', 'Enrich — when', 'enum', 'end', 'libraryEnrich', 'When', { options: ['end', 'record', 'never'] }),
         enPoint('scope', 'Enrich — which files', 'enum', 'final-failed', 'libraryEnrichScope', 'Scope', { options: ['final-failed', 'final', 'all'] }),

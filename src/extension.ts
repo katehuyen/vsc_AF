@@ -556,6 +556,8 @@ import {
 import { clearPort, portHolder } from './core/portScan';
 import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
+import { libraryWall } from './core/studioLibrary';
+import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
@@ -26787,8 +26789,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The Studio's dependencies: the asset archive, the manifests in the agent
     // folders, what is watched, what it may cost, and which provider keys exist
     // (never the keys themselves — that stays inside the vault).
+    // X-424 — the Studio wall read from the library; the page never starts a stopped engine (it shows the sidecar cache and says so), the op may.
+    const studioWall = (view: Parameters<typeof libraryWall>[0], cache: Parameters<typeof libraryWall>[1], start: boolean) => libraryWall(view, cache, {
+        list: async (base, lang) => { const c = await mediaRecorder.ready(base, start ? 'auto' : 'never'); return 'down' in c ? c : c.listItems('media', lang); },
+        settings: () => {
+            const own = (k: string): unknown => { const i = vscode.workspace.getConfiguration().inspect<unknown>(`agentFarm.${k}`); return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined; };
+            return { base: own('studioLibraryBase'), stages: own('studioLibraryStages'), kind: own('studioLibraryKind'), success: own('studioLibrarySuccess') };
+        },
+        defaultBase: airtableLookup.defaultBase,
+        lang: airtableLookup.lang
+    });
     const studioDeps = {
         extensionUri: context.extensionUri,
+        libraryWall: (view: Parameters<typeof libraryWall>[0], cache: Parameters<typeof libraryWall>[1]) => studioWall(view, cache, false),
         tasks: taskManagerRef as TaskManager,
         getAgents: () => agents,
         ingestFolders: () => cfg().get<{ path?: string; agent?: string }[]>('ingestFolders', []) ?? [],
@@ -26807,6 +26820,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         runMedia: (title, model, input, opts) =>
             (taskManagerRef as TaskManager).runMediaAdhoc(title, model, input, opts),
         refresh: () => StudioPanel.refreshIfOpen()
+    });
+    registerStudioLibraryOps(bridge, {
+        outputsDir: () => (taskManagerRef as TaskManager).outputsDir,
+        read: studioWall
     });
     registerMediaUploadOps(bridge, {
         upload: (file, provider) => (taskManagerRef as TaskManager).uploadMediaFile(file, provider)

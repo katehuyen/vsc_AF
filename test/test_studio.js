@@ -146,7 +146,8 @@ const production = (scenes) => ({
     ok('"Generate" is wired to the command that really exists',
         /no invented one-click generator/.test(panel));
     ok('external assets stay loadable in the webview',
-        /localResourceRoots/.test(panel) && /assetDirs/.test(panel));
+        /localResourceRoots: studioRoots\(/.test(panel) && /localResourceRoots: studioRoots\(.*this\.lib\.dirs\(\)\)/.test(panel)
+        && /m\.assetFiles\) \{ dirs\.add\(path\.dirname\(f\)\)/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'studioLibraryView.ts'), 'utf8')));
 
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
     const ids = new Set(pkg.contributes.commands.map(c => c.command));

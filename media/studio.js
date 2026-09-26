@@ -136,12 +136,13 @@
             preview = `<div class="muted" style="padding:30px;text-align:center">no asset${item.assetPath ? '' : ' (pruned or failed)'}</div>`;
         }
         const external = item.source && item.source.indexOf('external') === 0;
+        const bare = !item.taskId;
         const p = (DATA.productions || []).find(x => x.id === item.projectId);
         const sceneTag = item.projectId
             ? `<span class="badge" title="assigned scene">${C.esc(p ? p.title + (item.sceneId ? ' · ' + ((p.scenes.find(s => s.id === item.sceneId) || {}).title || item.sceneId) : '') : item.projectId)}</span>`
             : '';
         const srcTag = external ? `<span class="badge warn" title="registered from a watched/external folder">${C.esc(item.source)}</span>` : '';
-        const pickTag = item.selectedCount
+        const pickTag = bare ? '' : item.selectedCount
             ? `<span class="badge" style="color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)" title="kept in triage">✓ kept</span>`
             : item.rejectedCount
                 ? '<span class="badge muted" title="dropped in triage">✗ dropped</span>'
@@ -153,15 +154,16 @@
         })} title="${C.esc(window.AFCtx.hint(item.title))}">
             ${preview}
             <h3 style="margin:8px 0 2px">${C.esc(item.title)}</h3>
-            <div class="sub">${C.esc(item.model)} · ${fmtTime(item.ts)}${item.estCost ? ' · ~' + C.fmtUSD(item.estCost) : ''} ${sceneTag}${srcTag}${pickTag}</div>
+            <div class="sub">${item.model ? C.esc(item.model) + ' · ' : ''}${fmtTime(item.ts)}${item.estCost ? ' · ~' + C.fmtUSD(item.estCost) : ''} ${sceneTag}${srcTag}${pickTag}</div>
+            ${window.AFStudioLib.strip(item.lib, (DATA.library || {}).base)}
             ${item.workflowTitle ? `<div class="sub muted">from: ${C.esc(item.workflowTitle)}</div>` : ''}
             ${item.input ? `<details style="margin-top:6px"><summary class="small">input</summary><pre>${C.esc(item.input)}</pre></details>` : ''}
             <div class="btnrow">
                 ${item.assetPath ? `<button class="secondary" data-open="${C.esc(item.assetPath)}">Open file</button>` : ''}
-                ${external ? '' : `<button class="secondary" data-rerun="${C.esc(item.taskId)}">Re-run</button>
+                ${external || bare ? '' : `<button class="secondary" data-rerun="${C.esc(item.taskId)}">Re-run</button>
                 <button class="secondary" data-vary="${C.esc(item.taskId)}">Vary…</button>
                 <button class="secondary" data-feedback="${C.esc(item.taskId)}" title="Say what was wrong — the note is injected into the prompt and it is regenerated">Feedback…</button>`}
-                <button class="secondary" data-assign="${C.esc(item.taskId)}">Scene…</button>
+                ${bare ? '' : `<button class="secondary" data-assign="${C.esc(item.taskId)}">Scene…</button>`}
             </div>
         </div>`;
     }
@@ -169,7 +171,7 @@
     function assetsHtml() {
         const p = cur();
         const items = (DATA.items || []).filter(i =>
-            (!DATA.project || i.projectId === DATA.project) &&
+            (!DATA.project || !i.taskId || i.projectId === DATA.project) &&
             (!fScene || (fScene === '·' ? (i.projectId === DATA.project && !i.sceneId) : i.sceneId === fScene)) &&
             (!fSource || fSource.indexOf(i.source) >= 0));
         const sources = [...new Set((DATA.items || []).map(i => i.source))].sort();
@@ -177,7 +179,7 @@
             ? `<option value="">all scenes</option><option value="·"${fScene === '·' ? ' selected' : ''}>unassigned</option>` +
               p.scenes.map(s => `<option value="${C.esc(s.id)}"${fScene === s.id ? ' selected' : ''}>${C.esc(s.title)}</option>`).join('')
             : '';
-        return `<div class="chiprow">
+        return `${window.AFStudioLib.head(DATA.library)}<div class="chiprow">
                 ${p ? `<select id="fscene" title="scene">${sceneOpts}</select>` : ''}
                 ${sources.length > 1 ? window.AFFilter.multi({
                     id: 'studio-sources', label: 'Sources', options: sources, selected: fSource,
@@ -451,6 +453,7 @@
         const fs = document.getElementById('fscene');
         if (fs) { fs.addEventListener('change', e => { fScene = e.target.value; render(); }); }
         window.AFFilter.wireMulti({ id: 'studio-sources', onChange: sel => { fSource = sel; render(); } });
+        window.AFStudioLib.wire(post);
 
         on('[data-open]', el => el.addEventListener('click', () => post('openAsset', { path: el.dataset.open })));
         on('[data-rerun]', el => el.addEventListener('click', () => post('rerun', { taskId: el.dataset.rerun })));

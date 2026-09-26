@@ -6478,6 +6478,15 @@
       ]
     },
     {
+      "capability": "studioPanel.ts#libraryView",
+      "ui": [
+        "page:studioPanel.ts#libraryView"
+      ],
+      "ops": [
+        "studio.library"
+      ]
+    },
+    {
       "capability": "studioPanel.ts#openAsset",
       "ui": [
         "page:studioPanel.ts#openAsset"

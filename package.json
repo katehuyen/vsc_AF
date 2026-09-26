@@ -9151,6 +9151,37 @@
           "default": "newest",
           "markdownDescription": "The order an **airtable** workflow input hands its records in (X-420)."
         },
+        "agentFarm.studioLibraryBase": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Which local Airtable database the **Studio** wall reads its media records from. Empty = the Airtable page's default (X-424)."
+        },
+        "agentFarm.studioLibraryStages": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Which stage folders the **Studio** wall shows, comma separated (source, raw, semi, final, asset). Empty = every stage (X-424)."
+        },
+        "agentFarm.studioLibraryKind": {
+          "type": "string",
+          "enum": [
+            "",
+            "image",
+            "video",
+            "audio"
+          ],
+          "default": "",
+          "markdownDescription": "Which kind of media the **Studio** wall shows. Empty = every kind (X-424)."
+        },
+        "agentFarm.studioLibrarySuccess": {
+          "type": "string",
+          "enum": [
+            "",
+            "passed",
+            "failed"
+          ],
+          "default": "",
+          "markdownDescription": "Which outcome the **Studio** wall shows: only the files that passed, only the failed ones, or empty = both (X-424)."
+        },
         "agentFarm.libraryEnrich": {
           "type": "string",
           "enum": [

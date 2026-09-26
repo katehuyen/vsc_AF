@@ -13,8 +13,10 @@ import { pickSequenceAssets } from '../core/premiere';
 import { defaultSequenceFile, writeSequence } from '../core/sequenceExport';
 import { revealPath } from '../core/reveal';
 import { buildStudio, pipelineSummary, SCENE_TARGET_SEP } from '../core/studio';
+import { wallItems } from '../core/studioLibrary';
 import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
+import { StudioLibraryView, studioRoots, WallReader } from './studioLibraryView';
 
 /**
  * Studio — the content production page.
@@ -40,6 +42,8 @@ export interface StudioDeps {
     mediaBudget(): number;
     /** which provider keys are present in the vault (never the keys themselves) */
     providerKeys(): { fal: boolean; replicate: boolean };
+    /** X-424 — the wall read from the library (the studio.library op's own function); absent = sidecars only */
+    libraryWall?: WallReader;
 }
 
 export class StudioPanel {
@@ -58,18 +62,11 @@ export class StudioPanel {
         }
         // Ingested assets live outside the outputs folder and a webview may only
         // load from listed roots — allow every directory that currently holds one.
-        const assetDirs = new Set<string>([deps.tasks.outputsDir]);
-        for (const m of readMediaMetas(deps.tasks.outputsDir)) {
-            for (const f of m.assetFiles) { assetDirs.add(path.dirname(f)); }
-        }
         const panel = vscode.window.createWebviewPanel(
             'agentfarm.studio', 'Studio', vscode.ViewColumn.One,
             {
                 enableScripts: true, retainContextWhenHidden: true,
-                localResourceRoots: [
-                    vscode.Uri.joinPath(deps.extensionUri, 'media'),
-                    ...[...assetDirs].map(d => vscode.Uri.file(d))
-                ]
+                localResourceRoots: studioRoots(deps.extensionUri, deps.tasks.outputsDir, readMediaMetas(deps.tasks.outputsDir), [])
             });
         StudioPanel.current = new StudioPanel(panel, deps);
         if (opts?.tab) { StudioPanel.current.tab = opts.tab; }
@@ -89,7 +86,10 @@ export class StudioPanel {
         void StudioPanel.current?.panel.webview.postMessage({ type: 'studio-compose', seed });
     }
 
+    private lib: StudioLibraryView;
+
     private constructor(private panel: vscode.WebviewPanel, private deps: StudioDeps) {
+        this.lib = new StudioLibraryView(deps.libraryWall, newDirs => this.onWall(newDirs));
         panel.webview.html = htmlShell(panel.webview, deps.extensionUri, 'Studio', this.data(), 'studio.js');
         panel.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -121,8 +121,8 @@ export class StudioPanel {
         const withUri = <T extends { file?: string }>(a: T) =>
             ({ ...a, uri: this.uriOf(a.file) });
 
-        // Assets tab: every meta, as the wall used to show them.
-        const items = metas.map(m => {
+        // Assets tab: the library's records (X-424), each joined to the sidecar of its file.
+        const sidecar = metas.map(m => {
             const asset = m.assetFiles.find(f => fs.existsSync(f));
             return {
                 taskId: m.taskId, title: m.title, model: m.model, input: m.input,
@@ -135,6 +135,7 @@ export class StudioPanel {
                 kind: asset ? assetKind(asset) : 'file'
             };
         });
+        const items = wallItems(sidecar, this.lib.current()).map(i => ({ ...i, assetUri: this.uriOf(i.assetPath) }));
 
         return {
             generatedAt: Date.now(),
@@ -158,6 +159,7 @@ export class StudioPanel {
             untriaged: state.untriaged.map(withUri),
             cost: state.cost,
             items,
+            library: this.lib.state(),
             // Assemble: exactly the clips the export would use, in order.
             sequence: currentDef
                 ? pickSequenceAssets(currentDef.production, metas).map(c => ({
@@ -177,6 +179,20 @@ export class StudioPanel {
     }
 
     refresh(): void {
+        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
+        void this.lib.load(this.metas(), (this.panel.webview.options.localResourceRoots ?? []).map(u => u.fsPath));
+    }
+
+    /** A newer wall arrived. A preview folder the webview may not load from yet means new roots — and new roots only take with a fresh page. */
+    private onWall(newDirs: boolean): void {
+        if (newDirs) {
+            this.panel.webview.options = {
+                ...this.panel.webview.options,
+                localResourceRoots: studioRoots(this.deps.extensionUri, this.deps.tasks.outputsDir, this.metas(), this.lib.dirs())
+            };
+            this.panel.webview.html = htmlShell(this.panel.webview, this.deps.extensionUri, 'Studio', this.data(), 'studio.js');
+            return;
+        }
         void this.panel.webview.postMessage({ type: 'data', data: this.data() });
     }
 
@@ -215,6 +231,7 @@ export class StudioPanel {
         const str = (k: string) => (typeof msg[k] === 'string' ? msg[k] as string : '');
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
+            case 'libraryView': this.lib.setView(msg.view); this.refresh(); break;
             case 'tab':
                 this.tab = str('tab') || 'pipeline';
                 this.refresh();
