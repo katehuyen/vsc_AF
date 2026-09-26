@@ -846,13 +846,14 @@ const variants = () => ([
     // X-418 — the workflow form's Library block: another database, ask before starting its engine.
     {
         id: 'tasks-wf-library',
-        label: 'Tasks → a workflow form: its Library block — stem-draft, every file recorded, ask before starting the engine (X-418)',
+        label: 'Tasks → a workflow form: its Library block — stem-draft, every file recorded, ask before starting the engine (X-418), its stage folders: FAIL → semi, last output → asset (X-417)',
         data: data(),
         act: (r) => {
             r.send({
                 type: 'plan-compose', kind: 'workflow',
                 seed: {
                     mode2: 'edit', id: 'w12', title: '34 sn dilim', stepIdx: null, libBase: 'stem-draft', libLang: '', libStart: 'ask', libRecord: 'all', libTemplate: '',
+                    libMapInput: '', libMapIntermediate: '', libMapFailed: 'semi', libMapRejected: '', libMapFinal: 'asset',
                     steps: [{ sid: 's1', stype: 'tool', title: 'Böl', toolJson: '{"recipe":"split","input":"{input.clip}"}' }]
                 }
             });

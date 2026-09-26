@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.679.0 - Your own stage folders per production (X-417) (2026-09-26)
+
+- **Each production decides where its kinds of files go (X-417).** The
+  workflow form's Library block has a Stage folders row: run inputs, parts
+  and passed candidates, judge FAILs, left-outs and the last output each get
+  a stage of your choosing (a failed take kept in semi, the last output
+  straight into asset). Blank = the built-in source · semi · raw · raw ·
+  final, and a stage a step names on its own row still wins. The mapping is
+  written into the run's ledger, so a FAIL, a selection and the end of the
+  run all follow it. On the bridge: `workflows.add/update` take
+  `library.stages`.
+
 ## 3.678.0 - Every file a run makes is filed and recorded in your local Airtable, and a stopped engine starts with one press (X-418, X-416) (2026-09-26)
 
 - **Nothing a run makes is lost in a folder any more (X-418).** A media

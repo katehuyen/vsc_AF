@@ -39,6 +39,17 @@ export const DEFAULT_STAGE: Readonly<Record<MediaRole, LibraryStage>> = {
     failed: 'raw', rejected: 'raw', final: 'final', unknown: 'raw'
 };
 
+/** The roles a workflow can map to its own stages (flex points library.stages.*); a candidate follows `intermediate`. */
+export const MAPPED_ROLES = ['input', 'intermediate', 'failed', 'rejected', 'final'] as const;
+export type MappedRole = typeof MAPPED_ROLES[number];
+export type StageMap = Partial<Record<MappedRole, LibraryStage>>;
+
+/** The stage a workflow's own mapping gives this role — undefined when it states none. */
+export function mappedStage(map: StageMap | undefined, role: unknown): LibraryStage | undefined {
+    const r = String(role ?? '');
+    return map?.[(r === 'candidate' ? 'intermediate' : r) as MappedRole];
+}
+
 export const isStage = (s: unknown): s is LibraryStage => (LIBRARY_STAGES as readonly string[]).includes(String(s));
 export const isRole = (r: unknown): r is MediaRole => (MEDIA_ROLES as readonly string[]).includes(String(r));
 

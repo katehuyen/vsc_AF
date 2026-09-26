@@ -202,6 +202,12 @@
         libPoint('template', 'Library — record template', 'text', '', { workflow: 'Template', step: 'Template' }),
         libPoint('stage', 'Library — the stage of this step\'s files', 'enum', '', { step: 'Stage' },
             { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        // X-417 — the workflow's own role → stage mapping; blank = the built-in default of that role
+        libPoint('stages.input', 'Library — stage of a run input', 'enum', '', { workflow: 'MapInput' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        libPoint('stages.intermediate', 'Library — stage of a part or a candidate', 'enum', '', { workflow: 'MapIntermediate' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        libPoint('stages.failed', 'Library — stage of a judge FAIL', 'enum', '', { workflow: 'MapFailed' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        libPoint('stages.rejected', 'Library — stage of a left-out file', 'enum', '', { workflow: 'MapRejected' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        libPoint('stages.final', 'Library — stage of the run\'s last output', 'enum', '', { workflow: 'MapFinal' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
         // M-45 — what wakes the supervisor after a step: [] = mechanical (src/core/workflowWake.ts)
         {
             id: 'workflow.wake', label: 'Wake the supervisor', type: 'conditions', default: [], remembered: false,

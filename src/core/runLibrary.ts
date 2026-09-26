@@ -10,13 +10,16 @@
  *              its Başarı Statüsü filled, nothing thrown away
  *   ended    — a run that reached its end: the files of its last producing step
  *              → final, its inputs from outside the library → source
+ * Every stage above is the built-in default; a workflow's own mapping
+ * (library.stages) replaces it per role, and each ledger entry carries that
+ * mapping so the later events follow it.
  * Every file is written down in the run's ledger (persisted on its record), so a
  * later event finds it by path, and a window reload loses nothing.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { expandRoot } from '../mcp/airtable/engine';
-import { LIBRARY_STAGES, LibraryStage, MediaRole, fileInto, libraryDir, libraryType, planLibrary } from './mediaLibrary';
+import { LIBRARY_STAGES, LibraryStage, MediaRole, StageMap, fileInto, libraryDir, libraryType, mappedStage, planLibrary } from './mediaLibrary';
 import { MediaRecorder } from './mediaRecorder';
 import { MediaOrigin, Produced } from './mediaRecordFields';
 import { LibrarySpec, ResolvedLibrary, StepLibrarySpec, resolveLibrary } from './runLibrarySpec';
@@ -37,6 +40,10 @@ export interface LedgerEntry {
     kept?: boolean;
     unrecorded?: boolean;
     error?: string;
+    /** what the file is to the run — a FAIL or a left-out changes it */
+    role?: MediaRole;
+    /** the workflow's own role → stage mapping when it states one */
+    map?: StageMap;
 }
 
 export interface RunCtx {
@@ -123,14 +130,18 @@ export class RunLibrary {
         const causes = (m.sources ?? []).filter(isLocalMedia);
         if (causes.length) { await this.consumed(ctx, causes); }
         const failed = m.role === 'failed' || m.role === 'rejected';
+        const stage = lib.stage ?? mappedStage(lib.stages, m.role);
         const out: string[] = [];
         const lines: string[] = [];
         for (const [i, file] of files.entries()) {
             if (!isLocalMedia(file)) { out.push(file); continue; }
-            const entry: LedgerEntry = { file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'produced', stage: 'raw', base: lib.base, lang: lib.lang, ...(lib.stage ? { pinned: true } : {}) };
+            const entry: LedgerEntry = {
+                file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'produced', stage: 'raw', base: lib.base, lang: lib.lang, role: m.role,
+                ...(lib.stage ? { pinned: true } : {}), ...(lib.stages ? { map: lib.stages } : {})
+            };
             try {
                 if (failed && lib.record === 'passed') {
-                    const plan = planLibrary({ roots: this.roots(), base: lib.base, file, stage: lib.stage, role: m.role, exists: p => fs.existsSync(p) });
+                    const plan = planLibrary({ roots: this.roots(), base: lib.base, file, stage, role: m.role, exists: p => fs.existsSync(p) });
                     if ('error' in plan) { throw new Error(plan.error); }
                     entry.file = fileInto(file, plan);
                     entry.stage = plan.stage;
@@ -138,7 +149,7 @@ export class RunLibrary {
                     lines.push(`Library: ${path.basename(entry.file)} → ${lib.base}/${plan.type}/${plan.stage} (not recorded — record: passed)`);
                 } else {
                     const r = await this.rec.record({
-                        file, base: lib.base, lang: lib.lang, autoStart: lib.autoStart, template: lib.template, stage: lib.stage, causeFiles: causes,
+                        file, base: lib.base, lang: lib.lang, autoStart: lib.autoStart, template: lib.template, stage, causeFiles: causes,
                         produced: {
                             role: m.role, origin: m.origin, productionType: m.productionType, model: m.model, prompt: m.prompt,
                             costUsd: files.length > 1 && m.costUsd ? m.costUsd / files.length : m.costUsd, sourceMaterial: m.sources, failure: m.failure, sequence: i + 1,
@@ -168,13 +179,14 @@ export class RunLibrary {
         for (const file of files.filter(isLocalMedia)) {
             if (this.known(ctx.ledger, file)) { continue; }
             const at = this.stageOfPath(lib.base, file);
+            const inStage = lib.stages?.input ?? 'source';
             const r = await this.rec.record({
-                file, base: lib.base, lang: lib.lang, autoStart: lib.autoStart, inPlace: true, stage: at ?? 'source',
+                file, base: lib.base, lang: lib.lang, autoStart: lib.autoStart, inPlace: true, stage: at ?? inStage,
                 produced: { role: 'input', origin: 'user_submission', productionType: 'input', run: { id: ctx.runId, name: ctx.w.title, startedAt: ctx.runStartedAt, stepIndex: ctx.stepIndex, steps: ctx.w.steps.length } }
             }).catch(e => ({ file, error: (e as Error).message, base: lib.base } as { file: string; error: string; base: string; id?: string; pending?: string }));
             ctx.ledger.push({
-                file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'input', stage: at ?? 'source', base: lib.base, lang: lib.lang,
-                ...(at ? { kept: true } : {}), ...(r.id ? { id: r.id } : {}), ...(r.pending ? { pending: r.pending } : {}), ...('error' in r && r.error ? { error: r.error } : {})
+                file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'input', stage: at ?? inStage, base: lib.base, lang: lib.lang, role: 'input',
+                ...(lib.stages ? { map: lib.stages } : {}), ...(at ? { kept: true } : {}), ...(r.id ? { id: r.id } : {}), ...(r.pending ? { pending: r.pending } : {}), ...('error' in r && r.error ? { error: r.error } : {})
             });
         }
         this.save();
@@ -203,29 +215,39 @@ export class RunLibrary {
     }
 
     /** A judge said FAIL: the file goes to raw with its reason — kept, salvageable. */
-    failed(ledger: LedgerEntry[], file: string, reason: string): Promise<string> {
-        return this.restage(ledger, file, 'raw', 'judge FAIL', { reason: reason.slice(0, 1000), salvageable: true });
+    async failed(ledger: LedgerEntry[], file: string, reason: string): Promise<string> {
+        const e = this.known(ledger, file);
+        if (e) { e.role = 'failed'; }
+        const to = await this.restage(ledger, file, e?.map?.failed ?? 'raw', 'judge FAIL', { reason: reason.slice(0, 1000), salvageable: true });
+        this.save();
+        return to;
     }
 
     /** A selection left these out: raw, said so. */
     async rejected(ledger: LedgerEntry[], files: string[]): Promise<void> {
-        for (const f of files) { await this.restage(ledger, f, 'raw', 'not selected', { reason: 'not selected at the selection step', salvageable: true }); }
+        for (const f of files) {
+            const e = this.known(ledger, f);
+            if (e) { e.role = 'rejected'; }
+            await this.restage(ledger, f, e?.map?.rejected ?? 'raw', 'not selected', { reason: 'not selected at the selection step', salvageable: true });
+        }
+        this.save();
     }
 
     /** The run ended: when it reached its end, its last producing step's files are final and its outside inputs go to source. */
     async ended(ledger: LedgerEntry[], status: string): Promise<string[]> {
         if (status !== 'done' || !ledger.length) { return []; }
         const lines: string[] = [];
-        const made = ledger.filter(e => e.kind === 'produced' && !e.pinned && e.stage === 'semi' && !e.error);
+        const made = ledger.filter(e => e.kind === 'produced' && !e.pinned && !e.error && e.role !== 'failed' && e.role !== 'rejected' && e.stage === (e.map?.intermediate ?? 'semi'));
         const last = Math.max(-1, ...made.map(e => e.stepIndex));
         for (const e of made.filter(x => x.stepIndex === last)) {
-            const to = await this.restage(ledger, e.file, 'final', 'the run\'s last output');
-            lines.push(`Library: ${path.basename(to)} → final`);
+            const fin = e.map?.final ?? 'final';
+            const to = await this.restage(ledger, e.file, fin, 'the run\'s last output');
+            lines.push(`Library: ${path.basename(to)} → ${fin}`);
         }
-        for (const e of ledger.filter(x => x.kind === 'input' && !x.kept && x.stage === 'source' && !x.error)) {
+        for (const e of ledger.filter(x => x.kind === 'input' && !x.kept && x.stage === (x.map?.input ?? 'source') && !x.error)) {
             if (this.stageOfPath(e.base, e.file)) { continue; }
-            const to = await this.restage(ledger, e.file, 'source', 'filed as a run input', undefined, true);
-            lines.push(`Library: ${path.basename(to)} → source (run input)`);
+            const to = await this.restage(ledger, e.file, e.stage, 'filed as a run input', undefined, true);
+            lines.push(`Library: ${path.basename(to)} → ${e.stage} (run input)`);
         }
         return lines;
     }

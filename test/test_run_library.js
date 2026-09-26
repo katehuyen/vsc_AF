@@ -33,7 +33,7 @@ ok('an unknown record / autoStart / a path as a base: refused', /record is all \
     && /ask \| auto \| never/.test(S.libraryRefusal({ autoStart: 'yes' }, 'workflow')) && /not a plain name/.test(S.libraryRefusal({ base: 'a\\b' }, 'step')));
 eq('saved without its blanks; nothing = no object', [S.cleanLibrary({ base: 'stem', lang: '' }), S.cleanLibrary({ base: ' ' })], [{ base: 'stem' }, undefined]);
 eq('the form round-trips', S.libraryFromDraft(S.librarySeed({ base: 'TEST', stage: 'semi' }, 'step'), 'step'), { base: 'TEST', stage: 'semi' });
-eq('…the workflow keys', Object.keys(S.librarySeed(undefined, 'workflow')), ['libBase', 'libLang', 'libStart', 'libRecord', 'libTemplate']);
+eq('…the workflow keys', Object.keys(S.librarySeed(undefined, 'workflow')), ['libBase', 'libLang', 'libStart', 'libRecord', 'libTemplate', 'libMapInput', 'libMapIntermediate', 'libMapFailed', 'libMapRejected', 'libMapFinal']);
 const MOD = { defaultInstance: 'stem', defaultLang: 'TR', mediaRoots: ['D:/zome/media'] };
 const r1 = S.resolveLibrary(undefined, undefined, MOD);
 eq('nothing stated: the Airtable page\'s database, every file, start it', [r1.on, r1.base, r1.lang, r1.record, r1.autoStart], [true, 'stem', 'TR', 'all', 'auto']);
@@ -41,6 +41,15 @@ ok('…and each value says where it came from', /base: stem — from Farm Settin
 const r2 = S.resolveLibrary({ base: 'stem-draft', record: 'passed' }, { base: 'TEST', stage: 'asset' }, MOD);
 eq('‼️ step over workflow over the page', [r2.base, r2.record, r2.stage], ['TEST', 'passed', 'asset']);
 ok('record none switches it off, said', !S.resolveLibrary({ record: 'none' }, undefined, MOD).on && /off: record is none/.test(S.resolveLibrary({ record: 'none' }, undefined, MOD).why[0]));
+/* X-417 — a production's own role → stage mapping */
+eq('stages: a role is refused by name', S.libraryRefusal({ stages: { draft: 'raw' } }, 'workflow'), 'library.stages has no role "draft" — input, intermediate, failed, rejected, final');
+ok('stages: the waiting area is refused with its reason', /all_in is the user's waiting area/.test(S.libraryRefusal({ stages: { final: 'all_in' } }, 'workflow')));
+ok('stages: a step has no mapping of its own', /no stages at the step level/.test(S.libraryRefusal({ stages: { final: 'raw' } }, 'step')));
+eq('stages: blanks dropped, an empty map dropped whole', [S.cleanLibrary({ stages: { input: '', final: 'asset' } }), S.cleanLibrary({ stages: { input: '' } })], [{ stages: { final: 'asset' } }, undefined]);
+const seedM = S.librarySeed({ base: 'b', stages: { failed: 'semi' } }, 'workflow');
+eq('stages: seed → form boxes → back', [seedM.libMapFailed, seedM.libMapFinal, S.libraryFromDraft(seedM, 'workflow')], ['semi', '', { base: 'b', stages: { failed: 'semi' } }]);
+const rM = S.resolveLibrary({ stages: { final: 'asset' } }, undefined, MOD);
+ok('stages: resolved with its origin, only what is stated', JSON.stringify(rM.stages) === '{"final":"asset"}' && rM.why.some(l => /^stages\.final: asset/.test(l)) && S.resolveLibrary(undefined, undefined, MOD).stages === undefined);
 ok('no database anywhere, or no media root: off, said', !S.resolveLibrary(undefined, undefined, { mediaRoots: ['x'] }).on && /no media root/.test(S.resolveLibrary(undefined, undefined, { defaultInstance: 's' }).why[0]));
 
 /* ---------- the wiring in the task manager ---------- */
@@ -137,6 +146,18 @@ ok('‼️ the run\'s end promotes and files its inputs', /this\.lib\.ended\(rec
         ok('a step that names its stage files there', pinned.files[0] === path.join(I('asset'), 'key.png'));
         await run.ended(ctx.ledger, 'done');
         ok('‼️ …and the run\'s end does not promote it, nor what failed', fs.existsSync(path.join(I('asset'), 'key.png')) && fs.existsSync(path.join(I('raw'), 'cand.png')));
+
+        /* ---------- X-417: the workflow's own stage folders ---------- */
+        const mw = { title: 'M', library: { stages: { intermediate: 'raw', failed: 'semi', final: 'asset' } }, steps: [{ title: 'Üret' }] };
+        const mctx = { w: mw, runId: 'r10', stepIndex: 0, taskId: 't2', ledger: [] };
+        const mk = n => { const p = path.join(work, n); fs.writeFileSync(p, n); return p; };
+        const ma = await run.produced(mctx, [mk('m1.png'), mk('m2.png')], { role: 'candidate', origin: 'AI_generated', productionType: 'fal' });
+        eq('‼️ a mapped candidate goes to the workflow\'s stage, not semi', ma.files, [path.join(I('raw'), 'm1.png'), path.join(I('raw'), 'm2.png')]);
+        eq('…and its entry carries the mapping', mctx.ledger[0].map, { intermediate: 'raw', failed: 'semi', final: 'asset' });
+        await run.failed(mctx.ledger, ma.files[1], 'bulanık');
+        ok('‼️ a mapped judge FAIL goes to the mapped stage, its role changed', fs.existsSync(path.join(I('semi'), 'm2.png')) && mctx.ledger[1].role === 'failed');
+        const mEnd = await run.ended(mctx.ledger, 'done');
+        ok('‼️ the run\'s end promotes the passed one to the mapped final, never the failed one', fs.existsSync(path.join(I('asset'), 'm1.png')) && fs.existsSync(path.join(I('semi'), 'm2.png')) && mEnd.some(l => /m1\.png → asset/.test(l)));
 
         /* ---------- a run start checks its engines (X-416) ---------- */
         const seen = [];
