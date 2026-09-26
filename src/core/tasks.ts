@@ -48,6 +48,7 @@ import {
 } from './media';
 import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
 import { LedgerEntry, ModuleView, RunCtx, RunLibrary, retargetSidecars } from './runLibrary';
+import { EnrichHook } from './runEnrich';
 import { LibrarySpec, StepLibrarySpec } from './runLibrarySpec';
 import type { MediaRecorder } from './mediaRecorder';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
@@ -1680,7 +1681,7 @@ export interface TaskManagerOptions {
     /** M-49 — the Farm Settings layer of tool.outDir / tool.overwrite, as the user wrote it (undefined = untouched) */
     toolSettings?: () => { outDir?: unknown; overwrite?: unknown };
     /** X-418 — files every produced file into the local Airtable's media library and records it; unset = files stay where they are made */
-    mediaLibrary?: { recorder: MediaRecorder; module: () => ModuleView };
+    mediaLibrary?: { recorder: MediaRecorder; module: () => ModuleView; enrich?: EnrichHook };
     /** M-49 — replaces the ffmpeg runner (tests) */
     runTool?: (c: RecipeCall) => Promise<ToolResult>;
     /** M-44 — replaces the supervisor session's real spawn (tests) */
@@ -3165,7 +3166,7 @@ export class TaskManager implements vscode.Disposable {
     /** X-418 — the run's library, when the extension gave one: a file a step makes is filed and recorded */
     private get lib(): RunLibrary | undefined {
         const m = this.opts.mediaLibrary;
-        if (m && !this.runLib) { this.runLib = new RunLibrary(m.recorder, m.module, () => this.save(), (a, b) => retargetSidecars(this.outputsDir, a, b)); }
+        if (m && !this.runLib) { this.runLib = new RunLibrary(m.recorder, m.module, () => this.save(), (a, b) => retargetSidecars(this.outputsDir, a, b), m.enrich); }
         return this.runLib;
     }
     private libCtx(task: FarmTask): RunCtx | undefined {

@@ -9129,6 +9129,63 @@
           "default": "never",
           "markdownDescription": "What a **tool** step does when a file it would write is already there."
         },
+        "agentFarm.libraryEnrich": {
+          "type": "string",
+          "enum": [
+            "end",
+            "record",
+            "never"
+          ],
+          "enumDescriptions": [
+            "When the run has ended — one pass over its final and failed files.",
+            "As soon as a file is in scope (filed final, failed, left out).",
+            "Never — only media.enrich fills a record."
+          ],
+          "default": "end",
+          "markdownDescription": "When a model looks at a run's recorded files and fills their record's meaning (X-419). A workflow's Library block can say otherwise."
+        },
+        "agentFarm.libraryEnrichScope": {
+          "type": "string",
+          "enum": [
+            "final-failed",
+            "final",
+            "all"
+          ],
+          "enumDescriptions": [
+            "The final output and the failed or left-out files (their salvage notes).",
+            "Only the final output.",
+            "Every recorded file, parts too — one model turn each."
+          ],
+          "default": "final-failed",
+          "markdownDescription": "Which of a run's recorded files get their meaning filled (X-419)."
+        },
+        "agentFarm.libraryEnrichModel": {
+          "type": "string",
+          "default": "sonnet",
+          "markdownDescription": "The claude model that looks at an **image** to fill its record (X-419)."
+        },
+        "agentFarm.libraryEnrichVideoModel": {
+          "type": "string",
+          "default": "gemini-3.8-flash-low",
+          "markdownDescription": "The agy model that looks at a **video** to fill its record (X-419) — it sees the frames, not the sound."
+        },
+        "agentFarm.libraryEnrichEffort": {
+          "type": "string",
+          "default": "low",
+          "markdownDescription": "The claude effort for filling a record (X-419)."
+        },
+        "agentFarm.libraryEnrichSections": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Which record sections a model fills, comma separated: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage. Empty = all (X-419)."
+        },
+        "agentFarm.libraryEnrichCap": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 50,
+          "markdownDescription": "Dollars per record a claude turn may spend filling it; 0 = no cap. agy reports no cost, so it is not enforced there (X-419)."
+        },
         "agentFarm.workflowAskEscalation": {
           "type": "string",
           "enum": [

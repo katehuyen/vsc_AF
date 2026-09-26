@@ -33,7 +33,7 @@ ok('an unknown record / autoStart / a path as a base: refused', /record is all \
     && /ask \| auto \| never/.test(S.libraryRefusal({ autoStart: 'yes' }, 'workflow')) && /not a plain name/.test(S.libraryRefusal({ base: 'a\\b' }, 'step')));
 eq('saved without its blanks; nothing = no object', [S.cleanLibrary({ base: 'stem', lang: '' }), S.cleanLibrary({ base: ' ' })], [{ base: 'stem' }, undefined]);
 eq('the form round-trips', S.libraryFromDraft(S.librarySeed({ base: 'TEST', stage: 'semi' }, 'step'), 'step'), { base: 'TEST', stage: 'semi' });
-eq('…the workflow keys', Object.keys(S.librarySeed(undefined, 'workflow')), ['libBase', 'libLang', 'libStart', 'libRecord', 'libTemplate', 'libMapInput', 'libMapIntermediate', 'libMapFailed', 'libMapRejected', 'libMapFinal']);
+eq('…the workflow keys', Object.keys(S.librarySeed(undefined, 'workflow')), ['libBase', 'libLang', 'libStart', 'libRecord', 'libTemplate', 'libMapInput', 'libMapIntermediate', 'libMapFailed', 'libMapRejected', 'libMapFinal', 'libEnWhen', 'libEnScope', 'libEnModel', 'libEnVideo', 'libEnEffort', 'libEnSections', 'libEnCap']);
 const MOD = { defaultInstance: 'stem', defaultLang: 'TR', mediaRoots: ['D:/zome/media'] };
 const r1 = S.resolveLibrary(undefined, undefined, MOD);
 eq('nothing stated: the Airtable page\'s database, every file, start it', [r1.on, r1.base, r1.lang, r1.record, r1.autoStart], [true, 'stem', 'TR', 'all', 'auto']);

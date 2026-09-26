@@ -8,6 +8,7 @@
  * the step level. Nothing stated = the module default, every file recorded,
  * failures too. Pure.
  */
+import { EnrichSpec, enrichFromDraft, enrichRefusal, enrichSeed } from './enrichSpec';
 import { resolveFlex } from './flexResolve';
 import { AutoStart } from './mediaRecorder';
 import { LibraryStage, MAPPED_ROLES, StageMap, stageRefusal } from './mediaLibrary';
@@ -15,10 +16,10 @@ import { LibraryStage, MAPPED_ROLES, StageMap, stageRefusal } from './mediaLibra
 export const LIBRARY_RECORDS = ['all', 'passed', 'none'] as const;
 export type LibraryRecord = typeof LIBRARY_RECORDS[number];
 
-export interface LibrarySpec { base?: string; lang?: string; autoStart?: AutoStart; record?: LibraryRecord; template?: string; stages?: StageMap }
+export interface LibrarySpec { base?: string; lang?: string; autoStart?: AutoStart; record?: LibraryRecord; template?: string; stages?: StageMap; enrich?: EnrichSpec }
 export interface StepLibrarySpec { base?: string; lang?: string; record?: LibraryRecord; template?: string; stage?: LibraryStage }
 
-const FIELDS = { workflow: ['base', 'lang', 'autoStart', 'record', 'template', 'stages'], step: ['base', 'lang', 'record', 'template', 'stage'] } as const;
+const FIELDS = { workflow: ['base', 'lang', 'autoStart', 'record', 'template', 'stages', 'enrich'], step: ['base', 'lang', 'record', 'template', 'stage'] } as const;
 const NAME = /^[\w.\- ]{1,80}$/;
 const MAP_DRAFT: Record<string, string> = { input: 'libMapInput', intermediate: 'libMapIntermediate', failed: 'libMapFailed', rejected: 'libMapRejected', final: 'libMapFinal' };
 
@@ -45,7 +46,7 @@ export function libraryRefusal(v: unknown, level: 'workflow' | 'step'): string {
     if (o.autoStart !== undefined && o.autoStart !== '' && !['ask', 'auto', 'never'].includes(String(o.autoStart))) { return 'library.autoStart is ask | auto | never'; }
     if (o.record !== undefined && o.record !== '' && !(LIBRARY_RECORDS as readonly string[]).includes(String(o.record))) { return `library.record is ${LIBRARY_RECORDS.join(' | ')}`; }
     if (o.stage !== undefined && o.stage !== '') { const no = stageRefusal(o.stage); if (no) { return 'library.stage: ' + no; } }
-    return stagesRefusal(o.stages);
+    return stagesRefusal(o.stages) || enrichRefusal(o.enrich);
 }
 
 /** Saved without its empty fields; nothing stated = no library object at all. */
@@ -61,19 +62,21 @@ const DRAFT: Record<string, string> = { base: 'libBase', lang: 'libLang', autoSt
 /** The Library boxes of a form, from the spec; a blank box is the level below. */
 export function librarySeed(v: LibrarySpec | StepLibrarySpec | undefined, level: 'workflow' | 'step'): Record<string, string> {
     const o = (v ?? {}) as Record<string, unknown>;
-    const seed: Record<string, string> = Object.fromEntries(FIELDS[level].filter(k => k !== 'stages').map(k => [DRAFT[k], String(o[k] ?? '')]));
-    if (level === 'workflow') { for (const r of MAPPED_ROLES) { seed[MAP_DRAFT[r]] = String((o.stages as StageMap | undefined)?.[r] ?? ''); } }
+    const seed: Record<string, string> = Object.fromEntries(FIELDS[level].filter(k => k !== 'stages' && k !== 'enrich').map(k => [DRAFT[k], String(o[k] ?? '')]));
+    if (level === 'workflow') { for (const r of MAPPED_ROLES) { seed[MAP_DRAFT[r]] = String((o.stages as StageMap | undefined)?.[r] ?? ''); } Object.assign(seed, enrichSeed(o.enrich as EnrichSpec | undefined)); }
     return seed;
 }
 
 /** …and back. */
 export function libraryFromDraft(raw: Record<string, unknown>, level: 'workflow' | 'step'): LibrarySpec | StepLibrarySpec | undefined {
     const out: Record<string, unknown> = {};
-    for (const k of FIELDS[level]) { if (k === 'stages') { continue; } const s = String(raw[DRAFT[k]] ?? '').trim(); if (s) { out[k] = s; } }
+    for (const k of FIELDS[level]) { if (k === 'stages' || k === 'enrich') { continue; } const s = String(raw[DRAFT[k]] ?? '').trim(); if (s) { out[k] = s; } }
     if (level === 'workflow') {
         const map: Record<string, string> = {};
         for (const r of MAPPED_ROLES) { const s = String(raw[MAP_DRAFT[r]] ?? '').trim(); if (s) { map[r] = s; } }
         if (Object.keys(map).length) { out.stages = map; }
+        const en = enrichFromDraft(raw);
+        if (en) { out.enrich = en; }
     }
     return Object.keys(out).length ? out : undefined;
 }

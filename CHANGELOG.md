@@ -2,8 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.679.0 - Your own stage folders per production (X-417) (2026-09-26)
+## 3.679.0 - A model fills every record's meaning, and your own stage folders per production (X-419, X-417) (2026-09-26)
 
+- **Records are no longer half empty (X-419).** When a run ends, a model
+  looks at its final and failed files and fills the Admin form's meaning
+  sections the way you would: a real name, topic, taxonomy, function and
+  style, tone, education (only when it is educational), marketing, platform
+  fit, accessibility, SEO, tags — and on a failed take, which seconds,
+  frames or regions can still be rescued. Images are opened by Claude,
+  videos by Antigravity (their frames); an audio file is skipped and said so.
+- **Your edits are safe.** Only blank fields are filled; a field you typed
+  in the Admin panel — even while the model was looking — is kept. What could
+  not be filled honestly is listed with the reason, and the record's history
+  says which model filled it and what it cost.
+- **You decide when, which and how much.** Farm settings
+  (`agentFarm.libraryEnrich*`) and the workflow form's Library block: at the
+  run's end, as each file is ready, or never; final + failed, final only,
+  or every file; the image and video models, the effort, the sections, and
+  a dollar cap per record (enforced on Claude). On the bridge:
+  `media.enrich` fills one record by id or file.
 - **Each production decides where its kinds of files go (X-417).** The
   workflow form's Library block has a Stage folders row: run inputs, parts
   and passed candidates, judge FAILs, left-outs and the last output each get

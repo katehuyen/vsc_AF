@@ -34,9 +34,22 @@
     const ST_RECORD = 'st-libRecord', ST_STAGE = 'st-libStage';
     const STEP_KEYS = ['libBase', 'libLang', 'libTemplate', 'libRecord', 'libStage'];
 
+    // X-419 — a model fills the records' meaning: [box id, draft key, label, placeholder, tip]
+    const EN_WHEN = [['', 'Default — at the run\'s end'], ['end', 'at the run\'s end'], ['record', 'as each file is ready'], ['never', 'never']];
+    const EN_SCOPE = [['', 'Default — final + failed'], ['final-failed', 'final + failed'], ['final', 'final only'], ['all', 'every file']];
+    const EN_TEXT = [
+        ['wf-libEnModel', 'libEnModel', 'Image model', 'sonnet', 'The claude model that opens an image and fills its record. Blank = the Farm setting, else sonnet.'],
+        ['wf-libEnVideo', 'libEnVideo', 'Video model', 'gemini-3.8-flash-low', 'The agy model that opens a video (its frames, not its sound) and fills its record. Blank = the Farm setting, else gemini-3.8-flash-low. An audio file is skipped: no engine here can hear one.'],
+        ['wf-libEnEffort', 'libEnEffort', 'Effort', 'low', 'The claude effort for filling a record. Blank = the Farm setting, else low.'],
+        ['wf-libEnSections', 'libEnSections', 'Sections', 'all', 'Which sections of the record a model fills, comma separated: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage. Blank = all. Only blank fields are filled — a person\'s value is never overwritten.'],
+        ['wf-libEnCap', 'libEnCap', '$ / record', 'none', 'Dollars a claude turn may spend on one record; the engine stops it there. agy reports no cost, so it is not enforced for video. Blank = the Farm setting, else no cap.']
+    ];
+    const EN_KEYS = ['libEnWhen', 'libEnScope'].concat(EN_TEXT.map(t => t[1]));
+
     function blank() {
         const b = { libBase: '', libLang: '', libTemplate: '', libRecord: '', libStage: '' };
         WF_MAP.forEach(m => { b[m[1]] = ''; });
+        EN_KEYS.forEach(k => { b[k] = ''; });
         return b;
     }
 
@@ -92,12 +105,20 @@
                 ${select(C, WF_START, 'Engine not running', START, c.libStart, 'What a run does when the database\'s engine is not running: start it (hidden, no browser), ask you, or never — then the records wait in the pending list and are written when it answers.')}
             </div>
             <div class="ntsec"><span class="muted small">Stage folders — which stage each kind of file goes to in this production. Blank = the built-in.</span></div>
-            <div class="ntgrid">${WF_MAP.map(m => mapSelect(C, m, c[m[1]])).join('')}</div>`;
+            <div class="ntgrid">${WF_MAP.map(m => mapSelect(C, m, c[m[1]])).join('')}</div>
+            <div class="ntsec"><span class="muted small">Fill the records — a model looks at each file and fills its record's meaning (topic, taxonomy, tone, platform fit, SEO, salvage notes on a failure…). Blank = the Farm settings.</span></div>
+            <div class="ntgrid">
+                ${select(C, 'wf-libEnWhen', 'When', EN_WHEN, c.libEnWhen, 'When the records are filled: once the run has ended (one pass), as soon as each file is final or failed, or never — then only media.enrich fills one.')}
+                ${select(C, 'wf-libEnScope', 'Which files', EN_SCOPE, c.libEnScope, 'Which recorded files get filled: the final output and the failed or left-out files (their salvage notes), the final output only, or every file — parts too, one model turn each.')}
+                ${EN_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, c[key], ph, tip)).join('')}
+            </div>`;
     }
 
     function wireWf(byId, draft) {
         WF_TEXT.forEach(([id, key]) => byId('nt-' + id, 'input', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
         WF_MAP.forEach(([id, key]) => byId('nt-' + id, 'change', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
+        [['wf-libEnWhen', 'libEnWhen'], ['wf-libEnScope', 'libEnScope']].forEach(([id, key]) => byId('nt-' + id, 'change', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
+        EN_TEXT.forEach(([id, key]) => byId('nt-' + id, 'input', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
         byId('nt-' + WF_RECORD, 'change', e => { const d = draft(); if (d) { d.libRecord = e.target.value; } });
         byId('nt-' + WF_START, 'change', e => { const d = draft(); if (d) { d.libStart = e.target.value; } });
     }

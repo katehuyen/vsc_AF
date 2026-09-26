@@ -12,7 +12,8 @@
  *              → final, its inputs from outside the library → source
  * Every stage above is the built-in default; a workflow's own mapping
  * (library.stages) replaces it per role, and each ledger entry carries that
- * mapping so the later events follow it.
+ * mapping so the later events follow it — and the enrichment plan too
+ * (X-419, src/core/runEnrich.ts): a model fills each in-scope record's meaning.
  * Every file is written down in the run's ledger (persisted on its record), so a
  * later event finds it by path, and a window reload loses nothing.
  */
@@ -20,8 +21,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { expandRoot } from '../mcp/airtable/engine';
 import { LIBRARY_STAGES, LibraryStage, MediaRole, StageMap, fileInto, libraryDir, libraryType, mappedStage, planLibrary } from './mediaLibrary';
+import { EnrichPlan } from './enrichSpec';
 import { MediaRecorder } from './mediaRecorder';
 import { MediaOrigin, Produced } from './mediaRecordFields';
+import { EnrichHook, EnrichedMark, RunEnrich } from './runEnrich';
 import { LibrarySpec, ResolvedLibrary, StepLibrarySpec, resolveLibrary } from './runLibrarySpec';
 
 export interface LedgerEntry {
@@ -44,10 +47,13 @@ export interface LedgerEntry {
     role?: MediaRole;
     /** the workflow's own role → stage mapping when it states one */
     map?: StageMap;
+    /** X-419 — the enrichment plan, and what came of it */
+    en?: EnrichPlan;
+    enriched?: EnrichedMark;
 }
 
 export interface RunCtx {
-    w: { title: string; library?: LibrarySpec; steps: { title: string; library?: StepLibrarySpec }[] };
+    w: { title: string; goal?: string; library?: LibrarySpec; steps: { title: string; library?: StepLibrarySpec }[] };
     runId: string;
     runStartedAt?: number;
     stepIndex: number;
@@ -85,8 +91,11 @@ export class RunLibrary {
         private module: () => ModuleView,
         private save: () => void,
         /** a file moved: whoever holds its path (a gallery sidecar) follows it */
-        private moved: (from: string, to: string) => void = () => undefined
-    ) { }
+        private moved: (from: string, to: string) => void = () => undefined,
+        enrich?: EnrichHook
+    ) { this.en = enrich ? new RunEnrich(enrich, save) : undefined; }
+
+    private en?: RunEnrich;
 
     resolve(ctx: Pick<RunCtx, 'w' | 'stepIndex'>): ResolvedLibrary {
         return resolveLibrary(ctx.w.library, ctx.w.steps[ctx.stepIndex]?.library, this.module());
@@ -131,13 +140,14 @@ export class RunLibrary {
         if (causes.length) { await this.consumed(ctx, causes); }
         const failed = m.role === 'failed' || m.role === 'rejected';
         const stage = lib.stage ?? mappedStage(lib.stages, m.role);
+        const enPlan = this.en?.plan(ctx.w);
         const out: string[] = [];
         const lines: string[] = [];
         for (const [i, file] of files.entries()) {
             if (!isLocalMedia(file)) { out.push(file); continue; }
             const entry: LedgerEntry = {
                 file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'produced', stage: 'raw', base: lib.base, lang: lib.lang, role: m.role,
-                ...(lib.stage ? { pinned: true } : {}), ...(lib.stages ? { map: lib.stages } : {})
+                ...(lib.stage ? { pinned: true } : {}), ...(lib.stages ? { map: lib.stages } : {}), ...(enPlan ? { en: enPlan } : {})
             };
             try {
                 if (failed && lib.record === 'passed') {
@@ -166,6 +176,7 @@ export class RunLibrary {
             }
             if (norm(entry.file) !== norm(file)) { this.moved(file, entry.file); }
             ctx.ledger.push(entry);
+            this.en?.touched(entry);
             out.push(entry.file);
         }
         this.save();
@@ -176,6 +187,7 @@ export class RunLibrary {
     async consumed(ctx: RunCtx, files: string[]): Promise<void> {
         const lib = this.resolve(ctx);
         if (!lib.on) { return; }
+        const enPlan = this.en?.plan(ctx.w);
         for (const file of files.filter(isLocalMedia)) {
             if (this.known(ctx.ledger, file)) { continue; }
             const at = this.stageOfPath(lib.base, file);
@@ -184,10 +196,12 @@ export class RunLibrary {
                 file, base: lib.base, lang: lib.lang, autoStart: lib.autoStart, inPlace: true, stage: at ?? inStage,
                 produced: { role: 'input', origin: 'user_submission', productionType: 'input', run: { id: ctx.runId, name: ctx.w.title, startedAt: ctx.runStartedAt, stepIndex: ctx.stepIndex, steps: ctx.w.steps.length } }
             }).catch(e => ({ file, error: (e as Error).message, base: lib.base } as { file: string; error: string; base: string; id?: string; pending?: string }));
-            ctx.ledger.push({
+            const entry: LedgerEntry = {
                 file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'input', stage: at ?? inStage, base: lib.base, lang: lib.lang, role: 'input',
-                ...(lib.stages ? { map: lib.stages } : {}), ...(at ? { kept: true } : {}), ...(r.id ? { id: r.id } : {}), ...(r.pending ? { pending: r.pending } : {}), ...('error' in r && r.error ? { error: r.error } : {})
-            });
+                ...(lib.stages ? { map: lib.stages } : {}), ...(enPlan ? { en: enPlan } : {}), ...(at ? { kept: true } : {}), ...(r.id ? { id: r.id } : {}), ...(r.pending ? { pending: r.pending } : {}), ...('error' in r && r.error ? { error: r.error } : {})
+            };
+            ctx.ledger.push(entry);
+            this.en?.touched(entry);
         }
         this.save();
     }
@@ -220,6 +234,7 @@ export class RunLibrary {
         if (e) { e.role = 'failed'; }
         const to = await this.restage(ledger, file, e?.map?.failed ?? 'raw', 'judge FAIL', { reason: reason.slice(0, 1000), salvageable: true });
         this.save();
+        if (e) { this.en?.touched(e); }
         return to;
     }
 
@@ -229,13 +244,20 @@ export class RunLibrary {
             const e = this.known(ledger, f);
             if (e) { e.role = 'rejected'; }
             await this.restage(ledger, f, e?.map?.rejected ?? 'raw', 'not selected', { reason: 'not selected at the selection step', salvageable: true });
+            if (e) { this.en?.touched(e); }
         }
         this.save();
     }
 
-    /** The run ended: when it reached its end, its last producing step's files are final and its outside inputs go to source. */
+    /** The run ended: when it reached its end, its last producing step's files are final and its outside inputs go to source; then, whatever the status, the in-scope records are enriched. */
     async ended(ledger: LedgerEntry[], status: string): Promise<string[]> {
-        if (status !== 'done' || !ledger.length) { return []; }
+        if (!ledger.length) { return []; }
+        const lines: string[] = status === 'done' ? await this.promote(ledger) : [];
+        if (this.en) { lines.push(...await this.en.ended(ledger)); }
+        return lines;
+    }
+
+    private async promote(ledger: LedgerEntry[]): Promise<string[]> {
         const lines: string[] = [];
         const made = ledger.filter(e => e.kind === 'produced' && !e.pinned && !e.error && e.role !== 'failed' && e.role !== 'rejected' && e.stage === (e.map?.intermediate ?? 'semi'));
         const last = Math.max(-1, ...made.map(e => e.stepIndex));

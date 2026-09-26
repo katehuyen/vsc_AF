@@ -136,6 +136,17 @@
         return Object.assign({ id: 'library.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, extra || {});
     }
 
+    /** X-419 — library.enrich.*: the Farm setting, then the workflow form's Library block. */
+    function enPoint(field, label, type, dflt, key, box, extra) {
+        return Object.assign({
+            id: 'library.enrich.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.' + key, bridge: 'settings.set:agentFarm.' + key },
+                workflow: { surface: 'media/afLibrary.js#wf-libEn' + box, bridge: 'workflows.add:library.enrich.' + field }
+            }
+        }, extra || {});
+    }
+
     const POINTS = [
         supervisor('engine', 'Supervisor engine', 'text', '', 'engine'),
         supervisor('model', 'Supervisor model', 'text', '', 'model'),
@@ -208,6 +219,14 @@
         libPoint('stages.failed', 'Library — stage of a judge FAIL', 'enum', '', { workflow: 'MapFailed' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
         libPoint('stages.rejected', 'Library — stage of a left-out file', 'enum', '', { workflow: 'MapRejected' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
         libPoint('stages.final', 'Library — stage of the run\'s last output', 'enum', '', { workflow: 'MapFinal' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        // X-419 — a model fills the records' meaning (src/core/enrichSpec.ts)
+        enPoint('when', 'Enrich — when', 'enum', 'end', 'libraryEnrich', 'When', { options: ['end', 'record', 'never'] }),
+        enPoint('scope', 'Enrich — which files', 'enum', 'final-failed', 'libraryEnrichScope', 'Scope', { options: ['final-failed', 'final', 'all'] }),
+        enPoint('model', 'Enrich — image model (claude)', 'text', 'sonnet', 'libraryEnrichModel', 'Model'),
+        enPoint('videoModel', 'Enrich — video model (agy)', 'text', 'gemini-3.8-flash-low', 'libraryEnrichVideoModel', 'Video'),
+        enPoint('effort', 'Enrich — effort (claude)', 'text', 'low', 'libraryEnrichEffort', 'Effort'),
+        enPoint('sections', 'Enrich — sections', 'text', '', 'libraryEnrichSections', 'Sections'),
+        enPoint('cap', 'Enrich — dollars per record', 'number', 0, 'libraryEnrichCap', 'Cap', { min: 0, max: 50 }),
         // M-45 — what wakes the supervisor after a step: [] = mechanical (src/core/workflowWake.ts)
         {
             id: 'workflow.wake', label: 'Wake the supervisor', type: 'conditions', default: [], remembered: false,
