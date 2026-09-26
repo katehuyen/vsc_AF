@@ -3105,6 +3105,8 @@ Karışmaması için tek yerde:
 | ⏰ **Schedule** (zamanlama) | belirli bir saatte ajana iş verir | **evet** |
 | ⚡ **Trigger** (tetikleyici) | bir şey olunca (dosya değişti, webhook, canlı olay) iş verir | **evet** |
 | 🔗 **Workflow** (iş akışı) | birden çok adımın zinciri (farklı ajanlar, onay/seçim kapıları, medya) | hayır — sen ya da bir tetikleyici başlatır |
+| ↳ **Checkpoint adımı** (kontrol noktası) | ajansız adım: yönetici orada uyanır ve koşuyu yönlendirir — devam, yeniden dene, atla, adım ekle, sana sor, durdur (M-43) | bir iş akışı koşusunun içinde |
+| ↳ **Tool adımı** (araç) | ajansız ve modelsiz adım: yerel bir ffmpeg reçetesi (böl, birleştir, transcode, anahtar kareler…) — sıfır token (M-49) | bir iş akışı koşusunun içinde |
 | 📋 **Template** (şablon) | kayıtlı bir istem; elle fırlatırsın | hayır |
 | ▶ **Task** (görev) | **tek bir koşu.** Yukarıdakilerin hepsi task ÜRETİR | — |
 

@@ -3060,6 +3060,8 @@ In one place so they never blur:
 | ⏰ **Schedule** | gives an agent work at a set time | **yes** |
 | ⚡ **Trigger** | gives work when something happens (file change, webhook, live event) | **yes** |
 | 🔗 **Workflow** | a chain of steps (several agents, approval/selection gates, media) | no — you or a trigger launches it |
+| ↳ **Checkpoint step** | a step with no agent: the supervisor is woken there and routes the run — proceed, retry, jump, insert a step, ask you, stop (M-43) | inside a workflow run |
+| ↳ **Tool step** | a step with no agent and no model: a local ffmpeg recipe (split, concat, transcode, key frames…) — zero tokens (M-49) | inside a workflow run |
 | 📋 **Template** | a saved prompt you fire by hand | no |
 | ▶ **Task** | **one single run.** Everything above PRODUCES tasks | — |
 
