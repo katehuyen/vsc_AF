@@ -5309,7 +5309,9 @@ export class TaskManager implements vscode.Disposable {
                 `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
             void execOneShot({
-                cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000
+                cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000,
+                // agy's default mode may act on the files; measured 2026-09-26: in plan mode it still opens and judges them
+                readOnly: want.engine === 'agy'
             }).then(r => {
                 if (r.error && !r.out) {
                     const why = 'the vision judge could not run (' + r.error.slice(0, 80) + ')';
