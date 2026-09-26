@@ -9184,7 +9184,7 @@
           "default": 0,
           "minimum": 0,
           "maximum": 50,
-          "markdownDescription": "Dollars per record a claude turn may spend filling it; 0 = no cap. agy reports no cost, so it is not enforced there (X-419)."
+          "markdownDescription": "Dollars per record a claude turn may spend filling it; 0 = no cap. A turn's own start costs about $0.02 (measured on haiku), so a cap under $0.05 stops every turn. agy reports no cost, so it is not enforced there (X-419)."
         },
         "agentFarm.workflowAskEscalation": {
           "type": "string",

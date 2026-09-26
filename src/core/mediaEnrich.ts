@@ -64,12 +64,10 @@ export function isBlank(item: Dict, p: string): boolean {
     const v = get(item, p);
     if (v === undefined || v === null || v === '' || v === 0 || v === false) { return true; }
     if (Array.isArray(v)) { return v.length === 0; }
-    if (p === 'name') {
-        const file = String(get(item, 'media.file_path') ?? '');
-        const b = path.basename(file), s = String(v);
-        return s === b || s === path.basename(b, path.extname(b));
-    }
-    return false;
+    if (typeof v !== 'string') { return false; }
+    // the recorder puts the file's name into name / content as a placeholder
+    const b = path.basename(String(get(item, 'media.file_path') ?? ''));
+    return !!b && (v === b || v === path.basename(b, path.extname(b)));
 }
 
 /** The sections this record gets asked about: the wanted ones, salvage only for a failed file, and only those with a blank field. */
@@ -132,6 +130,13 @@ function value(k: Kind, v: unknown): unknown {
     return s ? s.slice(0, k === 'long' ? 1200 : 200) : undefined;
 }
 
+/** A field as a model wrote it: "tone.audience" verbatim, nested {"tone": {"audience"}}, or the bare leaf "audience" (measured: haiku nests, gemini does not). */
+function pick(got: Dict, p: string): unknown {
+    if (got[p] !== undefined) { return got[p]; }
+    const nested = get(got, p);
+    return nested !== undefined ? nested : got[p.slice(p.lastIndexOf('.') + 1)];
+}
+
 /** Apply the parse to the CURRENT record: a field a person filled meanwhile is kept; one history line says what happened. */
 export function applyEnrich(item: Dict, p: EnrichParse, note: { at: string; by: string; model: string; costUsd?: number }): string[] {
     const put: string[] = [];
@@ -164,8 +169,9 @@ export function parseEnrich(out: string, item: Dict, sections: readonly EnrichSe
         const blank = s.fields.filter(x => isBlank(item, x.path));
         const left: string[] = [];
         for (const x of blank) {
-            const v = value(x.kind, got[x.path]);
-            if (v === undefined) { if (got[x.path] !== undefined) { res.dropped.push(`${x.path}: ${String(got[x.path]).slice(0, 40)}`); } left.push(x.path); continue; }
+            const raw = pick(got, x.path);
+            const v = value(x.kind, raw);
+            if (v === undefined) { if (raw !== undefined) { res.dropped.push(`${x.path}: ${String(raw).slice(0, 40)}`); } left.push(x.path); continue; }
             set(res.patch, x.path, v);
             res.filled.push(x.path);
         }

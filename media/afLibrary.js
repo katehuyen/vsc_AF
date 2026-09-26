@@ -42,7 +42,7 @@
         ['wf-libEnVideo', 'libEnVideo', 'Video model', 'gemini-3.8-flash-low', 'The agy model that opens a video (its frames, not its sound) and fills its record. Blank = the Farm setting, else gemini-3.8-flash-low. An audio file is skipped: no engine here can hear one.'],
         ['wf-libEnEffort', 'libEnEffort', 'Effort', 'low', 'The claude effort for filling a record. Blank = the Farm setting, else low.'],
         ['wf-libEnSections', 'libEnSections', 'Sections', 'all', 'Which sections of the record a model fills, comma separated: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage. Blank = all. Only blank fields are filled — a person\'s value is never overwritten.'],
-        ['wf-libEnCap', 'libEnCap', '$ / record', 'none', 'Dollars a claude turn may spend on one record; the engine stops it there. agy reports no cost, so it is not enforced for video. Blank = the Farm setting, else no cap.']
+        ['wf-libEnCap', 'libEnCap', '$ / record', 'none', 'Dollars a claude turn may spend on one record; the engine stops it there. A turn\'s own start costs about $0.02, so under $0.05 stops every turn. agy reports no cost, so it is not enforced for video. Blank = the Farm setting, else no cap.']
     ];
     const EN_KEYS = ['libEnWhen', 'libEnScope'].concat(EN_TEXT.map(t => t[1]));
 

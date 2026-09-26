@@ -82,6 +82,7 @@ export class MediaEnricher {
         const env = engine === 'claude' ? oneShotEnvelope('claude', res.out) : null;
         const text = env ? env.result : res.out;
         if (env?.costUSD) { out.costUsd = Math.round(env.costUSD * 10000) / 10000; }
+        if (env?.subtype === 'error_max_budget_usd') { return { ...out, engine, model, error: `the $${cap} cap stopped the turn before it answered — nothing written (a claude turn's own start costs about $0.02)` }; }
         if ((res.error && !text) || env?.isError) { return { ...out, engine, model, error: `the ${engine} turn failed — ${(res.error || env?.subtype || res.stderr || '').slice(0, 200)}` }; }
         const p = parseEnrich(text, item, secs);
         Object.assign(out, { engine, model, complete: p.complete, missing: p.missing });

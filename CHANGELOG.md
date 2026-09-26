@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.679.1 - Record filling reads every model's answer (X-419) (2026-09-26)
+
+- **An image's record is filled whole on Claude too.** Measured live: Haiku
+  wrote the dotted fields (tone, marketing, platform fit, accessibility, SEO)
+  as nested objects and they were left blank; the answer is now read nested,
+  as a bare field name or verbatim. The file name the recorder puts into
+  the content field as a placeholder is replaced too.
+- **A cap that stops a turn says so** — and the setting says what a turn's
+  own start costs (about $0.02), so a cap under $0.05 stops every turn.
+
 ## 3.679.0 - A model fills every record's meaning, and your own stage folders per production (X-419, X-417) (2026-09-26)
 
 - **Records are no longer half empty (X-419).** When a run ends, a model

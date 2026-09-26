@@ -26,6 +26,7 @@ const rec = (over) => Object.assign({
 {
     const r = rec();
     ok('the file\'s own name standing in for a name is blank; a real name is not', X.isBlank(r, 'name') && !X.isBlank(rec({ name: 'Mavi gözlü kedi' }), 'name'));
+    ok('‼️ …and in content too, where the recorder also puts it (measured live)', X.isBlank(rec({ content: 'kedi.png' }), 'content') && !X.isBlank(rec({ content: 'Bir kedi portresi' }), 'content'));
     ok('‼️ salvage is asked only of a failed file', !X.sectionsFor(r).some(s => s.id === 'salvage') && X.sectionsFor(rec({ failure: { is_failed: true, reason: 'eller eridi' } })).some(s => s.id === 'salvage'));
     ok('a section a person filled whole is not asked again', !X.sectionsFor(rec({ domain: 'a', discipline: 'b', field: 'c', branch: 'd' })).some(s => s.id === 'taxonomy'));
     eq('only the wanted sections', X.sectionsFor(r, ['tags', 'seo']).map(s => s.id), ['seo', 'tags']);
@@ -51,6 +52,9 @@ const rec = (over) => Object.assign({
     eq('a score is clamped to 0..1 and rounded; a list is split', [P.patch.marketing.clickbait_score, P.patch.marketing.credibility_score, P.patch.tags], [1, 0.46, ['kedi', 'mavi göz', 'portre']]);
     ok('a full section is complete and marked so', P.complete.includes('marketing') && P.patch.completed_sections.marketing === true && !P.complete.includes('function'));
     ok('‼️ a section the model could not fill honestly keeps its reason', P.missing.some(m => m.section === 'education' && m.why === 'eğitsel içerik değil'));
+    const toneSecs = X.sectionsFor(r, ['tone', 'marketing']);
+    const N = X.parseEnrich(JSON.stringify({ fill: { tone: { tone: { audience: 'adult', emotion: 'serious' }, energy: 'low', 'tone.formality': 'neutral' }, marketing: { marketing: { clickbait_score: 0.1, credibility_score: 0.8, shock_factor: 0.2, virality_score: 0.3 } } } }), r, toneSecs);
+    ok('‼️ a dotted field written nested, as a bare leaf or verbatim is read all three ways (measured: haiku nests)', N.complete.includes('tone') && N.complete.includes('marketing') && N.patch.tone.audience === 'adult' && N.patch.tone.energy === 'low' && N.patch.tone.formality === 'neutral');
     ok('prose that is not the JSON asked for is an error, every section missing', /not the JSON/.test(X.parseEnrich('olmadı', r, secs).error) && X.parseEnrich('olmadı', r, secs).missing.length === secs.length);
     const now = rec({ tags: ['elle'] });
     const put = X.applyEnrich(now, P, { at: 'T', by: 'agent-farm', model: 'claude/sonnet', costUsd: 0.01 });
