@@ -89,6 +89,11 @@ export function findRecords(items: readonly Dict[], q: ResolvedQuery, file?: str
         const want = key(file);
         return items.filter(it => key(String(get(it, 'media.file_path') ?? '')) === want).slice(0, 1).map(summarize);
     }
+    return matchRecords(items, q).map(summarize);
+}
+
+/** The whole records a search matches, in its order and within its limit. */
+export function matchRecords(items: readonly Dict[], q: ResolvedQuery): Dict[] {
     const words = lower(q.query).split(/\s+/).filter(Boolean);
     const tags = q.tags.map(lower);
     const found = items.filter(it => {
@@ -103,7 +108,7 @@ export function findRecords(items: readonly Dict[], q: ResolvedQuery, file?: str
     });
     const at = (it: Dict) => Date.parse(String(it.created_at ?? '')) || 0;
     found.sort((a, b) => q.sort === 'name' ? summarize(a).name.localeCompare(summarize(b).name, 'tr') : q.sort === 'oldest' ? at(a) - at(b) : at(b) - at(a));
-    return found.slice(0, q.limit).map(summarize);
+    return found.slice(0, q.limit);
 }
 
 /** A run value that is a path to a file means "that file's record", anything else is search text. */
