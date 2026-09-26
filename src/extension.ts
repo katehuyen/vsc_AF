@@ -23308,7 +23308,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // route beside it: the question is asked here, the ANSWER lives where
         // the slots do.
         account: (engine, account) =>
-            launchAccountRefusal({ engine: engineOf(engine).id, account }) || undefined
+            launchAccountRefusal({ engine: engineOf(engine).id, account }) || undefined,
+        // U-151 — the supervisor Farm Settings states; an empty engine inherits it
+        supervisor: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor
     });
 
     /**
@@ -24203,6 +24205,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         enginePolicies: () => enginePolicyMatrix(),
         // S-82 — the standing leg ceiling the relay block's empty box means.
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
+        // U-151 — the supervisor fields an empty task-form box inherits.
+        supervisorDefault: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor,
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.

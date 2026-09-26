@@ -596,6 +596,19 @@ const variants = () => ([
             drive(r, draft, 'nt-retrybehavior');
         }
     },
+    // U-151 — Farm Settings names the supervisor and the task says nothing: every
+    // box is empty and shows the inherited value faint (the smallest arity).
+    {
+        id: 'tasks-retry-supervisor-inherits', label: 'Tasks → the supervisor boxes empty, inheriting Farm Settings (U-151)',
+        data: (() => { const d = data(); d.launch.supervisor = { engine: 'claude', model: 'haiku', maxCalls: 4, minConfidence: 0.7 }; return d; })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması — dosyaları filele', 'nt-retrymode': 'custom', 'nt-retrymax': '3' };
+            drive(r, draft, 'nt-retrymode');
+            Object.assign(draft, { 'nt-retrybehavior': 'supervisor' });
+            drive(r, draft, 'nt-retrybehavior');
+        }
+    },
     /**
      * ‼️ S-82 — THE RELAY BLOCK, IN THE STATE THAT HAS TO EXPLAIN ITSELF.
      *

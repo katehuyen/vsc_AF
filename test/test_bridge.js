@@ -5602,6 +5602,17 @@ const { opencodeStatus, syncToOpencode } =
             && both.error === ONE_EXECUTOR);
         const onlyEngine = await reg.dispatch('m22.dims', { engine: 'opencode' });
         ok('one executor still passes', onlyEngine.ok && onlyEngine.result.engine === 'opencode');
+        // U-151 — a supervisor with no engine inherits Farm Settings' one, as the task form does.
+        reg.register([{ op: 'u151.dims', describe: 'reads run dimensions with a Farm Settings supervisor',
+            handler: a => bridgeRunDimensions(a, { supervisor: () => ({ engine: 'claude', maxCalls: 4 }) }) }]);
+        const noEngine = { retry: { max: 1, behavior: 'supervisor', supervisor: { minConfidence: 0.7 } } };
+        const inherits = await reg.dispatch('u151.dims', noEngine);
+        ok('U-151: an empty supervisor engine is accepted when Farm Settings names one, and stored as said',
+            inherits.ok && inherits.result.retry.behavior === 'supervisor'
+            && inherits.result.retry.supervisor.engine === undefined && inherits.result.retry.supervisor.minConfidence === 0.7);
+        const orphan = await reg.dispatch('m22.dims', noEngine);
+        ok('U-151: and refused, naming both places, when nothing names one',
+            !orphan.ok && /Farm Settings/.test(orphan.error));
         // ‼️ S-82 — the relay is read here in tasks.add's words, so a schedule
         // and a trigger can say it; the ceiling is clamped once, on the way in.
         const relay = await reg.dispatch('m22.dims', { baton: true, maxHops: '4' });

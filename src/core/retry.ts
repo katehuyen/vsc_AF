@@ -410,9 +410,10 @@ export function retryFormulaError(src: string): string {
  * turn a bad character into a run that never happens. So the LOUD check is
  * this, called by the form and by the bridge before anything is stored.
  *
- * Returns '' when the policy is storable.
+ * Returns '' when the policy is storable. `inherited` = the supervisor Farm
+ * Settings states (U-151): an engine said there makes an empty one here valid.
  */
-export function retryRefusal(raw: unknown): string {
+export function retryRefusal(raw: unknown, inherited?: unknown): string {
     if (!raw || typeof raw !== 'object') { return ''; }
     const o = raw as Record<string, unknown>;
     if (o.backoff !== undefined && o.backoff !== null && o.backoff !== ''
@@ -425,8 +426,9 @@ export function retryRefusal(raw: unknown): string {
         const err = retryFormulaError(src);
         if (err) { return `the retry formula was refused — ${err}`; }
     }
-    if (o.behavior === 'supervisor' && !normalizeSupervisor(o.supervisor)) {
-        return 'behavior "supervisor" needs supervisor.engine — the engine that judges the continuation';
+    if (o.behavior === 'supervisor'
+        && !normalizeSupervisor({ ...(statedSupervisor(inherited) ?? {}), ...(statedSupervisor(o.supervisor) ?? {}) })) {
+        return 'behavior "supervisor" needs supervisor.engine — the engine that judges the continuation (here or in Farm Settings)';
     }
     return '';
 }

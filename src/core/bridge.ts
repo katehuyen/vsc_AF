@@ -375,6 +375,8 @@ export function bridgeRunDimensions(
          * It returns the refusal sentence, or nothing.
          */
         account?: (engine: string, account: string) => string | undefined;
+        /** U-151 — the retry supervisor Farm Settings states, which an empty engine here inherits. */
+        supervisor?: () => unknown;
     } = {}
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
@@ -539,7 +541,8 @@ export function bridgeRunDimensions(
     // settings files, where a throw would be a run that never happens), so the
     // loud check is the caller's job — and a bridge call IS a caller who typed
     // something. The same validator the form uses, so the two cannot disagree.
-    need(!retryRefusal(args.retry), retryRefusal(args.retry));
+    const upSupervisor = opts.supervisor?.();
+    need(!retryRefusal(args.retry, upSupervisor), retryRefusal(args.retry, upSupervisor));
     const retry = normalizeRetry(args.retry);
     if (retry) { out.retry = retry; }
     // ‼️ M-22 — the pair this call states, checked before it is stored. The

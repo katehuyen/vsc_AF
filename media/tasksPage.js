@@ -1567,7 +1567,7 @@
             ['smart', 'continue it — pick up where it was cut off'],
             ['supervisor', 'let a supervisor decide how to continue']
         ])}</label>
-            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C) : ''}
+            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, (DATA.launch || {}).supervisor) : ''}
             ${(c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') ? `
             <label class="ntf wide" title="${C.esc(
             'Sent as the NEXT TURN of the run\'s own conversation, so it can be short — everything that '
@@ -3244,7 +3244,7 @@
             if (err) { return 'The retry formula was refused — ' + err; }
         }
         if (c.retryMode === 'custom' && c.mode !== 'interactive' && c.retryBehavior === 'supervisor') {
-            const err = window.AFSupervisor.error(c.retrySupervisor);
+            const err = window.AFSupervisor.error(c.retrySupervisor, (DATA.launch || {}).supervisor);
             if (err) { return err; }
         }
         return '';
@@ -3293,8 +3293,10 @@
         // normalizer applies exactly the same rule, so a policy cannot mean one
         // thing in the form and another in the run.
         // M-13 — supervisor is smart plus the agent that judges; with no engine
-        // named it IS smart, the same rule the host's normalizer applies.
-        const sup = c.retryBehavior === 'supervisor' ? window.AFSupervisor.toPolicy(c.retrySupervisor) : undefined;
+        // named here or in Farm Settings it IS smart, the same rule the host's
+        // normalizer applies (U-151: the empty boxes inherit, field by field).
+        const sup = c.retryBehavior === 'supervisor'
+            ? window.AFSupervisor.toPolicy(c.retrySupervisor, (DATA.launch || {}).supervisor) : undefined;
         if (sup) { out.supervisor = sup; }
         if (c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') {
             out.behavior = sup ? 'supervisor' : 'smart';
@@ -3994,6 +3996,7 @@
                 .ntbaton input[type=number] { width:96px; }
                 .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
                 .ntf select, .ntf input { padding:3px 6px; }
+                .ntf select.inh { opacity:.6; }
                 .ntf input[type=number] { font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
                     background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
                 /* M-45 - the wake editor: the preset the set IS, and one condition per row */
@@ -4483,7 +4486,10 @@
                 render();
             });
             byId('nt-retrycarryon', 'change', () => { readComposer(); });
-            window.AFSupervisor.IDS.forEach(id => byId(id, 'change', () => { readComposer(); }));
+            window.AFSupervisor.IDS.forEach(id => byId(id, 'change', ev => {
+                readComposer();
+                window.AFSupervisor.retitle(ev.target, (DATA.launch || {}).supervisor);
+            }));
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();

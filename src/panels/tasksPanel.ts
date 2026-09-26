@@ -128,6 +128,8 @@ export interface TasksDeps {
     /** S-82 — the fleet's leg ceiling (agentFarm.batonMaxHops), so the relay
      *  block can say what an empty "max legs" box means. 0 = none. */
     batonMaxLegs?(): number;
+    /** U-151 — the retry supervisor fields Farm Settings states (agentFarm.taskRetry), for the form's empty boxes. */
+    supervisorDefault?(): unknown;
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
@@ -943,6 +945,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             policies: deps.enginePolicies?.() ?? null,
             // S-82 — the standing leg ceiling, for the relay block's empty box.
             batonMaxLegs: deps.batonMaxLegs ? deps.batonMaxLegs() : null,
+            // U-151 — what the supervisor's empty boxes inherit
+            supervisor: deps.supervisorDefault?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),

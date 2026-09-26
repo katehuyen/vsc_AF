@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.687.0 - The supervisor boxes show what they inherit (U-151, part 2) (2026-09-27)
+
+- **An empty supervisor engine is allowed when Farm Settings names one.**
+  The task form used to refuse "supervisor" until you picked an engine,
+  even when your default already had one. Now the empty engine reads
+  "↳ Claude Code — Farm Settings", drawn faint, and the task inherits it;
+  with no engine anywhere the form still refuses, and says where to set it.
+- **Every empty box shows the value it inherits** - "4 — Farm Settings" as
+  its placeholder - and its hover opens with the value and where it comes
+  from (set on this task · inherited from Farm Settings · built-in). The
+  hover follows the box when you change it.
+- **The bridge answers the same way:** `tasks.add` (and schedules and
+  triggers) accept `behavior: "supervisor"` with no `supervisor.engine`
+  when Farm Settings names one, and refuse it, naming both places, when
+  nothing does.
+- Docs: BLUEPRINT (both languages) gains "Supervised Workflow" and
+  "Flexibility"; the media roadmap is current again (X-373).
+
 ## 3.686.0 - The retry supervisor inherits field by field (U-151, part 1) (2026-09-27)
 
 - **Your Farm Settings supervisor now reaches a task opened from the form.**
