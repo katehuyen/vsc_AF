@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.686.0 - The retry supervisor inherits field by field (U-151, part 1) (2026-09-27)
+
+- **Your Farm Settings supervisor now reaches a task opened from the form.**
+  A task's retry supervisor used to be stored whole - every box you left
+  empty was filled with the built-in value on save - so the calls, budget
+  and confidence you set in Farm Settings never applied to it. Now only
+  what the task says is kept, and the levels merge one field at a time: a
+  task naming only its engine takes the rest from your default; what nobody
+  said is the built-in.
+- **A task saying "supervisor" with no engine takes your default's
+  engine;** with no engine anywhere it runs as smart continue, as before.
+- **Saving the form again keeps an inherited value inherited** - an empty
+  box stays empty instead of freezing today's default into the task.
+
 ## 3.685.0 - A run's end in the library is on its status; the media chain accepted end to end (X-423) (2026-09-27)
 
 - **You can see what a run's end did in the library.** When a workflow run

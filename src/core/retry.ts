@@ -1,4 +1,4 @@
-import { normalizeSupervisor, SupervisorPolicy } from './retrySupervisor';
+import { normalizeSupervisor, statedSupervisor, SupervisorPolicy } from './retrySupervisor';
 
 /**
  * ‼️ M-3 — WHAT HAPPENS WHEN A RUN FAILS, AS A SETTING RATHER THAN A SECRET.
@@ -118,8 +118,8 @@ export interface RetryPolicy {
      * accounts of the engine; a slot id names the one account to carry on with.
      */
     carryOn?: string;
-    /** ‼️ M-13 — who judges the continuation when `behavior` is `supervisor` (retrySupervisor.ts) */
-    supervisor?: SupervisorPolicy;
+    /** ‼️ M-13 — who judges the continuation when `behavior` is `supervisor` (retrySupervisor.ts); U-151: only the fields this level said — resolveRetry makes it whole */
+    supervisor?: Partial<SupervisorPolicy>;
     /** How many times to try AGAIN after a failure. 0 (or absent) = never. */
     max?: number;
     /** Minutes to wait before the FIRST retry — and the `base` every strategy
@@ -502,10 +502,12 @@ export function normalizeRetry(raw: unknown): RetryPolicy | undefined {
     // bridge caller cannot half-say it and get a run resuming a conversation
     // nobody asked it to resume.
     if (o.behavior === 'smart') { out.behavior = 'smart'; }
-    // M-13 — a supervisor with no engine to ask is the deterministic `smart` it falls back to
-    const sup = normalizeSupervisor(o.supervisor);
+    // U-151 — only what was said is kept, so the levels merge field by field in
+    // resolveRetry; a supervisor with no engine at ANY level is the `smart` it
+    // falls back to, decided there rather than here.
+    const sup = statedSupervisor(o.supervisor);
     if (sup) { out.supervisor = sup; }
-    if (o.behavior === 'supervisor') { out.behavior = sup ? 'supervisor' : 'smart'; }
+    if (o.behavior === 'supervisor') { out.behavior = 'supervisor'; }
     for (const k of ['continuationPrompt', 'continuationPrompt2', 'continuationPromptLater'] as const) {
         const v = typeof o[k] === 'string' ? (o[k] as string).trim() : '';
         if (v) { out[k] = v.slice(0, RETRY_PROMPT_MAX_CHARS); }
@@ -524,7 +526,7 @@ export function normalizeRetry(raw: unknown): RetryPolicy | undefined {
 /** A policy with every hole filled — what the manager actually runs on. */
 export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Required<
     Pick<RetryPolicy, 'max' | 'delayMin' | 'backoff' | 'when'>
-> & Omit<RetryPolicy, 'max' | 'delayMin' | 'backoff' | 'when'> {
+> & Omit<RetryPolicy, 'max' | 'delayMin' | 'backoff' | 'when' | 'supervisor'> & { supervisor?: SupervisorPolicy } {
     const a = policy ?? {};
     const b = fallback ?? {};
     const pick = <K extends keyof RetryPolicy>(k: K): NonNullable<RetryPolicy[K]> =>
@@ -534,7 +536,7 @@ export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Requ
         delayMin: pick('delayMin') as number,
         backoff: pick('backoff') as RetryBackoff,
         when: pick('when') as RetryWhen
-    } as Required<Pick<RetryPolicy, 'max' | 'delayMin' | 'backoff' | 'when'>> & RetryPolicy;
+    } as Required<Pick<RetryPolicy, 'max' | 'delayMin' | 'backoff' | 'when'>> & Omit<RetryPolicy, 'supervisor'> & { supervisor?: SupervisorPolicy };
     // ‼️ THE OPTIONAL HALVES FALL THROUGH ONE FIELD AT A TIME. A run stating
     // only "wait 5 minutes first" must still inherit the user's formula and the
     // user's reset-awareness — merging whole objects would make every partial
@@ -552,7 +554,9 @@ export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Requ
     // is INHERITED rather than defaulted-on: a run that says nothing gets the
     // user's own setting, and a user who has said nothing gets `simple`.
     const behavior = a.behavior ?? b.behavior;
-    const sup = a.supervisor ?? b.supervisor;
+    // ‼️ U-151 — FIELD BY FIELD, then made whole: the run's own fields over the
+    // user's default, the built-in values only for what neither said.
+    const sup = normalizeSupervisor({ ...(b.supervisor ?? {}), ...(a.supervisor ?? {}) });
     if (sup) { out.supervisor = sup; }
     if (behavior === 'smart' || (behavior === 'supervisor' && !sup)) { out.behavior = 'smart'; }
     if (behavior === 'supervisor' && sup) { out.behavior = 'supervisor'; }

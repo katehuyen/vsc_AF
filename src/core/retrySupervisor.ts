@@ -71,13 +71,35 @@ export function normalizeSupervisor(raw: unknown): SupervisorPolicy | undefined 
     };
 }
 
-/** A stored policy as the task form's boxes (media/afSupervisor.js): text, '' = not said. */
+/**
+ * U-151 — ONLY WHAT WAS SAID, made safe: no defaults, no engine required. A
+ * policy is stored this way so the levels merge FIELD BY FIELD (a task saying
+ * only its engine still takes the calls and the budget from Farm Settings);
+ * `normalizeSupervisor` fills the rest once, after the merge.
+ */
+export function statedSupervisor(raw: unknown): Partial<SupervisorPolicy> | undefined {
+    if (!raw || typeof raw !== 'object') { return undefined; }
+    const o = raw as Record<string, unknown>;
+    const out: Partial<SupervisorPolicy> = {};
+    const engine = typeof o.engine === 'string' ? o.engine.trim().toLowerCase() : '';
+    if (engine) { out.engine = engine; }
+    if (typeof o.model === 'string' && o.model.trim()) { out.model = o.model.trim(); }
+    if (typeof o.agent === 'string' && o.agent.trim()) { out.agent = o.agent.trim(); }
+    const calls = num(o.maxCalls), conf = num(o.minConfidence), budget = num(o.budgetUsd);
+    if (calls !== undefined) { out.maxCalls = Math.max(1, Math.min(SUPERVISOR_MAX_CALLS, Math.round(calls))); }
+    if (budget !== undefined && budget > 0) { out.budgetUsd = budget; }
+    if (conf !== undefined) { out.minConfidence = Math.max(0, Math.min(1, conf)); }
+    if (SUPERVISOR_FALLBACKS.includes(o.lowConfidence as SupervisorFallback)) { out.lowConfidence = o.lowConfidence as SupervisorFallback; }
+    return Object.keys(out).length ? out : undefined;
+}
+
+/** A stored policy as the task form's boxes (media/afSupervisor.js): text, '' = not said — so an inherited value stays inherited when the form is saved again. */
 export function supervisorDraft(raw: unknown): Record<string, string> {
-    const s = normalizeSupervisor(raw);
+    const s = statedSupervisor(raw);
     return {
         engine: s?.engine ?? '', model: s?.model ?? '',
-        maxCalls: s ? String(s.maxCalls) : '', budgetUsd: s?.budgetUsd !== undefined ? String(s.budgetUsd) : '',
-        minConfidence: s ? String(s.minConfidence) : '', lowConfidence: s?.lowConfidence ?? 'smart'
+        maxCalls: s?.maxCalls !== undefined ? String(s.maxCalls) : '', budgetUsd: s?.budgetUsd !== undefined ? String(s.budgetUsd) : '',
+        minConfidence: s?.minConfidence !== undefined ? String(s.minConfidence) : '', lowConfidence: s?.lowConfidence ?? 'smart'
     };
 }
 

@@ -6,6 +6,7 @@ const path = require('path');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+const eq = (n, a, b) => ok(n + ` (got ${JSON.stringify(a)})`, JSON.stringify(a) === JSON.stringify(b));
 
 const OUT = path.join(__dirname, '..', 'out', 'core');
 const S = require(path.join(OUT, 'retrySupervisor.js'));
@@ -79,7 +80,18 @@ ok('the prompt states the contract, the limits and the incident',
 console.log('\n== behavior: supervisor through retry.ts ==');
 const pol = R.normalizeRetry({ max: 3, behavior: 'supervisor', supervisor: { engine: 'codex' } });
 ok('stored with its supervisor', pol.behavior === 'supervisor' && pol.supervisor.engine === 'codex');
-ok('no engine → it is the smart it falls back to', R.normalizeRetry({ behavior: 'supervisor' }).behavior === 'smart');
+ok('no engine at any level → it runs as the smart it falls back to', R.resolveRetry(R.normalizeRetry({ behavior: 'supervisor' })).behavior === 'smart');
+console.log('\n== U-151: the levels merge field by field ==');
+eq('only what was said is stored — no defaults filled in', R.normalizeRetry({ supervisor: { engine: 'Codex', maxCalls: 9 } }).supervisor, { engine: 'codex', maxCalls: 5 });
+const said = R.normalizeRetry({ behavior: 'supervisor', supervisor: { engine: 'codex' } });
+const user = R.normalizeRetry({ supervisor: { engine: 'claude', maxCalls: 4, budgetUsd: 1, minConfidence: 0.8 } });
+const m = R.resolveRetry(said, user).supervisor;
+ok('‼️ a task naming only its engine takes the calls, budget and confidence from the default', m.engine === 'codex' && m.maxCalls === 4 && m.budgetUsd === 1 && m.minConfidence === 0.8 && m.lowConfidence === 'smart');
+ok('a task saying supervisor with no engine takes the default\'s engine', R.resolveRetry(R.normalizeRetry({ behavior: 'supervisor' }), user).behavior === 'supervisor'
+    && R.resolveRetry(R.normalizeRetry({ behavior: 'supervisor' }), user).supervisor.engine === 'claude');
+ok('what nobody said is the built-in', R.resolveRetry(said).supervisor.maxCalls === S.SUPERVISOR_DEFAULT_CALLS && R.resolveRetry(said).supervisor.minConfidence === S.SUPERVISOR_DEFAULT_CONFIDENCE);
+eq('the form shows only what the task said — an inherited value stays blank, so saving again keeps it inherited',
+    S.supervisorDraft({ engine: 'codex' }), { engine: 'codex', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: 'smart' });
 ok('the bridge/form refusal names the missing engine', /needs supervisor\.engine/.test(R.retryRefusal({ behavior: 'supervisor' })) && R.retryRefusal({ behavior: 'supervisor', supervisor: { engine: 'codex' } }) === '');
 ok('it falls through from the default policy', R.resolveRetry({ max: 2 }, pol).behavior === 'supervisor' && R.resolveRetry({ max: 2 }, pol).supervisor.engine === 'codex');
 const LIMIT = 'Claude usage limit reached — resets 7pm';
