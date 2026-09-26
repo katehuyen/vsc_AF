@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.682.0 - The Studio writes to the library (X-425) (2026-09-27)
+
+- **A decision on the wall lands on the record.** ✓ Keep, ✗ Drop, tags, a
+  score and a review note on a Studio card are written into the local
+  Airtable record it shows: Keep into the approval chain, Drop as a failure
+  with its reason and a rejection count, the score as the human quality
+  score (0-1; a percent is read as one), the note into the moderation notes.
+- **An edit made elsewhere is never overwritten.** A write goes only onto
+  the version of the record the card showed. If the record changed in the
+  meantime - in the Admin panel, by an agent - nothing is written and the
+  card says so; refresh and decide again.
+- **Promotion moves the file and its record together.** The up arrow on a
+  card moves it to the next stage folder (to asset, to final) and rewrites
+  its record's stage. It asks first; Farm setting
+  `agentFarm.studioLibraryPromote` (`ask` | `auto`) lets it go at once. The
+  page never starts a stopped engine.
+- **Agents do the same on the bridge:** `studio.library.edit`
+  (`action` select | reject | tags | score | note, `version` guards the
+  write).
+
 ## 3.681.0 - A relay leg cut off at the wall is rescued; the Studio wall reads the library (S-83, X-424) (2026-09-27)
 
 - **A cut-off relay leg is really rescued.** Measured live: a leg told to
