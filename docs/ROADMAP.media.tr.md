@@ -195,7 +195,7 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 #### 🔀 Dalga I — İçerik hattı (M-37)
 - ✅ M-49 Tool adımı + ffmpeg reçeteleri (sıfır token yerel medya işleri).
 - ✅ X-372 Airtable medya entegrasyonu (X-416…X-426, 3.672–3.685): kütüphane yerleşimi, otomatik kayıt, akıllı form, Airtable girdisi, Studio okur/yazar + geri doldurma, all_in işleme, uçtan uca kabul.
-- 🔀 X-373 Bu belgenin canlandırılması + BLUEPRINT "Denetimli Akış" ve "Esneklik" bölümleri.
+- ✅ X-373 Bu belgenin canlandırılması + BLUEPRINT "Denetimli Akış" ve "Esneklik" bölümleri.
 - ⏸️ M-50 Prodüksiyon marka kiti (karakter, stil, ses, logo kuralları, oranlar) + `{brand.*}`.
 - ⏸️ M-51 İçerik takvimi (vault) + yayın adımı + platform bağlantı yuvaları.
 - ⏸️ M-52 Analitik geri besleme — platform metrikleri → Airtable `marketing` → fikir ve yönetici.

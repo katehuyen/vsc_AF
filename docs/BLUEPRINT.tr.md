@@ -1682,6 +1682,19 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 
 Retry supervisor (M-13; kesilen bir görevin nasıl devam edeceğine karar verir) aynı çekirdeğin özel hâlidir (M-48). Yukarıdaki her seçim bir esneme noktasıdır: Farm Settings'te, iş akışı formunda, adım kartında, koşuda ya da canlı verilen değer `core/flexResolve.ts` ile kökeniyle birlikte çözülür.
 
+## Esneklik — esneme noktaları, çözüm zinciri, ön ayarlar {#esneklik}
+
+Bir insanın seçtiği her değer — bir kutu, bir ayar, bir bridge argümanı — bir **esneme noktasıdır** (X-366). Bir kez tanımlanır ve tek bir yoldan çözülür; böylece her yüzey onun hakkında aynı şeyi söyler.
+
+- **Kayıt** (`media/afFlex.js`, X-367): her noktanın bir kimliği (`library.allin.unsure`, `retry.supervisor.maxCalls`…), bir tipi, yerleşik bir varsayılanı ve **seviyeleri** vardır — her seviye, ayarlandığı yüzeyle ve onu ayarlayan bridge anahtarıyla birlikte. `test/test_flex_points.js` tanımlanan her yüzeyi ve bridge anahtarını gerçek dosyalara ve op'lara karşı çözer; hiçbir noktanın sahiplenmediği bir yüzey kontrolünde düşer: noktası olmayan yeni bir tercih derlenmez.
+- **Zincir** (`core/flexResolve.ts`, X-368), en düşükten en yükseğe: `builtin` → `settings` (Farm Settings) → `agent` → `project` → `workflow` → `step` → `run` → `live`. Bir şey söyleyen en yüksek seviye kazanır; cevap değerin kendisi, **nereden geldiği**, neyi yendiği ve neyin neden yok sayıldığıdır — her yüzeyin yazdığı tek cümle (MIRROR: önce değer, sonra kökeni).
+- **Ön ayarlar** (`core/flexPresets.ts`, X-369): tek seviyede tek hamlede uygulanan adlandırılmış değer demetleri (ör. retry supervisor'ın temkinli / dengeli / titiz ayarları); çözüm, kazanan değerin hangi ön ayardan geldiğini söyler.
+- **Akıllı formlar** (X-370): bir aralık, üç durumlu seçim (sor / otomatik / asla), yumuşak ya da sert tavan, bir öneri.
+- **Farm Settings ▸ Flow & Content** (U-152, 3.667.0): ayar seviyesi olan her nokta, kayıttan türetilmiş olarak, kökeni ve ön ayarlarıyla; bridge `flex.*` / `presets.*` (`flex.set` ayar seviyesini yazar).
+- **Alan alan birleştirme**, değer bir nesne olduğunda (U-151, 3.686.0): retry supervisor bir seviyenin yalnızca söylediği alanları tutar; yalnızca motorunu adlandıran bir görev çağrı ve bütçe değerlerini yine Farm Settings'ten alır.
+
+Sistemin kullanıcıya kullanım anında zaten yaptırdığı bir seçim soru değil, esneme noktasıdır: kimseye önceden sorulmaz.
+
 ## Missions {#missions}
 
 İş akışları önceden çizilir: her adım, dal ve sıçrama koşu başlamadan sabittir. **Mission** (2.62.0) bunun tersidir — bir **hedef**, bir **lead ajan** ve bir **ekip** verirsin; sıradaki adımın ne olacağına **çalışma anında**, tur tur, önceki sonuçlara bakılarak karar verilir. "Orkestratör analiz eder, coder yazar, reviewer inceler, tester testleri koşar, lead hepsini birleştirir" — bunu önce DAG olarak çizmeden. Başarısız bir delegasyon misyonu öldürmez; lead'in üzerine yeniden plan kurduğu bilgidir.
