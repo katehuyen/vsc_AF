@@ -127,6 +127,15 @@
         return Object.assign({ id: 'tool.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, x);
     }
 
+    /** X-416/X-417/X-418 — where a run's files are filed and recorded: the workflow form's Library row, a media or tool step's Library row. */
+    function libPoint(field, label, type, dflt, at, extra) {
+        const levels = {};
+        if (at.settings) { levels.settings = at.settings; }
+        if (at.workflow) { levels.workflow = { surface: 'media/afLibrary.js#wf-lib' + at.workflow, bridge: 'workflows.add:library.' + field }; }
+        if (at.step) { levels.step = { surface: 'media/afLibrary.js#st-lib' + at.step, bridge: 'workflows.add:steps.library.' + field }; }
+        return Object.assign({ id: 'library.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, extra || {});
+    }
+
     const POINTS = [
         supervisor('engine', 'Supervisor engine', 'text', '', 'engine'),
         supervisor('model', 'Supervisor model', 'text', '', 'model'),
@@ -179,6 +188,20 @@
         checkpointPoint('maxRetries', 'Checkpoint — retries per step', 'number', 2, 'cpRetries', { min: 0, max: 5 }),
         checkpointPoint('minConfidence', 'Checkpoint — confidence threshold', 'number', 0.6, 'cpConf', { min: 0, max: 1 }),
         checkpointPoint('lowConfidence', 'Checkpoint — below the threshold', 'enum', 'ask', 'cpLow', { options: ['ask', 'mechanical', 'escalate'] }),
+        // X-416/X-417/X-418 — the media library of the local Airtable (src/core/runLibrary.ts)
+        libPoint('base', 'Library — Airtable database', 'text', '', {
+            settings: { surface: 'media/airtablePage.js#def-inst', bridge: 'airtable.config.set:defaultInstance' }, workflow: 'Base', step: 'Base'
+        }),
+        libPoint('lang', 'Library — record language', 'text', '', {
+            settings: { surface: 'media/airtablePage.js#def-lang', bridge: 'airtable.config.set:defaultLang' }, workflow: 'Lang', step: 'Lang'
+        }),
+        libPoint('autoStart', 'Library — an engine that is not running', 'tri', 'auto', { workflow: 'Start' },
+            { states: { ask: 'ask', auto: 'auto', never: 'never' } }),
+        libPoint('record', 'Library — which files get a record', 'enum', 'all', { workflow: 'Record', step: 'Record' },
+            { options: ['all', 'passed', 'none'] }),
+        libPoint('template', 'Library — record template', 'text', '', { workflow: 'Template', step: 'Template' }),
+        libPoint('stage', 'Library — the stage of this step\'s files', 'enum', '', { step: 'Stage' },
+            { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
         // M-45 — what wakes the supervisor after a step: [] = mechanical (src/core/workflowWake.ts)
         {
             id: 'workflow.wake', label: 'Wake the supervisor', type: 'conditions', default: [], remembered: false,

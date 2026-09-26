@@ -472,6 +472,8 @@ export function htmlShell(
     // M-49 — the tool step's recipes as data (read by afFlex.js too, so it loads first) and its step-card row
     const recipes = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRecipes.js'));
     const tool = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTool.js'));
+    // X-418 — the Library row: where a run's files are filed and recorded (workflow form, media and tool step cards)
+    const library = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afLibrary.js'));
     // M-45 — the wake conditions: the workflow form's block, the step card's override, the Run card
     const wake = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afWake.js'));
     // U-153 — the supervisor strip: one row per checkpoint visit (Live Timeline, a run row's badge)
@@ -547,6 +549,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${workflowInputs}"></script>
 <script nonce="${nonce}" src="${checkpoint}"></script>
 <script nonce="${nonce}" src="${tool}"></script>
+<script nonce="${nonce}" src="${library}"></script>
 <script nonce="${nonce}" src="${wake}"></script>
 <script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>

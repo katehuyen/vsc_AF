@@ -57,6 +57,12 @@ export async function mediaDuration(file: string, d: ToolDeps = {}): Promise<num
     return durationOf(r.stderr);
 }
 
+/** ffmpeg's own report of a file (its stderr for `-i`); undefined when ffmpeg is not there. */
+export async function ffmpegReport(file: string, d: ToolDeps = {}): Promise<string | undefined> {
+    const r = await run(['-hide_banner', '-i', file], d);
+    return r.missing ? undefined : r.stderr;
+}
+
 const tail = (s: string): string => s.trim().split(/\r?\n/).slice(-6).join('\n');
 
 export async function runRecipe(call: RecipeCall, d: ToolDeps = {}): Promise<ToolResult> {

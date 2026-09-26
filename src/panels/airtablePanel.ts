@@ -24,6 +24,8 @@ export interface AirtablePanelDeps {
     /** disk cache for MCP probe results (shared with the Toolbox page) */
     cacheFile: string;
     home?: string;
+    /** X-418 — an engine that now answers: write the records that waited for it */
+    afterStart?: (instance: string) => void;
 }
 
 function buildData(deps: AirtablePanelDeps): Record<string, unknown> {
@@ -164,6 +166,7 @@ export class AirtablePanel {
                 const name = String(msg.name ?? '');
                 const r = await startNamedInstance(this.deps.storageDir, name);
                 if (r.ok) {
+                    this.deps.afterStart?.(r.instance);
                     void vscode.window.showInformationMessage(`Agent Farm — Airtable Engine: ${r.instance} ${r.alreadyRunning ? 'was already running' : `is running on port ${r.port} (${Math.round(r.ms / 100) / 10} s)`}.`);
                 } else {
                     this.fail(`starting ${name}`, new Error(r.error));

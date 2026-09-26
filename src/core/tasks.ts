@@ -47,6 +47,9 @@ import {
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
 import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
+import { LedgerEntry, ModuleView, RunCtx, RunLibrary, retargetSidecars } from './runLibrary';
+import { LibrarySpec, StepLibrarySpec } from './runLibrarySpec';
+import type { MediaRecorder } from './mediaRecorder';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { chosenPermission, permissionFlags } from './permissionmode';
 import { ProviderIdentity } from './providerIdentity';
@@ -1198,6 +1201,8 @@ export interface WorkflowStep extends RunDimensions {
      */
     /** M-49 — a local ffmpeg recipe, no model; its result is the step's JSON (src/core/toolCall.ts) */
     tool?: ToolStepSpec;
+    /** X-418 — where this step's files are filed and recorded, over the workflow's (src/core/runLibrarySpec.ts) */
+    library?: StepLibrarySpec;
     webhook?: {
         url: string; method?: string; body?: string;
         headers?: Record<string, string>;
@@ -1304,6 +1309,8 @@ export interface FarmWorkflow {
     criteria?: string[];
     /** M-44 — the run's supervisor session: model, effort, sign-in, its ceilings (src/core/supervisorRun.ts) */
     supervisor?: WorkflowSupervisor;
+    /** X-418 — the Airtable database its files are filed and recorded in, and how (src/core/runLibrarySpec.ts) */
+    library?: LibrarySpec;
     /** M-45 — what wakes the supervisor after a step; unset = mechanical (src/core/workflowWake.ts) */
     wake?: WakeSpec;
 }
@@ -1651,6 +1658,8 @@ interface WorkflowRunRecord {
     board?: RunBoard;
     /** M-40 — a for-each step in flight; persisted so a resume re-runs only unfinished branches */
     forEach?: FE.ForEachRun;
+    /** X-418 — every file the run filed or read, where it is now and its record (src/core/runLibrary.ts) */
+    library?: LedgerEntry[];
     /** M-43 — the run's own copy of the chain: the supervisor's patches and inserted steps */
     edits?: RunEdits;
     /** M-43 — the supervisor's decisions so far (`<decision>:<target>`), retries per step, the person's answers */
@@ -1670,6 +1679,8 @@ export interface TaskManagerOptions {
     superviseTurn?: (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
     /** M-49 — the Farm Settings layer of tool.outDir / tool.overwrite, as the user wrote it (undefined = untouched) */
     toolSettings?: () => { outDir?: unknown; overwrite?: unknown };
+    /** X-418 — files every produced file into the local Airtable's media library and records it; unset = files stay where they are made */
+    mediaLibrary?: { recorder: MediaRecorder; module: () => ModuleView };
     /** M-49 — replaces the ffmpeg runner (tests) */
     runTool?: (c: RecipeCall) => Promise<ToolResult>;
     /** M-44 — replaces the supervisor session's real spawn (tests) */
@@ -3148,6 +3159,20 @@ export class TaskManager implements vscode.Disposable {
     /** Persist after a caller mutated store rows in place (bulk enable/disable). */
     persist(): void {
         this.save();
+    }
+
+    private runLib?: RunLibrary;
+    /** X-418 — the run's library, when the extension gave one: a file a step makes is filed and recorded */
+    private get lib(): RunLibrary | undefined {
+        const m = this.opts.mediaLibrary;
+        if (m && !this.runLib) { this.runLib = new RunLibrary(m.recorder, m.module, () => this.save(), (a, b) => retargetSidecars(this.outputsDir, a, b)); }
+        return this.runLib;
+    }
+    private libCtx(task: FarmTask): RunCtx | undefined {
+        const rec = task.workflowRunId ? this.runRecords.get(task.workflowRunId) : undefined;
+        const w = this.runView(task.workflowId, task.workflowRunId);
+        if (!this.lib || !rec || !w || task.stepIndex === undefined) { return undefined; }
+        return { w, runId: task.workflowRunId as string, runStartedAt: rec.startedAt, stepIndex: task.stepIndex, taskId: task.id, attempt: task.attempt, ledger: rec.library ??= [] };
     }
 
     /** Update the master switch / quiet hours (panel + bridge share this path). */
@@ -5373,6 +5398,8 @@ export class TaskManager implements vscode.Disposable {
             this.advanceWorkflow(task, 'done');
             return;
         }
+        const failLedger = this.libCtx(task)?.ledger;
+        if (failLedger) { await this.lib!.failed(failLedger, assetFile, reason); }
         const retries = step.verify!.retries ?? 1;
         if (attempt < retries) {
             this.save();
@@ -6299,6 +6326,7 @@ export class TaskManager implements vscode.Disposable {
             ...(Object.keys(given.values).length ? { inputs: given.values } : {}),
             ...(opts?.wake ? { wake: opts.wake } : {})
         });
+        this.lib?.prepare(w);
         return runId;
     }
 
@@ -6342,6 +6370,7 @@ export class TaskManager implements vscode.Disposable {
             ...(stepIndex !== undefined ? { stepIndex } : {})
         };
         this.save();
+        if (this.lib && rec.library?.length) { void this.lib.ended(rec.library, status).catch(() => undefined); }
     }
 
     /**
@@ -6752,8 +6781,19 @@ export class TaskManager implements vscode.Disposable {
         const r: ToolResult = 'error' in c
             ? { ok: false, recipe: String(spec.recipe ?? spec.preset ?? ''), outputs: [], runs: 0, ms: 0, error: c.error }
             : await (this.opts.runTool ?? runRecipe)(c);
+        const lc = this.libCtx(task);
+        const libLines: string[] = [];
+        if (lc && r.outputs.length) {
+            const filed = await this.lib!.produced(lc, r.outputs, {
+                role: r.ok ? 'intermediate' : 'failed', origin: /concat|merge|join|mux|overlay/i.test(r.recipe) ? 'manual_creation' : 'manual_extraction',
+                productionType: 'tool:' + r.recipe, sources: 'error' in c ? [] : [c.input ?? ''],
+                ...(r.ok ? {} : { failure: { reason: `the tool step failed — ${r.error ?? 'unknown'}`, salvageable: true } })
+            });
+            r.outputs = filed.files;
+            libLines.push(...filed.lines);
+        }
         try {
-            fs.writeFileSync(outFile, `# ${task.title}\n\n- Tool: ${r.recipe}${r.error ? ` — ${r.error}` : ''}\n${how.why.map(l => `- ${l}`).join('\n')}\n\n---\n\n${JSON.stringify(r, null, 2)}\n\n---\n`
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Tool: ${r.recipe}${r.error ? ` — ${r.error}` : ''}\n${[...how.why, ...libLines].map(l => `- ${l}`).join('\n')}\n\n---\n\n${JSON.stringify(r, null, 2)}\n\n---\n`
                 + `Finished: ${new Date().toLocaleString()} · ${r.ok ? 'OK' : 'FAILED'}\n`, 'utf8');
         } catch { /* archive gone */ }
         if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: tool step "${step.title}" failed — ${r.error}`); }
@@ -6887,6 +6927,15 @@ export class TaskManager implements vscode.Disposable {
         const estCost = estimateMediaCost(info.model, result.response,
             this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING);
         task.mediaCost = estCost;
+        const lc = this.libCtx(task);
+        if (lc && assets.length) {
+            const filed = await this.lib!.produced(lc, assets, {
+                role: 'candidate', origin: 'AI_generated', productionType: 'fal', model: info.model, prompt: info.input, costUsd: estCost,
+                sources: (info.uploads ?? []).map(u => u.path)
+            });
+            assets.splice(0, assets.length, ...filed.files);
+            info.note = [info.note, ...filed.lines].filter(Boolean).join('\n- ');
+        }
 
         const meta: MediaMeta = {
             taskId: task.id,
@@ -7108,6 +7157,8 @@ export class TaskManager implements vscode.Disposable {
         const cancelled = chosen === null;
         const selected = chosen ?? [];
         if (!cancelled) { recordSelection(this.outputsDir, metas, selected); }
+        const selLedger = cancelled ? undefined : this.runRecords.get(runId)?.library;
+        if (selLedger && this.lib) { await this.lib.rejected(selLedger, candidates.filter(c => !selected.includes(c.url)).map(c => c.file).filter((f): f is string => !!f)); }
 
         // The selection becomes the handoff: {prev_json.selected.N} = a URL,
         // {prev_text} = newline-joined URLs (one asset per line).

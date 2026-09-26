@@ -8,8 +8,10 @@ import {
     addStoreFolder, airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
     removeStoreFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from './core/airtable';
-import { fileInto, libraryInfo, planLibrary } from './core/mediaLibrary';
+import { fileInto, isRole, libraryInfo, MediaRole, planLibrary } from './core/mediaLibrary';
 import { startNamedInstance } from './core/airtableStart';
+import { AUTO_STARTS, AutoStart, MediaRecorder } from './core/mediaRecorder';
+import { cleanLibrary, LibrarySpec, libraryRefusal } from './core/runLibrarySpec';
 import { expandRoot } from './mcp/airtable/engine';
 import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
@@ -3634,6 +3636,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         surface: 'terminal' | 'external-terminal' | 'headless';
     }) => string | undefined) | undefined;
 
+    // X-418 — one recorder for the runs and the bridge: files a produced file into the library and records it in the local Airtable
+    const mediaRecorder = new MediaRecorder({
+        storageDir: context.globalStorageUri.fsPath,
+        confirm: async q => (await vscode.window.showWarningMessage(q, { modal: true }, 'Start it')) === 'Start it'
+    });
+    const flushAfterStart = (instance: string): void => {
+        void mediaRecorder.flush(instance).then(r => {
+            const n = r.reduce((s, x) => s + x.done, 0);
+            if (n) { void vscode.window.showInformationMessage(`Agent Farm — Airtable: ${n} waiting record(s) written to ${instance}.`); }
+        }, () => undefined);
+    };
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -3641,6 +3654,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => cfg().get<string>('taskExtraArgs', ''),
         {
             portableRoots,
+            mediaLibrary: {
+                recorder: mediaRecorder,
+                module: () => { const st = loadStore(context.globalStorageUri.fsPath); return { defaultInstance: st.defaultInstance, defaultLang: st.defaultLang, mediaRoots: st.mediaRoots }; }
+            },
             judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
             judgeUnjudged: () => cfg().get<string>('judgeUnjudged', 'ask'),
             toolSettings: () => {
@@ -7929,6 +7946,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : raw.approval ? 'approval' : raw.select ? 'select' : raw.checkpoint ? 'checkpoint' : raw.tool ? 'tool' : '';
         need(prompt || label || raw.browser, `Step ${i + 1}: prompt is required.`);
         const toolNo = raw.tool !== undefined ? toolStepRefusal(raw.tool) : '';
+        const libNo = libraryRefusal(raw.library, 'step');
+        need(!libNo, `Step ${i + 1}: ${libNo}.`);
         need(!toolNo, `Step ${i + 1}: tool — ${toolNo}.`);
         const { agent: agentRef, ...passthrough } = raw;
         const who = label && !String(agentRef ?? '').trim()
@@ -15717,7 +15736,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), tool? (M-49 — no agent, no model: a local ffmpeg recipe; its result {outputs, runs, ms} is the step\'s JSON: {recipe (tools.recipes lists them) | preset, input (a path or a template: {input.clip}, {prev_json.outputs.0}, {item}), params? (the recipe\'s own names — a template value is filled at run time; a blank one is the preset\'s, else the recipe default — flex points tool.<recipe>.<param>), outDir? (default Farm Settings tool.outDir, else af-tool beside the input), overwrite? (never|suffix|always)} — refused at save by name), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on), wake? (wake conditions for this step alone, shaped as the workflow wake below; omit = the workflow ones, "mechanical" = none after this step)} — advanced webhook/media/browser fields pass through as in the builder]), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), wake? (M-45 — what wakes the supervisor after a step ends: "mechanical" (never — the default), "smart" (every step), "hybrid" (a failed quality check, a failed step, the run past $2) or a condition list [{id, field, operator, value?} | {id, all:[…]}] over workflows.wakeFields; ORed. Nothing fires = the mechanical path unchanged; something fires = the supervisor decides as at a checkpoint, and the row names the condition), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
+            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), tool? (M-49 — no agent, no model: a local ffmpeg recipe; its result {outputs, runs, ms} is the step\'s JSON: {recipe (tools.recipes lists them) | preset, input (a path or a template: {input.clip}, {prev_json.outputs.0}, {item}), params? (the recipe\'s own names — a template value is filled at run time; a blank one is the preset\'s, else the recipe default — flex points tool.<recipe>.<param>), outDir? (default Farm Settings tool.outDir, else af-tool beside the input), overwrite? (never|suffix|always)} — refused at save by name), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on), wake? (wake conditions for this step alone, shaped as the workflow wake below; omit = the workflow ones, "mechanical" = none after this step)} — advanced webhook/media/browser fields pass through as in the builder]), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), library? (X-418 — where every file the run makes is filed and recorded in the local Airtable: {base? (the Airtable database; default the Airtable page\'s default), lang?, autoStart? (ask|auto|never, default auto — a closed engine is started first), record? (all = failures too, the default | passed | none = the library is off), template? (default <Type>-<Stage> when the base has it)}; a media or tool step overrides it with steps[].library {base?, lang?, record?, template?, stage? (source|raw|semi|final|asset — its files go there, never promoted at the end)}; unset stage: a candidate or part → semi, a FAIL or a left-out → raw, the run\'s last output → final, its inputs from outside the library → source), wake? (M-45 — what wakes the supervisor after a step ends: "mechanical" (never — the default), "smart" (every step), "hybrid" (a failed quality check, a failed step, the run past $2) or a condition list [{id, field, operator, value?} | {id, all:[…]}] over workflows.wakeFields; ORed. Nothing fires = the mechanical path unchanged; something fires = the supervisor decides as at a checkpoint, and the row names the condition), inputs? ([{name, type? (file|folder|text|choice|number|url, default text), default?, required?, description?, choices? (choice)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -15729,11 +15748,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!ins.error, `inputs: ${ins.error}.`);
                 const supNo = supervisorRunRefusal(args.supervisor as WorkflowSupervisor | undefined);
                 need(!supNo, `${supNo}.`);
+                const libNo = libraryRefusal(args.library, 'workflow');
+                need(!libNo, `${libNo}.`);
                 const wk = wakeFromArg(args.wake);
                 need(!wk.error, `${wk.error}.`);
                 const w = taskManager.addWorkflow(title, steps, ins.inputs);
                 if (wk.wake) { setWorkflowWake(w, wk.wake); taskManager.persist(); }
                 if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); taskManager.persist(); }
+                const lib = cleanLibrary(args.library as LibrarySpec | undefined);
+                if (lib) { w.library = lib; taskManager.persist(); }
                 if (args.goal !== undefined || args.criteria !== undefined) { setWorkflowGoal(w, args.goal, args.criteria); taskManager.persist(); }
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }
@@ -15742,7 +15765,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'workflows.update',
             describe: 'Rename a workflow and/or replace its whole step chain — the same save the page\'s '
                 + 'workflow form makes. args: id or title, newTitle?, steps? (the FULL list, same shape as '
-                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them), goal?, criteria? (as workflows.add; "" removes them), supervisor? (the whole object, as workflows.add; {} removes it), wake? (as workflows.add; "mechanical" removes it)',
+                + 'workflows.add; omit to leave the chain alone, [] to empty it), inputs? (the FULL input list, same shape as workflows.add; [] removes them), goal?, criteria? (as workflows.add; "" removes them), supervisor? (the whole object, as workflows.add; {} removes it), library? (the whole object, as workflows.add; {} removes it), wake? (as workflows.add; "mechanical" removes it)',
             handler: (args) => {
                 const w = bridgeWorkflow(optStr(args, 'id') || argStr(args, 'title'));
                 const newTitle = optStr(args, 'newTitle');
@@ -15756,6 +15779,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!ins.error, `inputs: ${ins.error}.`);
                 const supNo = args.supervisor === undefined ? '' : supervisorRunRefusal(args.supervisor as WorkflowSupervisor);
                 need(!supNo, `${supNo}.`);
+                const libNo = libraryRefusal(args.library, 'workflow');
+                need(!libNo, `${libNo}.`);
                 const wk = wakeFromArg(args.wake);
                 need(!wk.error, `${wk.error}.`);
                 w.steps = steps;
@@ -15763,6 +15788,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (ins.inputs.length) { w.inputs = ins.inputs; } else { delete w.inputs; }
                 setWorkflowGoal(w, args.goal === undefined ? w.goal : args.goal, args.criteria === undefined ? w.criteria : args.criteria);
                 if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); }
+                if (args.library !== undefined) { const lib = cleanLibrary(args.library as LibrarySpec); if (lib) { w.library = lib; } else { delete w.library; } }
                 taskManager.persist();
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }
@@ -17654,11 +17680,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'airtable.start',
-            describe: 'X-416 — START A LOCAL ENGINE INSTANCE WITHOUT A BROWSER: `node server.js` in <instance>\\Admin, detached and hidden (it outlives VS Code like start_admin.bat\'s window; no npm install, no UI build, no browser tab), its output appended to <globalStorage>\\airtable-engine-<name>.log; then waits until it answers. An instance already answering is left alone. Returns {ok, instance, port, alreadyRunning?, ms, log?, error?}. args: instance? (default: the module\'s defaultInstance), timeoutMs? (default 20000)',
+            describe: 'X-416 — START A LOCAL ENGINE INSTANCE WITHOUT A BROWSER: `node server.js` in <instance>\\Admin, detached and hidden (it outlives VS Code like start_admin.bat\'s window; no npm install, no UI build, no browser tab), its output appended to <globalStorage>\\airtable-engine-<name>.log; then waits until it answers. An instance already answering is left alone. The records that waited for it (media.pending) are then written. Returns {ok, instance, port, alreadyRunning?, ms, log?, error?, pendingWritten}. args: instance? (default: the module\'s defaultInstance), timeoutMs? (default 20000)',
             handler: async (args) => {
                 const r = await startNamedInstance(airtableStorage, String(args.instance ?? ''), { timeoutMs: Number(args.timeoutMs) || undefined });
                 need(r.ok, r.error ?? '');
-                return r;
+                const flushed = await mediaRecorder.flush(r.instance);
+                return { ...r, pendingWritten: flushed.reduce((s, x) => s + x.done, 0) };
             }
         },
         {
@@ -17697,6 +17724,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const p = plan as Exclude<typeof plan, { error: string }>;
                 return { ...p, from, file: fileInto(from, p) };
             }
+        },
+        {
+            op: 'media.record',
+            describe: 'X-418 — FILE ONE FILE INTO THE MEDIA LIBRARY AND GIVE IT ITS AIRTABLE RECORD, the way a run does for every file it makes: moved to <root>\\media_<base>\\<type>\\<stage>\\ (as media.library.file), fingerprinted (sha256 → the record\'s fingerprint), probed with ffmpeg (Medya Dosyası + Teknik Kalite), recorded with the mechanical fields (Provenans, workflow.stage, pipeline_history, Başarı Statüsü when failed) and the <Type>-<Stage> template when the base has one. The same bytes already recorded → no second record: {duplicate:true, id}, the relation still linked. The engine is started first when it is down (autoStart); still down → the file is filed anyway and its record waits in the pending list {pending}. Returns {file, stage, base, id?, duplicate?, pending?, template?, error?, why}. args: file (absolute), base? (default the module\'s defaultInstance), lang?, stage? | role? (as media.library.plan), origin? (AI_generated|uploaded|external|manual_creation|manual_extraction|user_submission|imported; default user_submission for an input, else AI_generated), model?, prompt?, negativePrompt?, seed?, costUsd?, failure? ({reason, salvageable?, notes?}), causeFiles? (files it was made from — their records gain it as an effect), template?, autoStart? (ask|auto|never, default auto), inPlace? (record it where it is)',
+            handler: async (args) => {
+                const file = String(args.file ?? '');
+                need(fs.existsSync(file), `no file at ${file}`);
+                const role = String(args.role ?? '').trim() || 'unknown';
+                need(isRole(role), `there is no role "${role}"`);
+                const auto = String(args.autoStart ?? 'auto') as AutoStart;
+                need(AUTO_STARTS.includes(auto), `autoStart is ${AUTO_STARTS.join(' | ')}`);
+                const failure = args.failure && typeof args.failure === 'object' ? args.failure as { reason: string } : undefined;
+                const r = await mediaRecorder.record({
+                    file, base: optStr(args, 'base'), lang: optStr(args, 'lang'), stage: optStr(args, 'stage'), template: optStr(args, 'template'), autoStart: auto, inPlace: args.inPlace === true,
+                    causeFiles: Array.isArray(args.causeFiles) ? args.causeFiles.map(String) : undefined,
+                    produced: {
+                        role: role as MediaRole, origin: (optStr(args, 'origin') || (role === 'input' ? 'user_submission' : 'AI_generated')) as 'AI_generated',
+                        productionType: 'bridge', model: optStr(args, 'model'), prompt: optStr(args, 'prompt'), negativePrompt: optStr(args, 'negativePrompt'),
+                        seed: typeof args.seed === 'number' ? args.seed : undefined, costUsd: typeof args.costUsd === 'number' ? args.costUsd : undefined,
+                        failure
+                    }
+                });
+                need(!r.error || !!r.pending, r.error ?? '');
+                return r;
+            }
+        },
+        {
+            op: 'media.restage',
+            describe: 'X-418 — MOVE A LIBRARY FILE TO ANOTHER STAGE AND ITS RECORD WITH IT, in one call: the file moves (never overwriting; -2, -3… when the name is taken) and the record\'s media.file_path, workflow.stage, a pipeline_history line and — for a failed or rejected file — its Başarı Statüsü change. A promotion to asset is this op. Engine down → the change waits in the pending list (a record still waiting to be created takes it before it is written). Returns {file, stage, base, id?, pending?, error?, why}. args: file (absolute), stage (source|raw|semi|final|asset — all_in is refused), base?, lang?, id? (the record, when known), reason?, failure? ({reason, salvageable?, notes?}), autoStart? (ask|auto|never, default auto)',
+            handler: async (args) => {
+                const file = String(args.file ?? '');
+                need(fs.existsSync(file), `no file at ${file}`);
+                need(!!optStr(args, 'stage'), 'name the stage');
+                const r = await mediaRecorder.restage({
+                    file, stage: String(args.stage), base: optStr(args, 'base'), lang: optStr(args, 'lang'), id: optStr(args, 'id'), reason: optStr(args, 'reason'),
+                    failure: args.failure && typeof args.failure === 'object' ? args.failure as { reason: string } : undefined,
+                    autoStart: (optStr(args, 'autoStart') || 'auto') as AutoStart
+                });
+                need(!r.error, r.error ?? '');
+                return r;
+            }
+        },
+        {
+            op: 'media.pending',
+            describe: 'X-416 / X-418 — THE RECORDS WAITING FOR A CLOSED ENGINE: [{key, base, lang, kind (create|update), file (its path now), since, tries, lastError}]. They are written by themselves the next time the base is reached, or by media.pending.flush. args: base?',
+            handler: (args) => mediaRecorder.pending(optStr(args, 'base')).map(e => ({ key: e.key, base: e.base, lang: e.lang, kind: e.kind, file: e.file, since: new Date(e.since).toISOString(), tries: e.tries, lastError: e.lastError }))
+        },
+        {
+            op: 'media.pending.flush',
+            describe: 'X-416 / X-418 — WRITE THE WAITING RECORDS NOW: every entry of the base (or of every base that has one) is created or updated on its engine; one that lands leaves the list, one that fails stays with its reason. Returns [{base, done, failed, down?}]. args: base?, autoStart? (ask|auto|never, default never — a flush does not start an engine unless told to)',
+            handler: async (args) => mediaRecorder.flush(optStr(args, 'base'), (optStr(args, 'autoStart') || 'never') as AutoStart)
         },
         {
             op: 'airtable.config.set',
@@ -37235,7 +37313,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 extensionUri: context.extensionUri,
                 storageDir: airtableStorage,
                 extVersion,
-                cacheFile: toolboxProbeCacheFile
+                cacheFile: toolboxProbeCacheFile,
+                afterStart: flushAfterStart
             });
         }),
 

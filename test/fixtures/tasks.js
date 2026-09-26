@@ -827,6 +827,37 @@ const variants = () => ([
             drive(r, { 'nt-st-tInput': '{input.clip}', 'nt-st-tp-overlapSec': '1' }, 'nt-st-tOverwrite');
         }
     },
+    // X-418 — a tool step that files its parts into another database, as assets: the step's Library row set.
+    {
+        id: 'tasks-step-tool-library',
+        label: 'Tasks → a workflow tool step whose files go to TEST as assets: its Library row (X-418)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Anahtar kare', 'nt-st-stype': 'tool' }, 'nt-st-stype');
+            drive(r, { 'nt-st-tRecipe': 'split' }, 'nt-st-tRecipe');
+            // the Library boxes are read on change without a redraw; the overwrite picker reads every box and redraws
+            drive(r, { 'nt-st-libBase': 'TEST', 'nt-st-libRecord': 'passed', 'nt-st-libStage': 'asset' }, 'nt-st-libStage');
+            drive(r, {}, 'nt-st-tOverwrite');
+        }
+    },
+    // X-418 — the workflow form's Library block: another database, ask before starting its engine.
+    {
+        id: 'tasks-wf-library',
+        label: 'Tasks → a workflow form: its Library block — stem-draft, every file recorded, ask before starting the engine (X-418)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w12', title: '34 sn dilim', stepIdx: null, libBase: 'stem-draft', libLang: '', libStart: 'ask', libRecord: 'all', libTemplate: '',
+                    steps: [{ sid: 's1', stype: 'tool', title: 'Böl', toolJson: '{"recipe":"split","input":"{input.clip}"}' }]
+                }
+            });
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',

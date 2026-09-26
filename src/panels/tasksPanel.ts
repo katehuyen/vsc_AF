@@ -25,6 +25,7 @@ import { checkpointFromDraft, checkpointSeed, setWorkflowGoal } from '../core/ch
 import { trailRow, TrailRow } from '../core/supervisorTrail';
 import { toolStepFromJson } from '../core/toolCall';
 import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, supervisorSeed } from '../core/supervisorRun';
+import { LibrarySpec, libraryFromDraft, libraryRefusal, librarySeed, StepLibrarySpec } from '../core/runLibrarySpec';
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
 import { RunIdentity } from '../core/turnRuntime';
@@ -1111,6 +1112,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         selMin: s.select?.min ?? 1,
         selMax: s.select?.max ?? 0,
         ...checkpointSeed(s.checkpoint),
+        ...librarySeed(s.library, 'step'),
         ...(s.wake ? { wake: s.wake } : {})
     };
 }
@@ -1166,6 +1168,10 @@ export function stepFromDraft(
             ...(str('verifyModel') ? { model: str('verifyModel') } : {})
         }
         : undefined;
+    const lib = libraryFromDraft(raw, 'step') as StepLibrarySpec | undefined;
+    const libNo = libraryRefusal(lib, 'step');
+    if (libNo && (stype === 'media' || stype === 'tool')) { return { error: `Step ${n} ("${title}"): ${libNo}.` }; }
+    const withLib = lib && !libNo ? { library: lib } : {};
     const named = (label: string): Pick<WorkflowStep, 'agentId' | 'agentName' | 'prompt' | 'mode'> =>
         ({ agentId: '', agentName: label, prompt: '', mode: 'headless' });
 
@@ -1205,7 +1211,7 @@ export function stepFromDraft(
         const [projectId, sceneId] = str('mScene').split('/');
         return {
             step: {
-                ...named('media'), title, ...chain, verify,
+                ...named('media'), title, ...chain, verify, ...withLib,
                 media: {
                     model: str('mModel'), input: str('mInput'),
                     projectId: projectId || undefined, sceneId: sceneId || undefined
@@ -1224,7 +1230,7 @@ export function stepFromDraft(
     if (stype === 'tool') {
         const t = toolStepFromJson(str('toolJson'));
         if ('error' in t) { return { error: `Step ${n} ("${title}"): ${t.error}.` }; }
-        return { step: { ...named('tool'), title, ...chain, tool: t.tool } };
+        return { step: { ...named('tool'), title, ...chain, tool: t.tool, ...withLib } };
     }
     if (stype === 'select') {
         const min = Math.max(1, num('selMin', 1));
@@ -1792,8 +1798,8 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), wake: w.wake ?? [], stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
-                : { mode2: 'new', steps: [], inputs: [], wake: [], stepIdx: step === 'new' ? -1 : null, step: null });
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                : { mode2: 'new', steps: [], inputs: [], ...librarySeed(undefined, 'workflow'), wake: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
         const tpl = node?.template;
@@ -2028,6 +2034,9 @@ export class TasksPanel {
             if (wsNo) { this.say(`Supervisor: ${wsNo}.`); return; }
             const wk = wakeFromArg(item.wake);
             if (wk.error) { this.say(`Wake: ${wk.error}.`); return; }
+            const wlib = libraryFromDraft(item, 'workflow') as LibrarySpec | undefined;
+            const wlibNo = libraryRefusal(wlib, 'workflow');
+            if (wlibNo) { this.say(`Library: ${wlibNo}.`); return; }
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -2038,6 +2047,7 @@ export class TasksPanel {
                 if (ins.inputs.length) { existing.inputs = ins.inputs; } else { delete existing.inputs; }
                 setWorkflowGoal(existing, item.goal, item.criteria);
                 setWorkflowSupervisor(existing, ws);
+                if (wlib) { existing.library = wlib; } else { delete existing.library; }
                 setWorkflowWake(existing, wk.wake);
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
@@ -2045,6 +2055,7 @@ export class TasksPanel {
                 const made = m.addWorkflow(str('title'), steps, ins.inputs);
                 setWorkflowGoal(made, item.goal, item.criteria);
                 setWorkflowSupervisor(made, ws);
+                if (wlib) { made.library = wlib; }
                 setWorkflowWake(made, wk.wake);
                 m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);

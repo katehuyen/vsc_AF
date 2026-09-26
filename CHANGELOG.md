@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.678.0 - Every file a run makes is filed and recorded in your local Airtable, and a stopped engine starts with one press (X-418, X-416) (2026-09-26)
+
+- **Nothing a run makes is lost in a folder any more (X-418).** A media
+  step's downloads and a tool step's outputs go straight into their stage
+  folder of the workflow's Airtable database — a candidate or a part → semi,
+  the file of a failed step → raw — and each one gets a full media record, the
+  way the Admin panel's form would fill it: the file itself, its technical
+  fields read with ffmpeg (duration, frame rate, size, aspect ratio, codec,
+  bitrate, sample rate, channels), its provenance (model, prompt, where in
+  which run and step), the run as its batch, its stage in `workflow.stage` and
+  a history line for every event. The same file is never recorded twice: its
+  content fingerprint answers first.
+- **Failures are kept, with the reason.** A video or image the judge failed,
+  and a candidate you left out at a selection, move to **raw** with their
+  success status filled in (why, salvageable) — a frame or a part of it can be
+  rescued later. When the run reaches its end, its last output moves to
+  **final** and the input it was given from outside the library to **source**.
+- **What a file was made from is linked.** A part names the clip it was cut
+  from and the clip names its parts (the form's cause/effect relation).
+- **You choose per workflow and per step.** The workflow form has a Library
+  block — database, language, which files get a record (every file, failures
+  too · only what passed · none), a template, and what to do when the engine is
+  not running (start it · ask me · never). A media or tool step has its own
+  Library row, where a stage can be named for its files (a key frame straight
+  into asset, say). Blank = the Airtable page's defaults.
+- **A stopped engine is not a stopped run (X-416).** A down database card on
+  the Airtable page has **Start**: the engine runs hidden, without a browser
+  or a rebuild. A run starts it by itself when needed; if it still cannot be
+  reached the files are filed anyway and their records wait, and are written
+  the moment the engine answers.
+- **Bridge:** `media.record`, `media.restage` (a promotion to asset is this),
+  `media.pending`, `media.pending.flush`, `airtable.start`; `workflows.add`
+  and `workflows.update` take `library` and `steps[].library`.
+
 ## 3.677.0 - The media library of your local Airtable, and a read-only video judge (X-417 core, M-42 audit fix) (2026-09-26)
 
 - **Agent Farm knows where your media lives (X-417).** Every Airtable
