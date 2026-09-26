@@ -250,6 +250,8 @@
         slPoint('stages', 'Studio wall — stages shown', 'text', '', 'studioLibraryStages'),
         slPoint('kind', 'Studio wall — kind', 'enum', '', 'studioLibraryKind', { options: ['', 'image', 'video', 'audio'], emptyLabel: 'every kind' }),
         slPoint('success', 'Studio wall — outcome', 'enum', '', 'studioLibrarySuccess', { options: ['', 'passed', 'failed'], emptyLabel: 'passed + failed' }),
+        // X-425 — a promotion on the wall moves a file and its record: asked first, or done at once
+        setting('studio.library.promote', 'Studio wall — promotion', 'enum', 'ask', 'agentFarm.studioLibraryPromote', { options: ['ask', 'auto'] }),
         // X-419 — a model fills the records' meaning (src/core/enrichSpec.ts)
         enPoint('when', 'Enrich — when', 'enum', 'end', 'libraryEnrich', 'When', { options: ['end', 'record', 'never'] }),
         enPoint('scope', 'Enrich — which files', 'enum', 'final-failed', 'libraryEnrichScope', 'Scope', { options: ['final-failed', 'final', 'all'] }),

@@ -45,6 +45,7 @@
                 .sl-row .badge { margin-left:0; }
                 .sl-strip { margin-top:3px; line-height:18px; }
                 .sl-strip .badge { margin:0 1px 0 0; padding:0 5px; }
+                .sl-strip .sl-act { font-size:10px; line-height:16px; padding:0 6px; margin:0 2px 0 0; }
             </style>
             <div class="sl-row">
                 ${src}
@@ -77,7 +78,43 @@
             parts.push(tip(`<span class="badge muted">C${causes.length} E${effects.length}</span>`, 'Chain — ' + causes.length + ' cause(s), ' + effects.length + ' effect(s)',
                 (causes.length ? 'Made from:\n' + causes.join('\n') : 'Made from: nothing recorded') + '\n\n' + (effects.length ? 'Went into:\n' + effects.join('\n') : 'Went into: nothing recorded')));
         }
+        if (c.id) { parts.push(acts(c, base)); }
         return `<div class="sub sl-strip">${parts.join(' ')}</div>`;
+    }
+
+    /** X-425 — what a person decides on a record: written onto the version this card shows. */
+    function acts(c, base) {
+        const human = c.scoreBy === 'human' ? String(c.score) : '';
+        const data = `data-id="${esc(c.id)}" data-base="${esc(base || '')}" data-version="${esc(c.version || '')}" data-file="${esc(c.file || '')}" data-stage="${esc(c.stage || '')}" data-tags="${esc((c.tags || []).join(', '))}" data-score="${esc(human)}" data-note="${esc(c.note || '')}"`;
+        const btn = (act, label, head, body) => tip(`<button class="sl-act" data-lib-act="${act}" ${data}>${esc(label)}</button>`, head, body);
+        const guard = '\n\nWritten onto version ' + (c.version || '?') + ' of the record — if it changed in the Admin panel since, nothing is written and the wall is read again.';
+        const out = [
+            btn('select', 'Keep', 'Keep — ' + c.id, 'Marks it chosen on its record (workflow.approval_chain) and takes back a rejection made here.' + guard),
+            btn('reject', 'Drop', 'Drop — ' + c.id, 'Marks it failed on its record — "rejected in Studio", salvageable — and counts the rejection. The file does not move.' + guard),
+            btn('edit', '✎', 'Tags · score · note — ' + c.id, 'Tags: ' + ((c.tags || []).join(', ') || 'none') + '\nScore by hand: ' + (human || 'none') + '\nNote: ' + (c.note || 'none') + guard)
+        ];
+        const to = { raw: 'asset', semi: 'final' }[c.stage];
+        if (to) {
+            out.push(btn('promote', '↑ ' + to, 'Promote to ' + to + ' — ' + c.id, 'Moves the file from ' + c.stage + ' into the ' + to + ' folder and its record with it (media.restage).\n\nFarm setting agentFarm.studioLibraryPromote: ask first, or at once.'));
+        }
+        return out.join('');
+    }
+
+    let actsWired = false;
+    /** One listener for every card's buttons, in the capture phase so the card's own click does not open the file. */
+    function wireActs(post) {
+        if (actsWired) { return; }
+        actsWired = true;
+        document.addEventListener('click', e => {
+            const b = e.target && e.target.closest ? e.target.closest('[data-lib-act]') : null;
+            if (!b) { return; }
+            e.preventDefault();
+            e.stopPropagation();
+            const d = b.dataset;
+            const card = { id: d.id, base: d.base, version: Number(d.version) || 0, file: d.file, stage: d.stage };
+            if (d.libAct === 'promote') { post('libPromote', card); return; }
+            post('libEdit', Object.assign(card, { kind: d.libAct, current: { tags: d.tags || '', score: d.score || '', note: d.note || '' } }));
+        }, true);
     }
 
     /** The filter row's events: every change is one read of the library. */
@@ -90,6 +127,7 @@
         if (base) { base.addEventListener('keydown', e => { if (e.key === 'Enter') { send(); } }); }
         ['sl-kind', 'sl-success'].forEach(id => { const el = document.getElementById(id); if (el) { el.addEventListener('change', send); } });
         if (window.AFFilter) { window.AFFilter.wireMulti({ id: 'sl-stages', onChange: sel => { stagesPick = sel; send(); } }); }
+        wireActs(post);
     }
 
     window.AFStudioLib = { head: head, strip: strip, wire: wire };

@@ -24,6 +24,8 @@ export interface LibraryCard extends RecordSummary {
     /** completed_sections that are true, as a percentage of all of them */
     fill: number;
     reason: string;
+    /** X-425 — the review note (moderation.notes) a person wrote on the wall */
+    note: string;
     causes: string[];
     effects: string[];
     version: number;
@@ -80,6 +82,7 @@ export function libraryCard(item: Dict): LibraryCard {
         scoreBy: human ? 'human' : auto ? 'auto' : '',
         fill: flags.length ? Math.round(100 * flags.filter(f => f === true).length / flags.length) : 0,
         reason: String(get(item, 'failure.reason') ?? ''),
+        note: String(get(item, 'moderation.notes') ?? ''),
         causes: ids(get(item, 'relations.causal.causes')),
         effects: ids(get(item, 'relations.causal.effects')),
         version: num(item.version),

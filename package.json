@@ -9182,6 +9182,19 @@
           "default": "",
           "markdownDescription": "Which outcome the **Studio** wall shows: only the files that passed, only the failed ones, or empty = both (X-424)."
         },
+        "agentFarm.studioLibraryPromote": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "auto"
+          ],
+          "enumDescriptions": [
+            "Ask before a promotion moves the file and its record",
+            "Promote at once"
+          ],
+          "default": "ask",
+          "markdownDescription": "A promotion on the **Studio** wall (raw → asset, semi → final) moves the file into the next stage folder and its Airtable record with it. `ask` confirms first, `auto` does it at once (X-425)."
+        },
         "agentFarm.libraryEnrich": {
           "type": "string",
           "enum": [

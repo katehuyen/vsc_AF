@@ -6487,6 +6487,24 @@
       ]
     },
     {
+      "capability": "studioPanel.ts#libPromote",
+      "ui": [
+        "page:studioPanel.ts#libPromote"
+      ],
+      "ops": [
+        "media.restage"
+      ]
+    },
+    {
+      "capability": "studioPanel.ts#libEdit",
+      "ui": [
+        "page:studioPanel.ts#libEdit"
+      ],
+      "ops": [
+        "studio.library.edit"
+      ]
+    },
+    {
       "capability": "studioPanel.ts#openAsset",
       "ui": [
         "page:studioPanel.ts#openAsset"

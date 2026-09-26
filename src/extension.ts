@@ -558,6 +558,7 @@ import { clearPort, portHolder } from './core/portScan';
 import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
 import { libraryWall } from './core/studioLibrary';
+import { StudioEditRequest, writeStudioEdit } from './core/studioLibraryWrite';
 import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
@@ -26806,9 +26807,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         defaultBase: airtableLookup.defaultBase,
         lang: airtableLookup.lang
     });
+    // X-425 — a decision on the wall written onto its record, onto the version the card showed; the page never starts an engine, the op may
+    const studioSetting = (k: string): unknown => { const i = vscode.workspace.getConfiguration().inspect<unknown>(`agentFarm.${k}`); return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined; };
+    const studioEdit = (req: StudioEditRequest, start: boolean) => writeStudioEdit(b => mediaRecorder.ready(b, start ? 'auto' : 'never'), req,
+        { base: String(studioSetting('studioLibraryBase') || '') || airtableLookup.defaultBase(), lang: airtableLookup.lang() }, Date.now());
     const studioDeps = {
         extensionUri: context.extensionUri,
         libraryWall: (view: Parameters<typeof libraryWall>[0], cache: Parameters<typeof libraryWall>[1]) => studioWall(view, cache, false),
+        libraryAct: {
+            edit: (req: StudioEditRequest) => studioEdit(req, false),
+            promote: (r: { file: string; stage: string; base?: string; id?: string }) =>
+                mediaRecorder.restage({ file: r.file, stage: r.stage, base: r.base, id: r.id, reason: 'promoted in Studio', autoStart: 'never' }),
+            promoteMode: () => String(resolveFlex('studio.library.promote', { ...(studioSetting('studioLibraryPromote') ? { settings: studioSetting('studioLibraryPromote') } : {}) }).value)
+        },
         tasks: taskManagerRef as TaskManager,
         getAgents: () => agents,
         ingestFolders: () => cfg().get<{ path?: string; agent?: string }[]>('ingestFolders', []) ?? [],
@@ -26830,7 +26841,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     registerStudioLibraryOps(bridge, {
         outputsDir: () => (taskManagerRef as TaskManager).outputsDir,
-        read: studioWall
+        read: studioWall,
+        edit: studioEdit
     });
     registerMediaUploadOps(bridge, {
         upload: (file, provider) => (taskManagerRef as TaskManager).uploadMediaFile(file, provider)

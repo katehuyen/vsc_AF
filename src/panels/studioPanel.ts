@@ -17,6 +17,7 @@ import { wallItems } from '../core/studioLibrary';
 import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
 import { StudioLibraryView, studioRoots, WallReader } from './studioLibraryView';
+import { LibraryActDeps, libraryEditFromPage, libraryPromoteFromPage } from './studioLibraryActions';
 
 /**
  * Studio — the content production page.
@@ -44,6 +45,8 @@ export interface StudioDeps {
     providerKeys(): { fal: boolean; replicate: boolean };
     /** X-424 — the wall read from the library (the studio.library op's own function); absent = sidecars only */
     libraryWall?: WallReader;
+    /** X-425 — the wall's decisions written back (studio.library.edit / media.restage's own writers) */
+    libraryAct?: LibraryActDeps;
 }
 
 export class StudioPanel {
@@ -232,6 +235,12 @@ export class StudioPanel {
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'libraryView': this.lib.setView(msg.view); this.refresh(); break;
+            case 'libEdit':
+                if (this.deps.libraryAct) { await libraryEditFromPage(msg, this.deps.libraryAct, { metas: () => this.metas(), outputsDir: this.deps.tasks.outputsDir }); this.refresh(); }
+                break;
+            case 'libPromote':
+                if (this.deps.libraryAct) { await libraryPromoteFromPage(msg, this.deps.libraryAct); this.refresh(); }
+                break;
             case 'tab':
                 this.tab = str('tab') || 'pipeline';
                 this.refresh();
