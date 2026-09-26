@@ -1641,6 +1641,19 @@ Between a workflow (a fixed chain) and a mission (a leader that plans): **the ch
 
 The retry supervisor (M-13, a cut-off task deciding how it goes on) is the same core in its special case (M-48). Every choice above is a flex point: a value set in Farm Settings, the workflow form, the step card, the run or live, resolved by `core/flexResolve.ts` with its origin.
 
+## Flexibility — flex points, the resolution chain, presets {#esneklik}
+
+Every value a person chooses — a box, a setting, a bridge argument — is a **flex point** (X-366). It is declared once and resolved one way, so every surface says the same thing about it.
+
+- **The registry** (`media/afFlex.js`, X-367): each point has an id (`library.allin.unsure`, `retry.supervisor.maxCalls`…), a type, a built-in default, and its **levels** — each level with the surface it is set on and the bridge key that sets it. `test/test_flex_points.js` resolves every declared surface and bridge key against the real files and ops, and fails a surface control no point claims: a new preference without a point does not build.
+- **The chain** (`core/flexResolve.ts`, X-368), lowest to highest: `builtin` → `settings` (Farm Settings) → `agent` → `project` → `workflow` → `step` → `run` → `live`. The highest level that says something wins; the answer is the value, **where it came from**, what it beat and what was ignored and why — one sentence every surface writes (MIRROR: the value first, then its origin).
+- **Presets** (`core/flexPresets.ts`, X-369): named bundles of values applied at one level in one move (e.g. the retry supervisor's cautious / balanced / thorough); the resolution says which preset a winning value came from.
+- **Smart forms** (X-370): a range, a tri-state (ask / auto / never), a soft or hard cap, a suggestion.
+- **Farm Settings ▸ Flow & Content** (U-152, 3.667.0): every point that has a settings level, derived from the registry, with its origin and the presets; bridge `flex.*` / `presets.*` (`flex.set` writes the settings level).
+- **Merged field by field** where a value is an object (U-151, 3.686.0): the retry supervisor keeps only the fields a level said, so a task naming only its engine still takes the calls and budget from Farm Settings.
+
+A choice the system already lets the user make at the moment of use is a flex point, not a question: nobody is asked for it in advance.
+
 ## Missions {#missions}
 
 Workflows are pre-drawn: every step, branch and jump is fixed before the run starts. A **Mission** (2.62.0) is the opposite — you give a **goal**, a **lead agent** and a **team**, and the next step is decided **at run time**, round by round, from the previous results. "An orchestrator analyzes, the coder implements, the reviewer reviews, the tester runs the tests, and the lead merges it all" — without drawing that as a DAG first. A failed delegation doesn't kill the mission; it's information the lead re-plans on.
