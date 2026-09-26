@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.683.0 - The gallery's media moves into the library (X-426) (2026-09-27)
+
+- **No media lives only in the extension's folder any more.** A one-time
+  backfill takes every file a gallery sidecar (`.media.json`) names, files
+  it into the library and gives it its Airtable record; the sidecar follows
+  it to the new path, so the Studio's doors keep working.
+- **Your decisions travel with it.** A generation goes to `semi`, one you
+  dropped in the Studio to `raw` with the drop written on its record, one
+  you kept to `semi` with the keep written, an external file to `source`.
+- **Nothing is filed twice.** A file the database already has - the same
+  path or the same bytes - stays where it is; a file already in a stage
+  folder without a record is recorded where it lies.
+- **See it before it happens.** Bridge `studio.library.backfill` is a dry
+  run until you say `apply=true`: what would be filed where, what is already
+  recorded, what is missing. The engine has to answer - without it no file
+  can be matched to its record, so nothing is done and it says so. A second
+  run finds nothing to do.
+
 ## 3.682.0 - The Studio writes to the library (X-425) (2026-09-27)
 
 - **A decision on the wall lands on the record.** ✓ Keep, ✗ Drop, tags, a

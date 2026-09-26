@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { BridgeRegistry, need, optBool, optStr } from './bridge';
 import { readMediaMetas } from './media';
+import { BackfillReport } from './mediaBackfill';
 import { CacheEntry, cacheOf, LibraryWall, STUDIO_VIEW_KEYS, StudioView, viewRefusal } from './studioLibrary';
 import { editRefusal, StudioEditKind, StudioEditOutcome, StudioEditRequest } from './studioLibraryWrite';
 
@@ -16,6 +17,8 @@ export interface StudioLibraryOpsDeps {
     read(view: StudioView, cache: CacheEntry[], start: boolean): Promise<LibraryWall>;
     /** X-425 — one edit onto a record, the page's own writer; start as above */
     edit(req: StudioEditRequest, start: boolean): Promise<StudioEditOutcome>;
+    /** X-426 — the sidecar files into the library; apply=false is the dry run */
+    backfill(a: { base?: string; lang?: string; apply: boolean; start: boolean }): Promise<BackfillReport>;
 }
 
 export function registerStudioLibraryOps(bridge: BridgeRegistry, deps: StudioLibraryOpsDeps): void {
@@ -43,6 +46,15 @@ export function registerStudioLibraryOps(bridge: BridgeRegistry, deps: StudioLib
                 const no = editRefusal(req);
                 need(!no, no);
                 return deps.edit(req, optBool(args, 'autoStart'));
+            }
+        },
+        {
+            op: 'studio.library.backfill',
+            describe: 'X-426 — PUT THE MEDIA THAT LIVES ONLY IN THE EXTENSION\'S OUTPUTS FOLDER INTO THE LIBRARY, once: every file a gallery sidecar (<taskId>.media.json) names is filed into <root>\\media_<base>\\<type>\\<stage>\\ and recorded (as media.record), and the sidecar follows it to its new path. A file the database already has — same path or same bytes (sha256) — stays where it is (recorded); one already in a stage folder with no record is recorded where it is (record). Stage by role: a generation → semi, one dropped in Studio → raw (the drop written as the wall\'s reject), one kept → semi with the keep written as select, an external/ingested file → source. DRY RUN BY DEFAULT: apply=true moves and writes. The engine must answer (it is how a file is matched to its record) — down → nothing done, said. A second run finds nothing to do. args: base? (default the setting agentFarm.studioLibraryBase, else the Airtable page\'s default), lang?, apply? (default false), autoStart? (true = a stopped engine may be started). Returns {base, lang, dryRun, down?, counts {recorded, file, record, missing, skipped}, items [{file, taskId, action, why, role?, stage?, target?, decision?, id?, pending?, error?}], lines}.',
+            handler: async (args) => {
+                const base = optStr(args, 'base');
+                need(!base || /^[\w.\- ]{1,80}$/.test(base), 'base is a plain name');
+                return deps.backfill({ base, lang: optStr(args, 'lang'), apply: optBool(args, 'apply'), start: optBool(args, 'autoStart') });
             }
         }
     ]);

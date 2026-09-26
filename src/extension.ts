@@ -10,7 +10,8 @@ import {
 } from './core/airtable';
 import { fileInto, isRole, libraryInfo, MediaRole, planLibrary } from './core/mediaLibrary';
 import { startNamedInstance } from './core/airtableStart';
-import { AUTO_STARTS, AutoStart, MediaRecorder } from './core/mediaRecorder';
+import { AUTO_STARTS, AutoStart, MediaRecorder, sha256File } from './core/mediaRecorder';
+import { backfillLibrary } from './core/mediaBackfill';
 import { MediaEnricher } from './core/mediaEnricher';
 import { AirtableQuery, InputLookupDeps, findRecords, lookupInputs, queryRefusal, resolveQuery } from './core/airtableInput';
 import { EnrichSettings, EnrichSpec, enrichRefusal, resolveEnrich } from './core/enrichSpec';
@@ -26842,7 +26843,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerStudioLibraryOps(bridge, {
         outputsDir: () => (taskManagerRef as TaskManager).outputsDir,
         read: studioWall,
-        edit: studioEdit
+        edit: studioEdit,
+        backfill: a => {
+            const outputsDir = (taskManagerRef as TaskManager).outputsDir;
+            return backfillLibrary(a.base || String(studioSetting('studioLibraryBase') || '') || airtableLookup.defaultBase(), a.lang || airtableLookup.lang(), a.apply, {
+                outputsDir, roots: loadStore(context.globalStorageUri.fsPath).mediaRoots.map(expandRoot), metas: readMediaMetas(outputsDir),
+                list: async (b, l) => { const c = await mediaRecorder.ready(b, a.start ? 'auto' : 'never'); return 'down' in c ? c : c.listItems('media', l); },
+                hash: sha256File, exists: p => fs.existsSync(p), record: r => mediaRecorder.record(r),
+                decide: (id, kind, b, l) => studioEdit({ id, kind, base: b, lang: l }, false)
+            });
+        }
     });
     registerMediaUploadOps(bridge, {
         upload: (file, provider) => (taskManagerRef as TaskManager).uploadMediaFile(file, provider)
