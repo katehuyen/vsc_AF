@@ -18,12 +18,12 @@ const { normalizeSupervisor, supervisorDraft } = require(path.join(ROOT, 'out', 
 
 console.log('\n== the draft is text, and an untouched box says nothing ==');
 {
-    eq('blank', S.blank(), { engine: '', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: 'smart' });
+    eq('blank', S.blank(), { engine: '', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: '' });
     eq('no engine = no policy (the host makes that smart)', S.toPolicy(S.blank()), undefined);
-    eq('only the engine named', S.toPolicy({ engine: 'codex' }), { engine: 'codex', lowConfidence: 'smart' });
+    eq('only the engine named', S.toPolicy({ engine: 'codex' }), { engine: 'codex' });
     eq('every box said', S.toPolicy({ engine: 'claude', model: 'haiku', maxCalls: '3', budgetUsd: '0.5', minConfidence: '0.7', lowConfidence: 'park' }),
         { engine: 'claude', model: 'haiku', maxCalls: 3, budgetUsd: 0.5, minConfidence: 0.7, lowConfidence: 'park' });
-    eq('a zero budget is no money cap, not a cap of zero', S.toPolicy({ engine: 'claude', budgetUsd: '0' }), { engine: 'claude', lowConfidence: 'smart' });
+    eq('a zero budget is no money cap, not a cap of zero', S.toPolicy({ engine: 'claude', budgetUsd: '0' }), { engine: 'claude' });
 }
 
 console.log('\n== a box out of range is refused where it was typed ==');
@@ -50,7 +50,7 @@ console.log('\n== read takes only the boxes on the page ==');
 {
     const page = { 'nt-supengine': 'codex', 'nt-supcalls': '3' };
     eq('absent boxes keep the draft', S.read({ model: 'kept' }, id => page[id]),
-        { engine: 'codex', model: 'kept', maxCalls: '3', budgetUsd: '', minConfidence: '', lowConfidence: 'smart' });
+        { engine: 'codex', model: 'kept', maxCalls: '3', budgetUsd: '', minConfidence: '', lowConfidence: '' });
     eq('six ids, one per box', S.IDS.length, 6);
 }
 
@@ -60,7 +60,10 @@ console.log('\n== U-151: an empty box inherits Farm Settings, the same rule on b
     const up = { engine: 'claude', maxCalls: 4 };
     eq('no engine here, one in Farm Settings: nothing wrong', S.error({}, up), '');
     ok('no engine anywhere: refused, naming both places', /Farm Settings/.test(S.error({}, {})));
-    eq('only the boxes said travel, never the inherited engine', S.toPolicy({ minConfidence: '0.7' }, up), { minConfidence: 0.7, lowConfidence: 'smart' });
+    eq('only the boxes said travel, never the inherited engine', S.toPolicy({ minConfidence: '0.7' }, up), { minConfidence: 0.7 });
+    const fb = resolveRetry(normalizeRetry({ max: 1, behavior: 'supervisor', supervisor: S.toPolicy(S.blank(), up) }),
+        normalizeRetry({ supervisor: { engine: 'claude', lowConfidence: 'park' } })).supervisor;
+    eq('‼️ an untouched "if it is not sure" takes Farm Settings\' answer instead of stating smart', fb.lowConfidence, 'park');
     eq('no engine anywhere is still no policy', S.toPolicy({ minConfidence: '0.7' }, {}), undefined);
     const task = { max: 1, behavior: 'supervisor', supervisor: S.toPolicy({ minConfidence: '0.7' }, up) };
     eq('the bridge accepts what the form accepts', retryRefusal(task, up), '');
@@ -94,7 +97,13 @@ console.log('\n== U-151: the boxes draw the inherited value faint, MIRROR first 
     eq('built-in when nothing says', [W.valueLine('maxCalls', '', {}), W.valueLine('budgetUsd', '', {})], ['2 — built-in', 'none — built-in']);
     const label = { t: 'old\n\nThe engine…', getAttribute() { return this.t; }, setAttribute(k, v) { this.t = v; } };
     const cls = new Set(['inh']);
-    const el = { id: 'nt-supengine', value: 'codex', closest: () => label, classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) } };
+    ok('the fallback leads with what it inherits, faint', /<select id="nt-supfallback" class="inh"><option value="" selected>↳ continue \(smart\) — built-in<\/option>/.test(html));
+    const parked = W.row(W.blank(), engines, C, { engine: 'claude', lowConfidence: 'park' });
+    ok('…and names Farm Settings when that is where it comes from', /<option value="" selected>↳ hold, tell me — Farm Settings<\/option>/.test(parked)
+        && /title="hold, tell me — inherited from Farm Settings\n\nWhat happens/.test(parked));
+    const said = W.row({ engine: 'claude', lowConfidence: 'stop' }, engines, C, { lowConfidence: 'park' });
+    ok('a stated fallback is solid and says so', /<select id="nt-supfallback">/.test(said) && /title="no retry — set on this task/.test(said));
+    const el = { id: 'nt-supengine', tagName: 'SELECT', value: 'codex', closest: () => label, classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) } };
     W.retitle(el, { engine: 'claude' });
     eq('‼️ the tip follows the control after a change', label.t, 'codex — set on this task\n\nThe engine…');
     ok('and the faint goes with the inheritance', !cls.has('inh'));

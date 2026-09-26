@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.688.0 - "If it is not sure" inherits too (U-151, part 2b) (2026-09-27)
+
+- **The supervisor's "If it is not sure" no longer overrides your default.**
+  It always stated a value (continue, smart), so what you chose in Farm
+  Settings never reached a task opened from the form. It now leads with
+  "↳ <what it inherits> — Farm Settings" (or "— built-in"), drawn faint;
+  left there, the task says nothing and your default decides. Its hover
+  opens with the value and where it comes from, like the other boxes.
+
 ## 3.687.0 - The supervisor boxes show what they inherit (U-151, part 2) (2026-09-27)
 
 - **An empty supervisor engine is allowed when Farm Settings names one.**

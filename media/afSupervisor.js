@@ -12,10 +12,12 @@
         ['stop', 'no retry']
     ];
 
-    /** The blank draft: every box has a home, so a seed and a fresh form are one shape. */
+    /** The blank draft: every box has a home, so a seed and a fresh form are one shape. '' = inherited. */
     function blank() {
-        return { engine: '', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: 'smart' };
+        return { engine: '', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: '' };
     }
+
+    const fallbackWord = v => { const f = FALLBACKS.find(x => x[0] === v); return f ? f[1] : String(v); };
 
     function num(s, lo, hi) {
         const t = String(s == null ? '' : s).trim();
@@ -56,20 +58,29 @@
         if (budget) { out.budgetUsd = budget; }
         const conf = num(s.minConfidence, 0, 1);
         if (conf !== undefined) { out.minConfidence = conf; }
-        out.lowConfidence = FALLBACKS.some(f => f[0] === s.lowConfidence) ? s.lowConfidence : 'smart';
+        if (FALLBACKS.some(f => f[0] === s.lowConfidence)) { out.lowConfidence = s.lowConfidence; }
         return out;
     }
 
     /** MIRROR's first line: what the box holds now and where it comes from. */
     function valueLine(key, value, up) {
+        const word = v => (key === 'lowConfidence' ? fallbackWord(v) : String(v));
         const own = String(value == null ? '' : value).trim();
-        if (own) { return own + ' — set on this task'; }
-        if (up && up[key] !== undefined && up[key] !== '') { return String(up[key]) + ' — inherited from Farm Settings'; }
+        if (own) { return word(own) + ' — set on this task'; }
+        if (up && up[key] !== undefined && up[key] !== '') { return word(up[key]) + ' — inherited from Farm Settings'; }
         const p = window.AFFlex.point('retry.supervisor.' + key);
-        return (p && p.default !== '' && p.default !== 0 ? String(p.default) : 'none') + ' — built-in';
+        return (p && p.default !== '' && p.default !== 0 ? word(p.default) : 'none') + ' — built-in';
     }
 
-    const KEY_OF = { 'nt-supengine': 'engine', 'nt-supmodel': 'model', 'nt-supcalls': 'maxCalls', 'nt-supbudget': 'budgetUsd', 'nt-supconf': 'minConfidence' };
+    /** The first line of an empty select: what it inherits, and from where. */
+    function inheritLabel(key, up) {
+        return '↳ ' + valueLine(key, '', up).replace(' — inherited from Farm Settings', ' — Farm Settings');
+    }
+
+    const KEY_OF = {
+        'nt-supengine': 'engine', 'nt-supmodel': 'model', 'nt-supcalls': 'maxCalls',
+        'nt-supbudget': 'budgetUsd', 'nt-supconf': 'minConfidence', 'nt-supfallback': 'lowConfidence'
+    };
 
     /** After a change: the tooltip's first line follows the box, and the inherited engine stays faint only while it is inherited. */
     function retitle(el, inh) {
@@ -79,7 +90,7 @@
         const t = label.getAttribute('title') || '';
         const cut = t.indexOf('\n\n');
         label.setAttribute('title', valueLine(key, el.value, inh || {}) + (cut >= 0 ? t.slice(cut) : ''));
-        if (key === 'engine') { el.classList.toggle('inh', !el.value); }
+        if (el.tagName === 'SELECT') { el.classList.toggle('inh', !el.value); }
     }
 
     /**
@@ -99,9 +110,11 @@
                 selected: e.id === s.engine, disabled: !e.ready, detail: e.next || ''
             })).join('');
         const mirror = (value, key) => valueLine(key, value, up);
-        // X-370 — a tri point: ask / auto / never, the stored values from the flex registry
+        // X-370 — a tri point: ask / auto / never, the stored values from the flex registry;
+        // U-151 — led by the inherited state, so an untouched box says nothing
         const fb = window.AFFlexForms.triSelect('nt-supfallback', window.AFFlex.point('retry.supervisor.lowConfidence').states,
-            s.lowConfidence, C, { ask: 'hold, tell me', auto: 'continue (smart)', never: 'no retry' });
+            s.lowConfidence, C, { ask: 'hold, tell me', auto: 'continue (smart)', never: 'no retry' },
+            inheritLabel('lowConfidence', up));
         const box = (id, key, label, value, ph, tip) => {
             const place = up[key] !== undefined ? String(up[key]) + ' — Farm Settings' : ph;
             return `<label class="ntf" title="${C.esc(mirror(value, key) + '\n\n' + tip)}"><span>${label}</span>`
@@ -121,7 +134,7 @@
                 'Dollars across all its calls for this task. Empty = no money cap (the call cap still holds). Its cost is recorded as its own run, never mixed into the task’s.')
             + box('supconf', 'minConfidence', 'Min confidence', s.minConfidence, '0.6',
                 'A decision it is less sure of than this (0–1) is not applied; the choice below is used instead.')
-            + `<label class="ntf" title="${C.esc('What happens when its answer is below the confidence above, or it cannot be asked at all (its own limit, a timeout, a malformed answer).')}"><span>If it is not sure</span>`
+            + `<label class="ntf" title="${C.esc(mirror(s.lowConfidence, 'lowConfidence') + '\n\n' + 'What happens when its answer is below the confidence above, or it cannot be asked at all (its own limit, a timeout, a malformed answer).')}"><span>If it is not sure</span>`
             + `${fb}</label>`;
     }
 

@@ -91,7 +91,7 @@ ok('a task saying supervisor with no engine takes the default\'s engine', R.reso
     && R.resolveRetry(R.normalizeRetry({ behavior: 'supervisor' }), user).supervisor.engine === 'claude');
 ok('what nobody said is the built-in', R.resolveRetry(said).supervisor.maxCalls === S.SUPERVISOR_DEFAULT_CALLS && R.resolveRetry(said).supervisor.minConfidence === S.SUPERVISOR_DEFAULT_CONFIDENCE);
 eq('the form shows only what the task said — an inherited value stays blank, so saving again keeps it inherited',
-    S.supervisorDraft({ engine: 'codex' }), { engine: 'codex', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: 'smart' });
+    S.supervisorDraft({ engine: 'codex' }), { engine: 'codex', model: '', maxCalls: '', budgetUsd: '', minConfidence: '', lowConfidence: '' });
 ok('the bridge/form refusal names the missing engine', /needs supervisor\.engine/.test(R.retryRefusal({ behavior: 'supervisor' })) && R.retryRefusal({ behavior: 'supervisor', supervisor: { engine: 'codex' } }) === '');
 ok('it falls through from the default policy', R.resolveRetry({ max: 2 }, pol).behavior === 'supervisor' && R.resolveRetry({ max: 2 }, pol).supervisor.engine === 'codex');
 const LIMIT = 'Claude usage limit reached — resets 7pm';

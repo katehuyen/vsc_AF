@@ -114,10 +114,11 @@
 
     /* ---------- the page ---------- */
 
-    /** A tri point as a select: each state named, the stored value as the option value. */
-    function triSelect(id, states, stored, C, detail) {
+    /** A tri point as a select: each state named, the stored value as the option value. `inherit` = the label of a leading '' option (say nothing, inherit). */
+    function triSelect(id, states, stored, C, detail, inherit) {
         const d = detail || {};
-        return `<select id="${C.esc(id)}">` + TRI.map(s => C.option(states[s],
+        const up = inherit ? C.option('', inherit, { selected: !stored }) : '';
+        return `<select id="${C.esc(id)}"${up && !stored ? ' class="inh"' : ''}>` + up + TRI.map(s => C.option(states[s],
             `${TRI_LABEL[s]} — ${d[s] || states[s]}`, { selected: states[s] === stored, detail: d[s] || '' })).join('') + '</select>';
     }
 

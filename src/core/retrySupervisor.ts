@@ -99,7 +99,7 @@ export function supervisorDraft(raw: unknown): Record<string, string> {
     return {
         engine: s?.engine ?? '', model: s?.model ?? '',
         maxCalls: s?.maxCalls !== undefined ? String(s.maxCalls) : '', budgetUsd: s?.budgetUsd !== undefined ? String(s.budgetUsd) : '',
-        minConfidence: s?.minConfidence !== undefined ? String(s.minConfidence) : '', lowConfidence: s?.lowConfidence ?? 'smart'
+        minConfidence: s?.minConfidence !== undefined ? String(s.minConfidence) : '', lowConfidence: s?.lowConfidence ?? ''
     };
 }
 
