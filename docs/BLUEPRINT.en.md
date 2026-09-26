@@ -1624,6 +1624,23 @@ You don't need to delete and rebuild an installed chain (0.7.0):
 
 The Live Timeline now has a **Workflow runs** section: every chain run in the last 4 hours in its own strip, with steps as numbered blocks — green = done, blue = running, red = failed. Hover over a block: step name, agent and duration. You literally watch one agent hand work off to another.
 
+## Supervised Workflow {#denetimli-akis}
+
+Between a workflow (a fixed chain) and a mission (a leader that plans): **the chain stays the skeleton, and a supervisor steers it at the points you choose** (X-365, waves G and H). Nothing here is on unless a workflow says so; a workflow that says nothing runs exactly as before — the *mechanical* path.
+
+| Piece | What it does |
+|---|---|
+| **Checkpoint step** (M-43) | A step with no agent. The run stops there and the supervisor is asked to route it: `proceed` · `retry` · `jump` · `insert` (an agent or an approval step) · `ask_user` · `stop`. Per checkpoint: `message` (what to look at), `allowed` actions, `maxInsert` (0–5), `insertKinds`, `maxRetries` per step, `minConfidence` (a decision below it is not applied). The decision is JSON, validated before it is applied. |
+| **Wake** (M-45) | What wakes the supervisor after a step ends: `mechanical` (never — the default), `smart` (every step), `hybrid` (a failed quality check, a failed step, the run past $2), or a list of conditions over `workflows.wakeFields`. Nothing fires → the mechanical path; something fires → the supervisor decides as at a checkpoint, and the row names the condition. |
+| **The supervisor** (M-44) | One persistent session per run, with a call ceiling, a budget and a mechanical fall-back when it cannot or should not be asked. |
+| **Feeding the flow** (M-35) | Inputs (`workflows.run {inputs}`, a trigger's payload), the run's board (`{steps.<id>.json.x}`, `{run.x}`), for-each fan-out over a list, local files uploaded to a provider, a modality-aware judge. |
+| **Live steering** (M-46) | A person can steer a running flow and change its settings live (Needs you, Telegram). |
+| **Missions** (M-47) | A mission's `run_workflow` hands a flow its inputs; the supervisor escalates to the mission's leader. |
+| **One condition engine** (X-371) | Wake conditions and sentry policies share `policyEngine`. |
+| **Supervisor strip** (U-153) | The run page shows each decision, why, what it cost and where it came from. |
+
+The retry supervisor (M-13, a cut-off task deciding how it goes on) is the same core in its special case (M-48). Every choice above is a flex point: a value set in Farm Settings, the workflow form, the step card, the run or live, resolved by `core/flexResolve.ts` with its origin.
+
 ## Missions {#missions}
 
 Workflows are pre-drawn: every step, branch and jump is fixed before the run starts. A **Mission** (2.62.0) is the opposite — you give a **goal**, a **lead agent** and a **team**, and the next step is decided **at run time**, round by round, from the previous results. "An orchestrator analyzes, the coder implements, the reviewer reviews, the tester runs the tests, and the lead merges it all" — without drawing that as a DAG first. A failed delegation doesn't kill the mission; it's information the lead re-plans on.
