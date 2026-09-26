@@ -163,6 +163,47 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 - ✅ **F3 — Sağlayıcı retry/backoff** (2.35.0): `resilientFetch` (media.ts) — poll tarafında ağ hatası/5xx/429 artan beklemelerle (pollMs·2ⁿ, 30sn tavan, 3 deneme) yeniden denenir, 4xx anında düşer, ASLA fırlatmaz; fal/replicate/webhook-poll döngülerinin üçü de kullanır. Submit'te retry YOK (çifte ücret riski) ama ağ fırlatması dürüst `ok:false`'a çevrilir. Ek: runMediaStep/reattach provider çağrıları try/catch'e alındı — eskiden poll sırasındaki ağ hatası unhandled rejection olup task'ı sonsuza dek 'running' bırakıyordu (gizli bug, F3'te kapandı); artık adım onFail yoluyla dürüstçe düşer. *Test: 9/9 (kesintili mock: blip toleransı fal/replicate/webhook, 4xx fail-fast + tek istek, submit tek istek, kapalı porta karşı crash yok).*
 - *Dokunma riski: yüksek dikkat — tasks.ts'in kalbi; küçük, izole PR'lar + mevcut 4 test takımı (lifecycle/approval/parallel/taskstats) yeşil kalmak zorunda. (F1+F2'de tüm suite 376 yeşil.)*
 
+### İçerik üretimi ve denetimli akış (X-365 şemsiyesi) — dalgalar F · G · H · I
+
+> **Hedef:** akış akar, akıllı yönetici kontrol noktasında yönlendirir; her tercih bir **esneme noktasıdır** (ayar → proje → akış → adım → koşu → canlı); üretilen her medya kendi formuyla doğru veri tabanına ve aşama klasörüne girer. Bu dört dalga X-365 şemsiyesinin parçalarıdır; yukarıdaki eski "Dalga F" (dayanıklılık, 2.35.0) ile karıştırılmasın diye burada **F (esneklik)** diye anılır. Durum 2026-09-27 (3.686.0).
+
+#### 🔀 Dalga F (esneklik) — Esneklik altyapısı (X-366)
+- ✅ X-367 Esneme noktası kaydı (`media/afFlex.js`) + parite testi — her noktanın her seviyesinin yüzeyi ve köprü anahtarı gerçekten var.
+- ✅ X-368 Tercih çözümleyici ve köken (`core/flexResolve.ts` — değer, nereden geldiği, neyi ezdiği tek cümlede).
+- ✅ X-369 Ortak ön ayar kütüphanesi (`core/flexPresets.ts`).
+- ✅ X-370 Akıllı esneme biçimleri — aralık, üç durum, yumuşak/sert tavan, öneri.
+- ✅ U-152 Farm Settings ▸ Akış ve İçerik bölümü + köprü `flex.*` / `presets.*` (3.667.0).
+- 🔀 U-151 Kullanım anı seçicileri — 1. parça (retry supervisor alan alan kalıtım, 3.686.0) tamam; UI (kalıtılan/üzerine yazılan çipler, ↑ varsayılan yap / ↺ kalıtılana dön, "Run with…" formu) açık.
+
+#### ☑ Dalga G — Akışı beslemek (M-35) — TAMAM
+- ✅ M-38 Workflow girdileri + tetik → workflow yükü + `workflows.run {inputs}`.
+- ✅ M-39 Koşu belleği (blackboard) + `{steps.<id>.json.x}` `{run.x}` şablonları.
+- ✅ M-40 forEach adımı (listeye göre dinamik fan-out).
+- ✅ M-41 Yerel dosya → sağlayıcı yükleme + `media.upload`.
+- ✅ M-42 Modaliteye duyarlı hakem (videoya sahte PASS verilmez).
+
+#### ☑ Dalga H — Akıllı yönetici / denetimli akış (M-36) — TAMAM
+- ✅ M-43 Checkpoint adımı + yönetici karar sözleşmesi + doğrulayıcı (proceed · retry · jump · insert · ask_user · stop).
+- ✅ M-44 Kalıcı yönetici oturumu + tavan / bütçe / mekanik düşüş.
+- ✅ M-45 Olayla uyanma — mekanik / akıllı / hibrit ön ayarları + koşul düzenleyici.
+- ✅ M-46 Koşan akışa canlı insan yönlendirmesi ve canlı ayar.
+- ✅ M-47 Misyon entegrasyonu — `run_workflow` girdi verir, yönetici lidere yükselir.
+- ✅ M-48 M-13 retry supervisor'ı denetimli akış çekirdeğinin özel hâli.
+- ✅ X-371 Tek koşul motoru (`policyEngine`), iki sözlük.
+- ✅ U-153 Koşu sayfasında yönetici şeridi — karar, neden, maliyet, köken.
+
+#### 🔀 Dalga I — İçerik hattı (M-37)
+- ✅ M-49 Tool adımı + ffmpeg reçeteleri (sıfır token yerel medya işleri).
+- ✅ X-372 Airtable medya entegrasyonu (X-416…X-426, 3.672–3.685): kütüphane yerleşimi, otomatik kayıt, akıllı form, Airtable girdisi, Studio okur/yazar + geri doldurma, all_in işleme, uçtan uca kabul.
+- 🔀 X-373 Bu belgenin canlandırılması + BLUEPRINT "Denetimli Akış" ve "Esneklik" bölümleri.
+- ⏸️ M-50 Prodüksiyon marka kiti (karakter, stil, ses, logo kuralları, oranlar) + `{brand.*}`.
+- ⏸️ M-51 İçerik takvimi (vault) + yayın adımı + platform bağlantı yuvaları.
+- ⏸️ M-52 Analitik geri besleme — platform metrikleri → Airtable `marketing` → fikir ve yönetici.
+- ⏸️ M-53 İçerik ekibi (youtuber = showrunner) + 3 reçete.
+- ⏸️ M-54 Tarayıcı reçete kitabı (Flow, Higgsfield web) + Higgsfield skill/MCP değerlendirmesi.
+- ⏸️ M-55 Dikey dilim — 34 sn video hattı kabul testi (sıfır kopyala-yapıştır).
+- ⏸️ A-27 Maliyet optimizasyonu — aralık içinde yüksel/alçal, ucuz paralel, marjinal faydada dur.
+
 ---
 
 ## 5. Çoklu-CLI Oturumları — Analiz: Temiz Genişler mi, Bozar mı?
@@ -197,5 +238,5 @@ Token bütçe uyarıları var; medya maliyeti gösteriliyor ama **eşik aşımı
 
 - Her dalga bir sürüme bağlanır; bitince bu dosyada kutusu ☑ yapılır, CHANGELOG ve BLUEPRINT'e bölüm eklenir.
 - Dalga içi kapsam değişirse bu belge **önce** güncellenir (belge = sözleşme).
-- Öncelik değişiklikleri kullanıcı kararıdır; varsayılan sıra: **A → B → C → D → E → F** (E, kullanıcı isterse öne çekilebilir — bağımsızdır).
+- Öncelik değişiklikleri kullanıcı kararıdır; varsayılan sıra: **A → B → C → D → E → F** (E, kullanıcı isterse öne çekilebilir — bağımsızdır). X-365 dalgalarının sırası projenin `Backlog.md`'sindeki satır sırasıdır; her kalem kapanırken buradaki satırı ✅ yapar.
 - Her dalganın doğrulaması: mevcut test takımları yeşil + dalgaya özel ad-hoc test + gerçek bir mini-üretim senaryosu (1 proje, 2 sahne) ile uçtan uca deneme.
