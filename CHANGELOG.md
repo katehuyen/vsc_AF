@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.684.0 - The all_in waiting area is processed (X-422) (2026-09-27)
+
+- **Drop a file into `all_in`, and it finds its stage.** Each image in a
+  media library's `all_in` folder is looked at by claude, each video by agy
+  (its frames), and given a stage - source, raw, semi or final. Never
+  asset: that is your promotion.
+- **Only what the model is sure of moves.** A sure file is filed into its
+  stage folder, recorded, and its form filled - about two model turns a
+  file. One the model is not sure of, an audio file (no model here can
+  hear) and a file that is not media stay where they are.
+- **You are asked, or it waits.** Farm setting `agentFarm.allInUnsure`:
+  `ask` posts one Notices question listing what stayed - answer with a
+  stage per file; `wait` leaves them for the next pass.
+- **When it runs is yours too.** `agentFarm.allInWhen`: `daily` - the
+  manager's daily media batch runs it; `manual` - only a call by hand does.
+- **Bridge `media.allin`** is a dry run until `apply=true`: what is
+  waiting, and which model would look at it. A base whose engine does not
+  answer is left alone and said.
+
 ## 3.683.0 - The gallery's media moves into the library (X-426) (2026-09-27)
 
 - **No media lives only in the extension's folder any more.** A one-time

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.683.0",
+  "version": "3.684.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9194,6 +9194,32 @@
           ],
           "default": "ask",
           "markdownDescription": "A promotion on the **Studio** wall (raw → asset, semi → final) moves the file into the next stage folder and its Airtable record with it. `ask` confirms first, `auto` does it at once (X-425)."
+        },
+        "agentFarm.allInUnsure": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "wait"
+          ],
+          "enumDescriptions": [
+            "Leave it in all_in and ask on Notices",
+            "Leave it in all_in for the next pass, without a question"
+          ],
+          "default": "ask",
+          "markdownDescription": "A file in a media library's `all_in` waiting area that the model is not sure of (or cannot open, or that is not media) stays where it is. `ask` posts one Notices question listing them, `wait` leaves them for the next pass. The bridge op `media.allin` can override it per pass (X-422)."
+        },
+        "agentFarm.allInWhen": {
+          "type": "string",
+          "enum": [
+            "daily",
+            "manual"
+          ],
+          "enumDescriptions": [
+            "The manager's daily media batch processes all_in",
+            "Only a call by hand (bridge media.allin) processes it"
+          ],
+          "default": "daily",
+          "markdownDescription": "When a media library's `all_in` waiting area is processed — each file looked at by a model (about two model turns a file: its stage, then its form). `daily`: the manager's daily media batch runs it. `manual`: only a call by hand does (X-422)."
         },
         "agentFarm.libraryEnrich": {
           "type": "string",

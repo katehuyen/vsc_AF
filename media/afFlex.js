@@ -252,6 +252,16 @@
         slPoint('success', 'Studio wall — outcome', 'enum', '', 'studioLibrarySuccess', { options: ['', 'passed', 'failed'], emptyLabel: 'passed + failed' }),
         // X-425 — a promotion on the wall moves a file and its record: asked first, or done at once
         setting('studio.library.promote', 'Studio wall — promotion', 'enum', 'ask', 'agentFarm.studioLibraryPromote', { options: ['ask', 'auto'] }),
+        // X-422 — a file in all_in the model is not sure of: asked on Notices, or left for the next pass
+        {
+            id: 'library.allin.unsure', label: 'all_in — a file the model is not sure of', type: 'enum', default: 'ask', remembered: false, options: ['ask', 'wait'],
+            levels: {
+                settings: { surface: 'setting:agentFarm.allInUnsure', bridge: 'settings.set:agentFarm.allInUnsure' },
+                run: { surface: 'src/core/allInOps.ts#unsure', bridge: 'media.allin:unsure' }
+            }
+        },
+        // X-422 — whether the manager's daily media batch processes all_in, or only a call by hand does
+        setting('library.allin.when', 'all_in — when it is processed', 'enum', 'daily', 'agentFarm.allInWhen', { options: ['daily', 'manual'] }),
         // X-419 — a model fills the records' meaning (src/core/enrichSpec.ts)
         enPoint('when', 'Enrich — when', 'enum', 'end', 'libraryEnrich', 'When', { options: ['end', 'record', 'never'] }),
         enPoint('scope', 'Enrich — which files', 'enum', 'final-failed', 'libraryEnrichScope', 'Scope', { options: ['final-failed', 'final', 'all'] }),

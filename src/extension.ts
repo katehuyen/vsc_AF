@@ -12,6 +12,8 @@ import { fileInto, isRole, libraryInfo, MediaRole, planLibrary } from './core/me
 import { startNamedInstance } from './core/airtableStart';
 import { AUTO_STARTS, AutoStart, MediaRecorder, sha256File } from './core/mediaRecorder';
 import { backfillLibrary } from './core/mediaBackfill';
+import { intakeAllIn } from './core/allInIntake';
+import { registerAllInOps } from './core/allInOps';
 import { MediaEnricher } from './core/mediaEnricher';
 import { AirtableQuery, InputLookupDeps, findRecords, lookupInputs, queryRefusal, resolveQuery } from './core/airtableInput';
 import { EnrichSettings, EnrichSpec, enrichRefusal, resolveEnrich } from './core/enrichSpec';
@@ -26851,6 +26853,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 list: async (b, l) => { const c = await mediaRecorder.ready(b, a.start ? 'auto' : 'never'); return 'down' in c ? c : c.listItems('media', l); },
                 hash: sha256File, exists: p => fs.existsSync(p), record: r => mediaRecorder.record(r),
                 decide: (id, kind, b, l) => studioEdit({ id, kind, base: b, lang: l }, false)
+            });
+        }
+    });
+    // X-422 — the all_in waiting area: a model gives each file its stage, the sure ones are filed, recorded and their form filled
+    registerAllInOps(bridge, {
+        setting: () => studioSetting('allInUnsure'),
+        when: () => studioSetting('allInWhen'),
+        run: a => {
+            const st = loadStore(context.globalStorageUri.fsPath);
+            const lang = a.lang || st.defaultLang || 'TR';
+            const { plan } = resolveEnrich(a.spec as EnrichSpec, enrichSettings());
+            return intakeAllIn({ base: a.base, apply: a.apply, unsure: a.unsure, plan, lang }, {
+                roots: st.mediaRoots.map(expandRoot),
+                listDir: dir => fs.readdirSync(dir, { withFileTypes: true }).map(e => ({ name: e.name, dir: e.isDirectory() })),
+                up: async b => { const c = await mediaRecorder.ready(b, a.start ? 'auto' : 'never'); return 'down' in c ? c.down : ''; },
+                exec: w => execOneShot(w), record: r => mediaRecorder.record(r),
+                enrich: (b, id) => mediaEnricher.enrich({ base: b, lang, id, plan, autoStart: 'never' }),
+                ask: (title, body) => (noticesStore.recentDuplicate({ title, body }) ? undefined : noticesStore.add({ title, type: 'question', body }).id)
             });
         }
     });
