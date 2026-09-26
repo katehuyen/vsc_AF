@@ -81,6 +81,12 @@ const by = (r, f) => r.items.find(i => i.file === f);
     bad.exec = async () => ({ out: '', stderr: 'boom', error: 'exit 1' });
     r = await A.intakeAllIn({ base: 'TEST', apply: true, unsure: 'wait', plan, lang: 'TR' }, bad);
     ok('a failed model turn files nothing and says why', r.counts.failed === 3 && calls.record.length === 0 && /turn failed/.test(by(r, cat).why));
+    const { turnFailure } = require(path.join(ROOT, 'out/core/mediaEnricher.js'));
+    const cmd = 'Command failed: agy --model m -p "' + 'x'.repeat(300) + '"';
+    ok('‼️ a failed turn says the engine\'s own words, never the echo of its command line',
+        turnFailure({ error: cmd, stderr: 'RESOURCE_EXHAUSTED: quota' }) === 'RESOURCE_EXHAUSTED: quota'
+        && turnFailure({ error: cmd + '\nboom: model not found' }) === 'boom: model not found'
+        && /^Command failed/.test(turnFailure({ error: cmd })) && turnFailure({}, 'error_during_execution') === 'error_during_execution');
 
     console.log('== the bridge door ==');
     const { BridgeRegistry } = require(path.join(ROOT, 'out/core/bridge.js'));

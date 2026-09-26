@@ -111,6 +111,8 @@ ok('‼️ the run\'s end promotes and files its inputs', /this\.lib\.ended\(rec
         ok('the step archive says where each file went', /Library: p1\.mp4 → TEST\/video\/semi · record media_mp4_/.test(fs.readFileSync(mgr.tasks.find(t => t.workflowRunId === runId && t.stepIndex === 0).outputFile, 'utf8')));
         const rec = mgr.workflowRunState(runId);
         ok('the run ended done', rec && rec.status === 'done');
+        ok('‼️ X-423 — what the run\'s end did in the library is on its status, not thrown away', Array.isArray(rec.libraryEnd)
+            && rec.libraryEnd.some(l => /merged\.mp4 → final/.test(l)) && rec.libraryEnd.some(l => /clip\.mp4 → source \(run input\)/.test(l)));
 
         const w2 = mgr.addWorkflow('Bozuk', [{ id: 's1', agentId: '', agentName: 'tool', title: 'X', prompt: '', mode: 'headless', tool: { recipe: 'loudnorm', input: path.join(V('source'), 'clip.mp4') } }]);
         const r2 = mgr.runWorkflow(w2);

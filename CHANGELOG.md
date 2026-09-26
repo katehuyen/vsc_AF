@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.685.0 - A run's end in the library is on its status; the media chain accepted end to end (X-423) (2026-09-27)
+
+- **You can see what a run's end did in the library.** When a workflow run
+  ends, its last output is promoted to `final`, its outside inputs go to
+  `source` and a model fills the forms. Those lines used to be thrown away;
+  they are now on `workflows.status` as `libraryEnd` - including a record
+  whose enrichment failed, and why.
+- **A failed model turn says why.** The reason used to be the first 200
+  characters of the command line itself; it is now the engine's own last
+  words (enrichment and the all_in pass alike).
+- **The whole chain, measured.** A run made a file, filed and recorded it,
+  filled its form at the end; the Studio showed it; it was promoted to
+  asset; the next run took it from the library by an airtable search and
+  what it made names the asset as its cause - no copy and paste.
+
 ## 3.684.0 - The all_in waiting area is processed (X-422) (2026-09-27)
 
 - **Drop a file into `all_in`, and it finds its stage.** Each image in a

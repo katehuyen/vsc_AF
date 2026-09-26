@@ -38,6 +38,12 @@ export interface EnrichOutcome {
 }
 
 const norm = (p: string): string => path.resolve(String(p || '')).toLowerCase();
+
+/** Why a model turn failed: the engine's own last words, never the echo of the command line that fills the head of "Command failed: …". */
+export function turnFailure(res: { error?: string; stderr?: string }, subtype?: string): string {
+    const err = String(res.stderr || '').trim() || String(res.error || '').split(/\r?\n/).slice(1).join(' ').trim();
+    return (err ? err.slice(-240) : String(res.error || subtype || 'no reason given').slice(0, 120)).replace(/\s+/g, ' ');
+}
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 export class MediaEnricher {
@@ -83,7 +89,7 @@ export class MediaEnricher {
         const text = env ? env.result : res.out;
         if (env?.costUSD) { out.costUsd = Math.round(env.costUSD * 10000) / 10000; }
         if (env?.subtype === 'error_max_budget_usd') { return { ...out, engine, model, error: `the $${cap} cap stopped the turn before it answered — nothing written (a claude turn's own start costs about $0.02)` }; }
-        if ((res.error && !text) || env?.isError) { return { ...out, engine, model, error: `the ${engine} turn failed — ${(res.error || env?.subtype || res.stderr || '').slice(0, 200)}` }; }
+        if ((res.error && !text) || env?.isError) { return { ...out, engine, model, error: `the ${engine} turn failed — ${turnFailure(res, env?.subtype)}` }; }
         const p = parseEnrich(text, item, secs);
         Object.assign(out, { engine, model, complete: p.complete, missing: p.missing });
         if (p.dropped.length) { out.why.push(`refused values: ${p.dropped.slice(0, 8).join('; ')}`); }

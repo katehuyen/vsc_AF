@@ -1368,6 +1368,8 @@ export interface WorkflowRunState {
     forEach?: Record<string, unknown>;
     /** X-420 — what its airtable inputs found before step 1, one line each */
     airtable?: string[];
+    /** X-423 — what the run's end did in the library: promotions, and each record's enrichment or why it failed */
+    libraryEnd?: string[];
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -1666,6 +1668,8 @@ interface WorkflowRunRecord {
     library?: LedgerEntry[];
     /** X-420 — what its airtable inputs found, one line each; present = looked up */
     airtable?: string[];
+    /** X-423 — the run's end in the library, one line each (promotions, enrichment) */
+    libraryEnd?: string[];
     /** X-420 — the database its airtable inputs read: agent steps are told to look there first */
     airtableBase?: string;
     /** M-43 — the run's own copy of the chain: the supervisor's patches and inserted steps */
@@ -6402,7 +6406,9 @@ export class TaskManager implements vscode.Disposable {
             ...(stepIndex !== undefined ? { stepIndex } : {})
         };
         this.save();
-        if (this.lib && rec.library?.length) { void this.lib.ended(rec.library, status).catch(() => undefined); }
+        if (this.lib && rec.library?.length) {
+            void this.lib.ended(rec.library, status).then(lines => { if (lines.length) { rec.libraryEnd = lines; this.save(); } }, () => undefined);
+        }
     }
 
     /**
@@ -6495,6 +6501,7 @@ export class TaskManager implements vscode.Disposable {
             ...(rec?.board ? { board: rec.board } : {}),
             ...(rec?.forEach ? { forEach: FE.forEachSummary(rec.forEach) } : {}),
             ...(rec?.airtable ? { airtable: rec.airtable } : {}),
+            ...(rec?.libraryEnd ? { libraryEnd: rec.libraryEnd } : {}),
             steps,
             costUSD: tasks.reduce((a, t) => a + (t.costUSD ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)

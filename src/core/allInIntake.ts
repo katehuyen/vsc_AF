@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { EnrichPlan } from './enrichSpec';
 import { enrichModality } from './mediaEnrich';
+import { turnFailure } from './mediaEnricher';
 import { LIBRARY_INBOX, LibraryStage, libraryType, MediaRole } from './mediaLibrary';
 import { RecordOutcome, RecordRequest } from './mediaRecorder';
 import { OneShotResult, OneShotWant, oneShotEnvelope } from './oneShot';
@@ -102,7 +103,7 @@ async function judge(f: { file: string }, engine: 'claude' | 'agy', plan: JudgeP
     const env = engine === 'claude' ? oneShotEnvelope('claude', res.out) : null;
     const text = env ? env.result : res.out;
     const costUsd = env?.costUSD ? Math.round(env.costUSD * 10000) / 10000 : undefined;
-    if ((res.error && !text) || env?.isError) { return { error: true, costUsd, why: `the ${engine} turn failed — ${(res.error || env?.subtype || res.stderr || '').slice(0, 200)}` }; }
+    if ((res.error && !text) || env?.isError) { return { error: true, costUsd, why: `the ${engine} turn failed — ${turnFailure(res, env?.subtype)}` }; }
     const j = parseJudge(text);
     return 'error' in j ? { error: true, costUsd, why: j.error } : { ...j, costUsd };
 }
