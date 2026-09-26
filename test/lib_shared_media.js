@@ -127,6 +127,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afTool.js',
     // afLibrary.js — where a run's files are filed and recorded: the workflow form's block, a media or tool step's row (X-418).
     'afLibrary.js',
+    // afAirtableInput.js — an airtable input's search line on the workflow form (X-420).
+    'afAirtableInput.js',
     // afWake.js — what wakes a workflow's supervisor after a step: form block, step override, Run card (M-45).
     'afWake.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).

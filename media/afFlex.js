@@ -136,6 +136,17 @@
         return Object.assign({ id: 'library.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, extra || {});
     }
 
+    /** X-420 — airtable.input.*: the Farm setting, then the input's own search line on the workflow form. */
+    function aqPoint(field, label, type, dflt, key, extra) {
+        return Object.assign({
+            id: 'airtable.input.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.' + key, bridge: 'settings.set:agentFarm.' + key },
+                workflow: { surface: 'media/afAirtableInput.js#wi-aq-' + field, bridge: 'workflows.add:inputs.airtable.' + field }
+            }
+        }, extra || {});
+    }
+
     /** X-419 — library.enrich.*: the Farm setting, then the workflow form's Library block. */
     function enPoint(field, label, type, dflt, key, box, extra) {
         return Object.assign({
@@ -219,6 +230,10 @@
         libPoint('stages.failed', 'Library — stage of a judge FAIL', 'enum', '', { workflow: 'MapFailed' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
         libPoint('stages.rejected', 'Library — stage of a left-out file', 'enum', '', { workflow: 'MapRejected' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
         libPoint('stages.final', 'Library — stage of the run\'s last output', 'enum', '', { workflow: 'MapFinal' }, { options: ['', 'source', 'raw', 'semi', 'final', 'asset'] }),
+        // X-420 — an airtable workflow input's search defaults (src/core/airtableInput.ts)
+        aqPoint('stages', 'Airtable input — stages searched', 'text', 'asset, final', 'airtableInputStages'),
+        aqPoint('limit', 'Airtable input — most records', 'number', 20, 'airtableInputLimit', { min: 1, max: 200 }),
+        aqPoint('sort', 'Airtable input — order', 'enum', 'newest', 'airtableInputSort', { options: ['newest', 'oldest', 'name'] }),
         // X-419 — a model fills the records' meaning (src/core/enrichSpec.ts)
         enPoint('when', 'Enrich — when', 'enum', 'end', 'libraryEnrich', 'When', { options: ['end', 'record', 'never'] }),
         enPoint('scope', 'Enrich — which files', 'enum', 'final-failed', 'libraryEnrichScope', 'Scope', { options: ['final-failed', 'final', 'all'] }),

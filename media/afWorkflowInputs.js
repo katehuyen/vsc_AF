@@ -10,7 +10,7 @@
     'use strict';
     const TYPES = [
         ['text', 'text'], ['file', 'file — a path'], ['folder', 'folder — a path'],
-        ['choice', 'choice — one of a list'], ['number', 'number'], ['url', 'URL']
+        ['choice', 'choice — one of a list'], ['number', 'number'], ['url', 'URL'], ['airtable', 'airtable — records found by a search']
     ];
     const ID = { name: 'wi-name', type: 'wi-type', dflt: 'wi-default', req: 'wi-required', desc: 'wi-desc', choices: 'wi-choices', run: 'wi-run', map: 'wi-map' };
     const MAP_TIP = '{file} = the file that changed · {watch} = the watched path · {payload} = what a webhook sent · {payload.a.b} = one field of it';
@@ -19,7 +19,7 @@
 
     /** Saved inputs → drafts (choices as one comma-separated box). */
     function toDrafts(inputs) {
-        return (inputs || []).map(i => Object.assign(blank(), i, { choices: Array.isArray(i.choices) ? i.choices.join(', ') : (i.choices || '') }));
+        return (inputs || []).map(i => Object.assign(blank(), i, { choices: Array.isArray(i.choices) ? i.choices.join(', ') : (i.choices || ''), aq: Object.assign({}, i.airtable || {}) }));
     }
     /** Drafts → what is saved; the host checks it again (normalizeInputs). */
     function fromDrafts(drafts) {
@@ -29,6 +29,8 @@
             if (d.required) { o.required = true; }
             if (String(d.description || '').trim()) { o.description = String(d.description).trim(); }
             if (o.type === 'choice') { o.choices = String(d.choices || '').split(',').map(s => s.trim()).filter(Boolean); }
+            const aq = o.type === 'airtable' && window.AFAirtableInput ? window.AFAirtableInput.clean(d.aq) : undefined;
+            if (aq) { o.airtable = aq; }
             return o;
         });
     }
@@ -48,7 +50,7 @@
             ${field(C, ID.desc + '-' + i, 'Says', d.description, 'what it is, in a few words', 'Shown on the Run card, and in the refusal when it is missing.')}
             <label class="cbx" title="A run without a value for it does not start, and says why."><input type="checkbox" id="nt-${ID.req}-${i}"${d.required ? ' checked' : ''}> required</label>
             <button class="secondary" data-wi-del="${i}" title="Remove this input">✕</button>
-        </div>`).join('');
+        </div>${d.type === 'airtable' && window.AFAirtableInput ? window.AFAirtableInput.row(d, i, C) : ''}`).join('');
         return `<div class="ntsec"><b>Inputs</b> <span class="muted small">What the workflow is given when it starts — a step reads one as <code>{input.name}</code>. None = it takes nothing.</span></div>
             ${rows}<div class="ctl-row"><button class="secondary" id="nt-wi-add">+ Add an input</button></div>`;
     }
@@ -90,6 +92,7 @@
             on(ID.choices + '-' + i, 'input', e => { d.choices = e.target.value; });
             on(ID.req + '-' + i, 'change', e => { d.required = !!e.target.checked; });
             on(ID.type + '-' + i, 'change', e => { d.type = e.target.value; o.redraw && o.redraw(); });
+            if (d.type === 'airtable' && window.AFAirtableInput) { window.AFAirtableInput.wire(on, d, i); }
         });
         on('wi-add', 'click', () => { o.drafts.push(blank()); o.redraw && o.redraw(); });
         doc.querySelectorAll('[data-wi-del]').forEach(b => b.addEventListener('click', () => {

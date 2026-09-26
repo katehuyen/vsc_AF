@@ -95,6 +95,13 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     const menus = json(node([path.join('test', 'measure_page.js'), 'tasks', shut])) || [];
     ok(`‼️ a toolbar menu nobody pressed takes no space (${menus.length} shut)`,
         menus.length > 0 && menus.every(m => m.d === 'none' && m.h === 0));
+
+    // X-420: an airtable input's search line is nine boxes; at the form's usual
+    // width they stood on the 150px basis and Sort fell alone onto a full-width row.
+    const aq = "(function(){var g=document.querySelector('.wi-aq');if(!g){return null;}var t=[].slice.call(g.children).map(function(c){return Math.round(c.getBoundingClientRect().top);});"
+        + "return {n:t.length,rows:t.filter(function(v,i){return t.indexOf(v)===i;}).length};})()";
+    const line = json(node([path.join('test', 'measure_page.js'), 'tasks', aq])) || {};
+    ok(`‼️ an airtable input's search line keeps its nine boxes on one row (${JSON.stringify(line)})`, line.n === 9 && line.rows === 1);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

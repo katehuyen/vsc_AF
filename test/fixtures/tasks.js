@@ -755,6 +755,22 @@ const variants = () => ([
             });
         }
     },
+    // X-420 — ONE airtable input (the smallest arity): its search line under its row.
+    {
+        id: 'tasks-wf-airtable-input',
+        label: 'Tasks → a workflow form with one airtable input — its search line: "kedi", final stage, images, newest (X-420)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w9', title: 'Kedileri anlat', stepIdx: null,
+                    steps: [{ stype: 'agent', title: 'Anlat', agent: 'developer', prompt: 'Bu kayıtları anlat: {input.refs}', smode: 'headless' }],
+                    inputs: [{ name: 'refs', type: 'airtable', description: 'the cat pictures', airtable: { query: 'kedi', stages: 'final', kind: 'image', sort: 'newest' } }]
+                }
+            });
+        }
+    },
     // M-39 — three steps, each with its id chip; the second chip's panel open (a step read two steps back).
     {
         id: 'tasks-wf-stepids',

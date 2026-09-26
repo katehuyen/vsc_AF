@@ -12,9 +12,10 @@ import { resolveFlex } from './flexResolve';
 import { ensureStepIds, unknownStepRefs } from './runContext';
 import { ForEachSpec, forEachRefusal } from './forEachStep';
 import { CheckpointSpec, checkpointRefusal } from './checkpointStep';
+import { AirtableQuery, cleanQuery, queryRefusal } from './airtableInput';
 
-export type InputType = 'file' | 'folder' | 'text' | 'choice' | 'number' | 'url';
-export const INPUT_TYPES: readonly InputType[] = ['file', 'folder', 'text', 'choice', 'number', 'url'];
+export type InputType = 'file' | 'folder' | 'text' | 'choice' | 'number' | 'url' | 'airtable';
+export const INPUT_TYPES: readonly InputType[] = ['file', 'folder', 'text', 'choice', 'number', 'url', 'airtable'];
 
 export interface WorkflowInput {
     name: string;
@@ -25,6 +26,8 @@ export interface WorkflowInput {
     description?: string;
     /** the values a `choice` input offers */
     choices?: string[];
+    /** X-420 — an `airtable` input's search; before the first step its records become the value (src/core/airtableInput.ts) */
+    airtable?: AirtableQuery;
 }
 
 /** Where a run's value for one input came from. */
@@ -62,6 +65,9 @@ export function normalizeInputs(raw: unknown): { inputs: WorkflowInput[]; errors
         if (!INPUT_TYPES.includes(type)) { errors.push(`${at}: type is one of ${INPUT_TYPES.join(', ')}`); return; }
         const choices = Array.isArray(o.choices) ? o.choices.map(c => str(c).trim()).filter(Boolean) : [];
         if (type === 'choice' && !choices.length) { errors.push(`${at}: a choice input needs its choices`); return; }
+        const aq = type === 'airtable' ? queryRefusal(o.airtable) : '';
+        if (aq) { errors.push(`${at}: ${aq}`); return; }
+        const search = type === 'airtable' ? cleanQuery(o.airtable as AirtableQuery | undefined) : undefined;
         const dflt = str(o.default);
         const bad = dflt ? valueProblem({ name, type, choices }, dflt) : '';
         if (bad) { errors.push(`${at}: the default ${bad}`); return; }
@@ -70,7 +76,8 @@ export function normalizeInputs(raw: unknown): { inputs: WorkflowInput[]; errors
             ...(dflt ? { default: dflt } : {}),
             ...(o.required === true ? { required: true } : {}),
             ...(str(o.description).trim() ? { description: str(o.description).trim() } : {}),
-            ...(type === 'choice' ? { choices } : {})
+            ...(type === 'choice' ? { choices } : {}),
+            ...(search ? { airtable: search } : {})
         });
     });
     return { inputs, errors };
@@ -110,7 +117,8 @@ export function resolveInputs(
         const r = resolveFlex('workflow.input', { workflow: input.default, run: str(given?.[input.name]) });
         const value = str(r.value);
         if (value === '') {
-            if (input.required) { problems.push(`input "${input.name}" is required${input.description ? ` — ${input.description}` : ''}`); }
+            // X-420 — an airtable input's own search is its value, looked up before the first step
+            if (input.required && input.type !== 'airtable') { problems.push(`input "${input.name}" is required${input.description ? ` — ${input.description}` : ''}`); }
             continue;
         }
         const bad = valueProblem(input, value);

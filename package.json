@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.679.1",
+  "version": "3.680.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9128,6 +9128,28 @@
           ],
           "default": "never",
           "markdownDescription": "What a **tool** step does when a file it would write is already there."
+        },
+        "agentFarm.airtableInputStages": {
+          "type": "string",
+          "default": "asset, final",
+          "markdownDescription": "Which stage folders an **airtable** workflow input searches when it names none, comma separated (source, raw, semi, final, asset) (X-420)."
+        },
+        "agentFarm.airtableInputLimit": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 200,
+          "markdownDescription": "At most this many records an **airtable** workflow input hands a run (X-420)."
+        },
+        "agentFarm.airtableInputSort": {
+          "type": "string",
+          "enum": [
+            "newest",
+            "oldest",
+            "name"
+          ],
+          "default": "newest",
+          "markdownDescription": "The order an **airtable** workflow input hands its records in (X-420)."
         },
         "agentFarm.libraryEnrich": {
           "type": "string",

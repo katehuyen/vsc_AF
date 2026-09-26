@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.680.0 - A run takes its material from your Airtable (X-420) (2026-09-26)
+
+- **Search the library instead of pasting paths.** A workflow input can now
+  be of type *airtable*: a search of the local Airtable (words, stage
+  folders, kind, status, tags, passed or failed, how many, in what order).
+  It runs before the first step, and the records it finds are the input's
+  value - a list a for-each step walks one file at a time (`{item.file}`).
+- **What comes out is linked to what went in.** A file made from a found
+  record is recorded with that record as its cause.
+- **A trigger on a stage folder works too.** Hand the input a file path - a
+  folder trigger's `{file}` - and it takes that file's own record.
+- **The defaults are yours.** Farm settings
+  `agentFarm.airtableInputStages/Limit/Sort` (asset + final, 20, newest
+  first), overridden on each input's search line.
+- **See it before you run it.** On the bridge `media.find` makes the same
+  search, and `workflows.status` says what each input found. A search that
+  cannot run ends the run before its first step and says why.
+
 ## 3.679.1 - Record filling reads every model's answer (X-419) (2026-09-26)
 
 - **An image's record is filled whole on Claude too.** Measured live: Haiku

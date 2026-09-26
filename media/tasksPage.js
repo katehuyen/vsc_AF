@@ -3985,6 +3985,7 @@
                    to fill its row, which is right for a prompt and absurd for a
                    two-digit number alone on a line — a 1400px input holding 3. */
                 .ntf.thin { flex:0 0 170px; }
+                .wi-aq .ntf { flex-basis:110px; min-width:96px; }
                 .ntf > span { opacity:.75; }
                 .ntbaton { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; padding:4px 0 0 20px; }
                 .ntbaton label { display:flex; flex-direction:column; gap:2px; font-size:11px; }

@@ -49,6 +49,7 @@ import {
 import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
 import { LedgerEntry, ModuleView, RunCtx, RunLibrary, retargetSidecars } from './runLibrary';
 import { EnrichHook } from './runEnrich';
+import { libraryHint } from './airtableInput';
 import { LibrarySpec, StepLibrarySpec } from './runLibrarySpec';
 import type { MediaRecorder } from './mediaRecorder';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
@@ -1365,6 +1366,8 @@ export interface WorkflowRunState {
     board?: RunBoard;
     /** M-40 — a for-each step in flight: its branches counted, and the policy it runs under */
     forEach?: Record<string, unknown>;
+    /** X-420 — what its airtable inputs found before step 1, one line each */
+    airtable?: string[];
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -1661,6 +1664,10 @@ interface WorkflowRunRecord {
     forEach?: FE.ForEachRun;
     /** X-418 — every file the run filed or read, where it is now and its record (src/core/runLibrary.ts) */
     library?: LedgerEntry[];
+    /** X-420 — what its airtable inputs found, one line each; present = looked up */
+    airtable?: string[];
+    /** X-420 — the database its airtable inputs read: agent steps are told to look there first */
+    airtableBase?: string;
     /** M-43 — the run's own copy of the chain: the supervisor's patches and inserted steps */
     edits?: RunEdits;
     /** M-43 — the supervisor's decisions so far (`<decision>:<target>`), retries per step, the person's answers */
@@ -1682,6 +1689,8 @@ export interface TaskManagerOptions {
     toolSettings?: () => { outDir?: unknown; overwrite?: unknown };
     /** X-418 — files every produced file into the local Airtable's media library and records it; unset = files stay where they are made */
     mediaLibrary?: { recorder: MediaRecorder; module: () => ModuleView; enrich?: EnrichHook };
+    /** X-420 — looks up a run's airtable inputs before its first step (src/core/airtableInput.ts lookupInputs) */
+    airtableInputs?: (inputs: WorkflowInput[], given: Record<string, string>) => Promise<{ values: Record<string, string>; lines: string[]; error?: string; base?: string }>;
     /** M-49 — replaces the ffmpeg runner (tests) */
     runTool?: (c: RecipeCall) => Promise<ToolResult>;
     /** M-44 — replaces the supervisor session's real spawn (tests) */
@@ -6349,7 +6358,29 @@ export class TaskManager implements vscode.Disposable {
         if (!this.runRecords.has(runId)) { return; }
         if (this.runRecords.get(runId)?.ended) { return; }
         if (this.tasks.some(t => t.workflowRunId === runId)) { return; }
+        if (this.airtableFirst(runId, w)) { return; }
         this.routeToStep(w, 0, {}, runId);
+    }
+
+    private lookingUp = new Set<string>();
+    /** X-420 — a run with airtable inputs looks them up first; the records become their values, then the first step starts. */
+    private airtableFirst(runId: string, w: FarmWorkflow): boolean {
+        const rec = this.runRecords.get(runId);
+        const ins = (w.inputs ?? []).filter(i => i.type === 'airtable');
+        if (!rec || !ins.length || rec.airtable || !this.opts.airtableInputs) { return false; }
+        if (this.lookingUp.has(runId)) { return true; }
+        this.lookingUp.add(runId);
+        const fail = (why: string) => { this.lookingUp.delete(runId); this.endWorkflowRun(runId, 'failed', `Airtable input: ${why}`, 0); };
+        void this.opts.airtableInputs(ins, rec.inputs ?? {}).then(r => {
+            if (r.error) { fail(r.error); return; }
+            this.lookingUp.delete(runId);
+            rec.inputs = { ...(rec.inputs ?? {}), ...r.values };
+            rec.airtable = r.lines;
+            if (r.base) { rec.airtableBase = r.base; }
+            this.save();
+            this.routeToStep(w, 0, {}, runId);
+        }, e => fail((e as Error).message));
+        return true;
     }
 
     /** ‼️ X-71/X-73 — one record per run, persisted. A run absent from here
@@ -6463,6 +6494,7 @@ export class TaskManager implements vscode.Disposable {
             ...(lastDone ? { handoff: this.computeHandoff(lastDone) } : {}),
             ...(rec?.board ? { board: rec.board } : {}),
             ...(rec?.forEach ? { forEach: FE.forEachSummary(rec.forEach) } : {}),
+            ...(rec?.airtable ? { airtable: rec.airtable } : {}),
             steps,
             costUSD: tasks.reduce((a, t) => a + (t.costUSD ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
@@ -6639,7 +6671,8 @@ export class TaskManager implements vscode.Disposable {
                 `step ${index + 1} could not start — agent "${step.agentName}" not found`, index);
             return;
         }
-        const prompt = this.substitute(step.prompt, handoff);
+        const base = this.runRecords.get(runId)?.airtableBase;
+        const prompt = this.substitute(step.prompt, handoff) + (base ? '\n\n' + libraryHint(base) : '');
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}${branchTag(handoff)}`,
             prompt, step.mode,
             {
