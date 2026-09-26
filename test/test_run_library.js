@@ -159,6 +159,16 @@ ok('‼️ the run\'s end promotes and files its inputs', /this\.lib\.ended\(rec
         const mEnd = await run.ended(mctx.ledger, 'done');
         ok('‼️ the run\'s end promotes the passed one to the mapped final, never the failed one', fs.existsSync(path.join(I('asset'), 'm1.png')) && fs.existsSync(path.join(I('semi'), 'm2.png')) && mEnd.some(l => /m1\.png → asset/.test(l)));
 
+        /* ---------- an input the base already has a record of, lying outside its folders ---------- */
+        const old = path.join(work, 'old.mp4');
+        fs.writeFileSync(old, 'OLD-CLIP');
+        const pre = await recorder.record({ file: old, base: 'TEST', lang: 'TR', autoStart: 'auto', inPlace: true, stage: 'raw', produced: { role: 'input', origin: 'user_submission', productionType: 'input' } });
+        const octx = { w: { title: 'O', steps: [{ title: 'Oku' }] }, runId: 'r11', stepIndex: 0, taskId: 't3', ledger: [] };
+        await run.consumed(octx, [old]);
+        const oEnd = await run.ended(octx.ledger, 'done');
+        ok('‼️ a recorded input outside the base folders stays where it is — linked, never moved to source', fs.existsSync(old) && !fs.existsSync(path.join(V('source'), 'old.mp4')) && octx.ledger[0].kept === true && octx.ledger[0].id === pre.id && !oEnd.some(l => /old\.mp4/.test(l)));
+        eq('…and its record keeps its own stage', E.items.get(pre.id).item.workflow.stage, 'raw');
+
         /* ---------- a run start checks its engines (X-416) ---------- */
         const seen = [];
         new RL.RunLibrary({ ready: async (b, a) => { seen.push(b + ':' + a); return { down: 'x' }; } }, () => ({ defaultInstance: 'stem', defaultLang: 'TR', mediaRoots: ['x'] }), () => undefined)

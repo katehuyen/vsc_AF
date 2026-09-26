@@ -196,9 +196,11 @@ export class RunLibrary {
                 file, base: lib.base, lang: lib.lang, autoStart: lib.autoStart, inPlace: true, stage: at ?? inStage,
                 produced: { role: 'input', origin: 'user_submission', productionType: 'input', run: { id: ctx.runId, name: ctx.w.title, startedAt: ctx.runStartedAt, stepIndex: ctx.stepIndex, steps: ctx.w.steps.length } }
             }).catch(e => ({ file, error: (e as Error).message, base: lib.base } as { file: string; error: string; base: string; id?: string; pending?: string }));
+            // A file this base already has a record of is in the library wherever it lies: linked, never moved.
+            const kept = !!at || ('duplicate' in r && !!r.duplicate);
             const entry: LedgerEntry = {
                 file, stepIndex: ctx.stepIndex, taskId: ctx.taskId, kind: 'input', stage: at ?? inStage, base: lib.base, lang: lib.lang, role: 'input',
-                ...(lib.stages ? { map: lib.stages } : {}), ...(enPlan ? { en: enPlan } : {}), ...(at ? { kept: true } : {}), ...(r.id ? { id: r.id } : {}), ...(r.pending ? { pending: r.pending } : {}), ...('error' in r && r.error ? { error: r.error } : {})
+                ...(lib.stages ? { map: lib.stages } : {}), ...(enPlan ? { en: enPlan } : {}), ...(kept ? { kept: true } : {}), ...(r.id ? { id: r.id } : {}), ...(r.pending ? { pending: r.pending } : {}), ...('error' in r && r.error ? { error: r.error } : {})
             };
             ctx.ledger.push(entry);
             this.en?.touched(entry);

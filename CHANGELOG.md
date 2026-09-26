@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.680.1 - A library file a run reads stays where it is (X-420) (2026-09-26)
+
+- **A recorded input is linked, never moved.** Measured live: a run read a
+  file whose record lived on another drive than the database's folders, and
+  at the end it was filed into `source` as if it came from outside. A file
+  the database already has a record of now stays where it is and keeps its
+  stage; only what its outputs came from is written onto them.
+
 ## 3.680.0 - A run takes its material from your Airtable (X-420) (2026-09-26)
 
 - **Search the library instead of pasting paths.** A workflow input can now
