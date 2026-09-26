@@ -11,7 +11,7 @@ import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
 import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
-import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionRoute } from './judgeEngines';
+import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
 import * as FE from './forEachStep';
@@ -5296,7 +5296,7 @@ export class TaskManager implements vscode.Disposable {
     private runVisionJudge(assetFile: string, criteria: string, step?: StepJudge):
         Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string }> {
         return new Promise(resolve => {
-            const want = judgeWant(step, this.opts.judgeArgs?.());
+            const want = visionJudgeWant(assetFile, step, this.opts.judgeArgs?.());
             const judge = want.origin;
             const route = visionRoute(assetFile, want.engine);
             if (!route.ok) {
@@ -5304,7 +5304,7 @@ export class TaskManager implements vscode.Disposable {
                 return;
             }
             const prompt = sanitizePrompt(
-                `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu Read aracıyla aç ve incele. ` +
+                `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu ${want.engine === 'claude' ? 'Read aracıyla ' : ''}aç ve incele; kabuk komutu çalıştırma. ` +
                 `Şu ÖLÇÜTü karşılıyor mu? ÖLÇÜT: ${criteria}. ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.

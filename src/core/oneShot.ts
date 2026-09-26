@@ -242,7 +242,7 @@ const claudeAdapter: OneShotAdapter = {
 /**
  * ‼️ THE REGISTRY, AND WHAT IS DELIBERATELY NOT IN IT.
  *
- * Only Claude. Codex's `exec` prints a different envelope and IT HAS NOT BEEN
+ * Claude, and agy (its flags and envelope measured). Codex's `exec` prints a different envelope and IT HAS NOT BEEN
  * MEASURED — so there is no Codex adapter, and asking for one gets `undefined`
  * exactly as `oneShotLine` has always refused by name. A guessed field name
  * would not fail loudly: it would parse to `null` at 3 a.m. in the middle of a
@@ -251,7 +251,46 @@ const claudeAdapter: OneShotAdapter = {
  * Adding an engine is a registration here, with BOTH halves, and the test
  * refuses a row that has only one of them.
  */
-const ADAPTERS: OneShotAdapter[] = [claudeAdapter];
+/** agy (Antigravity CLI, Gemini models) — flags and envelope measured 2026-09-26 (M-42). */
+const AGY_EFFORTS = ['low', 'medium', 'high', 'max'];
+const agyFlags = (want: OneShotWant): string[] => [
+    ...(String(want.model ?? '').trim() ? ['--model', String(want.model).trim()] : []),
+    ...(want.json ? ['--output-format', 'json'] : []),
+    ...(want.readOnly ? ['--mode', 'plan'] : []),
+    ...(AGY_EFFORTS.includes(String(want.effort ?? '').trim()) ? ['--effort', String(want.effort).trim()] : []),
+    ...(String(want.resume ?? '').trim() ? ['--conversation', String(want.resume).trim()] : [])
+];
+
+const agyAdapter: OneShotAdapter = {
+    engine: 'agy',
+    line(want) {
+        return `agy ${agyFlags(want).join(' ')}${agyFlags(want).length ? ' ' : ''}-p "${want.prompt ?? ''}"`;
+    },
+    /** `-p` takes the prompt as its value — this CLI does not read it from stdin. */
+    argv(want) {
+        return { cmd: 'agy', args: [...agyFlags(want), '-p', want.prompt ?? ''], stdin: false };
+    },
+    /** {conversation_id, status, response, usage: {total_tokens, …}} */
+    envelope(stdout) {
+        const lines = stdout.trim().split('\n');
+        let o: Record<string, unknown> | undefined;
+        for (let i = lines.length - 1; i >= 0 && !o; i--) {
+            const c = asObj(lines[i].trim());
+            if (c && typeof c.response === 'string') { o = c; }
+        }
+        if (!o) { return null; }
+        const u = o.usage && typeof o.usage === 'object' ? o.usage as Record<string, unknown> : {};
+        return {
+            result: o.response as string,
+            sessionId: typeof o.conversation_id === 'string' ? o.conversation_id : undefined,
+            tokens: typeof u.total_tokens === 'number' && u.total_tokens > 0 ? u.total_tokens : undefined,
+            isError: o.status !== 'SUCCESS',
+            subtype: typeof o.status === 'string' ? o.status : undefined
+        };
+    }
+};
+
+const ADAPTERS: OneShotAdapter[] = [claudeAdapter, agyAdapter];
 
 /** The adapter for an engine, or `undefined` where none has been written. */
 export function oneShotAdapter(engine: string | undefined): OneShotAdapter | undefined {

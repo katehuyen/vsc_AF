@@ -74,6 +74,29 @@ export function visionRoute(file: string, engine?: string):
     return why ? { ok: false, modality, engine: e, why } : { ok: true, modality, engine: e };
 }
 
+/**
+ * The judge for an input the built-in engine cannot open, when the step named no
+ * engine of its own. Measured 2026-09-26: agy on gemini-3.8-flash-low saw a 12 s
+ * clip's frames (colours and the cut, ~36k tokens) and a PNG; it got no sound.
+ */
+export const VISION_DEFAULT: Partial<Record<Modality, { engine: string; model: string }>> = {
+    video: { engine: 'agy', model: 'gemini-3.8-flash-low' }
+};
+
+/** judgeWant, with the measured default for a video when the step left the engine blank. */
+export function visionJudgeWant(file: string, step: StepJudge | undefined, settingArgs: string | undefined): JudgeWant {
+    const want = judgeWant(step, settingArgs);
+    const modality = assetModality(file);
+    const d = VISION_DEFAULT[modality];
+    if (String(step?.engine ?? '').trim() || !d || visionRoute(file, want.engine).ok) { return want; }
+    const own = String(step?.model ?? '').trim();
+    const model = /^gemini/i.test(own) ? own : d.model;
+    return {
+        engine: d.engine, model, args: '',
+        origin: `judge ${d.engine} — built-in default for ${modality} (${want.engine} cannot open one) · model ${model} — ${model === own ? 'from this step' : `built-in default for ${modality}`}`
+    };
+}
+
 export const normalizeUnjudged = (v: unknown): UnjudgedBehavior =>
     UNJUDGED_BEHAVIORS.includes(v as UnjudgedBehavior) ? v as UnjudgedBehavior : 'ask';
 

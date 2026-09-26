@@ -52,7 +52,20 @@ ok('‼️ an engine with no one-shot judge turn is refused by name', /"gemini" 
 
 ok('‼️ no "passed through" left in the text judge', !/passed through/.test(src.slice(src.indexOf('private runJudge('), src.indexOf('private runVisionJudge('))));
 ok('‼️ a media step with no asset is unjudged, not passed', !/no downloaded asset to verify — passed through/.test(src));
-ok('both judges run on the step\'s own choice', (src.match(/judgeWant\(step, this\.opts\.judgeArgs\?\.\(\)\)/g) || []).length === 2);
+ok('both judges run on the step\'s own choice', /[^n]judgeWant\(step, this\.opts\.judgeArgs\?\.\(\)\)/.test(src)
+    && /visionJudgeWant\(assetFile, step, this\.opts\.judgeArgs\?\.\(\)\)/.test(src));
+
+// ---------- M-42 (3): a video the step left to the built-in goes to the measured Gemini path ----------
+const v0 = J.visionJudgeWant('clip.mp4', undefined, SHIPPED);
+eq('a video with no engine of its own → agy on the cheapest Gemini', [v0.engine, v0.model, v0.args], ['agy', 'gemini-3.8-flash-low', '']);
+ok('…and the origin says why', /^judge agy — built-in default for video \(claude cannot open one\) · model gemini-3\.8-flash-low — built-in default for video$/.test(v0.origin));
+ok('…and agy can open it', J.visionRoute('clip.mp4', v0.engine).ok);
+eq('a step\'s own Gemini model is kept', J.visionJudgeWant('clip.mp4', { model: 'gemini-3.1-pro-low' }, SHIPPED).model, 'gemini-3.1-pro-low');
+eq('a step\'s own Claude model is not handed to Gemini', J.visionJudgeWant('clip.mp4', { model: 'claude-haiku-4-5-20251001' }, SHIPPED).model, 'gemini-3.8-flash-low');
+eq('a step that named claude keeps claude — and stays unjudged', J.visionJudgeWant('clip.mp4', { engine: 'claude' }, SHIPPED).engine, 'claude');
+eq('an image stays on claude', J.visionJudgeWant('frame.png', undefined, SHIPPED).engine, 'claude');
+ok('‼️ sound has no measured judge: still not judged, never a PASS', !J.visionRoute('voice.mp3', J.visionJudgeWant('voice.mp3', undefined, SHIPPED).engine).ok);
+eq('agy can be a step\'s judge', J.judgeEngineRefusal('agy'), '');
 ok('the verdict line carries the judge and its origin', /\[\$\{judged\.judge\}\]/.test(src));
 const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
 ok('the bridge refuses a judge engine at save time', /judgeEngineRefusal\(verifyIn\?\.engine\)/.test(ext));

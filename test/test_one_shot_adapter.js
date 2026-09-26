@@ -147,6 +147,21 @@ const M = require(path.join(ROOT, 'out', 'core', 'missions.js'));
         one.oneShotLine({ engine: 'codex', prompt: 'x' }) === undefined);
 }
 
+// ---------- M-42 — agy (Antigravity CLI): its flags and its envelope, as measured 2026-09-26 ----------
+{
+    const measured = '{"conversation_id":"a30d100d-be58-4525-ac72-b4f27bc86892","status":"SUCCESS","response":"{\\"opened\\": true, \\"color\\": \\"green\\"}\\n",'
+        + '"duration_seconds":6.6874177,"num_turns":1,"usage":{"input_tokens":19372,"output_tokens":333,"thinking_tokens":266,"cache_read_tokens":16280,"total_tokens":19705}}';
+    const env = one.oneShotEnvelope('agy', 'a warning line\n' + measured);
+    ok('agy: the reply is read out of its envelope, past a noise line', !!env && env.result === '{"opened": true, "color": "green"}\n' && env.isError === false);
+    ok('agy: the conversation is its session, total_tokens its tokens', !!env && env.sessionId === 'a30d100d-be58-4525-ac72-b4f27bc86892' && env.tokens === 19705);
+    ok('agy: a status other than SUCCESS is an error', one.oneShotEnvelope('agy', measured.replace('"SUCCESS"', '"ERROR"')).isError === true);
+    ok('agy: text that is not its envelope is not a reply', one.oneShotEnvelope('agy', 'plain words') === null);
+    const a = one.oneShotArgv({ engine: 'agy', model: 'gemini-3.8-flash-low', json: true, readOnly: true, effort: 'xhigh', prompt: 'look' });
+    ok('agy: its own flags; an effort it does not take is left out; the prompt is -p\'s value', !!a && a.cmd === 'agy' && a.stdin === false
+        && JSON.stringify(a.args) === JSON.stringify(['--model', 'gemini-3.8-flash-low', '--output-format', 'json', '--mode', 'plan', '-p', 'look']));
+    ok('agy: the shell form says the same', one.oneShotLine({ engine: 'agy', model: 'gemini-3.8-flash-low', prompt: 'look' }) === 'agy --model gemini-3.8-flash-low -p "look"');
+}
+
 console.log((fail ? 'FAIL' : 'ok') + ' — test_one_shot_adapter.js: '
     + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

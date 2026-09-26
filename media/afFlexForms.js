@@ -99,7 +99,9 @@
     const ENGINE_INPUT = {
         claude: { label: 'Claude', image: true, pdf: true, video: false, audio: false },
         codex: { label: 'Codex', image: true, video: false, audio: false },
-        gemini: { label: 'Gemini', image: true, pdf: true, video: true, audio: true }
+        gemini: { label: 'Gemini', image: true, pdf: true, video: true, audio: true },
+        // measured 2026-09-26 (M-42): a PNG and a clip's frames seen, its sound not
+        agy: { label: 'Antigravity (Gemini)', image: true, video: true, audio: false }
     };
 
     /** '' when the engine can take every input needed; else the reason, in words. */
