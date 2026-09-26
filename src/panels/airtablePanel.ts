@@ -3,6 +3,7 @@ import {
     addStoreFolder, airtablePageData, loadStore, probeAirtableInstances, registerMcp, removeStoreFolder,
     sameFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from '../core/airtable';
+import { startNamedInstance } from '../core/airtableStart';
 import { loadProbeCache, probeMcpServer, saveProbeCache } from '../core/mcpProbe';
 import { probeCacheKey, resolveServerConfig } from '../core/toolboxBridge';
 import { handleAfNav, htmlShell } from './base';
@@ -158,6 +159,18 @@ export class AirtablePanel {
             case 'probe-tools':
                 await this.probeTools();
                 break;
+
+            case 'start': {
+                const name = String(msg.name ?? '');
+                const r = await startNamedInstance(this.deps.storageDir, name);
+                if (r.ok) {
+                    void vscode.window.showInformationMessage(`Agent Farm — Airtable Engine: ${r.instance} ${r.alreadyRunning ? 'was already running' : `is running on port ${r.port} (${Math.round(r.ms / 100) / 10} s)`}.`);
+                } else {
+                    this.fail(`starting ${name}`, new Error(r.error));
+                }
+                this.refresh();
+                break;
+            }
 
             case 'open-ui': {
                 const url = String(msg.url ?? '');

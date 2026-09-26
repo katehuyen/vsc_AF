@@ -152,6 +152,11 @@ one('setdef', 'draft')._click();
 ok('Set default posts set/defaultInstance', posted[0] && posted[0].type === 'set'
     && posted[0].key === 'defaultInstance' && posted[0].value === 'draft');
 posted = [];
+ok('X-416 — a down instance offers Start, a live one does not', /data-start="draft"/.test(html()) && !/data-start="stem"/.test(html()));
+ok('…its hover says what it runs and what it skips', /Start draft&#10;&#10;Runs node server.js[^"]*no browser tab/.test(html()));
+one('start', 'draft')._click();
+ok('Start posts start with the instance name', posted[0] && posted[0].type === 'start' && posted[0].name === 'draft');
+posted = [];
 one('do', 'probe-tools')._click();
 ok('Probe tools posts probe-tools', posted[0] && posted[0].type === 'probe-tools');
 posted = [];

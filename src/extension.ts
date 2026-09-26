@@ -9,6 +9,7 @@ import {
     removeStoreFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from './core/airtable';
 import { fileInto, libraryInfo, planLibrary } from './core/mediaLibrary';
+import { startNamedInstance } from './core/airtableStart';
 import { expandRoot } from './mcp/airtable/engine';
 import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
@@ -17650,6 +17651,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'airtable.config.get',
             describe: 'The module store (databaseRoots, mediaRoots, defaults, timeout). args: none',
             handler: () => loadStore(airtableStorage)
+        },
+        {
+            op: 'airtable.start',
+            describe: 'X-416 — START A LOCAL ENGINE INSTANCE WITHOUT A BROWSER: `node server.js` in <instance>\\Admin, detached and hidden (it outlives VS Code like start_admin.bat\'s window; no npm install, no UI build, no browser tab), its output appended to <globalStorage>\\airtable-engine-<name>.log; then waits until it answers. An instance already answering is left alone. Returns {ok, instance, port, alreadyRunning?, ms, log?, error?}. args: instance? (default: the module\'s defaultInstance), timeoutMs? (default 20000)',
+            handler: async (args) => {
+                const r = await startNamedInstance(airtableStorage, String(args.instance ?? ''), { timeoutMs: Number(args.timeoutMs) || undefined });
+                need(r.ok, r.error ?? '');
+                return r;
+            }
         },
         {
             op: 'media.library',

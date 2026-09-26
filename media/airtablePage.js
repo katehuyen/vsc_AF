@@ -118,9 +118,10 @@
                 ${row.title ? `<div class="muted small">${esc(row.title)}</div>` : ''}
                 <div class="air-inst-body">${row.alive
                     ? (stat(row) || '<span class="muted small">live</span>')
-                    : `<span class="muted small" title="${esc(row.error || '')}">not running — start_admin.bat in its folder starts it</span>`}</div>
+                    : `<span class="muted small" title="${esc(row.error || '')}">not running — Start opens it, no browser</span>`}</div>
                 <div class="btnrow" style="margin:8px 0 0">
-                    ${row.alive ? `<button class="mini" data-open-ui="${esc(row.url)}" title="the engine's own web panel">Open UI</button>` : ''}
+                    ${row.alive ? `<button class="mini" data-open-ui="${esc(row.url)}" title="the engine's own web panel">Open UI</button>`
+                        : `<button class="mini" data-start="${esc(row.name)}" title="Start ${esc(row.name)}&#10;&#10;Runs node server.js in its Admin folder, hidden — no npm install, no UI build, no browser tab (start_admin.bat does all three). It keeps running after VS Code closes, like the .bat's window. Its output goes to airtable-engine-${esc(row.name)}.log in Agent Farm's storage.">Start</button>`}
                     ${row.isDefault ? '' : `<button class="mini" data-setdef="${esc(row.name)}" title="use this instance when a tool call names none">Set default</button>`}
                     <button class="mini" data-reveal="${esc(row.dir)}" title="reveal the instance folder">folder</button>
                 </div>
@@ -172,16 +173,16 @@
         const s = DATA.store;
         const reg = DATA.registration;
         const opts = (DATA.instances || []).map(r =>
-            `<option value="${esc(r.name)}"${r.name === s.defaultInstance ? ' selected' : ''}>${esc(r.name)}</option>`).join('');
+            `<option value="${esc(r.name)}"${r.name === s.defaultInstance ? ' selected' : ''} title="${esc(r.name)} — :${r.port}, ${r.alive ? 'running' : 'not running'} · ${esc(r.dir)}">${esc(r.name)}</option>`).join('');
         const ghost = s.defaultInstance && !(DATA.instances || []).some(r => r.name === s.defaultInstance)
-            ? `<option value="${esc(s.defaultInstance)}" selected>${esc(s.defaultInstance)} (not found)</option>` : '';
+            ? `<option value="${esc(s.defaultInstance)}" selected title="${esc(s.defaultInstance)} — no instance of that name under the engine folders">${esc(s.defaultInstance)} (not found)</option>` : '';
         return `<div class="row">
             <div class="card" style="flex:1 1 300px">
                 <b>Defaults</b>
                 <div class="muted small" style="margin:2px 0 8px">Used when an agent's tool call doesn't specify them.</div>
                 <div class="air-defrow"><label>Instance</label>
                     <select id="def-inst" title="empty = the single running one is used automatically">
-                        <option value=""${s.defaultInstance ? '' : ' selected'}>(auto — the single live one)</option>${opts}${ghost}
+                        <option value=""${s.defaultInstance ? '' : ' selected'} title="No default — a tool call that names no instance uses the single one running">(auto — the single live one)</option>${opts}${ghost}
                     </select></div>
                 <div class="air-defrow"><label>Language</label>
                     <input id="def-lang" type="text" size="6" value="${esc(s.defaultLang)}" placeholder="engine default"
@@ -280,6 +281,8 @@
             b.addEventListener('click', () => post({ type: b.dataset.do })));
         document.querySelectorAll('[data-open-ui]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'open-ui', url: b.dataset.openUi })));
+        document.querySelectorAll('[data-start]').forEach(b =>
+            b.addEventListener('click', () => { b.disabled = true; b.textContent = 'Starting…'; post({ type: 'start', name: b.dataset.start }); }));
         document.querySelectorAll('[data-setdef]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'set', key: 'defaultInstance', value: b.dataset.setdef })));
         document.querySelectorAll('[data-reveal]').forEach(b =>

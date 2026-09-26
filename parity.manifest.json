@@ -852,6 +852,15 @@
       ]
     },
     {
+      "capability": "airtablePanel.ts#start",
+      "ui": [
+        "page:airtablePanel.ts#start"
+      ],
+      "ops": [
+        "airtable.start"
+      ]
+    },
+    {
       "capability": "airtablePanel.ts#unregister",
       "ui": [
         "page:airtablePanel.ts#unregister"
