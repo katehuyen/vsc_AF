@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.676.0 - The workflow's tool step gets its own form, and a video is judged by Gemini through agy (M-49 3/3, M-42 3/3) (2026-09-26)
+
+- **A video step's quality gate really looks at the video (M-42).** Claude
+  cannot open a video, so such a step was "not judged". When the step names no
+  judge engine of its own, a video now goes to **agy** (the Antigravity CLI) on
+  its cheapest Gemini model, `gemini-3.8-flash-low`. Measured on a known clip
+  (red then blue, the cut at 6 s): agy described it exactly, ruled PASS on the
+  true criterion and FAIL on a false one, in 12–15 s and ~36k Gemini tokens per
+  12 s clip. It does not hear the sound, so an audio file stays "not judged" —
+  never a silent PASS. The verdict line names it: *judge agy — built-in default
+  for video (claude cannot open one)*. A step's own judge engine still wins,
+  and `agy` can now be picked as one (a one-shot engine alongside claude).
+
+- **A tool step is filled in, not typed as JSON.** The step card's single
+  Recipe box is replaced by a row drawn from the recipe catalogue: a recipe
+  picker, the recipe's presets, the input, one box per parameter (numbers,
+  choices, a file, a list of files one per line), the output folder and what
+  happens to a file already there. A blank box inherits — the preset's value,
+  else the recipe's own — and shows it as its placeholder; its hover opens with
+  the value and where it comes from (*Current: 10 — from the preset "Omni Flash
+  parts"*), then the description and its flex point. Templates such as
+  `{input.clip}` or `{item}` still work in any box. Switching recipe drops the
+  old one's parameters; picking another recipe's preset switches to that recipe.
+- **Every recipe parameter is a step-level flex point** (`tool.<recipe>.<param>`,
+  its default the recipe's own), and so are the step's recipe, preset and
+  input; `tool.outDir` and `tool.overwrite` can now be set per step as well as
+  in Farm Settings. The recipe catalogue moved to `media/afRecipes.js` so the
+  page, the flex registry and the runner read one list.
+- **A tool step's output says where every value came from** — one line per
+  parameter, the output folder and the overwrite policy, in the flex chain's
+  own words (*segmentSec: 10 — from this step (preset: Omni Flash parts)*).
+- **Fixed: a workflow's tool step ignored Farm Settings.** The output folder
+  and overwrite policy set there never reached a workflow's tool step (only the
+  bridge's `tools.run` read them); they do now, under the step's own values.
+- **Fixed: `workflows.add` could not create a tool step.** A step with a `tool`
+  block and no agent was refused as "prompt is required"; it is now accepted,
+  checked at save time by name (recipe, preset, parameter names, input), and
+  the op's contract documents the block.
+
 ## 3.675.0 - The migration gate weighs the agent repo in seconds, not minutes, and a chain attached twice at once stays one chain (X-401, S-104) (2026-09-25)
 
 - **A session turned into a relay after it started is one chain, never two
