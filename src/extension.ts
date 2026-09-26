@@ -8,6 +8,8 @@ import {
     addStoreFolder, airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
     removeStoreFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from './core/airtable';
+import { fileInto, libraryInfo, planLibrary } from './core/mediaLibrary';
+import { expandRoot } from './mcp/airtable/engine';
 import { focusExternalTerminal, openExternalTerminal } from './core/extTerminal';
 import {
     applyPackFiles, buildAgentPack, readAgentPack, rebindPack, writeAgentPack
@@ -17648,6 +17650,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'airtable.config.get',
             describe: 'The module store (databaseRoots, mediaRoots, defaults, timeout). args: none',
             handler: () => loadStore(airtableStorage)
+        },
+        {
+            op: 'media.library',
+            describe: 'X-417 — THE MEDIA LIBRARY of the local Airtable: <root>\\media_<base>\\<image|video|audio>\\<stage>\\, one media folder per base (engine instance). Stages: source (input material) · raw (unclassified but kept — nothing is thrown away) · semi (half done) · final (truly succeeded) · asset (the reusable treasure, reached only by promotion); all_in is the user\'s waiting area for unprocessed files and is never filed into. The stage goes into the record\'s workflow.stage too. Returns {roots, defaultBase, bases (the media_<base> folders found), layout, stages, meanings, inbox, roles, defaultStages, recordField}. args: none',
+            handler: () => {
+                const s = loadStore(airtableStorage);
+                return libraryInfo(s.mediaRoots.map(expandRoot), s.defaultInstance, d => fs.readdirSync(d));
+            }
+        },
+        {
+            op: 'media.library.plan',
+            describe: 'X-417 — WHERE ONE FILE GOES in the media library, without moving it: {root, base, type (from the extension), stage, dir, target (its own name; -2, -3… when taken — never overwritten), inPlace, why (one line per decision)}. args: file (absolute path), base? (the Airtable database; default the module\'s defaultInstance), stage? (source|raw|semi|final|asset — all_in is refused by name) | role? (input|candidate|intermediate|failed|rejected|final|unknown → its default stage: source, semi, semi, raw, raw, final, raw)',
+            handler: (args) => {
+                const s = loadStore(airtableStorage);
+                const plan = planLibrary({
+                    roots: s.mediaRoots.map(expandRoot), base: String(args.base ?? '').trim() || s.defaultInstance,
+                    file: String(args.file ?? ''), stage: args.stage, role: args.role, exists: p => fs.existsSync(p)
+                });
+                need(!('error' in plan), 'error' in plan ? plan.error : '');
+                return plan;
+            }
+        },
+        {
+            op: 'media.library.file',
+            describe: 'X-417 — MOVE ONE FILE INTO THE MEDIA LIBRARY: the media.library.plan answer, then the file is moved there (across drives: copied, then the source removed; nothing is ever overwritten) and {…plan, file (the path it now has), from} is returned. It does NOT write the Airtable record — follow with airtable_media_save on the returned file, with workflow.stage = stage. args: file (absolute path, must exist), base?, stage? | role? (as media.library.plan)',
+            handler: (args) => {
+                const s = loadStore(airtableStorage);
+                const from = String(args.file ?? '');
+                need(fs.existsSync(from), `no file at ${from}`);
+                const plan = planLibrary({
+                    roots: s.mediaRoots.map(expandRoot), base: String(args.base ?? '').trim() || s.defaultInstance,
+                    file: from, stage: args.stage, role: args.role, exists: p => fs.existsSync(p)
+                });
+                need(!('error' in plan), 'error' in plan ? plan.error : '');
+                const p = plan as Exclude<typeof plan, { error: string }>;
+                return { ...p, from, file: fileInto(from, p) };
+            }
         },
         {
             op: 'airtable.config.set',

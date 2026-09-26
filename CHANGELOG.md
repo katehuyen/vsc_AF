@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.677.0 - The media library of your local Airtable, and a read-only video judge (X-417 core, M-42 audit fix) (2026-09-26)
+
+- **Agent Farm knows where your media lives (X-417).** Every Airtable
+  database has its own media folder, `D:\zome\media\media_<base>\`, with one
+  folder per type (image, video, audio) and, under it, one per stage:
+  **source** (input material) · **raw** (unclassified but kept — nothing is
+  thrown away) · **semi** (half done) · **final** (truly succeeded) · **asset**
+  (the reusable treasure). `all_in` is your own waiting area for files nobody
+  has processed yet; agents never put anything there, and asking for it is
+  refused with the reason. A file made by a run takes its stage from what it
+  is: its input → source, a candidate or a part → semi, a failed or rejected
+  one → raw, the finished result → final; asset is reached only by promoting.
+- **Three new bridge operations.** `media.library` shows the roots, the
+  databases that have a media folder, the stages and their meanings;
+  `media.library.plan` says where one file would go and why, without moving
+  it; `media.library.file` moves it there. A name already taken gets `-2`,
+  `-3`…; nothing is ever overwritten, and a file already in its place is left
+  alone. The Airtable record is still written with `airtable_media_save` —
+  filing a run's output automatically, with its form filled, comes next
+  (X-418, X-419).
+- **The video judge can no longer touch your files (M-42 audit).** agy judged
+  a video in its default mode, where it may act on files and run commands;
+  only a sentence in its prompt held it back. It now runs read-only
+  (`--mode plan`). Measured: it still opens the file and rules correctly
+  (a red image: "entirely red" PASS, "entirely blue" FAIL).
+
 ## 3.676.0 - The workflow's tool step gets its own form, and a video is judged by Gemini through agy (M-49 3/3, M-42 3/3) (2026-09-26)
 
 - **A video step's quality gate really looks at the video (M-42).** Claude
