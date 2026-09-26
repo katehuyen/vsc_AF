@@ -14,9 +14,10 @@ import { BATON_DEFAULT_MAX_LEGS, Baton, moveBaton, newBatonId, passBaton } from 
 import { batonBrake } from './batonBrake';
 import { closingRecord, failsafeVerdict, LegEndFacts, legOpener, rescueEvidence } from './batonFailsafe';
 import { markFolder } from './batonLegFacts';
-import { chainMaxLegs } from './batonSeal';
+import { chainMaxLegs, isSeal } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
+import type { FolderRead } from './legRoots';
 
 export type NoticeLevel = 1 | 2 | 3 | 4;
 
@@ -28,9 +29,10 @@ export interface LegEndDeps {
     isEnded: (sessionId: string, opener: Baton) => boolean;
     launchIdOf?: (sessionId: string) => string | undefined;
     manifestOf?: (launchId: string) => LaunchManifest | undefined;
-    headOf?: (cwd: string) => Promise<string | undefined>;
-    /** S-92 — the folder's `git status --short` as the rescued leg opens on it */
-    dirtOf?: (cwd: string) => Promise<string | undefined>;
+    /** S-83 — the HEADs of the leg's folder and its project's repositories (legRoots.ts) */
+    headOf?: FolderRead;
+    /** S-92 — the same roots' `git status --short` as the rescued leg opens on it */
+    dirtOf?: FolderRead;
     maxLegs?: () => number;
     notify?: (title: string, body: string, key: string, level?: NoticeLevel, type?: 'info' | 'warning') => void;
     now: () => number;
@@ -91,7 +93,7 @@ export class LegEndWatch {
     }
 
     private async rescue(opener: Baton, sid: string, facts: LegEndFacts, evidence: string[], why: string, now: number): Promise<Baton> {
-        const prompt = rescueEvidence(facts, evidence);
+        const prompt = rescueEvidence(facts, evidence, isSeal(opener) ? undefined : opener.prompt);
         const launchId = this.deps.launchIdOf?.(sid);
         const manifest = launchId ? this.deps.manifestOf?.(launchId) : undefined;
         const passed = passBaton({ prompt, sessionId: sid, launchId, manifest, prior: this.deps.store.all(), now });

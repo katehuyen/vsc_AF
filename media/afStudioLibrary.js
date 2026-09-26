@@ -18,7 +18,11 @@
     function select(id, label, cur, inherited, opts, what) {
         const shown = cur || inherited || '';
         return `<select id="${id}" title="${esc(label + ': ' + (opts.find(o => o[0] === shown) || ['', shown || 'all'])[1] + (cur ? '' : ' (inherited)') + '\n\n' + what)}">`
-            + opts.map(o => `<option value="${esc(o[0])}"${o[0] === cur ? ' selected' : ''}>${esc(o[0] === '' && inherited ? 'setting: ' + inherited : o[1])}</option>`).join('')
+            + opts.map(o => {
+                const text = o[0] === '' && inherited ? 'setting: ' + inherited : o[1];
+                const note = o[0] === '' ? (inherited ? 'The Farm setting decides.' : 'No filter.') : '';
+                return `<option value="${esc(o[0])}"${o[0] === cur ? ' selected' : ''} title="${esc(label + ': ' + text + (note ? '\n\n' + note : ''))}">${esc(text)}</option>`;
+            }).join('')
             + '</select>';
     }
 

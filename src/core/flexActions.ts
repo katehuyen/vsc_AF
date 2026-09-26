@@ -118,7 +118,8 @@ export function flexSettingsState(deps: FlexDeps) {
                 id: p.id, label: p.label, type: p.type, default: p.default, value: r.value, from: r.from,
                 sentence: r.sentence, key: p.levels.settings!.surface.slice('setting:'.length),
                 ...(p.min !== undefined ? { min: p.min } : {}), ...(p.max !== undefined ? { max: p.max } : {}),
-                ...(p.options ? { options: p.options } : {}), ...(p.states ? { states: p.states } : {})
+                ...(p.options ? { options: p.options } : {}), ...(p.states ? { states: p.states } : {}),
+                ...(p.emptyLabel ? { emptyLabel: p.emptyLabel } : {})
             };
         }),
         presets: presetsFor(userPresets(deps)).map(p => ({

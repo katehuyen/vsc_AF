@@ -341,6 +341,7 @@ import { relayHandoffHold, rowSessionId, successorRow } from './core/batonDoor';
 import { PassedLegCard, PassedLegEnder, PassedLegFacts } from './core/batonEnd';
 import { BatonRunner } from './core/batonRunner';
 import { legFactsFrom } from './core/batonLegFacts';
+import { legGitReaders } from './core/legRoots';
 import { BatonStore } from './core/batonStore';
 import { batonBarView, batonCardView } from './core/batonView';
 import { quotaBrake } from './core/quotaBrake';
@@ -437,7 +438,7 @@ import {
     agentsText, cancelTarget, farmStatusText, sessionsKeyboard, splitAgentPrompt
 } from './core/telegramCommands';
 import { phoneLaunchVerdict, phoneOpenedText } from './core/telegramLaunch';
-import { changesSummary, changesText, headCommit } from './core/workdirChanges';
+import { changesSummary, changesText, commitsAfter, headCommit } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
     askWhich, forgetGone, pickFocus, rememberOutgoing, rememberTopic, resolve as resolveRoute,
@@ -16836,14 +16837,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     setBatonSource(() => batonStore.all());
     const gitShortStatus = async (cwd: string) => { const c = await changesSummary(cwd); return c.note ? undefined : c.status; };
+    // ‼️ S-83 — a leg's work lands in its folder AND its project's repositories; every relay door reads both
+    const legGit = legGitReaders({
+        reposOf: id => projectStore.get(id)?.repos, head: cwd => headCommit(cwd), status: gitShortStatus, log: (cwd, since) => commitsAfter(cwd, since)
+    });
     // S-82 — what attaching a relay reads, handed to baton.attach and the Console card's ⑂ Attach relay alike
     const batonAttachDeps = {
         store: batonStore,
         launchIdOf: (sid: string) => consoleHost.list().find(s => s.sessionId === sid)?.launchId
             || index.allWithExternal().find(x => x.sessionId === sid)?.launchId,
         manifests: () => launchManifests(),
-        headOf: (cwd: string) => headCommit(cwd),
-        dirtOf: gitShortStatus,
+        headOf: legGit.headOf,
+        dirtOf: legGit.dirtOf,
         maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))
     };
     registerBatonOps(bridge, {
@@ -17005,9 +17010,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             readNote: file => ({ ts: fs.statSync(file).mtimeMs, text: fs.readFileSync(file, 'utf8') }),
             toolCalls: sid => live.sessions().find(x => x.sessionId === sid)?.toolCalls,
-            cwdOf: sid => openerOf(batonStore.all(), sid)?.from.cwd,
-            gitStatus: gitShortStatus,
-            openDirt: sid => openerOf(batonStore.all(), sid)?.dirt
+            placeOf: sid => openerOf(batonStore.all(), sid)?.from,
+            gitStatus: legGit.dirtOf,
+            openDirt: sid => openerOf(batonStore.all(), sid)?.dirt,
+            openHead: sid => openerOf(batonStore.all(), sid)?.head,
+            commitsOf: legGit.commitsOf
         }),
         launchIdOf: batonAttachDeps.launchIdOf,
         maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
@@ -17034,8 +17041,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             })()
         ],
         manifestOf: launchId => manifestOf(launchManifests(), { launchId }),
-        headOf: cwd => headCommit(cwd),
-        dirtOf: gitShortStatus
+        headOf: legGit.headOf,
+        dirtOf: legGit.dirtOf
     });
     // S-77 — ONE status-bar item for the relay running right now; hidden while none runs.
     const batonBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);

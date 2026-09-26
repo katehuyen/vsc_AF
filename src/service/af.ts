@@ -146,13 +146,7 @@ export function resolvePayload(opts: CliOptions): Record<string, unknown> {
         if (!fs.existsSync(absPath)) {
             throw new Error(`Args file not found: ${absPath}`);
         }
-        const content = fs.readFileSync(absPath, 'utf8').replace(/^\uFEFF/, '').trim();
-        if (!content) { return {}; }
-        const parsed = JSON.parse(content) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            throw new Error(`Args in file ${opts.argsFile} must be a JSON object.`);
-        }
-        return parsed as Record<string, unknown>;
+        return parsePayloadText(fs.readFileSync(absPath, 'utf8'), `Args file ${opts.argsFile}`);
     }
 
     if (opts.fromStdin) {
@@ -198,7 +192,14 @@ export function resolvePayload(opts: CliOptions): Record<string, unknown> {
 export function parsePayloadText(raw: string, source: string): Record<string, unknown> {
     const content = raw.replace(/^\uFEFF/, '').trim();
     if (!content) { return {}; }
-    const parsed = JSON.parse(content) as unknown;
+    let parsed: unknown;
+    try { parsed = JSON.parse(content); } catch (e) {
+        const m = String((e as Error).message ?? e);
+        // A Windows path pasted into a JSON string: `D:\zone` is an escape (\z), and JSON.parse names only a position.
+        const hint = /Bad escaped character|Invalid escape|Bad control character/i.test(m)
+            ? ' A backslash inside a JSON string starts an escape: write a Windows path as D:\\\\zone\\\\dev or D:/zone/dev.' : '';
+        throw new Error(`${source} is not valid JSON: ${m}.${hint}`);
+    }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error(`${source} must contain a JSON object.`);
     }

@@ -21,6 +21,7 @@ import { FirstLeg, sealFirstLeg } from './batonSeal';
 import { LegEndFacts } from './batonFailsafe';
 import { LegEndWatch, NoticeLevel } from './batonLegEnd';
 import { markStored } from './batonLegFacts';
+import type { FolderRead } from './legRoots';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
 
@@ -103,9 +104,9 @@ export interface BatonRunnerDeps {
     firstLegs?: () => FirstLeg[];
     manifestOf?: (launchId: string) => LaunchManifest | undefined;
     /** the folder's git HEAD, recorded on the seal for the barren brake */
-    headOf?: (cwd: string) => Promise<string | undefined>;
+    headOf?: FolderRead;
     /** S-92 — the folder's `git status --short`, recorded on a seal and a rescue for the failsafe */
-    dirtOf?: (cwd: string) => Promise<string | undefined>;
+    dirtOf?: FolderRead;
     /** S-84 — the A2A board the chain's handover cards live on; absent = no cards */
     board?: BatonBoard;
 }

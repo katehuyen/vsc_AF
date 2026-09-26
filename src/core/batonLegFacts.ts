@@ -11,6 +11,7 @@
 import { LegEndFacts } from './batonFailsafe';
 import type { Baton } from './baton';
 import type { BatonStore } from './batonStore';
+import type { FolderRead, LegPlace } from './legRoots';
 
 export interface LegFactSources {
     /** the Console card for the session, if it has one */
@@ -24,15 +25,17 @@ export interface LegFactSources {
     readNote: (file: string) => { ts: number; text: string } | undefined;
     /** tool calls the live monitor counted */
     toolCalls: (sessionId: string) => number | undefined;
-    /** the leg's folder */
-    cwdOf: (sessionId: string) => string | undefined;
-    /** `git status --short` of a folder; undefined when it is not a repository */
-    gitStatus: (cwd: string) => Promise<string | undefined>;
-    /** S-92 — the same folder's `git status --short` when the leg opened (its opener's `dirt`) */
+    /** S-83 — the leg's place: its folder and the project it runs in (legRoots.ts) */
+    placeOf: (sessionId: string) => LegPlace | undefined;
+    /** `git status --short` over the place's roots; undefined when none is a repository */
+    gitStatus: FolderRead;
+    /** S-92 — the same roots' `git status --short` when the leg opened (its opener's `dirt`) */
     openDirt?: (sessionId: string) => string | undefined;
+    /** S-83 — the roots' HEADs when the leg opened (its opener's `head`) */
+    openHead?: (sessionId: string) => string | undefined;
+    /** S-83 — what the place's roots committed since that HEAD fingerprint */
+    commitsOf?: (place: LegPlace, openFp: string | undefined) => Promise<string | undefined>;
 }
-
-type FolderRead = (cwd: string) => Promise<string | undefined>;
 
 /**
  * S-92 — the engines write into the agent repository on every turn: their
@@ -56,9 +59,9 @@ export function newDirt(now: string | undefined, before?: string): string | unde
         .join('\n');
 }
 
-/** S-78 / S-92 — the folder as a leg opens on it: HEAD for the barren brake, status for the failsafe. */
+/** S-78 / S-92 — the leg's place as it opens: HEADs for the barren brake, status for the failsafe (S-83: every root). */
 export async function markFolder<B extends Pick<Baton, 'from' | 'head' | 'dirt'>>(b: B, headOf?: FolderRead, dirtOf?: FolderRead): Promise<B> {
-    const read = (f?: FolderRead) => f ? f(b.from.cwd).catch(() => undefined) : Promise.resolve(undefined);
+    const read = (f?: FolderRead) => f ? f(b.from).catch(() => undefined) : Promise.resolve(undefined);
     const [head, dirt] = await Promise.all([read(headOf), read(dirtOf)]);
     return { ...b, ...(head ? { head } : {}), ...(dirt ? { dirt } : {}) };
 }
@@ -91,9 +94,11 @@ export function legFactsFrom(src: LegFactSources): (sessionId: string, endedAt: 
         const error = card?.status === 'error' ? (card.exitReason || 'the Console run ended in error')
             : row?.status === 'failed' ? (row.why || 'its task row failed') : undefined;
         const tools = safe(() => src.toolCalls(sid)) ?? card?.lastTurn?.steps;
-        const cwd = safe(() => src.cwdOf(sid));
-        const raw = cwd ? await src.gitStatus(cwd).catch(() => undefined) : undefined;
+        const place = safe(() => src.placeOf(sid));
+        const raw = place?.cwd ? await src.gitStatus(place).catch(() => undefined) : undefined;
         const dirty = newDirt(raw, safe(() => src.openDirt?.(sid)));
+        const commits = place?.cwd && src.commitsOf
+            ? await src.commitsOf(place, safe(() => src.openHead?.(sid))).catch(() => undefined) : undefined;
         return {
             sessionId: sid, endedAt,
             byUser: card?.exitReason === CLOSED_BY_USER || row?.status === 'cancelled',
@@ -102,6 +107,7 @@ export function legFactsFrom(src: LegFactSources): (sessionId: string, endedAt: 
             ...(code ? { exitCode: Number(code[1]) } : {}),
             ...(error ? { error } : {}),
             ...(dirty !== undefined ? { dirty } : {}),
+            ...(commits ? { commits } : {}),
             ...(typeof tools === 'number' ? { toolCalls: tools } : {})
         };
     };

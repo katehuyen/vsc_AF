@@ -248,8 +248,8 @@
         // X-424 — which records the Studio wall shows (src/core/studioLibrary.ts)
         slPoint('base', 'Studio wall — database', 'text', '', 'studioLibraryBase'),
         slPoint('stages', 'Studio wall — stages shown', 'text', '', 'studioLibraryStages'),
-        slPoint('kind', 'Studio wall — kind', 'enum', '', 'studioLibraryKind', { options: ['', 'image', 'video', 'audio'] }),
-        slPoint('success', 'Studio wall — outcome', 'enum', '', 'studioLibrarySuccess', { options: ['', 'passed', 'failed'] }),
+        slPoint('kind', 'Studio wall — kind', 'enum', '', 'studioLibraryKind', { options: ['', 'image', 'video', 'audio'], emptyLabel: 'every kind' }),
+        slPoint('success', 'Studio wall — outcome', 'enum', '', 'studioLibrarySuccess', { options: ['', 'passed', 'failed'], emptyLabel: 'passed + failed' }),
         // X-419 — a model fills the records' meaning (src/core/enrichSpec.ts)
         enPoint('when', 'Enrich — when', 'enum', 'end', 'libraryEnrich', 'When', { options: ['end', 'record', 'never'] }),
         enPoint('scope', 'Enrich — which files', 'enum', 'final-failed', 'libraryEnrichScope', 'Scope', { options: ['final-failed', 'final', 'all'] }),

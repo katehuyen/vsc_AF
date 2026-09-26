@@ -44,6 +44,8 @@ export interface LegEndFacts {
     error?: string;
     /** `git status --short` of its folder: '' = clean, undefined = not read */
     dirty?: string;
+    /** S-83 — what its folder and its project's repositories committed during the run (`git log --oneline`) */
+    commits?: string;
     /** tool calls it made; undefined = not known */
     toolCalls?: number;
 }
@@ -135,10 +137,12 @@ export function noteSections(text: string): string {
 /**
  * What the rescued successor is handed under the emergency header — the
  * baton's `prompt`, and the template's `{evidence}`: the note when there is
- * one, otherwise the folder's uncommitted state. Its last words are never
- * guessed here; the header points at `sessions.read` for them.
+ * one; otherwise ‼️ S-83 the brief the leg itself started from (`brief`, its
+ * opener's words), so a leg cut off before it could pass is continued on its
+ * job rather than guessed at. Then what it committed and left uncommitted.
+ * Its last words are never guessed here; the header points at `sessions.read`.
  */
-export function rescueEvidence(f: LegEndFacts, reasons: readonly string[]): string {
+export function rescueEvidence(f: LegEndFacts, reasons: readonly string[], brief?: string): string {
     const lines = [`Why it was rescued: ${reasons.join('; ')}.`];
     const note = f.note && f.note.ts >= f.endedAt - FAILSAFE_NOTE_WINDOW_MS ? f.note : undefined;
     if (note) {
@@ -146,7 +150,12 @@ export function rescueEvidence(f: LegEndFacts, reasons: readonly string[]): stri
     } else {
         lines.push('', 'It wrote no handover note.');
     }
+    if (f.commits) { lines.push('', 'What it committed during its run (git log --oneline, newest first):', cap(f.commits, 2000)); }
     if (f.dirty) { lines.push('', 'Uncommitted in its folder (git status --short):', cap(f.dirty, 2000)); }
+    const words = String(brief ?? '').trim();
+    if (!note && words) {
+        lines.push('', 'The brief it started from — its own opening words; the commits above are what it got done of it:', '', cap(words));
+    }
     return lines.join('\n');
 }
 

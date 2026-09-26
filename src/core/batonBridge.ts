@@ -14,6 +14,7 @@ import { BridgeCaller, BridgeRefusal, BridgeRegistry, optNum, optStr } from './b
 import { BATON_DEFAULT_MAX_LEGS, Baton, batonPlanSentence, isLive, moveBaton, passBaton, successorSurface } from './baton';
 import { BatonBrake, batonBrake } from './batonBrake';
 import { markFolder } from './batonLegFacts';
+import type { FolderRead } from './legRoots';
 import { attachRelay } from './batonAttach';
 import { BatonBoard } from './batonBoard';
 import { chainMaxLegs } from './batonSeal';
@@ -35,9 +36,9 @@ export interface BatonBridgeDeps {
     /** S-74 — the runner's button: the successor starts now (BatonRunner.startNow) */
     startNow?: (b: Baton, by: string) => { ok: true; baton: Baton } | { ok: false; why: string };
     /** S-78 — the passing folder's git HEAD, for the barren brake */
-    headOf?: (cwd: string) => Promise<string | undefined>;
+    headOf?: FolderRead;
     /** S-92 — the passing folder's `git status --short`, for the failsafe */
-    dirtOf?: (cwd: string) => Promise<string | undefined>;
+    dirtOf?: FolderRead;
     /** S-78 — agentFarm.batonMaxHops; absent = BATON_DEFAULT_MAX_LEGS */
     maxLegs?: () => number;
     /** S-78 — a brake stopped a chain: one of the two things a relay tells Notices (S-77) */

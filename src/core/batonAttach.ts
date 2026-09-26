@@ -7,6 +7,7 @@
  */
 import { BATON_DEFAULT_MAX_LEGS, Baton, BatonRelay, batonRelayOf, normalizeLegCeiling } from './baton';
 import { markStored } from './batonLegFacts';
+import type { FolderRead } from './legRoots';
 import { chainMaxLegs, sealFirstLeg } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { DisciplineOrders, orderFor } from './contextGuard';
@@ -16,9 +17,9 @@ export interface AttachDeps {
     store: BatonStore;
     launchIdOf: (sessionId: string) => string | undefined;
     manifests: () => readonly LaunchManifest[];
-    headOf?: (cwd: string) => Promise<string | undefined>;
+    headOf?: FolderRead;
     /** S-92 — the folder's `git status --short` at the seal, for the failsafe */
-    dirtOf?: (cwd: string) => Promise<string | undefined>;
+    dirtOf?: FolderRead;
     /** the setting's leg ceiling, for the sentence */
     maxLegs?: () => number;
     now?: () => number;

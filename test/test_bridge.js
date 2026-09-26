@@ -5766,6 +5766,16 @@ const { opencodeStatus, syncToOpencode } =
         fs.writeFileSync(sampleArgFile, JSON.stringify({ title: 'Test Notice', priority: 1 }), 'utf8');
         const p3 = resolvePayload({ argsFile: sampleArgFile, timeoutMs: 1000, rawOutput: false, help: false });
         ok('resolvePayload reads from JSON file', p3.title === 'Test Notice' && p3.priority === 1);
+        // A Windows path typed into an args file: \z is an escape, and a bare "Bad escaped character at 837" named no cure
+        const winPathFile = path.join(tmpStorage, 'winpath-args.json');
+        fs.writeFileSync(winPathFile, '{ "note": "repo D:\\zone\\dev" }', 'utf8');
+        let winPathMsg = '';
+        try { resolvePayload({ argsFile: winPathFile, timeoutMs: 1000, rawOutput: false, help: false }); } catch (e) { winPathMsg = String(e.message); }
+        ok('an args file with a raw Windows path is refused WITH the cure, naming the file',
+            /^Args file .*winpath-args\.json is not valid JSON: /.test(winPathMsg) && /write a Windows path as D:\\\\zone\\\\dev or D:\/zone\/dev\.$/.test(winPathMsg));
+        let arrMsg = '';
+        try { parsePayloadText('[1]', 'stdin'); } catch (e) { arrMsg = String(e.message); }
+        ok('…and a JSON array is still refused as not an object', arrMsg === 'stdin must contain a JSON object.');
 
         // --out: the answer to `node af.js <op> > file`, which hands the bytes to a shell
         // that re-encodes them. A catalog dump taken that way arrived with a BOM and broke

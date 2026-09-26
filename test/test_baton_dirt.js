@@ -47,7 +47,7 @@ console.log('\n== the folder photographed at the open ==');
 
     const src = (o) => Object.assign({
         card: () => undefined, row: () => undefined, guard: () => undefined, notePath: () => undefined,
-        readNote: () => undefined, toolCalls: () => undefined, cwdOf: () => 'D:\\agent', gitStatus: async () => POOL
+        readNote: () => undefined, toolCalls: () => undefined, placeOf: () => ({ cwd: 'D:\\agent' }), gitStatus: async () => POOL
     }, o);
     const clean = await LF.legFactsFrom(src({}))('s1', 1);
     ok('‼️ a leg that left only the pool is not dirty — the chain can end as done', clean.dirty === '');
@@ -65,7 +65,8 @@ console.log('\n== the folder photographed at the open ==');
         && /dirtOf: deps\.dirtOf/.test(read('core/batonRunner.ts')));
     const ext = read('extension.ts');
     ok('the window hands the reader to the pass, the seal and the failsafe',
-        /dirtOf: gitShortStatus,/.test(ext) && /dirtOf: gitShortStatus\n/.test(ext)
+        /dirtOf: legGit\.dirtOf,/.test(ext) && /dirtOf: legGit\.dirtOf\n/.test(ext)
+        && /gitStatus: legGit\.dirtOf,/.test(ext) && /commitsOf: legGit\.commitsOf/.test(ext)
         && /openDirt: sid => openerOf\(batonStore\.all\(\), sid\)\?\.dirt/.test(ext));
 
     console.log(`\ntest_baton_dirt: ${pass} passed, ${fail} failed`);

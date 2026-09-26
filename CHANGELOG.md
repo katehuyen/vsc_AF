@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.681.0 - A relay leg cut off at the wall is rescued; the Studio wall reads the library (S-83, X-424) (2026-09-27)
+
+- **A cut-off relay leg is really rescued.** Measured live: a leg told to
+  hand over at the 5-hour wall committed its work, wrote its baton and hit
+  the account limit a second before passing it. The failsafe judged it
+  correctly - rescue - and then the barren-chain brake stopped the rescue,
+  because it looked for commits only in the agent's folder while the work
+  had gone into the project's repository. A leg is now measured where its
+  work lands: its folder AND the code repositories of the project it runs
+  in, for the brake and for "left uncommitted work" alike.
+- **The rescued leg knows its job.** With no handover note, the emergency
+  successor used to get one line: "It wrote no handover note." It now gets
+  the brief the leg itself started from, what it committed during its run
+  and what it left uncommitted - so it continues the work instead of
+  reconstructing it.
+- **The Studio's Assets tab is the media library's wall (X-424).** Cards are
+  the records of a local Airtable database: stage, status, outcome, A/H
+  score, form fill and the cause/effect chain on hover. A record made here
+  keeps its Re-run/Vary/Feedback/Scene doors. The `.media.json` sidecars are
+  only a cache - engine down, no database chosen, or not recorded yet - and
+  the note over the wall says which; the page never starts an engine.
+  Filters (database, stages, kind, success) are Farm settings
+  `agentFarm.studioLibrary*`, a live filter row, and bridge `studio.library`.
+- **af.js names the cure for a Windows path in an args file.** `D:\zone` in a
+  JSON string is an escape; the refusal now says so and how to write it.
+
 ## 3.680.1 - A library file a run reads stays where it is (X-420) (2026-09-26)
 
 - **A recorded input is linked, never moved.** Measured live: a run read a

@@ -4,6 +4,7 @@
  * own (ceiling, barren); S-96 adds the user's (`lastLeg` on the running leg).
  */
 import { Baton, openerOf } from './baton';
+import { headsLabel, headsRoots } from './legRoots';
 
 export interface BatonBrake {
     kind: 'ceiling' | 'user' | 'barren';
@@ -20,7 +21,9 @@ export interface BatonBrake {
  * - user: the passing leg's opener carries `lastLeg` — the user made it the last.
  * - barren: the two legs before the next one each ended on the same HEAD they
  *   were opened on — two runs in a row committed nothing, and a third would
- *   only spend another window the same way.
+ *   only spend another window the same way. ‼️ S-83: `head` fingerprints the
+ *   leg's folder AND its project's repositories (legRoots.ts) — the folder
+ *   alone read three commits in the project's repo as none and killed a rescue.
  */
 export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: number): BatonBrake | undefined {
     const next = draft.hop + 1;
@@ -43,9 +46,10 @@ export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: numbe
     const h1 = legOf(draft.hop - 1)?.head;
     const h2 = legOf(draft.hop - 2)?.head;
     if (h1 === head && h2 === head) {
+        const roots = headsRoots(head);
         return {
             kind: 'barren',
-            why: `barren chain — legs ${draft.hop - 1} and ${draft.hop} both ended with no new commit in ${draft.from.cwd} (HEAD still ${head.slice(0, 8)}); leg ${next} does not open.`
+            why: `barren chain — legs ${draft.hop - 1} and ${draft.hop} both ended with no new commit in ${roots.length ? roots.join(', ') : draft.from.cwd} (HEAD still ${headsLabel(head)}); leg ${next} does not open.`
         };
     }
     return undefined;

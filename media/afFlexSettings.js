@@ -17,7 +17,8 @@
                 `${TRI_DETAIL[s]} (${p.states[s]})`, { selected: p.states[s] === v })).join('') + '</select>';
         }
         if (p.type === 'enum' && p.options) {
-            return `<select ${a}>` + p.options.map(o => C.option(o, o, { selected: o === v })).join('') + '</select>';
+            // an empty value is a choice too ("every kind"): it gets words, never a blank row with no title
+            return `<select ${a}>` + p.options.map(o => C.option(o, o === '' ? (p.emptyLabel || 'empty') : o, { selected: o === v })).join('') + '</select>';
         }
         if (p.type === 'boolean') {
             return `<select ${a}>${C.option('true', 'on', { selected: v === true })}${C.option('false', 'off', { selected: v === false })}</select>`;

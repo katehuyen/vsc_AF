@@ -42,6 +42,8 @@ export interface FlexPoint {
     min?: number;
     max?: number;
     options?: string[];
+    /** what an `enum` point's empty option means ("every kind") — the box shows it instead of a blank */
+    emptyLabel?: string;
     /** a `tri` point's stored value for each of ask / auto / never */
     states?: Record<FlexTriState, string>;
 }

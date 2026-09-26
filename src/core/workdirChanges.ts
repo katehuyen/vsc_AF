@@ -56,6 +56,14 @@ export async function headCommit(cwd: string, git: GitRun = run): Promise<string
     return /^[0-9a-f]{7,64}$/i.test(h) ? h : undefined;
 }
 
+/** S-83 — the commits on HEAD after `since`, `git log --oneline` newest first; undefined when git cannot say. */
+export async function commitsAfter(cwd: string, since: string, git: GitRun = run, max = 30): Promise<string | undefined> {
+    if (!cwd || !/^[0-9a-f]{7,64}$/i.test(since)) { return undefined; }
+    try {
+        return (await git(['log', '--oneline', '--no-decorate', `-${max}`, `${since}..HEAD`], cwd)).trimEnd();
+    } catch { return undefined; }
+}
+
 /** The summary as one message. */
 export function changesText(label: string, c: ChangesSummary): string {
     if (c.note) { return `📄 ${label}\n${c.note}`; }

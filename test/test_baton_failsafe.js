@@ -125,7 +125,7 @@ console.log('\n== reading a leg\'s end ==');
 const LF = require(path.join(OUT, 'batonLegFacts.js'));
 const src = (o) => Object.assign({
     card: () => undefined, row: () => undefined, guard: () => undefined, notePath: () => undefined,
-    readNote: () => undefined, toolCalls: () => undefined, cwdOf: () => 'D:\\repo', gitStatus: async () => ''
+    readNote: () => undefined, toolCalls: () => undefined, placeOf: () => ({ cwd: 'D:\\repo' }), gitStatus: async () => ''
 }, o);
 
 console.log('\n== the runner ==');
