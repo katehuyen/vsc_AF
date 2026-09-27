@@ -59,6 +59,18 @@ console.log('\n== the word list is the user\'s ==');
     ok('a /…/ that does not compile is matched as text, never a crash', F.wordMatcher('/([/').test('a /([/ b'));
 }
 
+console.log('\n== ‼️ with the filter off, nothing stops the clock ==');
+{
+    const { AutoAnswerTimers } = require(path.join(ROOT, 'out', 'core', 'autoAnswerTimers.js'));
+    let s = settings({ filter: 'off' });
+    const a = Object.assign(ask([{ question: 'Go?', options: [{ label: 'Yes (Recommended)' }] }]), { ts: Date.now() });
+    const t = new AutoAnswerTimers({ settings: () => s, askOf: () => a, expire: () => {} });
+    ok('off: a Stop is refused', t.hold('c1') === false);
+    ok('off: the card is told it cannot be stopped', A.autoAnswerView(a, s).holdable === false);
+    s = settings({});
+    ok('recommended: the person at the card may still stop it', t.hold('c1') === true && A.autoAnswerView(a, s).holdable === true);
+}
+
 console.log('\n== one list, three places ==');
 {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));

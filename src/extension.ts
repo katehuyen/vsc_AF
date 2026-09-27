@@ -12939,21 +12939,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
-            op: 'console.autoAnswer.hold',
-            describe: 'Stop the auto-answer countdown on the question a hosted Console session parked its turn on (K-43) — the question then waits for a person whatever agentFarm.console.autoAnswer.* says; the same as the card\'s "Stop timer" button. args: id. Returns the card\'s view: { state: armed | held | waiting, reason, why, dueAt, picks }. console.sessions → asking.autoAnswer shows the countdown before you stop it. Refused when no countdown is running (a permission ask, a destructive-looking question, or the setting is off — its why says which).',
-            handler: (args) => {
-                const id = argStr(args, 'id');
-                const s = consoleHost.get(id);
-                need(s, 'no such live console session (console.sessions lists them)');
-                need(s!.pendingAsk, 'that session is not waiting on an answer right now');
-                const before = consoleHost.autoAnswerView(id);
-                need(before?.state !== 'waiting', `there is no countdown to stop — ${before?.why ?? ''}`);
-                const held = consoleHost.holdAutoAnswer(id);
-                ConsolePanel.refreshIfOpen();
-                return { id, held, autoAnswer: consoleHost.autoAnswerView(id) };
-            }
-        },
-        {
             op: 'console.permissionMode',
             // ‼️ B-12 — THE SECURITY LINE IS UNCHANGED AND IS NOW SAID OUT LOUD.
             // OpenCode's Console permission card is user-triggerable, so the SOP

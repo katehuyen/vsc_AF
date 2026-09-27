@@ -1324,9 +1324,10 @@
       "ui": [
         "page:consolePanel.ts#askHold"
       ],
-      "ops": [
-        "console.autoAnswer.hold"
-      ]
+      "exempt": {
+        "kind": "human-only",
+        "why": "K-45 (the user's rule, 2026-09-27): stopping a question's timer is nobody's to do but the user at the card — never an agent's. A night relay stood still for hours on a question nobody was there to answer; an op that let any agent freeze another's clock is exactly that failure on demand. With the filter off, not even the card can stop it."
+      }
     },
     {
       "capability": "consolePanel.ts#attachDrop",

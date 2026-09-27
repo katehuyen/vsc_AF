@@ -2049,8 +2049,8 @@
         if (v.state === 'armed') {
             return `<div class="aa" id="c-ask-aa">⏳ <span class="aa-left" data-aa-due="${v.dueAt}">${aaLeft(v.dueAt - Date.now())}</span>
                 left — then <span class="aa-pick">${C.esc(aaPicks(v))}</span> is chosen for you
-                <button class="secondary" id="c-ask-hold"
-                    title="Stop the countdown — this question then waits for you, and nothing is chosen on your behalf. Picking an option or typing an answer stops it too.">Stop timer</button></div>`;
+                ${v.holdable === false ? '' : `<button class="secondary" id="c-ask-hold"
+                    title="Stop the countdown — this question then waits for you, and nothing is chosen on your behalf. Picking an option or typing an answer stops it too.">Stop timer</button>`}</div>`;
         }
         if (v.state === 'held') {
             return '<div class="aa held">⏸ Timer stopped — this question waits for you.</div>';
@@ -2250,7 +2250,8 @@
         // K-43 — somebody is here: a pick or a keystroke stops the countdown,
         // so a half-made choice is never overwritten by the timer.
         const hold = () => {
-            if (!s.autoAnswer || s.autoAnswer.state !== 'armed' || aaHoldSent === a.requestId) { return; }
+            // K-45 — with the user's filter off nothing stops the clock, not even a touch
+            if (!s.autoAnswer || s.autoAnswer.state !== 'armed' || s.autoAnswer.holdable === false || aaHoldSent === a.requestId) { return; }
             aaHoldSent = a.requestId;
             vscode.postMessage({ type: 'askHold', id: s.id });
         };

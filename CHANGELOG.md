@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.691.0 - No agent can stop a question's timer (K-45, part 2a) (2026-09-27)
+
+- **Stopping a question's countdown is no longer on the bridge.** An agent
+  could freeze any session's timer with `console.autoAnswer.hold`; that op
+  is gone — only the person at the card can press Stop.
+- **With the filter `off`, nothing stops the clock:** the Stop button is
+  not drawn, a pick or a keystroke does not stop it, and a clock stopped
+  earlier runs again the moment you switch the filter off.
+
 ## 3.690.0 - The question timer's filter is yours (K-45, part 1) (2026-09-27)
 
 - **A word in an option the timer would never pick no longer freezes a

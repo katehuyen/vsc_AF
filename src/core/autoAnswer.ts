@@ -281,6 +281,8 @@ export interface AutoAnswerView {
     timeoutSeconds: number;
     /** the labels the timer will choose, in question order */
     picks: string[];
+    /** K-45 — whether a person may stop this clock at all: never while the user's filter is `off` */
+    holdable: boolean;
 }
 
 export function autoAnswerView(
@@ -288,13 +290,13 @@ export function autoAnswerView(
 ): AutoAnswerView | null {
     if (!ask) { return null; }
     const verdict = autoAnswerFor(ask, settings);
-    const base = { requestId: ask.requestId, timeoutSeconds: settings.timeoutSeconds };
+    const base = { requestId: ask.requestId, timeoutSeconds: settings.timeoutSeconds, holdable: settings.filter !== 'off' };
     if (!verdict.armed) {
         return { ...base, state: 'waiting', reason: verdict.reason, why: verdict.why, dueAt: 0, picks: [] };
     }
     const picks = Object.values(verdict.answers ?? {}).flatMap(a => (Array.isArray(a) ? a : [a]));
     const dueAt = ask.ts + settings.timeoutSeconds * 1000;
-    return heldAt && heldAt > 0
+    return heldAt && heldAt > 0 && base.holdable
         ? {
             ...base, state: 'held', reason: 'armed', dueAt, heldAt, picks,
             why: 'waiting for you — the timer was stopped, so nothing will be chosen for you.'

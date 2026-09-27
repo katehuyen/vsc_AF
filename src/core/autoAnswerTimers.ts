@@ -51,7 +51,9 @@ export class AutoAnswerTimers {
         const same = !!slot && slot.requestId === ask.requestId;
         if (same && !force) { return; }
         if (slot?.timer) { clearTimeout(slot.timer); }
-        const next: Slot = { requestId: ask.requestId, heldAt: same ? slot!.heldAt : undefined };
+        // K-45 — the user turned the filter off: a clock somebody stopped runs again
+        const off = this.deps.settings().filter === 'off';
+        const next: Slot = { requestId: ask.requestId, heldAt: same && !off ? slot!.heldAt : undefined };
         this.slots.set(id, next);
         if (!next.heldAt) { this.arm(id, next, ask); }
     }
@@ -81,10 +83,13 @@ export class AutoAnswerTimers {
         this.deps.expire(id, verdict.answers, settings);
     }
 
-    /** Stop the clock on this card's current ask. False when there is nothing to stop. */
+    /**
+     * Stop the clock on this card's current ask. False when there is nothing to stop —
+     * ‼️ and ALWAYS false while the user's filter is `off` (K-45): then nothing stops it.
+     */
     hold(id: string): boolean {
         const ask = this.deps.askOf(id);
-        if (!ask) { return false; }
+        if (!ask || this.deps.settings().filter === 'off') { return false; }
         let slot = this.slots.get(id);
         if (!slot || slot.requestId !== ask.requestId) {
             slot = { requestId: ask.requestId };

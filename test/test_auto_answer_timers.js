@@ -207,9 +207,12 @@ function wiring() {
     const ROOT = path.join(__dirname, '..');
     const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
     const ext = read('src/extension.ts');
-    const hold = ext.slice(ext.indexOf("op: 'console.autoAnswer.hold'"), ext.indexOf("op: 'console.autoAnswer.hold'") + 1600);
-    ok('console.autoAnswer.hold is on the bridge and calls the host\'s own Stop',
-        hold.length > 100 && /consoleHost\.holdAutoAnswer\(id\)/.test(hold));
+    ok('‼️ K-45: no agent can stop a question\'s clock — console.autoAnswer.hold is not on the bridge',
+        ext.indexOf("op: 'console.autoAnswer.hold'") < 0);
+    const parity = JSON.parse(read('parity.manifest.json'));
+    const entry = (parity.entries || parity.capabilities || parity).find
+        ? (parity.entries || parity.capabilities || parity).find(e => e.capability === 'consolePanel.ts#askHold') : null;
+    ok('…and the card\'s Stop is recorded as the person\'s own (human-only)', !!entry && entry.exempt && entry.exempt.kind === 'human-only');
     ok('console.sessions says whether a timer will answer the question',
         /autoAnswer: consoleHost\.autoAnswerView\(s\.id\)/.test(ext));
     ok('‼️ the host is handed the settings reader — without it the feature is OFF for everyone',
