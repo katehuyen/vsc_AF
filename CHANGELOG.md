@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.715.0 - A headless task's own cost is found by its session id (A-27) (2026-09-27)
+
+- Two runs of the same agent back to back fell inside each other's time
+  window, so neither was priced; and a transcript the index had not read
+  to its end yet was posted as $0 and kept at $0. A task whose stream bound
+  a session is now priced by that id, and a $0 / 0-token read waits for the
+  index instead of locking a zero in.
+
 ## 3.714.0 - A text check no longer loads the agent's context (A-27) (2026-09-27)
 
 - A workflow step's text check ran in the step agent's folder, so every

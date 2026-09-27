@@ -49,6 +49,16 @@ function engineKey(v: string | undefined): string {
  * documented contract (X-19): zero means "this engine states no price", never
  * "this run was cheap", and the surfaces that print it say so.
  */
+/**
+ * A-27 — a matched transcript's figures are final once they read something: a
+ * $0 / 0-token read is the index not having reached the file's end yet, and
+ * posting it locks a zero in (setTaskCost is idempotent). Past 60 tries or 15
+ * minutes what there is, is posted.
+ */
+export function costReady(cost: number | undefined, tokens: number, tries: number, endedAt: number, now: number): boolean {
+    return (cost ?? 0) > 0 || tokens > 0 || tries > 60 || now - endedAt > 15 * 60_000;
+}
+
 export function matchTaskSession<T extends CostSessionLite>(
     task: CostTaskSpan,
     sessions: T[],

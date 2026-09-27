@@ -126,7 +126,7 @@ import {
 import { registerSettingsOps } from './core/settingsBridge';
 import { registerFlexOps } from './core/flexBridge';
 import { setWorkflowFlex } from './core/flexWorkflow';
-import { matchTaskSession } from './core/taskcost';
+import { costReady, matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
     FIX_COMMANDS, insightKey, pickAutoDelegates
@@ -4147,6 +4147,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agentId: string; engine?: string; startedAt: number; endedAt: number; tries: number;
         /** ‼️ S-19 — set when this run CONTINUED a conversation. */
         resumeSessionId?: string; costBefore?: number; tokensBefore?: number;
+        /** A-27 — the session this run's stream bound: matched by identity before any time window */
+        runSessionId?: string;
     }>();
     const tryAttachCosts = () => {
         if (!taskRunner) { return; }
@@ -4176,10 +4178,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 continue;
             }
-            const hit = matchTaskSession(p, index.forAgentWithExternal(p.agentId));
+            // A-27 — the run's own session id when the stream bound one: two runs back to back fall
+            // inside each other's time window and the window alone matched neither
+            const hit = (p.runSessionId ? index.byId(p.runSessionId) : undefined) ?? matchTaskSession(p, index.forAgentWithExternal(p.agentId));
             if (hit) {
-                taskManager.setTaskCost(id, hit.cost, hit.file, totalTokens(hit.usage));
-                costPending.delete(id);
+                if (costReady(hit.cost, totalTokens(hit.usage), ++p.tries, p.endedAt, Date.now())) {
+                    taskManager.setTaskCost(id, hit.cost ?? 0, hit.file, totalTokens(hit.usage));
+                    costPending.delete(id);
+                }
             } else if (++p.tries > 60 || Date.now() - p.endedAt > 15 * 60_000) {
                 costPending.delete(id); // transcript never appeared or stayed ambiguous
             }
@@ -4194,6 +4200,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 costPending.set(t.id, {
                     agentId: t.agentId, engine: t.engine,
                     startedAt: t.startedAt, endedAt: t.endedAt, tries: 0,
+                    ...(t.runSessionId && !t.resumeSessionId ? { runSessionId: t.runSessionId } : {}),
                     ...(t.resumeSessionId ? {
                         resumeSessionId: t.resumeSessionId,
                         costBefore: t.resumeCostBefore ?? 0,

@@ -84,5 +84,18 @@ ok('candidate mix: one valid among invalid ones still matches',
     tm.dispose();
 }
 
+// A-27 — a $0 / 0-token read is the index not at the file's end yet: wait, never lock a zero in
+{
+    const { costReady } = require(path.join(ROOT, 'out/core/taskcost.js'));
+    const now = 1_000_000_000;
+    ok('a read with a cost or tokens is final', costReady(0.02, 0, 1, now, now) && costReady(0, 3000, 1, now, now));
+    ok('‼️ a $0, 0-token read waits', !costReady(0, 0, 1, now - 5000, now) && !costReady(undefined, 0, 60, now, now));
+    ok('…until 60 tries or 15 minutes, then posts what there is', costReady(0, 0, 61, now, now) && costReady(0, 0, 1, now - 15 * 60_000 - 1, now));
+    const ext = fs.readFileSync(path.join(ROOT, 'src/extension.ts'), 'utf8');
+    ok('‼️ a run is priced by its own session id before any time window (back-to-back runs matched neither)',
+        /const hit = \(p\.runSessionId \? index\.byId\(p\.runSessionId\) : undefined\) \?\? matchTaskSession\(/.test(ext)
+        && /if \(costReady\(hit\.cost, totalTokens\(hit\.usage\), \+\+p\.tries, p\.endedAt, Date\.now\(\)\)\)/.test(ext));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
