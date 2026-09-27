@@ -1,4 +1,5 @@
 import { AutomationEvent, evaluatePrecondition, Precondition, PreconditionDeps } from './automation';
+import { type PublishView, publishSignals } from './calendarSignals';
 
 /**
  * The Living page — one screen that answers a single question: **is the system
@@ -113,6 +114,8 @@ export interface LivingInput {
      * answer that will disagree within a week.
      */
     projects?: { name: string; warnings: string[] }[];
+    /** M-61 — the content calendar's upcoming and overdue publishes (src/core/calendarSignals.ts) */
+    publishes?: PublishView;
     preconditionDeps?: PreconditionDeps;
 }
 
@@ -443,6 +446,7 @@ export function buildLivingReport(input: LivingInput): LivingReport {
         ...dutySignals(input),
         ...spendSignal(input),
         ...projectSignals(input),
+        ...publishSignals(input.publishes, now),
         ...checkSignals(input)
     ].sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label));
 

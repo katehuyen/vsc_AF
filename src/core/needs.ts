@@ -14,6 +14,7 @@
  */
 import { askActions, WorkflowQuestion } from './workflowAsk';
 import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
+import { type OverduePublish, publishNeedItems } from './calendarSignals';
 
 export type NeedKind =
     | 'permission'        // a live session is blocked on a permission dialog
@@ -23,7 +24,8 @@ export type NeedKind =
     | 'conflict'          // Antigravity two-sided drift needs reconciling
     | 'mission'           // a mission waits on the human (question / interrupted)
     | 'question'          // M-46 — a workflow supervisor asks the human
-    | 'console-question'; // K-45 — a Console question no timer will answer
+    | 'console-question'  // K-45 — a Console question no timer will answer
+    | 'publish-overdue';  // M-61 — a content calendar publish past its time, still open
 
 export interface NeedAction {
     id: string;
@@ -46,6 +48,9 @@ export interface NeedRef {
     /** console-question: the Console card and the ask it is parked on */
     consoleId?: string;
     requestId?: string;
+    /** publish-overdue: the workflow step that publishes the note (filePath) */
+    workflowId?: string;
+    stepIndex?: number;
 }
 
 export interface NeedItem {
@@ -85,7 +90,8 @@ const URGENCY: Record<NeedKind, number> = {
     'browser-approval': 1,
     'interrupted': 2,
     'stalled': 2,
-    'conflict': 3
+    'conflict': 3,
+    'publish-overdue': 3
 };
 
 export interface PendingApproval {
@@ -174,6 +180,8 @@ export interface NeedsInput {
     }[];
     /** K-45 — Console questions no timer will answer (src/core/consoleNeeds.ts) */
     consoleAsks?: ConsoleNeedAsk[];
+    /** M-61 — the content calendar's overdue publishes (src/core/calendarSignals.ts) */
+    overduePublishes?: OverduePublish[];
     /** M-46 — a workflow supervisor's open questions (src/core/workflowAsk.ts) */
     workflowQuestions?: WorkflowQuestion[];
     /** Missions blocked on the human: an open question or an interrupted run. */
@@ -309,6 +317,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
         });
     }
     items.push(...consoleNeedItems(input.consoleAsks ?? [], URGENCY['console-question']));
+    items.push(...publishNeedItems(input.overduePublishes ?? [], URGENCY['publish-overdue']));
 
     for (const a of input.approvals) {
         const isStep = a.kind === 'approval';
@@ -408,6 +417,8 @@ export function needKey(item: NeedItem): string {
             return `interrupted|${r.runId ?? '?'}`;
         case 'conflict':
             return `conflict|${r.agentId ?? '*'}|${r.filePath ?? '*'}`;
+        case 'publish-overdue':
+            return `publish-overdue|${r.filePath ?? '?'}`;
     }
 }
 

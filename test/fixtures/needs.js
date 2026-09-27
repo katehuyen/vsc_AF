@@ -157,6 +157,18 @@ module.exports = {
             label: 'Needs You — a Console question no timer will answer, and the word and filter that stopped it (K-45)',
             data: data({ liveSessions: [], approvals: [], insights: [], consoleAsks: consoleAsks() }),
             act: expandAll
+        },
+        {
+            id: 'needs-publish-overdue',
+            label: 'Needs You — two overdue publishes: one with the workflow step that sends it, one that no step names (M-61)',
+            data: data({
+                liveSessions: [], approvals: [], insights: [], overduePublishes: [
+                    { entry: { file: 'C:\\vault\\CONTENT\\2026-09-25 youtube - Kahve 3 hata.md', name: '2026-09-25 youtube - Kahve 3 hata', title: 'Kahve: 3 hata', date: '2026-09-25', startTime: '18:00', platform: 'youtube', status: 'ready' },
+                        lateMs: 2 * 86_400_000, step: { workflowId: 'w14', workflowTitle: 'Haftalık yayın', stepIndex: 3 } },
+                    { entry: { file: 'C:\\vault\\CONTENT\\2026-09-27 instagram - Latte sanati.md', name: '2026-09-27 instagram - Latte sanati', title: 'Latte sanatı', date: '2026-09-27', startTime: '09:30', platform: 'instagram', status: 'planned' },
+                        lateMs: 5 * 3_600_000 }
+                ]
+            })
         }
     ]
 };

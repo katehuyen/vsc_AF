@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.721.0 - Overdue publishes on Living and Needs You (M-61) (2026-09-27)
+
+- Living has a row for the content calendar: the overdue publishes and how
+  late each is, or — when none is late — the next one due.
+- Needs You has a row per overdue publish, with Open the note and Open its
+  publish step (the workflow step that names the note), or Tasks when no step
+  names it. Moving the note's date or marking it ends the row.
+
 ## 3.720.0 - Analytics feedback: the metrics step and {performance} (M-52) (2026-09-27)
 
 - A new step type, metrics: the content calendar's published notes go to a

@@ -268,9 +268,10 @@ import { ladderOf, ladderRefusal } from './core/judgeLadder';
 import { candidatesRefusal } from './core/mediaCandidates';
 import { browserRecipeRefusal } from './core/browserRecipes';
 import { browserProfilesRoot, listBrowserRecipes, openRecipeLogin } from './core/browserLogin';
-import { addEntry, calendarView, findEntry, newEntryRefusal, readCalendar, updateEntry, type NewEntry } from './core/contentCalendar';
+import { addEntry, calendarView, findEntry, newEntryRefusal, readCalendar, updateEntry, whenOf, type NewEntry } from './core/contentCalendar';
 import { publishRefusal } from './core/publishStep';
 import { loadRows, metricsRefusal, performanceSummary, planMetrics } from './core/contentMetrics';
+import { publishStepOf } from './core/calendarSignals';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -19451,7 +19452,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         interruptedRuns: taskManager.interruptedRuns(),
         missionWaits: missionWaits(),
         workflowQuestions: workflowAsks.list(),
-        consoleAsks: consoleNeedsOf?.() ?? []
+        consoleAsks: consoleNeedsOf?.() ?? [],
+        // M-61 — a publish past its time and still open, with the step that sends it when one names the note
+        overduePublishes: calendarView(readCalendar(contentCalendarDir()), Date.now()).overdue
+            .map(entry => ({ entry, lateMs: Date.now() - whenOf(entry), step: publishStepOf(entry, taskManager.workflows) }))
     });
 
     // Cleared rows: the key stays only while its row is still produced, so a
@@ -24144,6 +24148,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             case 'open-console':
                 if (item.ref.consoleId) { ConsolePanel.show(consoleDeps, { sessionId: item.ref.consoleId }); }
                 break;
+            // M-61 — an overdue publish: its calendar note, or the workflow step that publishes it
+            case 'open-note':
+                if (item.ref.filePath) { void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(item.ref.filePath)); }
+                break;
+            case 'open-publish':
+                if (item.ref.workflowId) { TasksPanel.composePlan(tasksDeps, 'workflow', item.ref.workflowId, item.ref.stepIndex ?? 0); }
+                break;
+            case 'open-tasks':
+                void vscode.commands.executeCommand('agentfarm.openTasks');
+                break;
             case 'focus-terminal':
                 void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
                     { sessionId: item.ref.sessionId });
@@ -24568,6 +24582,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             budgetToday: budgets['*'] || undefined,
             queueStaleHours: cfg().get<number>('queue.maxAgeHours', 24),
             noticeStaleHours: cfg().get<number>('noticeStaleHours', 24),
+            // M-61 — the content calendar's upcoming (7 days) and overdue publishes
+            publishes: calendarView(readCalendar(contentCalendarDir()), Date.now()),
             // ‼️ The SAME sentences the project page prints, not a second
             // opinion computed here — a folder-exists check written twice is
             // two answers that will disagree within a week. Closed projects are

@@ -35,7 +35,8 @@
         'console-question': { icon: '❓', label: 'QUESTION',     cls: 'urgent' },
         'interrupted':      { icon: '✂️', label: 'INTERRUPTED',  cls: 'warn' },
         'stalled':          { icon: '⏳', label: 'STALLED',      cls: 'warn' },
-        'conflict':         { icon: '⇄',  label: 'CONFLICT',     cls: 'warn' }
+        'conflict':         { icon: '⇄',  label: 'CONFLICT',     cls: 'warn' },
+        'publish-overdue':  { icon: '📣', label: 'OVERDUE',      cls: 'warn' }
     };
 
     /**
