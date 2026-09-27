@@ -329,7 +329,7 @@ import {
 } from './core/accountUsage';
 import {
     AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, PolicyPool, PolicyResolution,
-    PolicyWorld, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
+    PolicyWorld, effectiveCeiling, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
 } from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -22011,6 +22011,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the user's own rules. One assembly, so a policy cannot mean one thing to
      * the launcher and another to the spawn.
      */
+    // ‼️ S-105 — the policies' ceiling: defaultAccountCeiling, never above the quota handover line (a slot past it hands over at once)
+    const accountCeiling = (): { value: number; why: string } => {
+        const own = ownSetting('defaultAccountCeiling');
+        const set = resolveFlex('accounts.defaultCeiling', own === undefined || own === null || own === '' ? {} : { settings: own }).value;
+        return effectiveCeiling(set, cfg().get<number>('quotaHandoverPct', 90));
+    };
     const policyWorldFor = (
         engine: string | undefined, agentId?: string, model?: string
     ): PolicyWorld => {
@@ -22021,6 +22027,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return {
             engine: eng,
             usage: accountUsage.current(),
+            ceiling: accountCeiling().value,
             standing: standing.id,
             standingOrigin: standing.origin,
             ...(pool ? { pool } : {}),
@@ -22406,6 +22413,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         builtIn: { id: string; label: string; detail: string; now: { engine: string; picks: string; note: string; refusal: string }[] }[];
         rules: (AccountPolicy & { now: { engine: string; picks: string; note: string; refusal: string }[] })[];
         ceiling: number;
+        ceilingWhy: string;
     } => {
         const withSlots = [...new Set(storedAccounts().map(s => s.engine))];
         const engines = withSlots.length ? withSlots : ['claude'];
@@ -22423,7 +22431,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...p,
                 now: nowFor('@' + p.name, p.engine ? String(p.engine).trim().toLowerCase() : undefined)
             })),
-            ceiling: POLICY_DEFAULT_CEILING
+            ceiling: accountCeiling().value,
+            ceilingWhy: accountCeiling().why
         };
     };
     const accountRowsFor = (engine: string): { id: string; label: string; detail: string }[] => [
@@ -41331,7 +41340,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     rows: policyRowsFor(engine, model || undefined),
                     ...(optBool(args, 'raw', false) ? { policies: accountPolicies() } : {}),
                     builtIn: BUILT_IN_POLICIES.map(p => p.id),
-                    ceiling: POLICY_DEFAULT_CEILING
+                    ceiling: accountCeiling().value,
+                    ceilingWhy: accountCeiling().why
                 };
             }
         },

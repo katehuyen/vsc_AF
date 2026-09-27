@@ -159,6 +159,8 @@ export interface PolicyWorld {
     /** turns a slot id into the label a person recognises; id by default */
     labelOf?: (id: string) => string;
     now?: number;
+    /** S-105 — the ceiling in force when a rule names none (effectiveCeiling); absent = POLICY_DEFAULT_CEILING */
+    ceiling?: number;
 }
 
 export interface PolicyResolution {
@@ -247,7 +249,25 @@ export function policyShapeRefusal(p: AccountPolicy | undefined, others: Account
 export function resolvePolicy(stated: string | undefined, world: PolicyWorld): PolicyResolution {
     const s = String(stated ?? '').trim();
     if (!isPolicyId(s)) { return { id: s, policy: '', note: '' }; }
-    return walk(s, world, POLICY_DEFAULT_CEILING, 0, s);
+    const c = Number(world.ceiling);
+    return walk(s, world, Number.isFinite(c) && c > 0 && c <= 100 ? c : POLICY_DEFAULT_CEILING, 0, s);
+}
+
+/**
+ * ‼️ S-105 — THE CEILING A POLICY WALKS WITH WHEN ITS RULE, STEP OR POOL NAMES
+ * NONE: agentFarm.defaultAccountCeiling, and never above the quota handover
+ * line. A slot at or past that line would be told to hand over on its first
+ * reading, so choosing it opened a run that handed over at once — a loop.
+ * `quotaHandoverPct` 0 (off) leaves the setting alone.
+ */
+export function effectiveCeiling(setting: unknown, quotaHandoverPct: unknown): { value: number; why: string } {
+    const n = Number(setting);
+    const own = Number.isFinite(n) && n > 0 && n <= 100 ? n : POLICY_DEFAULT_CEILING;
+    const q = Number(quotaHandoverPct);
+    if (Number.isFinite(q) && q > 0 && q < own) {
+        return { value: q, why: `${q}% — the quota handover line (quotaHandoverPct), below the account ceiling ${own}%: a slot past it would hand over at once` };
+    }
+    return { value: own, why: `${own}% — defaultAccountCeiling${own === POLICY_DEFAULT_CEILING && !(Number.isFinite(n) && n > 0) ? ' (default)' : ''}` };
 }
 
 function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer: string): PolicyResolution {

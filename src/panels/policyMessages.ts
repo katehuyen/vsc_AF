@@ -27,6 +27,8 @@ export interface PolicyMatrix {
     builtIn: { id: string; label: string; detail: string; now: PolicyNow[] }[];
     rules: (AccountPolicy & { now: PolicyNow[] })[];
     ceiling: number;
+    /** S-105 — where the default wall came from (defaultAccountCeiling, or the quota handover line below it) */
+    ceilingWhy?: string;
 }
 
 /** The writers the section needs — each answers with the refusal to show, or

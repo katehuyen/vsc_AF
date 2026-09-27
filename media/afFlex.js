@@ -340,6 +340,11 @@
             id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 0, min: 0, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.contextHandoverStayAccountPct', bridge: 'settings.set:agentFarm.contextHandoverStayAccountPct' } }
         },
+        // S-105 — the wall a policy picks a starting account under, never above the quota handover line (accountPolicy.ts effectiveCeiling)
+        {
+            id: 'accounts.defaultCeiling', label: 'Account policies — default wall (%)', type: 'number', default: 90, min: 1, max: 100, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.defaultAccountCeiling', bridge: 'settings.set:agentFarm.defaultAccountCeiling' } }
+        },
         // A-27 — the judge's ladder, cheapest first: a FAIL is judged one rung up before a retry is paid for (src/core/judgeLadder.ts)
         {
             id: 'judge.ladder', label: 'Judge ladder (cheapest first)', type: 'text', default: '', remembered: false,

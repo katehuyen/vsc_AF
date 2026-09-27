@@ -212,5 +212,30 @@ ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses 
     ok('a chain may step through an emptiest rule, and the note says both', via.id === 'b' && /emptiest of its 3 listed/.test(via.note) && /via @ViaTrio step 2 of 2/.test(via.note));
 }
 
+// ---- S-105 — the default wall, never above the quota handover line ---------
+{
+    const loop = [u('m', 80), u('n', 95)];
+    const at90 = P.resolvePolicy('@emptiest', world({ usage: loop }));
+    ok('‼️ S-105 — the bug: under the fixed 90% wall an 80% slot is picked, and a 70% handover line would end it at once', at90.id === 'm');
+    const c = P.effectiveCeiling(90, 70);
+    ok('the wall in force is the LOWER of defaultAccountCeiling and quotaHandoverPct, and says so', c.value === 70 && /quota handover line/.test(c.why));
+    const at70 = P.resolvePolicy('@emptiest', world({ usage: loop, ceiling: c.value }));
+    ok('‼️ …so with the handover line at 70% the 80% slot is passed over — the loop cannot happen', at70.id === '' && !!at70.refusal && /70%/.test(at70.refusal));
+    ok('…and the round robin and standing policies walk the same wall', !!P.resolvePolicy('@round-robin', world({ usage: loop, ceiling: 70 })).refusal
+        && !!P.resolvePolicy('@standing', world({ usage: loop, standing: 'm', ceiling: 70 })).refusal);
+    ok('a slot under the wall is still chosen', P.resolvePolicy('@emptiest', world({ usage: [u('m', 80), u('k', 30)], ceiling: 70 })).id === 'k');
+    ok('the user\'s own wall wins when it is the lower one', P.effectiveCeiling(60, 90).value === 60 && /defaultAccountCeiling/.test(P.effectiveCeiling(60, 90).why));
+    ok('quotaHandoverPct 0 (off) leaves the wall alone; nothing written = 90 (default)', P.effectiveCeiling(undefined, 0).value === 90 && /default/.test(P.effectiveCeiling(undefined, 0).why));
+    ok('a nonsense world ceiling falls back to the built-in 90', P.resolvePolicy('@emptiest', world({ usage: loop, ceiling: 0 })).id === 'm');
+    const rule = { name: 'mine', chain: [{ policy: '@emptiest' }] };
+    ok('a rule step that names no wall walks the world\'s wall too', !!P.resolvePolicy('@mine', world({ usage: loop, ceiling: 70, policies: [rule] })).refusal);
+    const own = { name: 'own', ceiling: 85, chain: [{ policy: '@emptiest' }] };
+    ok('a rule that names its own wall keeps it', P.resolvePolicy('@own', world({ usage: loop, ceiling: 70, policies: [own] })).id === 'm');
+    const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('the host walks every policy with the wall in force, and the pages and policies.list show it with its why',
+        /ceiling: accountCeiling\(\)\.value,\s*standing/.test(ext) && (ext.match(/ceilingWhy: accountCeiling\(\)\.why/g) || []).length === 2
+        && /effectiveCeiling\(set, cfg\(\)\.get<number>\('quotaHandoverPct', 90\)\)/.test(ext));
+}
+
 console.log(`test_account_policies.js: ${pass} passed, ${fail} failed`);
 if (fail) { process.exit(1); }

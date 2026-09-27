@@ -112,7 +112,7 @@
                     ? 'A slot belongs to one engine, so this rule does too: a launch on another engine is refused by name rather than given whatever that engine is signed in as.'
                     : 'Asked about whichever engine the launch is on. A step naming a slot of another engine is skipped there.')
             + T.wrap('<span class="poid">≤ ' + esc(r.ceiling || POL().ceiling) + '%</span>',
-                'Wall: ' + (r.ceiling || POL().ceiling) + '%' + (r.ceiling ? '' : ' (the default)'),
+                'Wall: ' + (r.ceiling || POL().ceiling) + '%' + (r.ceiling ? '' : ' (the default' + (POL().ceilingWhy ? ': ' + POL().ceilingWhy : '') + ')'),
                 'Where a step refuses a slot unless it names its own. A policy is choosing where to START a session, so the wall is lower than the runner\'s: starting on a sign-in with five per cent left is choosing the one that ends ten minutes in.')
             + T.wrap('<span class="poid postrat">' + STRATEGY[strategyOf(r)].glyph + ' ' + esc(STRATEGY[strategyOf(r)].label) + '</span>',
                 STRATEGY[strategyOf(r)].head, STRATEGY[strategyOf(r)].body)

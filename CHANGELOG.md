@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.727.0 - The policies' account wall follows the quota handover line (S-105) (2026-09-28)
+
+- New setting defaultAccountCeiling (default 90, next to quotaHandoverPct
+  in Farm Settings): the wall @emptiest, @round-robin, @standing, @pool and
+  every rule step that names none use when they pick the account a session
+  starts on. It never stands above quotaHandoverPct — with the handover
+  line at 70% an 80% account was picked and told to hand over at once, a
+  loop; now the lower of the two is the wall. The Account Policies table and
+  policies.list say the wall in force and why.
+
 ## 3.726.0 - A context handover stays on its account while it has room (S-106) (2026-09-28)
 
 - New setting contextHandoverStayAccountPct (Farm Settings → Handover
