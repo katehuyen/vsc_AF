@@ -339,6 +339,13 @@
                 run: { surface: 'media/afRunWith.js#wi-spendCap', bridge: 'workflows.run:spendCap' }
             }
         },
+        // A-27 — parallel-cheap: a media step makes N candidates at once and its check picks the first PASS (src/core/mediaCandidates.ts)
+        {
+            id: 'media.candidates', label: 'Media candidates (parallel-cheap)', type: 'number', default: 1, min: 1, max: 4, remembered: false,
+            levels: {
+                step: { surface: 'media/tasksPage.js#st-mCandidates', bridge: 'workflows.add:steps.media.candidates' }
+            }
+        },
         brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),
         brandPoint('typography', 'typography'), brandPoint('voice', 'voice id'), brandPoint('aspect', 'aspect'),
         brandPoint('duration', 'duration'), brandPoint('logo', 'logo rule'), brandPoint('logoPlace', 'logo placement'),

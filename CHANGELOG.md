@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.712.0 - Parallel-cheap: a media step makes several candidates and its check picks one (A-27, part 3) (2026-09-27)
+
+- **Candidates** (1-4) on a workflow media step: that many are made at
+  once in one row, the step's vision check judges them in order (on the
+  judge ladder) and the first that passes is handed on alone — the next
+  step sees exactly what a one-candidate step hands on. Each candidate is
+  billed on its own answer. None passes: the step fails naming every
+  candidate's reason, and its retries apply as before. Without a check the
+  first candidate is handed on. `workflows.add steps[].media.candidates`.
+- The step list reads such a step as `model × 3`; the Runs table and
+  `workflows.status` count the picks.
+
 ## 3.711.0 - Stop, replan, and what a run's checks saved (A-27, part 3) (2026-09-27)
 
 - **Stop**: a retry whose check fails for the same reason as the attempt

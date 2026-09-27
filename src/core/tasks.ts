@@ -19,6 +19,7 @@ import * as FE from './forEachStep';
 import { capWaitingBranches, runSpendCap, SpendCap, spendCapStop } from './runSpendCap';
 import { escalationLine, ladderFor } from './judgeLadder';
 import { afterFail, climbDecision, JudgeDecision, RunEconomy, runEconomy } from './judgeDecision';
+import { alignCandidates, candidatesOf, mergeCandidates, pickedBody, pickLine, withArchiveBody } from './mediaCandidates';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -1227,7 +1228,7 @@ export interface WorkflowStep extends RunDimensions {
      * archive; the response JSON becomes the next step's handoff. Wave A:
      * optional projectId/sceneId tie the produced assets to a production scene.
      */
-    media?: { model: string; input: string; timeoutMin?: number; projectId?: string; sceneId?: string };
+    media?: { model: string; input: string; timeoutMin?: number; projectId?: string; sceneId?: string; candidates?: number };
     /**
      * F3 — browser automation step: the step's agent drives its browser MCP.
      * Host allowlist is enforced before launch; empty allowlist = refuse.
@@ -5445,13 +5446,15 @@ export class TaskManager implements vscode.Disposable {
      */
     private async verifyMediaThenAdvance(task: FarmTask, w: FarmWorkflow, step: WorkflowStep): Promise<void> {
         const meta = readMediaMetas(this.outputsDir).find(m => m.taskId === task.id);
-        const assetFile = meta?.assetFiles.find(f => fs.existsSync(f));
+        const files = (meta?.assetFiles ?? []).filter(f => fs.existsSync(f));
+        const assetFile = files[0];
         const attempt = task.attempt ?? 0;
         if (!assetFile) {
             await this.settleUnjudged(task, w, 'there is no downloaded asset to look at', attempt, 'Vision verify');
             return;
         }
-        const judged = await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, step.verify!.criteria, sj));
+        const judged = files.length > 1 && candidatesOf(step.media?.candidates) > 1 ? await this.pickCandidate(task, step, files, meta!)
+            : await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, step.verify!.criteria, sj));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Vision verify', judged.judge);
             return;
@@ -5489,6 +5492,31 @@ export class TaskManager implements vscode.Disposable {
         void vscode.window.showWarningMessage(
             `Agent Farm: media "${task.title}" failed vision QA after ${attempt + 1} attempt(s).`);
         this.advanceWorkflow(task, 'failed');
+    }
+
+    /** A-27 — parallel-cheap: the candidates judged in order, the first PASS handed on alone (src/core/mediaCandidates.ts). */
+    private async pickCandidate(task: FarmTask, step: WorkflowStep, files: string[], meta: MediaMeta):
+        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string }> {
+        const seen: { pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string }[] = [];
+        for (const [i, f] of files.entries()) {
+            const j = await this.climbJudge(task, step, sj => this.runVisionJudge(f, step.verify!.criteria, sj));
+            if (j.pass && !j.unjudged) {
+                const line = pickLine(i, files.length, j.reason);
+                try {
+                    const out = task.outputFile as string;
+                    fs.writeFileSync(out, withArchiveBody(fs.readFileSync(out, 'utf8'), JSON.stringify(pickedBody(extractJson(archivedOutputBody(fs.readFileSync(out, 'utf8'))), i, files.length), null, 2)) + `${line}\n`, 'utf8');
+                    const order = [i, ...files.map((_, k) => k).filter(k => k !== i)];
+                    fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
+                        JSON.stringify({ ...meta, assetFiles: order.map(k => files[k]), assetUrls: order.map(k => meta.assetUrls?.[k]).filter(Boolean) }, null, 2), 'utf8');
+                } catch { /* archive gone — the verdict still stands */ }
+                task.judgeDecisions = [...(task.judgeDecisions ?? []), { kind: 'picked', line }];
+                return j;
+            }
+            seen.push(j);
+        }
+        const judged = seen.filter(j => !j.unjudged);
+        if (!judged.length) { return seen[0]; }
+        return { ...judged[judged.length - 1], reason: seen.map((j, k) => `candidate ${k + 1}: ${j.unjudged ?? j.reason}`).join(' | ') };
     }
 
     /** A-27 — cheap-first, and one rung up on a FAIL before a retry is paid for (src/core/judgeLadder.ts). */
@@ -7023,28 +7051,33 @@ export class TaskManager implements vscode.Disposable {
         }
 
         const timeoutMs = (media.timeoutMin ?? 10) * 60_000;
-        let result: MediaResult;
-        try {
-            result = await provider.run(media.model, input, auth, {
-                baseUrl: this.opts.mediaBaseUrl?.(provider.id),
-                timeoutMs,
-                pollMs: this.opts.mediaPollMs?.(),
-                // F2: persist the poll URLs the moment the job is queued, so a
-                // window close mid-render reattaches instead of losing the job.
-                onQueued: job => {
-                    task.mediaJob = {
-                        provider: provider.id, statusUrl: job.statusUrl, responseUrl: job.responseUrl,
-                        deadline: Date.now() + timeoutMs + 60_000,
-                        input: input.slice(0, 2000)
-                    };
-                    this.save();
-                }
-            });
-        } catch (e) {
-            // F3: a provider crash must fail the step honestly — never leave the
-            // task stuck 'running' with the chain silently dead.
-            result = { ok: false, error: `provider error: ${String(e).slice(0, 300)}`, assetUrls: [] };
-        }
+        const one = async (k: number): Promise<MediaResult> => {
+            try {
+                return await provider.run(media.model, input, auth, {
+                    baseUrl: this.opts.mediaBaseUrl?.(provider.id),
+                    timeoutMs,
+                    pollMs: this.opts.mediaPollMs?.(),
+                    // F2: persist the poll URLs the moment the job is queued, so a
+                    // window close mid-render reattaches instead of losing the job.
+                    onQueued: job => {
+                        if (k) { return; }
+                        task.mediaJob = {
+                            provider: provider.id, statusUrl: job.statusUrl, responseUrl: job.responseUrl,
+                            deadline: Date.now() + timeoutMs + 60_000,
+                            input: input.slice(0, 2000)
+                        };
+                        this.save();
+                    }
+                });
+            } catch (e) {
+                // F3: a provider crash must fail the step honestly — never leave the
+                // task stuck 'running' with the chain silently dead.
+                return { ok: false, error: `provider error: ${String(e).slice(0, 300)}`, assetUrls: [] };
+            }
+        };
+        // A-27 — parallel-cheap: N candidates at once, one of them picked by the check (src/core/mediaCandidates.ts)
+        const n = candidatesOf(media.candidates);
+        const result = n > 1 ? mergeCandidates(await Promise.all(Array.from({ length: n }, (_, k) => one(k)))) : await one(0);
         await this.completeMediaTask(task, info, result);
     }
 
@@ -7097,7 +7130,8 @@ export class TaskManager implements vscode.Disposable {
             try { if (await downloadAsset(url, file)) { assets.push(file); assetUrls.push(url); } }
             catch { /* one bad asset must not sink the step */ }
         }
-        const estCost = await billMedia(info.model, result.response,
+        const response = alignCandidates(result.response, assetUrls);
+        const estCost = await billMedia(info.model, response,
             this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING, assets, f => mediaDuration(f));
         task.mediaCost = estCost;
         const lc = this.libCtx(task);
@@ -7129,7 +7163,7 @@ export class TaskManager implements vscode.Disposable {
             fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
                 JSON.stringify(meta, null, 2), 'utf8');
         } catch { /* gallery meta is best-effort */ }
-        writeOut(true, '', withOutputs(result.response, assets), assets, estCost);
+        writeOut(true, '', withOutputs(response, assets), assets, estCost);
     }
 
     /** F2: tasks whose media job survived the reload (collected at load, polled from the ctor). */

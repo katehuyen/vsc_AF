@@ -34,9 +34,9 @@ ok('…says the supervisor is woken instead of the retry', /^Replan: the judge s
 eq('an overturned FAIL saves the retry it would have bought; with none left it saves nothing', [D.climbDecision(true, 'l', true, 0.3), D.climbDecision(true, 'l', false, 0.3), D.climbDecision(false, 'l', true, 0.3)],
     [{ kind: 'overturned', line: 'l', savedUSD: 0.3 }, { kind: 'overturned', line: 'l' }, { kind: 'upheld', line: 'l' }]);
 const e = D.runEconomy([{ judgeDecisions: [{ kind: 'overturned', line: 'a', savedUSD: 0.3 }] }, {}, { judgeDecisions: [{ kind: 'upheld', line: 'b' }, { kind: 'stopped', line: 'c', savedUSD: 0.2 }] }]);
-eq('the run adds its rows up', e, { climbs: 2, overturned: 1, stopped: 1, replans: 0, savedUSD: 0.5, lines: ['a', 'b', 'c'] });
+eq('the run adds its rows up', e, { climbs: 2, overturned: 1, stopped: 1, replans: 0, picked: 0, savedUSD: 0.5, lines: ['a', 'b', 'c'] });
 eq('…and says it short', D.economyShort(e), '2 climbs · 1 overturned · 1 stopped · ~$0.50 saved');
-eq('…and for a narrow cell, the decision that mattered most', [D.economyCell(e), D.economyCell({ climbs: 1, overturned: 0, stopped: 0, replans: 0, savedUSD: 0, lines: [] })], ['stopped ~$0.50', 'upheld']);
+eq('…and for a narrow cell, the decision that mattered most', [D.economyCell(e), D.economyCell({ climbs: 1, overturned: 0, stopped: 0, replans: 0, picked: 0, savedUSD: 0, lines: [] }), D.economyCell({ climbs: 0, overturned: 0, stopped: 0, replans: 0, picked: 1, savedUSD: 0, lines: [] })], ['stopped ~$0.50', 'upheld', 'picked']);
 eq('no decision anywhere: no economy', D.runEconomy([{}, { judgeDecisions: [] }]), undefined);
 
 /* ---------- the wiring ---------- */

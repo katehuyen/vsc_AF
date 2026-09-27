@@ -1177,6 +1177,20 @@ const variants = () => ([
             });
         }
     },
+    // A-27 — parallel-cheap: a cheap media step making three candidates, its Verify check picking one
+    {
+        id: 'tasks-media-candidates',
+        label: 'Tasks → a workflow media step making 3 candidates at once, its Verify check picking the first that passes (A-27)',
+        data: data(),
+        act: (r) => {
+            const step = { sid: 's1', stype: 'media', title: 'Kapak', mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mCandidates: 3,
+                verifyCriteria: 'Başlık yazısı okunur olsun', verifyRetries: 1 };
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: { mode2: 'edit', id: 'w15', title: 'Kapak hattı', stepIdx: 0, goal: '', criteria: '', steps: [step], step: JSON.parse(JSON.stringify(step)) }
+            });
+        }
+    },
     // M-38 — run pressed on a workflow that takes inputs: its Run card, prefilled from the last run.
     {
         id: 'tasks-wf-runcard',

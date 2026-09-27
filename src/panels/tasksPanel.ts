@@ -33,6 +33,7 @@ import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from '../core/w
 import { spendCapRefusal } from '../core/runSpendCap';
 import { ladderOf, ladderRefusal } from '../core/judgeLadder';
 import { economyCell, economyShort, RunEconomy, runEconomy } from '../core/judgeDecision';
+import { candidatesRefusal } from '../core/mediaCandidates';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -1164,6 +1165,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         whInterval: s.webhook?.poll?.intervalSec ?? 3,
         mModel: s.media?.model ?? 'fal-ai/flux/schnell',
         mInput: s.media?.input ?? '{"prompt": "{prev_text}"}',
+        mCandidates: s.media?.candidates ?? 1,
         mScene: scene,
         bUrl: s.browser?.url ?? '',
         bGoal: s.browser?.goal ?? '',
@@ -1277,12 +1279,16 @@ export function stepFromDraft(
         if (!str('mModel')) { return { error: `Step ${n} ("${title}") is a media step with no model.` }; }
         if (!str('mInput')) { return { error: `Step ${n} ("${title}") is a media step with no input.` }; }
         const [projectId, sceneId] = str('mScene').split('/');
+        const candNo = candidatesRefusal(str('mCandidates'));
+        if (candNo) { return { error: `Step ${n} ("${title}"): ${candNo}.` }; }
+        const candidates = num('mCandidates', 1);
         return {
             step: {
                 ...named('media'), title, ...chain, verify, ...withLib,
                 media: {
                     model: str('mModel'), input: str('mInput'),
-                    projectId: projectId || undefined, sceneId: sceneId || undefined
+                    projectId: projectId || undefined, sceneId: sceneId || undefined,
+                    ...(candidates > 1 ? { candidates } : {})
                 }
             }
         };

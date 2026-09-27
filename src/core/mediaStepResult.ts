@@ -8,6 +8,7 @@
  * URL alone left a join after a for-each with nothing on this computer to join.
  */
 import { assetKind, estimateMediaCost, MediaPriceRule, priceRuleFor } from './media';
+import { candidateAnswers } from './mediaCandidates';
 
 export type MeasureSeconds = (file: string) => Promise<number | undefined>;
 
@@ -33,6 +34,13 @@ export async function measuredSeconds(files: string[], measure: MeasureSeconds):
 export async function billMedia(
     model: string, response: unknown, rules: MediaPriceRule[], files: string[], measure: MeasureSeconds
 ): Promise<number> {
+    // A-27 — N candidates are N calls: each billed on its own answer and its own file (src/core/mediaCandidates.ts)
+    const each = candidateAnswers(response);
+    if (each) {
+        let sum = 0;
+        for (const [i, r] of each.entries()) { sum += await billMedia(model, r, rules, files[i] ? [files[i]] : [], measure); }
+        return sum;
+    }
     const rule = priceRuleFor(model, rules);
     const seconds = rule?.per === 'second' && reportedSeconds(response) === undefined
         ? await measuredSeconds(files, measure) : undefined;

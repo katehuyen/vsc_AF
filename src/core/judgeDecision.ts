@@ -8,7 +8,7 @@
  * retry is priced at what the attempt it follows cost. Pure.
  */
 
-export type JudgeDecisionKind = 'overturned' | 'upheld' | 'stopped' | 'replan';
+export type JudgeDecisionKind = 'overturned' | 'upheld' | 'stopped' | 'replan' | 'picked';
 
 export interface JudgeDecision {
     kind: JudgeDecisionKind;
@@ -20,6 +20,8 @@ export interface JudgeDecision {
 
 export interface RunEconomy {
     climbs: number; overturned: number; stopped: number; replans: number;
+    /** media steps whose check picked one of several candidates (src/core/mediaCandidates.ts) */
+    picked: number;
     savedUSD: number;
     lines: string[];
 }
@@ -82,7 +84,7 @@ export function runEconomy(rows: { judgeDecisions?: JudgeDecision[] }[]): RunEco
     if (!all.length) { return undefined; }
     const n = (k: JudgeDecisionKind) => all.filter(d => d.kind === k).length;
     return {
-        climbs: n('overturned') + n('upheld'), overturned: n('overturned'), stopped: n('stopped'), replans: n('replan'),
+        climbs: n('overturned') + n('upheld'), overturned: n('overturned'), stopped: n('stopped'), replans: n('replan'), picked: n('picked'),
         savedUSD: usd(all.reduce((a, d) => a + (d.savedUSD ?? 0), 0)),
         lines: all.map(d => d.line).slice(-20)
     };
@@ -90,7 +92,7 @@ export function runEconomy(rows: { judgeDecisions?: JudgeDecision[] }[]): RunEco
 
 /** The narrowest form, for a status cell: the decision that mattered most, and what it saved. */
 export function economyCell(e: RunEconomy): string {
-    const word = e.replans ? 'replan' : e.stopped ? 'stopped' : e.overturned ? 'overturned' : 'upheld';
+    const word = e.replans ? 'replan' : e.stopped ? 'stopped' : e.picked ? 'picked' : e.overturned ? 'overturned' : 'upheld';
     return `${word}${e.savedUSD > 0 ? ` ~$${e.savedUSD.toFixed(2)}` : ''}`;
 }
 
@@ -102,6 +104,7 @@ export function economyShort(e: RunEconomy): string {
         e.overturned ? `${e.overturned} overturned` : '',
         e.stopped ? `${e.stopped} stopped` : '',
         e.replans ? `${e.replans} replan${e.replans === 1 ? '' : 's'}` : '',
+        e.picked ? `${e.picked} picked` : '',
         saved && e.savedUSD > 0 ? `~$${e.savedUSD.toFixed(2)} saved` : ''
     ].filter(Boolean).join(' · ');
 }

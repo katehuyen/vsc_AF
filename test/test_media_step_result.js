@@ -42,7 +42,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
     ok('estimateMediaCost alone keeps its old answer', near(M.estimateMediaCost('fal-ai/kling-video', {}, rules), 0.5));
 
     const src = fs.readFileSync(path.join(ROOT, 'src/core/tasks.ts'), 'utf8');
-    ok('the media step bills through billMedia with the files it downloaded', /billMedia\(info\.model, result\.response,[\s\S]{0,120}assets, f => mediaDuration\(f\)\)/.test(src));
+    ok('the media step bills through billMedia with the files it downloaded', /const response = alignCandidates\(result\.response, assetUrls\);\s*const estCost = await billMedia\(info\.model, response,[\s\S]{0,120}assets, f => mediaDuration\(f\)\)/.test(src));
 
     /* ---------- what a media step hands on, and a files box reading a for-each ---------- */
     const out = B.withOutputs({ video: { url: 'u' } }, ['D:\\o\\a.mp4']);

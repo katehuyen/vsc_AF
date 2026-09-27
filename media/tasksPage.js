@@ -1155,7 +1155,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             whUrl: '', whMethod: 'POST', whBody: '', whHeader: '',
             whPoll: false, whPollUrl: '', whStatusField: 'status',
             whDone: 'succeeded|completed|complete|done|success', whInterval: 3,
-            mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mScene: '',
+            mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mCandidates: 1, mScene: '',
             bUrl: '', bGoal: '', bHosts: '',
             apMsg: '', selMsg: '', selMin: 1, selMax: 0, toolJson: ''
         }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, window.AFLibrary ? window.AFLibrary.blank() : {}, seed || {});
@@ -2111,7 +2111,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         // M-53 — a role step reads as the role and the agent that fills it
         const agentOf = none => (s.role && window.AFRoles ? window.AFRoles.who(s.role, composer, DATA.showrunner) : (s.agent || none));
         const who = s.stype === 'webhook' ? (s.whMethod || 'POST') + ' ' + trunc(s.whUrl || '(no url)', 44)
-            : s.stype === 'media' ? (s.mModel || '(no model)')
+            : s.stype === 'media' ? (s.mModel || '(no model)') + (Number(s.mCandidates) > 1 ? ' × ' + s.mCandidates : '')
                 : s.stype === 'browser' ? agentOf('?') + ' → ' + trunc(s.bUrl || '(no url)', 34)
                     : s.stype === 'approval' ? 'the chain waits for you'
                         : s.stype === 'select' ? 'keep ' + (s.selMin || 1) + (s.selMax ? '–' + s.selMax : ' or more')
@@ -2439,6 +2439,8 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     'fal.ai by default; prefix with "replicate:" for Replicate.', true)}
                 ${textF('st-mInput', 'JSON input', s.mInput, '{"prompt": "{prev_text}"}',
                         'The provider\'s own input object. {prev_text} / {prev_json.x} / {secret:NAME} are substituted.', true)}
+                ${numF('st-mCandidates', 'Candidates', s.mCandidates,
+                            (s.mCandidates > 1 ? s.mCandidates + ' made at once' : '1 — one made') + '\n\nParallel-cheap: this many are made at once (1-4) and the step\'s Verify check picks the first that passes; only the picked one is handed on. Pairs with a cheap model. Without a Verify check the first is handed on.')}
                 ${scenes.length ? pickSel('st-mScene', 'Production scene',
                             [{ id: '', label: '— no scene —' }].concat(scenes.map(x => ({ id: x.id, label: x.label }))), s.mScene,
                             'Ties the produced assets to a scene so the gallery groups them.') : ''}
@@ -2551,7 +2553,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
             'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg',
             'feList', 'feConc', 'feFail', 'feRetries', 'feCap', 'feCapMode', 'feBudget'].forEach(v);
-        ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
+        ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax', 'mCandidates'].forEach(n);
         ['parallel', 'whPoll'].forEach(b);
         if (s.stype === 'checkpoint' && window.AFCheckpoint) { window.AFCheckpoint.read(s, g); }
         if (s.stype === 'tool' && window.AFTool) { window.AFTool.read(s, g); }
@@ -4797,7 +4799,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
-                    'mModel', 'mInput', 'bUrl', 'bGoal', 'bHosts',
+                    'mModel', 'mInput', 'mCandidates', 'bUrl', 'bGoal', 'bHosts',
                     'apMsg', 'selMsg', 'selMin', 'selMax'].forEach(id =>
                         byId('nt-st-' + id, 'input', () => readStep()));
                 // ‼️ X-224 — `saccount` reads back like the other pickers here.
