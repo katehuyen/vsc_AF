@@ -2898,7 +2898,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 + 'on the chain\'s pool instead of writing a handover note for a person to act on. The run is sealed as leg 1 '
                 + 'the moment its session is known — its card draws ⑂ 1, the status bar ⑂ 1/N, and its handover whisper says '
                 + '"pass the baton". The chain ends by itself when the work is done and nobody passes; the leg ceiling and the '
-                + 'barren-chain brake (two legs, no new commit) stop it otherwise. Same door as tasks.add baton:true.')}"><span>⑂ Relay</span>
+                + 'barren-chain brake (two legs, no new commit) stop it otherwise.')}"><span>⑂ Relay</span>
                     <label class="cbx"><input type="checkbox" id="nt-baton"${c.baton ? ' checked' : ''}>
                         open a baton relay — at its limit the run hands over to a fresh session, not to a note</label>
                     ${c.baton ? `<span class="ntbaton">

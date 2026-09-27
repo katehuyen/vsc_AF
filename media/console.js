@@ -5988,8 +5988,7 @@
                     + 'at this session\'s transcript).',
                 'Nothing starts until you press Send — if this run stopped on its quota, change the account first.',
                 window.AFTip.GAP,
-                'This conversation itself is never resumed: a window at the handover line walks straight back into the wall.',
-                'Agent door: console.continueFromHandover id=' + (s.id || '') + ' open=true'
+                'This conversation itself is never resumed: a window at the handover line walks straight back into the wall.'
             ]), 'tip-continue', 'Continue from handover');
     }
 
@@ -6001,11 +6000,9 @@
             v.head,
             window.AFTip.lines([
                 'Stops every waiting or parked baton of chain ' + v.chainId + ', so no further leg opens.',
-                'Nothing is deleted: baton.status keeps each one as stopped, with the reason.',
+                'Nothing is deleted: the chain\'s record keeps each one as stopped, with the reason.',
                 'A successor row that has not started yet (queued, or parked on a reset) is cancelled with it.',
-                'A run a baton already opened keeps running — end it on its own card.',
-                window.AFTip.GAP,
-                'Agent door: baton.stop chain=' + v.chainId
+                'A run a baton already opened keeps running — end it on its own card.'
             ]), 'tip-batonstop', 'Stop chain');
     }
 
@@ -6028,15 +6025,11 @@
         return cardTip(`<button class="stchip lastleg${on ? ' on' : ''}" id="c-baton-lastleg" aria-label="Last leg" aria-pressed="${on}"${locked ? ' disabled' : ''}>⑂⊣</button>`,
             head,
             T.lines(locked ? [
-                'Its pass was braked: no successor opened, and the handover note is where the work goes on.',
-                T.GAP,
-                'Agent door: baton.status chain=' + v.chainId
+                'Its pass was braked: no successor opened, and the handover note is where the work goes on.'
             ] : [
                 on ? 'Click: take it back — the chain goes on as if untouched.'
                     : 'Click: make this leg the last — it writes the handover note instead of passing the baton.',
-                'Right-click: the chain\'s legs — one more, fewer, a number, no ceiling.',
-                T.GAP,
-                'Agent door: baton.lastLeg session=' + s.sessionId + ' on=' + (on ? 'false' : 'true') + ' · baton.setLegs chain=' + v.chainId
+                'Right-click: the chain\'s legs — one more, fewer, a number, no ceiling.'
             ]), 'tip-lastleg', 'Last leg');
     }
 
@@ -6055,11 +6048,9 @@
                 s.batonView.head,
                 T.lines([
                     'Sends this run the handover order now — the one its context line would have sent: '
-                        + 'commit the clean progress, pass the baton (baton.pass) and end.',
+                        + 'commit the clean progress, pass the baton and end.',
                     'The next leg opens once this session has ended.',
-                    'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.',
-                    T.GAP,
-                    'Agent door: console.send id=' + (s.id || '') + ' — the words are the host\'s (PASS NOW …)'
+                    'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.'
                 ]), 'tip-batonpass', 'Pass now');
         }
         return cardTip(`<button class="stchip" id="c-baton-attach" aria-label="Attach relay"${relayOpen === s.id ? ' aria-expanded="true"' : ''}>⑂+</button>`,
@@ -6068,9 +6059,7 @@
                 'Makes this run leg 1 of a baton relay, sealed at once — no restart.',
                 'After that, its handover line says "pass the baton" instead of "write the note", and at its limit '
                     + 'the work goes on in a fresh session on the chain\'s pool.',
-                'The strip that opens below picks the pool (a rule, never one slot) and this chain\'s leg ceiling.',
-                T.GAP,
-                'Agent door: baton.attach session=' + s.sessionId + ' account=@… maxHops=N'
+                'The strip that opens below picks the pool (a rule, never one slot) and this chain\'s leg ceiling.'
             ]), 'tip-batonattach', 'Attach relay');
     }
 

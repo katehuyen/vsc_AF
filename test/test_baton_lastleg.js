@@ -131,7 +131,7 @@ ok('pressing on again changes nothing', (() => { const r = L.setLastLeg(braked, 
     const bar = V.batonBarView(braked, 6, () => true, () => '12:00');
     ok('the status bar marks a braked running leg: ⑂ 2⊣/6, and says so in its line',
         bar && bar.text === '⑂ 2⊣/6' && /running \(session L2\) — its last leg: braked by the user\./.test(bar.tooltip)
-        && /⑂⊣ Last leg on the running card \(baton\.lastLeg\)/.test(bar.tooltip));
+        && /⑂⊣ Last leg on the running card, /.test(bar.tooltip) && !/baton\.lastLeg/.test(bar.tooltip));
     ok('…and an unbraked one exactly as before', V.batonBarView(base, 6, () => true, () => '12:00').text === '⑂ 2/6');
 }
 

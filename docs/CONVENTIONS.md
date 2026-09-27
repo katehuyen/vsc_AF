@@ -60,6 +60,11 @@ repeat. The human-facing copy of this page lives in the project folder
 there, and it costs the reader nothing. The rules below are not negotiable, and
 this one comes before all of them.
 
+**‼️ A hover is read by the USER (A-28).** It never carries a bridge op, an
+`af.js` command line, an argument like `chain=…`, or an escape word — not as an
+"Agent door:" footnote, not in parentheses. Agents find the op in `farm.ops`
+and the parity manifest; the reader gets the control's name and what happens.
+
 ### ‼️ FIRST OF ALL: A HOVER PANEL YIELDS TO THE HAND (U-74)
 
 A panel answers a question the reader has **while they are looking**. The moment

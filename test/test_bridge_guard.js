@@ -143,7 +143,8 @@ console.log('\n== the wiring — the listener, the setting and the bridge op =='
         && /\.\.\.consoleCardViews\(s\.sessionId\)/.test(ext) && /cardViews: \(sessionId: string\) => consoleCardViews\(sessionId\)/.test(ext));
     ok('‼️ a Codex hook payload reaches the guard — it names no engine, and only a payload that does is let past',
         /if \(payload && !payload\.engine\)/.test(live));
-    ok('the setting says which engines it holds on', /Held on Claude and Codex/.test(props['agentFarm.bridgeGuard'].description));
+    ok('the setting says which engines it holds on', /Works on Claude and Codex/.test(props['agentFarm.bridgeGuard'].description)
+        && !/af\.js|af:allow-id/.test(props['agentFarm.bridgeGuard'].description));
 }
 
 console.log('\n== Codex — the same hook, measured on codex-cli 0.149.0 ==');
@@ -186,8 +187,14 @@ console.log('\n== the words a surface draws ==');
     eq('SHORTHAND on the strip', one.chip, 'guard 1');
     ok('the panel opens with the long form, singular', one.head === 'Bridge guard — 1 search for a session id stopped');
     ok('a refusal is a Label: value line — when, tool, id', one.lines.some(l => l === `2m ago: Grep · ${FULL}`));
-    ok('the panel names the call that answers and the way out',
-        one.lines.join('\n').includes(B.BRIDGE_FIND_HINT) && one.lines.join('\n').includes(B.BRIDGE_GUARD_ESCAPE));
+    // ‼️ A-28 — the panel's reader is the USER: it says what happened and where
+    // the switch is, and never the command the agent was pointed at.
+    const said = one.lines.join('\n');
+    ok('‼️ A-28 — the panel says what happened in words, and where to switch it off',
+        /searching the disk/.test(said) && /Nothing is needed from you/.test(said) && /Farm Settings → .*Bridge guard/.test(said));
+    ok('‼️ A-28 — …and carries no command, op or escape word',
+        !said.includes(B.BRIDGE_FIND_HINT) && !said.includes(B.BRIDGE_GUARD_ESCAPE)
+        && !/af\.js|sessions\.[a-zA-Z]+|agentFarm\.bridgeGuard/.test(said));
     const many = B.bridgeGuardView([1, 2, 3, 4, 5, 6, 7].map(i => c(i * 1000, 'id' + i, i === 7 ? 'known' : 'full')), ts => String(ts));
     eq('the count is all of them', many.count, 7);
     ok('newest first', many.lines[1].startsWith('7000 ago') && /short id this machine knows/.test(many.lines[1]));

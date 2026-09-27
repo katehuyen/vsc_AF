@@ -111,8 +111,8 @@ export function batonBarView(
             '',
             ...lines,
             '',
-            `Click: the chain's legs — one more, fewer, no ceiling, last leg (baton.setLegs chain=${top.chainId}).`,
-            `Brake: ⑂⊣ Last leg on the running card (baton.lastLeg), ✕⑂ Stop chain while a successor waits (baton.stop chain=${top.chainId}).`,
+            'Click: the chain\'s legs — one more, fewer, no ceiling, last leg.',
+            'Brake: ⑂⊣ Last leg on the running card, ✕⑂ Stop chain while a successor waits.',
             maxLegs > 0 ? `A new chain starts at ${maxLegs} legs (agentFarm.batonMaxHops).` : 'A new chain starts with no leg ceiling (agentFarm.batonMaxHops = 0).'
         ].join('\n'),
         chainId: top.chainId,
@@ -153,10 +153,10 @@ export function batonCardView(list: readonly Baton[], sessionId: string, fallbac
     if (brake === 'locked') { lines.push('Last leg: braked by the user — the chain ended at this leg.'); }
     const max = fallbackMax === undefined ? undefined : chainMaxLegs(list, chainId, fallbackMax);
     if (max !== undefined) {
-        lines.push(`Ceiling: ${max > 0 ? `${max} legs` : 'none'} — change it: right-click ⑂⊣, or click ⑂ in the status bar (baton.setLegs chain=${chainId}).`);
+        lines.push(`Ceiling: ${max > 0 ? `${max} legs` : 'none'} — change it: right-click ⑂⊣, or click ⑂ in the status bar.`);
     }
     lines.push(stoppable
-        ? `Brake: baton.stop chain=${chainId} — recorded, never deleted.`
+        ? 'Brake: ✕⑂ Stop chain on the card — recorded, never deleted.'
         : 'The chain ends when the work is done and nobody passes.');
     return {
         chainId, leg, chip: `⑂ ${leg}${last ? LAST_LEG_MARK : ''}`,

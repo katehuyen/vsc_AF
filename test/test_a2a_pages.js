@@ -117,7 +117,8 @@ const count = (s, re) => (s.match(re) || []).length;
     ok('↺ resets every filter and the query', count(s.html(), /class="a2a-card/g) === 4 && s.state().fFrom === null && s.state().query === '');
 
     const e = notes({ notes: [], tasksByNote: {} });
-    ok('an empty board says how notes get here', /No notes match/.test(e.html()) && /a2a\.notes\.post/.test(e.html()));
+    ok('an empty board says how notes get here', /No notes match/.test(e.html()) && /Agents leave notes for each other here/.test(e.html())
+        && !/a2a\.notes\./.test(e.html()));
 }
 
 // ---------- S-84: the relay on the board, the pin, and the hand that deletes ----------
@@ -257,7 +258,9 @@ const count = (s, re) => (s.match(re) || []).length;
     ok('↺ clears the query and the pickers', count(r.html(), /class="a2a-card/g) === 8 && r.state().query === '');
 
     const e = tasks({ tasks: [], notesById: {} });
-    ok('an empty board says how work gets here', /No tasks match/.test(e.html()) && /a2a\.tasks\.next/.test(e.html()));
+    ok('an empty board says how work gets here', /No tasks match/.test(e.html()) && /one posts a task, another takes it/.test(e.html())
+        // A-28 — in words the user reads, never the op an agent calls.
+        && !/a2a\.tasks\./.test(e.html()));
     const o = tasks({ tasks: [tasksFx.data().tasks[0]], notesById: {}, focusId: 't-mu9q0' });
     const oh = o.html();
     ok('one queued task: open lane only, no closed lane, no lease bar, Cancel offered',

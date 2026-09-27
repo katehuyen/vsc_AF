@@ -178,7 +178,7 @@
         const closedItems = items.filter(t => CLOSED.indexOf(t.state) >= 0);
         let list = '';
         if (!items.length) {
-            list = `<p class="muted a2a-empty">🕊️ No tasks match. Agents hand work to each other here — <code>a2a.tasks.add</code> on the bridge, <code>a2a.tasks.next</code> to take one; a claim is a 30-minute lease kept alive by heartbeats.</p>`;
+            list = `<p class="muted a2a-empty">🕊️ No tasks match. Agents hand work to each other here — one posts a task, another takes it; a claim is a 30-minute lease kept alive by heartbeats.</p>`;
         } else {
             if (openItems.length) { list += `<div class="a2a-lane">Open · ${openItems.length}</div>` + window.AFBulk.days(openItems, card, DATA.now); }
             if (closedItems.length) { list += `<div class="a2a-lane">Closed · ${closedItems.length}</div>` + window.AFBulk.days(closedItems, card, DATA.now); }

@@ -116,7 +116,7 @@ for (const bad of ['', 'x', '2.5', -1, null, undefined]) {
     ok('the card carries the ceiling and where to change it', card.max === 12 && card.lines.some(x => /^Ceiling: 12 legs — change it: right-click ⑂⊣/.test(x)));
     ok('a caller that gives no setting gets the card it always got', !('max' in V.batonCardView(base, 'L2')));
     const bar = V.batonBarView(base, 6, () => true);
-    ok('the bar reads the chain\'s own ceiling and says a click changes it', bar.text === '⑂ 2/12' && /Click: the chain's legs .*baton\.setLegs chain=chn_1/.test(bar.tooltip));
+    ok('the bar reads the chain\'s own ceiling and says a click changes it', bar.text === '⑂ 2/12' && /^Click: the chain's legs — one more, fewer, no ceiling, last leg\.$/m.test(bar.tooltip));
     const js = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
     ok('‼️ a right-click on ⑂⊣ IS the legs menu: no VS Code context section (Cut · Copy · Paste) on the button',
         !/afConsoleLastLeg/.test(js) && /byId\('c-baton-lastleg', 'contextmenu', ev => \{\s*ev\.preventDefault\(\);\s*ev\.stopPropagation\(\);/.test(js));

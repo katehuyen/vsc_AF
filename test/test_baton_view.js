@@ -23,7 +23,9 @@ const first = V.batonCardView([b('b1', 'waiting-end', 1, 's1')], 's1');
 ok('the run that started the chain and passed: leg 1, successor waiting, stoppable',
     first.leg === 1 && first.chip === '⑂ 1' && /successor waiting/.test(first.head) && first.stoppable
     && first.lines.some(l => /^Predecessor: none/.test(l)) && first.lines.some(l => /waits for this session to end/.test(l))
-    && first.lines.some(l => /baton\.stop chain=chn_1/.test(l)));
+    && first.lines.some(l => /^Brake: ✕⑂ Stop chain on the card/.test(l))
+    // A-28 — the hover is read by the user: the control, never the op.
+    && !first.lines.some(l => /baton\.[a-zA-Z]+ /.test(l)));
 
 const mid = V.batonCardView([
     b('b1', 'started', 1, 's1', { extra: { toSessionId: 's2' } }),
@@ -58,7 +60,8 @@ ok('two passes from one run: the newest speaks', twice.lines.some(l => /waits fo
     ok('a running leg: ⑂ leg/ceiling, its session the click target',
         run.text === '⑂ 3/6' && run.sessionId === 's3-long-id' && run.chainId === 'chn_1'
         && /^Baton relay — one chain running/.test(run.tooltip) && /Chain chn_1 — leg 3 of 6 running \(session s3-long-\)/.test(run.tooltip)
-        && /A new chain starts at 6 legs \(agentFarm\.batonMaxHops\)/.test(run.tooltip) && /baton\.stop chain=chn_1/.test(run.tooltip));
+        && /A new chain starts at 6 legs \(agentFarm\.batonMaxHops\)/.test(run.tooltip) && /✕⑂ Stop chain while a successor waits\./.test(run.tooltip)
+        && !/baton\.[a-zA-Z]+ chain=/.test(run.tooltip));
     const park = V.batonBarView([b('b1', 'parked', 2, 's2', { extra: { wakeAt: NOW + 3600000 } })], 6, none, fmt);
     ok('a parked leg carries its wake time on the bar — ⑂ 3/6 · 14:37', park.text === '⑂ 3/6 · 14:37' && /leg 3 of 6 parked .* wakes at 14:37/.test(park.tooltip) && !park.sessionId);
     const wait = V.batonBarView([b('b1', 'waiting-end', 1, 's1')], 0, none, fmt);

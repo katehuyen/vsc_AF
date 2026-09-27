@@ -115,7 +115,7 @@ export class LegEndWatch {
             this.deps.store.put(draft);
             this.say(`Relay passed for a flagged leg — chain ${draft.chainId}`,
                 `${why}.\n\nThe baton waits for the session's end; Agent Farm closes its card at rest and hop ${draft.hop} opens from what it left — `
-                + `✕ Stop chain on its card, or baton.stop chain=${draft.chainId}, stops it.`, `baton:${draft.id}:flagged`, 2, 'info');
+                + '✕ Stop chain on its card stops it.', `baton:${draft.id}:flagged`, 2, 'info');
             return draft;
         } finally {
             this.judging.delete(sid);
@@ -127,7 +127,7 @@ export class LegEndWatch {
         if (draft.state === 'stopped') { return draft; }
         this.deps.store.put(draft);
         this.say(`Relay rescued — chain ${draft.chainId}`,
-            `${why}.\n\nThe failsafe opened hop ${draft.hop} from what it left behind — ✕ Stop chain on its card, or baton.stop chain=${draft.chainId}, stops it.`,
+            `${why}.\n\nThe failsafe opened hop ${draft.hop} from what it left behind — ✕ Stop chain on its card stops it.`,
             `baton:${draft.id}:rescued`, 2, 'info');
         return this.release(draft, `failsafe: ${why}`);
     }

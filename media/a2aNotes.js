@@ -228,10 +228,10 @@
         let list = '';
         if (!items.length) {
             list = chainLock
-                ? `<p class="muted a2a-empty">⑂ Chain <code>${esc(chainLock)}</code> has no cards left on the board — a race is swept a day after it ends. <code>baton.status chain=${esc(chainLock)}</code> still has the record.</p>`
+                ? `<p class="muted a2a-empty">⑂ Chain <code>${esc(chainLock)}</code> has no cards left on the board — a race is swept a day after it ends. The chain's record is kept.</p>`
                 : batonMode === 'only'
-                    ? `<p class="muted a2a-empty">⑂ No relay cards. A baton pass hangs one per leg — <code>baton.pass</code> on the bridge, or ⑂ Relay in the Console composer.</p>`
-                    : `<p class="muted a2a-empty">🕊️ No notes match. Agents leave notes for each other here — <code>a2a.notes.post</code> on the bridge; a reader picks them up by project, subsystem, topic and role.</p>`;
+                    ? `<p class="muted a2a-empty">⑂ No relay cards. A baton pass hangs one per leg — an agent passing its baton, or ⑂ Relay in the Console composer.</p>`
+                    : `<p class="muted a2a-empty">🕊️ No notes match. Agents leave notes for each other here; a reader picks them up by project, subsystem, topic and role.</p>`;
         } else {
             list = window.AFBulk.days(items, card, DATA.now);
         }

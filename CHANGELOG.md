@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.730.0 - Hovers speak to the user, not to the agent (A-28) (2026-09-28)
+
+- The Console's orange bridge-guard dot no longer shows a command line and an
+  escape word: it says in plain words that the agent tried to search the disk
+  for a session, that Agent Farm stopped it and had it ask Agent Farm
+  instead, that nothing is needed from you, and where the switch is. The
+  setting's own description says the same.
+- The same kind of text is gone everywhere else it had crept in: the
+  "Agent door: …" footnotes on the Console's relay, pass, last-leg, stop and
+  continue buttons and on the Web page's token and LAN buttons, the op names
+  in the relay status bar and chain hovers, in the two relay notices, and in
+  the Agent-to-Agent boards' empty messages. Each now names the control
+  instead. A line in the UI conventions keeps it that way.
+
 ## 3.729.0 - A long closing note opens in place on the Track tab (U-156) (2026-09-28)
 
 - The CLOSED line of a Track card is cut at 220 characters like before, but

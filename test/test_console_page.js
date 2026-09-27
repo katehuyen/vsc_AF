@@ -1309,7 +1309,7 @@ const intentOf = (o) => Object.assign({
         /Handed over: yes — 30s ago — devir\.md/.test(status()));
     ok('…and says what the click does and does not do',
         /Nothing starts until you press Send/.test(status()) && /never resumed/.test(status())
-        && /console\.continueFromHandover id=/.test(status()));
+        && !/continueFromHandover|Agent door/.test(status()));
     push(sigged({
         state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: false,
         lines: ['Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago, through the Claude live hook (PostToolUse).']
@@ -1342,7 +1342,7 @@ const intentOf = (o) => Object.assign({
         && status().indexOf('id="c-baton-stop"') < status().indexOf('id="c-transcript"'));
     ok('…MIRROR: its tooltip opens with the relay\'s state, then says what stops and what does not',
         /Baton relay — leg 2 · successor waiting/.test(status())
-        && /Nothing is deleted/.test(status()) && /baton\.stop chain=chn_muq2k1/.test(status()));
+        && /Nothing is deleted/.test(status()) && !/baton\.[a-zA-Z]+ chain=|Agent door/.test(status()));
     posted.length = 0;
     els['c-baton-stop'].listeners.click();
     ok('…and the press names the chain to the host — nothing else',
@@ -1362,7 +1362,7 @@ const intentOf = (o) => Object.assign({
         && status().indexOf('id="c-baton-lastleg"') < status().indexOf('id="c-transcript"'));
     ok('…MIRROR: its panel opens with the state, then says what pressing does',
         /Last leg: off/.test(status()) && /Click: make this leg the last — it writes the handover note instead of passing the baton/.test(status())
-        && /baton\.lastLeg session=[^ ]+ on=true/.test(status()));
+        && !/baton\.lastLeg session=|Agent door/.test(status()));
     posted.length = 0;
     els['c-baton-lastleg'].listeners.click();
     ok('…pressing it asks the host to brake THIS card', posted.length === 1 && posted[0].type === 'batonLastLeg'
@@ -1375,8 +1375,9 @@ const intentOf = (o) => Object.assign({
     els['c-baton-lastleg'].listeners.click();
     ok('…and a second press releases it', posted.length === 1 && posted[0].on === false);
     push(data(CONVO.slice(), { batonView: leg('locked') }));
-    ok('locked after a braked pass: drawn disabled, pointing at baton.status, a press sends nothing',
-        /aria-pressed="true" disabled>⑂⊣</.test(status()) && /baton\.status chain=chn_muq2k1/.test(status())
+    ok('locked after a braked pass: drawn disabled, pointing at the handover note (A-28: no op), a press sends nothing',
+        /aria-pressed="true" disabled>⑂⊣</.test(status()) && /the handover note is where the work goes on/.test(status())
+        && !/baton\.status chain=/.test(status())
         && (posted.length = 0, els['c-baton-lastleg'].listeners.click && els['c-baton-lastleg'].listeners.click(), posted.length === 0));
     push(data(CONVO.slice(), { batonView: leg('passed', true) }));
     ok('‼️ once a successor waits, ✕⑂ Stop chain is the brake and ⑂⊣ steps aside',
@@ -1389,7 +1390,7 @@ const intentOf = (o) => Object.assign({
         /<button class="stchip lastleg" id="c-baton-lastleg"/.test(status()) && !/afConsoleLastLeg/.test(status())
         && /Last leg: off · leg 2 of 12/.test(status())
         && /Right-click: the chain(&#39;|')s legs — one more, fewer, a number, no ceiling\./.test(status())
-        && /baton\.setLegs chain=chn_muq2k1/.test(status()));
+        && !/baton\.setLegs chain=/.test(status()));
     let prevented = 0;
     const rclick = { preventDefault: () => { prevented++; }, stopPropagation: () => { prevented++; } };
     posted.length = 0;

@@ -96,8 +96,7 @@
             'New token',
             'Mints a fresh token and puts it in force at once.\n\n‼️ Every link made from the old one '
             + 'dies with it, including a bookmark saved on the phone — the page stores the token in a '
-            + 'cookie, so a phone that was working simply starts being refused.\n\n'
-            + 'Agent door: web.token.new confirm=true', 'svc-tip')}
+            + 'cookie, so a phone that was working simply starts being refused.', 'svc-tip')}
             </div>
         </div>`;
     }
@@ -125,8 +124,7 @@
             'local keeps the port on 127.0.0.1: nothing outside this machine can open it, and there '
             + 'is no code to scan.\n\nLAN serves the dashboard to everyone on this network who has '
             + 'the link. You are asked to confirm it every time, because that is a decision about '
-            + 'your network and not a preference.\n\nEither way it stays READ ONLY.\n\n'
-            + 'Agent door: web.bind bind=lan confirm=true', 'svc-tip')}
+            + 'your network and not a preference.\n\nEither way it stays READ ONLY.', 'svc-tip')}
                 <span class="muted small">${w.lanAddress
                 ? 'this machine is ' + esc(w.lanAddress) + ' on its network'
                 : 'this machine has no non-internal address right now'}</span>

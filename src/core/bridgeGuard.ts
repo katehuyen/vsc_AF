@@ -245,10 +245,14 @@ export function bridgeGuardView(
         lines.push(`${ago ? ago(c.ts) + ' ago' : new Date(c.ts).toISOString()}: ${c.tool} · ${c.id}`
             + (c.how === 'known' ? ' (a short id this machine knows)' : ''));
     }
-    if (n > VIEW_LIST_CAP) { lines.push(`…and ${n - VIEW_LIST_CAP} earlier (sessions.bridgeGuard lists them all).`); }
+    if (n > VIEW_LIST_CAP) { lines.push(`…and ${n - VIEW_LIST_CAP} earlier.`); }
+    // A-28 — the reader is the user, not the agent: what happened and whether
+    // it needs them, never the command the agent was told to run instead.
     lines.push(
-        `Each time the agent was handed ${BRIDGE_FIND_HINT} instead of the search — Agent Farm data is asked of the bridge.`,
-        `Way out: ${BRIDGE_GUARD_ESCAPE} in the command · switch: agentFarm.bridgeGuard`
+        ' ', // AFTip.GAP — an empty string is dropped as no line at all
+        'The agent tried to find a session\'s files by searching the disk. Agent Farm stopped the search '
+        + 'and had the agent ask Agent Farm itself, which knows where every session is.',
+        'Nothing is needed from you. To switch the guard off: Farm Settings → Live Monitoring & Alerts → Bridge guard.'
     );
     return {
         count: n,
