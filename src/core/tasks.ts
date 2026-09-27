@@ -17,6 +17,7 @@ import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runCo
 import { BrandKit, brandProductionFor, fillBrand, resolveBrand } from './brandKit';
 import * as FE from './forEachStep';
 import { capWaitingBranches, runSpendCap, SpendCap, spendCapStop } from './runSpendCap';
+import { escalationLine, ladderFor } from './judgeLadder';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -1391,6 +1392,8 @@ export interface WorkflowRunState {
     libraryEnd?: string[];
     /** A-27 — the hard spend cap the run runs under */
     spendCap?: SpendCap;
+    /** A-27 — the judge ladder the run was started with */
+    judgeLadder?: string;
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -1673,6 +1676,8 @@ export interface WorkflowRunOpts {
     roles?: RoleMap;
     /** A-27 — this run's own hard spend cap, above the workflow's and Farm Settings' */
     spendCap?: number;
+    /** A-27 — this run's judge ladder ("haiku,sonnet"), above Farm Settings' */
+    judgeLadder?: string;
 }
 
 interface WorkflowRunRecord {
@@ -1711,6 +1716,8 @@ interface WorkflowRunRecord {
     roles?: RoleMap;
     /** A-27 — the hard spend cap in force for this run and where it came from */
     spendCap?: SpendCap;
+    /** A-27 — the judge ladder the run was started with */
+    judgeLadder?: string;
     /** M-46 — what a person set while it ran: words for its supervisor, live settings (src/core/workflowLive.ts) */
     live?: RunLive;
     /** M-46 — the finished step's row the run is held after, when it was paused at a boundary */
@@ -1967,6 +1974,8 @@ export interface TaskManagerOptions {
     showrunner?: () => string;
     /** A-27 — Farm Settings' hard spend cap per workflow run (agentFarm.workflowSpendCap) */
     spendCapSetting?: () => unknown;
+    /** A-27 — Farm Settings' judge ladder (agentFarm.judgeLadder) */
+    judgeLadderSetting?: () => unknown;
     /** F2: media poll interval override (tests); undefined = provider default (3s). */
     mediaPollMs?: () => number;
     /**
@@ -5435,7 +5444,7 @@ export class TaskManager implements vscode.Disposable {
             await this.settleUnjudged(task, w, 'there is no downloaded asset to look at', attempt, 'Vision verify');
             return;
         }
-        const judged = await this.runVisionJudge(assetFile, step.verify!.criteria, step.verify);
+        const judged = await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, step.verify!.criteria, sj));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Vision verify', judged.judge);
             return;
@@ -5443,7 +5452,7 @@ export class TaskManager implements vscode.Disposable {
         const { pass, reason } = judged;
         try {
             fs.appendFileSync(task.outputFile as string,
-                `\nVision verify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n`, 'utf8');
+                `\nVision verify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n${judged.climbed ? judged.climbed + '\n' : ''}`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = pass ? 'pass' : 'fail';
 
@@ -5474,11 +5483,24 @@ export class TaskManager implements vscode.Disposable {
         this.advanceWorkflow(task, 'failed');
     }
 
+    /** A-27 — cheap-first, and one rung up on a FAIL before a retry is paid for (src/core/judgeLadder.ts). */
+    private async climbJudge<J extends { pass: boolean; reason: string; unjudged?: string; judge: string }>(
+        task: FarmTask, step: WorkflowStep, judge: (sj: StepJudge | undefined) => Promise<J>): Promise<J & { climbed?: string }> {
+        const lad = ladderFor(step.verify, task.workflowRunId ? this.runRecords.get(task.workflowRunId)?.judgeLadder : undefined, this.opts.judgeLadderSetting?.());
+        if (!lad.rungs.length) { return judge(step.verify); }
+        const rung = (i: number) => `judge ladder ${i + 1}/${lad.rungs.length} ${lad.rungs[i]} (${lad.from})`;
+        const low = await judge({ model: lad.rungs[0] });
+        if (low.unjudged || low.pass || lad.rungs.length < 2) { return { ...low, judge: rung(0) }; }
+        const up = await judge({ model: lad.rungs[1] });
+        if (up.unjudged) { return { ...low, judge: rung(0) }; }
+        return { ...up, judge: `${rung(0)} → ${rung(1)}`, climbed: escalationLine({ model: lad.rungs[0], reason: low.reason }, { model: lad.rungs[1], pass: up.pass, reason: up.reason }) };
+    }
+
     private async verifyThenAdvance(task: FarmTask, w: FarmWorkflow, step: WorkflowStep): Promise<void> {
         const agent = this.getAgents().find(a => a.id === task.agentId);
         const body = archivedOutputBody(fs.readFileSync(task.outputFile as string, 'utf8'));
         const attempt = task.attempt ?? 0;
-        const judged = await this.runJudge(agent?.dir ?? process.cwd(), step.verify!.criteria, body, step.verify);
+        const judged = await this.climbJudge(task, step, sj => this.runJudge(agent?.dir ?? process.cwd(), step.verify!.criteria, body, sj));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Verify', judged.judge);
             return;
@@ -5486,7 +5508,7 @@ export class TaskManager implements vscode.Disposable {
         const { pass, reason } = judged;
         try {
             fs.appendFileSync(task.outputFile as string,
-                `\nVerify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n`, 'utf8');
+                `\nVerify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n${judged.climbed ? judged.climbed + '\n' : ''}`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = pass ? 'pass' : 'fail';
 
@@ -6381,7 +6403,8 @@ export class TaskManager implements vscode.Disposable {
             ...(opts?.wake ? { wake: opts.wake } : {}),
             ...(opts?.production ? { production: opts.production } : {}),
             ...(opts?.roles && Object.keys(opts.roles).length ? { roles: opts.roles } : {}),
-            ...((c: SpendCap) => (c.usd > 0 ? { spendCap: c } : {}))(runSpendCap(opts?.spendCap, w.spendCap, this.opts.spendCapSetting?.()))
+            ...((c: SpendCap) => (c.usd > 0 ? { spendCap: c } : {}))(runSpendCap(opts?.spendCap, w.spendCap, this.opts.spendCapSetting?.())),
+            ...(opts?.judgeLadder ? { judgeLadder: opts.judgeLadder } : {})
         });
         this.lib?.prepare(w);
         return runId;
@@ -6546,6 +6569,7 @@ export class TaskManager implements vscode.Disposable {
             ...(rec?.airtable ? { airtable: rec.airtable } : {}),
             ...(rec?.libraryEnd ? { libraryEnd: rec.libraryEnd } : {}),
             ...(rec?.spendCap ? { spendCap: rec.spendCap } : {}),
+            ...(rec?.judgeLadder ? { judgeLadder: rec.judgeLadder } : {}),
             steps,
             costUSD: tasks.reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)

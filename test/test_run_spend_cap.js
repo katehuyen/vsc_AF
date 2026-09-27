@@ -37,9 +37,9 @@ ok('‼️ between steps: after the step limit, before a step starts', /step lim
 ok('‼️ between branches: the waiting ones close, and the fan-in ends when none is in flight', /const capped = spendCapStop[\s\S]{0,120}capWaitingBranches\(run, capped\);[\s\S]{0,120}if \(!run\.branches\.some\(b => b\.status === 'running'\)\) \{ this\.finishForEach\(w, runId, false\); \}/.test(tasks));
 ok('the cap is settled once, when the run starts: run → workflow → Farm Settings', /runSpendCap\(opts\?\.spendCap, w\.spendCap, this\.opts\.spendCapSetting\?\.\(\)\)/.test(tasks));
 ok('workflows.status shows the cap in force', /\.\.\.\(rec\?\.spendCap \? \{ spendCap: rec\.spendCap \} : \{\}\)/.test(tasks));
-ok('the bridge: workflows.add (the shared save), workflows.update and workflows.run take spendCap, refused in words', (ext.match(/spendCapRefusal\(args\.spendCap\)/g) || []).length === 3);
+ok('the bridge: workflows.add (the shared save), workflows.update and workflows.run take spendCap, refused in words', (ext.match(/spendCapRefusal\(args\.spendCap\)/g) || []).length === 2 && /spendCapRefusal\(given\('spendCap'\)\)/.test(ext));
 ok('the task manager and the panel read Farm Settings', (ext.match(/spendCapSetting: \(\) => cfg\(\)\.get<number>\('workflowSpendCap', 0\)/g) || []).length === 2);
-ok('the panel: the workflow form saves it, Run with… sends it', /if \(cap\) \{ existing\.spendCap = cap; \} else \{ delete existing\.spendCap; \}/.test(panel) && /spendCap: runCap/.test(panel));
+ok('the panel: the workflow form saves it, Run with… sends it', /if \(cap\) \{ existing\.spendCap = cap; \} else \{ delete existing\.spendCap; \}/.test(panel) && /spendCap: runCap/.test(panel) && /spendCapRefusal\(capIn\)/.test(panel));
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const props = [].concat(pkg.contributes.configuration).reduce((a, c) => Object.assign(a, c.properties || {}), {});
 ok('agentFarm.workflowSpendCap is a number, default 0, not below 0', props['agentFarm.workflowSpendCap'] && props['agentFarm.workflowSpendCap'].type === 'number' && props['agentFarm.workflowSpendCap'].default === 0 && props['agentFarm.workflowSpendCap'].minimum === 0);

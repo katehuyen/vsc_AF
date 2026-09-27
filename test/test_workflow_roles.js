@@ -101,7 +101,7 @@ AR.applyRun(slots, draft, { 'wi-roles.kurgu': 'developer', 'wi-roles.senarist': 
 eq('the Run card writes this run\'s roles; the first line clears one', draft.roles, { kurgu: 'developer' });
 const read2 = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const rw = read2('media/afRunWith.js'), tpage = read2('media/tasksPage.js'), tpanel = read2('src/panels/tasksPanel.ts'), extsrc = read2('src/extension.ts');
-ok('the Run card draws and reads the role boxes', /AFRoles\.runBoxes\(p, run, agents, F\(\)\)/.test(rw) && /AFRoles\.applyRun\(p, run, values\)/.test(rw) && /DATA\.scenes, DATA\.agents\)/.test(tpage));
+ok('the Run card draws and reads the role boxes', /AFRoles\.runBoxes\(p, run, agents, F\(\)\)/.test(rw) && /AFRoles\.applyRun\(p, run, values\)/.test(rw) && /DATA\.scenes, DATA\.agents[,)]/.test(tpage));
 ok('the run is sent its roles, refused by name, and started with them', /roles: wiRun\.roles \|\| \{\}/.test(tpage) && /rolesRefusal\(msg\.roles, this\.deps\.getAgents\(\)\)/.test(tpanel)
     && /roleSlots: rolesReport\(w, deps\.showrunner/.test(tpanel));
 eq('a role step in the list reads as the role and who fills it', [AR.who('senarist', { roles: { senarist: 'yazar' } }, 'youtuber'), AR.who('kurgu', null, '')], ['senarist → yazar', 'kurgu → youtuber']);

@@ -322,6 +322,14 @@
                 run: { surface: 'media/afRoles.js#wi-roles', bridge: 'workflows.run:roles' }
             }
         },
+        // A-27 — the judge's ladder, cheapest first: a FAIL is judged one rung up before a retry is paid for (src/core/judgeLadder.ts)
+        {
+            id: 'judge.ladder', label: 'Judge ladder (cheapest first)', type: 'text', default: '', remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.judgeLadder', bridge: 'settings.set:agentFarm.judgeLadder' },
+                run: { surface: 'media/afRunWith.js#wi-judgeLadder', bridge: 'workflows.run:judgeLadder' }
+            }
+        },
         // A-27 — the run's hard spend cap: past it no further step or branch starts, nothing asked (src/core/runSpendCap.ts)
         {
             id: 'workflow.spendCap', label: 'Run spend cap $ (hard)', type: 'number', default: 0, min: 0, remembered: false,

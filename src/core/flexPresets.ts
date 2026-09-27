@@ -48,29 +48,29 @@ export interface PresetEntry {
 export const BUILTIN_PRESETS: FlexPreset[] = [
     {
         name: 'Economy', family: 'cost', scope: 'global', builtin: true,
-        describe: 'The cheapest judge, one supervisor call with a $0.50 cap, $1 a day of sentry leader turns.',
+        describe: 'The cheapest judge with no second opinion, one supervisor call with a $0.50 cap, $1 a day of sentry leader turns, a workflow run stopped at $5.',
         values: {
-            'judge.args': '--model claude-haiku-4-5-20251001',
+            'judge.args': '--model claude-haiku-4-5-20251001', 'judge.ladder': 'haiku',
             'retry.supervisor.maxCalls': 1, 'retry.supervisor.budgetUsd': 0.5,
-            'sentry.leaderBudgetUsd': 1
+            'sentry.leaderBudgetUsd': 1, 'workflow.spendCap': 5
         }
     },
     {
         name: 'Balanced', family: 'cost', scope: 'global', builtin: true,
         describe: 'The shipped defaults.',
         values: {
-            'judge.args': '--model claude-haiku-4-5-20251001',
+            'judge.args': '--model claude-haiku-4-5-20251001', 'judge.ladder': '',
             'retry.supervisor.maxCalls': 2, 'retry.supervisor.budgetUsd': 0,
-            'sentry.leaderBudgetUsd': 2
+            'sentry.leaderBudgetUsd': 2, 'workflow.spendCap': 0
         }
     },
     {
         name: 'Quality', family: 'cost', scope: 'global', builtin: true,
-        describe: 'A stronger judge, three supervisor calls, $5 a day of sentry leader turns.',
+        describe: 'A stronger judge whose FAIL is checked by opus before a retry is paid for, three supervisor calls, $5 a day of sentry leader turns, no run cap.',
         values: {
-            'judge.args': '--model claude-sonnet-5',
+            'judge.args': '--model claude-sonnet-5', 'judge.ladder': 'sonnet,opus',
             'retry.supervisor.maxCalls': 3, 'retry.supervisor.budgetUsd': 0,
-            'sentry.leaderBudgetUsd': 5
+            'sentry.leaderBudgetUsd': 5, 'workflow.spendCap': 0
         }
     }
 ];

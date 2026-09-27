@@ -858,7 +858,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             </td>
         </tr>${wiRun && wiRun.id === p.id && (wiRun.kind || 'workflow') === p.kind && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
             ${p.kind === 'schedule' ? window.AFRunWith.scheduleCard(p, wiRun, C, (DATA.launch || {}).runPresets)
-                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict, DATA.scenes, DATA.agents)}
+                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict, DATA.scenes, DATA.agents, (DATA.launch || {}).workflowPresets)}
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
 
@@ -4413,7 +4413,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 onSubmit: () => {
                     post(wiRun.kind === 'schedule'
                         ? { type: 'plan', act: 'runwith', kind: 'schedule', id: wiRun.id, supervisor: window.AFWorkflowInputs.given(wiRun.sup), preset: wiRun.preset || '' }
-                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '', roles: wiRun.roles || {}, spendCap: wiRun.spendCap || '' });
+                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '', roles: wiRun.roles || {}, spendCap: wiRun.spendCap || '', judgeLadder: wiRun.judgeLadder || '', preset: wiRun.preset || '' });
                     wiRun = null;
                     render();
                 },

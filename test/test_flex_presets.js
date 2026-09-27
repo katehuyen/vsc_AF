@@ -86,13 +86,15 @@ const { registerFlexOps } = require(path.join(ROOT, 'out', 'core', 'flexBridge.j
     eq('at Farm Settings: grouped under settings.set, objects nested down their path', s.ops, {
         'settings.set': {
             'agentFarm.judgeArgs': '--model claude-haiku-4-5-20251001',
+            'agentFarm.judgeLadder': 'haiku',
             'agentFarm.taskRetry': { supervisor: { maxCalls: 1, budgetUsd: 0.5 } },
-            'agentFarm.sentryLeaderBudgetUsd': 1
+            'agentFarm.sentryLeaderBudgetUsd': 1,
+            'agentFarm.workflowSpendCap': 5
         }
     });
     eq('…nothing skipped', s.skipped, []);
     const r = X.presetArgs(eco, 'run');
-    eq('at run start: the args for tasks.add', r.ops, { 'tasks.add': { retry: { supervisor: { maxCalls: 1, budgetUsd: 0.5 } } } });
+    eq('at run start: the args for tasks.add, and (A-27) a workflow run\'s ladder and cap', r.ops, { 'workflows.run': { judgeLadder: 'haiku', spendCap: 5 }, 'tasks.add': { retry: { supervisor: { maxCalls: 1, budgetUsd: 0.5 } } } });
     eq('…and what a run cannot hold is skipped with the reason', r.skipped.map(x => x.point).sort(), ['judge.args', 'sentry.leaderBudgetUsd']);
     ok('…named', r.skipped.every(x => /cannot be set at the run start level/.test(x.why)));
     eq('the origin names the preset', R.resolveFlex('retry.supervisor.maxCalls', { settings: 1 }, { settings: 'Economy' }).sentence,
@@ -139,7 +141,7 @@ const { registerFlexOps } = require(path.join(ROOT, 'out', 'core', 'flexBridge.j
     eq('a dry run writes nothing', [dry.result.written, writes.length], [false, 0]);
     const ap = await reg.dispatch('presets.apply', { name: 'Economy' });
     eq('presets.apply at Farm Settings writes each key', writes.sort(),
-        ['agentFarm.judgeArgs', 'agentFarm.sentryLeaderBudgetUsd', 'agentFarm.taskRetry']);
+        ['agentFarm.judgeArgs', 'agentFarm.judgeLadder', 'agentFarm.sentryLeaderBudgetUsd', 'agentFarm.taskRetry', 'agentFarm.workflowSpendCap']);
     eq('‼️ …merging into an object setting instead of replacing it', store['agentFarm.taskRetry'],
         { max: 3, supervisor: { engine: 'claude', model: 'sonnet', maxCalls: 1, budgetUsd: 0.5 } });
     ok('…and every point says it came from the preset', ap.result.points.every(p => /\(preset: Economy\)/.test(p.sentence)));

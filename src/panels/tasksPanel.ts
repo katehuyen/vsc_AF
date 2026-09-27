@@ -31,6 +31,7 @@ import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/
 import { BrandKit, brandRefs, cleanBrand } from '../core/brandKit';
 import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from '../core/workflowRoles';
 import { spendCapRefusal } from '../core/runSpendCap';
+import { ladderOf, ladderRefusal } from '../core/judgeLadder';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -194,6 +195,10 @@ export interface TasksDeps {
     showrunner?: () => string;
     /** A-27 — Farm Settings' hard spend cap per workflow run (agentFarm.workflowSpendCap) */
     spendCapSetting?: () => number;
+    /** A-27 — Farm Settings' judge ladder, a cost preset's run values, and the presets that carry some */
+    judgeLadderSetting?: () => string;
+    workflowRunPreset?: (name: string) => Record<string, unknown>;
+    workflowPresets?: () => { name: string; describe?: string; run: Record<string, unknown> }[];
     /** live tasks merged with the finished-task archive */
     allRecords(): TaskRecord[];
     /** urgent Needs-You rows (permission waits + browser approvals). */
@@ -262,6 +267,7 @@ interface PlanRow {
     /** A-27 — a workflow's own hard spend cap, and Farm Settings' under it */
     spendCap?: number;
     spendCapSetting?: number;
+    judgeLadderSetting?: string;
     usesBrand?: boolean;
     /** U-151 — a schedule whose own retry is supervised, and that supervisor's values ('Run with…' starts there) */
     supervised?: boolean;
@@ -668,6 +674,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             roleSlots: rolesReport(w, deps.showrunner ? deps.showrunner() : 'youtuber', deps.getAgents()).roles,
             // A-27 — the hard spend cap the Run card's box starts under: the workflow's, else Farm Settings'
             spendCap: w.spendCap ?? 0, spendCapSetting: deps.spendCapSetting ? Number(deps.spendCapSetting()) || 0 : 0,
+            judgeLadderSetting: deps.judgeLadderSetting ? String(deps.judgeLadderSetting() || '') : '',
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -992,6 +999,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             supervisorOverrides: deps.supervisorOverrides?.() ?? null,
             flexSettings: deps.flexSettings?.() ?? null,
             runPresets: deps.runPresets?.() ?? [],
+            workflowPresets: deps.workflowPresets?.() ?? [],
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),
@@ -2200,8 +2208,9 @@ export class TasksPanel {
         production?: string;
         /** M-53 — a workflow run's own agent per role */
         roles?: Record<string, string>;
-        /** A-27 — a workflow run's own hard spend cap */
+        /** A-27 — a workflow run's own hard spend cap and judge ladder */
         spendCap?: unknown;
+        judgeLadder?: unknown;
         /** U-151 — '↑ make default' */
         point?: string; level?: string; target?: string; value?: unknown;
     }): Promise<void> {
@@ -2265,11 +2274,19 @@ export class TasksPanel {
                         if (rolesNo) { this.say(`Roles: ${rolesNo}.`); break; }
                         const runRoles = cleanRoles(msg.roles);
                         // A-27 — this run's own hard spend cap; blank = the workflow's, else Farm Settings'
-                        const capNo = spendCapRefusal(msg.spendCap);
+                        // A-27 — a cost preset's run values under the boxes the person filled
+                        let pre: Record<string, unknown> = {};
+                        try { pre = typeof msg.preset === 'string' && msg.preset && this.deps.workflowRunPreset ? this.deps.workflowRunPreset(msg.preset) : {}; } catch (e) { this.say(e instanceof Error ? e.message : String(e)); break; }
+                        const capIn = msg.spendCap === undefined || msg.spendCap === '' ? pre.spendCap : msg.spendCap;
+                        const capNo = spendCapRefusal(capIn);
                         if (capNo) { this.say(`Run cap: ${capNo}.`); break; }
-                        const runCap = msg.spendCap === undefined || msg.spendCap === '' ? undefined : Number(msg.spendCap);
-                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod || runRoles || runCap !== undefined
-                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}), ...(runRoles ? { roles: runRoles } : {}), ...(runCap !== undefined ? { spendCap: runCap } : {}) } : undefined);
+                        const runCap = capIn === undefined || capIn === '' ? undefined : Number(capIn);
+                        const ladIn = msg.judgeLadder === undefined || msg.judgeLadder === '' ? pre.judgeLadder : msg.judgeLadder;
+                        const ladNo = ladderRefusal(ladIn);
+                        if (ladNo) { this.say(`Judge ladder: ${ladNo}.`); break; }
+                        const runLad = ladderOf(ladIn).join(',');
+                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod || runRoles || runCap !== undefined || runLad
+                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}), ...(runRoles ? { roles: runRoles } : {}), ...(runCap !== undefined ? { spendCap: runCap } : {}), ...(runLad ? { judgeLadder: runLad } : {}) } : undefined);
                         break;
                     }
                     // ‼️ A workflow's Edit is the workflow — its name AND its

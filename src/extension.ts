@@ -263,7 +263,8 @@ import { runRecipe } from './core/toolRun';
 import { setFlexOverride, setFlexSetting, userPresets } from './core/flexActions';
 import { retryDefaultFor, supervisorOverrideMap } from './core/flexOverrides';
 import { findPreset, FlexPreset, presetArgs, presetsFor } from './core/flexPresets';
-import { presetSupervisor, retryForRun, runSupervisor } from './core/runWithTask';
+import { presetSupervisor, retryForRun, runSupervisor, workflowRunPreset } from './core/runWithTask';
+import { ladderOf, ladderRefusal } from './core/judgeLadder';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -4044,6 +4045,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
             showrunner: () => cfg().get<string>('showrunner', 'youtuber'),
             spendCapSetting: () => cfg().get<number>('workflowSpendCap', 0),
+            judgeLadderSetting: () => cfg().get<string>('judgeLadder', ''),
             browserAllowHosts: () => cfg().get<string[]>('browserAllowHosts', []),
             confirmBrowser: ({ title, url, goal }) => {
                 if (cfg().get<string>('browserApproval', 'ask') !== 'ask') {
@@ -9014,7 +9016,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.run',
-            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason), wake? (M-45 — this run only: "mechanical" | "smart" | "hybrid" | a condition list, as workflows.add; beats the workflow\'s and its steps\'), production? (M-50 — this run only: the production (id or title) whose brand kit its steps read as {brand.*}; beats the workflow\'s and a media step\'s own; refused when no such production exists), roles? (M-53 — this run only: {"<role>": "<agent name|id>"}, over the workflow\'s roles and the showrunner; an agent that does not exist is refused by name), spendCap? (A-27 — this run only: its hard spend cap in dollars, over the workflow\'s and Farm Settings\'; 0 = none for this run; workflows.status shows the cap in force as spendCap)',
+            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason), wake? (M-45 — this run only: "mechanical" | "smart" | "hybrid" | a condition list, as workflows.add; beats the workflow\'s and its steps\'), production? (M-50 — this run only: the production (id or title) whose brand kit its steps read as {brand.*}; beats the workflow\'s and a media step\'s own; refused when no such production exists), roles? (M-53 — this run only: {"<role>": "<agent name|id>"}, over the workflow\'s roles and the showrunner; an agent that does not exist is refused by name), spendCap? (A-27 — this run only: its hard spend cap in dollars, over the workflow\'s and Farm Settings\'; 0 = none for this run; workflows.status shows the cap in force as spendCap), judgeLadder? (A-27 — this run only: the judge\'s ladder, cheapest first, "haiku,sonnet": a step\'s check is judged on the first rung and a FAIL once more on the next before a retry is paid for; a step with its own judge keeps it; over Farm Settings agentFarm.judgeLadder), preset? (A-27 — a cost preset, Economy · Balanced · Quality or your own (presets.list): its workflow-run values — spendCap, judgeLadder — for this run; what this call names itself beats it)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
@@ -9033,10 +9035,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const runRolesNo = rolesRefusal(args.roles, agents);
                 need(!runRolesNo, `${runRolesNo}.`);
                 const runRoles = cleanRoles(args.roles);
-                const runCapNo = spendCapRefusal(args.spendCap);
+                // A-27 — a cost preset's run values, under what this call names itself
+                const pre = runPresetValues(optStr(args, 'preset'), proj && proj !== 'none' ? proj : undefined);
+                const given = (k: string): unknown => (args[k] !== undefined && args[k] !== '' ? args[k] : pre[k]);
+                const runCapNo = spendCapRefusal(given('spendCap'));
                 need(!runCapNo, `${runCapNo}.`);
+                const ladNo = ladderRefusal(given('judgeLadder'));
+                need(!ladNo, `${ladNo}.`);
+                const lad = ladderOf(given('judgeLadder')).join(',');
                 const runId = taskManager.runWorkflow(w as FarmWorkflow, {
-                    ...(args.spendCap !== undefined && args.spendCap !== '' ? { spendCap: Number(args.spendCap) } : {}),
+                    ...(given('spendCap') !== undefined && given('spendCap') !== '' ? { spendCap: Number(given('spendCap')) } : {}),
+                    ...(lad ? { judgeLadder: lad } : {}),
                     ...(proj ? { projectId: proj === 'none' ? undefined : proj } : {}),
                     ...(inputs ? { inputs } : {}),
                     ...(wk.wake ? { wake: wk.wake } : {}),
@@ -24389,6 +24398,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // M-50 — each production's brand kit, so a step card can show what an empty box inherits
         showrunner: () => cfg().get<string>('showrunner', 'youtuber'),
         spendCapSetting: () => cfg().get<number>('workflowSpendCap', 0),
+        judgeLadderSetting: () => cfg().get<string>('judgeLadder', ''),
+        workflowRunPreset: (name: string) => runPresetValues(name),
+        workflowPresets: () => presetsFor(userPresets(flexDeps))
+            .map(p => ({ name: p.name, describe: p.describe, run: workflowRunPreset(p) }))
+            .filter(p => Object.keys(p.run).length > 0),
         brandKits: () => Object.fromEntries(discoverProductions(agents)
             .filter(p => p.production.brand).map(p => [p.production.id, p.production.brand as BrandKit])),
         // M-24 — the saved prompts, for the four boxes in the New-task form
@@ -27250,6 +27264,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * run-level ones first, the boxes over them) laid over the schedule's supervised
      * retry. The page's card and schedules.runNow both call this. A refusal is thrown.
      */
+    /** A-27 — a flex preset's values for one workflow run; no name = none. */
+    function runPresetValues(name: string, project?: string): Record<string, unknown> {
+        if (!name) { return {}; }
+        const p = findPreset(userPresets(flexDeps), name, project);
+        need(p, `No preset "${name}" — presets.list shows them.`);
+        return workflowRunPreset(p as FlexPreset);
+    }
+
     function runScheduleWith(s: FarmSchedule, supervisor: unknown, preset?: string): Record<string, unknown> {
         const own = runSupervisor(supervisor);
         need(!own.error, `${own.error}.`);

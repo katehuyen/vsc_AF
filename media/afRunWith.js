@@ -11,6 +11,8 @@
     const RUN_PROD = 'wi-production';
     // A-27 — this run's hard spend cap (flex point workflow.spendCap, run level)
     const RUN_CAP = 'wi-spendCap';
+    // A-27 — this run's judge ladder (flex point judge.ladder, run level), and the cost preset that fills both
+    const RUN_LADDER = 'wi-judgeLadder', RUN_PRESET = 'wi-preset';
     const F = () => window.AFForm;
     const pointAt = box => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afRunWith.js#' + box) : '');
     const inKey = i => pointAt(RUN_IN) + '#' + i.name;
@@ -28,7 +30,7 @@
     const changed = (p, run) => ownOf(p, run) !== ownAtRender;
 
     /** The card. `promote` = { open, levels(key) }; `dict` = the host's wake dictionary. */
-    function workflowCard(p, run, C, promote, dict, scenes, agents) {
+    function workflowCard(p, run, C, promote, dict, scenes, agents, costPresets) {
         const P = promote && window.AFFlexPromote;
         ownAtRender = ownOf(p, run);
         const last = p.lastInputs || {};
@@ -58,12 +60,12 @@
         if (P && dict) { strips.push(P.stripFor(promote, wakeKey(), 'Wake', shown, shown)); }
         const prod = prodBox(p, run, scenes);
         const roles = window.AFRoles ? window.AFRoles.runBoxes(p, run, agents, F()) : '';
-        const cap = capBox(p, run);
+        const cost = costBoxes(p, run, costPresets);
         return F().card({
             id: 'nt-runwith', title: `Run “${p.title}” with`,
             lede: (p.inputs || []).length ? 'each box starts at the last run\'s value, else the input\'s default'
                 : prod ? 'this run\'s own wake conditions and brand kit' : 'this run\'s own wake conditions, starting at the last run\'s',
-            body: F().grid(fields, wake, prod, roles, cap, strips), submit: 'Run with these'
+            body: F().grid(fields, wake, prod, roles, cost, strips), submit: 'Run with these'
         });
     }
 
@@ -79,9 +81,31 @@
         });
     }
 
+    /** A-27 — the cost boxes: a preset picker, then the Run cap and the Judge ladder it fills; a typed box beats it. */
+    function costBoxes(p, run, presets) {
+        const list = presets || [];
+        const pre = run.preset ? ((list.find(x => x.name === run.preset) || {}).run || {}) : {};
+        const picker = list.length ? F().sel(RUN_PRESET, 'Cost preset', [{ id: '', label: 'none — the workflow\'s own' }].concat(list.map(x => ({ id: x.name, label: x.name, detail: x.describe || '' }))), run.preset || '', {
+            redraw: true, tip: (run.preset || 'none') + '\n\nA cost preset fills this run\'s Run cap and Judge ladder; a box you type beats it. This run only.'
+        }) : '';
+        return [picker, capBox(p, run, pre), ladderBox(p, run, pre)];
+    }
+
+    /** The Judge ladder box: cheapest model first; a FAIL is judged one rung up before a retry is paid for. */
+    function ladderBox(p, run, pre) {
+        const under = pre.judgeLadder ? [pre.judgeLadder, 'the preset ' + run.preset] : p.judgeLadderSetting ? [p.judgeLadderSetting, 'Farm Settings'] : ['one judge', 'no ladder'];
+        const mine = String(run.judgeLadder || '');
+        // its own row: model ids are long, and a fifth box in the first row squeezes the Wake picker below its value
+        return F().text(RUN_LADDER, 'Judge ladder', mine, {
+            wide: true, ph: under[0] + ' — ' + under[1],
+            tip: (mine ? mine + ' — this run' : under[0] + ' — ' + under[1]) + '\n\nModels cheapest first (haiku,sonnet): a step\'s check is judged on the first; a FAIL is judged once more on the next before the step is paid for again. A step with its own judge keeps it. This run only.'
+        });
+    }
+
     /** A-27 — the Run cap box: what this run may spend before no further step starts. */
-    function capBox(p, run) {
-        const under = p.spendCap > 0 ? ['$' + p.spendCap, 'the workflow'] : p.spendCapSetting > 0 ? ['$' + p.spendCapSetting, 'Farm Settings'] : ['none', 'no cap anywhere'];
+    function capBox(p, run, pre) {
+        const under = pre && pre.spendCap !== undefined ? [pre.spendCap > 0 ? '$' + pre.spendCap : 'none', 'the preset ' + run.preset]
+            : p.spendCap > 0 ? ['$' + p.spendCap, 'the workflow'] : p.spendCapSetting > 0 ? ['$' + p.spendCapSetting, 'Farm Settings'] : ['none', 'no cap anywhere'];
         const mine = String(run.spendCap == null ? '' : run.spendCap);
         return F().text(RUN_CAP, 'Run cap $ (hard)', mine, {
             ph: under[0] + ' — ' + under[1],
@@ -140,8 +164,10 @@
         if (values[RUN_WAKE] !== undefined) { run.wake = values[RUN_WAKE]; }
         if (values[RUN_PROD] !== undefined) { run.production = values[RUN_PROD]; }
         if (values[RUN_CAP] !== undefined) { run.spendCap = values[RUN_CAP]; }
+        if (values[RUN_LADDER] !== undefined) { run.judgeLadder = values[RUN_LADDER]; }
+        if (values[RUN_PRESET] !== undefined) { run.preset = values[RUN_PRESET]; }
         if (window.AFRoles) { window.AFRoles.applyRun(p, run, values); }
     }
 
-    window.AFRunWith = { RUN_IN, RUN_WAKE, RUN_PROD, RUN_CAP, workflowCard, scheduleCard, apply, changed };
+    window.AFRunWith = { RUN_IN, RUN_WAKE, RUN_PROD, RUN_CAP, RUN_LADDER, RUN_PRESET, workflowCard, scheduleCard, apply, changed };
 })();

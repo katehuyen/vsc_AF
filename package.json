@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.709.0",
+  "version": "3.710.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9183,6 +9183,11 @@
           "type": "string",
           "default": "youtuber",
           "markdownDescription": "The **showrunner** — the agent that fills every role a workflow step names (senarist, kurgu, yayinci …) when the workflow binds it to nobody (M-53). A workflow binds a role on its form (Roles) or with `workflows.add roles=`; `workflows.roles` says who fills what and why."
+        },
+        "agentFarm.judgeLadder": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The **judge's ladder** for a workflow step's quality check, cheapest model first (`haiku,sonnet`) (A-27). The check is judged on the first rung; a FAIL is judged once more on the next rung before the step is paid for again — a PASS there overturns it and no retry is made. A step that names its own judge engine or model keeps it. Empty = the one judge of `judgeArgs`. One run sets its own with `workflows.run judgeLadder=` or a cost preset."
         },
         "agentFarm.workflowSpendCap": {
           "type": "number",

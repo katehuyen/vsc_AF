@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.710.0 - The judge's ladder, and a cost preset for one run (A-27, part 2) (2026-09-27)
+
+- **Judge ladder** (`haiku,sonnet`): a step's check is judged by the
+  cheapest model first; a FAIL is judged once more one rung up before the
+  step is paid for again, and an upper PASS saves the retry. Farm Settings
+  `agentFarm.judgeLadder`, or one run in **Run with…** / `workflows.run
+  judgeLadder=`. A step with its own judge keeps it.
+- **Cost preset for one workflow run**: **Run with…** has a Cost preset
+  picker and `workflows.run preset=Economy` fills the run's cap and ladder;
+  a box you type beats it. Economy now carries `haiku` and a $5 run cap,
+  Quality `sonnet,opus`; applying Economy in Farm Settings sets both there.
+
 ## 3.709.0 - A hard spend cap for a workflow run (A-27, part 1) (2026-09-27)
 
 - **Run cap $ (hard)**: once a workflow run has spent this much — every

@@ -41,6 +41,11 @@ export function retryForRun(own: RetryPolicy | undefined, sup: Record<string, un
 }
 
 /** What picking a preset on the card fills in: its run-level supervisor values. */
+/** A-27 — a preset's values for one workflow run: every point it sets whose run level is a workflows.run key. */
+export function workflowRunPreset(p: FlexPreset): Record<string, unknown> {
+    return { ...(presetArgs(p, 'run').ops['workflows.run'] ?? {}) };
+}
+
 export function presetSupervisor(p: FlexPreset): Record<string, unknown> {
     const t = presetArgs(p, 'run').ops['tasks.add'] as { retry?: { supervisor?: Record<string, unknown> } } | undefined;
     return { ...(t?.retry?.supervisor ?? {}) };
