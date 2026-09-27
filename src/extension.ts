@@ -26888,7 +26888,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         providerKeys: () => ({
             fal: !!vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY')),
             replicate: !!vault.get(cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'))
-        })
+        }),
+        // read when a message arrives: the preset store is set up further down activate()
+        get flex() { try { return flexDeps; } catch { return undefined; } }
     };
     // …and the same write surface over the bridge (B-2). Producing media is the
     // long, many-step job an agent should be able to drive; until now every one
@@ -26903,7 +26905,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerBrandOps(bridge, {
         getAgents: () => agents,
         workflow: ref => (taskManagerRef as TaskManager).workflows.find(x => x.id === ref || x.title === ref),
-        refresh: () => StudioPanel.refreshIfOpen()
+        refresh: () => StudioPanel.refreshIfOpen(),
+        get flex() { try { return flexDeps; } catch { return undefined; } }
     });
     registerStudioLibraryOps(bridge, {
         outputsDir: () => (taskManagerRef as TaskManager).outputsDir,

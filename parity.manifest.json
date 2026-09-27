@@ -7046,6 +7046,24 @@
       ]
     },
     {
+      "capability": "studioBrand.ts#brand:set",
+      "ui": [
+        "page:studioBrand.ts#brand:set"
+      ],
+      "ops": [
+        "studio.brand.set"
+      ]
+    },
+    {
+      "capability": "studioBrand.ts#brand:save",
+      "ui": [
+        "page:studioBrand.ts#brand:save"
+      ],
+      "ops": [
+        "studio.brand.save"
+      ]
+    },
+    {
       "capability": "tasksPanel.ts#schedule:toggle",
       "ui": [
         "page:tasksPanel.ts#schedule:toggle"

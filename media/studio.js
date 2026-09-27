@@ -249,7 +249,8 @@
         const provider = (name, setting) =>
             window.AFCtx.row('afProviderRow', { pvName: name, pvSetting: setting })
             + ` title="${C.esc(window.AFCtx.hint(name))}"`;
-        return `<h2>Who generates</h2>
+        return `${window.AFBrand ? window.AFBrand.studioSection(DATA, C) : ''}
+            <h2>Who generates</h2>
             <div class="srcrow" ${provider('fal.ai', 'agentFarm.mediaAuthSecret')}>${dot(pr.fal)}<span class="lbl">fal.ai</span>
                 <span class="muted small" style="flex:1">${pr.fal ? 'key present in the vault — media steps can run' : 'no key: add one to the secret vault (agentFarm.mediaAuthSecret names it)'}</span>
                 <button class="secondary" data-settings="agentFarm.mediaAuthSecret">Setting</button></div>
@@ -454,6 +455,7 @@
         if (fs) { fs.addEventListener('change', e => { fScene = e.target.value; render(); }); }
         window.AFFilter.wireMulti({ id: 'studio-sources', onChange: sel => { fSource = sel; render(); } });
         window.AFStudioLib.wire(post);
+        if (window.AFBrand && DATA.tab === 'sources') { window.AFBrand.wireStudio(DATA, post, render); }
 
         on('[data-open]', el => el.addEventListener('click', () => post('openAsset', { path: el.dataset.open })));
         on('[data-rerun]', el => el.addEventListener('click', () => post('rerun', { taskId: el.dataset.rerun })));

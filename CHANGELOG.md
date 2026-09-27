@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.704.0 - Brand kits in Studio, and kits kept as presets (M-50, part 3) (2026-09-27)
+
+- **Studio ▸ Sources ▸ Brand kits** lists every production with its kit.
+  **Edit kit** edits every field and the characters (key, name, reference,
+  description) and saves them into the production's `production.json`.
+- **Keep as preset…** keeps a kit in the preset library (family `brand`,
+  beside Economy · Balanced · Quality). **Take a kept kit…** opens the editor
+  with its values — nothing is written until you press Save kit.
+- **Bridge:** `studio.brand.save`, and `studio.brand.set preset=`.
+
 ## 3.703.0 - The brand kit on the step card and on Run with… (M-50, part 2) (2026-09-27)
 
 - **A step card shows the kit it reads, field by field.** Every empty box

@@ -18,6 +18,8 @@ import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
 import { StudioLibraryView, studioRoots, WallReader } from './studioLibraryView';
 import { LibraryActDeps, libraryEditFromPage, libraryPromoteFromPage } from './studioLibraryActions';
+import { studioBrandData, studioBrandMessage } from './studioBrand';
+import { FlexDeps } from '../core/flexActions';
 
 /**
  * Studio — the content production page.
@@ -47,6 +49,8 @@ export interface StudioDeps {
     libraryWall?: WallReader;
     /** X-425 — the wall's decisions written back (studio.library.edit / media.restage's own writers) */
     libraryAct?: LibraryActDeps;
+    /** M-50 — the preset library's store, where brand kits are kept as presets */
+    flex?: FlexDeps;
 }
 
 export class StudioPanel {
@@ -177,7 +181,9 @@ export class StudioPanel {
                 exists: !!f.path && fs.existsSync(f.path)
             })),
             candidates: mediaCandidates(metas.filter(m =>
-                !(m.selectedUrls?.length) && !(m.rejectedUrls?.length))).length
+                !(m.selectedUrls?.length) && !(m.rejectedUrls?.length))).length,
+            // M-50 — Sources: every production's brand kit and the kits kept as presets
+            ...studioBrandData(found, this.deps.flex)
         };
     }
 
@@ -232,6 +238,12 @@ export class StudioPanel {
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
         const str = (k: string) => (typeof msg[k] === 'string' ? msg[k] as string : '');
+        const said = await studioBrandMessage(msg, this.deps.getAgents(), this.deps.flex);
+        if (said !== undefined) {
+            if (said) { void vscode.window.showWarningMessage(`Agent Farm: ${said}`); }
+            this.refresh();
+            return;
+        }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'libraryView': this.lib.setView(msg.view); this.refresh(); break;

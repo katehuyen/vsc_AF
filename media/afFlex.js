@@ -315,7 +315,7 @@
         brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),
         brandPoint('typography', 'typography'), brandPoint('voice', 'voice id'), brandPoint('aspect', 'aspect'),
         brandPoint('duration', 'duration'), brandPoint('logo', 'logo rule'), brandPoint('logoPlace', 'logo placement'),
-        brandPoint('character', 'a character (name, reference, description)'),
+        brandPoint('character', 'a character (name, reference, description)', { type: 'dimensions', default: {} }),
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
         {
             id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,

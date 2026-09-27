@@ -5,6 +5,9 @@ import {
     patchBrand, resolveBrand
 } from './brandKit';
 import { DiscoveredProduction, discoverProductions, writeProduction } from './production';
+import { FlexDeps, savePresetAs, userPresets } from './flexActions';
+import { presetError } from './flexPresets';
+import { brandPreset, brandPresetsIn, kitFromPreset } from './brandPresets';
 
 /**
  * M-50 — the brand kit on the bridge: read a production's kit, or what one
@@ -16,6 +19,8 @@ export interface BrandBridgeDeps {
     /** a workflow by id or title, for "what does this step read" */
     workflow?(ref: string): { production?: string; steps: { title: string; media?: { projectId?: string }; brand?: unknown }[] } | undefined;
     refresh?(): void;
+    /** the preset library's store — brand kits kept as presets (family brand) */
+    flex?: FlexDeps;
 }
 
 export const BRAND_FIELDS_DOC = `${BRAND_TEXT.join(', ')}, logo (${BRAND_LOGO.join('|')}), character {<key>: {${CHARACTER_FIELDS.join(', ')}}}`;
@@ -32,6 +37,38 @@ export function productionRef(agents: AgentInfo[], ref: unknown): { id?: string;
     if (!s) { return { id: '' }; }
     const p = findProductionIn(discoverProductions(agents), s);
     return p ? { id: p.production.id } : { error: `no production "${s}" — studio.productions lists what exists` };
+}
+
+/** A production's kit changed — field by field, or replaced — and written into its production.json. Throws the sentence. */
+export function setProductionBrand(agents: AgentInfo[], ref: string, raw: unknown, replace: boolean) {
+    const p = findProductionIn(discoverProductions(agents), ref);
+    if (!p) { throw new Error(`No production "${ref}" — studio.productions lists what exists.`); }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { throw new Error('brand is required — an object of kit fields.'); }
+    const no = brandRefusal(raw);
+    if (no) { throw new Error(`${no}.`); }
+    const kit = patchBrand(replace ? undefined : p.production.brand, raw as Record<string, unknown>);
+    const next = { ...p.production };
+    if (kit) { next.brand = kit; } else { delete next.brand; }
+    writeProduction(p.file, next);
+    return { production: p.production.id, file: p.file, brand: kit ?? {}, paths: brandPaths(kit) };
+}
+
+/** A brand preset by name: the production's kit becomes a copy of it. */
+export function applyBrandPreset(agents: AgentInfo[], flex: FlexDeps, ref: string, name: string) {
+    const pre = brandPresetsIn(userPresets(flex)).find(p => p.name === name.trim());
+    if (!pre) { throw new Error(`No brand kit preset "${name}" — presets.list shows them (family brand).`); }
+    return { ...setProductionBrand(agents, ref, kitFromPreset(pre), true), preset: pre.name };
+}
+
+/** A production's kit saved into the preset library (family brand). */
+export async function saveBrandPreset(agents: AgentInfo[], flex: FlexDeps, ref: string, name: string, project?: string) {
+    const p = findProductionIn(discoverProductions(agents), ref);
+    if (!p) { throw new Error(`No production "${ref}" — studio.productions lists what exists.`); }
+    if (!p.production.brand) { throw new Error(`"${p.production.title}" has no brand kit to save.`); }
+    const pr = brandPreset(p.production.brand, name, p.production.title, { project });
+    const err = presetError(pr);
+    if (err) { throw new Error(err); }
+    return { ...(await savePresetAs(flex, pr)), production: p.production.id };
 }
 
 export function registerBrandOps(bridge: BridgeRegistry, deps: BrandBridgeDeps): void {
@@ -69,19 +106,27 @@ export function registerBrandOps(bridge: BridgeRegistry, deps: BrandBridgeDeps):
         },
         {
             op: 'studio.brand.set',
-            describe: `Change a production's BRAND KIT (M-50), written into its production.json. args: production (id or title), brand (object; fields: ${BRAND_FIELDS_DOC}) — field by field: a given field replaces that field, "" or null removes it, a character given as null is removed whole and one given as an object changes only the fields it names; replace? (true = the kit becomes exactly brand). Refused by name: an unknown field, a logo outside ${BRAND_LOGO.join('|')}, a character key that is not a letter then letters/digits/_/-.`,
+            describe: `Change a production's BRAND KIT (M-50), written into its production.json. args: production (id or title), brand (object; fields: ${BRAND_FIELDS_DOC}) — field by field: a given field replaces that field, "" or null removes it, a character given as null is removed whole and one given as an object changes only the fields it names; replace? (true = the kit becomes exactly brand); OR preset (the name of a brand kit preset — presets.list, family brand): the kit becomes a copy of it. Refused by name: an unknown field, a logo outside ${BRAND_LOGO.join('|')}, a character key that is not a letter then letters/digits/_/-.`,
             handler: (args) => {
-                const p = production(optStr(args, 'production'));
-                const raw = args.brand;
-                need(raw && typeof raw === 'object' && !Array.isArray(raw), 'brand is required — an object of kit fields.');
-                const no = brandRefusal(raw);
-                need(!no, `${no}.`);
-                const kit = patchBrand(args.replace === true ? undefined : p.production.brand, raw as Record<string, unknown>);
-                const next = { ...p.production };
-                if (kit) { next.brand = kit; } else { delete next.brand; }
-                writeProduction(p.file, next);
+                const ref = optStr(args, 'production');
+                need(ref, 'production (id or title) is required.');
+                const presetName = optStr(args, 'preset');
+                need(!presetName || deps.flex, 'Presets are not reachable here.');
+                const r = presetName
+                    ? applyBrandPreset(deps.getAgents(), deps.flex as FlexDeps, ref, presetName)
+                    : setProductionBrand(deps.getAgents(), ref, args.brand, args.replace === true);
                 deps.refresh?.();
-                return { production: p.production.id, file: p.file, brand: kit ?? {}, paths: brandPaths(kit) };
+                return r;
+            }
+        },
+        {
+            op: 'studio.brand.save',
+            describe: 'Keep a production\'s BRAND KIT (M-50) as a preset of the library (agentFarm.flexPresets, family brand — beside Economy · Balanced · Quality), so another production can take it with studio.brand.set preset=. args: production (id or title), name, project? (a project id: the preset belongs to that project only). A production with no kit is refused.',
+            handler: async (args) => {
+                need(deps.flex, 'Presets are not reachable here.');
+                const r = await saveBrandPreset(deps.getAgents(), deps.flex as FlexDeps, optStr(args, 'production'), optStr(args, 'name'), optStr(args, 'project') || undefined);
+                deps.refresh?.();
+                return r;
             }
         }
     ]);

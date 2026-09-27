@@ -5,6 +5,7 @@
 // host's own (DATA.scenes — the whole-production entries, which carry no '/').
 // A step card shows the kit that step reads, field by field: an empty box shows
 // the production's value faint, a typed one is the step's own (DATA.brandKits).
+// Studio ▸ Sources draws every production's kit and edits it (studioSection).
 (function () {
     'use strict';
     const WF = 'wf-production';
@@ -68,7 +69,6 @@
         const box = (id, label, mine, under, what) => `<label class="ntf" title="${C.esc((mine ? mine + ' — this step' : (under || '(empty)') + ' — ' + from) + '\n\n' + what)}"><span>${C.esc(label)}</span>
             <input type="text" id="${id}" value="${C.esc(mine || '')}" placeholder="${C.esc(under || '')}"></label>`;
         const fields = FIELDS.map(([f, label]) => box(idOf(f), label, own[f], kit[f], `{brand.${f}} — empty = the production's value.`));
-        const logoWord = x => ((LOGO.find(o => o[0] === x) || [])[1] || '');
         const logo = `<label class="ntf thin" title="${C.esc((own.logo ? logoWord(own.logo) + ' — this step' : (kit.logo ? logoWord(kit.logo) : '(no rule)') + ' — ' + from) + '\n\n{brand.logo} — what a step does with the logo.')}"><span>Logo</span>
             <select id="${idOf('logo')}">${C.option('', '↳ ' + (kit.logo ? logoWord(kit.logo) : 'no rule'), { selected: !own.logo })}${LOGO.map(([v, l]) => C.option(v, l, { selected: own.logo === v })).join('')}</select></label>`;
         const keys = Object.keys(Object.assign({}, kit.character || {}, own.character || {}));
@@ -106,5 +106,107 @@
             CHAR.forEach(([f]) => byId(idOf('character-' + k + '-' + f), 'input', e => put(['character', k, f], e.target.value.trim()))));
     }
 
-    window.AFBrand = { WF, ST_IDS, productions, workflowBox, wireWf, stepProduction, stepRow, wireStep };
+
+    // ---------- the Studio's Brand kits block (Sources) ----------
+    // Each production keeps its own kit; one kept as a preset (family brand) is
+    // taken by opening the editor with its values — nothing is written until Save.
+    let kitEdit = null;   // { production, title, brand, chars: [{ key, name, ref, desc }] }
+    let kitKeep = '';     // the production whose kit is being kept as a preset
+    const logoWord = x => ((LOGO.find(o => o[0] === x) || [])[1] || '');
+    const STUDIO_CSS = '<style>.bkbox{border:1px solid var(--vscode-focusBorder);border-radius:8px;padding:8px 10px;margin:4px 0 10px}'
+        + '.bkrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:flex-end;margin:4px 0}'
+        + '.bkf{display:flex;flex-direction:column;gap:2px;font-size:11px;flex:1 1 150px;min-width:130px}.bkf>span{opacity:.75}.bkf.thin{flex:0 0 170px}</style>';
+
+    /** The kit as lines of text, for its AFTip. */
+    function kitLines(b) {
+        const out = FIELDS.concat([['logo', 'Logo']]).filter(([f]) => b[f]).map(([f, label]) => label + ': ' + (f === 'logo' ? logoWord(b.logo) : b[f]));
+        Object.keys(b.character || {}).forEach(k => {
+            const c = b.character[k];
+            out.push('character ' + k + ': ' + [c.name, c.ref, c.desc].filter(Boolean).join(' · '));
+        });
+        return out;
+    }
+
+    function editorHtml(C) {
+        const b = kitEdit.brand;
+        const box = (id, label, v, tip) => `<label class="bkf" title="${C.esc(tip)}"><span>${C.esc(label)}</span><input type="text" id="${id}" value="${C.esc(v || '')}"></label>`;
+        const fields = FIELDS.map(([f, label]) => box('bk-' + f, label, b[f], '{brand.' + f + '}')).join('');
+        const logo = `<label class="bkf thin" title="{brand.logo} — what a step does with the logo"><span>Logo</span><select id="bk-logo">${C.option('', '— no rule —', { selected: !b.logo })}${LOGO.map(([v, l]) => C.option(v, l, { selected: b.logo === v })).join('')}</select></label>`;
+        const chars = kitEdit.chars.map((c, i) => `<div class="bkrow">${box('bk-ck-' + i, 'Character key', c.key, '{brand.character.<key>.…} — a letter, then letters, digits, _ or -')}`
+            + CHAR.map(([f, label]) => box('bk-c-' + i + '-' + f, label, c[f], '{brand.character.' + (c.key || '<key>') + '.' + f + '}')).join('')
+            + `<button class="secondary" data-bkdrop="${i}" title="Drop this character">✕</button></div>`).join('');
+        return `<div class="bkbox" id="bk-editor"><div class="bkrow">${fields}${logo}</div>${chars}
+            <div class="btnrow"><button class="secondary" id="bk-addchar" title="A character steps can read as {brand.character.<key>.ref}">+ character</button><span style="flex:1"></span>
+            <button id="bk-save" title="Write this kit into ${C.esc(kitEdit.title)}'s production.json">Save kit</button><button class="secondary" id="bk-cancel">Cancel</button></div></div>`;
+    }
+
+    /** Sources ▸ Brand kits: every production's kit, and the kits kept as presets. */
+    function studioSection(D, C) {
+        const presets = D.brandPresets || [];
+        const tip = (trigger, head, body) => (window.AFTip ? window.AFTip.wrap(trigger, head, body) : trigger);
+        const rows = (D.brands || []).map(p => {
+            const b = p.brand || {};
+            const lines = kitLines(b);
+            const n = Object.keys(b.character || {}).length;
+            const short = !lines.length ? 'no kit yet'
+                : [b.style ? 'style: ' + b.style : '', b.voice ? 'voice ' + b.voice : '', n ? n + ' character(s)' : ''].filter(Boolean).join(' · ') || lines.length + ' field(s)';
+            const keep = kitKeep === p.id ? `<div class="bkrow"><label class="bkf" title="The preset's name in the library (family brand)"><span>Keep as</span><input type="text" id="bk-keepname" value="${C.esc(p.title)}"></label>
+                <button id="bk-keep">Keep</button><button class="secondary" id="bk-keepcancel">Cancel</button></div>` : '';
+            return `<div class="srcrow"><span class="lbl">${C.esc(p.title)}</span>
+                ${tip(`<span class="muted small">${C.esc(short)}</span>`, p.title + ' — brand kit', lines.join('\n') || 'No kit yet — Edit kit starts one.')}
+                <span style="flex:1"></span>
+                <button class="secondary" data-brandedit="${C.esc(p.id)}" title="Edit what this production's steps read as {brand.*}">Edit kit</button>
+                ${presets.length ? `<select data-brandtake="${C.esc(p.id)}" title="Open the editor with a kept kit's values — nothing is written until Save kit">${C.option('', 'Take a kept kit…', { selected: true })}${presets.map(x => C.option(x.name, x.name, { detail: x.describe })).join('')}</select>` : ''}
+                ${lines.length ? `<button class="secondary" data-brandkeep="${C.esc(p.id)}" title="Keep this kit as a preset, so another production can take it">Keep as preset…</button>` : ''}
+                </div>${keep}${kitEdit && kitEdit.production === p.id ? editorHtml(C) : ''}`;
+        }).join('');
+        return `${STUDIO_CSS}<h2>Brand kits</h2>
+            <p class="muted small">What a workflow's steps read as <code>{brand.style}</code>, <code>{brand.character.&lt;key&gt;.ref}</code>, … — each production keeps its own, in its production.json.</p>
+            ${rows || '<div class="srcrow"><span class="muted small">No productions yet — a production (New Production) carries a brand kit.</span></div>'}`;
+    }
+
+    function openKit(p, brand) {
+        const b = JSON.parse(JSON.stringify(brand || {}));
+        kitEdit = { production: p.id, title: p.title, brand: b, chars: Object.keys(b.character || {}).map(key => Object.assign({ key }, b.character[key])) };
+        delete b.character;
+    }
+
+    function wireStudio(D, post, render) {
+        const q = sel => Array.from(document.querySelectorAll(sel));
+        const on = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+        const prod = id => (D.brands || []).find(x => x.id === id) || { id, title: id };
+        q('[data-brandedit]').forEach(el => el.addEventListener('click', () => { const p = prod(el.dataset.brandedit); openKit(p, p.brand); render(); }));
+        q('[data-brandtake]').forEach(el => el.addEventListener('change', () => {
+            const pre = (D.brandPresets || []).find(x => x.name === el.value);
+            if (pre) { openKit(prod(el.dataset.brandtake), pre.brand); render(); }
+        }));
+        q('[data-brandkeep]').forEach(el => el.addEventListener('click', () => { kitKeep = el.dataset.brandkeep; render(); }));
+        on('bk-keep', 'click', () => {
+            const name = (document.getElementById('bk-keepname') || {}).value || '';
+            if (name.trim()) { post('brand:save', { production: kitKeep, name: name.trim() }); }
+            kitKeep = ''; render();
+        });
+        on('bk-keepcancel', 'click', () => { kitKeep = ''; render(); });
+        if (!kitEdit) { return; }
+        const b = kitEdit.brand;
+        FIELDS.forEach(([f]) => on('bk-' + f, 'input', e => { b[f] = e.target.value; }));
+        on('bk-logo', 'change', e => { b.logo = e.target.value; });
+        kitEdit.chars.forEach((c, i) => {
+            on('bk-ck-' + i, 'input', e => { c.key = e.target.value.trim(); });
+            CHAR.forEach(([f]) => on('bk-c-' + i + '-' + f, 'input', e => { c[f] = e.target.value; }));
+        });
+        q('[data-bkdrop]').forEach(el => el.addEventListener('click', () => { kitEdit.chars.splice(Number(el.dataset.bkdrop), 1); render(); }));
+        on('bk-addchar', 'click', () => { kitEdit.chars.push({ key: 'c' + (kitEdit.chars.length + 1) }); render(); });
+        on('bk-save', 'click', () => {
+            const brand = Object.assign({}, b);
+            const character = {};
+            kitEdit.chars.forEach(c => { if (c.key) { character[c.key] = { name: c.name || '', ref: c.ref || '', desc: c.desc || '' }; } });
+            if (Object.keys(character).length) { brand.character = character; }
+            post('brand:set', { production: kitEdit.production, brand });
+            kitEdit = null; render();
+        });
+        on('bk-cancel', 'click', () => { kitEdit = null; render(); });
+    }
+
+    window.AFBrand = { WF, ST_IDS, productions, workflowBox, wireWf, stepProduction, stepRow, wireStep, studioSection, wireStudio, kitLines };
 })();

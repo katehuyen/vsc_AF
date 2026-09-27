@@ -36,6 +36,16 @@ const data = (over) => Object.assign({
     items: [item({ lib: card() })], library: lib()
 }, over || {});
 
+const KIT_A = {
+    style: 'sıcak pastel, 35mm', negative: 'metin, filigran', voice: 'tr-TR-Ahmet', aspect: '9:16', duration: '34s', logo: 'keep',
+    character: { ana: { name: 'Ada', ref: 'D:/brand/ada.png', desc: 'kızıl saçlı, sarı yağmurluk' } }
+};
+const BRANDS = {
+    tab: 'sources',
+    brands: [{ id: 'kanal-a', title: 'Kanal A', brand: KIT_A }, { id: 'kanal-b', title: 'Kanal B', brand: {} }],
+    brandPresets: [{ name: 'Sıcak pastel', describe: 'Brand kit, saved from Kanal A', brand: KIT_A }]
+};
+
 module.exports = {
     script: 'studio.js',
     data,
@@ -61,6 +71,20 @@ module.exports = {
                 ],
                 library: lib({ note: '2 record(s) from TEST.', matched: 2, view: { stages: 'raw,final' }, resolved: { base: 'TEST', stages: ['raw', 'final'], kind: '', success: '' } })
             })
+        },
+        // M-50 — Sources ▸ Brand kits: one production with a kit (one character), one without, one kit kept as a preset.
+        {
+            id: 'brand-kits', label: 'Sources → Brand kits: Kanal A\'s kit (one character), Kanal B with none, one kit kept as a preset (M-50)',
+            data: data(BRANDS)
+        },
+        {
+            id: 'brand-edit', label: 'Sources → Brand kits: Edit kit pressed on Kanal A — every field, its one character, + character (M-50)',
+            data: data(BRANDS),
+            act: (r) => {
+                const b = r.query('[data-brandedit]').find(e => e.dataset.brandedit === 'kanal-a');
+                if (!b) { throw new Error('no Edit kit on Kanal A'); }
+                b.click();
+            }
         }
     ]
 };
