@@ -18,6 +18,7 @@ import { BrandKit, brandProductionFor, fillBrand, resolveBrand } from './brandKi
 import * as FE from './forEachStep';
 import { capWaitingBranches, runSpendCap, SpendCap, spendCapStop } from './runSpendCap';
 import { escalationLine, ladderFor } from './judgeLadder';
+import { afterFail, climbDecision, JudgeDecision, RunEconomy, runEconomy } from './judgeDecision';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -149,6 +150,10 @@ export interface FarmTask {
     /** result of the verify step, when the step had one. */
     /** M-42 — `unjudged`: no judge could look at it; never read as a pass */
     verified?: 'pass' | 'fail' | 'unjudged';
+    /** A-27 — the reason this attempt's check FAILed: the next attempt is held against it */
+    verifyFail?: string;
+    /** A-27 — what its check decided beyond the verdict: climbs, retries withheld (src/core/judgeDecision.ts) */
+    judgeDecisions?: JudgeDecision[];
     /** M-45 — this row is the supervisor woken after its step, by these conditions (src/core/workflowWake.ts) */
     wokeBy?: string[];
     /** M-45 — how the step it was woken after had ended: what the mechanical path goes on from */
@@ -1394,6 +1399,8 @@ export interface WorkflowRunState {
     spendCap?: SpendCap;
     /** A-27 — the judge ladder the run was started with */
     judgeLadder?: string;
+    /** A-27 — what its checks decided and saved: climbs, retries withheld, estimated $ */
+    economy?: RunEconomy;
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -5358,7 +5365,7 @@ export class TaskManager implements vscode.Disposable {
             const prompt = sanitizePrompt(
                 `Sen bir kalite denetçisisin. Aşağıdaki ÇIKTI şu ÖLÇÜTÜ karşılıyor mu? ` +
                 `ÖLÇÜT: ${criteria} --- ÇIKTI: ${body.slice(0, 4000)} --- ` +
-                `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
+                `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
             void execOneShot({ cwd, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000 }).then(r => {
                 if (r.error && !r.out) {
@@ -5394,7 +5401,7 @@ export class TaskManager implements vscode.Disposable {
             const prompt = sanitizePrompt(
                 `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu ${want.engine === 'claude' ? 'Read aracıyla ' : ''}aç ve incele; kabuk komutu çalıştırma. ` +
                 `Şu ÖLÇÜTü karşılıyor mu? ÖLÇÜT: ${criteria}. ` +
-                `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
+                `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
             void execOneShot({
                 cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000,
@@ -5455,6 +5462,8 @@ export class TaskManager implements vscode.Disposable {
                 `\nVision verify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n${judged.climbed ? judged.climbed + '\n' : ''}`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = pass ? 'pass' : 'fail';
+        const retries = step.verify!.retries ?? 1;
+        const go = this.judgeNext(task, w, step, judged, attempt, retries);
 
         if (pass) {
             this.save();
@@ -5463,8 +5472,7 @@ export class TaskManager implements vscode.Disposable {
         }
         const failLedger = this.libCtx(task)?.ledger;
         if (failLedger) { await this.lib!.failed(failLedger, assetFile, reason); }
-        const retries = step.verify!.retries ?? 1;
-        if (attempt < retries) {
+        if (go === 'retry') {
             this.save();
             void vscode.window.showWarningMessage(
                 `Agent Farm: media "${task.title}" failed vision QA — regenerating (${attempt + 1}/${retries}).`);
@@ -5496,6 +5504,32 @@ export class TaskManager implements vscode.Disposable {
         return { ...up, judge: `${rung(0)} → ${rung(1)}`, climbed: escalationLine({ model: lad.rungs[0], reason: low.reason }, { model: lad.rungs[1], pass: up.pass, reason: up.reason }) };
     }
 
+    /** A-27 — records what a check decided beyond its verdict, and whether a retry is bought (src/core/judgeDecision.ts). */
+    private judgeNext(task: FarmTask, w: FarmWorkflow, step: WorkflowStep, judged: { pass: boolean; reason: string; climbed?: string },
+        attempt: number, retries: number): 'pass' | 'retry' | 'fail' {
+        const cost = stepSpend(task) ?? 0;
+        const made: JudgeDecision[] = judged.climbed ? [climbDecision(judged.pass, judged.climbed, attempt < retries, cost)] : [];
+        let go: 'pass' | 'retry' | 'fail' = 'pass';
+        if (!judged.pass) {
+            task.verifyFail = judged.reason;
+            const rec = task.workflowRunId ? this.runRecords.get(task.workflowRunId) : undefined;
+            const prior = attempt > 0 ? this.tasks.filter(t => t !== task && t.workflowRunId === task.workflowRunId && t.stepIndex === task.stepIndex
+                && t.branchIndex === task.branchIndex && (t.attempt ?? 0) === attempt - 1 && t.verifyFail)
+                .sort((a, b) => a.createdAt - b.createdAt).pop()?.verifyFail : undefined;
+            const canWake = !!rec && task.branchIndex === undefined
+                && resolveWake({ workflow: w.wake, step: step.wake, run: rec.wake, live: rec.live?.wake }).conditions.length > 0;
+            const next = afterFail({ attempt, retries, reason: judged.reason, prior, canWake, attemptUSD: cost });
+            if (next.decision) { made.push(next.decision); }
+            go = next.go;
+        }
+        if (made.length) {
+            task.judgeDecisions = [...(task.judgeDecisions ?? []), ...made];
+            const lines = made.filter(d => d.kind === 'stopped' || d.kind === 'replan').map(d => d.line + '\n').join('');
+            try { if (lines) { fs.appendFileSync(task.outputFile as string, lines, 'utf8'); } } catch { /* archive gone */ }
+        }
+        return go;
+    }
+
     private async verifyThenAdvance(task: FarmTask, w: FarmWorkflow, step: WorkflowStep): Promise<void> {
         const agent = this.getAgents().find(a => a.id === task.agentId);
         const body = archivedOutputBody(fs.readFileSync(task.outputFile as string, 'utf8'));
@@ -5511,14 +5545,15 @@ export class TaskManager implements vscode.Disposable {
                 `\nVerify (attempt ${attempt + 1}): ${pass ? 'PASS' : 'FAIL'} — ${reason} [${judged.judge}]\n${judged.climbed ? judged.climbed + '\n' : ''}`, 'utf8');
         } catch { /* archive gone */ }
         task.verified = pass ? 'pass' : 'fail';
+        const retries = step.verify!.retries ?? 1;
+        const go = this.judgeNext(task, w, step, judged, attempt, retries);
 
         if (pass) {
             this.save();
             this.advanceWorkflow(task, 'done');
             return;
         }
-        const retries = step.verify!.retries ?? 1;
-        if (attempt < retries) {
+        if (go === 'retry') {
             this.save();
             void vscode.window.showWarningMessage(
                 `Agent Farm: "${task.title}" failed verification — retrying (${attempt + 1}/${retries}).`);
@@ -6570,6 +6605,7 @@ export class TaskManager implements vscode.Disposable {
             ...(rec?.libraryEnd ? { libraryEnd: rec.libraryEnd } : {}),
             ...(rec?.spendCap ? { spendCap: rec.spendCap } : {}),
             ...(rec?.judgeLadder ? { judgeLadder: rec.judgeLadder } : {}),
+            ...((e?: RunEconomy) => (e ? { economy: e } : {}))(runEconomy(tasks)),
             steps,
             costUSD: tasks.reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
@@ -7550,6 +7586,8 @@ export class TaskManager implements vscode.Disposable {
         // M-46 — a person's waiting word or decision wakes it at this boundary, whatever the conditions say
         const human = [...(pendingWords(rec.live).length ? ['your-word'] : []), ...(rec.live?.decision ? ['your-decision'] : [])];
         if (!r.conditions.length && !human.length) { return undefined; }
+        // A-27 — a check that withheld its retries to replan wakes it, whatever the conditions say (src/core/judgeDecision.ts)
+        const replan = status === 'failed' ? task.judgeDecisions?.find(d => d.kind === 'replan') : undefined;
         const rows = this.tasks.filter(t => t.workflowRunId === runId);
         const kind = kindOfStep(step);
         const h = this.computeHandoff(task);
@@ -7559,9 +7597,9 @@ export class TaskManager implements vscode.Disposable {
             verified: task.verified, runCostUSD: rows.reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             assets: kind === 'media' && h.file ? 1 : 0, output: h.text
         }));
-        const fired = [...human, ...v.fired];
+        const fired = [...human, ...(replan ? ['replan'] : []), ...v.fired];
         const said = [...human.map(h => h === 'your-word' ? 'your-word (a word of yours was waiting)' : 'your-decision (you decided this boundary)'),
-            ...(v.said ? [v.said] : [])].join(', ');
+            ...(replan ? [`replan (${replan.line})`] : []), ...(v.said ? [v.said] : [])].join(', ');
         return fired.length ? { fired, said, from: r.sentence, after: status } : undefined;
     }
 

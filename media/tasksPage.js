@@ -3721,11 +3721,13 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                */''}
             <td class="state">${tipw(`<span class="pill ${st[1]}">${C.esc(st[0])}</span>${r.detail
                 ? `<div class="muted small held">${C.esc(blockShort(r.detail))}</div>` : ''}${r.didWork
-                    ? `<div class="muted small held">${C.esc(blockShort(r.didWork))}</div>` : ''}${r.archived
+                    ? `<div class="muted small held">${C.esc(blockShort(r.didWork))}</div>` : ''}${r.judge
+                    ? `<div class="muted small">${C.esc(r.judge.cell)}</div>` : ''}${r.archived
                     ? '<div class="muted small">archived</div>' : ''}`,
-                `${C.esc(st[0])}${r.archived ? ' · archived' : ''}${r.detail ? ' · ' + C.esc(r.detail) : ''}`,
+                `${C.esc(st[0])}${r.archived ? ' · archived' : ''}${r.detail ? ' · ' + C.esc(r.detail) : ''}${r.judge ? ' · judge: ' + C.esc(r.judge.short) : ''}`,
                 window.AFTip.lines([
                     r.detail ? 'Held by: ' + r.detail + '\n' : '',
+                    r.judge ? 'Judge: ' + r.judge.short + '\n' + r.judge.lines.join('\n') + '\n' : '',
                     r.didWork ? 'What it managed: ' + r.didWork
                         + '\n‼️ This run was CUT OFF, not untouched — read its transcript before sending '
                         + 'the same work again.\n' : '',

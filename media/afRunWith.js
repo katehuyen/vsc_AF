@@ -22,7 +22,9 @@
     /** Which boxes hold a value of this run's own — a change of it redraws (↑ comes or goes). */
     function ownOf(p, run) {
         return (p.inputs || []).filter(i => differs(i, (run.values || {})[i.name])).map(i => i.name)
-            .concat(run.wake ? ['wake'] : [], run.production ? ['production'] : [], Object.keys(run.roles || {}).map(r => 'role:' + r)).join(',');
+            .concat(run.wake ? ['wake'] : [], run.production ? ['production'] : [], Object.keys(run.roles || {}).map(r => 'role:' + r),
+                // A-27 — a cost preset changes what the Run cap and Judge ladder boxes show faint
+                run.preset ? ['preset:' + run.preset] : []).join(',');
     }
 
     let ownAtRender = '';

@@ -32,6 +32,7 @@ import { BrandKit, brandRefs, cleanBrand } from '../core/brandKit';
 import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from '../core/workflowRoles';
 import { spendCapRefusal } from '../core/runSpendCap';
 import { ladderOf, ladderRefusal } from '../core/judgeLadder';
+import { economyCell, economyShort, RunEconomy, runEconomy } from '../core/judgeDecision';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -355,6 +356,8 @@ interface RunRow {
     reportsCost: boolean;
     tokens?: number;
     verified?: string;
+    /** A-27 — what its check decided beyond the verdict: short for the cell, lines for the panel */
+    judge?: { cell: string; short: string; lines: string[] };
     hasOutput: boolean;
     /** U-153 — a checkpoint visit: what the workflow supervisor decided here */
     supervisor?: TrailRow;
@@ -846,6 +849,7 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             reportsCost: engineOf(t.engine).reportsCost,
             tokens: t.tokens,
             verified: t.verified,
+            ...((e?: RunEconomy) => (e ? { judge: { cell: economyCell(e), short: economyShort(e), lines: e.lines } } : {}))(runEconomy([t])),
             hasOutput: !!t.outputFile,
             ...(t.status === 'queued' && t.supervision ? { supervised: true } : {}),
             ...(t.supervisorCall ? { supervisor: trailRow({ ...t, supervisorCall: t.supervisorCall }) } : {}),

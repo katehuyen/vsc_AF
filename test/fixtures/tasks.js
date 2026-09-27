@@ -455,6 +455,20 @@ const variants = () => ([
             word: 'retry s2', why: 'Başlık 90 karakteri aşıyor; daha kısa bir başlıkla yeniden çalıştır.', confidence: 0.81, costUSD: 0.0187,
             model: 'claude-haiku-4-5', limitsOrigin: 'allowed: the step · the rest: built-in', supervisorOrigin: 'model: the workflow · the rest: built-in', at: Date.now() - 240000 }
     }] }) },
+    // A-27 — what a check decided beyond its verdict, under the status badge: one decision, then a climb upheld and the retries stopped
+    { id: 'tasks-run-judge', label: 'Tasks → Runs — a check that climbed the judge ladder, and one whose retries were stopped (A-27)', data: Object.assign(data(), { runs: [{
+        id: 'rj1', title: 'Klip hattı 2/5: Başlık yaz', agentName: 'senarist', mode: 'headless', status: 'done', verified: 'pass',
+        source: 'Klip hattı', sourceKind: 'workflow', when: min(6), durMin: 1.2, detail: '', costUSD: 0.0412,
+        engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rj1.md', prompt: 'Videoya kısa bir başlık yaz.',
+        judge: { cell: 'overturned ~$0.04', short: '1 climb · 1 overturned · ~$0.04 saved', lines: ['Escalated: haiku said FAIL (FAIL başlık 60 karakteri aşıyor) → sonnet says PASS — overturned, no retry paid: PASS 58 karakter, kurala uyuyor'] }
+    }, {
+        id: 'rj2', title: 'Klip hattı 4/5: Kapak görseli (retry 1)', agentName: 'kurgu', mode: 'headless', status: 'failed', verified: 'fail',
+        source: 'Klip hattı', sourceKind: 'workflow', when: min(9), durMin: 2.4, detail: '', costUSD: 0.1830,
+        engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rj2.md', prompt: 'Kapak görselini üret.',
+        judge: { cell: 'stopped ~$0.37', short: '1 climb · 1 stopped · ~$0.37 saved', lines: [
+            'Escalated: haiku said FAIL (FAIL yazı okunmuyor) → sonnet says FAIL — upheld: FAIL başlık yazısı hâlâ okunmuyor',
+            'Stopped: attempt 2 failed for the same reason as attempt 1 — 2 retries not paid for; the run\'s wake is mechanical, so no supervisor is asked'] }
+    }] }) },
     { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() },
     // ‼️ M-33 — THE BULK BAR EXISTS IN NO OTHER STATE. It is hidden until
     // something is ticked, so a picture of the Plan tab at rest shows none of
@@ -1076,6 +1090,27 @@ const variants = () => ([
             const el = r.query('[data-af]').find(e => e.dataset.af === 'wi-roles.kurgu');
             if (!el) { throw new Error('no kurgu box on the Run card'); }
             el.value = 'developer'; el.fire('change');
+        }
+    },
+    // A-27 — Run with…'s Cost preset: Economy picked, its $5 cap and haiku ladder shown faint in the two boxes it fills
+    {
+        id: 'tasks-wf-cost-preset',
+        label: 'Tasks → Plan → with… on a workflow, the Economy cost preset picked: the Run cap and Judge ladder boxes show its values faint (A-27)',
+        data: (() => {
+            const d = Object.assign(data(), {
+                tab: 'plan', plan: [Object.assign(wfWithInputs(), { inputs: [], lastInputs: {} })],
+                workflows: [{ id: 'w9', title: 'Klip kes', steps: 2, inputs: [] }]
+            });
+            d.launch = Object.assign({}, d.launch, { workflowPresets: [
+                { name: 'Economy', describe: 'cheap judge, low ceilings', run: { judgeLadder: 'haiku', spendCap: 5 } },
+                { name: 'Quality', describe: 'strong judges, no cap', run: { judgeLadder: 'sonnet,opus', spendCap: 0 } }] });
+            return d;
+        })(),
+        act: (r) => {
+            r.query('[data-plan="runwith"][data-kind="workflow"]')[0].click();
+            const el = r.query('[data-af]').find(e => e.dataset.af === 'wi-preset');
+            if (!el) { throw new Error('no Cost preset picker on the Run card'); }
+            el.value = 'Economy'; el.fire('change');
         }
     },
     {

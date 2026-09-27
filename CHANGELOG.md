@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.711.0 - Stop, replan, and what a run's checks saved (A-27, part 3) (2026-09-27)
+
+- **Stop**: a retry whose check fails for the same reason as the attempt
+  before it made no progress; the retries left are not paid for.
+- **Replan**: the judge may answer `FAIL-METHOD` (the approach itself is
+  wrong). That, or a stop, wakes the run's supervisor with `replan` instead
+  of retrying — unless the run's wake is mechanical, where the step simply
+  stops failed.
+- **Savings on the run**: every climb, overturned FAIL, stop and replan is
+  recorded with an estimated $ saved; `workflows.status` returns it as
+  `economy`, and the Runs table shows it under the status badge.
+- **Fix**: picking a Cost preset in **Run with…** now redraws the card, so
+  the Run cap and Judge ladder boxes show the preset's values.
+
 ## 3.710.0 - The judge's ladder, and a cost preset for one run (A-27, part 2) (2026-09-27)
 
 - **Judge ladder** (`haiku,sonnet`): a step's check is judged by the
