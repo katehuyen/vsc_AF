@@ -7,6 +7,7 @@ import { FLEX_POINTS, FlexLevel, FlexPoint, flexPoint, flexValid } from './flexP
 import {
     deletePreset, findPreset, FlexPreset, normalizePresets, presetArgs, presetDiff, presetsFor, savePreset
 } from './flexPresets';
+import { FLEX_OVERRIDES_KEY, OverrideLevel, withOverride } from './flexOverrides';
 import { FlexLayers, resolveFlex, settingsLayer } from './flexResolve';
 
 export interface FlexDeps {
@@ -57,6 +58,23 @@ export async function setFlexSetting(deps: FlexDeps, id: string, value: unknown)
         await deps.writeSetting(key, next);
     }
     return resolveFlex(p, { settings: value });
+}
+
+/**
+ * U-151 — set one point for ONE agent or ONE project (`agentFarm.flexOverrides`), or
+ * take it back to inherited with `undefined`. Refused for a point that is not set
+ * at that level, and for a value the point does not accept.
+ */
+export async function setFlexOverride(deps: FlexDeps, id: string, level: OverrideLevel, target: string, value: unknown) {
+    const p = pointOrThrow(id);
+    if (!p.levels[level]) { throw new Error(`${id} is not set per ${level} — it is set ${Object.keys(p.levels).join(', ')}.`); }
+    const who = String(target ?? '').trim();
+    if (!who) { throw new Error(`target: which ${level} (${level === 'agent' ? 'its name' : 'its id'}).`); }
+    if (value !== undefined && !flexValid(p, value)) { throw new Error(`${JSON.stringify(value)} is not a valid ${p.type} for ${id}.`); }
+    await deps.writeSetting(FLEX_OVERRIDES_KEY, withOverride(deps.readSetting(FLEX_OVERRIDES_KEY), level, who, id, value));
+    const layers: FlexLayers = { settings: settingsLayer(p, deps.readSetting) };
+    layers[level] = value;
+    return { level, target: who, ...resolveFlex(p, layers) };
 }
 
 /** Apply a preset at one level — written at Farm Settings (merged), returned as op args elsewhere. */

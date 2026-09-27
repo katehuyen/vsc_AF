@@ -51,7 +51,10 @@
             settings: {
                 surface: 'setting:agentFarm.taskRetry#supervisor.' + field,
                 bridge: 'settings.set:agentFarm.taskRetry#supervisor.' + field
-            }
+            },
+            // U-151 — for one agent / one project (agentFarm.flexOverrides)
+            agent: { surface: 'setting:agentFarm.flexOverrides#agent', bridge: 'flex.set:level.agent' },
+            project: { surface: 'setting:agentFarm.flexOverrides#project', bridge: 'flex.set:level.project' }
         };
         if (box) {
             levels.run = {

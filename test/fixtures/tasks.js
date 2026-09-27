@@ -609,6 +609,24 @@ const variants = () => ([
             drive(r, draft, 'nt-retrybehavior');
         }
     },
+    // U-151 — the agent and the project say something too: each empty box names
+    // the level it inherits from (the longest origins the row has to hold).
+    {
+        id: 'tasks-retry-supervisor-layers', label: 'Tasks → the supervisor boxes inheriting from the agent and the project (U-151)',
+        data: (() => {
+            const d = data();
+            d.launch.supervisor = { engine: 'claude', model: 'haiku', maxCalls: 4 };
+            d.launch.supervisorOverrides = { agent: { developer: { maxCalls: 3, minConfidence: 0.8 } }, project: { prj_1: { engine: 'codex', lowConfidence: 'park' } } };
+            return d;
+        })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması — dosyaları filele', 'nt-agent': 'developer', 'nt-project': 'prj_1', 'nt-retrymode': 'custom', 'nt-retrymax': '3' };
+            drive(r, draft, 'nt-retrymode');
+            Object.assign(draft, { 'nt-retrybehavior': 'supervisor' });
+            drive(r, draft, 'nt-retrybehavior');
+        }
+    },
     /**
      * ‼️ S-82 — THE RELAY BLOCK, IN THE STATE THAT HAS TO EXPLAIN ITSELF.
      *

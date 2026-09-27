@@ -1708,8 +1708,9 @@ export interface TaskManagerOptions {
     /** ‼️ M-3 — the user's DEFAULT retry policy (`agentFarm.taskRetry`), used by
      *  every run that does not state one of its own. Read through a function
      *  because it is a setting: a window that has been open for a week must
-     *  honour what was changed on Tuesday. */
-    defaultRetry?: () => RetryPolicy | undefined;
+     *  honour what was changed on Tuesday. U-151: asked FOR a task, so the
+     *  task's agent and project values (agentFarm.flexOverrides) are laid over it. */
+    defaultRetry?: (t?: FarmTask) => RetryPolicy | undefined;
     /**
      * ‼️ M-10 — WHEN THIS ENGINE'S USAGE WINDOW REOPENS, epoch ms, from the
      * engine's OWN published data rather than from its printed prose. It is the
@@ -2697,7 +2698,7 @@ export class TaskManager implements vscode.Disposable {
         // `ask` is the user's own hold — the evidence arriving does not take
         // their decision away from them.
         if (held.deferredCode === 'progress:ask') { return false; }
-        const p = resolveRetry(held.retry, this.opts.defaultRetry?.());
+        const p = resolveRetry(held.retry, this.opts.defaultRetry?.(held));
         const resumeId = (prev.runSessionId ?? '').trim();
         if (prev.failurePhase === 'interrupted' && p.behavior === 'smart' && resumeId) {
             held.resumeSessionId = resumeId;
@@ -4985,7 +4986,7 @@ export class TaskManager implements vscode.Disposable {
         }
         let out = '';
         try { if (task.outputFile) { out = fs.readFileSync(task.outputFile, 'utf8'); } } catch { /* no output yet */ }
-        const fallback = this.opts.defaultRetry?.();
+        const fallback = this.opts.defaultRetry?.(task);
         const d = retryDecision(task.retry, {
             attempt: task.retryAttempt ?? 0, output: out, fallback,
             now: Date.now(),

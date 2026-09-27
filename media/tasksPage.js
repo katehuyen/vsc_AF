@@ -1567,7 +1567,7 @@
             ['smart', 'continue it — pick up where it was cut off'],
             ['supervisor', 'let a supervisor decide how to continue']
         ])}</label>
-            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, (DATA.launch || {}).supervisor) : ''}
+            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, supInh(c)) : ''}
             ${(c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') ? `
             <label class="ntf wide" title="${C.esc(
             'Sent as the NEXT TURN of the run\'s own conversation, so it can be short — everything that '
@@ -3244,11 +3244,14 @@
             if (err) { return 'The retry formula was refused — ' + err; }
         }
         if (c.retryMode === 'custom' && c.mode !== 'interactive' && c.retryBehavior === 'supervisor') {
-            const err = window.AFSupervisor.error(c.retrySupervisor, (DATA.launch || {}).supervisor);
+            const err = window.AFSupervisor.error(c.retrySupervisor, supInh(c));
             if (err) { return err; }
         }
         return '';
     }
+
+    /** U-151 — what the supervisor's empty boxes inherit for this draft's agent and project. */
+    function supInh(c) { return window.AFSupervisor.inherited(DATA.launch, c && c.agent, c && c.project); }
 
     /** The draft's three-state retry picker, as the one field the host stores.
      *  undefined = say nothing, so the user's default stays in charge. */
@@ -3296,7 +3299,7 @@
         // named here or in Farm Settings it IS smart, the same rule the host's
         // normalizer applies (U-151: the empty boxes inherit, field by field).
         const sup = c.retryBehavior === 'supervisor'
-            ? window.AFSupervisor.toPolicy(c.retrySupervisor, (DATA.launch || {}).supervisor) : undefined;
+            ? window.AFSupervisor.toPolicy(c.retrySupervisor, supInh(c)) : undefined;
         if (sup) { out.supervisor = sup; }
         if (c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') {
             out.behavior = sup ? 'supervisor' : 'smart';
@@ -4488,7 +4491,7 @@
             byId('nt-retrycarryon', 'change', () => { readComposer(); });
             window.AFSupervisor.IDS.forEach(id => byId(id, 'change', ev => {
                 readComposer();
-                window.AFSupervisor.retitle(ev.target, (DATA.launch || {}).supervisor);
+                window.AFSupervisor.retitle(ev.target, supInh(composer));
             }));
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {

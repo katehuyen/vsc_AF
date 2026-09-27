@@ -62,19 +62,42 @@
         return out;
     }
 
+    /**
+     * U-151 — what an empty box inherits for this agent and this project: Farm Settings,
+     * then the agent's own value, then the project's (`L` = the page's launch data);
+     * `_from` names where each field came from.
+     */
+    function inherited(L, agent, project) {
+        const l = L || {};
+        const out = { _from: {} };
+        const lay = (fields, from) => Object.keys(fields || {}).forEach(k => {
+            if (fields[k] !== undefined && fields[k] !== '') { out[k] = fields[k]; out._from[k] = from; }
+        });
+        lay(l.supervisor, 'Farm Settings');
+        const o = l.supervisorOverrides || {};
+        if (agent) { lay((o.agent || {})[agent], 'agent ' + agent); }
+        if (project) {
+            const p = (l.projects || []).find(x => x.id === project);
+            lay((o.project || {})[project], 'project ' + (p ? p.name : project));
+        }
+        return out;
+    }
+
+    const originOf = (up, key) => (up && up._from && up._from[key]) || 'Farm Settings';
+
     /** MIRROR's first line: what the box holds now and where it comes from. */
     function valueLine(key, value, up) {
         const word = v => (key === 'lowConfidence' ? fallbackWord(v) : String(v));
         const own = String(value == null ? '' : value).trim();
         if (own) { return word(own) + ' — set on this task'; }
-        if (up && up[key] !== undefined && up[key] !== '') { return word(up[key]) + ' — inherited from Farm Settings'; }
+        if (up && up[key] !== undefined && up[key] !== '') { return word(up[key]) + ' — inherited from ' + originOf(up, key); }
         const p = window.AFFlex.point('retry.supervisor.' + key);
         return (p && p.default !== '' && p.default !== 0 ? word(p.default) : 'none') + ' — built-in';
     }
 
-    /** The first line of an empty select: what it inherits, and from where. */
+    /** The first option of an empty select: what it inherits — SHORTHAND, the origin is on the tooltip's first line. */
     function inheritLabel(key, up) {
-        return '↳ ' + valueLine(key, '', up).replace(' — inherited from Farm Settings', ' — Farm Settings');
+        return '↳ ' + valueLine(key, '', up).split(' — ')[0];
     }
 
     const KEY_OF = {
@@ -104,7 +127,7 @@
         const upEngine = inheritedEngine(up);
         const upLabel = upEngine ? ((list.find(e => e.id === upEngine) || {}).label || upEngine) : '';
         const eng = (upEngine
-            ? C.option('', '↳ ' + upLabel + ' — Farm Settings', { selected: !s.engine })
+            ? C.option('', '↳ ' + upLabel, { selected: !s.engine, detail: 'inherited from ' + originOf(up, 'engine') })
             : C.option('', 'choose the engine that judges', { selected: !s.engine, disabled: true }))
             + list.map(e => C.option(e.id, e.label + (e.ready ? '' : ' — cannot run here'), {
                 selected: e.id === s.engine, disabled: !e.ready, detail: e.next || ''
@@ -116,7 +139,7 @@
             s.lowConfidence, C, { ask: 'hold, tell me', auto: 'continue (smart)', never: 'no retry' },
             inheritLabel('lowConfidence', up));
         const box = (id, key, label, value, ph, tip) => {
-            const place = up[key] !== undefined ? String(up[key]) + ' — Farm Settings' : ph;
+            const place = up[key] !== undefined ? String(up[key]) + ' — ' + originOf(up, key) : ph;
             return `<label class="ntf" title="${C.esc(mirror(value, key) + '\n\n' + tip)}"><span>${label}</span>`
                 + `<input type="text" id="nt-${id}" value="${C.esc(value)}" placeholder="${C.esc(place)}"></label>`;
         };
@@ -149,5 +172,5 @@
 
     const IDS = ['nt-supengine', 'nt-supmodel', 'nt-supcalls', 'nt-supbudget', 'nt-supconf', 'nt-supfallback'];
 
-    window.AFSupervisor = { blank, row, read, toPolicy, error, retitle, valueLine, IDS, FALLBACKS };
+    window.AFSupervisor = { blank, row, read, toPolicy, error, retitle, valueLine, inherited, IDS, FALLBACKS };
 })();

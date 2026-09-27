@@ -1692,6 +1692,7 @@ Bir insanın seçtiği her değer — bir kutu, bir ayar, bir bridge argümanı 
 - **Akıllı formlar** (X-370): bir aralık, üç durumlu seçim (sor / otomatik / asla), yumuşak ya da sert tavan, bir öneri.
 - **Farm Settings ▸ Flow & Content** (U-152, 3.667.0): ayar seviyesi olan her nokta, kayıttan türetilmiş olarak, kökeni ve ön ayarlarıyla; bridge `flex.*` / `presets.*` (`flex.set` ayar seviyesini yazar).
 - **Alan alan birleştirme**, değer bir nesne olduğunda (U-151, 3.686.0): retry supervisor bir seviyenin yalnızca söylediği alanları tutar; yalnızca motorunu adlandıran bir görev çağrı ve bütçe değerlerini yine Farm Settings'ten alır.
+- **Ajan başına ve proje başına** (U-151, 3.689.0, `core/flexOverrides.ts`): `agentFarm.flexOverrides` tek bir ajan (adıyla) ya da tek bir proje (kimliğiyle) için verilen değerleri tutar; `flex.set level=agent|project target=…` yazar, `flex.get agent=/project=` okur, çalışma zamanı her koşu için bunları Farm Settings'in üzerine serer, görev formu her boş kutunun hangi seviyeden kalıttığını söyler. Bir akışın kendi değerleri akışın kaydında durur.
 
 Sistemin kullanıcıya kullanım anında zaten yaptırdığı bir seçim soru değil, esneme noktasıdır: kimseye önceden sorulmaz.
 

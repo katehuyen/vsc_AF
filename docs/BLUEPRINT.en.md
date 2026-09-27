@@ -1651,6 +1651,7 @@ Every value a person chooses — a box, a setting, a bridge argument — is a **
 - **Smart forms** (X-370): a range, a tri-state (ask / auto / never), a soft or hard cap, a suggestion.
 - **Farm Settings ▸ Flow & Content** (U-152, 3.667.0): every point that has a settings level, derived from the registry, with its origin and the presets; bridge `flex.*` / `presets.*` (`flex.set` writes the settings level).
 - **Merged field by field** where a value is an object (U-151, 3.686.0): the retry supervisor keeps only the fields a level said, so a task naming only its engine still takes the calls and budget from Farm Settings.
+- **Per agent and per project** (U-151, 3.689.0, `core/flexOverrides.ts`): `agentFarm.flexOverrides` holds values set for one agent (by name) or one project (by id); `flex.set level=agent|project target=…` writes them, `flex.get agent=/project=` reads them, the runtime lays them over Farm Settings for each run, and the task form names the level every empty box inherits from. A workflow's own values live on its record.
 
 A choice the system already lets the user make at the moment of use is a flex point, not a question: nobody is asked for it in advance.
 

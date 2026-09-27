@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.688.0",
+  "version": "3.689.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8398,6 +8398,23 @@
           "additionalProperties": false,
           "default": {},
           "markdownDescription": "How **every** interactive session starts — Start, Continue and Resume alike, from the tree, the palette or a keybinding. Set once instead of typing `--model` into a terminal all day. Every field is optional and an empty one emits no flag at all, so the default `{}` starts exactly the bare `claude` it always did. The **Start Session…** launcher (`ctrl+alt+s`) shows these as inherited values and can override them for one launch, or write itself back here."
+        },
+        "agentFarm.flexOverrides": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Preference values (flex points) set for ONE agent or ONE project — `{ \"agent\": { \"developer\": { \"retry.supervisor.engine\": \"codex\" } }, \"project\": { \"prj_x\": { … } } }`. In the chain they sit above Farm Settings and below a workflow, a step and a run: an agent's value beats your general one, a project's beats the agent's. Agents are keyed by NAME, projects by id. Set with `flex.set level=agent|project target=…`; a workflow's own values live on the workflow.",
+          "properties": {
+            "agent": {
+              "type": "object",
+              "markdownDescription": "Per agent (by name): `{ \"<point id>\": value }`.",
+              "additionalProperties": { "type": "object" }
+            },
+            "project": {
+              "type": "object",
+              "markdownDescription": "Per project (by id): `{ \"<point id>\": value }`.",
+              "additionalProperties": { "type": "object" }
+            }
+          }
         },
         "agentFarm.flexPresets": {
           "type": "array",

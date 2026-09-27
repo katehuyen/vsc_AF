@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.689.0 - A preference for one agent or one project (U-151, part 3a) (2026-09-27)
+
+- **A value can now be set for one agent or one project.** A new setting,
+  `agentFarm.flexOverrides`, holds preference values for a single agent
+  (by name) or a single project (by id). In the chain an agent's value
+  beats Farm Settings, a project's beats the agent's, and a run's own
+  value beats both. Today it covers the retry supervisor.
+- **Runs really use it:** a task's retry is resolved with its agent's and
+  its project's values laid over your default, field by field.
+- **The task form says where each value comes from:** an empty box reads
+  "3 — agent developer" or "haiku — Farm Settings"; the pickers show
+  "↳ <value>" and their hover names the level.
+- **Bridge:** `flex.set level=agent|project target=<name|id>` writes it
+  (`value: null` = back to inherited); `flex.get agent=… project=…` reads it.
+
 ## 3.688.0 - "If it is not sure" inherits too (U-151, part 2b) (2026-09-27)
 
 - **The supervisor's "If it is not sure" no longer overrides your default.**

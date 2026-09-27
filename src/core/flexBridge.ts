@@ -5,9 +5,10 @@
  */
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import {
-    applyPresetAt, deletePresetNamed, FlexDeps, savePresetAs, setFlexSetting, userPresets
+    applyPresetAt, deletePresetNamed, FlexDeps, savePresetAs, setFlexOverride, setFlexSetting, userPresets
 } from './flexActions';
 import { FLEX_LEVEL_LABELS, FLEX_LEVELS, FLEX_POINTS, FlexCtx, FlexLevel, flexApplies, flexLevelsOf, flexPoint } from './flexPoints';
+import { FLEX_OVERRIDES_KEY, OVERRIDE_LEVELS, overridesAt } from './flexOverrides';
 import { FlexPreset, presetLibrary } from './flexPresets';
 import { FlexLayers, resolveFlex, settingsLayer } from './flexResolve';
 import { PRESETS as SENTRY_PRESETS } from './sentryPolicy';
@@ -61,13 +62,18 @@ export function registerFlexOps(bridge: BridgeRegistry, deps: FlexBridgeDeps): v
                 + 'ignored [{level, value, why}], sentence ("Opus — from this workflow; Farm Settings said Sonnet"), applies}. '
                 + 'args: point (id, see flex.list); layers? {agent|project|workflow|step|run|live: value} — the levels '
                 + 'with no store yet are passed by the caller; the Farm Settings layer is read from what the user wrote '
-                + 'unless layers.settings is given; ctx? facts for applies.',
+                + 'unless layers.settings is given; agent? (name) / project? (id) read that agent\'s / project\'s own value '
+                + 'from agentFarm.flexOverrides unless layers says it (U-151); ctx? facts for applies.',
             handler: (args) => {
                 const id = argStr(args, 'point');
                 const p = flexPoint(id);
                 need(p, `"${id}" is not a flex point — flex.list shows every one.`);
                 const layers = objArg(args, 'layers') as FlexLayers;
-                const all: FlexLayers = 'settings' in layers ? layers : { ...layers, settings: settingsLayer(p!, deps.readSetting) };
+                const all: FlexLayers = 'settings' in layers ? { ...layers } : { ...layers, settings: settingsLayer(p!, deps.readSetting) };
+                for (const level of OVERRIDE_LEVELS) {
+                    const target = optStr(args, level);
+                    if (target && !(level in layers)) { all[level] = overridesAt(deps.readSetting(FLEX_OVERRIDES_KEY), level, target)[id]; }
+                }
                 const ctx = args.ctx === undefined ? {} : objArg(args, 'ctx') as FlexCtx;
                 return { ...resolveFlex(p!, all), applies: flexApplies(id, ctx) };
             }
@@ -77,11 +83,17 @@ export function registerFlexOps(bridge: BridgeRegistry, deps: FlexBridgeDeps): v
             describe: 'Set one flex point (U-152): {point, level? (settings, or live with runId — a RUNNING workflow: workflow.wake and workflow.supervisor.model / budgetUsd / maxCalls, from its next step on (M-46); a run\'s '
                 + 'own value is passed to the op that starts it), value? (omit or null = back to inherited)}. The value is '
                 + 'checked against the point; one inside an object setting (agentFarm.taskRetry) is written into it, the '
-                + 'other fields kept. Returns the point resolved.',
+                + 'other fields kept. U-151: level agent or project with target (the agent\'s NAME, the project\'s id) '
+                + 'sets it for that one agent or project (agentFarm.flexOverrides) — above Farm Settings, below the run. '
+                + 'Returns the point resolved.',
             handler: async (args) => {
                 const level = levelArg(args);
                 if (level === 'live' && deps.setLive) {
                     return deps.setLive(argStr(args, 'runId'), argStr(args, 'point'), args.value === null ? undefined : args.value);
+                }
+                if (level === 'agent' || level === 'project') {
+                    return setFlexOverride(deps, argStr(args, 'point'), level, argStr(args, 'target'),
+                        args.value === null ? undefined : args.value);
                 }
                 need(level === 'settings', `${FLEX_LEVEL_LABELS[level]} values have no store yet — pass them to the op that `
                     + 'starts the run (presets.apply level=run returns those args).');

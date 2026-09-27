@@ -86,7 +86,7 @@ console.log('\n== U-151: the boxes draw the inherited value faint, MIRROR first 
     };
     const engines = [{ id: 'claude', label: 'Claude Code', ready: true }, { id: 'codex', label: 'Codex', ready: true }];
     const html = W.row(W.blank(), engines, C, { engine: 'claude', maxCalls: 4 });
-    ok('the empty engine names the inherited one, choosable', /<option value="" selected>↳ Claude Code — Farm Settings<\/option>/.test(html));
+    ok('the empty engine names the inherited one, choosable — SHORTHAND, the origin is on the tip', /<option value="" selected>↳ Claude Code<\/option>/.test(html));
     ok('and is drawn faint', /<select id="nt-supengine" class="inh">/.test(html));
     ok('an inherited box shows its value as the placeholder', /id="nt-supcalls" value="" placeholder="4 — Farm Settings"/.test(html));
     ok('MIRROR: the engine tip opens with the value and its origin', /title="claude — inherited from Farm Settings\n\nThe engine/.test(html));
@@ -97,9 +97,9 @@ console.log('\n== U-151: the boxes draw the inherited value faint, MIRROR first 
     eq('built-in when nothing says', [W.valueLine('maxCalls', '', {}), W.valueLine('budgetUsd', '', {})], ['2 — built-in', 'none — built-in']);
     const label = { t: 'old\n\nThe engine…', getAttribute() { return this.t; }, setAttribute(k, v) { this.t = v; } };
     const cls = new Set(['inh']);
-    ok('the fallback leads with what it inherits, faint', /<select id="nt-supfallback" class="inh"><option value="" selected>↳ continue \(smart\) — built-in<\/option>/.test(html));
+    ok('the fallback leads with what it inherits, faint', /<select id="nt-supfallback" class="inh"><option value="" selected>↳ continue \(smart\)<\/option>/.test(html));
     const parked = W.row(W.blank(), engines, C, { engine: 'claude', lowConfidence: 'park' });
-    ok('…and names Farm Settings when that is where it comes from', /<option value="" selected>↳ hold, tell me — Farm Settings<\/option>/.test(parked)
+    ok('…and names Farm Settings when that is where it comes from', /<option value="" selected>↳ hold, tell me<\/option>/.test(parked)
         && /title="hold, tell me — inherited from Farm Settings\n\nWhat happens/.test(parked));
     const said = W.row({ engine: 'claude', lowConfidence: 'stop' }, engines, C, { lowConfidence: 'park' });
     ok('a stated fallback is solid and says so', /<select id="nt-supfallback">/.test(said) && /title="no retry — set on this task/.test(said));
@@ -109,6 +109,18 @@ console.log('\n== U-151: the boxes draw the inherited value faint, MIRROR first 
     ok('and the faint goes with the inheritance', !cls.has('inh'));
     el.value = ''; W.retitle(el, { engine: 'claude' });
     ok('back to inherited: faint again, origin named', cls.has('inh') && label.t.startsWith('claude — inherited from Farm Settings'));
+    const L = {
+        supervisor: { engine: 'claude', maxCalls: 2 },
+        supervisorOverrides: { agent: { developer: { maxCalls: 3 } }, project: { prj_a: { engine: 'codex' } } },
+        projects: [{ id: 'prj_a', name: 'AgentFarm' }]
+    };
+    const inh = W.inherited(L, 'developer', 'prj_a');
+    eq('U-151: Farm Settings, then the agent, then the project', [inh.engine, inh.maxCalls, inh._from.engine, inh._from.maxCalls],
+        ['codex', 3, 'project AgentFarm', 'agent developer']);
+    const drawn = W.row(W.blank(), engines, C, inh);
+    ok('the empty box names the agent it inherits from', /placeholder="3 — agent developer"/.test(drawn));
+    ok('the engine\'s tip names the project', /↳ Codex</.test(drawn) && /title="codex — inherited from project AgentFarm/.test(drawn));
+    eq('no agent, no project: Farm Settings alone', W.inherited(L, '', '')._from, { engine: 'Farm Settings', maxCalls: 'Farm Settings' });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

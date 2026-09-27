@@ -130,6 +130,8 @@ export interface TasksDeps {
     batonMaxLegs?(): number;
     /** U-151 — the retry supervisor fields Farm Settings states (agentFarm.taskRetry), for the form's empty boxes. */
     supervisorDefault?(): unknown;
+    /** U-151 — each agent's (by name) and project's (by id) supervisor fields, laid over the default. */
+    supervisorOverrides?(): unknown;
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
@@ -947,6 +949,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             batonMaxLegs: deps.batonMaxLegs ? deps.batonMaxLegs() : null,
             // U-151 — what the supervisor's empty boxes inherit
             supervisor: deps.supervisorDefault?.() ?? null,
+            supervisorOverrides: deps.supervisorOverrides?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),

@@ -125,7 +125,7 @@ const rank = l => LV.indexOf(l);
     eq('…and every point', list.result.points.map(p => p.id), P.flexPointIds());
     const m = list.result.points.find(p => p.id === 'retry.supervisor.model');
     eq('…each level with its surface and bridge key', m.levels.map(l => [l.level, !!l.surface, !!l.bridge]),
-        [['settings', true, true], ['run', true, true]]);
+        [['settings', true, true], ['agent', true, true], ['project', true, true], ['run', true, true]]);
     eq('…and applies under the given facts', m.applies.ok, false);
 
     const got = await reg.dispatch('flex.get', { point: 'retry.supervisor.model', layers: { run: 'opus' } });

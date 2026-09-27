@@ -255,6 +255,7 @@ import { RECIPE_PRESETS, RECIPES } from './core/mediaRecipes';
 import { toolCall, toolStepRefusal } from './core/toolCall';
 import { runRecipe } from './core/toolRun';
 import { userPresets } from './core/flexActions';
+import { retryDefaultFor, supervisorOverrideMap } from './core/flexOverrides';
 import { findPreset, presetArgs } from './core/flexPresets';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -650,6 +651,9 @@ import {
  * is `core/settingsDoor.ts`, section-scoped, and that file carries the reasons.
  */
 const cfg = afConfig;
+/** U-151 — the default retry policy FOR one run: Farm Settings, then its agent's and project's own values. */
+const retryDefault = (t?: { agentName?: string; projectId?: string }) =>
+    retryDefaultFor(k => cfg().get<unknown>(k.slice('agentFarm.'.length)), t);
 
 /**
  * ‼️ THE SENTRY'S POOL OF THE USER'S OWN WORDS (X-175 templates, X-192 pool).
@@ -3704,7 +3708,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // used by every task that does not state its own. Unset means the
             // shipped default, which is the behaviour this extension has always
             // had (core/retry.ts, DEFAULT_RETRY).
-            defaultRetry: () => normalizeRetry(cfg().get<unknown>('taskRetry')),
+            defaultRetry: t => retryDefault(t),
             // ‼️ M-10 — WHEN THE WINDOW REOPENS, FROM THE ENGINE ITSELF. The
             // matrix is the same one the status bar and `usage.engines` read, so
             // a reset-aware retry and the indicator can never disagree about the
@@ -8526,7 +8530,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // the caller does not have to read a settings file to know
                     // whether the run it just queued will try again.
                     retry: task.retry ?? null,
-                    retryPolicy: describeRetry(task.retry, normalizeRetry(cfg().get<unknown>('taskRetry')))
+                    retryPolicy: describeRetry(task.retry, retryDefault(task))
                 };
             }
         },
@@ -16904,7 +16908,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         begin: t => taskManager.beginSupervision(t),
         settle: (t, o, m) => taskManager.settleSupervision(t, o, m),
         find: id => taskManager.tasks.find(x => x.id === id),
-        policyOf: t => resolveRetry(t.retry, normalizeRetry(cfg().get<unknown>('taskRetry'))).supervisor,
+        policyOf: t => resolveRetry(t.retry, retryDefault(t)).supervisor,
         incidentOf: incidentFrom({
             all: () => taskManager.tasks,
             sessionOf: t => successorSessionOf(t),
@@ -16919,7 +16923,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const c = await changesSummary(t.workDir || findAgent(t.agentId)?.dir || '');
                 return c.note ? undefined : { status: c.status, stat: c.stat };
             },
-            retriesLeft: t => resolveRetry(t.retry, normalizeRetry(cfg().get<unknown>('taskRetry'))).max - (t.retryAttempt ?? 0)
+            retriesLeft: t => resolveRetry(t.retry, retryDefault(t)).max - (t.retryAttempt ?? 0)
         }),
         ask: supervisorAsk({ cwdOf: t => t.workDir || findAgent(t.agentId)?.dir || os.homedir(), accountFor: supervisorAccount }),
         log: l => console.log(`[Agent Farm] ${l}`)
@@ -23309,8 +23313,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // the slots do.
         account: (engine, account) =>
             launchAccountRefusal({ engine: engineOf(engine).id, account }) || undefined,
-        // U-151 — the supervisor Farm Settings states; an empty engine inherits it
-        supervisor: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor
+        // U-151 — the supervisor this run inherits (Farm Settings, its agent, its project); an empty engine takes it
+        supervisor: a => retryDefault({
+            agentName: typeof a.agent === 'string' ? a.agent : undefined,
+            projectId: typeof a.project === 'string' ? a.project : typeof a.projectId === 'string' ? a.projectId : undefined
+        })?.supervisor
     });
 
     /**
@@ -24207,6 +24214,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         // U-151 — the supervisor fields an empty task-form box inherits.
         supervisorDefault: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor,
+        // …and what one agent or one project says on top of it (agentFarm.flexOverrides)
+        supervisorOverrides: () => supervisorOverrideMap(cfg().get<unknown>('flexOverrides')),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
