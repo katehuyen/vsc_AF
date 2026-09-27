@@ -317,7 +317,8 @@
             id: 'workflow.role', label: 'Role filled by (agent)', type: 'text', default: 'youtuber', remembered: false,
             levels: {
                 settings: { surface: 'setting:agentFarm.showrunner', bridge: 'settings.set:agentFarm.showrunner' },
-                workflow: { surface: 'media/afRoles.js#wf-roles', bridge: 'workflows.add:roles' }
+                workflow: { surface: 'media/afRoles.js#wf-roles', bridge: 'workflows.add:roles' },
+                run: { surface: 'media/afRoles.js#wi-roles', bridge: 'workflows.run:roles' }
             }
         },
         brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),

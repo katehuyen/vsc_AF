@@ -84,6 +84,31 @@ AR.wireStep((id, ev, fn) => { handlers[id] = fn; }, () => st, () => { redrawn++;
 handlers['nt-st-role']({ target: { value: ' kurgu ' } });
 ok('typing a role writes it and redraws, so the Roles box shows it', st.role === 'kurgu' && redrawn === 1);
 
+/* ---------- part 2: this run's own agent per role ---------- */
+const fr = R.fillRole('kurgu', { run: { kurgu: 'developer' }, workflow: { kurgu: 'yazar' }, showrunner: 'youtuber', agents: AG });
+ok('‼️ this run\'s agent beats the workflow\'s and the showrunner, and says so', fr.agent.id === 'a3' && fr.from === 'run' && /set for this run/.test(fr.why));
+ok('…a run agent that is gone is named as this run\'s', /goes to this run's "yok"/.test(R.fillRole('kurgu', { run: { kurgu: 'yok' }, agents: AG }).error));
+ok('workflow.role has a run level on the Run card and workflows.run', pt.levels.run && pt.levels.run.surface === 'media/afRoles.js#wi-roles' && pt.levels.run.bridge === 'workflows.run:roles');
+const sels = [];
+const Fm = { sel: (id, label, opts, v, o) => { sels.push({ id, label, opts, v, o }); return `<sel ${id}>`; } };
+const slots = { roleSlots: [{ role: 'senarist', agent: 'yazar', from: 'workflow' }, { role: 'kurgu', agent: 'youtuber', from: 'showrunner' }] };
+AR.runBoxes(slots, { roles: { kurgu: 'developer' } }, ['youtuber', 'yazar', 'developer'], Fm);
+ok('‼️ the Run card: a box per role, its first line the agent it will get and whose', sels.length === 2 && sels[0].id === 'wi-roles.senarist'
+    && sels[0].opts[0].label === 'yazar — the workflow\'s' && sels[1].opts[0].label === 'youtuber — the showrunner' && sels[1].v === 'developer' && /^developer — this run/.test(sels[1].o.tip));
+ok('no role on any step: no boxes', AR.runBoxes({}, {}, [], Fm) === '');
+const draft = { roles: {} };
+AR.applyRun(slots, draft, { 'wi-roles.kurgu': 'developer', 'wi-roles.senarist': '' });
+eq('the Run card writes this run\'s roles; the first line clears one', draft.roles, { kurgu: 'developer' });
+const read2 = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const rw = read2('media/afRunWith.js'), tpage = read2('media/tasksPage.js'), tpanel = read2('src/panels/tasksPanel.ts'), extsrc = read2('src/extension.ts');
+ok('the Run card draws and reads the role boxes', /AFRoles\.runBoxes\(p, run, agents, F\(\)\)/.test(rw) && /AFRoles\.applyRun\(p, run, values\)/.test(rw) && /DATA\.scenes, DATA\.agents\)/.test(tpage));
+ok('the run is sent its roles, refused by name, and started with them', /roles: wiRun\.roles \|\| \{\}/.test(tpage) && /rolesRefusal\(msg\.roles, this\.deps\.getAgents\(\)\)/.test(tpanel)
+    && /roleSlots: rolesReport\(w, deps\.showrunner/.test(tpanel));
+eq('a role step in the list reads as the role and who fills it', [AR.who('senarist', { roles: { senarist: 'yazar' } }, 'youtuber'), AR.who('kurgu', null, '')], ['senarist → yazar', 'kurgu → youtuber']);
+ok('…the step list uses it for agent and browser steps', /const agentOf = none => \(s\.role && window\.AFRoles \? window\.AFRoles\.who\(s\.role, composer, DATA\.showrunner\)/.test(tpage)
+    && /s\.stype === 'browser' \? agentOf\('\?'\)/.test(tpage) && /: agentOf\('\(no agent\)'\) \+ ' · '/.test(tpage));
+ok('workflows.run takes roles=, refused by name', /const runRolesNo = rolesRefusal\(args\.roles, agents\)/.test(extsrc) && /roles\? \(M-53 — this run only/.test(extsrc));
+
 /* ---------- the wiring ---------- */
 const src = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const page = src('media/tasksPage.js'), ext = src('src/extension.ts'), base = src('src/panels/base.ts'), tp = src('src/panels/tasksPanel.ts');
@@ -114,6 +139,10 @@ ok('the task manager is handed the showrunner', /showrunner: \(\) => cfg\(\)\.ge
         await settle();
         const t2 = mgr.tasks.find(t => t.workflowRunId === run2);
         ok('‼️ the workflow\'s binding runs it as that agent', t2 && t2.agentId === 'a2');
+        const run2b = mgr.runWorkflow(w, { roles: { senarist: 'developer' } });
+        await settle();
+        const t2b = mgr.tasks.find(t => t.workflowRunId === run2b);
+        ok('‼️ a run started with its own roles runs as that agent, over the workflow\'s', t2b && t2b.agentId === 'a3');
         w.roles = { senarist: 'gitti' };
         const run3 = mgr.runWorkflow(w);
         await settle();

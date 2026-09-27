@@ -8,6 +8,8 @@
 (function () {
     'use strict';
     const WF = 'wf-roles';
+    // M-53 — Run with…: this run's own agent per role (the flex point's run level)
+    const RUN = 'wi-roles';
     const KNOWN = ['senarist', 'prompt', 'kurgu', 'yayinci'];
 
     /** Every role the composer's steps name, first appearance first. */
@@ -77,5 +79,32 @@
         });
     }
 
-    window.AFRoles = { workflowBox, wireWf, stepField, wireStep, rolesOf };
+    /** Run with…: one box per role the steps name — this run's own agent, over the workflow's and the showrunner. `p.roleSlots` = [{role, agent, from}]. */
+    function runBoxes(p, run, agents, Fm) {
+        return (p.roleSlots || []).map(s => {
+            const mine = (run.roles || {})[s.role] || '';
+            const whose = s.from === 'workflow' ? 'the workflow\'s' : 'the showrunner';
+            const base = s.agent || '?';
+            return Fm.sel(RUN + '.' + s.role, s.role, [{ id: '', label: base + ' — ' + whose }].concat((agents || []).map(a => ({ id: a, label: a }))), mine, {
+                tip: (mine ? mine + ' — this run' : base + ' — ' + whose) + '\n\nWho fills role ' + s.role + ' in this run only; the workflow keeps its own.',
+                redraw: true
+            });
+        }).join('');
+    }
+
+    function applyRun(p, run, values) {
+        (p.roleSlots || []).forEach(s => {
+            const v = values[RUN + '.' + s.role];
+            if (v === undefined) { return; }
+            run.roles = Object.assign({}, run.roles || {});
+            if (v) { run.roles[s.role] = v; } else { delete run.roles[s.role]; }
+        });
+    }
+
+    /** A role step in the list: the role and who fills it — the workflow's binding, else the showrunner. */
+    function who(role, c, showrunner) {
+        return role + ' → ' + (((c && c.roles) || {})[role] || showrunner || 'youtuber');
+    }
+
+    window.AFRoles = { workflowBox, wireWf, stepField, wireStep, rolesOf, runBoxes, applyRun, who };
 })();

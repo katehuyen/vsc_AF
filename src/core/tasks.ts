@@ -1663,6 +1663,8 @@ export interface WorkflowRunOpts {
     wake?: WakeSpec;
     /** M-50 — this run's production for {brand.*}, above the workflow's and a media step's own */
     production?: string;
+    /** M-53 — this run's own agent for a role, above the workflow's binding and the showrunner */
+    roles?: RoleMap;
 }
 
 interface WorkflowRunRecord {
@@ -1697,6 +1699,8 @@ interface WorkflowRunRecord {
     wake?: WakeSpec;
     /** M-50 — the production the run was started with, for {brand.*} */
     production?: string;
+    /** M-53 — the roles the run was started with */
+    roles?: RoleMap;
     /** M-46 — what a person set while it ran: words for its supervisor, live settings (src/core/workflowLive.ts) */
     live?: RunLive;
     /** M-46 — the finished step's row the run is held after, when it was paused at a boundary */
@@ -6363,7 +6367,8 @@ export class TaskManager implements vscode.Disposable {
                 : (this.opts.activeProjectId?.() ?? null),
             ...(Object.keys(given.values).length ? { inputs: given.values } : {}),
             ...(opts?.wake ? { wake: opts.wake } : {}),
-            ...(opts?.production ? { production: opts.production } : {})
+            ...(opts?.production ? { production: opts.production } : {}),
+            ...(opts?.roles && Object.keys(opts.roles).length ? { roles: opts.roles } : {})
         });
         this.lib?.prepare(w);
         return runId;
@@ -6577,10 +6582,10 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** M-53 — the agent a step runs as: its own, or the one its role is filled with (the workflow's binding, else the showrunner). */
-    private stepAgent(w: FarmWorkflow, step: WorkflowStep): { agent?: AgentInfo; missing: string } {
+    private stepAgent(w: FarmWorkflow, step: WorkflowStep, runId: string): { agent?: AgentInfo; missing: string } {
         const agents = this.getAgents();
         if (!step.role) { return { agent: agents.find(a => a.id === step.agentId), missing: `agent "${step.agentName}" not found` }; }
-        const r = fillRole(step.role, { workflow: w.roles, showrunner: this.opts.showrunner?.(), agents });
+        const r = fillRole(step.role, { run: this.runRecords.get(runId)?.roles, workflow: w.roles, showrunner: this.opts.showrunner?.(), agents });
         return { agent: r.agent && agents.find(a => a.id === r.agent!.id), missing: r.error ?? r.why };
     }
 
@@ -6711,7 +6716,7 @@ export class TaskManager implements vscode.Disposable {
             void this.runCheckpointStep(w, index, handoff, runId);
             return;
         }
-        const { agent, missing } = this.stepAgent(w, step);
+        const { agent, missing } = this.stepAgent(w, step, runId);
         if (!agent) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped — ${missing}.`);
@@ -7139,7 +7144,7 @@ export class TaskManager implements vscode.Disposable {
             const ok = await this.opts.confirmBrowser({ title: step.title, url, goal });
             if (!ok) { fail('not approved'); return; }
         }
-        const { agent, missing } = this.stepAgent(w, step);
+        const { agent, missing } = this.stepAgent(w, step, runId);
         if (!agent) {
             fail(missing);
             return;

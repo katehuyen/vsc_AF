@@ -18,7 +18,7 @@
     /** Which boxes hold a value of this run's own — a change of it redraws (↑ comes or goes). */
     function ownOf(p, run) {
         return (p.inputs || []).filter(i => differs(i, (run.values || {})[i.name])).map(i => i.name)
-            .concat(run.wake ? ['wake'] : [], run.production ? ['production'] : []).join(',');
+            .concat(run.wake ? ['wake'] : [], run.production ? ['production'] : [], Object.keys(run.roles || {}).map(r => 'role:' + r)).join(',');
     }
 
     let ownAtRender = '';
@@ -26,7 +26,7 @@
     const changed = (p, run) => ownOf(p, run) !== ownAtRender;
 
     /** The card. `promote` = { open, levels(key) }; `dict` = the host's wake dictionary. */
-    function workflowCard(p, run, C, promote, dict, scenes) {
+    function workflowCard(p, run, C, promote, dict, scenes, agents) {
         const P = promote && window.AFFlexPromote;
         ownAtRender = ownOf(p, run);
         const last = p.lastInputs || {};
@@ -55,11 +55,12 @@
         }) : '';
         if (P && dict) { strips.push(P.stripFor(promote, wakeKey(), 'Wake', shown, shown)); }
         const prod = prodBox(p, run, scenes);
+        const roles = window.AFRoles ? window.AFRoles.runBoxes(p, run, agents, F()) : '';
         return F().card({
             id: 'nt-runwith', title: `Run “${p.title}” with`,
             lede: (p.inputs || []).length ? 'each box starts at the last run\'s value, else the input\'s default'
                 : prod ? 'this run\'s own wake conditions and brand kit' : 'this run\'s own wake conditions, starting at the last run\'s',
-            body: F().grid(fields, wake, prod, strips), submit: 'Run with these'
+            body: F().grid(fields, wake, prod, roles, strips), submit: 'Run with these'
         });
     }
 
@@ -125,6 +126,7 @@
         (p.inputs || []).forEach(i => { const v = values[RUN_IN + '.' + i.name]; if (v !== undefined) { run.values[i.name] = v; } });
         if (values[RUN_WAKE] !== undefined) { run.wake = values[RUN_WAKE]; }
         if (values[RUN_PROD] !== undefined) { run.production = values[RUN_PROD]; }
+        if (window.AFRoles) { window.AFRoles.applyRun(p, run, values); }
     }
 
     window.AFRunWith = { RUN_IN, RUN_WAKE, RUN_PROD, workflowCard, scheduleCard, apply, changed };

@@ -1048,6 +1048,22 @@ const variants = () => ([
         }
     },
     // M-50 — the Run card of a workflow whose steps read the brand: this run reads Kanal B instead of the workflow's Kanal A.
+    // M-53 — Run with… on a workflow with two roles: this run gives kurgu to developer; senarist stays the workflow's.
+    {
+        id: 'tasks-wf-roles-runcard',
+        label: 'Tasks → Plan → with… on a workflow with roles: senarist stays the workflow\'s yazar, this run gives kurgu to developer instead of the showrunner (M-53)',
+        data: Object.assign(data(), {
+            tab: 'plan', plan: [Object.assign(wfWithInputs(), { inputs: [], lastInputs: {},
+                roleSlots: [{ role: 'senarist', agent: 'yazar', from: 'workflow' }, { role: 'kurgu', agent: 'youtuber', from: 'showrunner' }] })],
+            workflows: [{ id: 'w9', title: 'Klip kes', steps: 2, inputs: [] }]
+        }),
+        act: (r) => {
+            r.query('[data-plan="runwith"][data-kind="workflow"]')[0].click();
+            const el = r.query('[data-af]').find(e => e.dataset.af === 'wi-roles.kurgu');
+            if (!el) { throw new Error('no kurgu box on the Run card'); }
+            el.value = 'developer'; el.fire('change');
+        }
+    },
     {
         id: 'tasks-wf-brand-runcard',
         label: 'Tasks → Plan → with… on a workflow whose steps read {brand.*}: this run takes Kanal B\'s kit instead of the workflow\'s Kanal A (M-50)',

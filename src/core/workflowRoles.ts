@@ -14,7 +14,7 @@ const RESERVED = ['media', 'webhook', 'approval', 'select', 'checkpoint', 'tool'
 
 export type RoleMap = Record<string, string>;
 export interface RoleAgent { id: string; name: string }
-export interface RoleFill { agent?: RoleAgent; from: 'workflow' | 'showrunner'; why: string; error?: string }
+export interface RoleFill { agent?: RoleAgent; from: 'run' | 'workflow' | 'showrunner'; why: string; error?: string }
 
 export function roleKeyRefusal(k: unknown): string {
     const s = String(k ?? '').trim();
@@ -49,17 +49,18 @@ export function rolesRefusal(raw: unknown, agents: RoleAgent[]): string {
     return '';
 }
 
-/** The agent a role is filled with, and where that came from — the workflow's binding, else the showrunner (flex point workflow.role). */
-export function fillRole(role: string, o: { workflow?: RoleMap; showrunner?: string; agents: RoleAgent[] }): RoleFill {
+/** The agent a role is filled with, and where that came from — this run's, the workflow's binding, else the showrunner (flex point workflow.role). */
+export function fillRole(role: string, o: { run?: RoleMap; workflow?: RoleMap; showrunner?: string; agents: RoleAgent[] }): RoleFill {
     const r = resolveFlex('workflow.role', {
         settings: (o.showrunner ?? '').trim() || undefined,
-        workflow: o.workflow?.[role]?.trim() || undefined
+        workflow: o.workflow?.[role]?.trim() || undefined,
+        run: o.run?.[role]?.trim() || undefined
     });
     const ref = String(r.value || DEFAULT_SHOWRUNNER);
-    const from = r.from === 'workflow' ? 'workflow' as const : 'showrunner' as const;
+    const from = r.from === 'run' ? 'run' as const : r.from === 'workflow' ? 'workflow' as const : 'showrunner' as const;
     const why = `role ${role}: ${r.sentence}${from === 'showrunner' ? ' — the showrunner takes every role the workflow leaves open' : ''}`;
     const agent = findIn(o.agents, ref);
-    return agent ? { agent, from, why } : { from, why, error: `role "${role}" goes to ${from === 'workflow' ? 'this workflow\'s' : 'the showrunner'} "${ref}", and there is no such agent` };
+    return agent ? { agent, from, why } : { from, why, error: `role "${role}" goes to ${from === 'run' ? 'this run\'s' : from === 'workflow' ? 'this workflow\'s' : 'the showrunner'} "${ref}", and there is no such agent` };
 }
 
 /** Every role the steps name, first appearance first. */

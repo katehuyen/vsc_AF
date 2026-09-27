@@ -8967,7 +8967,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.run',
-            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason), wake? (M-45 — this run only: "mechanical" | "smart" | "hybrid" | a condition list, as workflows.add; beats the workflow\'s and its steps\'), production? (M-50 — this run only: the production (id or title) whose brand kit its steps read as {brand.*}; beats the workflow\'s and a media step\'s own; refused when no such production exists)',
+            describe: 'Run a workflow now. Returns the RUN id — pass it to workflows.status to see where the chain got to and what it produced. args: id or title, project (optional project id every step of the run is filed under; "none" files the run under no project, omit to take the window\'s active project), inputs? ({"<name>": "<value>"} — the workflow\'s declared inputs, read by its steps as {input.name}; a value beats the input\'s default, a missing required one or an unknown name refuses the run with the reason), wake? (M-45 — this run only: "mechanical" | "smart" | "hybrid" | a condition list, as workflows.add; beats the workflow\'s and its steps\'), production? (M-50 — this run only: the production (id or title) whose brand kit its steps read as {brand.*}; beats the workflow\'s and a media step\'s own; refused when no such production exists), roles? (M-53 — this run only: {"<role>": "<agent name|id>"}, over the workflow\'s roles and the showrunner; an agent that does not exist is refused by name)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const w = taskManager.workflows.find(x => x.id === ref || x.title === ref);
@@ -8983,11 +8983,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!wk.error, `${wk.error}.`);
                 const runProd = productionRef(agents, args.production);
                 need(!runProd.error, `${runProd.error}.`);
+                const runRolesNo = rolesRefusal(args.roles, agents);
+                need(!runRolesNo, `${runRolesNo}.`);
+                const runRoles = cleanRoles(args.roles);
                 const runId = taskManager.runWorkflow(w as FarmWorkflow, {
                     ...(proj ? { projectId: proj === 'none' ? undefined : proj } : {}),
                     ...(inputs ? { inputs } : {}),
                     ...(wk.wake ? { wake: wk.wake } : {}),
-                    ...(runProd.id ? { production: runProd.id } : {})
+                    ...(runProd.id ? { production: runProd.id } : {}),
+                    ...(runRoles ? { roles: runRoles } : {})
                 });
                 need(runId, `"${(w as FarmWorkflow).title}" has no steps — there was nothing to start.`);
                 return { started: (w as FarmWorkflow).title, runId };

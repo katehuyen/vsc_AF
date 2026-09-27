@@ -858,7 +858,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             </td>
         </tr>${wiRun && wiRun.id === p.id && (wiRun.kind || 'workflow') === p.kind && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
             ${p.kind === 'schedule' ? window.AFRunWith.scheduleCard(p, wiRun, C, (DATA.launch || {}).runPresets)
-                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict, DATA.scenes)}
+                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict, DATA.scenes, DATA.agents)}
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
 
@@ -2108,14 +2108,16 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
      *  the card to find out about. */
     function stepSummary(s) {
         const k = STEP_KINDS.find(x => x.id === s.stype) || STEP_KINDS[0];
+        // M-53 — a role step reads as the role and the agent that fills it
+        const agentOf = none => (s.role && window.AFRoles ? window.AFRoles.who(s.role, composer, DATA.showrunner) : (s.agent || none));
         const who = s.stype === 'webhook' ? (s.whMethod || 'POST') + ' ' + trunc(s.whUrl || '(no url)', 44)
             : s.stype === 'media' ? (s.mModel || '(no model)')
-                : s.stype === 'browser' ? (s.agent || '?') + ' → ' + trunc(s.bUrl || '(no url)', 34)
+                : s.stype === 'browser' ? agentOf('?') + ' → ' + trunc(s.bUrl || '(no url)', 34)
                     : s.stype === 'approval' ? 'the chain waits for you'
                         : s.stype === 'select' ? 'keep ' + (s.selMin || 1) + (s.selMax ? '–' + s.selMax : ' or more')
                         : s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.summary(s)
                         : s.stype === 'tool' && window.AFTool ? window.AFTool.summary(s)
-                            : (s.agent || '(no agent)') + ' · ' + (s.smode || 'headless');
+                            : agentOf('(no agent)') + ' · ' + (s.smode || 'headless');
         const flags = [];
         if (s.parallel) { flags.push('∥ runs in parallel'); }
         if (String(s.feList || '').trim()) { flags.push('⑃ for each ' + s.feList); }
@@ -4410,7 +4412,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 onSubmit: () => {
                     post(wiRun.kind === 'schedule'
                         ? { type: 'plan', act: 'runwith', kind: 'schedule', id: wiRun.id, supervisor: window.AFWorkflowInputs.given(wiRun.sup), preset: wiRun.preset || '' }
-                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '' });
+                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '', roles: wiRun.roles || {} });
                     wiRun = null;
                     render();
                 },

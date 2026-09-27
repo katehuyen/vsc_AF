@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.707.0 - A role for one run, from Run with… (M-53, part 2) (2026-09-27)
+
+- **Run with… has a box per role** the workflow's steps name. Its first line
+  is the agent the run will get and whose choice that is (the workflow's or
+  the showrunner); pick another agent for this run only. Bridge:
+  `workflows.run roles={"kurgu": "developer"}`.
+- **The step list reads a role step as the role and who fills it** —
+  `senarist → developer · headless`.
+
 ## 3.706.0 - Role slots: a step names a role, the workflow or the showrunner fills it (M-53, part 1) (2026-09-27)
 
 - **A workflow step can name a role instead of an agent** — `senarist`,

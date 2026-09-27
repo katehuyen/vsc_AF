@@ -29,7 +29,7 @@ import { LibrarySpec, libraryFromDraft, libraryRefusal, librarySeed, StepLibrary
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
 import { BrandKit, brandRefs, cleanBrand } from '../core/brandKit';
-import { cleanRoles, roleKeyRefusal, rolesRefusal } from '../core/workflowRoles';
+import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from '../core/workflowRoles';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -254,6 +254,8 @@ interface PlanRow {
     lastWake?: string;
     /** M-50 — the production its steps read {brand.*} from, and whether any step reads it */
     production?: string;
+    /** M-53 — who fills each role its steps name (the Run card's role boxes) */
+    roleSlots?: { role: string; agent?: string; from: string }[];
     usesBrand?: boolean;
     /** U-151 — a schedule whose own retry is supervised, and that supervisor's values ('Run with…' starts there) */
     supervised?: boolean;
@@ -656,6 +658,8 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {}, wakeMode: wakeMode(w.wake), lastWake: w.lastWake ?? '',
             // M-50 — its production, and whether any step reads {brand.*} (the Run card's box is drawn only then)
             production: w.production ?? '', usesBrand: brandRefs([w.steps]).length > 0,
+            // M-53 — who fills each role its steps name, for the Run card's role boxes
+            roleSlots: rolesReport(w, deps.showrunner ? deps.showrunner() : 'youtuber', deps.getAgents()).roles,
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -2180,6 +2184,8 @@ export class TasksPanel {
         preset?: string;
         /** M-50 — a workflow run's own production for {brand.*} */
         production?: string;
+        /** M-53 — a workflow run's own agent per role */
+        roles?: Record<string, string>;
         /** U-151 — '↑ make default' */
         point?: string; level?: string; target?: string; value?: unknown;
     }): Promise<void> {
@@ -2238,8 +2244,12 @@ export class TasksPanel {
                         // M-50 — this run's own production for {brand.*}; the box offers only ones that exist
                         const prod = typeof msg.production === 'string' ? msg.production.trim() : '';
                         if (prod && !(this.deps.scenes?.() ?? []).some(x => x.id === prod)) { this.say(`Production: no production "${prod}" any more.`); break; }
-                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod
-                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}) } : undefined);
+                        // M-53 — this run's own agent per role
+                        const rolesNo = rolesRefusal(msg.roles, this.deps.getAgents());
+                        if (rolesNo) { this.say(`Roles: ${rolesNo}.`); break; }
+                        const runRoles = cleanRoles(msg.roles);
+                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod || runRoles
+                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}), ...(runRoles ? { roles: runRoles } : {}) } : undefined);
                         break;
                     }
                     // ‼️ A workflow's Edit is the workflow — its name AND its
