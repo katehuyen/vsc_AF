@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.694.0 - ↑ Make a supervisor value the default, or ↺ go back to inherited (U-151, part 3b) (2026-09-27)
+
+- **A supervisor box on the New-task form that holds its own value shows a
+  small ↑.** Press it and a strip under the row moves the value up in one
+  move — this project, this agent, or everywhere (Farm Settings) — and the
+  box then inherits it. **↺ back to inherited** just empties the box.
+- A box that already inherits shows nothing.
+- A default changed from anywhere — this strip, Farm Settings or the bridge
+  (`flex.set`) — shows on an open task form at once.
+
 ## 3.693.0 - Why a question has no timer is said where you look (K-45, part 3) (2026-09-27)
 
 - **Needs You lists a Console question no timer will answer**, and its line

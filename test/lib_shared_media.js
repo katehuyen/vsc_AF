@@ -117,6 +117,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afFlex.js', 'afFlexForms.js',
     // afFlexSettings.js — the Farm Settings "Flow & Content" card (U-152).
     'afFlexSettings.js',
+    // afFlexPromote.js — '↑ make default' beside a flex box (U-151).
+    'afFlexPromote.js',
     // afSupervisor.js — the retry supervisor's boxes (M-13).
     'afSupervisor.js',
     // afWorkflowInputs.js — a workflow's inputs: form block, Run card, trigger mapping (M-38).

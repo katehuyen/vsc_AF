@@ -6765,6 +6765,15 @@
       ]
     },
     {
+      "capability": "tasksPanel.ts#flexPromote",
+      "ui": [
+        "page:tasksPanel.ts#flexPromote"
+      ],
+      "ops": [
+        "flex.set"
+      ]
+    },
+    {
       "capability": "tasksPanel.ts#afnav",
       "ui": [
         "page:tasksPanel.ts#afnav"

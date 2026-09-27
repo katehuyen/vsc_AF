@@ -627,6 +627,29 @@ const variants = () => ([
             drive(r, draft, 'nt-retrybehavior');
         }
     },
+    // U-151 — one box holds this task's own value: ↑ beside it, pressed, opens the
+    // strip that moves it up the chain (this project · this agent · everywhere) or drops it.
+    {
+        id: 'tasks-retry-supervisor-promote', label: 'Tasks → a supervisor box with its own value, ↑ pressed: make it the default for this project · this agent · everywhere, or ↺ back (U-151)',
+        data: (() => {
+            const d = data();
+            d.launch.supervisor = { engine: 'claude', model: 'haiku', maxCalls: 4 };
+            d.launch.supervisorOverrides = { agent: { developer: { maxCalls: 3 } } };
+            return d;
+        })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması — dosyaları filele', 'nt-agent': 'developer', 'nt-project': 'prj_1', 'nt-retrymode': 'custom', 'nt-retrymax': '3' };
+            drive(r, draft, 'nt-retrymode');
+            Object.assign(draft, { 'nt-retrybehavior': 'supervisor' });
+            drive(r, draft, 'nt-retrybehavior');
+            Object.assign(draft, { 'nt-supmodel': 'sonnet' });
+            drive(r, draft, 'nt-supmodel');
+            const up = r.query('[data-flexup]').find(e => e.dataset.flexup === 'retry.supervisor.model');
+            if (!up) { throw new Error('no ↑ beside the model box'); }
+            up.click();
+        }
+    },
     /**
      * ‼️ S-82 — THE RELAY BLOCK, IN THE STATE THAT HAS TO EXPLAIN ITSELF.
      *

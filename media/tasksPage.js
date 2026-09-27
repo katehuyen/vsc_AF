@@ -1567,7 +1567,7 @@
             ['smart', 'continue it — pick up where it was cut off'],
             ['supervisor', 'let a supervisor decide how to continue']
         ])}</label>
-            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, supInh(c)) : ''}
+            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, supInh(c), supPromote(c)) : ''}
             ${(c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') ? `
             <label class="ntf wide" title="${C.esc(
             'Sent as the NEXT TURN of the run\'s own conversation, so it can be short — everything that '
@@ -3253,6 +3253,24 @@
     /** U-151 — what the supervisor's empty boxes inherit for this draft's agent and project. */
     function supInh(c) { return window.AFSupervisor.inherited(DATA.launch, c && c.agent, c && c.project); }
 
+    /** U-151 — which supervisor box has its '↑ make default' strip open, and the levels it offers. */
+    let supUp = '';
+    function supPromote(c) {
+        if (!window.AFFlexPromote) { return undefined; }
+        const p = ((DATA.launch || {}).projects || []).find(x => c && x.id === c.project);
+        return { open: supUp, levels: window.AFFlexPromote.levelsFor(c && c.agent, p ? { id: p.id, name: p.name } : null) };
+    }
+    const supKey = point => String(point || '').replace('retry.supervisor.', '');
+    const supOwn = () => {
+        const r = (composer || {}).retrySupervisor || {};
+        return Object.keys(r).filter(k => String(r[k] == null ? '' : r[k]).trim()).sort().join(',');
+    };
+    function supDrop(point) {
+        if (composer && composer.retrySupervisor) { composer.retrySupervisor[supKey(point)] = ''; }
+        supUp = '';
+        render();
+    }
+
     /** The draft's three-state retry picker, as the one field the host stores.
      *  undefined = say nothing, so the user's default stays in charge. */
     function retryFromDraft(c) {
@@ -4000,6 +4018,7 @@
                 .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
                 .ntf select, .ntf input { padding:3px 6px; }
                 .ntf select.inh { opacity:.6; }
+                ${window.AFFlexPromote ? window.AFFlexPromote.css() : ''}
                 .ntf input[type=number] { font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
                     background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
                 /* M-45 - the wake editor: the preset the set IS, and one condition per row */
@@ -4490,9 +4509,19 @@
             });
             byId('nt-retrycarryon', 'change', () => { readComposer(); });
             window.AFSupervisor.IDS.forEach(id => byId(id, 'change', ev => {
+                const was = supOwn();
                 readComposer();
                 window.AFSupervisor.retitle(ev.target, supInh(composer));
+                // U-151 — a box that took or lost its own value gains or loses its ↑
+                if (window.AFFlexPromote && supOwn() !== was) { render(); }
             }));
+            if (window.AFFlexPromote) {
+                window.AFFlexPromote.wire(document, m => vscode.postMessage(m), {
+                    open: point => { readComposer(); supUp = supUp === supKey(point) ? '' : supKey(point); render(); },
+                    back: point => { readComposer(); supDrop(point); },
+                    value: point => { readComposer(); return ((composer || {}).retrySupervisor || {})[supKey(point)]; }
+                });
+            }
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();
@@ -4940,6 +4969,8 @@
         // the host push simply did not go through it.
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; repaint(); }
         if (ev.data.type === 'focus' && ev.data.tab) { tab = ev.data.tab; persist(); render(); }
+        // U-151 — the value now lives where it was promoted to; the box inherits it
+        if (ev.data.type === 'flexPromoted' && ev.data.point) { supDrop(ev.data.point); }
         // ‼️ "OPEN THIS TASK" HAS TO LAND ON THE TASK. A project's Work tab and
         // a timeline row both say Open about one run; opening the page at the
         // top of a list of two hundred and leaving the reader to find it is the

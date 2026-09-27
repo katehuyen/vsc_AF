@@ -132,6 +132,8 @@ export interface TasksDeps {
     supervisorDefault?(): unknown;
     /** U-151 — each agent's (by name) and project's (by id) supervisor fields, laid over the default. */
     supervisorOverrides?(): unknown;
+    /** U-151 — '↑ make default': one flex value written at a level, through flex.set's own core. */
+    flexPromote?(args: { point: string; level: string; target: string; value: unknown }): Promise<unknown>;
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
@@ -2125,6 +2127,8 @@ export class TasksPanel {
         inputs?: Record<string, unknown>;
         /** M-45 — the Run card's "this run only" wake preset */
         wake?: string;
+        /** U-151 — '↑ make default' */
+        point?: string; level?: string; target?: string; value?: unknown;
     }): Promise<void> {
         const m = this.deps.manager;
         const run = (cmd: string, ...args: unknown[]) => { void vscode.commands.executeCommand(cmd, ...args); };
@@ -2693,6 +2697,19 @@ export class TasksPanel {
                 break;
             case 'open-needs':
                 run('agentfarm.openNeeds');
+                break;
+            // U-151 — '↑ make default' beside a flex box: written where the user chose, then the box empties
+            case 'flexPromote':
+                if (!this.deps.flexPromote) { break; }
+                try {
+                    await this.deps.flexPromote({
+                        point: String(msg.point ?? ''), level: String(msg.level ?? ''), target: String(msg.target ?? ''), value: msg.value
+                    });
+                    void this.panel.webview.postMessage({ type: 'flexPromoted', point: msg.point });
+                    this.refresh();
+                } catch (e) {
+                    void vscode.window.showErrorMessage(`Agent Farm: ${(e as Error).message}`);
+                }
                 break;
             case 'command':
                 if (msg.text?.trim()) { await this.deps.runCommandText(msg.text.trim()); }

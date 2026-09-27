@@ -255,7 +255,7 @@ import { resolveFlex } from './core/flexResolve';
 import { RECIPE_PRESETS, RECIPES } from './core/mediaRecipes';
 import { toolCall, toolStepRefusal } from './core/toolCall';
 import { runRecipe } from './core/toolRun';
-import { userPresets } from './core/flexActions';
+import { setFlexOverride, setFlexSetting, userPresets } from './core/flexActions';
 import { retryDefaultFor, supervisorOverrideMap } from './core/flexOverrides';
 import { findPreset, presetArgs } from './core/flexPresets';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
@@ -24209,6 +24209,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         supervisorDefault: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor,
         // …and what one agent or one project says on top of it (agentFarm.flexOverrides)
         supervisorOverrides: () => supervisorOverrideMap(cfg().get<unknown>('flexOverrides')),
+        // the same two cores flex.set writes through: one agent / one project, or Farm Settings
+        flexPromote: async (args: { point: string; level: string; target: string; value: unknown }) => (
+            args.level === 'agent' || args.level === 'project'
+                ? setFlexOverride(flexDeps, args.point, args.level, args.target, args.value)
+                : args.level === 'settings' ? setFlexSetting(flexDeps, args.point, args.value)
+                    : Promise.reject(new Error(`level ${args.level}: make it the default for a project, an agent or everywhere.`))),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
@@ -27134,6 +27140,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
     registerFlexOps(bridge, flexDeps);
+    // U-151 — a default moved up (from a page or over the bridge) shows on the task form at once
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.flexOverrides') || e.affectsConfiguration('agentFarm.taskRetry')) {
+            TasksPanel.refreshIfOpen();
+        }
+    }));
 
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's

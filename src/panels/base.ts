@@ -486,6 +486,8 @@ export function htmlShell(
     const flexForms = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexForms.js'));
     // U-152 — the Farm Settings "Flow & Content" card.
     const flexSettings = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexSettings.js'));
+    // U-151 — '↑ make default' / '↺ back to inherited' beside a flex box
+    const flexPromote = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexPromote.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -548,6 +550,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${flex}"></script>
 <script nonce="${nonce}" src="${flexForms}"></script>
 <script nonce="${nonce}" src="${flexSettings}"></script>
+<script nonce="${nonce}" src="${flexPromote}"></script>
 <script nonce="${nonce}" src="${supervisor}"></script>
 <script nonce="${nonce}" src="${workflowInputs}"></script>
 <script nonce="${nonce}" src="${checkpoint}"></script>

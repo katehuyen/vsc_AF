@@ -100,6 +100,11 @@
         return '↳ ' + valueLine(key, '', up).split(' — ')[0];
     }
 
+    const LABELS = {
+        engine: 'Supervisor engine', model: 'Supervisor model', maxCalls: 'Supervisor calls',
+        budgetUsd: 'Supervisor budget $', minConfidence: 'Min confidence', lowConfidence: 'If it is not sure'
+    };
+
     const KEY_OF = {
         'nt-supengine': 'engine', 'nt-supmodel': 'model', 'nt-supcalls': 'maxCalls',
         'nt-supbudget': 'budgetUsd', 'nt-supconf': 'minConfidence', 'nt-supfallback': 'lowConfidence'
@@ -119,8 +124,9 @@
     /**
      * The boxes. `engines` = [{ id, label, ready, next }]; `C` = the page's option/escape helper;
      * `inh` = Farm Settings' supervisor fields — an empty box shows that value faint (MIRROR: value, then origin).
+     * U-151 — `promote` = { open: the key whose strip is open, levels } draws ↑ beside a box that holds its own value.
      */
-    function row(d, engines, C, inh) {
+    function row(d, engines, C, inh, promote) {
         const s = Object.assign(blank(), d || {});
         const up = inh || {};
         const list = (engines && engines.length) ? engines : [{ id: 'claude', label: 'Claude Code', ready: true }];
@@ -133,6 +139,12 @@
                 selected: e.id === s.engine, disabled: !e.ready, detail: e.next || ''
             })).join('');
         const mirror = (value, key) => valueLine(key, value, up);
+        const P = promote && window.AFFlexPromote;
+        const upBtn = (key, value) => (P ? P.button('retry.supervisor.' + key, value, promote.open === key) : '');
+        const openKey = P && promote.open && String(s[promote.open] || '').trim() ? promote.open : '';
+        const shown = key => (key === 'engine' ? ((list.find(e => e.id === s.engine) || {}).label || s.engine)
+            : key === 'lowConfidence' ? fallbackWord(s.lowConfidence) : String(s[key]));
+        const strip = openKey ? P.strip('retry.supervisor.' + openKey, LABELS[openKey], shown(openKey), promote.levels || []) : '';
         // X-370 — a tri point: ask / auto / never, the stored values from the flex registry;
         // U-151 — led by the inherited state, so an untouched box says nothing
         const fb = window.AFFlexForms.triSelect('nt-supfallback', window.AFFlex.point('retry.supervisor.lowConfidence').states,
@@ -140,14 +152,14 @@
             inheritLabel('lowConfidence', up));
         const box = (id, key, label, value, ph, tip) => {
             const place = up[key] !== undefined ? String(up[key]) + ' — ' + originOf(up, key) : ph;
-            return `<label class="ntf" title="${C.esc(mirror(value, key) + '\n\n' + tip)}"><span>${label}</span>`
+            return `<label class="ntf" title="${C.esc(mirror(value, key) + '\n\n' + tip)}"><span>${label}${upBtn(key, value)}</span>`
                 + `<input type="text" id="nt-${id}" value="${C.esc(value)}" placeholder="${C.esc(place)}"></label>`;
         };
         return `<label class="ntf" title="${C.esc(valueLine('engine', s.engine, up) + '\n\n'
             + 'The engine that reads what the cut-off run left and decides how it goes on: resume it with a '
             + 'prompt, run the original again, wait, stop, or ask you. It runs read-only and never commits, '
             + 'pushes or closes anything. ‼️ An engine on the SAME plan as the task is limited by the same '
-            + 'window, so it is asked only after the reset; an independent one can answer at once.')}"><span>Supervisor engine</span>`
+            + 'window, so it is asked only after the reset; an independent one can answer at once.')}"><span>Supervisor engine${upBtn('engine', s.engine)}</span>`
             + `<select id="nt-supengine"${!s.engine && upEngine ? ' class="inh"' : ''}>${eng}</select></label>`
             + box('supmodel', 'model', 'Supervisor model', s.model, '(optional) the engine’s default',
                 'The model it judges with — a small one is usually enough; empty uses the engine’s default.')
@@ -157,8 +169,8 @@
                 'Dollars across all its calls for this task. Empty = no money cap (the call cap still holds). Its cost is recorded as its own run, never mixed into the task’s.')
             + box('supconf', 'minConfidence', 'Min confidence', s.minConfidence, '0.6',
                 'A decision it is less sure of than this (0–1) is not applied; the choice below is used instead.')
-            + `<label class="ntf" title="${C.esc(mirror(s.lowConfidence, 'lowConfidence') + '\n\n' + 'What happens when its answer is below the confidence above, or it cannot be asked at all (its own limit, a timeout, a malformed answer).')}"><span>If it is not sure</span>`
-            + `${fb}</label>`;
+            + `<label class="ntf" title="${C.esc(mirror(s.lowConfidence, 'lowConfidence') + '\n\n' + 'What happens when its answer is below the confidence above, or it cannot be asked at all (its own limit, a timeout, a malformed answer).')}"><span>If it is not sure${upBtn('lowConfidence', s.lowConfidence)}</span>`
+            + `${fb}</label>` + strip;
     }
 
     /** Read the boxes back into the draft; `get(id)` answers an element's value or undefined when it is not on the page. */
