@@ -23,6 +23,7 @@ import { ProbeInfo, probeFields, probeFile } from './mediaProbe';
 import { Produced, addCausal, applyRestage, producedFields } from './mediaRecordFields';
 import { PendingCreate, PendingEntry, dropPending, loadPending, notePendingError, queueCreate, queueRestage } from './mediaPending';
 import { applyPublished } from './publishStep';
+import { applyMetrics, type Metrics } from './contentMetrics';
 
 type Dict = Record<string, unknown>;
 export type AutoStart = 'ask' | 'auto' | 'never';
@@ -272,6 +273,20 @@ export class MediaRecorder {
         if ('down' in c) { return { id: r.id, base, error: c.down }; }
         await this.patch(c, this.langOf(r.lang), r.id, item => { applyPublished(item, r); });
         return { id: r.id, base };
+    }
+
+    /** M-52 — a publish's numbers on its record (applyMetrics, src/core/contentMetrics.ts); answers the record's topic for the performance snapshot. */
+    async metrics(r: { id: string; base?: string; lang?: string; metrics: Metrics }): Promise<{ id: string; base: string; topic?: string; error?: string }> {
+        const base = this.baseOf(r.base);
+        const c = await this.ready(base, 'never');
+        if ('down' in c) { return { id: r.id, base, error: c.down }; }
+        let topic = '';
+        await this.patch(c, this.langOf(r.lang), r.id, item => {
+            applyMetrics(item, r.metrics);
+            const p = item.publishing && typeof item.publishing === 'object' ? item.publishing as Record<string, unknown> : {};
+            topic = [item.topic, item.subtopic, p.pub_tags].filter(x => typeof x === 'string' && x).join(' ');
+        });
+        return { id: r.id, base, ...(topic ? { topic } : {}) };
     }
 
     pending(base?: string): PendingEntry[] {

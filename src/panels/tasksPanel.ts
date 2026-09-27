@@ -36,6 +36,7 @@ import { economyCell, economyShort, RunEconomy, runEconomy } from '../core/judge
 import { candidatesRefusal } from '../core/mediaCandidates';
 import { BROWSER_RECIPES, browserRecipe } from '../core/browserRecipes';
 import { publishRefusal, type PublishSpec } from '../core/publishStep';
+import { metricsRefusal, type MetricsSpec } from '../core/contentMetrics';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -1112,10 +1113,10 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
  * next to the manager, exactly like the schedule and trigger seeds above — the
  * page never learns the model's shape and the model never learns the form's.
  */
-const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool', 'publish'];
+const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool', 'publish', 'metrics'];
 
 function stepSeed(s: WorkflowStep): Record<string, unknown> {
-    const stype = s.tool ? 'tool' : s.publish ? 'publish' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
+    const stype = s.tool ? 'tool' : s.publish ? 'publish' : s.metrics ? 'metrics' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
         : s.approval ? 'approval' : s.select ? 'select' : s.checkpoint ? 'checkpoint' : 'agent';
     const hdr = Object.entries(s.webhook?.headers ?? {})[0];
     const scene = s.media?.projectId
@@ -1187,6 +1188,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         bDownloadDir: s.browser?.downloadDir ?? '',
         puPlatform: s.publish?.platform ?? '', puEntry: s.publish?.entry ?? '', puUrl: s.publish?.url ?? '', puBody: s.publish?.body ?? '',
         puApproval: s.publish?.approval ?? '', puSchedule: s.publish?.schedule ?? '', puConnection: s.publish?.connection ?? '',
+        mtUrl: s.metrics?.url ?? '', mtPlatform: s.metrics?.platform ?? '', mtDays: s.metrics?.days ? String(s.metrics.days) : '', mtFields: (s.metrics?.fields ?? []).join(', '),
         apMsg: s.approval?.message ?? '',
         toolJson: s.tool ? JSON.stringify(s.tool) : '',
         selMsg: s.select?.message ?? '',
@@ -1327,6 +1329,14 @@ export function stepFromDraft(
         const no = publishRefusal(publish);
         if (no) { return { error: `Step ${n} ("${title}"): ${no}.` }; }
         return { step: { ...named('publish'), title, ...chain, publish: JSON.parse(JSON.stringify(publish)) as PublishSpec } };
+    }
+    if (stype === 'metrics') {
+        const fields = str('mtFields').split(/[\s,]+/).filter(Boolean);
+        const days = Number(str('mtDays'));
+        const metrics: MetricsSpec = { url: str('mtUrl'), ...(str('mtPlatform') ? { platform: str('mtPlatform') } : {}), ...(days ? { days } : {}), ...(fields.length ? { fields } : {}) };
+        const no = metricsRefusal(metrics);
+        if (no) { return { error: `Step ${n} ("${title}"): ${no}.` }; }
+        return { step: { ...named('metrics'), title, ...chain, metrics } };
     }
     if (stype === 'tool') {
         const t = toolStepFromJson(str('toolJson'));

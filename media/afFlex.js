@@ -365,6 +365,15 @@
             id: 'publish.connection', label: 'Publish — connection', type: 'enum', default: 'webhook', options: ['webhook'], remembered: false,
             levels: { step: { surface: 'media/afPublish.js#st-puConnection', bridge: 'workflows.add:steps.publish.connection' } }
         },
+        // M-52 — analytics feedback: a metrics step pulls the published content's numbers; how often is the workflow's schedule (src/core/contentMetrics.ts, media/afMetrics.js)
+        {
+            id: 'metrics.fields', label: 'Metrics — which numbers', type: 'list', default: ['views', 'watchSeconds', 'engagement'], remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.metricsFields', bridge: 'settings.set:agentFarm.metricsFields' },
+                step: { surface: 'media/afMetrics.js#st-mtFields', bridge: 'workflows.add:steps.metrics.fields' }
+            }
+        },
+        setting('performance.brief', 'Similar content performance in briefs', 'boolean', true, 'agentFarm.performanceBrief'),
         // M-54 — the browser recipe book: a recipe runs on Agent Farm's own Playwright profile and files its downloads (src/core/browserRecipes.ts)
         {
             id: 'browser.recipe', label: 'Browser step — recipe', type: 'text', default: '', remembered: false,

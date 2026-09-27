@@ -123,11 +123,11 @@ const weeklyRhythm: ContentRecipe = {
         steps: [
             {
                 id: 'idea', role: 'fikir', title: 'Haftanın fikri', outputContract: 'json',
-                prompt: 'Bu haftanın videosu için tek bir fikir seç. Kanal: {input.channel}\nTakvim dosyası: {input.calendar}\nTakvim verildiyse önce ondan bu haftaya düşen ve henüz üretilmemiş satırı al; verilmediyse kanala uygun bir fikir öner.\n\nYalnızca şu biçimde JSON döndür:\n{"title": "videonun başlığı", "hook": "ilk üç saniyenin kancası", "angle": "ne anlatıyor, kime", "calendarRow": "takvimdeki satır ya da boş"}'
+                prompt: 'Bu haftanın videosu için tek bir fikir seç. Kanal: {input.channel}\nTakvim dosyası: {input.calendar}\nTakvim verildiyse önce ondan bu haftaya düşen ve henüz üretilmemiş satırı al; verilmediyse kanala uygun bir fikir öner.\n\n{performance}\n\nYalnızca şu biçimde JSON döndür:\n{"title": "videonun başlığı", "hook": "ilk üç saniyenin kancası", "angle": "ne anlatıyor, kime", "calendarRow": "takvimdeki satır ya da boş"}'
             },
             {
                 id: 'script', role: 'senarist', title: 'Senaryo', outputContract: 'json',
-                prompt: 'Şu fikir için {input.shots} sahnelik kısa bir video senaryosu yaz; her sahne 5 saniye.\nBaşlık: {steps.idea.json.title}\nKanca: {steps.idea.json.hook}\nAçı: {steps.idea.json.angle}\n\nYalnızca şu biçimde JSON döndür:\n{"title": "başlık", "shots": [{"prompt": "İngilizce, sinematik, tek paragraf, somut bir görüntü üretim komutu", "caption": "sahnenin ekran yazısı"}]}',
+                prompt: 'Şu fikir için {input.shots} sahnelik kısa bir video senaryosu yaz; her sahne 5 saniye.\nBaşlık: {steps.idea.json.title}\nKanca: {steps.idea.json.hook}\nAçı: {steps.idea.json.angle}\n\n{performance}\n\nYalnızca şu biçimde JSON döndür:\n{"title": "başlık", "shots": [{"prompt": "İngilizce, sinematik, tek paragraf, somut bir görüntü üretim komutu", "caption": "sahnenin ekran yazısı"}]}',
                 verify: { criteria: 'The JSON has a shots list of exactly {input.shots} items, each with a concrete English visual prompt.', retries: 1 }
             },
             {

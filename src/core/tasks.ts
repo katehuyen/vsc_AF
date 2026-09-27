@@ -24,6 +24,7 @@ import { browserMcpArgs, browserRecipeRefusal, buildRecipePrompt, planBrowser, p
 import { type BrowserRun, fileBrowserDownloads } from './browserDownloads';
 import { profileInUse } from './browserLogin';
 import { buildPublishPayload, calendarPatchOf, planPublish, readPublishResult, type PublishSpec } from './publishStep';
+import { planMetrics, pullMetrics, type Metrics, type MetricsSpec } from './contentMetrics';
 import { findEntry, readCalendar, updateEntry } from './contentCalendar';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
@@ -1226,6 +1227,8 @@ export interface WorkflowStep extends RunDimensions {
     tool?: ToolStepSpec;
     /** M-51 — publish to one platform through a connection, the calendar note and the record updated (src/core/publishStep.ts) */
     publish?: PublishSpec;
+    /** M-52 — the published content's numbers pulled through a connection, onto the records and the performance snapshot (src/core/contentMetrics.ts) */
+    metrics?: MetricsSpec;
     /** X-418 — where this step's files are filed and recorded, over the workflow's (src/core/runLibrarySpec.ts) */
     library?: StepLibrarySpec;
     webhook?: {
@@ -2091,6 +2094,14 @@ export interface TaskManagerOptions {
     contentCalendarDir?: () => string;
     /** M-51 — a publish's result on its media record; answers one line for the step's archive */
     recordPublished?: (r: { id: string; platform: string; status: string; url?: string; at: string }) => Promise<string>;
+    /** M-52 — Farm Settings' metricsFields; a step's own wins */
+    metricsFields?: () => string[];
+    /** M-52 — a publish's numbers on its media record; answers one line for the archive and the record's topic */
+    recordMetrics?: (id: string, m: Metrics) => Promise<{ line: string; topic?: string }>;
+    /** M-52 — where the performance snapshot lives */
+    performanceFile?: () => string;
+    /** M-52 — the "how similar published content performed" block for a query; '' = none or turned off */
+    performance?: (query: string) => string;
     /**
      * Wave B — visual selection gate. Resolve with the chosen asset URLs (the
      * subset kept), or null to cancel (the step's onFail policy applies).
@@ -6762,7 +6773,12 @@ export class TaskManager implements vscode.Disposable {
         });
         // M-39 — any earlier step, by its stable id; M-38 — the inputs last, so a value a run
         // was given is never re-read as a placeholder
-        const filled = fillInputs(fillBoard(out, handoff.board), handoff.inputs);
+        let filled = fillInputs(fillBoard(out, handoff.board), handoff.inputs);
+        // M-52 — last, so a title in the block is never re-read as a placeholder; the run's inputs and the previous text are the query
+        if (filled.includes('{performance}')) {
+            const query = [...Object.values(handoff.inputs ?? {}), (handoff.text ?? '').slice(0, 600)].join(' ');
+            filled = filled.split('{performance}').join(this.opts.performance?.(query) ?? '');
+        }
         return handoff.branch ? FE.fillItem(filled, handoff.branch.item, handoff.branch.index) : filled;
     }
 
@@ -6849,6 +6865,10 @@ export class TaskManager implements vscode.Disposable {
 
         if (step.publish) {
             void this.runPublishStep(w, index, handoff, runId);
+            return;
+        }
+        if (step.metrics) {
+            void this.runMetricsStep(w, index, handoff, runId);
             return;
         }
         if (step.webhook) {
@@ -7074,6 +7094,32 @@ export class TaskManager implements vscode.Disposable {
                 .catch(e => `Record not updated — ${String(e)}`));
         }
         done(true, { ...result, status: patch.status, platform: pub.platform, payload });
+    }
+
+    /** M-52 — the calendar's published notes measured through the connection (src/core/contentMetrics.ts). */
+    private async runMetricsStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const spec = w.steps[index].metrics!;
+        const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
+        const plan = planMetrics(spec, this.opts.metricsFields?.());
+        const task = this.stepTask(w, index, runId, 'metrics', { prompt: `metrics ← ${spec.platform || 'every platform'}`, status: 'running' }, handoff);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+        const calDir = this.opts.contentCalendarDir?.();
+        const r = await pullMetrics({
+            spec, url: resolve(spec.url), fields: plan.fields, days: plan.days, entries: calDir ? readCalendar(calDir) : [], now: Date.now(), runId, workflowTitle: w.title,
+            post: async (url, body) => {
+                const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+                return { ok: res.ok, status: res.status, text: (await res.text()).slice(0, 200_000) };
+            },
+            record: this.opts.recordMetrics, snapshotFile: this.opts.performanceFile?.()
+        }).catch(e => ({ ok: false, lines: [String(e)], body: {} }));
+        try {
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Metrics: ${spec.platform || 'every platform'}\n${[...plan.why, ...r.lines].map(l => `- ${l}\n`).join('')}\n---\n\n${JSON.stringify(r.body, null, 2)}\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · ${r.ok ? 'OK' : 'FAILED'}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        this.finish(task, r.ok ? 'done' : 'failed');
     }
 
     /** M-49 — a local ffmpeg recipe, no model: the result (outputs, runs, duration) is the step's JSON on the board. */
@@ -7583,7 +7629,8 @@ export class TaskManager implements vscode.Disposable {
         let out = shut ? { mechanical: shut, log: [`mechanical — ${shut}`], directives: [...own, ...sup.directives], decision: undefined } : await superviseCheckpoint({
             workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: wake || index > 0 ? before : undefined,
             costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
-            directives: [...own, ...sup.directives], stepIds: ids, limits
+            directives: [...own, ...sup.directives], stepIds: ids, limits,
+            performance: this.opts.performance?.([w.title, w.goal ?? '', ...Object.values(rec?.inputs ?? {})].join(' '))
         }, { stepIds: ids, currentStep: before, retries: sup.retries, history: sup.history }, {
             ask, pick: this.opts.askChoice ? (q, o) => this.opts.askChoice!(q, o, { runId, workflowTitle: w.title }) : undefined,
             confirm: this.opts.confirmApproval ? (title, message) => this.opts.confirmApproval!({ title, message }) : undefined

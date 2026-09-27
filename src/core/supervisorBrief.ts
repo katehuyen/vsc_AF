@@ -25,6 +25,8 @@ export interface BriefInput {
     directives?: string[];
     stepIds: readonly string[];
     limits: DecisionLimits;
+    /** M-52 — how similar published content performed (src/core/contentMetrics.ts); '' = none */
+    performance?: string;
 }
 
 export const BRIEF_STEP_CHARS = 300;
@@ -60,6 +62,7 @@ export function buildBrief(b: BriefInput): string {
     if (b.criteria?.length) { out.push('## Success criteria', ...b.criteria.map(c => `- ${c}`)); }
     const ins = Object.entries(b.inputs ?? {});
     if (ins.length) { out.push('## Inputs', ...ins.map(([k, v]) => `- ${k}: ${cut(v, 200)}`)); }
+    if (b.performance?.trim()) { out.push(b.performance.trim()); }
     const steps = Object.values(b.board?.steps ?? {}).sort((x, y) => x.index - y.index);
     out.push('## Steps so far', ...(steps.length ? steps.map(s =>
         `- ${s.id} "${s.title}": ${s.status}${s.verdict ? ` · verdict ${s.verdict}` : ''}${s.costUSD ? ` · $${s.costUSD.toFixed(2)}` : ''}`

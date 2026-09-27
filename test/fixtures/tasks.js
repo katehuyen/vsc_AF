@@ -1037,6 +1037,21 @@ const variants = () => ([
             });
         }
     },
+    // M-52 — a metrics step: platform, the window in days, which numbers, the n8n webhook.
+    {
+        id: 'tasks-wf-metrics',
+        label: 'Tasks → a workflow\'s metrics step: every platform, the last 14 days, views + engagement, the n8n webhook from Secrets (M-52)',
+        data: (() => { const d = data(); d.publishPlatforms = ['youtube', 'instagram', 'tiktok']; return d; })(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w15', title: 'Haftalık metrikler', stepIdx: 0,
+                    steps: [{ sid: 's1', stype: 'metrics', title: 'Metrikleri çek', mtUrl: '{secret:N8N_METRICS_URL}', mtPlatform: '', mtDays: '14', mtFields: 'views, engagement' }]
+                }
+            });
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',

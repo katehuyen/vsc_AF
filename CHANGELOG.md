@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.720.0 - Analytics feedback: the metrics step and {performance} (M-52) (2026-09-27)
+
+- A new step type, metrics: the content calendar's published notes go to a
+  connection (a webhook — your n8n flow reads the platforms' analytics) and
+  the numbers it answers (views, average watch time, completion, likes,
+  comments, shares, saves, engagement) land on each media record's analytics
+  fields and marketing.engagement_rate, and on a local performance snapshot.
+  Schedule the workflow to pull on a rhythm.
+- "How similar published content performed" reaches the briefs: a step
+  prompt's {performance} placeholder (the content recipe's idea and script
+  steps ask for it) and the workflow supervisor's brief. Farm Settings
+  metricsFields picks the numbers, performanceBrief turns it off. Bridge:
+  performance.summary.
+
 ## 3.719.0 - The content calendar and the publish step (M-51) (2026-09-27)
 
 - The content calendar lives in the vault: one note per publish in the Full

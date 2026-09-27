@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.719.0",
+  "version": "3.720.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9636,6 +9636,33 @@
             "tiktok"
           ],
           "markdownDescription": "M-51 — the platforms a publish step offers, in your order of priority (the first is the step card's default)."
+        },
+        "agentFarm.metricsFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "views",
+              "watchSeconds",
+              "completion",
+              "likes",
+              "comments",
+              "shares",
+              "saves",
+              "engagement"
+            ]
+          },
+          "default": [
+            "views",
+            "watchSeconds",
+            "engagement"
+          ],
+          "markdownDescription": "M-52 — which numbers a metrics step asks your n8n flow for and the briefs show. Whatever the flow answers still lands on the media record. A step's own list wins."
+        },
+        "agentFarm.performanceBrief": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "M-52 — put \"how similar published content performed\" into the briefs: the `{performance}` placeholder of an idea or script step, and the workflow supervisor's brief. Off = both stay empty. The numbers come from the metrics step's last pull."
         },
         "agentFarm.contentCalendarDir": {
           "type": "string",
