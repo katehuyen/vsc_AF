@@ -5571,10 +5571,10 @@ export class TaskManager implements vscode.Disposable {
     }
 
     private async verifyThenAdvance(task: FarmTask, w: FarmWorkflow, step: WorkflowStep): Promise<void> {
-        const agent = this.getAgents().find(a => a.id === task.agentId);
         const body = archivedOutputBody(fs.readFileSync(task.outputFile as string, 'utf8'));
         const attempt = task.attempt ?? 0;
-        const judged = await this.climbJudge(task, step, sj => this.runJudge(agent?.dir ?? process.cwd(), step.verify!.criteria, body, sj));
+        // A-27 — judged where no agent's CLAUDE.md is loaded: in the agent's folder a haiku check (measured) cost more than the step it judged
+        const judged = await this.climbJudge(task, step, sj => this.runJudge(this.outputsDir, step.verify!.criteria, body, sj));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Verify', judged.judge);
             return;

@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.714.0 - A text check no longer loads the agent's context (A-27) (2026-09-27)
+
+- A workflow step's text check ran in the step agent's folder, so every
+  judge call loaded that agent's instructions: measured, a haiku check cost
+  $0.034 against the $0.024 step it judged. It now runs in the task-outputs
+  folder, like the vision check and the supervisor.
+
 ## 3.713.0 - A check's own cost reaches the run (A-27) (2026-09-27)
 
 - **Judge spend counted**: a workflow step's quality check (text and
