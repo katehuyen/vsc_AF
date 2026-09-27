@@ -1009,6 +1009,42 @@ const variants = () => ([
             });
         }
     },
+    // M-50 — a step card reading Kanal A's kit: one character, the empty boxes faint with the kit's values, the step's own style typed.
+    {
+        id: 'tasks-wf-brand-step',
+        label: 'Tasks → a workflow step reading Kanal A\'s brand kit: the empty boxes show the kit faint, its own style "noir" typed, one character (M-50)',
+        data: Object.assign(data(), {
+            scenes: [{ id: 'kanal-a', label: 'Kanal A — the whole production' }],
+            brandKits: { 'kanal-a': { style: 'sıcak pastel, 35mm', negative: 'metin, filigran', voice: 'tr-TR-Ahmet', aspect: '9:16', logo: 'keep',
+                character: { ana: { name: 'Ada', ref: 'D:/brand/ada.png', desc: 'kızıl saçlı, sarı yağmurluk' } } } }
+        }),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w16', title: 'Klip', stepIdx: 0, goal: '', criteria: '', production: 'kanal-a',
+                    steps: [{ sid: 's1', stype: 'agent', title: 'Görsel istemi', agent: 'developer', smode: 'headless',
+                        prompt: '{brand.character.ana.name}: {brand.character.ana.desc} — {brand.style}', brand: { style: 'noir' } }]
+                }
+            });
+        }
+    },
+    // M-50 — the Run card of a workflow whose steps read the brand: this run reads Kanal B instead of the workflow's Kanal A.
+    {
+        id: 'tasks-wf-brand-runcard',
+        label: 'Tasks → Plan → with… on a workflow whose steps read {brand.*}: this run takes Kanal B\'s kit instead of the workflow\'s Kanal A (M-50)',
+        data: Object.assign(data(), {
+            tab: 'plan', plan: [Object.assign(wfWithInputs(), { inputs: [], lastInputs: {}, production: 'kanal-a', usesBrand: true })],
+            workflows: [{ id: 'w9', title: 'Klip kes', steps: 1, inputs: [] }],
+            scenes: [{ id: 'kanal-a', label: 'Kanal A — the whole production' }, { id: 'kanal-b', label: 'Kanal B — the whole production' }]
+        }),
+        act: (r) => {
+            r.query('[data-plan="runwith"][data-kind="workflow"]')[0].click();
+            const el = r.query('[data-af]').find(e => e.dataset.af === 'wi-production');
+            if (!el) { throw new Error('no Brand kit box on the Run card'); }
+            el.value = 'kanal-b'; el.fire('change');
+        }
+    },
     // M-45 — the workflow form's Wake block: ONE condition of the user's own (the smallest arity), then the hybrid preset's three.
     {
         id: 'tasks-wf-wake-one',

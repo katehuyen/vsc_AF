@@ -28,7 +28,7 @@ import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, super
 import { LibrarySpec, libraryFromDraft, libraryRefusal, librarySeed, StepLibrarySpec } from '../core/runLibrarySpec';
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
-import { cleanBrand } from '../core/brandKit';
+import { BrandKit, brandRefs, cleanBrand } from '../core/brandKit';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -186,6 +186,8 @@ export interface TasksDeps {
      * than no picker — the field is simply not drawn.
      */
     scenes?: () => { id: string; label: string }[];
+    /** M-50 — every production's brand kit by its id, for the step card's faint inherited values */
+    brandKits?: () => Record<string, BrandKit>;
     /** live tasks merged with the finished-task archive */
     allRecords(): TaskRecord[];
     /** urgent Needs-You rows (permission waits + browser approvals). */
@@ -247,6 +249,9 @@ interface PlanRow {
     wakeMode?: string;
     /** U-151 — the wake preset the last 'Run with…' chose; the card starts there */
     lastWake?: string;
+    /** M-50 — the production its steps read {brand.*} from, and whether any step reads it */
+    production?: string;
+    usesBrand?: boolean;
     /** U-151 — a schedule whose own retry is supervised, and that supervisor's values ('Run with…' starts there) */
     supervised?: boolean;
     supervisor?: Record<string, unknown>;
@@ -646,6 +651,8 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             id: w.id, kind: 'workflow', title: w.title,
             when: 'when you run it (or a trigger does)',
             inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {}, wakeMode: wakeMode(w.wake), lastWake: w.lastWake ?? '',
+            // M-50 — its production, and whether any step reads {brand.*} (the Run card's box is drawn only then)
+            production: w.production ?? '', usesBrand: brandRefs([w.steps]).length > 0,
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -948,6 +955,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         wakeDict: wakeDictionary(),
         // Production scenes a media step can file its assets under.
         scenes: deps.scenes ? deps.scenes() : [],
+        brandKits: deps.brandKits ? deps.brandKits() : {},
         // ---- what the New-task form offers. One vocabulary with the session
         // launcher (core/launch.ts), so "run it on opus at low effort" means the
         // same thing whether you start a session or queue a task.
@@ -2155,6 +2163,8 @@ export class TasksPanel {
         /** U-151 — a schedule's 'Run with…': this run's supervisor values and the preset under them */
         supervisor?: unknown;
         preset?: string;
+        /** M-50 — a workflow run's own production for {brand.*} */
+        production?: string;
         /** U-151 — '↑ make default' */
         point?: string; level?: string; target?: string; value?: unknown;
     }): Promise<void> {
@@ -2210,7 +2220,11 @@ export class TasksPanel {
                         if (wk.error) { this.say(`Wake: ${wk.error}.`); break; }
                         // U-151 — the next 'Run with…' starts at this run's wake choice (remembered, like its inputs)
                         if (typeof msg.wake === 'string' && msg.wake) { w.lastWake = msg.wake; } else { delete w.lastWake; }
-                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}) } : undefined);
+                        // M-50 — this run's own production for {brand.*}; the box offers only ones that exist
+                        const prod = typeof msg.production === 'string' ? msg.production.trim() : '';
+                        if (prod && !(this.deps.scenes?.() ?? []).some(x => x.id === prod)) { this.say(`Production: no production "${prod}" any more.`); break; }
+                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod
+                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}) } : undefined);
                         break;
                     }
                     // ‼️ A workflow's Edit is the workflow — its name AND its

@@ -173,6 +173,58 @@ const agent = { id: 'a1', name: 'yazar', dir: agentDir };
     const html = AFB.workflowBox({ production: 'kanal-a' }, scenes, C);
     ok('the box shows the current production, with a MIRROR tooltip', /id="nt-wf-production"/.test(html) && /<option value="kanal-a" selected>Kanal A/.test(html) && /title="Kanal A/.test(html));
     ok('a production that is gone stays visible, marked', /⚠ eski/.test(AFB.workflowBox({ production: 'eski' }, scenes, C)));
+    ok('with no productions at all, a line says how to make one — no empty picker', /No productions yet/.test(AFB.workflowBox({}, [], C)) && !/<select/.test(AFB.workflowBox({}, [], C)));
+
+    /* ---------- part 2: this run's own production ---------- */
+    kits['kanal-b'] = { style: 'mürekkep', character: { ana: { ref: 'D:/brand/ada-b.png' } } };
+    const wb = mgr.addWorkflow('Marka B', [step('p', '{brand.character.ana.ref} · {brand.style}')]);
+    wb.production = 'kanal-a';
+    const runB = mgr.runWorkflow(wb, { production: 'kanal-b' });
+    eq('‼️ a run naming its own production reads that kit, not the workflow\'s', (mgr.tasks.find(t => t.workflowId === wb.id) || {}).prompt, 'D:/brand/ada-b.png · mürekkep');
+    eq('…and the run record keeps it across a reload', JSON.parse(fs.readFileSync(path.join(tmp, 'f.json'), 'utf8')).workflowRuns[runB].production, 'kanal-b');
+    ok('workflows.run takes production=, checked like the workflow\'s', /const runProd = productionRef\(agents, args\.production\);/.test(ext) && /production\? \(M-50 — this run only/.test(ext));
+    ok('the page\'s run posts it and the host checks it', /production: wiRun\.production \|\| ''/.test(page) && /const prod = typeof msg\.production === 'string'/.test(panel)
+        && /usesBrand: brandRefs\(\[w\.steps\]\)\.length > 0/.test(panel));
+    ok('workflow.production has a run level: the Run card box', /run: \{ surface: 'media\/afRunWith\.js#wi-production', bridge: 'workflows\.run:production' \}/.test(flex));
+    global.window.AFFlexPromote = undefined;
+    global.window.AFCharts = C;
+    require(path.join(ROOT, 'media/afForm.js'));
+    require(path.join(ROOT, 'media/afRunWith.js'));
+    const RW = global.window.AFRunWith;
+    const two = [{ id: 'kanal-a', label: 'Kanal A — the whole production' }, { id: 'kanal-b', label: 'Kanal B — the whole production' }];
+    const card = RW.workflowCard({ title: 'K', inputs: [], production: 'kanal-a', usesBrand: true }, { values: {}, wake: '', production: 'kanal-b' }, C, null, null, two);
+    ok('the Run card draws Brand kit from, at this run\'s choice, MIRROR first', /data-af="wi-production"/.test(card) && /Kanal B — this run/.test(card) && /the workflow&#39;s — Kanal A|the workflow's — Kanal A/.test(card));
+    ok('‼️ a workflow that reads no brand and names no production gets no box', !/wi-production/.test(RW.workflowCard({ title: 'K', inputs: [] }, { values: {}, wake: '' }, C, null, null, two)));
+    const rr = { values: {}, wake: '' };
+    RW.apply({ inputs: [] }, rr, { 'wi-production': 'kanal-b' });
+    eq('the box writes the run draft', rr.production, 'kanal-b');
+
+    /* ---------- part 2: the step card, field by field ---------- */
+    const kitsA = { 'kanal-a': KIT };
+    const wfc = { production: 'kanal-a' };
+    const st = { stype: 'agent', prompt: '{brand.style}', brand: { style: 'noir' } };
+    const row = AFB.stepRow(st, wfc, kitsA, scenes, C);
+    ok('the step card shows the kit faint and its own value typed', /id="nt-st-brand-style" value="noir"/.test(row) && /id="nt-st-brand-voice" value="" placeholder="tr-TR-Ahmet"/.test(row));
+    ok('…each box says its value and where it came from first (MIRROR)', /title="noir — this step/.test(row) && /title="tr-TR-Ahmet — production Kanal A/.test(row));
+    ok('…the kit\'s character, field by field', /id="nt-st-brand-character-ana-ref" value="" placeholder="D:\/brand\/ada.png"/.test(row));
+    ok('…and the summary counts its own fields, open when it has some', /Kanal A&#39;s kit · 1 field\(s\) of its own|Kanal A's kit · 1 field\(s\) of its own/.test(row) && /<details class="ntbrand" open>/.test(row));
+    eq('a media step tied to its own production reads that one on the card', AFB.stepProduction({ stype: 'media', mScene: 'kanal-b/s01' }, wfc), 'kanal-b');
+    ok('‼️ nothing is drawn where the brand cannot apply: an approval step, or no production and no {brand.*}',
+        AFB.stepRow({ stype: 'approval' }, wfc, kitsA, scenes, C) === '' && AFB.stepRow({ stype: 'agent', prompt: 'x' }, {}, kitsA, scenes, C) === '');
+    const h = {};
+    const byId = (id, ev, fn) => { h[id + ':' + ev] = fn; };
+    const s2 = { stype: 'agent', brand: { style: 'noir' } };
+    AFB.wireStep(byId, () => s2, kitsA, () => wfc);
+    h['nt-st-brand-voice:input']({ target: { value: ' tr-TR-Emel ' } });
+    h['nt-st-brand-character-ana-ref:input']({ target: { value: 'D:/x.png' } });
+    h['nt-st-brand-logo:change']({ target: { value: 'remove' } });
+    eq('typing sets the step\'s own fields', s2.brand, { style: 'noir', voice: 'tr-TR-Emel', character: { ana: { ref: 'D:/x.png' } }, logo: 'remove' });
+    ['nt-st-brand-style:input', 'nt-st-brand-voice:input', 'nt-st-brand-character-ana-ref:input'].forEach(k => h[k]({ target: { value: '' } }));
+    h['nt-st-brand-logo:change']({ target: { value: '' } });
+    eq('‼️ emptying every box leaves no brand of its own (it inherits again)', s2.brand, undefined);
+    ok('the step card draws and wires the block', /window\.AFBrand\.stepRow\(s, c, DATA\.brandKits, DATA\.scenes, C\)/.test(page) && /window\.AFBrand\.wireStep\(byId, \(\) => composer\.step, DATA\.brandKits, \(\) => composer\)/.test(page));
+    ok('every step box is a flex point', AFB.ST_IDS.every(id => flex.indexOf("'media/afBrand.js#st-brand-' + field") >= 0 && new RegExp("brandPoint\\('" + id.slice(9) + "'").test(flex)));
+    ok('the host hands the page every kit', /brandKits: deps\.brandKits \? deps\.brandKits\(\) : \{\}/.test(panel) && /brandKits: \(\) => Object\.fromEntries\(discoverProductions\(agents\)/.test(ext));
 
     fs.rmSync(tmp, { recursive: true, force: true });
     console.log(`\ntest_brand_kit.js: ${pass} passed, ${fail} failed`);

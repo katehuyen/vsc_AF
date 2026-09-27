@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.703.0 - The brand kit on the step card and on Run with… (M-50, part 2) (2026-09-27)
+
+- **A step card shows the kit it reads, field by field.** Every empty box
+  shows the production's value faint; type into one and that field is this
+  step's own. Characters too — name, reference and description each. The
+  tooltip says the value and where it came from.
+- **Run with… can take another production's kit for one run** — the box is
+  there only when a step reads `{brand.*}` or the workflow names a
+  production. Bridge: `workflows.run production=`.
+
 ## 3.702.0 - A production's brand kit, read by every step (M-50, part 1) (2026-09-27)
 
 - **`production.json` carries a brand kit** — style, negative prompt, colours,

@@ -858,7 +858,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             </td>
         </tr>${wiRun && wiRun.id === p.id && (wiRun.kind || 'workflow') === p.kind && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
             ${p.kind === 'schedule' ? window.AFRunWith.scheduleCard(p, wiRun, C, (DATA.launch || {}).runPresets)
-                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict)}
+                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict, DATA.scenes)}
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
 
@@ -2481,6 +2481,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
             </div>
             ${s.stype === 'checkpoint' ? '' : forEachRow(s)}
+            ${window.AFBrand ? window.AFBrand.stepRow(s, c, DATA.brandKits, DATA.scenes, C) : ''}
             ${s.stype !== 'checkpoint' && window.AFWake ? window.AFWake.stepRow(s, c.wake, DATA.wakeDict, C, stepPromote(c)) : ''}
             ${wantsVerify ? `<div class="ntgrid">
                 ${textF('st-verifyCriteria', s.stype === 'media' ? 'Vision QA criteria' : 'Verify the output',
@@ -4407,7 +4408,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 onSubmit: () => {
                     post(wiRun.kind === 'schedule'
                         ? { type: 'plan', act: 'runwith', kind: 'schedule', id: wiRun.id, supervisor: window.AFWorkflowInputs.given(wiRun.sup), preset: wiRun.preset || '' }
-                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '' });
+                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '' });
                     wiRun = null;
                     render();
                 },
@@ -4831,6 +4832,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 if (window.AFLibrary) { window.AFLibrary.wire(byId, readStep, window.AFFlexPromote ? render : null, () => composer.step); }
                 if (window.AFTool && composer.step && composer.step.stype === 'tool') { window.AFTool.wire(byId, readStep, render, composer.step); }
                 if (window.AFWake && composer.step) { window.AFWake.wireStep(byId, () => composer.step, DATA.wakeDict, render); }
+                if (window.AFBrand && composer.step) { window.AFBrand.wireStep(byId, () => composer.step, DATA.brandKits, () => composer); }
             }
         }
 

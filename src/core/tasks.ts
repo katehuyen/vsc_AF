@@ -1655,6 +1655,8 @@ export interface WorkflowRunOpts {
     inputSource?: 'run' | 'trigger';
     /** M-45 — this run's own wake conditions, above the workflow's and its steps' */
     wake?: WakeSpec;
+    /** M-50 — this run's production for {brand.*}, above the workflow's and a media step's own */
+    production?: string;
 }
 
 interface WorkflowRunRecord {
@@ -1687,6 +1689,8 @@ interface WorkflowRunRecord {
     supervisor?: SupervisorState;
     /** M-45 — the wake conditions the run was started with */
     wake?: WakeSpec;
+    /** M-50 — the production the run was started with, for {brand.*} */
+    production?: string;
     /** M-46 — what a person set while it ran: words for its supervisor, live settings (src/core/workflowLive.ts) */
     live?: RunLive;
     /** M-46 — the finished step's row the run is held after, when it was paused at a boundary */
@@ -6350,7 +6354,8 @@ export class TaskManager implements vscode.Disposable {
                 ? (opts.projectId ?? null)
                 : (this.opts.activeProjectId?.() ?? null),
             ...(Object.keys(given.values).length ? { inputs: given.values } : {}),
-            ...(opts?.wake ? { wake: opts.wake } : {})
+            ...(opts?.wake ? { wake: opts.wake } : {}),
+            ...(opts?.production ? { production: opts.production } : {})
         });
         this.lib?.prepare(w);
         return runId;
@@ -6564,8 +6569,8 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** M-50 — the kit a step fills {brand.*} from: its production's, its own fields over it. */
-    private stepBrand(w: FarmWorkflow, step: WorkflowStep): BrandKit | undefined {
-        const id = brandProductionFor(w, step);
+    private stepBrand(w: FarmWorkflow, step: WorkflowStep, runId: string): BrandKit | undefined {
+        const id = brandProductionFor(w, step, this.runRecords.get(runId));
         const base = id ? this.opts.productionBrand?.(id) : undefined;
         return base || step.brand ? resolveBrand(base, step.brand, id).kit : undefined;
     }
@@ -6659,7 +6664,7 @@ export class TaskManager implements vscode.Disposable {
         const step = w.steps[index];
         this.handoffs.set(runId, handoff);
         // M-50 — a copy per step: a parallel group shares one handoff, and each member may read another kit
-        const brand = this.stepBrand(w, step);
+        const brand = this.stepBrand(w, step, runId);
         if (brand || handoff.brand) { handoff = { ...handoff, brand }; }
 
         if (step.webhook) {

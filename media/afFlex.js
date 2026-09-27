@@ -139,6 +139,14 @@
         return Object.assign({ id: 'library.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, extra || {});
     }
 
+    /** M-50 — a step's own brand kit field, laid over its production's kit (src/core/brandKit.ts). */
+    function brandPoint(field, label, extra) {
+        return Object.assign({
+            id: 'brand.' + field, label: 'Brand — ' + label, type: 'text', default: '', remembered: false,
+            levels: { step: { surface: 'media/afBrand.js#st-brand-' + field, bridge: 'workflows.add:steps.brand.' + field } }
+        }, extra || {});
+    }
+
     /** X-420 — airtable.input.*: the Farm setting, then the input's own search line on the workflow form. */
     function aqPoint(field, label, type, dflt, key, extra) {
         return Object.assign({
@@ -300,9 +308,14 @@
             id: 'workflow.production', label: 'Brand kit from (production)', type: 'text', default: '', remembered: false,
             levels: {
                 workflow: { surface: 'media/afBrand.js#wf-production', bridge: 'workflows.add:production' },
-                step: { surface: 'media/tasksPage.js#st-mScene', bridge: 'workflows.add:steps.media.projectId' }
+                step: { surface: 'media/tasksPage.js#st-mScene', bridge: 'workflows.add:steps.media.projectId' },
+                run: { surface: 'media/afRunWith.js#wi-production', bridge: 'workflows.run:production' }
             }
         },
+        brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),
+        brandPoint('typography', 'typography'), brandPoint('voice', 'voice id'), brandPoint('aspect', 'aspect'),
+        brandPoint('duration', 'duration'), brandPoint('logo', 'logo rule'), brandPoint('logoPlace', 'logo placement'),
+        brandPoint('character', 'a character (name, reference, description)'),
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
         {
             id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,
