@@ -61,6 +61,7 @@ export function showFlexValue(p: FlexPoint, v: unknown): string {
         return state ? `${state} (${String(v)})` : String(v);
     }
     if (typeof v === 'string') { return v === '' ? '(empty)' : v; }
+    if (p.type === 'list' && Array.isArray(v)) { return v.length === 1 ? '1 entry' : `${v.length} entries`; }
     if (v !== null && typeof v === 'object') {
         const j = JSON.stringify(v);
         return j.length > 60 ? j.slice(0, 59) + '…' : j;

@@ -35,6 +35,10 @@
 
 /** The settings this reads, by their contributed names — one source for the
  *  manifest, the category mapping and the reader. */
+import {
+    AUTO_ANSWER_DEFAULT_WORDS, AutoAnswerFilter, normalizeFilter, normalizeWords, stopWord
+} from './autoAnswerFilter';
+
 export const AUTO_ANSWER_ENABLED_KEY = 'agentFarm.console.autoAnswer.enabled';
 export const AUTO_ANSWER_TIMEOUT_KEY = 'agentFarm.console.autoAnswer.timeoutSeconds';
 
@@ -52,6 +56,10 @@ export const AUTO_ANSWER_MAX_SECONDS = 7200;
 export interface AutoAnswerSettings {
     enabled: boolean;
     timeoutSeconds: number;
+    /** K-45 — how much of a question the word list reads; `off` = nothing stops the clock */
+    filter: AutoAnswerFilter;
+    /** K-45 — the user's word list */
+    words: string[];
 }
 
 /**
@@ -62,7 +70,7 @@ export interface AutoAnswerSettings {
  * becomes no wait at all.
  */
 export function autoAnswerSettings(raw: {
-    enabled?: unknown; timeoutSeconds?: unknown;
+    enabled?: unknown; timeoutSeconds?: unknown; filter?: unknown; words?: unknown;
 } | undefined): AutoAnswerSettings {
     const n = Number(raw?.timeoutSeconds);
     const seconds = Number.isFinite(n) && n > 0
@@ -72,7 +80,9 @@ export function autoAnswerSettings(raw: {
         // Only an explicit `false` turns it off: an absent setting is the
         // default, and the default is on.
         enabled: raw?.enabled !== false,
-        timeoutSeconds: seconds
+        timeoutSeconds: seconds,
+        filter: normalizeFilter(raw?.filter),
+        words: normalizeWords(raw?.words)
     };
 }
 
@@ -111,46 +121,15 @@ export function recommendedOption(q: AutoAnswerQuestion | undefined): string | n
 }
 
 /**
- * ‼️ THE VOCABULARY THAT STOPS THE CLOCK. Deliberately read over the question,
- * the headers, every option label AND every description — a label reading
- * "Yes" is safe until the description under it says "deletes the branch".
- *
- * English and Turkish, because the fleet asks in both. This list is a filter,
- * not a judgement: a false positive costs a question that waits for a person,
- * which is the outcome the feature is allowed to fall back to. A false negative
- * costs an unattended machine doing something irreversible, which it is not.
+ * The word that makes this question a person's to answer, or `null` — returned so
+ * the card can SAY which word stopped it. K-45: the list and how much of the
+ * question is read are the user's settings (`autoAnswerFilter.ts`); by default
+ * only the question and the option the clock would pick are read.
  */
-const DESTRUCTIVE = [
-    /\bdelet(e|es|ing|ion)\b/i, /\bdrop(ping)? (the )?(table|database|schema|index)\b/i,
-    /\bforce[- ]push\b/i, /\bpush --force\b/i, /--force-with-lease/i,
-    /\breset --hard\b/i, /\brm -rf\b/i, /\bwipe[sd]?\b/i, /\bpurge[sd]?\b/i,
-    /\bdestroy(s|ed|ing)?\b/i, /\boverwrit(e|es|ing|ten)\b/i, /\btruncate[sd]?\b/i,
-    /\birreversible\b/i, /\bcannot be undone\b/i, /\bpermanently\b/i, /\brevoke[sd]?\b/i,
-    /\buninstall(s|ed|ing)?\b/i, /\bkill (the )?(process|session|task)\b/i,
-    /\bsil(?:\b|mek|er|in|inir|iniyor|inecek)/i, /\bkaldır(?:\b|mak|ır|ılır|ılacak)/i,
-    /\bgeri alınamaz\b/i, /\bkalıcı olarak\b/i, /\büzerine yaz/i, /\bsıfırla(?:\b|mak|r|nır)/i
-];
-
-/**
- * The word that makes this question a person's to answer, or `null`. Returned
- * rather than a boolean so the card can SAY which word stopped it — a silent
- * refusal to auto-answer looks exactly like the feature being switched off.
- */
-export function destructiveWord(ask: AutoAnswerAsk | undefined): string | null {
-    const haystack: string[] = [String(ask?.detail ?? '')];
-    for (const q of ask?.questions ?? []) {
-        haystack.push(String(q?.question ?? ''), String(q?.header ?? ''));
-        for (const o of q?.options ?? []) {
-            haystack.push(String(o?.label ?? ''), String(o?.description ?? ''));
-        }
-    }
-    for (const text of haystack) {
-        for (const re of DESTRUCTIVE) {
-            const hit = re.exec(text);
-            if (hit) { return hit[0]; }
-        }
-    }
-    return null;
+export function destructiveWord(
+    ask: AutoAnswerAsk | undefined, filter: AutoAnswerFilter = 'all', words: string[] = AUTO_ANSWER_DEFAULT_WORDS
+): string | null {
+    return stopWord(ask, filter, words, q => recommendedOption(q as AutoAnswerQuestion));
 }
 
 /**
@@ -191,18 +170,28 @@ export function autoAnswerFor(
             reason: 'permission'
         };
     }
-    const stopper = destructiveWord(ask);
+    const filter = settings.filter ?? 'recommended';
+    const stopper = destructiveWord(ask, filter, settings.words ?? AUTO_ANSWER_DEFAULT_WORDS);
     if (stopper) {
         return {
             armed: false,
-            why: `waiting for you — this question says "${stopper}", and a choice that may not be `
-                + 'undone is yours to make.',
+            why: `waiting for you — this question says "${stopper}", a word on your list, and a choice that may not be `
+                + `undone is yours to make (question timer filter: ${filter} — Farm Settings).`,
             reason: 'destructive'
         };
     }
     const answers: Record<string, string | string[]> = {};
     for (const q of ask.questions ?? []) {
         const key = String(q?.question ?? '').trim();
+        // K-45 — the strict filter answers only a question that MARKS its recommendation
+        if (filter === 'strict' && !(q?.options ?? []).some(o => RECOMMENDED.test(String(o?.label ?? '')))) {
+            return {
+                armed: false,
+                why: 'waiting for you — the strict question-timer filter answers only a question that marks '
+                    + 'an option "(Recommended)", and this one marks none.',
+                reason: 'nothing-to-pick'
+            };
+        }
         const pick = recommendedOption(q);
         if (!key || !pick) {
             return {

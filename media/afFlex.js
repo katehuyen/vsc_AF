@@ -36,7 +36,7 @@
         builtin: 'built-in', settings: 'Farm Settings', agent: 'agent', project: 'project',
         workflow: 'workflow', step: 'step / checkpoint', run: 'run start', live: 'live (while running)'
     };
-    const TYPES = ['enum', 'number', 'boolean', 'text', 'range', 'tri', 'conditions', 'dimensions'];
+    const TYPES = ['enum', 'number', 'boolean', 'text', 'range', 'tri', 'conditions', 'dimensions', 'list'];
     /** The three states a `tri` point has; `states` maps each to the value it stores. */
     const TRI = ['ask', 'auto', 'never'];
     /** The keys a level entry carries — anything else is a typo nobody reads. */
@@ -181,6 +181,18 @@
         supervisor('minConfidence', 'Supervisor min confidence', 'number', 0.6, 'conf', { min: 0, max: 1 }),
         supervisor('lowConfidence', 'If the supervisor is not sure', 'tri', 'smart', 'fallback',
             { states: { ask: 'park', auto: 'smart', never: 'stop' } }),
+        // K-45 — which questions the Console's timer leaves for a person: the user's, never built in
+        setting('console.autoAnswer.filter', 'Question timer filter', 'enum', 'recommended', 'agentFarm.console.autoAnswer.filter',
+            { options: ['off', 'recommended', 'all', 'strict'] }),
+        setting('console.autoAnswer.words', 'Question timer words', 'list', [
+            'delete', 'deleting', 'deletion', 'drop table', 'drop the table', 'drop database', 'drop schema', 'drop index',
+            'force push', 'force-push', 'push --force', '--force-with-lease', 'reset --hard', 'rm -rf',
+            'wipe', 'purge', 'destroy', 'overwrite', 'overwriting', 'overwritten', 'truncate', 'truncating',
+            'irreversible', 'cannot be undone', 'permanently', 'revoke', 'uninstall',
+            'kill process', 'kill the process', 'kill session', 'kill the session', 'kill task', 'kill the task',
+            '/\\bsil\\b/', 'silmek', 'silme', 'siler', 'silin', 'silecek',
+            'kaldır', 'geri alınamaz', 'kalıcı olarak', 'üzerine yaz', 'sıfırla'
+        ], 'agentFarm.console.autoAnswer.words'),
         setting('judge.args', 'Judge CLI arguments', 'text', '--model claude-haiku-4-5-20251001', 'agentFarm.judgeArgs'),
         setting('workflow.prevTextChars', '{prev_text} length', 'number', 1500, 'agentFarm.workflowPrevTextChars',
             { min: 200, max: 20000 }),
@@ -338,6 +350,7 @@
             case 'range':
                 return !!v && typeof v === 'object' && v.lo !== undefined && v.hi !== undefined;
             case 'conditions': return Array.isArray(v);
+            case 'list': return Array.isArray(v) && v.every(x => typeof x === 'string');
             case 'dimensions': return !!v && typeof v === 'object' && !Array.isArray(v);
             default: return false;
         }

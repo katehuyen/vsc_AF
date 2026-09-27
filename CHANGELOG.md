@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.690.0 - The question timer's filter is yours (K-45, part 1) (2026-09-27)
+
+- **A word in an option the timer would never pick no longer freezes a
+  question.** A night relay stood still for ~3 hours because one option's
+  description said "silinen": the built-in word list read every option,
+  so the clock was never started. The filter is now a setting:
+  `agentFarm.console.autoAnswer.filter` — `recommended` (default: only the
+  question and the option the timer would choose are read), `all` (every
+  option, as before), `strict` (as `all`, and a question that marks no
+  option "(Recommended)" waits too) or `off` (nothing stops the clock; the
+  recommended option is always taken when the time runs out).
+- **The word list is yours:** `agentFarm.console.autoAnswer.words`, edited
+  on Farm Settings ▸ Flow & Content as chips — ✕ removes a word, a click
+  puts it in the box to edit, Enter adds or replaces, ↺ brings back the
+  shipped list. A word matches at the start of a word ("silin" catches
+  "silinen"); `/…/` is a regular expression; an empty list stops nothing.
+- The card says which word stopped the clock, as written in the question,
+  and which filter is in charge.
+
 ## 3.689.0 - A preference for one agent or one project (U-151, part 3a) (2026-09-27)
 
 - **A value can now be set for one agent or one project.** A new setting,

@@ -181,6 +181,7 @@ const CATEGORY_OF: Record<string, string> = {
     notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live',
     // K-43 — what happens to a question nobody is there to answer
     'console.autoAnswer.enabled': 'live', 'console.autoAnswer.timeoutSeconds': 'live',
+    'console.autoAnswer.filter': 'live', 'console.autoAnswer.words': 'live',
     // ‼️ A-18 — beside the notification switches ON PURPOSE, because the two are
     // constantly confused: those open a VS Code notification, these play a
     // sound. Filed apart, "I turned the sound off and a notification still

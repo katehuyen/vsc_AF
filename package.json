@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.689.0",
+  "version": "3.690.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8506,6 +8506,39 @@
           "minimum": 5,
           "maximum": 7200,
           "markdownDescription": "How long a **Console** question waits for you before `#agentFarm.console.autoAnswer.enabled#` chooses the recommended option — in seconds, measured from when the question was asked (reopening the window does not restart it). Default 300 (5 minutes); values outside 5–7200 are clamped. Changing it re-arms questions that are already waiting."
+        },
+        "agentFarm.console.autoAnswer.filter": {
+          "type": "string",
+          "enum": [
+            "off",
+            "recommended",
+            "all",
+            "strict"
+          ],
+          "enumDescriptions": [
+            "No filter: the clock always runs and the recommended option is chosen — fully unattended.",
+            "Read only the question and the option the clock would choose (default): a word in another option's description does not stop it.",
+            "Read the question and every option and description: any listed word anywhere stops the clock.",
+            "As 'all', and a question that marks no option \"(Recommended)\" also waits for you."
+          ],
+          "default": "recommended",
+          "markdownDescription": "Which **Console** questions the timer (`#agentFarm.console.autoAnswer.enabled#`) leaves for you because they carry a word from `#agentFarm.console.autoAnswer.words#`. `recommended` reads only the question and the option it would choose; `off` never stops the clock — the recommended option is always taken when the time runs out."
+        },
+        "agentFarm.console.autoAnswer.words": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "delete", "deleting", "deletion", "drop table", "drop the table", "drop database", "drop schema", "drop index",
+            "force push", "force-push", "push --force", "--force-with-lease", "reset --hard", "rm -rf",
+            "wipe", "purge", "destroy", "overwrite", "overwriting", "overwritten", "truncate", "truncating",
+            "irreversible", "cannot be undone", "permanently", "revoke", "uninstall",
+            "kill process", "kill the process", "kill session", "kill the session", "kill task", "kill the task",
+            "/\\bsil\\b/", "silmek", "silme", "siler", "silin", "silecek",
+            "kaldır", "geri alınamaz", "kalıcı olarak", "üzerine yaz", "sıfırla"
+          ],
+          "markdownDescription": "The words that make a **Console** question wait for you instead of being answered on the timer. Each entry matches at the start of a word, any case (`silin` catches `silinen`); an entry written `/…/` is a regular expression. Add, remove or edit freely — an empty list stops nothing. How much of a question is read: `#agentFarm.console.autoAnswer.filter#`."
         },
         "agentFarm.notifyConsoleTurnEnd": {
           "type": "boolean",

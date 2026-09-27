@@ -10,7 +10,7 @@ import * as path from 'path';
 
 export type FlexLevel = 'builtin' | 'settings' | 'agent' | 'project' | 'workflow' | 'step' | 'run' | 'live';
 
-export type FlexType = 'enum' | 'number' | 'boolean' | 'text' | 'range' | 'tri' | 'conditions' | 'dimensions';
+export type FlexType = 'enum' | 'number' | 'boolean' | 'text' | 'range' | 'tri' | 'conditions' | 'dimensions' | 'list';
 
 export type FlexTriState = 'ask' | 'auto' | 'never';
 

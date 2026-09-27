@@ -538,6 +538,7 @@ import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid, nodeOpencodeIo } from './core/consolehost';
 import { AUTO_ANSWER_ENABLED_KEY, AUTO_ANSWER_TIMEOUT_KEY, autoAnswerSettings } from './core/autoAnswer';
+import { AUTO_ANSWER_FILTER_KEY, AUTO_ANSWER_WORDS_KEY } from './core/autoAnswerFilter';
 import {
     carriedTotals, ConsoleMessage, ConsoleSessionState, contextPercent, ContextSample, contextSample, ConsoleStatus,
     OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
@@ -27234,7 +27235,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // K-43 — read on every arming, so the figure is never a stale copy.
         () => autoAnswerSettings({
             enabled: cfg().get(AUTO_ANSWER_ENABLED_KEY.replace(/^agentFarm\./, '')),
-            timeoutSeconds: cfg().get(AUTO_ANSWER_TIMEOUT_KEY.replace(/^agentFarm\./, ''))
+            timeoutSeconds: cfg().get(AUTO_ANSWER_TIMEOUT_KEY.replace(/^agentFarm\./, '')),
+            // K-45 — how much of a question the word list reads, and the list: the user's
+            filter: cfg().get(AUTO_ANSWER_FILTER_KEY.replace(/^agentFarm\./, '')),
+            words: cfg().get(AUTO_ANSWER_WORDS_KEY.replace(/^agentFarm\./, ''))
         }));
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).

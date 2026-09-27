@@ -23,6 +23,14 @@
         if (p.type === 'boolean') {
             return `<select ${a}>${C.option('true', 'on', { selected: v === true })}${C.option('false', 'off', { selected: v === false })}</select>`;
         }
+        if (p.type === 'list') {
+            // K-45 — a word list: ✕ removes, a click puts the word in the box to edit, Enter adds or replaces
+            const items = Array.isArray(v) ? v : [];
+            return `<div class="flexlist" data-flex-list="${C.esc(p.id)}">` + items.map((w, i) =>
+                `<span class="flexword" data-flex-word="${C.esc(w)}"><span class="flexwordt" data-flex-list-edit="${C.esc(p.id)}" data-i="${i}" title="${C.esc(w + '\n\nClick to edit it in the box.')}">${C.esc(w)}</span>`
+                + `<button type="button" class="flexwordx" data-flex-list-del="${C.esc(p.id)}" data-i="${i}" title="Remove “${C.esc(w)}”">✕</button></span>`).join('')
+                + `<input type="text" class="flexwordadd" data-flex-list-add="${C.esc(p.id)}" placeholder="add a word — Enter · Esc clears"></div>`;
+        }
         if (p.type === 'number') {
             // a text box, so it wears the page's input style; the host checks the range
             const range = p.min !== undefined || p.max !== undefined
@@ -82,7 +90,13 @@
             .flexh { font-size:1em; margin:10px 0 2px; }
             .flexsave { display:flex; gap:6px; align-items:center; }
             .flexsave input { width:220px; }
-            .flexerr { color:var(--vscode-errorForeground); margin:4px 0; }`;
+            .flexerr { color:var(--vscode-errorForeground); margin:4px 0; }
+            .flexlist { display:flex; flex-wrap:wrap; gap:4px; max-width:640px; }
+            .flexword { display:inline-flex; align-items:center; border:1px solid var(--vscode-input-border, rgba(128,128,128,.5)); border-radius:10px; padding:0 2px 0 8px; font-size:11px; }
+            .flexwordt { cursor:pointer; }
+            .flexwordx { background:none; border:none; padding:0 4px; color:inherit; cursor:pointer; opacity:.7; }
+            .flexwordx:hover { opacity:1; }
+            .flexlist .flexwordadd { width:220px; }`;
     }
 
     /** What a box holds, as the point's type; undefined = empty = back to inherited. */
@@ -100,6 +114,25 @@
             const point = el.getAttribute('data-flex-point');
             const value = valueOf(el);
             post(value === undefined ? { type: 'flexReset', point } : { type: 'flexSet', point, value });
+        }));
+        const listOf = id => Array.from(document.querySelectorAll('[data-flex-list="' + id + '"] [data-flex-word]'))
+            .map(x => x.getAttribute('data-flex-word'));
+        document.querySelectorAll('[data-flex-list-del]').forEach(b => b.addEventListener('click', () => {
+            const id = b.getAttribute('data-flex-list-del'), i = Number(b.getAttribute('data-i'));
+            post({ type: 'flexSet', point: id, value: listOf(id).filter((_, k) => k !== i) });
+        }));
+        document.querySelectorAll('[data-flex-list-edit]').forEach(t => t.addEventListener('click', () => {
+            const box = document.querySelector('[data-flex-list-add="' + t.getAttribute('data-flex-list-edit') + '"]');
+            if (!box) { return; }
+            box.value = t.textContent; box.setAttribute('data-edit', t.getAttribute('data-i')); box.focus();
+        }));
+        document.querySelectorAll('[data-flex-list-add]').forEach(box => box.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape') { box.value = ''; box.removeAttribute('data-edit'); return; }
+            if (ev.key !== 'Enter') { return; }
+            const id = box.getAttribute('data-flex-list-add'), word = box.value.trim(), at = box.getAttribute('data-edit');
+            const next = listOf(id);
+            if (at !== null && at !== '') { if (word) { next[Number(at)] = word; } else { next.splice(Number(at), 1); } } else if (word) { next.push(word); } else { return; }
+            post({ type: 'flexSet', point: id, value: next });
         }));
         document.querySelectorAll('[data-flex-reset]').forEach(b => b.addEventListener('click', () =>
             post({ type: 'flexReset', point: b.getAttribute('data-flex-reset') })));
