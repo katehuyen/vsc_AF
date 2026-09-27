@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.718.0",
+  "version": "3.719.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9614,6 +9614,33 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Your notes vault, if you keep one. This is what `${vault}` means in every folder setting below, so the reports, answers and wiki folders can be written once as `${vault}/…` instead of three absolute paths. Empty = there is no vault on this machine, and a setting that asks for `${vault}` is SKIPPED rather than half-built — a path with a variable missing from it would point somewhere nobody meant."
+        },
+        "agentFarm.publishApproval": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "auto",
+            "never"
+          ],
+          "default": "ask",
+          "markdownDescription": "M-51 — before a publish step sends anything: `ask` waits for a yes (default), `auto` publishes without asking, `never` rehearses — it builds and records the payload and sends nothing. A step's own approval wins."
+        },
+        "agentFarm.publishPlatforms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "youtube",
+            "instagram",
+            "tiktok"
+          ],
+          "markdownDescription": "M-51 — the platforms a publish step offers, in your order of priority (the first is the step card's default)."
+        },
+        "agentFarm.contentCalendarDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "M-51 — the content calendar: a vault folder holding one note per publish, in the Full Calendar plugin's frontmatter (title, date, startTime, completed) plus platform, status (planned · producing · ready · published · cancelled), url, record and publishedAt. A publish step updates its note when it ends. Accepts the path variables `${vault}` `${workspace}` `${home}` — see agentFarm.vaultDir. Empty = `${vault}/01_INBOX/02_Calendar/CONTENT`."
         },
         "agentFarm.reportDir": {
           "type": "string",

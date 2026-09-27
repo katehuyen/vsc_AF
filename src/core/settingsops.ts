@@ -262,7 +262,7 @@ const CATEGORY_OF: Record<string, string> = {
     // media pipeline & browser
     mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
     mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',
-    browserAllowHosts: 'media', browserApproval: 'media',
+    browserAllowHosts: 'media', browserApproval: 'media', contentCalendarDir: 'media', publishApproval: 'media', publishPlatforms: 'media',
     // search & semantic
     embeddingsProvider: 'search', embeddingsModel: 'search', embeddingsBaseUrl: 'search',
     embeddingsSecret: 'search', semanticMaxSessions: 'search', searchToolTrailDays: 'search',

@@ -35,6 +35,7 @@ import { ladderOf, ladderRefusal } from '../core/judgeLadder';
 import { economyCell, economyShort, RunEconomy, runEconomy } from '../core/judgeDecision';
 import { candidatesRefusal } from '../core/mediaCandidates';
 import { BROWSER_RECIPES, browserRecipe } from '../core/browserRecipes';
+import { publishRefusal, type PublishSpec } from '../core/publishStep';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -192,6 +193,9 @@ export interface TasksDeps {
      * than no picker — the field is simply not drawn.
      */
     scenes?: () => { id: string; label: string }[];
+    /** M-51 — Farm Settings' publishPlatforms, and the open content calendar notes by name */
+    publishPlatforms?: () => string[];
+    calendarNotes?: () => string[];
     /** M-54 — open Chrome on a recipe's own profile so the user signs in once */
     browserLogin?: (recipe: string, url?: string) => { ok: true; note: string } | { ok: false; error: string };
     /** M-50 — every production's brand kit by its id, for the step card's faint inherited values */
@@ -987,6 +991,9 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         scenes: deps.scenes ? deps.scenes() : [],
         // M-54 — the recipes a browser step can name (src/core/browserRecipes.ts)
         browserRecipes: BROWSER_RECIPES.map(r => ({ id: r.id, label: r.label, url: r.url, hosts: r.hosts, note: r.note })),
+        // M-51 — the publish step's platform list and the open calendar notes it can name
+        publishPlatforms: deps.publishPlatforms ? deps.publishPlatforms() : [],
+        calendarNotes: deps.calendarNotes ? deps.calendarNotes() : [],
         brandKits: deps.brandKits ? deps.brandKits() : {},
         showrunner: deps.showrunner ? deps.showrunner() : 'youtuber',
         // ---- what the New-task form offers. One vocabulary with the session
@@ -1105,10 +1112,10 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
  * next to the manager, exactly like the schedule and trigger seeds above — the
  * page never learns the model's shape and the model never learns the form's.
  */
-const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool'];
+const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool', 'publish'];
 
 function stepSeed(s: WorkflowStep): Record<string, unknown> {
-    const stype = s.tool ? 'tool' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
+    const stype = s.tool ? 'tool' : s.publish ? 'publish' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
         : s.approval ? 'approval' : s.select ? 'select' : s.checkpoint ? 'checkpoint' : 'agent';
     const hdr = Object.entries(s.webhook?.headers ?? {})[0];
     const scene = s.media?.projectId
@@ -1178,6 +1185,8 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         bRecipe: s.browser?.recipe ?? '',
         bConfirm: s.browser?.confirm ?? '',
         bDownloadDir: s.browser?.downloadDir ?? '',
+        puPlatform: s.publish?.platform ?? '', puEntry: s.publish?.entry ?? '', puUrl: s.publish?.url ?? '', puBody: s.publish?.body ?? '',
+        puApproval: s.publish?.approval ?? '', puSchedule: s.publish?.schedule ?? '', puConnection: s.publish?.connection ?? '',
         apMsg: s.approval?.message ?? '',
         toolJson: s.tool ? JSON.stringify(s.tool) : '',
         selMsg: s.select?.message ?? '',
@@ -1308,6 +1317,16 @@ export function stepFromDraft(
     }
     if (stype === 'checkpoint') {
         return { step: { ...named('checkpoint'), title, ...chain, checkpoint: checkpointFromDraft(str) } };
+    }
+    if (stype === 'publish') {
+        const pick = (k: string) => str(k) || undefined;
+        const publish = {
+            platform: str('puPlatform') || 'youtube', url: str('puUrl'), entry: pick('puEntry'), body: pick('puBody'),
+            approval: pick('puApproval') as PublishSpec['approval'], schedule: pick('puSchedule') as PublishSpec['schedule'], connection: pick('puConnection') as PublishSpec['connection']
+        };
+        const no = publishRefusal(publish);
+        if (no) { return { error: `Step ${n} ("${title}"): ${no}.` }; }
+        return { step: { ...named('publish'), title, ...chain, publish: JSON.parse(JSON.stringify(publish)) as PublishSpec } };
     }
     if (stype === 'tool') {
         const t = toolStepFromJson(str('toolJson'));

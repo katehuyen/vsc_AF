@@ -346,6 +346,25 @@
                 step: { surface: 'media/tasksPage.js#st-mCandidates', bridge: 'workflows.add:steps.media.candidates' }
             }
         },
+        // M-51 — where the content calendar's notes live (src/core/contentCalendar.ts)
+        setting('calendar.dir', 'Content calendar folder', 'text', '', 'agentFarm.contentCalendarDir'),
+        // M-51 — the publish step (src/core/publishStep.ts, media/afPublish.js)
+        setting('publish.platforms', 'Publish — platforms, in priority', 'list', ['youtube', 'instagram', 'tiktok'], 'agentFarm.publishPlatforms'),
+        {
+            id: 'publish.approval', label: 'Publish — ask before sending', type: 'enum', default: 'ask', options: ['ask', 'auto', 'never'], remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.publishApproval', bridge: 'settings.set:agentFarm.publishApproval' },
+                step: { surface: 'media/afPublish.js#st-puApproval', bridge: 'workflows.add:steps.publish.approval' }
+            }
+        },
+        {
+            id: 'publish.schedule', label: 'Publish — when', type: 'enum', default: 'now', options: ['now', 'planned'], remembered: false,
+            levels: { step: { surface: 'media/afPublish.js#st-puSchedule', bridge: 'workflows.add:steps.publish.schedule' } }
+        },
+        {
+            id: 'publish.connection', label: 'Publish — connection', type: 'enum', default: 'webhook', options: ['webhook'], remembered: false,
+            levels: { step: { surface: 'media/afPublish.js#st-puConnection', bridge: 'workflows.add:steps.publish.connection' } }
+        },
         // M-54 — the browser recipe book: a recipe runs on Agent Farm's own Playwright profile and files its downloads (src/core/browserRecipes.ts)
         {
             id: 'browser.recipe', label: 'Browser step — recipe', type: 'text', default: '', remembered: false,

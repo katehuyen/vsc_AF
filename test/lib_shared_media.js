@@ -125,6 +125,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afWorkflowInputs.js',
     // afCheckpoint.js — a checkpoint step's card row, and a workflow's goal + criteria (M-43).
     'afCheckpoint.js',
+    // afPublish.js — a publish step's card row (M-51).
+    'afPublish.js',
     // afTool.js — a tool step's card row: recipe, preset, input, its parameters (M-49).
     'afTool.js',
     // afLibrary.js — where a run's files are filed and recorded: the workflow form's block, a media or tool step's row (X-418).

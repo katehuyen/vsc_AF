@@ -1137,6 +1137,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         { id: 'webhook', icon: '🌐', label: 'webhook — an HTTP call, no agent' },
         { id: 'media', icon: '🎬', label: 'media — fal.ai / Replicate render' },
         { id: 'browser', icon: '🧭', label: 'browser — an agent drives a site' },
+        { id: 'publish', icon: '📣', label: 'publish — send it to a platform (n8n)' },
         { id: 'approval', icon: '✋', label: 'approval — the chain waits for you' },
         { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' },
         { id: 'checkpoint', icon: '◆', label: 'checkpoint — the supervisor decides here' },
@@ -1158,7 +1159,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mCandidates: 1, mScene: '',
             bUrl: '', bGoal: '', bHosts: '', bRecipe: '', bConfirm: '', bDownloadDir: '',
             apMsg: '', selMsg: '', selMin: 1, selMax: 0, toolJson: ''
-        }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, window.AFLibrary ? window.AFLibrary.blank() : {}, seed || {});
+        }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, window.AFPublish ? window.AFPublish.blank() : {}, window.AFLibrary ? window.AFLibrary.blank() : {}, seed || {});
         // A webhook or media step carries no real agent, so switching one to
         // "agent" would land on an empty picker that LOOKS filled — the select
         // draws the first name whatever the draft says.
@@ -2117,6 +2118,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                         : s.stype === 'select' ? 'keep ' + (s.selMin || 1) + (s.selMax ? '–' + s.selMax : ' or more')
                         : s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.summary(s)
                         : s.stype === 'tool' && window.AFTool ? window.AFTool.summary(s)
+                        : s.stype === 'publish' && window.AFPublish ? window.AFPublish.summary(s)
                             : agentOf('(no agent)') + ' · ' + (s.smode || 'headless');
         const flags = [];
         if (s.parallel) { flags.push('∥ runs in parallel'); }
@@ -2481,6 +2483,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 ${numF('st-selMax', 'Keep at most', s.selMax, '0 = no ceiling.')}
             </div>` : ''}
             ${s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.row(s, C) : ''}
+            ${s.stype === 'publish' && window.AFPublish ? window.AFPublish.row(s, C, DATA) : ''}
             ${(s.stype === 'media' || s.stype === 'tool') && window.AFLibrary ? window.AFLibrary.row(s, C, stepPromote(c), c) : ''}
             <div class="ntsec"><b>How it behaves in the chain</b>
                 <span class="muted small">These are the same on every kind of step — they are about the CHAIN,
@@ -2574,6 +2577,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         if (s.stype === 'checkpoint' && window.AFCheckpoint) { window.AFCheckpoint.read(s, g); }
         if (s.stype === 'tool' && window.AFTool) { window.AFTool.read(s, g); }
         if ((s.stype === 'media' || s.stype === 'tool') && window.AFLibrary) { window.AFLibrary.read(s, g); }
+        if (s.stype === 'publish' && window.AFPublish) { window.AFPublish.read(s, g); }
     }
 
     /** What a step cannot be saved without — said inside the step card. */
@@ -2591,6 +2595,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 return 'Polling needs the field in the submit response that holds the poll URL.';
             }
         }
+        if (s.stype === 'publish' && window.AFPublish && window.AFPublish.error(s)) { return window.AFPublish.error(s); }
         if (s.stype === 'media') {
             if (!String(s.mModel || '').trim()) { return 'A media step needs a model id.'; }
             if (!String(s.mInput || '').trim()) { return 'A media step needs its JSON input.'; }
@@ -4862,6 +4867,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 ['feConc', 'feRetries', 'feCap', 'feBudget'].forEach(id => byId('nt-st-' + id, 'input', () => readStep()));
                 ['feFail', 'feCapMode'].forEach(id => byId('nt-st-' + id, 'change', () => readStep()));
                 if (window.AFCheckpoint) { window.AFCheckpoint.wire(byId, readStep, render); }
+                if (window.AFPublish) { window.AFPublish.wire(byId, readStep); }
                 if (window.AFLibrary) { window.AFLibrary.wire(byId, readStep, window.AFFlexPromote ? render : null, () => composer.step); }
                 if (window.AFTool && composer.step && composer.step.stype === 'tool') { window.AFTool.wire(byId, readStep, render, composer.step); }
                 if (window.AFWake && composer.step) { window.AFWake.wireStep(byId, () => composer.step, DATA.wakeDict, render); }

@@ -23,6 +23,8 @@ import { alignCandidates, candidatesOf, mergeCandidates, pickedBody, pickLine, w
 import { browserMcpArgs, browserRecipeRefusal, buildRecipePrompt, planBrowser, playwrightMcpConfig } from './browserRecipes';
 import { type BrowserRun, fileBrowserDownloads } from './browserDownloads';
 import { profileInUse } from './browserLogin';
+import { buildPublishPayload, calendarPatchOf, planPublish, readPublishResult, type PublishSpec } from './publishStep';
+import { findEntry, readCalendar, updateEntry } from './contentCalendar';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -1222,6 +1224,8 @@ export interface WorkflowStep extends RunDimensions {
      */
     /** M-49 — a local ffmpeg recipe, no model; its result is the step's JSON (src/core/toolCall.ts) */
     tool?: ToolStepSpec;
+    /** M-51 — publish to one platform through a connection, the calendar note and the record updated (src/core/publishStep.ts) */
+    publish?: PublishSpec;
     /** X-418 — where this step's files are filed and recorded, over the workflow's (src/core/runLibrarySpec.ts) */
     library?: StepLibrarySpec;
     webhook?: {
@@ -2081,6 +2085,12 @@ export interface TaskManagerOptions {
     mediaUploadBaseUrl?: (provider: string) => string | undefined;
     /** Human-in-the-loop workflow gate; resolve true to continue the chain, false to fail the step. */
     confirmApproval?: (info: { title: string; message: string }) => Promise<boolean>;
+    /** M-51 — Farm Settings' publishApproval (ask · auto · never); a step's own wins */
+    publishApproval?: () => string;
+    /** M-51 — the content calendar's folder */
+    contentCalendarDir?: () => string;
+    /** M-51 — a publish's result on its media record; answers one line for the step's archive */
+    recordPublished?: (r: { id: string; platform: string; status: string; url?: string; at: string }) => Promise<string>;
     /**
      * Wave B — visual selection gate. Resolve with the chosen asset URLs (the
      * subset kept), or null to cancel (the step's onFail policy applies).
@@ -6837,6 +6847,10 @@ export class TaskManager implements vscode.Disposable {
         const brand = this.stepBrand(w, step, runId);
         if (brand || handoff.brand) { handoff = { ...handoff, brand }; }
 
+        if (step.publish) {
+            void this.runPublishStep(w, index, handoff, runId);
+            return;
+        }
         if (step.webhook) {
             this.runWebhookStep(w, index, handoff, runId);
             return;
@@ -6951,7 +6965,8 @@ export class TaskManager implements vscode.Disposable {
         const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
         const url = resolve(hook.url);
         const method = (hook.method ?? 'POST').toUpperCase();
-        const body = hook.body ? resolve(hook.body) : undefined;
+        // a JSON body is filled inside its string values, so a quote or a Windows path in a value stays valid JSON
+        const body = hook.body ? fillJsonTemplate(hook.body, resolve) : undefined;
 
         const task = this.stepTask(w, index, runId, 'webhook', {
             prompt: `${method} ${hook.url}`,
@@ -7004,6 +7019,61 @@ export class TaskManager implements vscode.Disposable {
                 `# ${task.title}\n\n- Webhook: ${method} ${hook.url}\n\n---\n\n[request error] ${String(err)}\n`, 'utf8');
             this.finish(task, 'failed');
         });
+    }
+
+    /** M-51 — gate, connection, then the calendar note and the record told (src/core/publishStep.ts). */
+    private async runPublishStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const pub = step.publish!;
+        const resolve = (s: string) => (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(s, handoff));
+        const plan = planPublish(pub, this.opts.publishApproval?.());
+        const task = this.stepTask(w, index, runId, 'publish', { prompt: `publish → ${pub.platform}`, status: 'running' }, handoff);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+        const lines = [...plan.why];
+        const done = (ok: boolean, body: unknown) => {
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Publish: ${pub.platform}\n${lines.map(l => `- ${l}\n`).join('')}\n---\n\n${JSON.stringify(body, null, 2)}\n\n---\n` +
+                `Finished: ${new Date().toLocaleString()} · ${ok ? 'OK' : 'FAILED'}\n`, 'utf8');
+            this.finish(task, ok ? 'done' : 'failed');
+        };
+        const calDir = this.opts.contentCalendarDir?.();
+        const ref = pub.entry ? resolve(pub.entry).trim() : '';
+        const entry = ref && calDir ? findEntry(readCalendar(calDir), ref) : undefined;
+        if (ref && !entry) { lines.push(`No calendar note "${ref}"${calDir ? ` in ${calDir}` : ''}`); done(false, {}); return; }
+        if (entry) { lines.push(`Calendar: ${entry.name}`); }
+        let metadata: unknown;
+        if (pub.body) {
+            const filled = fillJsonTemplate(pub.body, resolve);
+            try { metadata = JSON.parse(filled); } catch { lines.push('The metadata template is not JSON once filled'); done(false, { metadata: filled }); return; }
+        }
+        const payload = buildPublishPayload({ platform: pub.platform, stepTitle: step.title, schedule: plan.schedule, entry, metadata,
+            prevJson: handoff.json, prevText: handoff.text, runId, workflowTitle: w.title });
+        if (plan.approval === 'never') { lines.push('Rehearsal (approval: never) — nothing was sent'); done(true, { rehearsal: true, payload }); return; }
+        if (plan.approval === 'ask' && this.opts.confirmApproval
+            && !await this.opts.confirmApproval({ title: step.title, message: `Publish "${String(payload.title)}" to ${pub.platform}?` })) {
+            lines.push('Not approved'); done(false, { payload }); return;
+        }
+        let res: Response;
+        let text = '';
+        try {
+            res = await fetch(resolve(pub.url), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(120_000) });
+            text = (await res.text()).slice(0, 100_000);
+        } catch (e) { lines.push(`Connection error: ${String(e)}`); done(false, { payload }); return; }
+        if (!res.ok) { lines.push(`HTTP ${res.status}`); done(false, { payload, response: text }); return; }
+        const result = readPublishResult(text);
+        const at = new Date().toISOString();
+        const patch = calendarPatchOf(result, plan.schedule, at);
+        if (entry) {
+            try { updateEntry(entry.file, patch); lines.push(`Calendar: ${entry.name} → ${patch.status}`); }
+            catch (e) { lines.push(`Calendar not updated — ${(e as Error).message}`); }
+        }
+        if (entry?.record && this.opts.recordPublished) {
+            lines.push(await this.opts.recordPublished({ id: entry.record, platform: pub.platform, status: patch.status, url: result.url, at: patch.publishedAt ?? at })
+                .catch(e => `Record not updated — ${String(e)}`));
+        }
+        done(true, { ...result, status: patch.status, platform: pub.platform, payload });
     }
 
     /** M-49 — a local ffmpeg recipe, no model: the result (outputs, runs, duration) is the step's JSON on the board. */

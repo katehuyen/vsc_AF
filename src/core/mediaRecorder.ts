@@ -22,6 +22,7 @@ import { LibraryStage, fileInto, libraryType, planLibrary, stageFor } from './me
 import { ProbeInfo, probeFields, probeFile } from './mediaProbe';
 import { Produced, addCausal, applyRestage, producedFields } from './mediaRecordFields';
 import { PendingCreate, PendingEntry, dropPending, loadPending, notePendingError, queueCreate, queueRestage } from './mediaPending';
+import { applyPublished } from './publishStep';
 
 type Dict = Record<string, unknown>;
 export type AutoStart = 'ask' | 'auto' | 'never';
@@ -262,6 +263,15 @@ export class MediaRecorder {
         idx.byPath.delete(norm(from));
         idx.byPath.set(norm(file), id);
         return { file, stage: plan.stage, base, id, why: plan.why };
+    }
+
+    /** M-51 — a publish's result on its record (applyPublished, src/core/publishStep.ts); the engine is not started for it. */
+    async published(r: { id: string; base?: string; lang?: string; platform: string; status: string; url?: string; at: string }): Promise<{ id: string; base: string; error?: string }> {
+        const base = this.baseOf(r.base);
+        const c = await this.ready(base, 'never');
+        if ('down' in c) { return { id: r.id, base, error: c.down }; }
+        await this.patch(c, this.langOf(r.lang), r.id, item => { applyPublished(item, r); });
+        return { id: r.id, base };
     }
 
     pending(base?: string): PendingEntry[] {

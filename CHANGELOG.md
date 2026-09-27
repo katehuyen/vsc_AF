@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.719.0 - The content calendar and the publish step (M-51) (2026-09-27)
+
+- The content calendar lives in the vault: one note per publish in the Full
+  Calendar plugin's frontmatter (title, date, startTime, completed) plus
+  platform, status, url and record — in 01_INBOX/02_Calendar/CONTENT unless
+  Farm Settings' contentCalendarDir says otherwise. Bridge: calendar.list
+  (upcoming and overdue), calendar.add, calendar.set.
+- A new step type, publish: one platform per step through a connection (a
+  webhook — your n8n flow does the upload), after an approval gate (ask ·
+  auto · never = a rehearsal that sends nothing), now or at the calendar
+  note's time. The answer updates the calendar note (published, the URL) and
+  the media record's publishing fields.
+- Fix: a webhook step's JSON body is filled inside its string values, so a
+  quote or a Windows path in a value no longer breaks the JSON.
+
 ## 3.718.0 - A recipe profile another Chrome holds stops the step before it is paid for (M-54) (2026-09-27)
 
 - A recipe step whose browser profile is still open in another Chrome window

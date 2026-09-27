@@ -187,7 +187,7 @@ const CTX = {
     // ON ITS OWN LINE, which is what the argument list following it means.
     ok('there is ONE resolver the folder settings go through',
         /const configuredFolder = \(/.test(ext)
-        && (ext.match(/configuredFolder\(\r?\n/g) || []).length === 3);
+        && (ext.match(/configuredFolder\(\r?\n/g) || []).length === 4);
     ok('…and it asks the module, rather than expanding anything itself',
         /resolvePathVars\(candidate, ctx\)/.test(ext));
     ok('…and a template it could not build is SKIPPED, never half-used',
@@ -208,9 +208,9 @@ const CTX = {
     // POSITION: an argument somebody else falls back TO, never a `||` default
     // and never a value that decides anything on its own.
     ok('‼️ the legacy vault path is spelled in as few places as it has readers',
-        // three spellings for three folders — and the answers one, which now has
-        // two readers, is spelled ONCE as a named constant rather than twice.
-        (ext.match(/'D:', 'zone', 'know'/g) || []).length === 3
+        // four spellings for four folders (M-51 added the content calendar's) — and
+        // the answers one, which has two readers, is spelled ONCE as a named constant.
+        (ext.match(/'D:', 'zone', 'know'/g) || []).length === 4
         && (ext.match(/const LEGACY_ANSWER_DIR = path\.join\(/g) || []).length === 1);
     ok('‼️ …and every road to it is a last-resort argument, never a default',
         !/\|\| path\.join\('D:', 'zone', 'know'/.test(ext)

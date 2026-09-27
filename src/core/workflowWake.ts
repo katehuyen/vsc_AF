@@ -131,8 +131,8 @@ function conditionWords(c: Condition): string {
     return [c.field, o?.label ?? c.operator, o?.takesValue ? String(c.value) : ''].filter(Boolean).join(' ');
 }
 
-export function kindOfStep(s: { webhook?: unknown; media?: unknown; browser?: unknown; approval?: unknown; select?: unknown; checkpoint?: unknown; tool?: unknown }): string {
-    return s.checkpoint ? 'checkpoint' : s.tool ? 'tool' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
+export function kindOfStep(s: { webhook?: unknown; media?: unknown; browser?: unknown; approval?: unknown; select?: unknown; checkpoint?: unknown; tool?: unknown; publish?: unknown }): string {
+    return s.checkpoint ? 'checkpoint' : s.tool ? 'tool' : s.publish ? 'publish' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
         : s.approval ? 'approval' : s.select ? 'select' : 'agent';
 }
 

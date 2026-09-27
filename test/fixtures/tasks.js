@@ -1021,6 +1021,22 @@ const variants = () => ([
             });
         }
     },
+    // M-51 — a publish step: platform, ask first, when, connection, the calendar note (with its datalist), the webhook and the metadata template.
+    {
+        id: 'tasks-wf-publish',
+        label: 'Tasks → a workflow\'s publish step: YouTube, Ask first from Farm Settings, planned at the calendar note\'s time, the n8n webhook from Secrets and a metadata template (M-51)',
+        data: (() => { const d = data(); d.publishPlatforms = ['youtube', 'instagram', 'tiktok']; d.calendarNotes = ['2026-10-01 youtube - Kahve 3 hata', '2026-10-05 instagram - Latte sanatı']; return d; })(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w14', title: 'Haftalık yayın', stepIdx: 0,
+                    steps: [{ sid: 's1', stype: 'publish', title: 'YouTube\'a yayınla', puPlatform: 'youtube', puEntry: '2026-10-01 youtube - Kahve 3 hata', puUrl: '{secret:N8N_PUBLISH_URL}',
+                        puBody: '{"description": "{prev_text}", "tags": ["kahve"]}', puApproval: '', puSchedule: 'planned', puConnection: '' }]
+                }
+            });
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',
