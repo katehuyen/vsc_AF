@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.705.0 - A media step's spend and files reach the rest of the run (M-55 groundwork) (2026-09-27)
+
+- **Gemini Omni Flash is priced** (`gemini-omni`, $0.13 a second), and a
+  per-second model whose answer names no duration is billed on the length of
+  the file it made, measured — not a guessed 5 seconds.
+- **A media step's spend now counts in the run**: the run total, `{run.cost}`,
+  the `cost.run` wake condition (so the soft ceiling wakes the supervisor),
+  the supervisor's view and a for-each part's `budgetUSD`. Before, only agent
+  steps were counted and fal spend never tripped a ceiling.
+- **A media step hands on its files**: its JSON carries `outputs` — the
+  downloaded files on this computer, as a tool step's do — so
+  `{prev_json.outputs.0}` works after it.
+- **A join after a for-each gets each part's file**: `files:
+  "{steps.edit.json.items}"` gives every branch's produced file in part order.
+  A part that failed is refused by name ("part 2 failed …") instead of being
+  closed up, which would have shortened the video and put it off its sound.
+
 ## 3.704.0 - Brand kits in Studio, and kits kept as presets (M-50, part 3) (2026-09-27)
 
 - **Studio ▸ Sources ▸ Brand kits** lists every production with its kit.

@@ -21,7 +21,10 @@ export function toolCall(args: Record<string, unknown>, dflt: { outDir: string; 
     if (r.input && !input) { return { error: `${r.id} needs an input file` }; }
     const overwrite = String(args.overwrite ?? dflt.overwrite ?? 'never') as Overwrite;
     if (!OVERWRITES.includes(overwrite)) { return { error: `overwrite is ${OVERWRITES.join(' | ')}, not "${overwrite}"` }; }
-    const files = Array.isArray(given.files) ? given.files.map(String) : [];
+    const listed: unknown[] = Array.isArray(given.files) ? given.files : [];
+    const hole = listed.find(f => f !== null && typeof f === 'object') as { missing?: unknown } | undefined;
+    if (hole) { return { error: `files: ${String(hole.missing ?? 'an entry is not a file path')} — joining the rest would leave a gap` }; }
+    const files = listed.map(String);
     const beside = input ?? files[0];
     const outDir = String(args.outDir ?? '').trim() || dflt.outDir.trim() || (beside ? path.join(path.dirname(beside), 'af-tool') : '');
     if (!outDir) { return { error: 'name an outDir — there is no input to put the output beside' }; }
@@ -95,6 +98,24 @@ export function toolResolved(t: ToolStepSpec, settings: { outDir?: unknown; over
     return { defaults: { outDir: String(outDir.value ?? ''), overwrite: String(overwrite.value ?? 'never') }, why };
 }
 
-/** A template that became a JSON list (a split's outputs) is that list; anything else, one line a file. */
-const parseList = (s: string): unknown[] => { try { const a = JSON.parse(s); return Array.isArray(a) ? a.map(String) : [s]; } catch { return [s]; } };
+/**
+ * One entry of a list handed to a files box: a path stays a path; a step result
+ * or a for-each branch ({steps.<id>.json.items}) gives the files it produced
+ * (json.outputs); a branch that did not finish is a HOLE, refused by toolCall
+ * by name — a join that closed it would come out short and off its sound.
+ */
+export function filesIn(v: unknown): unknown[] {
+    if (typeof v === 'string') { return [v]; }
+    if (!v || typeof v !== 'object') { return [String(v)]; }
+    const o = v as { index?: unknown; status?: unknown; reason?: unknown; outputs?: unknown; json?: { outputs?: unknown } };
+    const part = typeof o.index === 'number' ? `part ${o.index + 1}` : 'an entry';
+    if (typeof o.status === 'string' && o.status !== 'done') {
+        return [{ missing: `${part} ${o.status}${o.reason ? ` (${String(o.reason)})` : ''}` }];
+    }
+    const outs = o.json && typeof o.json === 'object' ? o.json.outputs : o.outputs;
+    return Array.isArray(outs) && outs.length ? outs.map(String) : [{ missing: `${part} produced no file` }];
+}
+
+/** A template that became a JSON list (a split's outputs, a for-each's items) is that list; anything else, one line a file. */
+const parseList = (s: string): unknown[] => { try { const a = JSON.parse(s); return Array.isArray(a) ? a.flatMap(filesIn) : [s]; } catch { return [s]; } };
 const listOf = (s: string): unknown[] => (/^\s*\[/.test(s) ? parseList(s) : s.split(/\r?\n/).map(x => x.trim()).filter(Boolean));

@@ -18,6 +18,7 @@ export interface MediaPriceRule {
 export const DEFAULT_MEDIA_PRICING: MediaPriceRule[] = [
     { match: 'flux.*schnell', usd: 0.003, per: 'image' },
     { match: 'flux', usd: 0.025, per: 'image' },
+    { match: 'gemini-omni', usd: 0.13, per: 'second' },
     { match: 'nano-banana|gemini.*image', usd: 0.04, per: 'image' },
     { match: 'kling', usd: 0.1, per: 'second' },
     { match: 'seedance', usd: 0.06, per: 'second' },
@@ -211,11 +212,15 @@ export async function downloadAsset(url: string, targetFile: string): Promise<bo
     } catch { return false; }
 }
 
-/** Estimate cost from pricing rules and the response shape. */
-export function estimateMediaCost(model: string, response: unknown, rules: MediaPriceRule[]): number {
-    const rule = rules.find(r => {
+export function priceRuleFor(model: string, rules: MediaPriceRule[]): MediaPriceRule | undefined {
+    return rules.find(r => {
         try { return new RegExp(r.match, 'i').test(model); } catch { return false; }
     });
+}
+
+/** Estimate cost from pricing rules and the response shape; `measuredSec` stands in when the response names no duration. */
+export function estimateMediaCost(model: string, response: unknown, rules: MediaPriceRule[], measuredSec?: number): number {
+    const rule = priceRuleFor(model, rules);
     if (!rule) { return 0; }
     if (rule.per === 'request') { return rule.usd; }
     const r = response as { images?: unknown[]; video?: { duration?: number }; duration?: number } | undefined;
@@ -223,7 +228,7 @@ export function estimateMediaCost(model: string, response: unknown, rules: Media
         const count = Array.isArray(r?.images) ? r!.images!.length : 1;
         return rule.usd * Math.max(1, count);
     }
-    const seconds = r?.video?.duration ?? r?.duration ?? 5;
+    const seconds = r?.video?.duration ?? r?.duration ?? measuredSec ?? 5;
     return rule.usd * Math.max(1, Number(seconds) || 5);
 }
 

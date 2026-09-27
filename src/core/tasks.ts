@@ -29,7 +29,8 @@ import { flexPoint } from './flexPoints';
 import { SupervisorCall, supervisorCall, supervisorTrail, SupervisorTrail } from './supervisorTrail';
 import { missionHandoffText } from './workflowMission';
 import { fillTool, toolCall, toolResolved, ToolStepSpec } from './toolCall';
-import { runRecipe, ToolResult } from './toolRun';
+import { mediaDuration, runRecipe, ToolResult } from './toolRun';
+import { billMedia, stepSpend, withOutputs } from './mediaStepResult';
 import type { RecipeCall } from './mediaRecipes';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
@@ -44,7 +45,7 @@ import {
     enginePermissionSetting, headlessEffortRefusal, headlessResumeRefusal, runArgs, tuiArgs
 } from './consoleEngine';
 import {
-    DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
+    DEFAULT_MEDIA_PRICING, downloadAsset, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
 import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
@@ -6463,7 +6464,7 @@ export class TaskManager implements vscode.Disposable {
             status: t.status,
             taskId: t.id,
             ...(t.outputFile ? { outputFile: t.outputFile } : {}),
-            ...(t.costUSD !== undefined ? { costUSD: t.costUSD } : {}),
+            ...(stepSpend(t) !== undefined ? { costUSD: stepSpend(t) } : {}),
             ...(t.tokens !== undefined ? { tokens: t.tokens } : {})
         }));
         const live = tasks.some(t => t.status === 'queued' || t.status === 'running');
@@ -6520,7 +6521,7 @@ export class TaskManager implements vscode.Disposable {
             ...(rec?.airtable ? { airtable: rec.airtable } : {}),
             ...(rec?.libraryEnd ? { libraryEnd: rec.libraryEnd } : {}),
             steps,
-            costUSD: tasks.reduce((a, t) => a + (t.costUSD ?? 0), 0),
+            costUSD: tasks.reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
         };
     }
@@ -6993,8 +6994,8 @@ export class TaskManager implements vscode.Disposable {
             try { if (await downloadAsset(url, file)) { assets.push(file); assetUrls.push(url); } }
             catch { /* one bad asset must not sink the step */ }
         }
-        const estCost = estimateMediaCost(info.model, result.response,
-            this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING);
+        const estCost = await billMedia(info.model, result.response,
+            this.opts.mediaPricing?.() ?? DEFAULT_MEDIA_PRICING, assets, f => mediaDuration(f));
         task.mediaCost = estCost;
         const lc = this.libCtx(task);
         if (lc && assets.length) {
@@ -7025,7 +7026,7 @@ export class TaskManager implements vscode.Disposable {
             fs.writeFileSync(path.join(this.outputsDir, `${task.id}.media.json`),
                 JSON.stringify(meta, null, 2), 'utf8');
         } catch { /* gallery meta is best-effort */ }
-        writeOut(true, '', result.response, assets, estCost);
+        writeOut(true, '', withOutputs(result.response, assets), assets, estCost);
     }
 
     /** F2: tasks whose media job survived the reload (collected at load, polled from the ctor). */
@@ -7310,7 +7311,7 @@ export class TaskManager implements vscode.Disposable {
         const shut = visit.cutOff ? CUT_OFF : human || this.opts.superviseTurn ? '' : turnRefusal(sup, sl);
         let out = shut ? { mechanical: shut, log: [`mechanical — ${shut}`], directives: [...own, ...sup.directives], decision: undefined } : await superviseCheckpoint({
             workflow: w.title, goal: w.goal, criteria: w.criteria, inputs: rec?.inputs, board: rec?.board, lastStep: wake || index > 0 ? before : undefined,
-            costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (t.costUSD ?? 0), 0),
+            costUSD: this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             directives: [...own, ...sup.directives], stepIds: ids, limits
         }, { stepIds: ids, currentStep: before, retries: sup.retries, history: sup.history }, {
             ask, pick: this.opts.askChoice ? (q, o) => this.opts.askChoice!(q, o, { runId, workflowTitle: w.title }) : undefined,
@@ -7488,7 +7489,7 @@ export class TaskManager implements vscode.Disposable {
         const v = wakeVerdict(r.conditions, wakeFacts({
             kind, status, attempt: rows.filter(t => t.stepIndex === i && !t.wokeBy && t.branchIndex === undefined).length,
             startedAt: task.startedAt, endedAt: task.endedAt ?? Date.now(), costUSD: task.costUSD ?? task.mediaCost,
-            verified: task.verified, runCostUSD: rows.reduce((a, t) => a + (t.costUSD ?? 0), 0),
+            verified: task.verified, runCostUSD: rows.reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             assets: kind === 'media' && h.file ? 1 : 0, output: h.text
         }));
         const fired = [...human, ...v.fired];
@@ -7579,7 +7580,7 @@ export class TaskManager implements vscode.Disposable {
             ...(h.json !== undefined ? { json: h.json } : {}),
             ...(h.file ? { file: h.file } : {}),
             ...(task.verified ? { verdict: task.verified } : {}),
-            ...(task.costUSD ? { costUSD: task.costUSD } : {}),
+            ...(stepSpend(task) ? { costUSD: stepSpend(task) } : {}),
             ...(task.uploads?.length ? { uploads: task.uploads.map(u => ({ path: u.path, url: u.url })) } : {}),
             at: Date.now()
         });
@@ -7666,7 +7667,7 @@ export class TaskManager implements vscode.Disposable {
         if (!run || run.stepIndex !== task.stepIndex || run.branches[i]?.status !== 'running') { return; }
         const h = this.computeHandoff(task);
         const next = FE.branchEnded(run, i, {
-            ok: status === 'done', text: h.text, json: h.json, file: h.file, costUSD: task.costUSD,
+            ok: status === 'done', text: h.text, json: h.json, file: h.file, costUSD: stepSpend(task),
             reason: task.verified === 'fail' ? 'its quality check failed' : status
         });
         this.save();
