@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.709.0 - A hard spend cap for a workflow run (A-27, part 1) (2026-09-27)
+
+- **Run cap $ (hard)**: once a workflow run has spent this much — every
+  step, media and supervisor turn counted — no further step or for-each
+  branch starts and the run stops, saying what it spent, the cap and
+  where the cap came from. Nothing is asked. Set it in Farm Settings
+  (`agentFarm.workflowSpendCap`), on the workflow form's new **Cost** row,
+  or for one run in **Run with…**. Bridge: `spendCap=` on `workflows.add`,
+  `workflows.update` and `workflows.run`; `workflows.status` shows it.
+
 ## 3.708.0 - The recipe book: three content workflows in one pick (M-53, part 3) (2026-09-27)
 
 - **New Recipe Workflow installs a whole content workflow** — Video parça

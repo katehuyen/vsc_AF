@@ -16,6 +16,7 @@ import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
 import { BrandKit, brandProductionFor, fillBrand, resolveBrand } from './brandKit';
 import * as FE from './forEachStep';
+import { capWaitingBranches, runSpendCap, SpendCap, spendCapStop } from './runSpendCap';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -1331,6 +1332,8 @@ export interface FarmWorkflow {
     production?: string;
     /** M-53 — which agent fills each role its steps name; an open role goes to the showrunner */
     roles?: RoleMap;
+    /** A-27 — the run's hard spend cap in dollars, 0 = none (src/core/runSpendCap.ts) */
+    spendCap?: number;
 }
 
 /**
@@ -1386,6 +1389,8 @@ export interface WorkflowRunState {
     airtable?: string[];
     /** X-423 — what the run's end did in the library: promotions, and each record's enrichment or why it failed */
     libraryEnd?: string[];
+    /** A-27 — the hard spend cap the run runs under */
+    spendCap?: SpendCap;
     steps: WorkflowRunStep[];
     /** every task of this run, added up once — the parent's budget roll-up */
     costUSD: number;
@@ -1666,6 +1671,8 @@ export interface WorkflowRunOpts {
     production?: string;
     /** M-53 — this run's own agent for a role, above the workflow's binding and the showrunner */
     roles?: RoleMap;
+    /** A-27 — this run's own hard spend cap, above the workflow's and Farm Settings' */
+    spendCap?: number;
 }
 
 interface WorkflowRunRecord {
@@ -1702,6 +1709,8 @@ interface WorkflowRunRecord {
     production?: string;
     /** M-53 — the roles the run was started with */
     roles?: RoleMap;
+    /** A-27 — the hard spend cap in force for this run and where it came from */
+    spendCap?: SpendCap;
     /** M-46 — what a person set while it ran: words for its supervisor, live settings (src/core/workflowLive.ts) */
     live?: RunLive;
     /** M-46 — the finished step's row the run is held after, when it was paused at a boundary */
@@ -1956,6 +1965,8 @@ export interface TaskManagerOptions {
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
     /** M-53 — the agent every role a workflow leaves open goes to (agentFarm.showrunner) */
     showrunner?: () => string;
+    /** A-27 — Farm Settings' hard spend cap per workflow run (agentFarm.workflowSpendCap) */
+    spendCapSetting?: () => unknown;
     /** F2: media poll interval override (tests); undefined = provider default (3s). */
     mediaPollMs?: () => number;
     /**
@@ -6369,7 +6380,8 @@ export class TaskManager implements vscode.Disposable {
             ...(Object.keys(given.values).length ? { inputs: given.values } : {}),
             ...(opts?.wake ? { wake: opts.wake } : {}),
             ...(opts?.production ? { production: opts.production } : {}),
-            ...(opts?.roles && Object.keys(opts.roles).length ? { roles: opts.roles } : {})
+            ...(opts?.roles && Object.keys(opts.roles).length ? { roles: opts.roles } : {}),
+            ...((c: SpendCap) => (c.usd > 0 ? { spendCap: c } : {}))(runSpendCap(opts?.spendCap, w.spendCap, this.opts.spendCapSetting?.()))
         });
         this.lib?.prepare(w);
         return runId;
@@ -6533,6 +6545,7 @@ export class TaskManager implements vscode.Disposable {
             ...(rec?.forEach ? { forEach: FE.forEachSummary(rec.forEach) } : {}),
             ...(rec?.airtable ? { airtable: rec.airtable } : {}),
             ...(rec?.libraryEnd ? { libraryEnd: rec.libraryEnd } : {}),
+            ...(rec?.spendCap ? { spendCap: rec.spendCap } : {}),
             steps,
             costUSD: tasks.reduce((a, t) => a + (stepSpend(t) ?? 0), 0),
             tokens: tasks.reduce((a, t) => a + (t.tokens ?? 0), 0)
@@ -6657,6 +6670,14 @@ export class TaskManager implements vscode.Disposable {
                 `step limit reached (${TaskManager.MAX_RUN_STEPS}) — possible loop in onFail routing`, index);
             void vscode.window.showWarningMessage(
                 `Agent Farm: workflow "${w.title}" stopped — step limit reached (possible loop in onFail routing).`);
+            return;
+        }
+        const capped = spendCapStop(this.runSpent(runId), this.runRecords.get(runId)?.spendCap);
+        if (capped) {
+            this.runCounts.delete(runId);
+            this.parallelGroups.delete(runId);
+            this.endWorkflowRun(runId, 'stopped', capped, index);
+            void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" stopped — ${capped}.`);
             return;
         }
         this.runCounts.set(runId, count + 1);
@@ -7670,10 +7691,22 @@ export class TaskManager implements vscode.Disposable {
         this.launchBranches(w, runId);
     }
 
+    /** A-27 — what a run has spent so far: every step row's own spend, supervisor turns included */
+    private runSpent(runId: string): number {
+        return this.tasks.filter(t => t.workflowRunId === runId).reduce((a, t) => a + (stepSpend(t) ?? 0), 0);
+    }
+
     private launchBranches(w: FarmWorkflow, runId: string): void {
         const live = this.forEachRuns.get(runId);
         if (!live) { return; }
         const { run, base } = live;
+        const capped = spendCapStop(this.runSpent(runId), this.runRecords.get(runId)?.spendCap);
+        if (capped) {
+            capWaitingBranches(run, capped);
+            this.save();
+            if (!run.branches.some(b => b.status === 'running')) { this.finishForEach(w, runId, false); }
+            return;
+        }
         for (const i of FE.launchable(run)) {
             FE.markLaunched(run, i);
             this.startWorkflowStep(w, run.stepIndex,

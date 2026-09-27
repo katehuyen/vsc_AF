@@ -4068,6 +4068,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .ntgrid { display:flex; flex-wrap:wrap; gap:8px 10px; margin:8px 0; }
                 .ntf { display:flex; flex-direction:column; gap:3px; flex:1 1 150px; min-width:140px; font-size:11px; }
                 .ntf.wide { flex:1 1 100%; }
+                .ntf.num { flex:0 1 180px; }
                 /* ‼️ A BOX THE SIZE OF WHAT GOES IN IT. An ordinary field grows
                    to fill its row, which is right for a prompt and absurd for a
                    two-digit number alone on a line — a 1400px input holding 3. */
@@ -4412,7 +4413,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 onSubmit: () => {
                     post(wiRun.kind === 'schedule'
                         ? { type: 'plan', act: 'runwith', kind: 'schedule', id: wiRun.id, supervisor: window.AFWorkflowInputs.given(wiRun.sup), preset: wiRun.preset || '' }
-                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '', roles: wiRun.roles || {} });
+                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '', production: wiRun.production || '', roles: wiRun.roles || {}, spendCap: wiRun.spendCap || '' });
                     wiRun = null;
                     render();
                 },

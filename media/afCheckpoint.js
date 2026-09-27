@@ -23,6 +23,8 @@
         ['wf-supTimeout', 'supTimeout', 'Minutes per call', '5', 'A turn that takes longer is cut and counts as failed.', true]
     ];
     const SUP_MODE = 'wf-supBudgetMode';
+    // A-27 — the whole run's hard spend cap (flex point workflow.spendCap)
+    const CAP = 'wf-spendCap';
     const IDS = ['cpMsg', 'cpMaxInsert', 'cpKinds', 'cpRetries', 'cpConf', 'cpLow'];
 
     function blank() { return { cpMsg: '', cpAllowed: '', cpMaxInsert: '', cpKinds: '', cpRetries: '', cpConf: '', cpLow: '' }; }
@@ -93,6 +95,12 @@
                     <input type="${isNum ? 'number' : 'text'}" id="nt-${id}"${isNum ? ' min="0" step="any"' : ''} placeholder="${C.esc(ph)}" value="${C.esc(c[key] == null ? '' : String(c[key]))}"></label>`).join('')}
                 <label class="ntf" title="${C.esc('What passing the budget does: soft = it is said on the row and the supervisor carries on; hard = no further turn this run.')}"><span>Over the budget</span>
                     <select id="nt-${SUP_MODE}">${[['', 'Default — say it (soft)'], ['soft', 'say it (soft)'], ['hard', 'stop asking (hard)']].map(([id, label]) => C.option(id, label, { selected: id === (c.supBudgetMode || '') })).join('')}</select></label>
+            </div>
+            <div class="ntsec"><b>Cost</b>
+            <span class="muted small">What the whole run may spend — every step and supervisor turn counted.</span></div>
+            <div class="ntgrid">
+                <label class="ntf num" title="${C.esc((c.spendCap ? '$' + c.spendCap + ' — this workflow' : 'Farm Settings, else none') + '\n\nThe WHOLE run\'s hard spend ceiling, every step and supervisor turn counted: once the run has spent this much, no further step or for-each branch starts and the run stops, saying so — nothing is asked. 0 or blank = Farm Settings (agentFarm.workflowSpendCap), else none. The soft ceiling is a Wake condition on cost.run.')}"><span>Run cap $ (hard)</span>
+                    <input type="number" id="nt-${CAP}" min="0" step="any" placeholder="Farm Settings, else none" value="${C.esc(c.spendCap == null ? '' : String(c.spendCap))}"></label>
             </div>`;
     }
 
@@ -101,6 +109,7 @@
         byId('nt-wf-criteria', 'input', e => { const d = draft(); if (d) { d.criteria = e.target.value; } });
         SUP.forEach(([id, key]) => byId('nt-' + id, 'input', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
         byId('nt-' + SUP_MODE, 'change', e => { const d = draft(); if (d) { d.supBudgetMode = e.target.value; } });
+        byId('nt-' + CAP, 'input', e => { const d = draft(); if (d) { d.spendCap = e.target.value; } });
     }
 
     window.AFCheckpoint = { KINDS, IDS, blank, row, summary, read, wire, goalEditor, wireGoal };

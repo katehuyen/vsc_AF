@@ -9,6 +9,8 @@
     const RUN_IN = 'wi-run', RUN_WAKE = 'wi-wake';
     // M-50 — this run's production for {brand.*}; drawn only when a step reads the brand or the workflow names one
     const RUN_PROD = 'wi-production';
+    // A-27 — this run's hard spend cap (flex point workflow.spendCap, run level)
+    const RUN_CAP = 'wi-spendCap';
     const F = () => window.AFForm;
     const pointAt = box => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afRunWith.js#' + box) : '');
     const inKey = i => pointAt(RUN_IN) + '#' + i.name;
@@ -56,11 +58,12 @@
         if (P && dict) { strips.push(P.stripFor(promote, wakeKey(), 'Wake', shown, shown)); }
         const prod = prodBox(p, run, scenes);
         const roles = window.AFRoles ? window.AFRoles.runBoxes(p, run, agents, F()) : '';
+        const cap = capBox(p, run);
         return F().card({
             id: 'nt-runwith', title: `Run “${p.title}” with`,
             lede: (p.inputs || []).length ? 'each box starts at the last run\'s value, else the input\'s default'
                 : prod ? 'this run\'s own wake conditions and brand kit' : 'this run\'s own wake conditions, starting at the last run\'s',
-            body: F().grid(fields, wake, prod, roles, strips), submit: 'Run with these'
+            body: F().grid(fields, wake, prod, roles, cap, strips), submit: 'Run with these'
         });
     }
 
@@ -73,6 +76,16 @@
         return F().sel(RUN_PROD, 'Brand kit from', [{ id: '', label: 'the workflow\'s — ' + wf }].concat(list.map(x => ({ id: x.id, label: x.label }))), run.production || '', {
             tip: `${run.production ? name(run.production) + ' — this run' : wf + ' — the workflow'}\n\nThe production whose brand kit this run's steps read as {brand.*}. This run only; it beats the workflow's and a media step's own.`,
             redraw: true
+        });
+    }
+
+    /** A-27 — the Run cap box: what this run may spend before no further step starts. */
+    function capBox(p, run) {
+        const under = p.spendCap > 0 ? ['$' + p.spendCap, 'the workflow'] : p.spendCapSetting > 0 ? ['$' + p.spendCapSetting, 'Farm Settings'] : ['none', 'no cap anywhere'];
+        const mine = String(run.spendCap == null ? '' : run.spendCap);
+        return F().text(RUN_CAP, 'Run cap $ (hard)', mine, {
+            ph: under[0] + ' — ' + under[1],
+            tip: (mine ? '$' + mine + ' — this run' : under[0] + ' — ' + under[1]) + '\n\nThis run\'s hard spend ceiling: once it has spent this much, no further step or for-each branch starts and the run stops, saying so. 0 = no cap for this run. This run only.'
         });
     }
 
@@ -126,8 +139,9 @@
         (p.inputs || []).forEach(i => { const v = values[RUN_IN + '.' + i.name]; if (v !== undefined) { run.values[i.name] = v; } });
         if (values[RUN_WAKE] !== undefined) { run.wake = values[RUN_WAKE]; }
         if (values[RUN_PROD] !== undefined) { run.production = values[RUN_PROD]; }
+        if (values[RUN_CAP] !== undefined) { run.spendCap = values[RUN_CAP]; }
         if (window.AFRoles) { window.AFRoles.applyRun(p, run, values); }
     }
 
-    window.AFRunWith = { RUN_IN, RUN_WAKE, RUN_PROD, workflowCard, scheduleCard, apply, changed };
+    window.AFRunWith = { RUN_IN, RUN_WAKE, RUN_PROD, RUN_CAP, workflowCard, scheduleCard, apply, changed };
 })();

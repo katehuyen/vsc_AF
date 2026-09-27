@@ -322,6 +322,15 @@
                 run: { surface: 'media/afRoles.js#wi-roles', bridge: 'workflows.run:roles' }
             }
         },
+        // A-27 — the run's hard spend cap: past it no further step or branch starts, nothing asked (src/core/runSpendCap.ts)
+        {
+            id: 'workflow.spendCap', label: 'Run spend cap $ (hard)', type: 'number', default: 0, min: 0, remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.workflowSpendCap', bridge: 'settings.set:agentFarm.workflowSpendCap' },
+                workflow: { surface: 'media/afCheckpoint.js#wf-spendCap', bridge: 'workflows.add:spendCap' },
+                run: { surface: 'media/afRunWith.js#wi-spendCap', bridge: 'workflows.run:spendCap' }
+            }
+        },
         brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),
         brandPoint('typography', 'typography'), brandPoint('voice', 'voice id'), brandPoint('aspect', 'aspect'),
         brandPoint('duration', 'duration'), brandPoint('logo', 'logo rule'), brandPoint('logoPlace', 'logo placement'),

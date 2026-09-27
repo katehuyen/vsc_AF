@@ -30,6 +30,7 @@ import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
 import { BrandKit, brandRefs, cleanBrand } from '../core/brandKit';
 import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from '../core/workflowRoles';
+import { spendCapRefusal } from '../core/runSpendCap';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -191,6 +192,8 @@ export interface TasksDeps {
     brandKits?: () => Record<string, BrandKit>;
     /** M-53 — the agent every role a workflow leaves open goes to (agentFarm.showrunner) */
     showrunner?: () => string;
+    /** A-27 — Farm Settings' hard spend cap per workflow run (agentFarm.workflowSpendCap) */
+    spendCapSetting?: () => number;
     /** live tasks merged with the finished-task archive */
     allRecords(): TaskRecord[];
     /** urgent Needs-You rows (permission waits + browser approvals). */
@@ -256,6 +259,9 @@ interface PlanRow {
     production?: string;
     /** M-53 — who fills each role its steps name (the Run card's role boxes) */
     roleSlots?: { role: string; agent?: string; from: string }[];
+    /** A-27 — a workflow's own hard spend cap, and Farm Settings' under it */
+    spendCap?: number;
+    spendCapSetting?: number;
     usesBrand?: boolean;
     /** U-151 — a schedule whose own retry is supervised, and that supervisor's values ('Run with…' starts there) */
     supervised?: boolean;
@@ -660,6 +666,8 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
             production: w.production ?? '', usesBrand: brandRefs([w.steps]).length > 0,
             // M-53 — who fills each role its steps name, for the Run card's role boxes
             roleSlots: rolesReport(w, deps.showrunner ? deps.showrunner() : 'youtuber', deps.getAgents()).roles,
+            // A-27 — the hard spend cap the Run card's box starts under: the workflow's, else Farm Settings'
+            spendCap: w.spendCap ?? 0, spendCapSetting: deps.spendCapSetting ? Number(deps.spendCapSetting()) || 0 : 0,
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -1848,7 +1856,7 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], production: w.production ?? '', roles: w.roles ?? {}, stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], production: w.production ?? '', roles: w.roles ?? {}, spendCap: w.spendCap ? String(w.spendCap) : '', stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
                 : { mode2: 'new', steps: [], inputs: [], ...librarySeed(undefined, 'workflow'), wake: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
@@ -2094,6 +2102,10 @@ export class TasksPanel {
             const rolesNo = rolesRefusal(item.roles, this.deps.getAgents());
             if (rolesNo) { this.say(`Roles: ${rolesNo}.`); return; }
             const roles = cleanRoles(item.roles);
+            // A-27 — the run's hard spend cap; blank or 0 = Farm Settings' (else none)
+            const capNo = spendCapRefusal(item.spendCap);
+            if (capNo) { this.say(`Run cap: ${capNo}.`); return; }
+            const cap = Number(item.spendCap) > 0 ? Number(item.spendCap) : undefined;
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -2108,6 +2120,7 @@ export class TasksPanel {
                 setWorkflowWake(existing, wk.wake);
                 if (prod) { existing.production = prod; } else { delete existing.production; }
                 if (roles) { existing.roles = roles; } else { delete existing.roles; }
+                if (cap) { existing.spendCap = cap; } else { delete existing.spendCap; }
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
@@ -2118,6 +2131,7 @@ export class TasksPanel {
                 setWorkflowWake(made, wk.wake);
                 if (prod) { made.production = prod; }
                 if (roles) { made.roles = roles; }
+                if (cap) { made.spendCap = cap; }
                 m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);
             }
@@ -2186,6 +2200,8 @@ export class TasksPanel {
         production?: string;
         /** M-53 — a workflow run's own agent per role */
         roles?: Record<string, string>;
+        /** A-27 — a workflow run's own hard spend cap */
+        spendCap?: unknown;
         /** U-151 — '↑ make default' */
         point?: string; level?: string; target?: string; value?: unknown;
     }): Promise<void> {
@@ -2248,8 +2264,12 @@ export class TasksPanel {
                         const rolesNo = rolesRefusal(msg.roles, this.deps.getAgents());
                         if (rolesNo) { this.say(`Roles: ${rolesNo}.`); break; }
                         const runRoles = cleanRoles(msg.roles);
-                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod || runRoles
-                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}), ...(runRoles ? { roles: runRoles } : {}) } : undefined);
+                        // A-27 — this run's own hard spend cap; blank = the workflow's, else Farm Settings'
+                        const capNo = spendCapRefusal(msg.spendCap);
+                        if (capNo) { this.say(`Run cap: ${capNo}.`); break; }
+                        const runCap = msg.spendCap === undefined || msg.spendCap === '' ? undefined : Number(msg.spendCap);
+                        this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake || prod || runRoles || runCap !== undefined
+                            ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}), ...(prod ? { production: prod } : {}), ...(runRoles ? { roles: runRoles } : {}), ...(runCap !== undefined ? { spendCap: runCap } : {}) } : undefined);
                         break;
                     }
                     // ‼️ A workflow's Edit is the workflow — its name AND its

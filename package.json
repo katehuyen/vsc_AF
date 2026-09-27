@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.708.0",
+  "version": "3.709.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9183,6 +9183,12 @@
           "type": "string",
           "default": "youtuber",
           "markdownDescription": "The **showrunner** — the agent that fills every role a workflow step names (senarist, kurgu, yayinci …) when the workflow binds it to nobody (M-53). A workflow binds a role on its form (Roles) or with `workflows.add roles=`; `workflows.roles` says who fills what and why."
+        },
+        "agentFarm.workflowSpendCap": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "The **hard spend cap** of a workflow run, in dollars (A-27): once a run has spent this much — every step and supervisor turn counted — no further step or for-each branch starts and the run stops, saying so. Nothing is asked. `0` = no cap. A workflow sets its own on its form (Run cap $) or with `workflows.add spendCap=`; one run beats both with `workflows.run spendCap=`. The soft ceiling is a Wake condition on `cost.run`."
         },
         "agentFarm.airtableInputStages": {
           "type": "string",
