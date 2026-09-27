@@ -178,7 +178,7 @@ console.log('== the Run card ==');
         ok('‼️ this flow posts the point, the input\'s name, the workflow and the value', m && m.type === 'flexPromote' && m.point === 'workflow.input'
             && m.name === 'size' && m.level === 'workflow' && m.target === 'w9' && m.value === 'long');
         r.send({ type: 'flexPromoted', point: 'workflow.input', name: 'size' });
-        ok('written: the box keeps its value — it IS the default now', r.query('#nt-wi-run-size')[0].value === 'long' && !/data-flexup-strip=/.test(r.html()));
+        ok('written: the box keeps its value — it IS the default now', r.query('[data-af]').find(e => e.dataset.af === 'wi-run.size').value === 'long' && !/data-flexup-strip=/.test(r.html()));
     }
     {
         const r = start3();
@@ -187,12 +187,12 @@ console.log('== the Run card ==');
         const m = r.last();
         ok('the wake set goes to the workflow as its preset', m && m.point === 'workflow.wake' && m.level === 'workflow' && m.target === 'w9' && m.value === 'hybrid');
         r.send({ type: 'flexPromoted', point: 'workflow.wake', name: 'run' });
-        ok('written: the run takes the workflow\'s again', r.query('#nt-wi-wake')[0].value === '' && !upOf(r, 'workflow.wake#run'));
+        ok('written: the run takes the workflow\'s again', r.query('[data-af]').find(e => e.dataset.af === 'wi-wake').value === '' && !upOf(r, 'workflow.wake#run'));
     }
     {
         const r = start3();
         r.query('[data-flexup-back]')[0].click();
-        ok('↺ on a run box puts the workflow\'s default back', r.query('#nt-wi-run-size')[0].value === 'short' && !upOf(r, 'workflow.input#size'));
+        ok('↺ on a run box puts the workflow\'s default back', r.query('[data-af]').find(e => e.dataset.af === 'wi-run.size').value === 'short' && !upOf(r, 'workflow.input#size'));
     }
 }
 

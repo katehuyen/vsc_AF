@@ -291,7 +291,7 @@
             levels: {
                 workflow: { surface: 'media/afWake.js#wf-wake', bridge: 'workflows.add:wake' },
                 step: { surface: 'media/afWake.js#st-wake', bridge: 'workflows.add:steps.wake' },
-                run: { surface: 'media/afWake.js#wi-wake', bridge: 'workflows.run:wake' },
+                run: { surface: 'media/afRunWith.js#wi-wake', bridge: 'workflows.run:wake' },
                 live: { surface: 'src/workflowLiveUi.ts#wl-wake', bridge: 'workflows.live:wake' }
             }
         },
@@ -300,7 +300,7 @@
             id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,
             levels: {
                 workflow: { surface: 'media/afWorkflowInputs.js#wi-default', bridge: 'workflows.add:inputs.default' },
-                run: { surface: 'media/afWorkflowInputs.js#wi-run', bridge: 'workflows.run:inputs' }
+                run: { surface: 'media/afRunWith.js#wi-run', bridge: 'workflows.run:inputs' }
             }
         },
         {

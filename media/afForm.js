@@ -42,8 +42,9 @@
     function wrap(o, inner, extraCls) {
         const opt = o || {};
         const cls = ['aff', opt.wide ? 'wide' : '', extraCls || ''].filter(Boolean).join(' ');
+        // `opt.after` — markup a surface places after the label (U-151: the ↑ beside a flex box); it escapes its own text
         const head = opt.label === '' ? '' :
-            `<span>${esc(opt.label)}${opt.required ? ' <em>required</em>' : ''}</span>`;
+            `<span>${esc(opt.label)}${opt.required ? ' <em>required</em>' : ''}${opt.after || ''}</span>`;
         return `<label class="${cls}"${opt.tip ? ` title="${esc(opt.tip)}"` : ''}>${head}${inner}</label>`;
     }
 

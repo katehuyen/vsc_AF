@@ -488,7 +488,9 @@ export function htmlShell(
     const flexSettings = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexSettings.js'));
     // U-151 — '↑ make default' / '↺ back to inherited' beside a flex box
     const flexPromote = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexPromote.js'));
-    const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
+    // U-151 — 'Run with…': one run's own values, drawn with the page form
+    const runWith = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunWith.js'));
+    const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
     // picked up on the next page render. See src/core/speaker.ts.
@@ -559,6 +561,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${airtableInput}"></script>
 <script nonce="${nonce}" src="${studioLib}"></script>
 <script nonce="${nonce}" src="${wake}"></script>
+<script nonce="${nonce}" src="${runWith}"></script>
 <script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>

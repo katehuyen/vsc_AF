@@ -240,6 +240,8 @@ interface PlanRow {
     lastInputs?: Record<string, string>;
     /** M-45 — which preset its wake conditions are (the Run card's "the workflow's") */
     wakeMode?: string;
+    /** U-151 — the wake preset the last 'Run with…' chose; the card starts there */
+    lastWake?: string;
     /** when/how it fires, in the user's words */
     when: string;
     nextAt?: number;
@@ -633,7 +635,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
         rows.push({
             id: w.id, kind: 'workflow', title: w.title,
             when: 'when you run it (or a trigger does)',
-            inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {}, wakeMode: wakeMode(w.wake),
+            inputs: w.inputs ?? [], lastInputs: w.lastInputs ?? {}, wakeMode: wakeMode(w.wake), lastWake: w.lastWake ?? '',
             // a chain has no single launch of its own — each step states one
             agentName: '', model: '', engine: '', guard: '', hasGuard: false,
             switchable: false, enabled: true,
@@ -2177,6 +2179,8 @@ export class TasksPanel {
                         if (refusal) { this.say(refusal); break; }
                         const wk = wakeFromArg(msg.wake);
                         if (wk.error) { this.say(`Wake: ${wk.error}.`); break; }
+                        // U-151 — the next 'Run with…' starts at this run's wake choice (remembered, like its inputs)
+                        if (typeof msg.wake === 'string' && msg.wake) { w.lastWake = msg.wake; } else { delete w.lastWake; }
                         this.deps.manager.runWorkflow(w, Object.keys(given).length || wk.wake ? { inputs: given, ...(wk.wake ? { wake: wk.wake } : {}) } : undefined);
                         break;
                     }

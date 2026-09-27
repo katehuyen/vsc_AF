@@ -847,14 +847,14 @@
             <td class="state">${stateCell}</td>
             <td class="acts">
                 <button class="mini secondary" data-plan="run" data-kind="${p.kind}" data-id="${p.id}" title="run it now">run</button>
+                ${p.kind === 'workflow' ? `<button class="mini secondary" data-plan="runwith" data-kind="workflow" data-id="${p.id}" title="Run with…
+
+Opens this run's own values: its inputs and wake set, each starting at the last run's.">with…</button>` : ''}
                 <button class="mini secondary" data-plan="edit" data-kind="${p.kind}" data-id="${p.id}" title="edit">edit</button>
                 <button class="mini secondary" data-plan="delete" data-kind="${p.kind}" data-id="${p.id}" title="delete">✕</button>
             </td>
-        </tr>${wiRun && wiRun.id === p.id && window.AFWorkflowInputs ? `<tr class="detail"><td colspan="10"><div class="detailbox">
-            <div class="ntsub"><b>Run “${C.esc(p.title)}” with</b> <span class="muted">each box starts at the last run's value, else the input's default</span></div>
-            ${window.AFWorkflowInputs.runCard(p.inputs, p.lastInputs, C, runPromote(p), wiRun.values)}
-            ${window.AFWake ? `<div class="ntgrid">${window.AFWake.runRow(p.wakeMode, wiRun.wake, DATA.wakeDict, C, runPromote(p))}</div>` : ''}
-            <div class="ctl-row"><button id="nt-wi-go">Run with these</button><button class="secondary" id="nt-wi-cancel">Cancel</button></div>
+        </tr>${wiRun && wiRun.id === p.id && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
+            ${window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict)}
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
 
@@ -4353,10 +4353,11 @@
         click('[data-plan]', e => {
             const el = e.currentTarget;
             // M-38 — a workflow that takes inputs opens its Run card instead of starting blind
-            const ins = el.dataset.plan === 'run' && el.dataset.kind === 'workflow' ? wfInputs(el.dataset.id) : [];
-            if (ins.length) {
+            const ins = (el.dataset.plan === 'run' || el.dataset.plan === 'runwith') && el.dataset.kind === 'workflow' ? wfInputs(el.dataset.id) : [];
+            if (ins.length || el.dataset.plan === 'runwith') {
                 const p = DATA.plan.find(x => x.kind === 'workflow' && x.id === el.dataset.id) || {};
-                wiRun = { id: el.dataset.id, values: Object.fromEntries(ins.map(i => [i.name, (p.lastInputs || {})[i.name] ?? i.default ?? ''])) };
+                // U-151 — 'Run with…': each box starts at the last run's value, the wake set too
+                wiRun = { id: el.dataset.id, values: Object.fromEntries(ins.map(i => [i.name, (p.lastInputs || {})[i.name] ?? i.default ?? ''])), wake: p.lastWake || '' };
                 render();
                 return;
             }
@@ -4383,24 +4384,21 @@
                 drafts: composer && composer.kind === 'workflow' ? composer.inputs : null,
                 inputs: composer && composer.kind === 'trigger' ? wfInputs(composer.workflowId) : wiRun ? wfInputs(wiRun.id) : [],
                 mapping: composer && composer.kind === 'trigger' ? composer.wiMap : null,
-                runValues: wiRun && !(composer && composer.kind === 'trigger') ? wiRun.values : null,
-                redraw: () => { persist(); render(); },
-                rerun: window.AFFlexPromote ? render : null
+                redraw: () => { persist(); render(); }
             });
-            click('#nt-wi-cancel', () => { wiRun = null; render(); });
-            const wkSel = document.getElementById('nt-wi-wake');
-            if (wkSel && wiRun) {
-                wkSel.addEventListener('change', e => {
-                    const was = !!wiRun.wake;
-                    wiRun.wake = e.target.value;
-                    // U-151 — a run that took (or dropped) its own wake set gains (or loses) its ↑
-                    if (window.AFFlexPromote && was !== !!wiRun.wake) { render(); }
-                });
-            }
-            click('#nt-wi-go', () => {
-                post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), ...(wiRun.wake ? { wake: wiRun.wake } : {}) });
-                wiRun = null;
-                render();
+        }
+        // U-151 — the 'Run with…' card is the page form: it keeps the draft in step, redraws when ↑ comes or goes
+        if (wiRun && window.AFRunWith && window.AFForm) {
+            const wp = () => DATA.plan.find(x => x.kind === 'workflow' && x.id === wiRun.id) || {};
+            window.AFForm.wire(document.getElementById('nt-runwith') || document, {
+                onEdit: v => { if (wiRun) { window.AFRunWith.apply(wp(), wiRun, v); } },
+                onRedraw: () => { if (wiRun && window.AFFlexPromote && window.AFRunWith.changed(wp(), wiRun)) { render(); } },
+                onSubmit: () => {
+                    post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '' });
+                    wiRun = null;
+                    render();
+                },
+                onCancel: () => { wiRun = null; render(); }
             });
         }
         click('[data-add]', e => post({ type: 'plan-add', kind: e.currentTarget.dataset.add }));

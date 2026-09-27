@@ -133,8 +133,10 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afAirtableInput.js',
     // afStudioLibrary.js — the Studio wall's library row and card strip (X-424).
     'afStudioLibrary.js',
-    // afWake.js — what wakes a workflow's supervisor after a step: form block, step override, Run card (M-45).
+    // afWake.js — what wakes a workflow's supervisor after a step: form block, step override (M-45).
     'afWake.js',
+    // afRunWith.js — 'Run with…': one run's own values, drawn with the page form (U-151).
+    'afRunWith.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).
     'afSupervisorStrip.js'];
 

@@ -1306,6 +1306,8 @@ export interface FarmWorkflow {
     inputs?: WorkflowInput[];
     /** M-38 — the last run's values, which the Run card is prefilled with (remembered) */
     lastInputs?: Record<string, string>;
+    /** U-151 — the wake preset the last 'Run with…' chose ('' / absent = the workflow's own); the card starts there */
+    lastWake?: string;
     /** M-43 — what the chain is for, and how its supervisor tells it got there */
     goal?: string;
     criteria?: string[];

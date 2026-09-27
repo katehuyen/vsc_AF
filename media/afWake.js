@@ -1,13 +1,13 @@
 // Agent Farm — WAKING THE SUPERVISOR ON AN EVENT (M-45). When a step ends, the
 // run's wake conditions are held against what it measured: nothing fires = the
 // mechanical path, something fires = the supervisor is asked as if a checkpoint
-// stood right after that step. Three surfaces, one module: the workflow form's
-// Wake block (presets + conditions), the step card's override, the Run card's
-// "this run only". Every list is the host's dictionary (DATA.wakeDict, from
+// stood right after that step. Two surfaces here: the workflow form's Wake block
+// (presets + conditions) and the step card's override; a run's own "this run
+// only" is on its 'Run with…' card (media/afRunWith.js). Every list is the host's dictionary (DATA.wakeDict, from
 // src/core/workflowPolicy.ts), so a field added there turns up here unchanged.
 (function () {
     'use strict';
-    const WF = 'wf-wake', ST = 'st-wake', RUN = 'wi-wake';
+    const WF = 'wf-wake', ST = 'st-wake';
     const clone = x => JSON.parse(JSON.stringify(x || []));
     const one = c => Array.isArray(c.all) ? ['&'].concat(c.all.map(one))
         : [c.field || '', c.operator || '', c.value === undefined || c.value === null ? '' : String(c.value)];
@@ -100,20 +100,6 @@
             ${has ? `<div class="wkbox">${editor(ST, s.wake, d, C, false)}</div>` : ''}`;
     }
 
-    /** The Run card's "this run only". U-151 — `promote` draws ↑ → this flow's own set. */
-    function runRow(wfMode, v, d, C, promote) {
-        if (!d) { return ''; }
-        const P = promote && window.AFFlexPromote;
-        const key = runKey();
-        const shown = v ? ((d.presets || []).find(p => p.id === v) || {}).label || v : '';
-        return `<label class="ntf" title="${C.esc('Wake conditions for this run only. Empty = the workflow\'s own (' + (wfMode || 'mechanical') + ').')}"><span>Wake${P ? P.up(promote, key, shown) : ''}</span>
-            <select id="nt-${RUN}">${[['', 'the workflow\'s — ' + (wfMode || 'mechanical')]].concat((d.presets || []).map(p => [p.id, p.label]))
-            .map(([id, label]) => C.option(id, label, { selected: id === (v || '') })).join('')}</select></label>
-            ${P ? P.stripFor(promote, key, 'Wake', shown, shown) : ''}`;
-    }
-    /** U-151 — the Run card's key: the point, qualified so it never meets the step card's. */
-    const runKey = () => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afWake.js#' + RUN) : '') + '#run';
-
     function wireEditor(pfx, byId, get, d, render) {
         (d.presets || []).forEach(p => byId(`nt-${pfx}-p-${p.id}`, 'click', () => { get().splice(0, Infinity, ...clone(p.conditions)); render(); }));
         byId(`nt-${pfx}-add`, 'click', () => {
@@ -166,5 +152,5 @@
         if (Array.isArray(s.wake)) { wireEditor(ST, byId, () => s.wake, d, render); }
     }
 
-    window.AFWake = { WF, ST, RUN, modeOf, modeLabel, workflowBlock, stepRow, runRow, wireWorkflow, wireStep, stepPoint: stPoint };
+    window.AFWake = { WF, ST, modeOf, modeLabel, workflowBlock, stepRow, wireWorkflow, wireStep, stepPoint: stPoint };
 })();

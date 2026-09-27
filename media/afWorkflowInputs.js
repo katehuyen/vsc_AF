@@ -1,9 +1,9 @@
 // Agent Farm — WORKFLOW INPUTS (M-38). A workflow declares what it is given
-// when it starts; any step reads a value as {input.<name>}. Three surfaces, one
-// module: the workflow form declares the inputs (flex point workflow.input at
-// the workflow level), the run card fills them (the run level, prefilled with
-// the last run's values), and a trigger that runs the workflow maps what it
-// knows when it fires onto them (trigger.inputs). Drafts are plain objects the
+// when it starts; any step reads a value as {input.<name>}. Two surfaces here:
+// the workflow form declares the inputs (flex point workflow.input at the
+// workflow level), and a trigger that runs the workflow maps what it knows when
+// it fires onto them (trigger.inputs). A run fills them on its 'Run with…' card
+// (media/afRunWith.js — the run level, prefilled with the last run's values). Drafts are plain objects the
 // page keeps; every box writes itself into its draft as it is typed, because
 // the page redraws on every host push.
 (function () {
@@ -12,7 +12,7 @@
         ['text', 'text'], ['file', 'file — a path'], ['folder', 'folder — a path'],
         ['choice', 'choice — one of a list'], ['number', 'number'], ['url', 'URL'], ['airtable', 'airtable — records found by a search']
     ];
-    const ID = { name: 'wi-name', type: 'wi-type', dflt: 'wi-default', req: 'wi-required', desc: 'wi-desc', choices: 'wi-choices', run: 'wi-run', map: 'wi-map' };
+    const ID = { name: 'wi-name', type: 'wi-type', dflt: 'wi-default', req: 'wi-required', desc: 'wi-desc', choices: 'wi-choices', map: 'wi-map' };
     const MAP_TIP = '{file} = the file that changed · {watch} = the watched path · {payload} = what a webhook sent · {payload.a.b} = one field of it';
 
     function blank() { return { name: '', type: 'text', default: '', required: false, description: '', choices: '' }; }
@@ -35,8 +35,8 @@
         });
     }
 
-    const field = (C, id, label, value, ph, title, up) =>
-        `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}${up || ''}</span>
+    const field = (C, id, label, value, ph, title) =>
+        `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
             <input type="text" id="nt-${id}" value="${C.esc(value == null ? '' : String(value))}" placeholder="${C.esc(ph || '')}"></label>`;
 
     /** The workflow form's Inputs block. */
@@ -55,36 +55,6 @@
             ${rows}<div class="ctl-row"><button class="secondary" id="nt-wi-add">+ Add an input</button></div>`;
     }
 
-    // U-151 — a Run card box's key for the '↑ this flow' control: the point, then which input
-    const runKey = i => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afWorkflowInputs.js#' + ID.run) : '') + '#' + i.name;
-    let ownAtRender = '';
-    const ownOf = (inputs, values) => (inputs || []).filter(i => values && values[i.name] !== undefined && String(values[i.name]) !== String(i.default || '')).map(i => i.name).join(',');
-
-    /**
-     * The Run card: one box per input, prefilled with the last run's value, else the default. U-151 — `values`
-     * is what this run holds so far; `promote` = { open, levels(key) } draws ↑ beside a box that differs from
-     * the workflow's default — made this flow's default in one move.
-     */
-    function runCard(inputs, last, C, promote, values) {
-        const P = promote && window.AFFlexPromote;
-        ownAtRender = ownOf(inputs, values);
-        const strips = [];
-        const rows = (inputs || []).map(i => {
-            const base = last && last[i.name] !== undefined ? last[i.name] : (i.default || '');
-            const v = values && values[i.name] !== undefined ? values[i.name] : base;
-            const from = String(v) !== String(base) ? 'this run' : last && last[i.name] !== undefined ? 'the last run' : i.default ? 'the workflow default' : 'nothing yet';
-            const tip = `${v || '(empty)'} — ${from}\n\n${i.description || i.type}${i.required ? ' · required' : ''}`;
-            const own = String(v) !== String(i.default || '') ? v : '';
-            const up = P ? P.up(promote, runKey(i), own) : '';
-            if (P) { strips.push(P.stripFor(promote, runKey(i), i.name, v, own)); }
-            return i.type === 'choice'
-                ? `<label class="ntf" title="${C.esc(tip)}"><span>${C.esc(i.name)}${i.required ? ' <em>required</em>' : ''}${up}</span>
-                    <select id="nt-${ID.run}-${C.esc(i.name)}">${[''].concat(i.choices || []).map(c => C.option(c, c || '—', { selected: c === v })).join('')}</select></label>`
-                : field(C, ID.run + '-' + i.name, i.name + (i.required ? ' *' : ''), v, i.description || i.type, tip, up);
-        }).join('');
-        return `<div class="ntgrid">${rows}${strips.join('')}</div>`;
-    }
-
     /** A trigger's mapping rows: input → what fills it when the trigger fires. */
     function mapRows(inputs, mapping, C) {
         if (!(inputs || []).length) { return ''; }
@@ -95,7 +65,7 @@
     }
 
     /**
-     * Every box writes into its draft as it is touched. `drafts` / `runValues` /
+     * Every box writes into its draft as it is touched. `drafts` /
      * `mapping` are the page's own objects; `redraw` is called when a change
      * alters the shape (a row added or removed, a type that grows a Choices box).
      */
@@ -116,9 +86,6 @@
             o.redraw && o.redraw();
         }));
         (o.inputs || []).forEach(i => {
-            if (o.runValues) { on(ID.run + '-' + i.name, i.type === 'choice' ? 'change' : 'input', e => { o.runValues[i.name] = e.target.value; }); }
-            // U-151 — a run box that came to differ from (or match) the workflow's default gains (or loses) its ↑
-            if (o.runValues && o.rerun) { on(ID.run + '-' + i.name, 'change', () => { if (ownOf(o.inputs, o.runValues) !== ownAtRender) { o.rerun(); } }); }
             if (o.mapping) { on(ID.map + '-' + i.name, 'input', e => { o.mapping[i.name] = e.target.value; }); }
         });
     }
@@ -126,5 +93,5 @@
     /** Only the values somebody typed — an empty box says nothing, so the default still applies. */
     const given = values => Object.fromEntries(Object.entries(values || {}).filter(([, v]) => String(v) !== ''));
 
-    window.AFWorkflowInputs = { TYPES, ID, blank, toDrafts, fromDrafts, editor, runCard, mapRows, wire, given };
+    window.AFWorkflowInputs = { TYPES, ID, blank, toDrafts, fromDrafts, editor, mapRows, wire, given };
 })();

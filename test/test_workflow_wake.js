@@ -81,7 +81,7 @@ eq('kinds', [K.kindOfStep({}), K.kindOfStep({ media: {} }), K.kindOfStep({ check
     const d = K.wakeDictionary();
     ok('the dictionary carries fields, operators and the presets with their sets', d.fields.length > 5 && d.operators.length > 5 && d.presets.map(p => p.id).join() === 'mechanical,smart,hybrid' && d.presets[2].conditions.length === 3);
     const page = fs.readFileSync(path.join(ROOT, 'media/tasksPage.js'), 'utf8');
-    ok('the page draws all three surfaces from DATA.wakeDict', ['workflowBlock(c, DATA.wakeDict', 'stepRow(s, c.wake, DATA.wakeDict', 'runRow(p.wakeMode, wiRun.wake, DATA.wakeDict'].every(x => page.indexOf(x) >= 0));
+    ok('the page draws all three surfaces from DATA.wakeDict', ['workflowBlock(c, DATA.wakeDict', 'stepRow(s, c.wake, DATA.wakeDict', 'workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict'].every(x => page.indexOf(x) >= 0));
     ok('base.ts loads afWake.js', /'afWake\.js'/.test(fs.readFileSync(path.join(ROOT, 'src/panels/base.ts'), 'utf8')));
 }
 

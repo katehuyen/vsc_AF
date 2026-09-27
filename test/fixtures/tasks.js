@@ -1062,9 +1062,11 @@ const variants = () => ([
         }),
         act: (r) => {
             r.query('[data-plan="run"][data-kind="workflow"]')[0].click();
-            drive(r, { 'nt-wi-run-size': 'long' }, 'nt-wi-run-size');
-            drive(r, { 'nt-wi-wake': 'hybrid' }, 'nt-wi-wake');
-            const up = r.query('[data-flexup]').find(e => e.dataset.flexup === 'workflow.input#size');
+            // the card is the page form: its boxes are named by their key, not an id
+            const pick = (key, v) => { const el = r.query('[data-af]').find(e => e.dataset.af === key); el.value = v; el.fire('change'); };
+            pick('wi-run.size', 'long');
+            pick('wi-wake', 'hybrid');
+            const up =r.query('[data-flexup]').find(e => e.dataset.flexup === 'workflow.input#size');
             if (!up) { throw new Error('no ↑ beside the size box'); }
             up.click();
         }

@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.700.0 - Run with… on every workflow (U-151, part 3d-1) (2026-09-27)
+
+- **Every workflow row has a `with…` button.** It opens the Run card —
+  now drawn as the page's standard form — even for a workflow that takes
+  no inputs, where you pick this run's wake set alone.
+- **The card remembers the last run's wake choice** as it already did its
+  inputs; choosing "the workflow's" again forgets it.
+- The ↑ beside a value that differs from the workflow's default stays.
+
 ## 3.699.0 - The step card shows what its empty boxes inherit (U-151, part 3c-4) (2026-09-27)
 
 - **An empty Library box on a step shows the workflow's value, faint**
