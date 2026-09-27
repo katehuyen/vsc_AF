@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.731.0 - A resumed session comes back as it ran, whichever door resumed it (S-102) (2026-09-28)
+
+- Resuming a session from the Sessions page (right-click → Resume in
+  Console), from the session page's Console / Resume button or from the
+  command palette now brings it back on the sign-in it ran on, with the
+  agent's own model and effort for that engine between the conversation's
+  last settings and the fleet's, and with a fresh card's Superpowers
+  default — the same answer the Console's own left panel always gave.
+  Before, these doors fell to the machine's main account.
+- An ended Console card's own Resume keeps the card's sign-in.
+- A terminal resume's account picker now leads with the sign-in the
+  conversation ran on, marked "this conversation ran on it".
+- The bridge's console.start resume= without an account continues on the
+  sign-in that conversation ran on, while that slot still exists.
+
 ## 3.730.0 - Hovers speak to the user, not to the agent (A-28) (2026-09-28)
 
 - The Console's orange bridge-guard dot no longer shows a command line and an

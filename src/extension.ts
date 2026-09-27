@@ -12368,7 +12368,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
                 + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
                 + enginesWithoutEffort()
-                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list — or, X-305, a RULE that chooses one at the moment this session starts: @emptiest (the sign-in of this engine with the most of its five-hour window left), @pool (the next account with room in the running sentry campaign\'s pool), @standing (this agent\'s own standing sign-in, else the machine-wide one), @round-robin (the usable sign-ins in turn across launches), or @<name> for one of the user\'s own rules in agentFarm.accountPolicies. A rule that can choose nothing right now REFUSES the start and says why, rather than falling through to the main sign-in. Omit and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does), baton? (S-82 — true opens a BATON RELAY: the card is sealed as leg 1 the moment its session id is known, so at the quota or context wall its whisper says "pass the baton" and a fresh session continues on the chain\'s pool — the rule account? names, or @emptiest when it names a single slot or nothing; the composer\'s ⑂ Relay chip is the same door. A fresh session only: a resumed one is attached with baton.attach), maxHops? (that chain\'s own leg ceiling, this leg included; 0 = none; implies baton:true; default agentFarm.batonMaxHops). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list — or, X-305, a RULE that chooses one at the moment this session starts: @emptiest (the sign-in of this engine with the most of its five-hour window left), @pool (the next account with room in the running sentry campaign\'s pool), @standing (this agent\'s own standing sign-in, else the machine-wide one), @round-robin (the usable sign-ins in turn across launches), or @<name> for one of the user\'s own rules in agentFarm.accountPolicies. A rule that can choose nothing right now REFUSES the start and says why, rather than falling through to the main sign-in. Omit on a resume= and the sign-in that conversation ran on continues it while that slot still exists (S-102); omit on a fresh start and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does), baton? (S-82 — true opens a BATON RELAY: the card is sealed as leg 1 the moment its session id is known, so at the quota or context wall its whisper says "pass the baton" and a fresh session continues on the chain\'s pool — the rule account? names, or @emptiest when it names a single slot or nothing; the composer\'s ⑂ Relay chip is the same door. A fresh session only: a resumed one is attached with baton.attach), maxHops? (that chain\'s own leg ceiling, this leg included; 0 = none; implies baton:true; default agentFarm.batonMaxHops). Returns the console id to talk to. ‼️ Not every engine states a price: '
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
@@ -12442,7 +12442,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * asked for the second plan and silently got the first has been
                  * told nothing, and the transcript records neither.
                  */
-                const wantAccount = optStr(args, 'account');
+                // ‼️ S-102 — a resume that names no account continues on the one it
+                // ran on, as every Console door does; a slot since forgotten is
+                // not a reason to refuse the resume, so it falls to the rule below.
+                const askedAccount = optStr(args, 'account');
+                const ownAccount = !askedAccount && resume ? sessionAccountOf(resume)?.id ?? '' : '';
+                const wantAccount = askedAccount || (ownAccount && !launchAccountRefusal({
+                    engine, account: ownAccount, agentId: agent.id, model: optStr(args, 'model') || ''
+                }) ? ownAccount : '');
                 const accountNo = launchAccountRefusal({
                     engine, account: wantAccount, agentId: agent.id,
                     model: optStr(args, 'model') || ''
@@ -22219,7 +22226,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * captured for it (one row, already true — the control with no referent).
      */
     const pickResumeAccount = async (
-        engine: string, title: string
+        engine: string, title: string, own?: string
     ): Promise<string | undefined> => {
         if (!canIsolateAccounts(engine)) { return ''; }
         const slots = slotsFor(storedAccounts(), engine);
@@ -22261,9 +22268,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         };
         const mine = slots.map(rowFor);
-        const first = mine.filter(r => r.id === standing);
-        const rest = mine.filter(r => r.id !== standing);
-        const pick = await vscode.window.showQuickPick([...first, machine, ...rest], {
+        // ‼️ S-102 — a resume leads with the sign-in THIS conversation ran on;
+        // the standing choice answers for a new run, not for this one.
+        const lead = own || standing;
+        const ranOn = '• this conversation ran on it';
+        if (own === MACHINE_ACCOUNT) { machine.description = ranOn; }
+        for (const r of mine) { if (own && r.id === own) { r.description = ranOn; } }
+        const ordered = lead === MACHINE_ACCOUNT
+            ? [machine, ...mine]
+            : [...mine.filter(r => r.id === lead), machine, ...mine.filter(r => r.id !== lead)];
+        const pick = await vscode.window.showQuickPick(ordered, {
             title: `Resume "${title}" as…`,
             placeHolder: 'Which sign-in pays for this conversation from here on',
             ignoreFocusOut: true
@@ -35950,7 +35964,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * built, because cancelling it opens nothing at all — see
                  * pickResumeAccount.
                  */
-                const account = await pickResumeAccount(engine, s.title || s.sessionId.slice(0, 8));
+                const account = await pickResumeAccount(engine, s.title || s.sessionId.slice(0, 8),
+                    sessionAccountOf(s.sessionId)?.id);
                 if (account === undefined) { return; }
                 // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN. This door
                 // passed none, so the terminal resolved the agent's standing
@@ -37381,6 +37396,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
                 engine: (s.engine || 'claude') as EngineId,
                 model: s.model, effort: s.effort, permissionMode: s.permissionMode,
+                // S-102 — the card's own sign-in, or failing that the one its run recorded
+                account: s.account || sessionAccountOf(s.sessionId)?.id,
                 ...(routeUsed?.providerId ? { providerId: routeUsed.providerId } : {}),
                 ...(routeUsed?.tier ? { tier: routeUsed.tier } : {}),
                 ...(routeUsed?.pinned ? { routePinned: true } : {}),
@@ -37529,9 +37546,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  */
                 const inherit = lastRunDimensions(s);
                 const sameEngine = defaultEngine === engine;
+                // ‼️ S-102 — the agent's own defaults for this engine sit between the
+                // transcript and the fleet, as on the Console's own resume.
+                const own: LaunchOptions = agent ? withAgentEngineDefaults(agent, { engine }) : {};
                 const want = narrowLaunch(engineModelMatrix()[engine],
-                    inherit.model || (sameEngine ? d.model : undefined),
-                    inherit.effort || (sameEngine ? d.effort : undefined));
+                    inherit.model || own.model || (sameEngine ? d.model : undefined),
+                    inherit.effort || own.effort || (sameEngine ? d.effort : undefined));
                 // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN, read off its
                 // launch record through the gate; nothing on this door names
                 // one, so nothing is asked and the standing route is never
@@ -37567,6 +37587,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // does not survive `--resume` (measured), so this is the
                     // spawn that has to re-tell it.
                     projectId: sessionOwnProject(s),
+                    // ‼️ S-102 — the sign-in it ran as, and the discipline a fresh
+                    // card would have: this door fell to the machine's account
+                    // while the Console's own resume carried both.
+                    account: sessionAccountOf(s.sessionId)?.id,
+                    ...(consoleHost.list().some(x => x.sessionId === s.sessionId)
+                        ? {} : { superpowers: superpowersOnFor(s.agentName ?? '') }),
                     // resume means CONTINUE: the earlier conversation comes with
                     // it, and so does what it has already spent
                     history: consoleHistory(s.sessionId),

@@ -325,9 +325,12 @@ async function main() {
             && has('launchAccountEnv({ engine, account }),'));
         ok('…and cancelling the picker opens NOTHING, rather than guessing',
             has('if (account === undefined) { return; }'));
-        ok('the standing account is the first row, so Enter does what the machine would have',
-            has('const first = mine.filter(r => r.id === standing);')
-            && has('showQuickPick([...first, machine, ...rest]'));
+        // S-102 — the conversation's own sign-in leads when it is known; the
+        // standing one only answers for a conversation nothing recorded.
+        ok('the account the conversation ran on is the first row, else the standing one, so Enter continues as it was',
+            has('const lead = own || standing;')
+            && has('[...mine.filter(r => r.id === lead), machine, ...mine.filter(r => r.id !== lead)]')
+            && has('showQuickPick(ordered,'));
         // ‼️ …and BOTH of those answer '' — nothing STATED. `@machine` is an
         // answer that CLEARS the config variable, and nobody was asked here, so
         // a terminal resume would have run as an identity the Console's own

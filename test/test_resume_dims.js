@@ -256,9 +256,36 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     ok('…and no longer reads the model off the first-seen set',
         !/models\[s\.models\.length - 1\]/.test(ex) && !/s\.models\[s\.models\.length - 1\]/.test(ex));
     ok('…and narrows the inherited pair for the row\'s engine',
-        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*\(sameEngine/.test(ex));
+        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*own\.model\s*\|\|\s*\(sameEngine/.test(ex));
     ok('…and its inherited mode beats the fleet default',
         /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*d\.permissionMode/.test(ex));
+
+    // ‼️ S-102 — THE DOOR DOES NOT DECIDE WHAT A RESUME RUNS AS. The Console's
+    // own resume carried the session's sign-in, the agent's defaults and the
+    // Superpowers default; the Sessions page / palette door (resumeInConsole)
+    // and the ended card's menu carried none of the sign-in, so the same
+    // conversation came back on the machine's account from two of three doors.
+    ok('S-102: the Console panel resume still carries the session\'s own sign-in',
+        /account:\s*this\.deps\.sessionAccount\?\.\(sessionId\)/.test(cp));
+    const ric = ex.slice(ex.indexOf("registerCommand('agentfarm.resumeInConsole'"));
+    const ricBody = ric.slice(0, ric.indexOf('ConsolePanel.show(consoleDeps'));
+    ok('S-102: resumeInConsole carries the sign-in the session ran on',
+        /account:\s*sessionAccountOf\(s\.sessionId\)\?\.id/.test(ricBody));
+    ok('…the agent\'s own defaults between the transcript and the fleet, as the panel does',
+        /const own: LaunchOptions = agent \? withAgentEngineDefaults\(agent, \{ engine \}\) : \{\}/.test(ricBody));
+    ok('…and a fresh card\'s Superpowers default, the seat\'s own when a card exists',
+        /consoleHost\.list\(\)\.some\(x => x\.sessionId === s\.sessionId\)\s*\n?\s*\?\s*\{\}\s*:\s*\{ superpowers: superpowersOnFor\(/.test(ricBody));
+    const crs = ex.slice(ex.indexOf("registerCommand('agentfarm.consoleResumeSession'"));
+    ok('S-102: the ended card\'s own Resume carries its sign-in too',
+        /account:\s*s\.account \|\| sessionAccountOf\(s\.sessionId\)\?\.id/.test(crs.slice(0, crs.indexOf('ConsolePanel.show('))));
+    ok('S-102: the terminal resume\'s account picker leads with the one this conversation ran on',
+        /pickResumeAccount\(engine, s\.title \|\| s\.sessionId\.slice\(0, 8\),\s*\n\s*sessionAccountOf\(s\.sessionId\)\?\.id\)/.test(ex)
+        && /const lead = own \|\| standing;/.test(ex) && /this conversation ran on it/.test(ex));
+    ok('S-102: the bridge\'s console.start resume= with no account continues on the one it ran on',
+        /const ownAccount = !askedAccount && resume \? sessionAccountOf\(resume\)\?\.id \?\? '' : '';/.test(ex)
+        && /Omit on a resume= and the sign-in that conversation ran on continues it/.test(ex));
+    ok('…and a slot since forgotten falls to the rule instead of refusing the resume',
+        /askedAccount \|\| \(ownAccount && !launchAccountRefusal\(/.test(ex));
 
     // The bridge door — and the ONE place the order is deliberately the other
     // way round: an argument a caller wrote is a real choice, unlike a composer
