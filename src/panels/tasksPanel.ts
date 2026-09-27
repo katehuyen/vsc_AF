@@ -34,6 +34,7 @@ import { spendCapRefusal } from '../core/runSpendCap';
 import { ladderOf, ladderRefusal } from '../core/judgeLadder';
 import { economyCell, economyShort, RunEconomy, runEconomy } from '../core/judgeDecision';
 import { candidatesRefusal } from '../core/mediaCandidates';
+import { BROWSER_RECIPES, browserRecipe } from '../core/browserRecipes';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -191,6 +192,8 @@ export interface TasksDeps {
      * than no picker — the field is simply not drawn.
      */
     scenes?: () => { id: string; label: string }[];
+    /** M-54 — open Chrome on a recipe's own profile so the user signs in once */
+    browserLogin?: (recipe: string, url?: string) => { ok: true; note: string } | { ok: false; error: string };
     /** M-50 — every production's brand kit by its id, for the step card's faint inherited values */
     brandKits?: () => Record<string, BrandKit>;
     /** M-53 — the agent every role a workflow leaves open goes to (agentFarm.showrunner) */
@@ -982,6 +985,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         wakeDict: wakeDictionary(),
         // Production scenes a media step can file its assets under.
         scenes: deps.scenes ? deps.scenes() : [],
+        // M-54 — the recipes a browser step can name (src/core/browserRecipes.ts)
+        browserRecipes: BROWSER_RECIPES.map(r => ({ id: r.id, label: r.label, url: r.url, hosts: r.hosts, note: r.note })),
         brandKits: deps.brandKits ? deps.brandKits() : {},
         showrunner: deps.showrunner ? deps.showrunner() : 'youtuber',
         // ---- what the New-task form offers. One vocabulary with the session
@@ -1170,6 +1175,9 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         bUrl: s.browser?.url ?? '',
         bGoal: s.browser?.goal ?? '',
         bHosts: (s.browser?.allowHosts ?? []).join(', '),
+        bRecipe: s.browser?.recipe ?? '',
+        bConfirm: s.browser?.confirm ?? '',
+        bDownloadDir: s.browser?.downloadDir ?? '',
         apMsg: s.approval?.message ?? '',
         toolJson: s.tool ? JSON.stringify(s.tool) : '',
         selMsg: s.select?.message ?? '',
@@ -1322,14 +1330,19 @@ export function stepFromDraft(
     const agent = chain.role ? { id: '', name: chain.role } : agents.find(a => a.name === str('agent'));
     if (!agent) { return { error: `Step ${n} ("${title}") has no agent.` }; }
     if (stype === 'browser') {
-        if (!str('bUrl')) { return { error: `Step ${n} ("${title}") is a browser step with no start URL.` }; }
+        const recipe = browserRecipe(str('bRecipe'));
+        if (!str('bUrl') && !recipe?.url) { return { error: `Step ${n} ("${title}") is a browser step with no start URL.` }; }
         if (!str('bGoal')) { return { error: `Step ${n} ("${title}") is a browser step with no goal.` }; }
+        const confirm = str('bConfirm');
         return {
             step: {
                 agentId: agent.id, agentName: agent.name, title, prompt: '', mode: 'headless', ...chain,
                 browser: {
                     url: str('bUrl'), goal: str('bGoal'),
-                    allowHosts: str('bHosts').split(',').map(x => x.trim()).filter(Boolean)
+                    allowHosts: str('bHosts').split(',').map(x => x.trim()).filter(Boolean),
+                    ...(recipe ? { recipe: recipe.id } : {}),
+                    ...(confirm === 'ask' || confirm === 'auto' ? { confirm } : {}),
+                    ...(recipe && str('bDownloadDir') ? { downloadDir: str('bDownloadDir') } : {})
                 }
             }
         };
@@ -2236,6 +2249,13 @@ export class TasksPanel {
             case 'refresh':
                 this.refresh();
                 break;
+            case 'browserLogin': {
+                const m = msg as { recipe?: unknown; url?: unknown };
+                const r = this.deps.browserLogin?.(String(m.recipe ?? ''), m.url ? String(m.url) : undefined);
+                if (r && r.ok) { void vscode.window.showInformationMessage(`Agent Farm: ${r.note}`); }
+                else if (r) { void vscode.window.showErrorMessage(`Agent Farm: ${r.error}`); }
+                break;
+            }
 
             // ---------------- PLAN: manage the definitions ----------------
             case 'plan': {

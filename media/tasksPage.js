@@ -1156,7 +1156,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             whPoll: false, whPollUrl: '', whStatusField: 'status',
             whDone: 'succeeded|completed|complete|done|success', whInterval: 3,
             mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mCandidates: 1, mScene: '',
-            bUrl: '', bGoal: '', bHosts: '',
+            bUrl: '', bGoal: '', bHosts: '', bRecipe: '', bConfirm: '', bDownloadDir: '',
             apMsg: '', selMsg: '', selMin: 1, selMax: 0, toolJson: ''
         }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, window.AFLibrary ? window.AFLibrary.blank() : {}, seed || {});
         // A webhook or media step carries no real agent, so switching one to
@@ -2112,7 +2112,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         const agentOf = none => (s.role && window.AFRoles ? window.AFRoles.who(s.role, composer, DATA.showrunner) : (s.agent || none));
         const who = s.stype === 'webhook' ? (s.whMethod || 'POST') + ' ' + trunc(s.whUrl || '(no url)', 44)
             : s.stype === 'media' ? (s.mModel || '(no model)') + (Number(s.mCandidates) > 1 ? ' × ' + s.mCandidates : '')
-                : s.stype === 'browser' ? agentOf('?') + ' → ' + trunc(s.bUrl || '(no url)', 34)
+                : s.stype === 'browser' ? agentOf('?') + ' → ' + trunc(s.bUrl || ((DATA.browserRecipes || []).find(r => r.id === s.bRecipe) || {}).label || '(no url)', 34)
                     : s.stype === 'approval' ? 'the chain waits for you'
                         : s.stype === 'select' ? 'keep ' + (s.selMin || 1) + (s.selMax ? '–' + s.selMax : ' or more')
                         : s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.summary(s)
@@ -2445,14 +2445,30 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                             [{ id: '', label: '— no scene —' }].concat(scenes.map(x => ({ id: x.id, label: x.label }))), s.mScene,
                             'Ties the produced assets to a scene so the gallery groups them.') : ''}
             </div>` : ''}
-            ${s.stype === 'browser' ? `<div class="ntgrid">
-                ${textF('st-bUrl', 'Start URL', s.bUrl, 'https://example.com/reports',
-                                '{prev_text} / {prev_json.x} are substituted.', true)}
+            ${s.stype === 'browser' ? (() => {
+                // M-54 — a recipe: Agent Farm's own Playwright on a signed-in profile, its downloads filed (src/core/browserRecipes.ts)
+                const rs = DATA.browserRecipes || [];
+                const rc = rs.find(r => r.id === s.bRecipe);
+                const rHosts = rc && rc.hosts.length ? rc.hosts.join(', ') : '';
+                return `<div class="ntgrid">
+                ${pickSel('st-bRecipe', 'Recipe', [{ id: '', label: '— none: the agent\'s own browser MCP —' }]
+                    .concat(rs.map(r => ({ id: r.id, label: r.label, detail: r.note }))), s.bRecipe || '',
+                    'Current: ' + (rc ? rc.label : 'none — the agent\'s own browser MCP') + '\n\nA recipe runs on Agent Farm\'s own Playwright, on a browser profile of its own that keeps a login (sign in once with Sign in… beside this box), and every file it downloads is filed into the gallery and the library.' + (rc ? '\n\n' + rc.note : ''))}
+                ${rc ? `<label class="ntf" title="${C.esc('Sign in once on the ' + rc.label + ' profile\n\nOpens an ordinary Chrome window on this recipe\'s own profile at ' + (rc.url || 'the Start URL') + '. Sign in there, then CLOSE the window: a step cannot open the profile while it is open. Your own Chrome windows are not touched.')}"><span>Profile</span>
+                    <button class="mini secondary" id="nt-st-bLogin" style="align-self:flex-start;width:auto;margin-top:3px">Sign in…</button></label>` : ''}
+                ${textF('st-bUrl', 'Start URL', s.bUrl, rc && rc.url ? rc.url : 'https://example.com/reports',
+                    (rc && rc.url ? 'Empty = the recipe\'s own: ' + rc.url + '\n\n' : '') + '{prev_text} / {prev_json.x} are substituted.', true)}
                 ${textF('st-bGoal', 'Goal', s.bGoal, 'find the latest report and extract the numbers',
-                                    'What the agent is trying to achieve on the site.', true)}
-                ${textF('st-bHosts', 'Allowed hosts', s.bHosts, 'example.com, cdn.example.com',
-                                        '‼️ The agent may not leave these domains. Empty = the global agentFarm.browserAllowHosts list.', true)}
-            </div>` : ''}
+                    'What the agent is trying to achieve on the site.', true)}
+                ${textF('st-bHosts', 'Allowed hosts', s.bHosts, rHosts || 'example.com, cdn.example.com',
+                    '‼️ The agent may not leave these domains. Empty = ' + (rHosts ? 'the recipe\'s own (' + rHosts + ')' : 'the global agentFarm.browserAllowHosts list') + '.', true)}
+                ${pickSel('st-bConfirm', 'Ask first', [{ id: '', label: 'Default — Farm Settings' },
+                    { id: 'ask', label: 'ask — wait for a yes' }, { id: 'auto', label: 'auto — run without asking' }], s.bConfirm || '',
+                    'Current: ' + (s.bConfirm || 'Farm Settings (agentFarm.browserApproval)') + '\n\nWhether the run stops for a yes before this step opens the site.')}
+                ${rc ? textF('st-bDownloadDir', 'Download folder', s.bDownloadDir, '(a folder of the step\'s own)',
+                    'Current: ' + (s.bDownloadDir || 'a folder of the step\'s own, beside its output') + '\n\nWhere the browser saves what it downloads; every new file here is filed into the gallery and the library when the step ends.', true) : ''}
+            </div>`;
+            })() : ''}
             ${s.stype === 'approval' ? `<div class="ntgrid">
                 ${textF('st-apMsg', 'Message', s.apMsg, 'Review the output before it goes live',
                                             'Shown when the chain stops to ask you. {prev_text} is substituted.', true)}
@@ -2551,7 +2567,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             'sengine', 'smodel', 'seffort', 'spermissionMode', 'sproviderId', 'stier',
             'onFail', 'runIf', 'contract', 'verifyCriteria', 'verifyEngine', 'verifyModel',
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
-            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg',
+            'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'bRecipe', 'bConfirm', 'bDownloadDir', 'apMsg', 'selMsg',
             'feList', 'feConc', 'feFail', 'feRetries', 'feCap', 'feCapMode', 'feBudget'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax', 'mCandidates'].forEach(n);
         ['parallel', 'whPoll'].forEach(b);
@@ -2581,7 +2597,8 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         }
         if (s.stype === 'browser') {
             if (!s.agent) { return 'Pick the agent that drives the browser.'; }
-            if (!String(s.bUrl || '').trim()) { return 'A browser step needs a start URL.'; }
+            const rcp = (DATA.browserRecipes || []).find(r => r.id === s.bRecipe);
+            if (!String(s.bUrl || '').trim() && !(rcp && rcp.url)) { return 'A browser step needs a start URL.'; }
             if (!String(s.bGoal || '').trim()) { return 'A browser step needs a goal — what it is trying to do there.'; }
         }
         if (s.stype === 'select' && s.selMax && s.selMax < (s.selMin || 1)) {
@@ -4799,7 +4816,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
-                    'mModel', 'mInput', 'mCandidates', 'bUrl', 'bGoal', 'bHosts',
+                    'mModel', 'mInput', 'mCandidates', 'bUrl', 'bGoal', 'bHosts', 'bDownloadDir',
                     'apMsg', 'selMsg', 'selMin', 'selMax'].forEach(id =>
                         byId('nt-st-' + id, 'input', () => readStep()));
                 // ‼️ X-224 — `saccount` reads back like the other pickers here.
@@ -4808,8 +4825,14 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 // ‼️ X-228 — `seffort`, `spermissionMode` and `stier` read like
                 // the account does: nothing else on the card depends on them.
                 ['agent', 'smode', 'saccount', 'seffort', 'spermissionMode', 'stier',
-                    'contract', 'onFailStep', 'mScene'].forEach(id =>
+                    'contract', 'onFailStep', 'mScene', 'bConfirm'].forEach(id =>
                         byId('nt-st-' + id, 'change', () => readStep()));
+                // M-54 — a recipe changes the placeholders and adds the download folder: redraw
+                byId('nt-st-bRecipe', 'change', () => { readStep(); render(); });
+                byId('nt-st-bLogin', 'click', () => {
+                    const st = composer.steps[composer.stepIdx] || {};
+                    post({ type: 'browserLogin', recipe: st.bRecipe, url: st.bUrl });
+                });
                 byId('nt-st-parallel', 'change', () => readStep());
                 // ‼️ X-228 — and the three that DECIDE the boxes under them do
                 // what the task form's own handlers do, through the one rule:

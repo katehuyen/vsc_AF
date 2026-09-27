@@ -2608,6 +2608,16 @@
       ]
     },
     {
+      "capability": "tasksPanel.ts#browserLogin",
+      "ui": [
+        "page:tasksPanel.ts#browserLogin"
+      ],
+      "ops": [
+        "browser.login",
+        "browser.recipes"
+      ]
+    },
+    {
       "capability": "insightHistory",
       "ui": [
         "cmd:agentfarm.insightHistory",

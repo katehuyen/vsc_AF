@@ -346,6 +346,29 @@
                 step: { surface: 'media/tasksPage.js#st-mCandidates', bridge: 'workflows.add:steps.media.candidates' }
             }
         },
+        // M-54 — the browser recipe book: a recipe runs on Agent Farm's own Playwright profile and files its downloads (src/core/browserRecipes.ts)
+        {
+            id: 'browser.recipe', label: 'Browser step — recipe', type: 'text', default: '', remembered: false,
+            levels: { step: { surface: 'media/tasksPage.js#st-bRecipe', bridge: 'workflows.add:steps.browser.recipe' } }
+        },
+        {
+            id: 'browser.hosts', label: 'Browser step — allowed hosts', type: 'list', default: [], remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.browserAllowHosts', bridge: 'settings.set:agentFarm.browserAllowHosts' },
+                step: { surface: 'media/tasksPage.js#st-bHosts', bridge: 'workflows.add:steps.browser.allowHosts' }
+            }
+        },
+        {
+            id: 'browser.confirm', label: 'Browser step — ask before it runs', type: 'enum', default: 'ask', options: ['ask', 'auto'], remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.browserApproval', bridge: 'settings.set:agentFarm.browserApproval' },
+                step: { surface: 'media/tasksPage.js#st-bConfirm', bridge: 'workflows.add:steps.browser.confirm' }
+            }
+        },
+        {
+            id: 'browser.downloadDir', label: 'Browser step — download folder', type: 'text', default: '', remembered: false,
+            levels: { step: { surface: 'media/tasksPage.js#st-bDownloadDir', bridge: 'workflows.add:steps.browser.downloadDir' } }
+        },
         brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),
         brandPoint('typography', 'typography'), brandPoint('voice', 'voice id'), brandPoint('aspect', 'aspect'),
         brandPoint('duration', 'duration'), brandPoint('logo', 'logo rule'), brandPoint('logoPlace', 'logo placement'),

@@ -1002,6 +1002,25 @@ const variants = () => ([
             up.click();
         }
     },
+    // M-54 — a browser step on a recipe: the recipe's URL and hosts faint, its own approval, the download folder box.
+    {
+        id: 'tasks-wf-browser-recipe',
+        label: 'Tasks → a workflow\'s browser step on the Google Flow recipe: Start URL and Allowed hosts empty, showing the recipe\'s faint; Ask first auto; the download folder box a recipe adds (M-54)',
+        data: (() => {
+            const d = data();
+            d.browserRecipes = require('../../out/core/browserRecipes.js').BROWSER_RECIPES.map(x => ({ id: x.id, label: x.label, url: x.url, hosts: x.hosts, note: x.note }));
+            return d;
+        })(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w13', title: 'Flow klip', stepIdx: 0,
+                    steps: [{ sid: 's1', stype: 'browser', title: 'Klip üret', agent: 'developer', bRecipe: 'flow', bUrl: '', bGoal: 'make an 8 s clip of {prev_text} and download it', bHosts: '', bConfirm: 'auto', bDownloadDir: '' }]
+                }
+            });
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',

@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.717.0 - The browser recipe book: a signed-in profile, downloads filed (M-54) (2026-09-27)
+
+- A browser step can name a recipe (web · Google Flow · Higgsfield web). It
+  then runs on Agent Farm's own Playwright MCP, on a browser profile of its
+  own that keeps a login, and saves into a download folder: when the step
+  ends, every new file there lands in the gallery and the library, and the
+  step's answer names it for the next step.
+- Sign in once: Sign in… beside the step's Recipe box (bridge browser.login)
+  opens an ordinary Chrome window on the recipe's profile. browser.recipes
+  lists the recipes and whether each profile exists.
+- A step's own Ask first (ask · auto) now wins over Farm Settings'
+  browserApproval; the step card gains Recipe, Ask first and Download folder.
+
 ## 3.716.0 - A lean check: one twelfth of the cost (A-27) (2026-09-27)
 
 - A workflow step's claude check now runs with no MCP servers and a

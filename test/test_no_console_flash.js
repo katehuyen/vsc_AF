@@ -24,7 +24,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const OPENS_A_WINDOW_ON_PURPOSE = {
     'core/extTerminal.ts': 'its whole job is opening an external terminal the user asked for',
     'core/reveal.ts': 'explorer.exe is a GUI program and revealing a file IS a window',
-    'panels/openDoc.ts': 'it launches the app the USER chose to open a document with; that app showing itself is the whole request'
+    'panels/openDoc.ts': 'it launches the app the USER chose to open a document with; that app showing itself is the whole request',
+    'core/browserLogin.ts': 'it opens a Chrome window for the user to sign in to a recipe\'s profile; the window IS the sign-in (M-54)'
 };
 
 const SRC = path.resolve(__dirname, '..', 'src');

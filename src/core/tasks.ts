@@ -20,6 +20,8 @@ import { capWaitingBranches, runSpendCap, SpendCap, spendCapStop } from './runSp
 import { escalationLine, ladderFor } from './judgeLadder';
 import { afterFail, climbDecision, JudgeDecision, RunEconomy, runEconomy } from './judgeDecision';
 import { alignCandidates, candidatesOf, mergeCandidates, pickedBody, pickLine, withArchiveBody } from './mediaCandidates';
+import { browserMcpArgs, browserRecipeRefusal, buildRecipePrompt, planBrowser, playwrightMcpConfig } from './browserRecipes';
+import { type BrowserRun, fileBrowserDownloads } from './browserDownloads';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -449,6 +451,8 @@ export interface FarmTask {
      * conversation.
      */
     spawnSessionId?: string;
+    /** M-54 — a recipe browser step: its own MCP config and the folder its downloads are filed from */
+    browserRun?: BrowserRun;
     /** ‼️ M-12 — what the run managed to do before it failed. Absent on a run
      *  that has not failed, and `unknown` until its transcript is bound. */
     failurePhase?: FailurePhase;
@@ -1235,7 +1239,7 @@ export interface WorkflowStep extends RunDimensions {
      * F3 — browser automation step: the step's agent drives its browser MCP.
      * Host allowlist is enforced before launch; empty allowlist = refuse.
      */
-    browser?: { url: string; goal: string; allowHosts?: string[] };
+    browser?: { url: string; goal: string; allowHosts?: string[]; recipe?: string; confirm?: 'ask' | 'auto'; downloadDir?: string };
     /**
      * Human-in-the-loop gate: the chain pauses here until the user approves.
      * On approve the upstream handoff passes through unchanged; on reject the
@@ -2062,6 +2066,10 @@ export interface TaskManagerOptions {
     opencodeVariants?: (model: string) => string[] | undefined;
     /** F3: global browser-step allowlist + per-step approval gate. */
     browserAllowHosts?: () => string[];
+    /** M-54 — Farm Settings' browserApproval (ask · auto); a step's own `confirm` wins */
+    browserApproval?: () => string;
+    /** M-54 — where each recipe's persistent browser profile lives */
+    browserProfilesDir?: () => string;
     /** Resolve to true to run the browser step; false cancels it. */
     confirmBrowser?: (info: { title: string; url: string; goal: string }) => Promise<boolean>;
     /** M-41 — Farm Settings for local files in a media input: ask · auto · never, which provider, how long it is kept */
@@ -4461,6 +4469,7 @@ export class TaskManager implements vscode.Disposable {
         if (!profile && !perTurn) {
             const launch = this.launchArgs(task);
             if (launch) { extra = (extra ? extra + ' ' : '') + launch; }
+            if (task.browserRun && !task.browserRun.mcpConfig.includes('"')) { extra = (extra ? extra + ' ' : '') + browserMcpArgs(task.browserRun.mcpConfig); }
         }
         if (task.outputContract === 'json' && !perTurn) {
             extra = (extra ? extra + ' ' : '') + '--output-format json';
@@ -4701,7 +4710,7 @@ export class TaskManager implements vscode.Disposable {
             }
             drain();
             stream.write(`\n\n---\nFinished: ${new Date().toLocaleString()} · exit ${code ?? '?'} · ${mins} min\n`);
-            stream.end();
+            const flushed = new Promise<void>(r => stream.end(() => r()));
             this.processes.delete(task.id);
             // ‼️ M-14 — WHAT THE RUN COST AND HOW FAR IT GOT, read once, from the
             // stream it already printed. `readOpencodeRun` is fail-soft by
@@ -4724,10 +4733,26 @@ export class TaskManager implements vscode.Disposable {
                     this.setRunProgress(task.id, { sessionId: bound });
                 }
             }
-            if (task.status === 'running') {
+            if (task.status === 'running' && code === 0 && task.browserRun) {
+                void this.fileBrowserRun(task, flushed).then(() => { if (task.status === 'running') { this.finish(task, 'done'); } });
+            } else if (task.status === 'running') {
                 this.finish(task, code === 0 ? 'done' : 'failed');
             }
         });
+    }
+
+    /** M-54 — a recipe step's downloads, filed before the step is called done (src/core/browserDownloads.ts). */
+    private async fileBrowserRun(task: FarmTask, flushed: Promise<void>): Promise<void> {
+        await flushed;
+        const w = this.runView(task.workflowId, task.workflowRunId);
+        const step = task.stepIndex !== undefined ? w?.steps[task.stepIndex] : undefined;
+        const lc = this.libCtx(task);
+        try {
+            await fileBrowserDownloads({
+                outputsDir: this.outputsDir, task, run: task.browserRun!, goal: step?.browser?.goal ?? task.prompt, workflowTitle: w?.title,
+                ...(lc ? { produced: (files: string[]) => this.lib!.produced(lc, files, { role: 'candidate', origin: 'AI_generated', productionType: 'browser', model: `browser:${task.browserRun!.recipe}` }) } : {})
+            });
+        } catch { /* filing is best-effort: the step itself succeeded */ }
     }
 
     private finish(task: FarmTask, status: TaskStatus, o?: { retry?: boolean }): void {
@@ -5608,6 +5633,7 @@ export class TaskManager implements vscode.Disposable {
                 });
             retry.attempt = attempt + 1;
             retry.outputContract = task.outputContract;
+            if (task.browserRun) { retry.browserRun = { ...task.browserRun, since: Date.now() }; }
             this.startTask(retry);
             return;
         }
@@ -7246,10 +7272,15 @@ export class TaskManager implements vscode.Disposable {
     private async runBrowserStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
         const step = w.steps[index];
         const browser = step.browser!;
-        const url = this.substitute(browser.url, handoff);
         const goal = this.substitute(browser.goal, handoff);
-        const allowHosts = (browser.allowHosts?.length ? browser.allowHosts : undefined)
-            ?? this.opts.browserAllowHosts?.() ?? [];
+        const key = `browser-${runId}-${index + 1}`;
+        const plan = planBrowser({ ...browser, url: browser.url ? this.substitute(browser.url, handoff) : '' }, {
+            settingsHosts: this.opts.browserAllowHosts?.(), settingsApproval: this.opts.browserApproval?.(),
+            profilesRoot: this.opts.browserProfilesDir?.() ?? path.join(path.dirname(this.outputsDir), 'browser-profiles'),
+            runDir: path.join(this.outputsDir, key)
+        });
+        const url = plan.url;
+        const allowHosts = plan.hosts;
 
         const fail = (why: string) => {
             void vscode.window.showWarningMessage(
@@ -7263,13 +7294,19 @@ export class TaskManager implements vscode.Disposable {
             this.advanceWorkflow(task, 'failed');
         };
 
+        const recipeNo = browserRecipeRefusal(browser.recipe);
+        if (recipeNo) { fail(recipeNo); return; }
+        if (plan.recipe && engineOf(step.engine).id !== 'claude') {
+            fail(`a recipe step runs on claude only (its own Playwright MCP), not on ${engineOf(step.engine).label}`);
+            return;
+        }
         if (!hostAllowed(url, allowHosts)) {
             fail(allowHosts.length
                 ? `"${url}" is outside the allowlist (${allowHosts.join(', ')})`
                 : 'no host allowlist configured (set agentFarm.browserAllowHosts or the step\'s allowHosts)');
             return;
         }
-        if (this.opts.confirmBrowser) {
+        if (plan.confirm === 'ask' && this.opts.confirmBrowser) {
             const ok = await this.opts.confirmBrowser({ title: step.title, url, goal });
             if (!ok) { fail('not approved'); return; }
         }
@@ -7278,7 +7315,16 @@ export class TaskManager implements vscode.Disposable {
             fail(missing);
             return;
         }
-        const prompt = buildBrowserPrompt(url, goal, allowHosts);
+        let browserRun: BrowserRun | undefined;
+        if (plan.recipe) {
+            const mcpConfig = path.join(this.outputsDir, `${key}.mcp.json`);
+            try {
+                fs.mkdirSync(plan.downloadDir!, { recursive: true });
+                fs.writeFileSync(mcpConfig, JSON.stringify(playwrightMcpConfig(plan), null, 2), 'utf8');
+            } catch (e) { fail(`its browser could not be set up — ${(e as Error).message}`); return; }
+            browserRun = { downloadDir: plan.downloadDir!, since: Date.now(), recipe: plan.recipe.id, mcpConfig };
+        }
+        const prompt = plan.recipe ? buildRecipePrompt(plan, goal) : buildBrowserPrompt(url, goal, allowHosts);
         const task = this.addTask(agent, `${w.title} ${index + 1}/${w.steps.length}: ${step.title}`,
             prompt, 'headless',
             {
@@ -7288,6 +7334,7 @@ export class TaskManager implements vscode.Disposable {
                 // step names (X-35) — see the note on the ordinary step path.
                 ...runExtras(step)
             });
+        if (browserRun) { task.browserRun = browserRun; }
         this.startTask(task);
     }
 
