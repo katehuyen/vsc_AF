@@ -2258,6 +2258,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 : stepCardHtml(c)}
             ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}
             ${window.AFCheckpoint ? window.AFCheckpoint.goalEditor(c, C) : ''}
+            ${window.AFBrand ? window.AFBrand.workflowBox(c, DATA.scenes, C) : ''}
             ${window.AFLibrary ? window.AFLibrary.wfEditor(c, C, window.AFFlexPromote ? { open: supUp } : undefined, (DATA.launch || {}).flexSettings) : ''}
             ${window.AFWake ? window.AFWake.workflowBlock(c, DATA.wakeDict, C) : ''}`;
     }
@@ -4783,6 +4784,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             if (window.AFCheckpoint) { window.AFCheckpoint.wireGoal(byId, () => composer); }
             if (window.AFLibrary) { window.AFLibrary.wireWf(byId, () => composer, window.AFFlexPromote ? render : null); }
             if (window.AFWake) { window.AFWake.wireWorkflow(byId, () => composer, DATA.wakeDict, render); }
+            if (window.AFBrand) { window.AFBrand.wireWf(byId, () => composer); }
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',

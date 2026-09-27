@@ -295,6 +295,14 @@
                 live: { surface: 'src/workflowLiveUi.ts#wl-wake', bridge: 'workflows.live:wake' }
             }
         },
+        // M-50 — the production whose brand kit a step reads as {brand.*}: the workflow's, a media step's own (src/core/brandKit.ts)
+        {
+            id: 'workflow.production', label: 'Brand kit from (production)', type: 'text', default: '', remembered: false,
+            levels: {
+                workflow: { surface: 'media/afBrand.js#wf-production', bridge: 'workflows.add:production' },
+                step: { surface: 'media/tasksPage.js#st-mScene', bridge: 'workflows.add:steps.media.projectId' }
+            }
+        },
         // M-38 — a workflow input's value: its default on the workflow, what a run is given, the last run's remembered
         {
             id: 'workflow.input', label: 'Workflow input', type: 'text', default: '', remembered: true,

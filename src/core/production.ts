@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { assetKind, MediaMeta } from './media';
 import { slugify } from './util';
+import { BrandKit, cleanBrand } from './brandKit';
 
 /**
  * Wave A (media roadmap) — production manifest: a small user-editable
@@ -24,6 +25,8 @@ export interface Production {
     id: string;
     title: string;
     scenes: ProductionScene[];
+    /** M-50 - its brand kit, read by steps as {brand.<path>} (src/core/brandKit.ts) */
+    brand?: BrandKit;
 }
 
 export interface DiscoveredProduction {
@@ -53,7 +56,8 @@ export function readProduction(agentDir: string): Production | undefined {
                 notes: typeof s.notes === 'string' ? s.notes : undefined
             });
         }
-        return { id: raw.id, title: raw.title, scenes };
+        const brand = cleanBrand((raw as { brand?: unknown }).brand);
+        return { id: raw.id, title: raw.title, scenes, ...(brand ? { brand } : {}) };
     } catch { return undefined; }
 }
 

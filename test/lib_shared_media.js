@@ -137,6 +137,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afWake.js',
     // afRunWith.js — 'Run with…': one run's own values, drawn with the page form (U-151).
     'afRunWith.js',
+    // afBrand.js — the brand kit: the workflow form's production box (M-50).
+    'afBrand.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).
     'afSupervisorStrip.js'];
 

@@ -14,6 +14,7 @@ import { execOneShot } from './oneShot';
 import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
+import { BrandKit, brandProductionFor, fillBrand, resolveBrand } from './brandKit';
 import * as FE from './forEachStep';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
@@ -1248,6 +1249,8 @@ export interface WorkflowStep extends RunDimensions {
     checkpoint?: CheckpointSpec;
     /** M-45 — what wakes the supervisor after this step; unset = the workflow's (src/core/workflowWake.ts) */
     wake?: WakeSpec;
+    /** M-50 — this step's own brand kit fields, over its production's (src/core/brandKit.ts) */
+    brand?: BrandKit;
 }
 
 /** What one step passes to the next. */
@@ -1261,6 +1264,8 @@ export interface Handoff {
     board?: RunBoard;
     /** M-40 — the element a for-each branch runs on */
     branch?: { index: number; count: number; item: unknown };
+    /** M-50 — the brand kit THIS step reads {brand.*} from; set per step, never handed on */
+    brand?: BrandKit;
 }
 
 export interface FarmTrigger {
@@ -1317,6 +1322,8 @@ export interface FarmWorkflow {
     library?: LibrarySpec;
     /** M-45 — what wakes the supervisor after a step; unset = mechanical (src/core/workflowWake.ts) */
     wake?: WakeSpec;
+    /** M-50 — the production whose brand kit its steps read as {brand.*} (src/core/brandKit.ts) */
+    production?: string;
 }
 
 /**
@@ -1691,6 +1698,8 @@ export interface TaskManagerOptions {
     askChoice?: (question: string, options: string[], ctx?: { runId: string; workflowTitle: string }) => Promise<string | undefined>;
     /** M-43 — replaces the checkpoint's one-shot supervisor call (tests) */
     superviseTurn?: (prompt: string, tier: 0 | 1) => Promise<{ out: string; error?: string; model?: string }>;
+    /** M-50 — a production's brand kit by its id; undefined = no such production or no kit */
+    productionBrand?: (id: string) => BrandKit | undefined;
     /** M-49 — the Farm Settings layer of tool.outDir / tool.overwrite, as the user wrote it (undefined = untouched) */
     toolSettings?: () => { outDir?: unknown; overwrite?: unknown };
     /** X-418 — files every produced file into the local Airtable's media library and records it; unset = files stay where they are made */
@@ -6554,8 +6563,16 @@ export class TaskManager implements vscode.Disposable {
         return handoff;
     }
 
+    /** M-50 — the kit a step fills {brand.*} from: its production's, its own fields over it. */
+    private stepBrand(w: FarmWorkflow, step: WorkflowStep): BrandKit | undefined {
+        const id = brandProductionFor(w, step);
+        const base = id ? this.opts.productionBrand?.(id) : undefined;
+        return base || step.brand ? resolveBrand(base, step.brand, id).kit : undefined;
+    }
+
     private substitute(prompt: string, handoff: Handoff): string {
-        let out = prompt.split(PREV_OUTPUT_PLACEHOLDER).join(handoff.file ?? '');
+        // M-50 — the brand first, on the step's own words only: an earlier step's output is never re-read as a placeholder
+        let out = fillBrand(prompt, handoff.brand).split(PREV_OUTPUT_PLACEHOLDER).join(handoff.file ?? '');
         out = out.split('{prev_text}').join((handoff.text ?? '').slice(0, this.opts.prevTextChars?.() ?? 1500));
         out = out.replace(/\{prev_json\.([\w.]+)\}/g, (_m, fieldPath: string) => {
             let cur: unknown = handoff.json;
@@ -6641,6 +6658,9 @@ export class TaskManager implements vscode.Disposable {
     private startWorkflowStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): void {
         const step = w.steps[index];
         this.handoffs.set(runId, handoff);
+        // M-50 — a copy per step: a parallel group shares one handoff, and each member may read another kit
+        const brand = this.stepBrand(w, step);
+        if (brand || handoff.brand) { handoff = { ...handoff, brand }; }
 
         if (step.webhook) {
             this.runWebhookStep(w, index, handoff, runId);

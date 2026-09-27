@@ -28,6 +28,7 @@ import { setWorkflowSupervisor, supervisorFromDraft, supervisorRunRefusal, super
 import { LibrarySpec, libraryFromDraft, libraryRefusal, librarySeed, StepLibrarySpec } from '../core/runLibrarySpec';
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
+import { cleanBrand } from '../core/brandKit';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -1137,7 +1138,8 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         selMax: s.select?.max ?? 0,
         ...checkpointSeed(s.checkpoint),
         ...librarySeed(s.library, 'step'),
-        ...(s.wake ? { wake: s.wake } : {})
+        ...(s.wake ? { wake: s.wake } : {}),
+        ...(s.brand ? { brand: s.brand } : {})
     };
 }
 
@@ -1175,6 +1177,7 @@ export function stepFromDraft(
     const wake = stype === 'checkpoint' ? {} : wakeFromArg(raw.wake);
     if (wake.error) { return { error: `Step ${n} ("${title}"): ${wake.error}.` }; }
     const mode: TaskMode = str('smode') === 'interactive' ? 'interactive' : 'headless';
+    const brand = cleanBrand(raw.brand);
     const chain: Partial<WorkflowStep> = {
         // M-39 — the step keeps its id through an edit, so {steps.<id>…} still finds it
         id: str('sid') || undefined,
@@ -1183,7 +1186,9 @@ export function stepFromDraft(
         runIf: str('runIf') || undefined,
         parallel: raw.parallel === true ? true : undefined,
         forEach: forEachFromDraft(str),
-        ...(wake.wake ? { wake: wake.wake } : {})
+        ...(wake.wake ? { wake: wake.wake } : {}),
+        // M-50 — the step's own brand fields survive an edit on the page
+        ...(brand ? { brand } : {})
     };
     const verify = str('verifyCriteria')
         ? {
@@ -1822,7 +1827,7 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], production: w.production ?? '', stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
                 : { mode2: 'new', steps: [], inputs: [], ...librarySeed(undefined, 'workflow'), wake: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
@@ -2061,6 +2066,9 @@ export class TasksPanel {
             const wlib = libraryFromDraft(item, 'workflow') as LibrarySpec | undefined;
             const wlibNo = libraryRefusal(wlib, 'workflow');
             if (wlibNo) { this.say(`Library: ${wlibNo}.`); return; }
+            // M-50 — the production whose brand kit its steps read; the box offers only productions that exist
+            const prod = str('production');
+            if (prod && !(this.deps.scenes?.() ?? []).some(x => x.id === prod)) { this.say(`Production: no production "${prod}" any more — pick another.`); return; }
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -2073,6 +2081,7 @@ export class TasksPanel {
                 setWorkflowSupervisor(existing, ws);
                 if (wlib) { existing.library = wlib; } else { delete existing.library; }
                 setWorkflowWake(existing, wk.wake);
+                if (prod) { existing.production = prod; } else { delete existing.production; }
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
@@ -2081,6 +2090,7 @@ export class TasksPanel {
                 setWorkflowSupervisor(made, ws);
                 if (wlib) { made.library = wlib; }
                 setWorkflowWake(made, wk.wake);
+                if (prod) { made.production = prod; }
                 m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);
             }

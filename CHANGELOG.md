@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.702.0 - A production's brand kit, read by every step (M-50, part 1) (2026-09-27)
+
+- **`production.json` carries a brand kit** — style, negative prompt, colours,
+  typography, voice, logo rule, aspect, duration and named characters
+  (`name`, `ref`, `desc`). Any step reads it as `{brand.style}`,
+  `{brand.character.ana.ref}`, … — so a script step and an image step use the
+  same character reference without copying it.
+- **The workflow form has a Brand kit box** — the production whose kit its
+  steps read. A media step tied to its own production reads that one, and a
+  step's own `brand` fields win field by field (the origin is kept).
+- **No kit, no silent blank:** with no production chosen the placeholder is
+  left as written, so the missing brand shows in the prompt.
+- **Bridge:** `studio.brand.get` (a production's kit, or what one step of a
+  workflow reads and from where), `studio.brand.set` (field by field),
+  `workflows.add/update production=`, `steps[].brand`.
+
 ## 3.701.0 - Run with… on a supervised schedule (U-151, part 3d-2) (2026-09-27)
 
 - **A schedule whose retry is supervised has a `with…` button.** It runs

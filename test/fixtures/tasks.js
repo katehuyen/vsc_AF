@@ -992,6 +992,23 @@ const variants = () => ([
             });
         }
     },
+    // M-50 — the workflow names the production whose brand kit its steps read as {brand.*}.
+    {
+        id: 'tasks-wf-brand',
+        label: 'Tasks → a workflow form reading its brand kit from the production Kanal A (M-50)',
+        data: Object.assign(data(), { scenes: [
+            { id: 'kanal-a', label: 'Kanal A — the whole production' }, { id: 'kanal-a/s01', label: 'Kanal A · Açılış' },
+            { id: 'kanal-b', label: 'Kanal B — the whole production' }] }),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w15', title: 'Klip', stepIdx: null, goal: '', criteria: '', production: 'kanal-a',
+                    steps: [{ sid: 's1', stype: 'agent', title: 'Senaryo', agent: 'developer', prompt: '{brand.character.ana.name} için yaz — {brand.style}', smode: 'headless' }]
+                }
+            });
+        }
+    },
     // M-45 — the workflow form's Wake block: ONE condition of the user's own (the smallest arity), then the hybrid preset's three.
     {
         id: 'tasks-wf-wake-one',

@@ -490,6 +490,8 @@ export function htmlShell(
     const flexPromote = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afFlexPromote.js'));
     // U-151 — 'Run with…': one run's own values, drawn with the page form
     const runWith = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunWith.js'));
+    // M-50 — the brand kit: the workflow form's production box
+    const brand = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afBrand.js'));
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -562,6 +564,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${studioLib}"></script>
 <script nonce="${nonce}" src="${wake}"></script>
 <script nonce="${nonce}" src="${runWith}"></script>
+<script nonce="${nonce}" src="${brand}"></script>
 <script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
