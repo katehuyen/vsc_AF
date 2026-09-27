@@ -167,7 +167,9 @@ const media = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'u
     sel.fire('change');
     const h2 = picked.html();
     ok('‼️ THE CARD DRAWS THE PICKED SIGN-IN\'S OWN BARS',
-        /Current session<\/span><strong>97%/.test(h2) && !/<strong>86%/.test(h2));
+        /Current session<\/span><strong class="afq-pct hot">97%/.test(h2) && !/<strong[^>]*>86%/.test(h2));
+    ok('U-154 — the percent, the reset time and the time left each wear their own class on the card',
+        /<strong class="afq-pct[^"]*">\d+%/.test(h2) && /Resets <span class="afq-reset">[^<]+<\/span>/.test(h2));
     ok('…its plan and its own reading time', /pro plan/.test(h2) && !/max plan/.test(h2));
     // ‼️ The endpoint's beat belongs to the endpoint. A slot read off its own
     // record on the accounts beat must not carry "auto every 5 min", which

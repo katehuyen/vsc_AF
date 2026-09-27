@@ -565,9 +565,12 @@ const LIVE_PAYLOAD = {
             /class="hot" style="width:92%"/.test(lastHtml)
             && /class="warn" style="width:82%"/.test(lastHtml)
             && /class="" style="width:12%"/.test(lastHtml));
-        ok('reset line answers "when" and "how long" together', /Resets .* · in 2h 20m/.test(card()));
+        // U-154 — the reset time and the time left each wear their own class
+        ok('reset line answers "when" and "how long" together',
+            /Resets <span class="afq-reset">[^<]+<\/span> · in <span class="afq-left">2h 20m<\/span>/.test(card()));
         ok('a reset on another day carries the date',
-            card().includes('Resets ' + new Date(nextDay).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ','));
+            card().includes('Resets <span class="afq-reset">'
+                + new Date(nextDay).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ','));
         ok('an unknown reset prints nothing rather than a wrong time',
             !lastHtml.includes('Resets Invalid') && !/Resets\s*·/.test(lastHtml));
         ok('the footer states plan, freshness and the beat',

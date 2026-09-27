@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
+import { quotaStyleCss } from '../core/quotaStyle';
 import {
     parseChatId, telegramCard, TelegramCard, TelegramSnapshot
 } from '../core/telegramCockpit';
@@ -76,7 +77,15 @@ function headerCounts(): { notices: { unread: number }; queue: { blocked: number
  *  have changed — the host does it from the same place it repaints the
  *  status-bar bell, so the two surfaces can never disagree. */
 export function pushHeaderCounts(): void {
-    const afui = headerCounts();
+    pushAfui(headerCounts());
+}
+
+/** U-154 — a quota figure's style edited in Farm Settings repaints every open page in place. */
+export function pushQuotaStyle(): void {
+    pushAfui({ quotaCss: quotaStyleCss(k => afConfig().get(k)) });
+}
+
+function pushAfui(afui: object): void {
     for (const w of [...livePages]) {
         try {
             void Promise.resolve(w.postMessage({ type: 'afui', afui }))
@@ -522,6 +531,7 @@ export function htmlShell(
     content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${css}">
+<style id="afq-style">${quotaStyleCss(k => afConfig().get(k))}</style>
 <title>${title}</title>
 </head>
 <body>

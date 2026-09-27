@@ -165,11 +165,16 @@ const r = runPage('accounts.js', DATA);
     const r4 = runPage('accounts.js', fixture.data());
     const h4 = r4.html();
     // The row, whole, so nothing about its shape is assumed one piece at a time.
-    const ROW = /<div class="acwrow"><span class="acwk">([^<]*)<\/span><span class="acwp( hot| warn)?( old)?">(\d+)%<\/span><div class="progress"><div class="(hot|warn|)" style="width:\d+%"><\/div><\/div><span class="acwr( stale)?">([^<]*)(?:<span class="acwc">([^<]*)<\/span>)?<\/span><\/div>/g;
+    // U-154 — each of the three figures wears its own class: afq-pct · afq-left · afq-reset.
+    const ROW = /<div class="acwrow"><span class="acwk">([^<]*)<\/span><span class="acwp afq-pct( hot| warn)?( old)?">(\d+)%<\/span><div class="progress"><div class="(hot|warn|)" style="width:\d+%"><\/div><\/div><span class="acwr( stale)?">(?:<span class="afq-left">([^<]*)<\/span>)?(?:<span class="acwc( afq-reset)?">([^<]*)<\/span>)?<\/span><\/div>/g;
     const rows = [...h4.matchAll(ROW)].map(m => ({
         short: m[1], pctTone: (m[2] || '').trim(), old: !!m[3], pct: Number(m[4]),
-        barTone: m[5], stale: !!m[6], lead: m[7], at: m[8] || ''
+        barTone: m[5], stale: !!m[6], lead: m[7] || '', resetCls: !!m[8], at: m[9] || ''
     }));
+    ok('‼️ U-154 — the time of day is a reset time, and wears its class wherever it is one',
+        rows.length > 0 && rows.every(w => !w.at || w.resetCls === (w.at !== 'no reset time')));
+    ok('…and the page says the stale red beats the user\'s own colour for the clock figures',
+        /\.acwr\.stale, \.acwr\.stale \.afq-left, \.acwr\.stale \.afq-reset \{ color:/.test(read('media', 'afAccounts.js')));
     ok('every window is a row of its own, and there are as many as the data carries',
         rows.length === fixture.data().accounts.reduce((n, a) => n + (a.bars || []).filter(b => b.percent >= 0).length, 0));
     /**
@@ -198,7 +203,7 @@ const r = runPage('accounts.js', DATA);
     // the figure beside it belongs to the window before this one.
     const stale = [...runPage('accounts.js', fixture.staleData()).html().matchAll(ROW)].filter(m => m[5]);
     ok('‼️ a window already turned over says so on its own row — and the figure beside it is STRUCK THROUGH, because it belongs to the window before this one',
-        stale.length === 1 && /^turned over /.test(stale[0][7]) && !stale[0][8] && !!stale[0][3]);
+        stale.length === 1 && /^turned over /.test(stale[0][7]) && !stale[0][9] && !!stale[0][3]);
     // ‼️ …AND THE LINE IS NOT DELETED, IT IS NO LONGER NEEDED. An engine that
     // publishes a percentage and NO window list has no row to hang a clock on,
     // and that layout keeps its caption exactly as it was.

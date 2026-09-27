@@ -303,6 +303,9 @@ function main() {
     }
 
     const css = fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8');
+    // U-154 — the shell's quota-figure rules, right after common.css as htmlShell puts them
+    const quotaCss = require(path.join(ROOT, 'out', 'core', 'quotaStyle.js'))
+        .quotaStyleCss(k => (fixture.quotaStyle || {})[k]);
     const sections = variants.map(v => {
         const r = runPage(fixture.script, v.data, fixture.window || {}, v.state);
         // A view that is reached by pressing something is reached by pressing
@@ -381,6 +384,7 @@ function main() {
 <style>
 ${themeCss(theme)}
 ${css}
+${quotaCss}
 /* the renderer's own frame — nothing here belongs to the extension */
 body { margin: 0; padding: 0 0 60px;
     background: var(--vscode-editor-background); color: var(--vscode-foreground);

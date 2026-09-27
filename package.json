@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.732.0",
+  "version": "3.733.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8911,6 +8911,21 @@
           "default": 240,
           "minimum": 0,
           "description": "Stuck warning: a working session with no hook events for this many seconds is marked STALLED — Needs You gets a row, and the alert plays when notifyStuck is on. Any value you like; 0 = never: no session is ever marked stalled and no stuck warning is given, however long it is silent."
+        },
+        "agentFarm.quotaStyle.percent": {
+          "type": "string",
+          "default": "",
+          "description": "How a quota's PERCENT is drawn on every page — CSS declarations, e.g. `color: #ff79c6; font-weight: 700`. Empty = the default (purple, semibold). At 75% and 90% the page's own warning colours still win."
+        },
+        "agentFarm.quotaStyle.left": {
+          "type": "string",
+          "default": "",
+          "description": "How a quota's TIME LEFT is drawn on every page — CSS declarations, e.g. `color: #89d185; font-weight: 700`. Empty = the default (green, semibold)."
+        },
+        "agentFarm.quotaStyle.reset": {
+          "type": "string",
+          "default": "",
+          "description": "How a quota's RESET TIME is drawn on every page — CSS declarations, e.g. `color: #75beff; font-style: italic`. Empty = the default (blue)."
         },
         "agentFarm.notifyPermission": {
           "type": "boolean",

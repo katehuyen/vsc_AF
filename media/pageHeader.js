@@ -288,6 +288,10 @@
             const m = ev && ev.data;
             if (!m || m.type !== 'afui' || !m.afui) { return; }
             window.__AFUI__ = Object.assign({}, window.__AFUI__, m.afui);
+            // U-154 — the quota figures' own look, re-sent when the user changes it
+            const qs = typeof m.afui.quotaCss === 'string' && document.getElementById
+                ? document.getElementById('afq-style') : null;
+            if (qs) { qs.textContent = m.afui.quotaCss; }
             paintCounts();
         });
     }

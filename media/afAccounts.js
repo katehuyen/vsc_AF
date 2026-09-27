@@ -158,10 +158,11 @@
             const old = !!(t && t.stale);
             return '<div class="acwrow">'
                 + '<span class="acwk">' + esc(b.short || '') + '</span>'
-                + '<span class="acwp' + (tn ? ' ' + tn : '') + (old ? ' old' : '') + '">' + b.percent + '%</span>'
+                + '<span class="acwp afq-pct' + (tn ? ' ' + tn : '') + (old ? ' old' : '') + '">' + b.percent + '%</span>'
                 + '<div class="progress"><div class="' + tn + '" style="width:' + b.percent + '%"></div></div>'
                 + '<span class="acwr' + (t && t.stale ? ' stale' : '') + '">'
-                + (t ? esc(t.lead) + (t.at ? '<span class="acwc">' + esc(t.at) + '</span>' : '')
+                + (t ? '<span class="afq-left">' + esc(t.lead) + '</span>'
+                    + (t.at ? '<span class="acwc afq-reset">' + esc(t.at) + '</span>' : '')
                     : '<span class="acwc">no reset time</span>')
                 + '</span></div>';
         };
@@ -172,7 +173,7 @@
         // where there is no short name to put in the gutter at all.
         const rows = drawn.length
             ? drawn.map(barRow).join('')
-            : '<div class="acwt"><span>' + esc(winName) + '</span><strong>' + a.percent + '%</strong></div>'
+            : '<div class="acwt"><span>' + esc(winName) + '</span><strong class="afq-pct">' + a.percent + '%</strong></div>'
                 + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>';
         // U-144 — only the caption layout still needs a line of its own; a
         // drawn bar carries its own clock now, and repeating it underneath
@@ -183,7 +184,7 @@
             : winName.charAt(0).toUpperCase() + winName.slice(1) + ' — ' + (a.label || a.id);
         const window5 = read
             ? T.wrap('<div class="acwin">' + rows
-                + (resets ? '<div class="acsub">' + esc(resets) + '</div>' : '') + '</div>',
+                + (resets ? '<div class="acsub">' + window.AFAccount.turnsHtml(a, DATA.now) + '</div>' : '') + '</div>',
                 heading,
                 T.lines([
                     ...(drawn.length
@@ -1382,7 +1383,7 @@
         .acwr { flex:none; width:170px; font-size:11px; font-variant-numeric:tabular-nums;
             white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .acwc { opacity:.6; margin-left:5px; }
-        .acwr.stale { color:var(--vscode-charts-red,#f14c4c); }
+        .acwr.stale, .acwr.stale .afq-left, .acwr.stale .afq-reset { color:var(--vscode-charts-red,#f14c4c); }
         .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
         .acnone { margin-top:6px; font-size:12px; }
         /* X-252 — the day's spend, on the card's own ruler under the

@@ -3296,7 +3296,7 @@
         // than a zero, which is the one number that would read as a wall.
         const who = live.account ? C.esc(live.account) : 'main sign-in';
         const left = typeof live.accountPercent === 'number'
-            ? ` · ${Math.max(0, 100 - live.accountPercent)}% left` : '';
+            ? ` · <span class="afq-pct">${Math.max(0, 100 - live.accountPercent)}%</span> left` : '';
         return ` on ${who}${left}`;
     }
 

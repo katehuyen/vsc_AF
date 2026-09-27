@@ -646,7 +646,7 @@ import {
     applyTerminalRender, registerTerminalRenderOps, SettingsSection, TerminalRenderAction, terminalRenderState
 } from './core/terminalRender';
 import {
-    postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setRunningVersion,
+    postCtx, pushHeaderCounts, pushQuotaStyle, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setRunningVersion,
     setWikiMarkBridge, speakerSettings
 } from './panels/base';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
@@ -17338,6 +17338,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
+        if (e.affectsConfiguration('agentFarm.quotaStyle')) { pushQuotaStyle(); }
     }));
     context.subscriptions.push(live.onEvent(e => {
         if (e.kind === 'end') { batonRunner.sessionEnded(e.sessionId, e.detail ?? 'end'); }

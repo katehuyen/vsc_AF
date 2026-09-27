@@ -3229,7 +3229,7 @@ const intentOf = (o) => Object.assign({
     ok('a running round says WHO is working and on WHICH account, in one line',
         html().includes('developer') && html().includes('slot-2'));
     ok('‼️ …and how much of that account is LEFT, which is the figure no task row carries',
-        html().includes('62% left'));
+        html().includes('<span class="afq-pct">62%</span> left'));
     ok('…and which item it is on right now', html().includes('X-178'));
     ok('the strip has no controls of its own — they belong to the page it points at',
         !/<button/.test(els['c-sentry']._html || ''));

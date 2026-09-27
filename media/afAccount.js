@@ -192,8 +192,8 @@
      * Every remaining-time reading on both account surfaces is now the one
      * function, so a card and its bars can never disagree about the same clock.
      */
-    function turns(a, now) {
-        if (!a || !a.resetsAt) { return ''; }
+    function turnsSegs(a, now) {
+        if (!a || !a.resetsAt) { return []; }
         const at = typeof now === 'number' ? now : Date.now();
         const left = a.resetsAt - at;
         /**
@@ -214,11 +214,24 @@
          * row says so instead of dressing a stale reading as a fresh one.
          */
         if (left <= 0) {
-            return 'window turned over at ' + clockOf(a.resetsAt)
-                + ' — the figure beside it was read before that';
+            return [['', 'window turned over at '], ['reset', clockOf(a.resetsAt)],
+                ['', ' — the figure beside it was read before that']];
         }
-        return 'window turns over at ' + clockOf(a.resetsAt) + ' (in ' + leftOf(left) + ')';
+        return [['', 'window turns over at '], ['reset', clockOf(a.resetsAt)],
+            ['', ' (in '], ['left', leftOf(left)], ['', ')']];
     }
+
+    function turns(a, now) { return turnsSegs(a, now).map(s => s[1]).join(''); }
+
+    // ‼️ U-154 — the same one sentence, each figure in its own class (afq-left ·
+    // afq-reset), so a page draws it without a second spelling of the words.
+    function escHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function segHtml(segs) {
+        return segs.map(s => (s[0] ? '<span class="afq-' + s[0] + '">' + escHtml(s[1]) + '</span>' : escHtml(s[1]))).join('');
+    }
+    function turnsHtml(a, now) { return segHtml(turnsSegs(a, now)); }
 
     /**
      * SHORTHAND — the row is a `<select>` line, so it carries the shortest
@@ -391,7 +404,7 @@
 
     return {
         MACHINE: MACHINE, MACHINE_ROW: MACHINE_ROW,
-        figure: figure, turns: turns, label: label, detail: detail,
+        figure: figure, turns: turns, turnsHtml: turnsHtml, label: label, detail: detail,
         // X-215 round 2 — the window list and its wording, so the card that
         // DRAWS the bars and the pickers that only name them share one reader.
         bars: barsOf, barTurns: barTurns, barTurnParts: barTurnParts, barLine: barLine, left: leftOf, when: whenOf,

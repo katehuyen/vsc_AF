@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.733.0 - Quota figures in their own look, everywhere (U-154) (2026-09-28)
+
+- Percent, time left and reset time are no longer one thin plain line: each
+  has its own colour on every page that draws them — the Accounts and
+  Engines cards, the Dashboard's plan card, the Console's campaign strip —
+  so the eye goes straight to the figure it wants. Defaults: percent purple,
+  time left green, reset time blue.
+- Farm Settings → Live Monitoring → **Quota figures**: three boxes, one per
+  figure, each taking CSS declarations (colour, weight, font, anything);
+  empty is the default, and a sample line shows the result. A change
+  repaints every open page at once.
+- The 75% and 90% warning colours on a percentage, and the red of a window
+  that has already turned over, still win over your own look.
+
 ## 3.732.0 - Start then stop is not a new round (M-56) (2026-09-28)
 
 - A backlog item's round now grows only when an item that was CLOSED (done

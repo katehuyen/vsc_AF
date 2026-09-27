@@ -178,6 +178,7 @@ const CATEGORY_OF: Record<string, string> = {
     // live monitoring & alerts
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
+    'quotaStyle.percent': 'live', 'quotaStyle.left': 'live', 'quotaStyle.reset': 'live',
     notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live',
     // K-43 — what happens to a question nobody is there to answer
     'console.autoAnswer.enabled': 'live', 'console.autoAnswer.timeoutSeconds': 'live',

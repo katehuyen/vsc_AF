@@ -1479,6 +1479,25 @@ wording — *the same figure never appears beside two different window names* �
 plus a case-insensitive source sweep, because case is where the seventh copy
 hid.
 
+### A quota figure wears its CLASS, and its look is the user's (U-154)
+
+**‼️ Wherever a quota figure is drawn as markup, it carries one of three
+classes:** `afq-pct` (a percentage, used or left) · `afq-left` (time left) ·
+`afq-reset` (the reset time or date). The look of each is a setting
+(`agentFarm.quotaStyle.percent` / `.left` / `.reset`, Farm Settings → Quota
+figures); `htmlShell` writes the rules into `<style id="afq-style">` right after
+`common.css`, and a change is pushed to every open page (`pushQuotaStyle`). A
+surface never colours a figure itself — the reader learns ONE colour per kind of
+fact across the whole extension. A sentence shared with a text surface is split
+into segments once (`AFAccount.turnsHtml` beside `turns`), never spelled twice.
+
+The rule weighs two classes (`:root .afq-pct`), so the user's look beats a
+surface's own base rule — and a surface's ALARM, written as two classes after
+it (`.acwp.hot`, `.acwr.stale .afq-left`), still beats the user's look. The
+percent's default is therefore neither yellow nor red. An AFTip body, a native
+`title` and an `<option>` are text and stay plain. Gate:
+`test/test_quota_style.js`.
+
 ---
 
 ## "Default" never stands alone

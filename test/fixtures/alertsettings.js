@@ -53,6 +53,21 @@ const ITEMS = (on, voices) => ([
         key: 'agentFarm.notifyStuck', type: 'boolean', default: true,
         value: true, modified: false,
         description: 'Show a notification when an agent looks stalled — after stuckThresholdSeconds of silence (0 there = never).'
+    },
+    {
+        key: 'agentFarm.quotaStyle.percent', type: 'string', default: '',
+        value: '', modified: false,
+        description: 'How a quota\'s PERCENT is drawn on every page — CSS declarations. Empty = the default (purple, semibold). At 75% and 90% the page\'s own warning colours still win.'
+    },
+    {
+        key: 'agentFarm.quotaStyle.left', type: 'string', default: '',
+        value: '', modified: false,
+        description: 'How a quota\'s TIME LEFT is drawn on every page — CSS declarations. Empty = the default (green, semibold).'
+    },
+    {
+        key: 'agentFarm.quotaStyle.reset', type: 'string', default: '',
+        value: '', modified: false,
+        description: 'How a quota\'s RESET TIME is drawn on every page — CSS declarations. Empty = the default (blue).'
     }
 ]);
 

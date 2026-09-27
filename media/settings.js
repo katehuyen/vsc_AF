@@ -2729,11 +2729,25 @@
             </div>`;
     }
 
+    // U-154 — the three quota figures' looks are one question, shown on a sample line
+    const QUOTA_KEYS = ['agentFarm.quotaStyle.percent', 'agentFarm.quotaStyle.left', 'agentFarm.quotaStyle.reset'];
+
+    function quotaGroup(items) {
+        const mine = QUOTA_KEYS.map(k => items.find(it => it.key === k)).filter(Boolean);
+        if (!mine.length) { return ''; }
+        return `<div class="setgroup" id="quota-figures">
+                <h3 class="setgrouph">Quota figures</h3>
+                <div class="setgroupwhy">Percent used, time left and reset time are drawn in their own look on every page — accounts, engines, dashboard, console. Each box takes CSS declarations (colour, weight, font…); empty is the default. At 75% and 90% a percent takes the page's warning colour instead. A change repaints open pages at once.</div>
+                <div class="afq-sample">5h: <span class="afq-pct">42%</span> used · <span class="afq-left">2h 13m</span> left · resets <span class="afq-reset">09:40</span></div>
+                ${mine.map(itemHtml).join('')}
+            </div>`;
+    }
+
     function alertsSection(cat) {
         const al = DATA.alerts;
         const all = (cat && cat.items) || [];
-        const items = all.filter(it => STUCK_KEYS.indexOf(it.key) < 0);
-        const stuck = stuckGroup(all);
+        const items = all.filter(it => STUCK_KEYS.indexOf(it.key) < 0 && QUOTA_KEYS.indexOf(it.key) < 0);
+        const stuck = stuckGroup(all) + quotaGroup(all);
         if (!al) { return items.map(itemHtml).join('') + stuck; }
         // Whichever of the two the filter leaves standing draws the card, once.
         // Keyed on `alerts.on` alone, a search for "voice" would file the card
@@ -2830,6 +2844,8 @@
                 .setgrouph { margin:0 0 2px; font-size:12px; letter-spacing:.02em; }
                 .setgroupwhy { font-size:11px; color:var(--vscode-descriptionForeground);
                     margin:0 0 6px; max-width:760px; }
+                .afq-sample { font-size:12px; margin:0 0 6px; padding:3px 8px; display:inline-block;
+                    border:1px dashed var(--vscode-widget-border, #4444); border-radius:4px; }
                 .pathvars { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:6px 0 2px; }
                 .pathvar { font-size:11px; padding:1px 6px; border-radius:9px; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4444);

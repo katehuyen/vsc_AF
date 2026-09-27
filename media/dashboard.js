@@ -398,21 +398,25 @@
         .pu-bar { margin-top:9px; }
         .pu-bar .pu-t { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12px; }
         .pu-bar .pu-t strong { font-size:13px; }
+        .pu-bar .pu-t strong.warn { color:var(--vscode-charts-yellow,#cca700); }
+        .pu-bar .pu-t strong.hot { color:var(--vscode-charts-red,#f14c4c); }
         .pu-bar .progress { margin-top:3px; }
     </style>`;
 
     /** "Resets 21:40 · in 2h 20m" — the absolute time answers "when", the
      *  relative one answers "should I start this now". */
-    function puReset(ts) {
+    /** HTML: U-154 — the reset time and the time left each wear their own class. */
+    function puResetHtml(ts) {
         if (!ts) { return ''; }
         const d = new Date(ts);
         const time = window.AFTime.clockUtc(d);
         const sameDay = d.toDateString() === new Date().toDateString();
         const when = sameDay ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+        const reset = `Resets <span class="afq-reset">${C.esc(when)}</span>`;
         const left = ts - Date.now();
-        if (left <= 0) { return `Resets ${when}`; }
+        if (left <= 0) { return reset; }
         const h = Math.floor(left / 3600e3), m = Math.round((left % 3600e3) / 60000);
-        return `Resets ${when} · in ${h > 0 ? h + 'h ' : ''}${m}m`;
+        return `${reset} · in <span class="afq-left">${h > 0 ? h + 'h ' : ''}${m}m</span>`;
     }
 
     /** An engine's headline figure, or the honest word for why there is none —
@@ -631,9 +635,9 @@
             body = pu.bars.map(b => {
                 const cls = b.percent >= 90 ? ' hot' : b.percent >= 75 ? ' warn' : '';
                 return `<div class="pu-bar">
-                    <div class="pu-t"><span>${C.esc(b.title)}</span><strong>${b.percent}%</strong></div>
+                    <div class="pu-t"><span>${C.esc(b.title)}</span><strong class="afq-pct${cls}">${b.percent}%</strong></div>
                     <div class="progress"><div class="${cls.trim()}" style="width:${b.percent}%"></div></div>
-                    <div class="sub">${C.esc(puReset(b.resetsAt))}</div>
+                    <div class="sub">${puResetHtml(b.resetsAt)}</div>
                 </div>`;
             }).join('');
             // ‼️ THE BEAT BELONGS TO THE ENDPOINT, SO IT IS ONLY CLAIMED FOR IT.
