@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.693.0 - Why a question has no timer is said where you look (K-45, part 3) (2026-09-27)
+
+- **Needs You lists a Console question no timer will answer**, and its line
+  says why — the word on your list and the filter ("this question says
+  "sil", a word on your list (question timer filter: recommended …)").
+  "Answer in Console" opens that card. A question whose clock is running is
+  not listed: it answers itself.
+- **The Telegram card says what the clock will do:** when it answers and
+  with what, that you stopped it, or why there is none.
+
 ## 3.692.0 - A touch on a question card never stops its timer (K-45, part 2b) (2026-09-27)
 
 - **Picking an option or typing no longer stops the countdown.** What you

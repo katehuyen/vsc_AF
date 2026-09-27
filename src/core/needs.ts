@@ -13,6 +13,7 @@
  * Pure data in, pure data out — the panel and the status bar both render here.
  */
 import { askActions, WorkflowQuestion } from './workflowAsk';
+import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
 
 export type NeedKind =
     | 'permission'        // a live session is blocked on a permission dialog
@@ -21,7 +22,8 @@ export type NeedKind =
     | 'stalled'           // a working session stopped emitting events
     | 'conflict'          // Antigravity two-sided drift needs reconciling
     | 'mission'           // a mission waits on the human (question / interrupted)
-    | 'question';         // M-46 — a workflow supervisor asks the human
+    | 'question'          // M-46 — a workflow supervisor asks the human
+    | 'console-question'; // K-45 — a Console question no timer will answer
 
 export interface NeedAction {
     id: string;
@@ -41,6 +43,9 @@ export interface NeedRef {
     missionRunId?: string;
     /** question: the workflow supervisor's open question */
     questionId?: string;
+    /** console-question: the Console card and the ask it is parked on */
+    consoleId?: string;
+    requestId?: string;
 }
 
 export interface NeedItem {
@@ -76,6 +81,7 @@ const URGENCY: Record<NeedKind, number> = {
     'permission': 0,
     'mission': 1,
     'question': 1,
+    'console-question': 1,
     'browser-approval': 1,
     'interrupted': 2,
     'stalled': 2,
@@ -166,6 +172,8 @@ export interface NeedsInput {
         stepIndex: number;
         stepTitle: string;
     }[];
+    /** K-45 — Console questions no timer will answer (src/core/consoleNeeds.ts) */
+    consoleAsks?: ConsoleNeedAsk[];
     /** M-46 — a workflow supervisor's open questions (src/core/workflowAsk.ts) */
     workflowQuestions?: WorkflowQuestion[];
     /** Missions blocked on the human: an open question or an interrupted run. */
@@ -300,6 +308,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             ...split(q.question), ts: q.askedAt, ref: { questionId: q.id }, actions: askActions(q)
         });
     }
+    items.push(...consoleNeedItems(input.consoleAsks ?? [], URGENCY['console-question']));
 
     for (const a of input.approvals) {
         const isStep = a.kind === 'approval';
@@ -361,7 +370,8 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
 export function blockingCount(items: NeedItem[]): number {
     return items.filter(i =>
         i.kind === 'permission' || i.kind === 'browser-approval'
-        || i.kind === 'stalled' || i.kind === 'interrupted' || i.kind === 'mission' || i.kind === 'question').length;
+        || i.kind === 'stalled' || i.kind === 'interrupted' || i.kind === 'mission' || i.kind === 'question'
+        || i.kind === 'console-question').length;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,6 +402,8 @@ export function needKey(item: NeedItem): string {
             return `mission|${r.missionRunId ?? '?'}`;
         case 'question':
             return `question|${r.questionId ?? '?'}`;
+        case 'console-question':
+            return `console-question|${r.consoleId ?? '?'}|${r.requestId ?? '?'}`;
         case 'interrupted':
             return `interrupted|${r.runId ?? '?'}`;
         case 'conflict':

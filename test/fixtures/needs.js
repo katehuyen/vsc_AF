@@ -99,6 +99,21 @@ const FREE_QUESTION = {
     question: 'Which folder should the harvest go to tonight?', options: []
 };
 
+/** K-45 — one Console question with one listed word: the clock will not answer it, and the row says why. */
+const consoleAsks = () => {
+    const A = require('../../out/core/autoAnswer.js');
+    const CN = require('../../out/core/consoleNeeds.js');
+    const ask = {
+        requestId: 'ask-7', interactive: true, ts: T - 7 * 60000, detail: '',
+        questions: [{
+            question: 'Eski release dalını silelim mi?', header: 'Dal',
+            options: [{ label: 'Evet, sil (Recommended)' }, { label: 'Hayır, kalsın' }]
+        }]
+    };
+    const s = A.autoAnswerSettings({ timeoutSeconds: 300 });
+    return CN.consoleNeedAsks([{ id: 'cs2', agentName: 'developer', pendingAsk: ask }], () => A.autoAnswerView(ask, s));
+};
+
 const data = (inp = input()) => {
     const items = N.buildNeedsQueue(inp).map(item => ({
         ...item, key: N.needKey(item), clearable: N.isClearable(item)
@@ -136,6 +151,12 @@ module.exports = {
             id: 'needs-question-free',
             label: 'Needs You — a supervisor question with no options: a free answer (M-46)',
             data: data({ liveSessions: [], approvals: [], insights: [], workflowQuestions: [FREE_QUESTION] })
+        },
+        {
+            id: 'needs-console-question',
+            label: 'Needs You — a Console question no timer will answer, and the word and filter that stopped it (K-45)',
+            data: data({ liveSessions: [], approvals: [], insights: [], consoleAsks: consoleAsks() }),
+            act: expandAll
         }
     ]
 };

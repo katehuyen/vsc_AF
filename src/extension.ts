@@ -86,6 +86,7 @@ import { buildInsights, Insight } from './core/health';
 import {
     ApprovalQueue, blockingCount, buildNeedsQueue, filterDismissedNeeds, isClearable, NeedItem, needKey
 } from './core/needs';
+import { ConsoleNeedAsk, consoleNeedAsks, consoleNeedSig } from './core/consoleNeeds';
 import {
     IDLE_REMINDER_PREFIX, NoticeInput, NoticesStore, registerNoticesOps, reportFileStem,
     staleReminderKeys
@@ -19239,6 +19240,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     // G1: the Needs You queue — live blockers + approvals + Antigravity drift.
+    // K-45 — bound once the Console host exists; a build before that has no Console questions
+    let consoleNeedsOf: (() => ConsoleNeedAsk[]) | undefined;
     const buildRawNeeds = (): NeedItem[] => buildNeedsQueue({
         // labelOf adds "#k" when one agent runs several sessions, so two
         // waiting sessions of the same agent stay tellable apart in the queue.
@@ -19248,7 +19251,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // F1: cut runs live in the queue too — the startup toast is easy to miss.
         interruptedRuns: taskManager.interruptedRuns(),
         missionWaits: missionWaits(),
-        workflowQuestions: workflowAsks.list()
+        workflowQuestions: workflowAsks.list(),
+        consoleAsks: consoleNeedsOf?.() ?? []
     });
 
     // Cleared rows: the key stays only while its row is still produced, so a
@@ -23938,6 +23942,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             case 'open-timeline':
                 void vscode.commands.executeCommand('agentfarm.openTimeline');
                 break;
+            case 'open-console':
+                if (item.ref.consoleId) { ConsolePanel.show(consoleDeps, { sessionId: item.ref.consoleId }); }
+                break;
             case 'focus-terminal':
                 void vscode.commands.executeCommand('agentfarm.focusSessionTerminal',
                     { sessionId: item.ref.sessionId });
@@ -27228,6 +27235,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;
+    consoleNeedsOf = () => consoleNeedAsks(consoleHost.list(), id => consoleHost.autoAnswerView(id));
+    let consoleNeedsSeen = '';
+    context.subscriptions.push(consoleHost.onChange(() => {
+        const sig = consoleNeedSig(consoleNeedsOf!());
+        if (sig !== consoleNeedsSeen) { consoleNeedsSeen = sig; needsEmitter.fire(); }
+    }));
     // K-43 — a changed wait re-arms the questions already waiting, not only the next one.
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.console.autoAnswer')) { consoleHost.resyncAutoAnswers(); }
@@ -30293,7 +30306,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const chatDigestCtx = (s: ConsoleSessionState) => ({
         project: (s.projectId ? projectStore.get(s.projectId)?.name : '') || '',
-        priced: engineOf(s.engine).reportsCost
+        priced: engineOf(s.engine).reportsCost,
+        clock: s.pendingAsk ? consoleHost.autoAnswerView(s.id) : null
     });
     let chatDigestMemo: DigestMemo = EMPTY_MEMO;
     /**

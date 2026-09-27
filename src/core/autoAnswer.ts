@@ -175,8 +175,8 @@ export function autoAnswerFor(
     if (stopper) {
         return {
             armed: false,
-            why: `waiting for you — this question says "${stopper}", a word on your list, and a choice that may not be `
-                + `undone is yours to make (question timer filter: ${filter} — Farm Settings).`,
+            why: `waiting for you — this question says "${stopper}", a word on your list (question timer filter: ${filter} — `
+                + 'Farm Settings), and a choice that may not be undone is yours to make.',
             reason: 'destructive'
         };
     }

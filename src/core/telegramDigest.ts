@@ -19,6 +19,7 @@
  * the one thing the reader is about to act on.
  */
 
+import type { AutoAnswerView } from './autoAnswer';
 import { ConsoleAsk, ConsoleSessionState } from './consoleproto';
 
 /** Telegram's own ceiling on a message's text */
@@ -34,6 +35,8 @@ export interface DigestContext {
     project?: string;
     /** does this engine state a price per turn (X-19)? false = plan-billed, say tokens */
     priced: boolean;
+    /** K-45 — the pending question's clock: when it answers, or why none will */
+    clock?: AutoAnswerView | null;
 }
 
 export interface DigestButton { text: string; data: string }
@@ -108,8 +111,19 @@ function askBlock(ask: ConsoleAsk): string {
     return `Permission: ${ask.displayName || ask.tool}` + (ask.detail ? `\n${ask.detail}` : '');
 }
 
-function statusBlock(state: ConsoleSessionState): string {
-    if (state.pendingAsk) { return '❓ WAITING ON YOU\n' + askBlock(state.pendingAsk); }
+/** K-45 — a phone that says nothing about the clock leaves the reader guessing whether to hurry. */
+function clockLine(v: AutoAnswerView | null | undefined): string {
+    if (!v) { return ''; }
+    if (v.state === 'armed') {
+        const at = new Date(v.dueAt).toTimeString().slice(0, 5);
+        return `\n⏳ Auto-answer at ${at} — then ${v.picks.map(p => `"${p}"`).join(', ')} is chosen for you.`;
+    }
+    if (v.state === 'held') { return '\n⏸ Timer stopped — this question waits for you.'; }
+    return v.reason === 'none' ? '' : '\n⏸ No timer: ' + v.why.replace(/^waiting for you — /, '');
+}
+
+function statusBlock(state: ConsoleSessionState, clock?: AutoAnswerView | null): string {
+    if (state.pendingAsk) { return '❓ WAITING ON YOU\n' + askBlock(state.pendingAsk) + clockLine(clock); }
     if (state.pendingPermission) {
         return '❓ WAITING ON YOU\nPermission refused: ' + state.pendingPermission.detail;
     }
@@ -139,7 +153,7 @@ export function digestText(state: ConsoleSessionState, ctx: DigestContext): stri
         .concat(turnTitle(state) ? ['🎯 ' + turnTitle(state)] : [])
         .concat(['Turn ' + (state.turns || 0)])
         .join(' · ');
-    const parts = [head, RULE, '📝 DONE\n' + doneBlock(turnText(state)), RULE, statusBlock(state), RULE, metricBlock(state, ctx)];
+    const parts = [head, RULE, '📝 DONE\n' + doneBlock(turnText(state)), RULE, statusBlock(state, ctx.clock), RULE, metricBlock(state, ctx)];
     let text = parts.join('\n');
     if (text.length > DIGEST_LIMIT) {
         // the done block is the only elastic one; take the overflow out of it
