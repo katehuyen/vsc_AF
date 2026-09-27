@@ -6002,6 +6002,7 @@
             window.AFTip.lines([
                 'Stops every waiting or parked baton of chain ' + v.chainId + ', so no further leg opens.',
                 'Nothing is deleted: baton.status keeps each one as stopped, with the reason.',
+                'A successor row that has not started yet (queued, or parked on a reset) is cancelled with it.',
                 'A run a baton already opened keeps running — end it on its own card.',
                 window.AFTip.GAP,
                 'Agent door: baton.stop chain=' + v.chainId

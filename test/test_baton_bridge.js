@@ -186,10 +186,41 @@ function setup(o = {}) {
                 /const batonBoard = new BatonBoard\(a2aNotes, id => agents\.find\(a => a\.id === id\)\?\.name\)/.test(ext));
             ok('…and both halves of the relay get it — the pass and the runner',
                 (ext.match(/board: batonBoard/g) || []).length === 2
-                && /batonStopChain[^]*?Date\.now\(\), batonBoard\)/.test(ext));
+                && /batonStopChain[^]*?Date\.now\(\), batonBoard, cancelSuccessorRow\)/.test(ext));
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    }
+
+    {
+        // ‼️ S-94 — the brake takes the successor row that has not started with it
+        const { stopBatons } = require(path.join(OUT, 'batonBridge.js'));
+        const rows = { tsk_q: 'queued', tsk_r: 'running' };
+        const cancelRow = id => {
+            if (rows[id] === 'queued') { rows[id] = 'cancelled'; return 'cancelled'; }
+            return rows[id] === 'running' ? 'running' : 'gone';
+        };
+        const s94 = setup({ cancelRow });
+        const p = await s94.reg.dispatch('baton.pass', { prompt: 'Continue S-94.' }, { sessionId: 'sess-A' });
+        const b = s94.store.get(p.result.baton.id);
+        s94.store.put(Object.assign({}, b, { state: 'parked', taskId: 'tsk_q' }));
+        const st = await s94.reg.dispatch('baton.stop', { session: 'sess-A', why: 'enough' });
+        ok('‼️ S-94 — baton.stop cancels the successor row that had not started, and its why says so',
+            st.ok && rows.tsk_q === 'cancelled' && /tsk_q, not started yet, was cancelled with it/.test(st.result.stopped[0].why));
+        const store2 = new BatonStore();
+        store2.put(Object.assign({}, b, { id: 'btn_run', state: 'parked', taskId: 'tsk_r' }));
+        const run = stopBatons(store2, store2.all(), 'stop', NOW, undefined, cancelRow);
+        ok('…a row already running is a session and is never touched — its why says so', rows.tsk_r === 'running' && /tsk_r is already running/.test(run[0].why));
+        const store3 = new BatonStore();
+        store3.put(Object.assign({}, b, { id: 'btn_bare', state: 'parked', taskId: 'tsk_x' }));
+        ok('…a brake with no canceller (and a row that is gone) records the reason as given',
+            stopBatons(store3, store3.all(), 'stop', NOW)[0].why === 'stop' && stopBatons(new BatonStore(), [Object.assign({}, b, { id: 'btn_g', state: 'parked', taskId: 'tsk_none' })], 'stop', NOW, undefined, cancelRow)[0].why === 'stop');
+        const desc = (await s94.reg.dispatch('farm.ops', {})).result.find(o => o.op === 'baton.stop').describe;
+        ok('…and the op says it', /cancelled with it while it has NOT started/.test(desc));
+        const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('‼️ all three brakes pass the canceller: baton.stop, farm.cleanup and ✕⑂ on the card',
+            /cancelRow: cancelSuccessorRow,/.test(ext) && /batonBoard, cancelSuccessorRow\); \}/.test(ext)
+            && /✕ on the Console card', Date\.now\(\), batonBoard, cancelSuccessorRow\)\.length/.test(ext));
     }
 
     console.log(`test_baton_bridge.js: ${pass} passed, ${fail} failed`);

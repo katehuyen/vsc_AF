@@ -33,6 +33,8 @@ export interface BatonBridgeDeps {
     room?: (b: Baton) => { account?: string; resetsAt?: number; refusal?: string } | undefined;
     fmtTime?: (t: number) => string;
     now?: () => number;
+    /** S-94 — the brake cancels a successor row that has not started */
+    cancelRow?: SuccessorRowCancel;
     /** S-74 — the runner's button: the successor starts now (BatonRunner.startNow) */
     startNow?: (b: Baton, by: string) => { ok: true; baton: Baton } | { ok: false; why: string };
     /** S-78 — the passing folder's git HEAD, for the barren brake */
@@ -70,10 +72,25 @@ const BRAKE_TITLE: Record<BatonBrake['kind'], string> = { ceiling: 'leg ceiling'
 
 /** A baton as the bridge shows it — the prompt previewed, the successor's surface resolved. */
 /** THE USER'S BRAKE, one body for the bridge op and the card's ✕ (S-74 · S-77): recorded, never deleted. */
-export function stopBatons(store: BatonStore, list: readonly Baton[], why: string, at: number, board?: BatonBoard): Baton[] {
+/**
+ * S-94 — what became of the successor row a stopped baton had opened:
+ * `cancelled` (it had not started — queued, or parked on a reset), `running`
+ * (it is a session now and is never touched), `gone` (no such row, or it ended).
+ */
+export type SuccessorRowCancel = (taskId: string) => 'cancelled' | 'running' | 'gone';
+
+export function stopBatons(
+    store: BatonStore, list: readonly Baton[], why: string, at: number, board?: BatonBoard, cancelRow?: SuccessorRowCancel
+): Baton[] {
     const stopped: Baton[] = [];
     for (const b of list) {
-        const r = moveBaton(b, 'stopped', why, at);
+        // ‼️ S-94 — a row the brake left queued would open the stopped chain's next leg the moment a seat freed up
+        let row: ReturnType<SuccessorRowCancel> | undefined;
+        if (cancelRow && b.taskId) { try { row = cancelRow(b.taskId); } catch { row = undefined; } }
+        const said = row === 'cancelled' ? `${why} · its successor row ${b.taskId}, not started yet, was cancelled with it`
+            : row === 'running' ? `${why} · its successor row ${b.taskId} is already running — a session now, left to you`
+                : why;
+        const r = moveBaton(b, 'stopped', said, at);
         if (r.ok) { stopped.push(r.baton); }
     }
     store.put(...stopped);
@@ -197,12 +214,12 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
         },
         {
             op: 'baton.stop',
-            describe: 'S-74 — THE USER\'S BRAKE: stop a waiting or parked baton, or a whole chain. Nothing is deleted — each record stays as `stopped` with your reason in `why`, and baton.status still shows it. A task row the baton had already opened is NOT touched (cancel it with tasks.cancel if you mean to). args: baton? (one id) | chain? (every live baton of that chain) | session? (the live baton that session passed) — exactly one of the three; why? (a line, recorded on each). Refused as data when nothing live matches. The same brake as ✕ on the card.',
+            describe: 'S-74 — THE USER\'S BRAKE: stop a waiting or parked baton, or a whole chain. Nothing is deleted — each record stays as `stopped` with your reason in `why`, and baton.status still shows it. A task row the baton had already opened is cancelled with it while it has NOT started (queued, or parked on a reset — S-94), so a freed seat never opens the stopped chain\'s next leg; a row already running is a session and is never touched (its why says so). args: baton? (one id) | chain? (every live baton of that chain) | session? (the live baton that session passed) — exactly one of the three; why? (a line, recorded on each). Refused as data when nothing live matches. The same brake as ✕ on the card.',
             handler: (args) => {
                 const picked = pickLive(deps.store, args, true);
                 if (!picked.by) { throw new BridgeRefusal('say which: baton (an id), chain (a chain id) or session (the session that passed it).', { step: 'pick' }); }
                 if (!picked.list.length) { throw new BridgeRefusal(`nothing live matches ${picked.by} — baton.status lists what is waiting or parked.`, { step: 'pick', by: picked.by }); }
-                const stopped = stopBatons(deps.store, picked.list, optStr(args, 'why') || 'stopped by the user', now(), deps.board);
+                const stopped = stopBatons(deps.store, picked.list, optStr(args, 'why') || 'stopped by the user', now(), deps.board, deps.cancelRow);
                 return { stopped: stopped.map(batonView), by: picked.by };
             }
         },

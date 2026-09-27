@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.725.0 - Stopping a chain takes its waiting successor row with it (S-94) (2026-09-28)
+
+- ✕⑂ Stop chain, baton.stop and farm.cleanup now cancel the successor task
+  row a baton had already written when it has not started yet (queued, or
+  parked on an account reset). Before, the row stayed on the board and the
+  stopped chain's next leg opened the moment a seat freed up. A row that is
+  already running is a session and is never touched; the stopped baton's
+  reason says which it was.
+
 ## 3.724.0 - The stuck warning can be tuned or turned off (U-158) (2026-09-28)
 
 - Farm Settings → Live Monitoring & Alerts has a "Stuck warning" group: how

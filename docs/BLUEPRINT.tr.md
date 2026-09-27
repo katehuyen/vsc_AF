@@ -1881,7 +1881,7 @@ Bir baton rölesi üç farklı kapıdan başlatılabilir veya koşan bir işe so
 Console kartı ve oturum listeleri, bir röle bindiğinde şu özel kontrollerle donatılır:
 
 - **`⑂→` (Pass now):** Oturumun kota veya bağlam limitlerine çarpmasını beklemeden, kullanıcı eliyle anında devir başlatma düğmesidir. Tıklandığında ajana `PASS NOW —` başlığıyla devir fısıltısı enjekte edilir. Ajan elindeki adımı commit'leyip `baton.pass` çağırır ve sonraki ayak hemen uyanır.
-- **`✕⑂` (Stop chain):** Zincir frenidir. Tıklandığında o zincire ait bekleyen veya park edilmiş tüm bayrakları `stopped` durumuna çeker. Koşan mevcut oturum kendi işini bitirir fakat arkasından yeni bir etap açılmaz.
+- **`✕⑂` (Stop chain):** Zincir frenidir. Tıklandığında o zincire ait bekleyen veya park edilmiş tüm bayrakları `stopped` durumuna çeker. Koşan mevcut oturum kendi işini bitirir fakat arkasından yeni bir etap açılmaz. Bir bayrağın görev tahtasına çoktan yazdığı ama HENÜZ BAŞLAMAMIŞ halef satırı (queued ya da bir sıfırlamaya park edilmiş) da onunla birlikte iptal edilir (S-94, 3.725.0) — önceden koltuk boşalınca durdurulan zincirin etabı yine de açılıyordu; çalışmaya başlamış satır bir oturumdur, ona asla dokunulmaz.
 - **`⑂ n` Etiketi ve Durum Paneli:** Kartın alt şeridinde mavi renkte `⑂ 1`, `⑂ 2` rozeti çizer. Üzerine gelindiğinde (AFTip) zincir kimliğini (`chainId`), kaçıncı devirde (`hop`) olduğunu, hesap havuzunu ve limit durumunu döker.
 - **Oturumlar Tablosu `⑂` Sütunu:** Tüm oturum listelerinde `⑂` başlığı altında yalnız röle taşıyan satırlarda `⑂ n` rozeti görünür; diğer satırlar temiz boş bırakılır.
 - **Durum Çubuğu Canlı Göstergesi:** Aktif koşan zincir için durum çubuğunda `⑂ 1/6` formatında canlı sayaç tutulur.
@@ -1905,7 +1905,7 @@ Zincirin sonsuz bir döngüde token yakmasını veya sahipsiz kalmasını engell
 
 - `baton.status` — Tüm zincirlerin, aktif etapların, park edilmiş bayrakların ve durma gerekçelerinin canlı listesi.
 - `baton.pass` — Koşan etabın bayrağı devretme kapısı (`prompt`, opsiyonel `surface`, `account`, `note`).
-- `baton.stop` — Belirli bir zinciri (`chainId`) veya bayrağı durdurma freni.
+- `baton.stop` — Belirli bir zinciri (`chainId`) veya bayrağı durdurma freni; başlamamış halef satırını da iptal eder (S-94) — ✕⑂ ve `farm.cleanup` ile aynı fren.
 - `baton.now` — Park edilmiş bir bayrağı bekleme süresini atlayarak derhal çalıştırma.
 - `baton.lastLeg` — Yumuşak fren (S-95): koşan etabı zincirin son etabı yapar (`on=true`) ya da devir anına kadar geri alır (`on=false`). Frenliyken devir emri not yazdırır, `baton.pass` `braked` döner, emniyet kilidi karışmaz. Konsol kartındaki ⑂⊣ Last leg aynı gövdeyi çalıştırır.
 - `farm.cleanup` — Takılı kalanlar (S-101): hiç başlamamış kuyruk satırları, hiçbir şey çalışmadığı hâlde "running" kalan satırlar, hâlâ bekleyen bayraklar ve boşta Konsol kartları — 24 saati geçen, yeniden başlatmanın temizlemediği her şey. Varsayılan yalnız listeler; `apply=true` (istenirse `ids=`) iptal eder / durdurur / kapatır, hiçbir şey silinmez. Durum çubuğundaki 🧹 çipi (yalnız takılı bir şey varken görünür), inceleme listesi ve günde en fazla bir kez gelen bildirimin "Clean now" düğmesi aynı gövdeyi çalıştırır; `farm.health` sayıyı `stale` olarak verir.

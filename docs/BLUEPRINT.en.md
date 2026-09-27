@@ -1838,7 +1838,7 @@ A baton relay can be initiated through three distinct doors or attached to an ex
 The Console card and session tables feature dedicated controls when handling a relay:
 
 - **`⑂→` (Pass now):** A manual handover trigger that bypasses waiting for quota or context limits. When clicked, it injects an immediate `PASS NOW —` whisper into the session. The agent commits in-flight progress, invokes `baton.pass`, and the next leg is triggered.
-- **`✕⑂` (Stop chain):** The chain brake. Clicking it sets all waiting or parked batons in that chain to `stopped`. The running leg finishes its current work, but no successor leg will be spawned.
+- **`✕⑂` (Stop chain):** The chain brake. Clicking it sets all waiting or parked batons in that chain to `stopped`. The running leg finishes its current work, but no successor leg will be spawned. A successor task row a baton had already written that has NOT started (queued, or parked on a reset) is cancelled with it (S-94, 3.725.0) — before, a freed seat opened the stopped chain's next leg anyway; a row already running is a session and is never touched.
 - **`⑂ n` Chip & Detail Panel:** Renders a distinct blue `⑂ 1`, `⑂ 2` chip on the card's status row. Hovering it opens a rich panel displaying the `chainId`, current hop count, assigned account pool, and limit readings.
 - **Sessions Table `⑂` Column:** Across all session tables, a dedicated `⑂` column displays `⑂ n` exclusively for relay legs, remaining clean and blank for ordinary sessions.
 - **Status Bar Live Counter:** When a relay is actively executing, the status bar displays a live counter formatted as `⑂ 1/6`.
@@ -1862,7 +1862,7 @@ Five distinct safety mechanisms protect the relay from endless loops, token wast
 
 - `baton.status` — Real-time ledger of all chains, active legs, parked batons, and stop reasons.
 - `baton.pass` — Runner's handover dispatch (`prompt`, optional `surface`, `account`, `note`).
-- `baton.stop` — Halts an entire chain (`chainId`) or individual baton.
+- `baton.stop` — Halts an entire chain (`chainId`) or individual baton, and cancels a successor row that has not started (S-94); the same brake as ✕⑂ and `farm.cleanup`.
 - `baton.now` — Bypasses parking delays to trigger a waiting baton immediately.
 - `baton.lastLeg` — The soft brake (S-95): makes the leg running now the chain's last (`on=true`) or takes it back (`on=false`) until it passes. Braked, its handover order names the note, its pass is answered `braked` and the failsafe stays out. The Console card's ⑂⊣ Last leg runs the same body.
 - `farm.cleanup` — What is stuck (S-101): task rows queued and never started, rows "running" with nothing working, relay batons still waiting and idle Console cards — anything waiting 24h+, which a restart does not clear. Lists by default; `apply=true` (optionally `ids=`) cancels / stops / closes them, deleting nothing. The status-bar 🧹 chip (shown only while something is stuck), its review picker and the once-a-day notice's "Clean now" run the same body; `farm.health` carries the count as `stale`.

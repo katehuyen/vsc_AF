@@ -16995,9 +16995,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         dirtOf: legGit.dirtOf,
         maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))
     };
+    // ‼️ S-94 — every brake (✕⑂ on the card, baton.stop, farm.cleanup) cancels a successor row that has not started
+    const cancelSuccessorRow = (id: string): 'cancelled' | 'running' | 'gone' => {
+        const t = taskManager.tasks.find(x => x.id === id);
+        if (!t) { return 'gone'; }
+        if (t.status === 'running') { return 'running'; }
+        if (t.status !== 'queued') { return 'gone'; }
+        taskManager.cancelTask(t);
+        return 'cancelled';
+    };
     registerBatonOps(bridge, {
         ...batonAttachDeps,
         board: batonBoard,
+        cancelRow: cancelSuccessorRow,
         caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,
         // a preview: launchAccountPick RETURNS a round-robin cursor, only a real
         // launch commits it — so asking here moves nothing
@@ -17198,7 +17208,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         batons: () => batonStore.all(),
         cancelTask: id => { const t = taskManager.tasks.find(x => x.id === id); if (t) { taskManager.cancelTask(t); } },
         closeCard: id => { consoleHost.forget(id); ConsolePanel.refreshIfOpen(); },
-        stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard); }
+        stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard, cancelSuccessorRow); }
     }, (title, body) => {
         noticesStore.add({ agentName: 'agent-farm', type: 'report', level: 2, title, body, sourceKey: `stale:${Date.now()}` });
         NoticesPanel.refreshIfOpen();
@@ -29140,7 +29150,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             passNowText(batonRelayOf(batonStore.all(), sessionId), contextGuard.orders()),
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
-            'stopped by the user — ✕ on the Console card', Date.now(), batonBoard).length,
+            'stopped by the user — ✕ on the Console card', Date.now(), batonBoard, cancelSuccessorRow).length,
         // S-99 — the card's ⑂⊣ runs baton.lastLeg's own body
         batonLastLeg: (sessionId: string, on: boolean) => applyLastLeg({ store: batonStore }, sessionId, on, 'the user (Console card)'),
         // S-103 — a right-click on ⑂⊣ opens the legs menu, written by baton.setLegs's own body
