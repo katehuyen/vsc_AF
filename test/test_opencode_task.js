@@ -112,9 +112,11 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
     ok('‼️ a timed firing never inherits a session id',
         /fromSchedule: s\.id, projectId: s\.projectId \|\| undefined, \.\.\.runExtras\(s\)/.test(body)
         && !/resumeSessionId/.test(body));
+    // U-151 — 'Run with…' may lay a retry over this one run, and nothing else.
     ok('…and the manual "run now" is the same call, so it cannot differ',
-        (tasksTs.match(/\{ fromSchedule: s\.id, projectId: s\.projectId \|\| undefined, \.\.\.runExtras\(s\) \}/g) || [])
-            .length === 2);
+        (tasksTs.match(/\{ fromSchedule: s\.id, projectId: s\.projectId \|\| undefined, \.\.\.runExtras\(s\)( \}|, \.\.\.\(over\?\.retry \? \{ retry: over\.retry \} : \{\}\) \})/g) || [])
+            .length === 2
+        && !/resumeSessionId/.test(tasksTs.slice(tasksTs.indexOf('runScheduleNow(s: FarmSchedule'), tasksTs.indexOf('const started = this.startTask(task);', tasksTs.indexOf('runScheduleNow(s: FarmSchedule')))));
     // Resume only ever comes from a place that MEANT it: Smart Continue after an
     // interrupted run, which is where the id is copied on purpose.
     ok('the only place a task inherits a conversation is Smart Continue',

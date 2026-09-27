@@ -136,6 +136,10 @@ export interface TasksDeps {
     flexPromote?(args: { point: string; level: string; target: string; value: unknown; name?: string }): Promise<unknown>;
     /** U-151 — { point id: its Farm Settings value } for the points the workflow form's boxes inherit. */
     flexSettings?(): Record<string, unknown>;
+    /** U-151 — 'Run with…' on a schedule: this run's own supervisor values over its supervised retry (the same door as schedules.runNow). */
+    runScheduleWith?(id: string, supervisor: unknown, preset?: string): unknown;
+    /** U-151 — the presets with run-level supervisor values, for the schedule card's picker: [{ name, describe, supervisor }] */
+    runPresets?(): { name: string; describe?: string; supervisor: Record<string, unknown> }[];
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
@@ -242,6 +246,9 @@ interface PlanRow {
     wakeMode?: string;
     /** U-151 — the wake preset the last 'Run with…' chose; the card starts there */
     lastWake?: string;
+    /** U-151 — a schedule whose own retry is supervised, and that supervisor's values ('Run with…' starts there) */
+    supervised?: boolean;
+    supervisor?: Record<string, unknown>;
     /** when/how it fires, in the user's words */
     when: string;
     nextAt?: number;
@@ -576,6 +583,8 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
         rows.push({
             id: s.id, kind: 'schedule', title: s.title,
             when: scheduleWhen(s),
+            // U-151 — 'Run with…' has something to set only where its retry is supervised
+            ...(s.retry?.behavior === 'supervisor' ? { supervised: true, supervisor: { ...(s.retry.supervisor ?? {}) } } : {}),
             nextAt: s.enabled ? nextOccurrences(s, now, 35)[0] : undefined,
             agentName: s.agentName,
             model: s.model ?? '',
@@ -957,6 +966,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             supervisor: deps.supervisorDefault?.() ?? null,
             supervisorOverrides: deps.supervisorOverrides?.() ?? null,
             flexSettings: deps.flexSettings?.() ?? null,
+            runPresets: deps.runPresets?.() ?? [],
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),
@@ -2132,6 +2142,9 @@ export class TasksPanel {
         inputs?: Record<string, unknown>;
         /** M-45 — the Run card's "this run only" wake preset */
         wake?: string;
+        /** U-151 — a schedule's 'Run with…': this run's supervisor values and the preset under them */
+        supervisor?: unknown;
+        preset?: string;
         /** U-151 — '↑ make default' */
         point?: string; level?: string; target?: string; value?: unknown;
     }): Promise<void> {
@@ -2155,6 +2168,12 @@ export class TasksPanel {
                 switch (`${msg.kind}:${msg.act}`) {
                     case 'schedule:toggle': run('agentfarm.toggleSchedule', node); break;
                     case 'schedule:run': run('agentfarm.runScheduleNow', node); break;
+                    case 'schedule:runwith':
+                        if (!this.deps.runScheduleWith) { break; }
+                        try {
+                            this.deps.runScheduleWith(String(msg.id), msg.supervisor, typeof msg.preset === 'string' && msg.preset ? msg.preset : undefined);
+                        } catch (e) { this.say(`Run with: ${(e as Error).message}`); }
+                        break;
                     // ‼️ Edit opens THE FORM, not a chain of boxes. The same
                     // form the + opens, prefilled — see composeFor.
                     case 'schedule:edit': this.compose('schedule', msg.id); break;

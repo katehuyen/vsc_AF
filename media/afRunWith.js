@@ -59,11 +59,56 @@
         });
     }
 
+    // A schedule's card: this run's supervisor values over its supervised retry, and a preset under them.
+    const SUP = 'rs-sup', PRESET = 'rs-preset';
+    const SUP_BOXES = [['model', 'Supervisor model'], ['engine', 'Supervisor engine'], ['maxCalls', 'Calls'],
+        ['budgetUsd', 'Budget $'], ['minConfidence', 'Min confidence']];
+    const LOW = [['', ''], ['ask', 'hold, tell me'], ['auto', 'continue (smart)'], ['never', 'no retry']];
+
+    /** What a box will use when it is left empty, and where that comes from — MIRROR's first line. */
+    function under(p, run, presets, k) {
+        const pre = run.preset ? (presets.find(x => x.name === run.preset) || {}).supervisor || {} : {};
+        if (pre[k] !== undefined) { return [String(pre[k]), 'the preset ' + run.preset]; }
+        const own = (p.supervisor || {})[k];
+        return own !== undefined && own !== '' ? [String(own), 'this schedule'] : ['', 'the default'];
+    }
+
+    /** `run` = { kind: 'schedule', id, sup: { <field>: value }, preset }; `presets` = [{ name, describe, supervisor }]. */
+    function scheduleCard(p, run, C, presets) {
+        const list = presets || [];
+        const box = (k, label) => {
+            const [v, from] = under(p, run, list, k);
+            const mine = String((run.sup || {})[k] || '');
+            return F().text(SUP + '.' + k, label, mine, {
+                ph: v ? v + ' — ' + from : from,
+                tip: (mine ? mine + ' — this run' : (v || 'the default') + ' — ' + from) + '\n\nThis run only: the schedule keeps its own.'
+            });
+        };
+        const [lv, lfrom] = under(p, run, list, 'lowConfidence');
+        const lowWord = x => (LOW.find(o => o[0] === x) || [])[1] || x;
+        const low = F().sel(SUP + '.lowConfidence', 'If it is not sure',
+            LOW.map(([id, label]) => ({ id, label: id ? label : '↳ ' + (lv ? lowWord(lv) : 'the default') })), (run.sup || {}).lowConfidence || '',
+            { tip: ((run.sup || {}).lowConfidence ? lowWord(run.sup.lowConfidence) + ' — this run' : (lv ? lowWord(lv) : 'the default') + ' — ' + lfrom) + '\n\nWhat the supervisor does when it is not sure of its call.' });
+        const picker = F().sel(PRESET, 'Preset', [{ id: '', label: 'none — the schedule\'s own' }].concat(list.map(x => ({ id: x.name, label: x.name, detail: x.describe || '' }))), run.preset || '', {
+            redraw: true, tip: (run.preset || 'none') + '\n\nA preset fills this run\'s supervisor values; a box you type beats it.'
+        });
+        return F().card({
+            id: 'nt-runwith', title: `Run “${p.title}” with`, lede: 'this run\'s own supervisor — the schedule keeps its own',
+            body: F().grid(picker, SUP_BOXES.map(([k, l]) => box(k, l)), low), submit: 'Run with these'
+        });
+    }
+
     /** The form's values → the draft. */
     function apply(p, run, values) {
+        if (run.kind === 'schedule') {
+            run.sup = run.sup || {};
+            SUP_BOXES.map(b => b[0]).concat(['lowConfidence']).forEach(k => { const v = values[SUP + '.' + k]; if (v !== undefined) { run.sup[k] = v; } });
+            if (values[PRESET] !== undefined) { run.preset = values[PRESET]; }
+            return;
+        }
         (p.inputs || []).forEach(i => { const v = values[RUN_IN + '.' + i.name]; if (v !== undefined) { run.values[i.name] = v; } });
         if (values[RUN_WAKE] !== undefined) { run.wake = values[RUN_WAKE]; }
     }
 
-    window.AFRunWith = { RUN_IN, RUN_WAKE, workflowCard, apply, changed };
+    window.AFRunWith = { RUN_IN, RUN_WAKE, workflowCard, scheduleCard, apply, changed };
 })();

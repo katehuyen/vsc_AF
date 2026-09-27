@@ -7955,7 +7955,7 @@ export class TaskManager implements vscode.Disposable {
     /** Manual "Run Now": the master switch still applies (paused means paused),
      *  but quiet hours and the precondition do not — the user pressing a button
      *  is a deliberate act, not an unattended wake-up. */
-    runScheduleNow(s: FarmSchedule): void {
+    runScheduleNow(s: FarmSchedule, over?: { retry?: RetryPolicy }): void {
         const gate = this.automationGate(new Date(), true);
         if (gate) {
             void vscode.window.showWarningMessage(`Agent Farm: cannot run "${s.title}" — ${gate.reason}.`);
@@ -7969,9 +7969,10 @@ export class TaskManager implements vscode.Disposable {
         // The project is the schedule's own declaration, never the window's —
         // see fireSchedule. Run Now must produce the same run the timer would,
         // or the button is not a test of anything, so it takes the same
-        // dimensions from the same place.
+        // dimensions from the same place. U-151 — 'Run with…' lays this run's
+        // own retry over the schedule's, for this run only.
         const task = this.addTask(agent, s.title, s.prompt, s.mode,
-            { fromSchedule: s.id, projectId: s.projectId || undefined, ...runExtras(s) });
+            { fromSchedule: s.id, projectId: s.projectId || undefined, ...runExtras(s), ...(over?.retry ? { retry: over.retry } : {}) });
         // ‼️ M-7 — THE SAME HONESTY THE TIMER PATH OWES (see fireSchedule). A
         // press is not a launch: the budget, the quota guard and the concurrency
         // limits all still stand in front of it, and logging "fired" for a run

@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.701.0 - Run with… on a supervised schedule (U-151, part 3d-2) (2026-09-27)
+
+- **A schedule whose retry is supervised has a `with…` button.** It runs
+  the schedule now with this run's own supervisor values — model, engine,
+  calls, budget, confidence — or a preset's (Economy · Balanced · Quality
+  or your own); a box you type beats the preset. The schedule keeps its
+  own values.
+- Every empty box says what it would use and where that comes from.
+- **`schedules.runNow supervisor={…} preset=<name>`** (bridge) does the
+  same; a schedule whose retry is not supervised is refused by name.
+
 ## 3.700.0 - Run with… on every workflow (U-151, part 3d-1) (2026-09-27)
 
 - **Every workflow row has a `with…` button.** It opens the Run card —

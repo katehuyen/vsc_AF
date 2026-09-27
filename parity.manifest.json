@@ -7037,6 +7037,15 @@
       ]
     },
     {
+      "capability": "tasksPanel.ts#schedule:runwith",
+      "ui": [
+        "page:tasksPanel.ts#schedule:runwith"
+      ],
+      "ops": [
+        "schedules.runNow"
+      ]
+    },
+    {
       "capability": "tasksPanel.ts#schedule:toggle",
       "ui": [
         "page:tasksPanel.ts#schedule:toggle"

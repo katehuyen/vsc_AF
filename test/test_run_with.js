@@ -58,12 +58,69 @@ console.log('== the row ==');
     ok('a typed value is posted; the workflow\'s wake is said as empty', m && m.inputs.clip === 'D:/in/b.mp4' && m.wake === '');
 }
 
+console.log('== a schedule ==');
+{
+    const sv = fixture.variants().find(v => v.id === 'tasks-schedule-runwith');
+    const fresh = (edit) => { const d = clone(sv.data); if (edit) { edit(d); } return runPage(fixture.script, d, fixture.window || {}, sv.state); };
+    {
+        const r = fresh(d => { d.plan[0].supervised = false; delete d.plan[0].supervisor; });
+        ok('‼️ a schedule whose retry is not supervised has nothing to set: no with… (applies)', r.query('[data-plan="runwith"]').length === 0);
+    }
+    const r = fresh();
+    ok('a supervised schedule carries with…', r.query('[data-plan="runwith"][data-kind="schedule"]').length === 1);
+    r.query('[data-plan="runwith"][data-kind="schedule"]')[0].click();
+    const html0 = r.html();
+    ok('the card opens with a preset picker and the supervisor boxes', !!af(r, 'rs-preset') && !!af(r, 'rs-sup.model') && !!af(r, 'rs-sup.lowConfidence'));
+    ok('an empty box shows the schedule\'s own value faint', /placeholder="haiku — this schedule"/.test(html0) && /placeholder="2 — this schedule"/.test(html0));
+    const pre = af(r, 'rs-preset');
+    pre.value = 'Economy';
+    pre.fire('change');
+    const html1 = r.html();
+    ok('picking a preset redraws: its values fill what the empty boxes would use', /placeholder="1 — the preset Economy"/.test(html1)
+        && /placeholder="0\.5 — the preset Economy"/.test(html1) && /placeholder="haiku — this schedule"/.test(html1));
+    const model = af(r, 'rs-sup.model');
+    model.value = 'sonnet';
+    model.fire('input');
+    r.query('[data-afact="submit"]')[0].click();
+    const m = r.last();
+    ok('‼️ Run with these posts the schedule, the typed values and the preset', m && m.type === 'plan' && m.act === 'runwith'
+        && m.kind === 'schedule' && m.id === 's7' && JSON.stringify(m.supervisor) === '{"model":"sonnet"}' && m.preset === 'Economy');
+}
+{
+    const W = require(path.join(ROOT, 'out', 'core', 'runWithTask.js'));
+    const P = require(path.join(ROOT, 'out', 'core', 'flexPresets.js'));
+    ok('one run sets the supervisor points that have a run level', W.runSupervisorFields().join() === 'engine,model,maxCalls,budgetUsd,minConfidence,lowConfidence');
+    const v = W.runSupervisor({ maxCalls: '3', model: 'sonnet', budgetUsd: '' });
+    ok('a box\'s text is typed by its point; an empty one says nothing', !v.error && v.value.maxCalls === 3 && v.value.model === 'sonnet' && !('budgetUsd' in v.value));
+    ok('a field one run cannot set is refused, naming the ones it can', /one run sets engine, model/.test(W.runSupervisor({ agent: 'x' }).error));
+    ok('a value its point refuses is refused', /not a valid/.test(W.runSupervisor({ maxCalls: 99 }).error));
+    const own = { behavior: 'supervisor', max: 2, supervisor: { engine: 'claude', model: 'haiku', maxCalls: 2 } };
+    const r = W.retryForRun(own, { maxCalls: 1 });
+    ok('‼️ this run\'s values are laid over the schedule\'s supervisor, the rest kept', !r.error && r.retry.supervisor.maxCalls === 1
+        && r.retry.supervisor.model === 'haiku' && r.retry.max === 2 && own.supervisor.maxCalls === 2);
+    ok('refused when the schedule\'s retry is not supervised', /not supervised/.test(W.retryForRun({ behavior: 'smart' }, { maxCalls: 1 }).error)
+        && /not supervised/.test(W.retryForRun(undefined, { maxCalls: 1 }).error));
+    ok('nothing to lay: the schedule\'s own retry as it is', W.retryForRun(undefined, {}).retry === undefined && !W.retryForRun(undefined, {}).error);
+    const eco = P.BUILTIN_PRESETS.find(p => p.name === 'Economy');
+    ok('a preset contributes its run-level supervisor values only', JSON.stringify(W.presetSupervisor(eco)) === '{"maxCalls":1,"budgetUsd":0.5}');
+}
+
 console.log('== the host ==');
 {
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');
     ok('‼️ a Run with… run remembers its wake choice on the workflow, and forgets it when the run took the workflow\'s',
         /case 'workflow:run':[\s\S]{0,900}if \(typeof msg\.wake === 'string' && msg\.wake\) \{ w\.lastWake = msg\.wake; \} else \{ delete w\.lastWake; \}/.test(panel));
     ok('the plan row carries it to the card', /lastWake: w\.lastWake \?\? ''/.test(panel));
+    ok('a schedule row says whether its retry is supervised, and with which values',
+        /s\.retry\?\.behavior === 'supervisor' \? \{ supervised: true, supervisor: \{ \.\.\.\(s\.retry\.supervisor \?\? \{\}\) \} \}/.test(panel));
+    ok('‼️ the card\'s run goes through the same door as schedules.runNow',
+        /case 'schedule:runwith':[\s\S]{0,200}this\.deps\.runScheduleWith\(String\(msg\.id\), msg\.supervisor/.test(panel));
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('schedules.runNow takes supervisor and preset through runScheduleWith',
+        /op: 'schedules\.runNow',[\s\S]{0,1100}taskManager\.runScheduleNow\(s as FarmSchedule\);[\s\S]{0,200}return runScheduleWith\(s as FarmSchedule, args\.supervisor, optStr\(args, 'preset'\)/.test(ext));
+    ok('…and so does the page\'s door', /runScheduleWith: \(id: string, supervisor: unknown, preset\?: string\) => \{[\s\S]{0,200}return runScheduleWith\(s as FarmSchedule, supervisor, preset\)/.test(ext));
+    ok('runScheduleWith checks the values, lays them over the schedule\'s retry and runs it for this run only',
+        /function runScheduleWith\([\s\S]{0,700}runSupervisor\(supervisor\)[\s\S]{0,500}presetSupervisor\([\s\S]{0,200}retryForRun\(s\.retry, sup\)[\s\S]{0,200}taskManager\.runScheduleNow\(s, Object\.keys\(sup\)\.length \? \{ retry: r\.retry \} : undefined\)/.test(ext));
     const flex = fs.readFileSync(path.join(ROOT, 'media', 'afFlex.js'), 'utf8');
     ok('the registry names the card as the run-level surface of both points',
         /run: \{ surface: 'media\/afRunWith\.js#wi-wake'/.test(flex) && /run: \{ surface: 'media\/afRunWith\.js#wi-run'/.test(flex));

@@ -1071,6 +1071,29 @@ const variants = () => ([
             up.click();
         }
     },
+    // U-151 — a schedule whose retry is supervised: 'with…' runs it now with this run's own supervisor
+    // values; the Economy preset picked, so every empty box says what it would use and from where.
+    {
+        id: 'tasks-schedule-runwith',
+        label: 'Tasks → Plan → with… on a supervised schedule: this run\'s own supervisor values, the Economy preset picked — the empty boxes show the preset\'s and the schedule\'s values faint (U-151)',
+        data: (() => {
+            const d = Object.assign(data(), { tab: 'plan', plan: [Object.assign(wfWithInputs(), {
+                id: 's7', kind: 'schedule', title: 'Gece özeti', when: 'every day at 03:00', agentName: 'developer',
+                inputs: undefined, lastInputs: undefined, supervised: true, supervisor: { engine: 'claude', model: 'haiku', maxCalls: 2 }
+            })] });
+            d.launch.runPresets = [
+                { name: 'Economy', describe: 'The cheapest judge, one supervisor call with a $0.50 cap.', supervisor: { maxCalls: 1, budgetUsd: 0.5 } },
+                { name: 'Quality', describe: 'A stronger judge, three supervisor calls.', supervisor: { maxCalls: 3, budgetUsd: 0 } }
+            ];
+            return d;
+        })(),
+        act: (r) => {
+            r.query('[data-plan="runwith"][data-kind="schedule"]')[0].click();
+            const el = r.query('[data-af]').find(e => e.dataset.af === 'rs-preset');
+            el.value = 'Economy';
+            el.fire('change');
+        }
+    },
     // M-38 — a trigger that runs that workflow: what it hands each input when it fires.
     {
         id: 'tasks-wf-triggermap',

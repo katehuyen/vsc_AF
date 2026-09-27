@@ -850,11 +850,15 @@
                 ${p.kind === 'workflow' ? `<button class="mini secondary" data-plan="runwith" data-kind="workflow" data-id="${p.id}" title="Run with…
 
 Opens this run's own values: its inputs and wake set, each starting at the last run's.">with…</button>` : ''}
+                ${p.kind === 'schedule' && p.supervised ? `<button class="mini secondary" data-plan="runwith" data-kind="schedule" data-id="${p.id}" title="Run with…
+
+Runs it now with this run's own supervisor values, or a preset's (Economy · Balanced · Quality). The schedule keeps its own.">with…</button>` : ''}
                 <button class="mini secondary" data-plan="edit" data-kind="${p.kind}" data-id="${p.id}" title="edit">edit</button>
                 <button class="mini secondary" data-plan="delete" data-kind="${p.kind}" data-id="${p.id}" title="delete">✕</button>
             </td>
-        </tr>${wiRun && wiRun.id === p.id && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
-            ${window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict)}
+        </tr>${wiRun && wiRun.id === p.id && (wiRun.kind || 'workflow') === p.kind && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
+            ${p.kind === 'schedule' ? window.AFRunWith.scheduleCard(p, wiRun, C, (DATA.launch || {}).runPresets)
+                : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict)}
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
 
@@ -4353,6 +4357,11 @@ Opens this run's own values: its inputs and wake set, each starting at the last 
         click('[data-plan]', e => {
             const el = e.currentTarget;
             // M-38 — a workflow that takes inputs opens its Run card instead of starting blind
+            if (el.dataset.plan === 'runwith' && el.dataset.kind === 'schedule') {
+                wiRun = { kind: 'schedule', id: el.dataset.id, sup: {}, preset: '' };
+                render();
+                return;
+            }
             const ins = (el.dataset.plan === 'run' || el.dataset.plan === 'runwith') && el.dataset.kind === 'workflow' ? wfInputs(el.dataset.id) : [];
             if (ins.length || el.dataset.plan === 'runwith') {
                 const p = DATA.plan.find(x => x.kind === 'workflow' && x.id === el.dataset.id) || {};
@@ -4389,12 +4398,15 @@ Opens this run's own values: its inputs and wake set, each starting at the last 
         }
         // U-151 — the 'Run with…' card is the page form: it keeps the draft in step, redraws when ↑ comes or goes
         if (wiRun && window.AFRunWith && window.AFForm) {
-            const wp = () => DATA.plan.find(x => x.kind === 'workflow' && x.id === wiRun.id) || {};
+            const wp = () => DATA.plan.find(x => x.kind === (wiRun.kind || 'workflow') && x.id === wiRun.id) || {};
             window.AFForm.wire(document.getElementById('nt-runwith') || document, {
                 onEdit: v => { if (wiRun) { window.AFRunWith.apply(wp(), wiRun, v); } },
-                onRedraw: () => { if (wiRun && window.AFFlexPromote && window.AFRunWith.changed(wp(), wiRun)) { render(); } },
+                // a schedule's preset changes what every empty box would use; a workflow's box gains or loses its ↑
+                onRedraw: () => { if (wiRun && (wiRun.kind === 'schedule' || (window.AFFlexPromote && window.AFRunWith.changed(wp(), wiRun)))) { render(); } },
                 onSubmit: () => {
-                    post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '' });
+                    post(wiRun.kind === 'schedule'
+                        ? { type: 'plan', act: 'runwith', kind: 'schedule', id: wiRun.id, supervisor: window.AFWorkflowInputs.given(wiRun.sup), preset: wiRun.preset || '' }
+                        : { type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), wake: wiRun.wake || '' });
                     wiRun = null;
                     render();
                 },

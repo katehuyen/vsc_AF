@@ -259,7 +259,8 @@ import { toolCall, toolStepRefusal } from './core/toolCall';
 import { runRecipe } from './core/toolRun';
 import { setFlexOverride, setFlexSetting, userPresets } from './core/flexActions';
 import { retryDefaultFor, supervisorOverrideMap } from './core/flexOverrides';
-import { findPreset, presetArgs } from './core/flexPresets';
+import { findPreset, FlexPreset, presetArgs, presetsFor } from './core/flexPresets';
+import { presetSupervisor, retryForRun, runSupervisor } from './core/runWithTask';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
@@ -10556,13 +10557,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'schedules.runNow',
-            describe: 'Queue a schedule\'s task right now (out of schedule). args: id or title',
+            describe: 'Queue a schedule\'s task right now (out of schedule). args: id or title, supervisor? (U-151 — this run\'s own '
+                + 'supervisor values, laid over the schedule\'s supervised retry for this run only: {engine?, model?, maxCalls?, '
+                + 'budgetUsd?, minConfidence?, lowConfidence?}; refused when its retry is not supervised), preset? (a flex preset\'s '
+                + 'run-level supervisor values — Economy · Balanced · Quality or your own; supervisor fields win over it)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
                 need(s, 'Schedule not found — schedules.list shows current ones.');
-                taskManager.runScheduleNow(s as FarmSchedule);
-                return { started: (s as FarmSchedule).title };
+                if (args.supervisor === undefined && !optStr(args, 'preset')) {
+                    taskManager.runScheduleNow(s as FarmSchedule);
+                    return { started: (s as FarmSchedule).title };
+                }
+                return runScheduleWith(s as FarmSchedule, args.supervisor, optStr(args, 'preset') || undefined);
             }
         },
         {
@@ -24214,6 +24221,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // …and what one agent or one project says on top of it (agentFarm.flexOverrides)
         supervisorOverrides: () => supervisorOverrideMap(cfg().get<unknown>('flexOverrides')),
         // U-151 — what the workflow form's and step card's boxes inherit: each such point's Farm Settings value
+        // U-151 — 'Run with…' on a schedule: the same door as schedules.runNow, and the presets its picker offers
+        runScheduleWith: (id: string, supervisor: unknown, preset?: string) => {
+            const s = taskManager.schedules.find(x => x.id === id);
+            need(s, 'Schedule not found.');
+            return runScheduleWith(s as FarmSchedule, supervisor, preset);
+        },
+        runPresets: () => presetsFor(userPresets(flexDeps))
+            .map(p => ({ name: p.name, describe: p.describe, supervisor: presetSupervisor(p) }))
+            .filter(p => Object.keys(p.supervisor).length > 0),
         flexSettings: () => Object.fromEntries(FLEX_POINTS
             .filter(fp => (fp.levels.workflow || fp.levels.step) && (fp.levels.settings?.surface ?? '').startsWith('setting:'))
             .map(fp => [fp.id, settingsLayer(fp, k => flexDeps.readSetting(k))] as [string, unknown])
@@ -27132,6 +27148,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         normPath
     });
+
+    /**
+     * U-151 — 'Run with…' on a schedule: this run's own supervisor values (a preset's
+     * run-level ones first, the boxes over them) laid over the schedule's supervised
+     * retry. The page's card and schedules.runNow both call this. A refusal is thrown.
+     */
+    function runScheduleWith(s: FarmSchedule, supervisor: unknown, preset?: string): Record<string, unknown> {
+        const own = runSupervisor(supervisor);
+        need(!own.error, `${own.error}.`);
+        let sup = own.value;
+        if (preset) {
+            const p = findPreset(userPresets(flexDeps), preset, s.projectId || undefined);
+            need(p, `No preset "${preset}" — presets.list shows them.`);
+            sup = { ...presetSupervisor(p as FlexPreset), ...sup };
+        }
+        const r = retryForRun(s.retry, sup);
+        need(!r.error, `"${s.title}": ${r.error}.`);
+        taskManager.runScheduleNow(s, Object.keys(sup).length ? { retry: r.retry } : undefined);
+        return { started: s.title, supervisor: sup };
+    }
 
     // X-368 — only what the user WROTE is the Farm Settings layer; the shipped default is `builtin`.
     const flexDeps = {
