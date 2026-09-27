@@ -335,6 +335,11 @@
             id: 'baton.flaggedModel', label: 'Relay — model after a second flag', type: 'text', default: '', remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.batonFlaggedModel', bridge: 'settings.set:agentFarm.batonFlaggedModel' } }
         },
+        // S-106 — a handover that is not the quota's stays on its account under this line (src/core/stayAccount.ts)
+        {
+            id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 0, min: 0, max: 100, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.contextHandoverStayAccountPct', bridge: 'settings.set:agentFarm.contextHandoverStayAccountPct' } }
+        },
         // A-27 — the judge's ladder, cheapest first: a FAIL is judged one rung up before a retry is paid for (src/core/judgeLadder.ts)
         {
             id: 'judge.ladder', label: 'Judge ladder (cheapest first)', type: 'text', default: '', remembered: false,

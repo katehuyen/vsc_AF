@@ -362,6 +362,7 @@ import { BatonRunner } from './core/batonRunner';
 import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
+import { StayVerdict, stayOnAccount, stayPctOf } from './core/stayAccount';
 import { legFactsFrom } from './core/batonLegFacts';
 import { legGitReaders } from './core/legRoots';
 import { BatonStore } from './core/batonStore';
@@ -17076,15 +17077,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(supervisorSweep) });
+    // ‼️ S-106 — a handover that is not the quota's stays on its account under agentFarm.contextHandoverStayAccountPct
+    const handoverStay = (sessionId: string | undefined, slotId: string | undefined): StayVerdict => {
+        const sid = String(sessionId ?? '');
+        const u = slotId ? accountUsage.current().find(x => x.slotId === slotId) : undefined;
+        const pct = stayPctOf(ownSetting).value;
+        return stayOnAccount({
+            stayPct: pct, slotId, percent: u?.percent, resetsAt: u?.resetsAt,
+            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), now: Date.now()
+        });
+    };
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,
         door: b => {
             const agent = findAgent(b.from.agentId);
+            const was = (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
+            const stay = handoverStay(b.from.sessionId, was);
+            if (stay.stay) { console.log(`[Agent Farm] baton ${b.id}: ${stay.why}`); }
             // S-73 — every account full RIGHT NOW: the row is written with the
             // first reset + the safety buffer as its notBefore (a preview — the
             // round-robin cursor does not move; the real pick is the launch's).
-            const pick = launchAccountPick({ engine: b.from.engine, account: b.want.account, agentId: agent.id, model: b.inherit.model });
+            const pick = launchAccountPick({ engine: b.from.engine, account: stay.stay ? stay.slotId : b.want.account, agentId: agent.id, model: b.inherit.model });
             const park = pick.refusal && pick.resetsAt
                 ? {
                     resetsAt: pick.resetsAt,
@@ -17098,7 +17112,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 maxHops: chainMaxLegs(batonStore.all(), b.chainId, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))),
                 template: cfg().get<string>('batonHandoverTemplate', ''),
                 directive: cfg().get<string>('batonInjectedDirective', ''),
-                emergencyTemplate: cfg().get<string>('batonEmergencyTemplate', '')
+                emergencyTemplate: cfg().get<string>('batonEmergencyTemplate', ''),
+                ...(stay.stay ? { account: stay.slotId } : {})
             });
             const task = taskManager.addTask(agent, row.title, row.prompt, row.mode, row.extra);
             const started = taskManager.startTask(task);
@@ -32956,6 +32971,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             } : {}),
             usage,
+            // S-106 — the finished round's account, kept when its handover was not the quota's and it has room
+            ...(finishedTask ? { stay: handoverStay(successorSessionOf(finishedTask), finishedTask.account) } : {}),
             automation: taskManager.automation,
             ...(next ? { next } : {}),
             templates: pool.templates,

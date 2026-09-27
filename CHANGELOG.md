@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.726.0 - A context handover stays on its account while it has room (S-106) (2026-09-28)
+
+- New setting contextHandoverStayAccountPct (Farm Settings → Handover
+  discipline → "Which account the next run opens on"; 0 = off). When a run
+  hands over for any reason other than quota — its context filled up — and
+  its account has used less than this share of its five-hour window, the
+  next relay leg (and the sentry's next round) opens on the same account
+  instead of the pool's pick. At or above the line, or on a quota handover,
+  the pool picks as before; a relay's later legs keep its pool.
+
 ## 3.725.0 - Stopping a chain takes its waiting successor row with it (S-94) (2026-09-28)
 
 - ✕⑂ Stop chain, baton.stop and farm.cleanup now cancel the successor task

@@ -1898,6 +1898,8 @@ Zincirin sonsuz bir döngüde token yakmasını veya sahipsiz kalmasını engell
 
 ### Akıllı Hesap Havuzu Mirası
 
+- **Hesapta Kalma (S-106, 3.726.0; `stayAccount.ts`):** `agentFarm.contextHandoverStayAccountPct` (0–100, varsayılan 0 = kapalı) altında, KOTA sebepli olmayan bir devir — bağlam devri ya da oturumun kendi kararıyla geçtiği bayrak — hesabın 5 saatlik penceresi çizginin altındaysa sonraki etabı AYNI hesapta açar (sıfırlanmış pencere %0 sayılır). Çizgide ya da üstünde, veya oturuma QUOTA HANDOVER ulaşmışsa havuz eskisi gibi seçer. Slota yalnız o tek etap yerleşir (`DoorContext.account`); bayrak zincirin havuzunu korur, bir sonraki etap yine havuzdan yerleşir. Nöbetin sonraki turu da biten turun hesabı için aynı kuralı izler (lider kendi seçtiyse o kazanır; kampanya tavanı asla aşılmaz).
+
 - **Havuz Kilidi:** Zincirin ilk etabı hangi hesap kuralıyla açıldıysa (`@GelistirmeHavuzu`, `@emptiest` vb.), sonraki bütün etaplar istisnasız bu havuzdan beslenir. Ajan devir çağrısında başka bir hesap adı geçirse dahi sistem havuzu korur (`poolKept`).
 - **Park Etme:** Havuzdaki tüm hesapların kullanım kotaları dolmuşsa, sistem ana hesabı harcamaz; zincir ilk hesabın sıfırlanma saatine (`resetsAt`) kadar park edilir (`waiting-end`), saati gelince otomatik uyanır.
 

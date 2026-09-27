@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.725.0",
+  "version": "3.726.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8876,6 +8876,13 @@
           "type": "string",
           "default": "",
           "description": "Baton relay (X-427): the model a successor opens on when the leg before it was ALSO opened by a flagged pass — the engine's own advice is a new session first, then another model. Empty = the chain keeps its own model. The chain carries on with whatever model its successor opened on."
+        },
+        "agentFarm.contextHandoverStayAccountPct": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Handover discipline (S-106): when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off."
         },
         "agentFarm.bridgeGuard": {
           "type": "boolean",

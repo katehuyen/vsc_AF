@@ -1855,6 +1855,8 @@ Five distinct safety mechanisms protect the relay from endless loops, token wast
 
 ### Smart Account Pool Inheritance
 
+- **Staying on the account (S-106, 3.726.0; `stayAccount.ts`):** under `agentFarm.contextHandoverStayAccountPct` (0–100, default 0 = off) a handover that is NOT the quota's — a context handover, or a pass the run made on its own — opens the next leg on the SAME account while that account is under the line of its five-hour window (a window that has already reset counts as 0%). At or above the line, or when a QUOTA HANDOVER reached the run, the pool picks as before. Only that one leg is placed on the slot (`DoorContext.account`); the baton keeps the chain's pool, so the leg after it is placed from the pool again. The sentry's next round follows the same rule for the finished round's account (below a leader's own choice, never past the campaign's ceiling).
+
 - **Pool Locking:** Whichever account policy seeded the first leg (`@GelistirmeHavuzu`, `@emptiest`, etc.) is strictly enforced on all subsequent legs. If an agent attempts to pass to a different account, the system maintains the chain pool (`poolKept`).
 - **Automatic Parking:** If all accounts in the pool are quota-exhausted, the system never falls back to the primary personal sign-in; the relay is parked (`waiting-end`) until the earliest reset time (`resetsAt`), resuming automatically when the window clears.
 

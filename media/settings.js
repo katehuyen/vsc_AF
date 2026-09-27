@@ -1876,6 +1876,11 @@
             keys: ['batonEmergencyTemplate']
         },
         {
+            title: 'Which account the next run opens on',
+            why: 'A run that hands over because its context filled up — not because its account ran out — leaves that account\'s five-hour window half used. Under this line the successor stays on the same account (a relay\'s next leg, the sentry\'s next round); at or above it, or when the handover was the quota\'s, the pool picks as before. The relay\'s pool is kept for every later leg. 0 = off.',
+            keys: ['contextHandoverStayAccountPct']
+        },
+        {
             title: 'When the engine fails a leg',
             why: 'A turn that fails on the engine\'s side ends nothing — the card sits idle and the chain would wait for ever. When the engine is down, overloaded or refuses the sign-in, no new leg is opened (it would fail the same way): the same session is asked to continue at growing intervals, and past the ceiling a person is asked. When the engine flags the conversation itself, Agent Farm passes the baton for the leg — from the second flagged pass in a row on the fallback model, if one is set — until the cap holds the chain for you.',
             keys: ['batonFaultWaitHours', 'batonFlaggedPasses', 'batonFlaggedModel']

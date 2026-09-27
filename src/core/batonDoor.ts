@@ -61,6 +61,8 @@ export interface DoorContext {
     directive?: string;
     /** S-83 — agentFarm.batonEmergencyTemplate: the header of a hop the failsafe opened; blank = the built-in one */
     emergencyTemplate?: string;
+    /** S-106 — this leg alone opens on this slot (stayAccount.ts); the baton keeps the chain's pool for the next pass */
+    account?: string;
 }
 
 /** The variables a handover template may name (agentFarm.batonHandoverTemplate). */
@@ -173,7 +175,7 @@ export function successorRow(b: Baton, ctx: DoorContext = {}): DoorRow {
         ...(i.providerId ? { providerId: i.providerId } : {}),
         ...(i.tier ? { tier: i.tier } : {}),
         ...(i.superpowers !== undefined ? { superpowers: i.superpowers } : {}),
-        account: b.want.account,
+        account: String(ctx.account ?? '').trim() || b.want.account,
         ...(b.from.cwd && !same(b.from.cwd, ctx.agentDir) ? { workDir: b.from.cwd } : {})
     };
     const park = ctx.park && ctx.park.resetsAt > 0 ? ctx.park : undefined;

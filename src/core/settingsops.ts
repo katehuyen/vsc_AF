@@ -213,6 +213,7 @@ const CATEGORY_OF: Record<string, string> = {
     // S-82 — what every leg is told on top: the user's header and standing rule
     batonHandoverTemplate: 'discipline', batonInjectedDirective: 'discipline', batonEmergencyTemplate: 'discipline',
     batonFaultWaitHours: 'discipline', batonFlaggedPasses: 'discipline', batonFlaggedModel: 'discipline',
+    contextHandoverStayAccountPct: 'discipline',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.
