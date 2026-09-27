@@ -13,12 +13,16 @@
 import {
     AutoAnswerAsk, AutoAnswerSettings, AutoAnswerView, autoAnswerClock, autoAnswerFor, autoAnswerView
 } from './autoAnswer';
+import { AskAnswers, TimeoutAnswer, mergeOwn, ownPicks, ownView } from './autoAnswerPicks';
 
 interface Slot {
     requestId: string;
     timer?: ReturnType<typeof setTimeout>;
     /** a person pressed Stop — this ask waits for them now, whatever the settings say */
     heldAt?: number;
+    /** K-45 - what the person picked and typed on the card; the clock keeps running */
+    picks?: AskAnswers;
+    response?: string;
 }
 
 export interface AutoAnswerTimerDeps {
@@ -26,7 +30,7 @@ export interface AutoAnswerTimerDeps {
     /** the card's pending ask, as it is right now */
     askOf: (id: string) => AutoAnswerAsk | undefined;
     /** the clock ran out: answer this card with these picks */
-    expire: (id: string, answers: Record<string, string | string[]>, settings: AutoAnswerSettings) => void;
+    expire: (id: string, answer: TimeoutAnswer, settings: AutoAnswerSettings, typed: string) => void;
     now?: () => number;
 }
 
@@ -51,9 +55,9 @@ export class AutoAnswerTimers {
         const same = !!slot && slot.requestId === ask.requestId;
         if (same && !force) { return; }
         if (slot?.timer) { clearTimeout(slot.timer); }
-        // K-45 — the user turned the filter off: a clock somebody stopped runs again
-        const off = this.deps.settings().filter === 'off';
-        const next: Slot = { requestId: ask.requestId, heldAt: same && !off ? slot!.heldAt : undefined };
+        const next: Slot = same
+            ? { requestId: ask.requestId, heldAt: slot!.heldAt, picks: slot!.picks, response: slot!.response }
+            : { requestId: ask.requestId };
         this.slots.set(id, next);
         if (!next.heldAt) { this.arm(id, next, ask); }
     }
@@ -80,16 +84,16 @@ export class AutoAnswerTimers {
         if (!verdict.armed || !verdict.answers) { return; }
         // The wait was lengthened while it ran: honour the new figure.
         if (!autoAnswerClock(ask, settings, this.now())?.expired) { this.arm(id, slot, ask); return; }
-        this.deps.expire(id, verdict.answers, settings);
+        this.deps.expire(id, mergeOwn(verdict.answers, slot.picks ?? {}), settings, slot.response ?? '');
     }
 
     /**
-     * Stop the clock on this card's current ask. False when there is nothing to stop —
-     * ‼️ and ALWAYS false while the user's filter is `off` (K-45): then nothing stops it.
+     * Stop the clock on this card's current ask. False when there is nothing to stop.
+     * ‼️ K-45 — only the person's own Stop timer on the card reaches this, whatever the filter.
      */
     hold(id: string): boolean {
         const ask = this.deps.askOf(id);
-        if (!ask || this.deps.settings().filter === 'off') { return false; }
+        if (!ask) { return false; }
         let slot = this.slots.get(id);
         if (!slot || slot.requestId !== ask.requestId) {
             slot = { requestId: ask.requestId };
@@ -101,11 +105,31 @@ export class AutoAnswerTimers {
         return true;
     }
 
+    /**
+     * K-45 - the person picked or typed on the card. The clock is NOT stopped: at expiry
+     * these are sent and only the questions left open get the recommended option.
+     * True when the picks changed (the card's line names them, so it repaints).
+     */
+    note(id: string, requestId: string, raw: unknown, response: string): boolean {
+        const ask = this.deps.askOf(id);
+        if (!ask || ask.requestId !== requestId) { return false; }
+        this.sync(id);
+        const slot = this.slots.get(id);
+        if (!slot) { return false; }
+        const picks = ownPicks(ask, raw);
+        const changed = JSON.stringify(picks) !== JSON.stringify(slot.picks ?? {});
+        slot.picks = picks;
+        slot.response = response;
+        return changed;
+    }
+
     view(id: string): AutoAnswerView | null {
         const ask = this.deps.askOf(id);
         const slot = this.slots.get(id);
-        return autoAnswerView(ask, this.deps.settings(),
-            ask && slot?.requestId === ask.requestId ? slot.heldAt : undefined);
+        const mine = !!ask && slot?.requestId === ask.requestId;
+        const settings = this.deps.settings();
+        return ownView(autoAnswerView(ask, settings, mine ? slot!.heldAt : undefined),
+            ask, settings, mine ? slot!.picks ?? {} : {});
     }
 
     /** true while this card has a clock running */

@@ -1326,7 +1326,17 @@
       ],
       "exempt": {
         "kind": "human-only",
-        "why": "K-45 (the user's rule, 2026-09-27): stopping a question's timer is nobody's to do but the user at the card — never an agent's. A night relay stood still for hours on a question nobody was there to answer; an op that let any agent freeze another's clock is exactly that failure on demand. With the filter off, not even the card can stop it."
+        "why": "K-45 (the user's rule, 2026-09-27): stopping a question's timer is nobody's to do but the user at the card — never an agent's. A night relay stood still for hours on a question nobody was there to answer; an op that let any agent freeze another's clock is exactly that failure on demand. The person's own Stop timer works under every filter, off included (decided 2026-09-27)."
+      }
+    },
+    {
+      "capability": "consolePanel.ts#askPicks",
+      "ui": [
+        "page:consolePanel.ts#askPicks"
+      ],
+      "exempt": {
+        "kind": "human-only",
+        "why": "K-45 (the user's rule, 2026-09-27): the half-made choice a person leaves on a question card while its clock runs. It is what their own hand did at the card, kept so the timer sends it instead of overwriting it; an agent answers a question outright with console.answer and has no half-made choice to leave."
       }
     },
     {

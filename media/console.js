@@ -2049,8 +2049,8 @@
         if (v.state === 'armed') {
             return `<div class="aa" id="c-ask-aa">⏳ <span class="aa-left" data-aa-due="${v.dueAt}">${aaLeft(v.dueAt - Date.now())}</span>
                 left — then <span class="aa-pick">${C.esc(aaPicks(v))}</span> is chosen for you
-                ${v.holdable === false ? '' : `<button class="secondary" id="c-ask-hold"
-                    title="Stop the countdown — this question then waits for you, and nothing is chosen on your behalf. Picking an option or typing an answer stops it too.">Stop timer</button>`}</div>`;
+                <button class="secondary" id="c-ask-hold"
+                    title="Stop the countdown — this question then waits for you, and nothing is chosen on your behalf. Picking an option or typing does NOT stop it: at 0:00 your picks are sent and only the questions you left open get the recommended option.">Stop timer</button></div>`;
         }
         if (v.state === 'held') {
             return '<div class="aa held">⏸ Timer stopped — this question waits for you.</div>';
@@ -2238,20 +2238,23 @@
             const el = document.getElementById('c-ask-free');
             return el ? el.value.trim() : '';
         };
+        const picked = () => Object.keys(askPick.by).reduce((acc, q) => {
+            const list = askPick.by[q] || [];
+            if (list.length) { acc[q] = list.length > 1 ? list : list[0]; }
+            return acc;
+        }, {});
         const answer = () => vscode.postMessage({
-            type: 'askAnswer', id: s.id, kind: 'answer',
-            answers: Object.keys(askPick.by).reduce((acc, q) => {
-                const list = askPick.by[q] || [];
-                if (list.length) { acc[q] = list.length > 1 ? list : list[0]; }
-                return acc;
-            }, {}),
-            response: free()
+            type: 'askAnswer', id: s.id, kind: 'answer', answers: picked(), response: free()
         });
-        // K-43 — somebody is here: a pick or a keystroke stops the countdown,
-        // so a half-made choice is never overwritten by the timer.
+        // K-45 — a pick or a keystroke NEVER stops the clock: what you chose is
+        // kept, and at 0:00 only the questions you left open get the recommended one.
+        const note = () => {
+            if (!(a.questions || []).length) { return; }
+            vscode.postMessage({ type: 'askPicks', id: s.id, requestId: a.requestId, picks: picked(), response: free() });
+        };
+        // K-43 — Stop timer: the one way to make this question wait for you.
         const hold = () => {
-            // K-45 — with the user's filter off nothing stops the clock, not even a touch
-            if (!s.autoAnswer || s.autoAnswer.state !== 'armed' || s.autoAnswer.holdable === false || aaHoldSent === a.requestId) { return; }
+            if (!s.autoAnswer || s.autoAnswer.state !== 'armed' || aaHoldSent === a.requestId) { return; }
             aaHoldSent = a.requestId;
             vscode.postMessage({ type: 'askHold', id: s.id });
         };
@@ -2267,13 +2270,13 @@
             const q = (a.questions || [])[Number(b.dataset.askq)];
             const o = q && (q.options || [])[Number(b.dataset.asko)];
             if (!q || !o) { return; }
-            hold();
             const cur = askPick.by[q.question] || [];
             if (q.multiSelect) {
                 const at = cur.indexOf(o.label);
                 askPick.by[q.question] = at >= 0
                     ? cur.filter(x => x !== o.label)
                     : cur.concat([o.label]);
+                note();
                 renderAsk();
                 return;
             }
@@ -2281,7 +2284,7 @@
             // A single-select question with every question answered IS the
             // answer — clicking the last option is the press.
             if ((a.questions || []).every(x => (askPick.by[x.question] || []).length)) { answer(); }
-            else { renderAsk(); }
+            else { note(); renderAsk(); }
         }));
         byId('c-ask-send', 'click', answer);
         byId('c-ask-allow', 'click', () => vscode.postMessage({ type: 'askAnswer', id: s.id, kind: 'allow' }));
@@ -2291,7 +2294,7 @@
         }));
         const box = document.getElementById('c-ask-free');
         if (box) {
-            box.addEventListener('input', hold);
+            box.addEventListener('input', note);
             box.addEventListener('keydown', ev => {
                 if (ev.key !== 'Enter') { return; }
                 ev.preventDefault();

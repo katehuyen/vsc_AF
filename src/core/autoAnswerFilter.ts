@@ -76,7 +76,7 @@ export function filterHaystack(
     return out;
 }
 
-/** The first listed word the mode finds, as written in the question; null = nothing stops the clock. */
+/** The first listed word the mode finds, as written in the question; null = no word keeps the clock from running. */
 export function stopWord(
     ask: { detail?: string; questions?: FilterQuestion[] } | undefined,
     filter: AutoAnswerFilter, words: string[], pick: (q: FilterQuestion) => string | null

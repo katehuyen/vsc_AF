@@ -59,16 +59,17 @@ console.log('\n== the word list is the user\'s ==');
     ok('a /…/ that does not compile is matched as text, never a crash', F.wordMatcher('/([/').test('a /([/ b'));
 }
 
-console.log('\n== ‼️ with the filter off, nothing stops the clock ==');
+console.log('\n== the person\'s own Stop works under every filter ==');
 {
     const { AutoAnswerTimers } = require(path.join(ROOT, 'out', 'core', 'autoAnswerTimers.js'));
     let s = settings({ filter: 'off' });
     const a = Object.assign(ask([{ question: 'Go?', options: [{ label: 'Yes (Recommended)' }] }]), { ts: Date.now() });
     const t = new AutoAnswerTimers({ settings: () => s, askOf: () => a, expire: () => {} });
-    ok('off: a Stop is refused', t.hold('c1') === false);
-    ok('off: the card is told it cannot be stopped', A.autoAnswerView(a, s).holdable === false);
+    ok('off: the clock runs', !!A.autoAnswerView(a, s) && A.autoAnswerView(a, s).state === 'armed');
+    ok('‼️ off: the person at the card may still stop it (decided 2026-09-27)', t.hold('c1') === true && t.view('c1').state === 'held');
     s = settings({});
-    ok('recommended: the person at the card may still stop it', t.hold('c1') === true && A.autoAnswerView(a, s).holdable === true);
+    t.sync('c1', true);
+    ok('a settings change keeps the person\'s Stop', t.view('c1').state === 'held');
 }
 
 console.log('\n== one list, three places ==');

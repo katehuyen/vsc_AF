@@ -31,7 +31,7 @@ async function timers() {
     let settings = autoAnswerSettings({ timeoutSeconds: 300 });
     const t = new AutoAnswerTimers({
         settings: () => settings, askOf: id => asks.get(id),
-        expire: (id, answers) => fired.push({ id, answers }), now: () => now
+        expire: (id, answer) => fired.push({ id, answers: answer.answers }), now: () => now
     });
 
     asks.set('c1', q('r1', now));
@@ -228,8 +228,10 @@ function wiring() {
     const js = read('media/console.js');
     ok('the card draws the countdown and posts Stop',
         /id="c-ask-hold"/.test(js) && /type: 'askHold'/.test(js) && /data-aa-due/.test(js));
-    ok('‼️ a pick or a keystroke stops the timer — a half-made choice is never overwritten',
-        /addEventListener\('input', hold\)/.test(js) && /return; \}\s*hold\(\);/.test(js));
+    ok('‼️ K-45: a pick or a keystroke never stops the clock — it posts the half-made choice instead',
+        /addEventListener\('input', note\)/.test(js) && !/addEventListener\('input', hold\)/.test(js)
+        && !/return; \}\s*hold\(\);/.test(js) && /type: 'askPicks'/.test(js)
+        && /case 'askPicks':\s*host\.noteAskPicks\(str\('id'\), str\('requestId'\), msg\.picks, str\('response'\)\)/.test(panel));
     const pkg = JSON.parse(read('package.json')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
     ok('both settings are contributed with the backlog\'s defaults (on, 300 s)',

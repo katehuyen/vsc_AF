@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.692.0 - A touch on a question card never stops its timer (K-45, part 2b) (2026-09-27)
+
+- **Picking an option or typing no longer stops the countdown.** What you
+  picked is kept; when the clock runs out your picks are sent and only the
+  questions you left open get the recommended option. Only the Stop timer
+  button stops the clock.
+- **Stop timer works under every filter, `off` included** (your decision,
+  2026-09-27): it is only ever your own click at the card — no agent, bridge
+  call or pick can stop a clock.
+- **The card's line names your picks:** "then "work@studio", "Evet, PR aç
+  (Recommended)" is chosen for you" follows what you chose.
+- **The record says whose pick each answer was:** the transcript marks
+  "(senin seçimin)" / "(önerilen)", and the agent is told which questions
+  the timer filled and what you had typed but not sent.
+
 ## 3.691.0 - No agent can stop a question's timer (K-45, part 2a) (2026-09-27)
 
 - **Stopping a question's countdown is no longer on the bridge.** An agent

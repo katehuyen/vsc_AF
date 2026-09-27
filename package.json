@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.691.0",
+  "version": "3.692.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8516,13 +8516,13 @@
             "strict"
           ],
           "enumDescriptions": [
-            "No filter: the clock always runs and the recommended option is chosen — fully unattended.",
+            "No filter: the clock runs on every question and the recommended option is chosen — only your own Stop timer on the card halts it.",
             "Read only the question and the option the clock would choose (default): a word in another option's description does not stop it.",
             "Read the question and every option and description: any listed word anywhere stops the clock.",
             "As 'all', and a question that marks no option \"(Recommended)\" also waits for you."
           ],
           "default": "recommended",
-          "markdownDescription": "Which **Console** questions the timer (`#agentFarm.console.autoAnswer.enabled#`) leaves for you because they carry a word from `#agentFarm.console.autoAnswer.words#`. `recommended` reads only the question and the option it would choose; `off` never stops the clock — the recommended option is always taken when the time runs out."
+          "markdownDescription": "Which **Console** questions the timer (`#agentFarm.console.autoAnswer.enabled#`) leaves for you because they carry a word from `#agentFarm.console.autoAnswer.words#`. `recommended` reads only the question and the option it would choose; `off` lets no word hold a question back — the recommended option is taken when the time runs out unless you press **Stop timer** on the card yourself."
         },
         "agentFarm.console.autoAnswer.words": {
           "type": "array",

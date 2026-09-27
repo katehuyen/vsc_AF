@@ -2690,6 +2690,10 @@ export class ConsolePanel {
             case 'askHold':
                 host.holdAutoAnswer(str('id'));
                 break;
+            // K-45 — a pick or a keystroke on the card: kept for the timer, the clock runs on.
+            case 'askPicks':
+                host.noteAskPicks(str('id'), str('requestId'), msg.picks, str('response'));
+                break;
             case 'permissionMode':
                 // The standing RULE — how much may happen without stopping to
                 // ask at all. One specific request is settled by 'askAnswer'.

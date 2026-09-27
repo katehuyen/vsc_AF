@@ -39,8 +39,9 @@ import {
     translateOpencodeResult, translateOpencodeUpdate
 } from './opencodeproto';
 import {
-    AutoAnswerSettings, AutoAnswerView, autoAnswerNote, autoAnswerResponse, autoAnswerSettings
+    AutoAnswerSettings, AutoAnswerView, autoAnswerSettings
 } from './autoAnswer';
+import { TimeoutAnswer, ownNote, ownResponse } from './autoAnswerPicks';
 import { AutoAnswerTimers } from './autoAnswerTimers';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
@@ -625,25 +626,23 @@ export class ConsoleHost {
     private autoAnswers = new AutoAnswerTimers({
         settings: () => this.autoAnswerConfig?.() ?? autoAnswerSettings({ enabled: false }),
         askOf: id => this.sessions.get(id)?.state.pendingAsk,
-        expire: (id, answers, settings) => this.answerOnTimeout(id, answers, settings)
+        expire: (id, answer, settings, typed) => this.answerOnTimeout(id, answer, settings, typed)
     });
 
     /**
      * The clock ran out on a question: answer it through the SAME path a click
      * takes, then make the row say it was chosen FOR the user, not by them.
      */
-    private answerOnTimeout(
-        id: string, answers: Record<string, string | string[]>, settings: AutoAnswerSettings
-    ): void {
+    private answerOnTimeout(id: string, answer: TimeoutAnswer, settings: AutoAnswerSettings, typed: string): void {
         const h = this.sessions.get(id);
         if (!h?.state.pendingAsk) { return; }
         const before = h.state.messages.length;
-        const response = autoAnswerResponse(settings.timeoutSeconds);
-        if (!this.answer(id, { kind: 'answer', answers, response })) { return; }
+        const response = ownResponse(settings.timeoutSeconds, answer, typed);
+        if (!this.answer(id, { kind: 'answer', answers: answer.answers, response })) { return; }
         const msgs = h.state.messages;
         const row = msgs[msgs.length - 1];
         if (msgs.length > before && row?.role === 'ask' && row.answer !== undefined) {
-            h.state = { ...h.state, messages: [...msgs.slice(0, -1), { ...row, answer: autoAnswerNote(answers) }] };
+            h.state = { ...h.state, messages: [...msgs.slice(0, -1), { ...row, answer: ownNote(answer) }] };
             this.fire(id);
         }
     }
@@ -653,6 +652,11 @@ export class ConsoleHost {
         const done = this.autoAnswers.hold(id);
         if (done) { this.fire(id); }
         return done;
+    }
+
+    /** K-45 — the person picked or typed on the card: kept for the timer, the clock runs on. */
+    noteAskPicks(id: string, requestId: string, picks: unknown, response: string): void {
+        if (this.autoAnswers.note(id, requestId, picks, response)) { this.fire(id); }
     }
 
     /** K-43 — what the card and the bridge show under the pending ask. */

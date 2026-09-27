@@ -825,6 +825,32 @@ const askingTimerData = (view, options) => {
     return d;
 };
 
+/**
+ * K-45 — TWO questions, the first picked by hand, the clock still running: at
+ * 0:00 the pick goes and only the open question gets the recommended option.
+ */
+const askingTimerTwoData = () => {
+    const d = askingTimerData({
+        state: 'armed', reason: 'armed', dueAt: Date.now() + 184000,
+        picks: ['work@studio', 'Evet, PR aç (Recommended)']
+    }, [
+        { label: 'work@studio', description: 'max20x — five-hour window 91% gone' },
+        { label: 'personal@gmail (Recommended)', description: 'pro — 12% gone, resets at 05:40' }
+    ]);
+    d.sessions = d.sessions.map(x => (x.id !== 'cs2' ? x : Object.assign({}, x, {
+        pendingAsk: Object.assign({}, x.pendingAsk, {
+            questions: x.pendingAsk.questions.concat([{
+                question: 'Bitince PR açayım mı?', header: 'PR', multiSelect: false,
+                options: [
+                    { label: 'Evet, PR aç (Recommended)', description: 'main için taslak PR' },
+                    { label: 'Hayır', description: 'dalda bırak' }
+                ]
+            }])
+        })
+    })));
+    return d;
+};
+
 module.exports = {
     script: 'console.js',
     data,
@@ -1067,6 +1093,12 @@ module.exports = {
                 picks: ['personal@gmail (Recommended)'],
                 why: 'waiting for you — the timer was stopped, so nothing will be chosen for you.'
             })
+        },
+        {
+            id: 'console-asking-timer-picked',
+            label: 'Console — TWO questions, the first picked, the clock still running: your pick goes at 0:00, the open one gets the recommended (K-45)',
+            data: askingTimerTwoData(),
+            act: r => { r.query('[data-askq="0"]').slice(0, 1).forEach(b => b.fire('click')); }
         },
         {
             id: 'console-asking-timer-refused',

@@ -56,7 +56,7 @@ export const AUTO_ANSWER_MAX_SECONDS = 7200;
 export interface AutoAnswerSettings {
     enabled: boolean;
     timeoutSeconds: number;
-    /** K-45 — how much of a question the word list reads; `off` = nothing stops the clock */
+    /** K-45 — how much of a question the word list reads; `off` = no word keeps the clock from running */
     filter: AutoAnswerFilter;
     /** K-45 — the user's word list */
     words: string[];
@@ -281,8 +281,6 @@ export interface AutoAnswerView {
     timeoutSeconds: number;
     /** the labels the timer will choose, in question order */
     picks: string[];
-    /** K-45 — whether a person may stop this clock at all: never while the user's filter is `off` */
-    holdable: boolean;
 }
 
 export function autoAnswerView(
@@ -290,13 +288,13 @@ export function autoAnswerView(
 ): AutoAnswerView | null {
     if (!ask) { return null; }
     const verdict = autoAnswerFor(ask, settings);
-    const base = { requestId: ask.requestId, timeoutSeconds: settings.timeoutSeconds, holdable: settings.filter !== 'off' };
+    const base = { requestId: ask.requestId, timeoutSeconds: settings.timeoutSeconds };
     if (!verdict.armed) {
         return { ...base, state: 'waiting', reason: verdict.reason, why: verdict.why, dueAt: 0, picks: [] };
     }
     const picks = Object.values(verdict.answers ?? {}).flatMap(a => (Array.isArray(a) ? a : [a]));
     const dueAt = ask.ts + settings.timeoutSeconds * 1000;
-    return heldAt && heldAt > 0 && base.holdable
+    return heldAt && heldAt > 0
         ? {
             ...base, state: 'held', reason: 'armed', dueAt, heldAt, picks,
             why: 'waiting for you — the timer was stopped, so nothing will be chosen for you.'
