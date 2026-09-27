@@ -2446,7 +2446,7 @@
                 ${textF('st-apMsg', 'Message', s.apMsg, 'Review the output before it goes live',
                                             'Shown when the chain stops to ask you. {prev_text} is substituted.', true)}
             </div>` : ''}
-            ${s.stype === 'tool' && window.AFTool ? window.AFTool.row(s, C, stepPromote(c)) : ''}
+            ${s.stype === 'tool' && window.AFTool ? window.AFTool.row(s, C, stepPromote(c), (DATA.launch || {}).flexSettings) : ''}
             ${s.stype === 'select' ? `<div class="ntgrid">
                 ${textF('st-selMsg', 'Message', s.selMsg, 'Pick the frames that go on to video',
                                                 'Shown above the gallery picker. {prev_text} is substituted.', true)}
@@ -2454,7 +2454,7 @@
                 ${numF('st-selMax', 'Keep at most', s.selMax, '0 = no ceiling.')}
             </div>` : ''}
             ${s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.row(s, C) : ''}
-            ${(s.stype === 'media' || s.stype === 'tool') && window.AFLibrary ? window.AFLibrary.row(s, C, stepPromote(c)) : ''}
+            ${(s.stype === 'media' || s.stype === 'tool') && window.AFLibrary ? window.AFLibrary.row(s, C, stepPromote(c), c) : ''}
             <div class="ntsec"><b>How it behaves in the chain</b>
                 <span class="muted small">These are the same on every kind of step — they are about the CHAIN,
                     not about what this step does.</span></div>

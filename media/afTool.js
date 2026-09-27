@@ -70,9 +70,18 @@
     let ownAtRender = '';
     const ownOf = s => UP.filter(k => String(spec(s || {})[k] || '').trim()).join(',');
 
-    /** The step card's tool row. U-151 — `promote` = { open, levels(point) } draws ↑ beside a box with its own value. */
-    function row(s, C, promote) {
+    /**
+     * The step card's tool row. U-151 — `promote` = { open, levels(point) } draws ↑ beside a box with its own value;
+     * `inh` = { point id: its Farm Settings value } is what an empty box inherits, shown faint (MIRROR: value, then origin).
+     */
+    function row(s, C, promote, inh) {
         const t = spec(s);
+        const farm = k => { const v = (inh || {})[pointOf(k)]; return v === undefined || v === null || v === '' ? '' : String(v); };
+        const owLabel = v => ((OW.find(o => o[0] === v) || [])[1] || v);
+        const owInh = farm('overwrite') || 'never';
+        const owFrom = farm('overwrite') ? 'Farm Settings' : 'built-in';
+        const owOpts = [['', '↳ ' + owLabel(owInh)]].concat(OW.slice(1));
+        const dirLine = t.outDir ? t.outDir + ' — set on this step' : farm('outDir') ? farm('outDir') + ' — inherited from Farm Settings' : 'an af-tool folder beside the input — built-in';
         const P = promote && window.AFFlexPromote;
         const up = k => (P ? P.up(promote, pointOf(k), t[k]) : '');
         ownAtRender = ownOf(s);
@@ -92,10 +101,10 @@
             + (r && r.input ? '<label class="ntf wide" title="' + tip(C, 'Current: ' + show(t.input), 'The file it works on: a path, or a template filled when it runs — {input.clip} (a workflow input), {prev_json.outputs.0} (the step before), {item} (a for-each element).\n\nFlex point tool.input (step).') + '"><span>Input *</span>'
                 + '<input type="text" id="' + idOf('input') + '" placeholder="{input.clip}" value="' + C.esc(boxValue(t.input)) + '"></label>' : '')
             + (r ? r.params.map(q => paramBox(C, t, r, q)).join('') : '')
-            + (r ? '<label class="ntf wide" title="' + tip(C, 'Current: ' + (t.outDir ? t.outDir + ' — from this step' : 'Farm Settings, else an af-tool folder beside the input'), 'Where the outputs are written. Blank = the Farm Settings folder (agentFarm.toolOutDir), and if that is blank too, af-tool beside the input.\n\nFlex point tool.outDir (step · Farm Settings).') + '"><span>Output folder' + up('outDir') + '</span>'
-                + '<input type="text" id="' + idOf('outDir') + '" placeholder="Farm Settings, else beside the input" value="' + C.esc(boxValue(t.outDir)) + '"></label>'
-                + '<label class="ntf" title="' + tip(C, 'Current: ' + (ow ? ow + ' — from this step' : 'Farm Settings'), 'What happens when an output file is already there.\n\nFlex point tool.overwrite (step · Farm Settings).') + '"><span>File already there' + up('overwrite') + '</span>'
-                + '<select id="' + idOf('overwrite') + '">' + OW.map(([v, l]) => C.option(v, l, { selected: v === ow })).join('') + '</select></label>' : '')
+            + (r ? '<label class="ntf wide" title="' + tip(C, dirLine, 'Where the outputs are written. Blank = the Farm Settings folder (agentFarm.toolOutDir), and if that is blank too, af-tool beside the input.\n\nFlex point tool.outDir (step · Farm Settings).') + '"><span>Output folder' + up('outDir') + '</span>'
+                + '<input type="text" id="' + idOf('outDir') + '" placeholder="' + C.esc(farm('outDir') ? farm('outDir') + ' — Farm Settings' : 'Farm Settings, else beside the input') + '" value="' + C.esc(boxValue(t.outDir)) + '"></label>'
+                + '<label class="ntf" title="' + tip(C, ow ? owLabel(ow) + ' — set on this step' : owLabel(owInh) + ' — inherited from ' + owFrom, 'What happens when an output file is already there.\n\nFlex point tool.overwrite (step · Farm Settings).') + '"><span>File already there' + up('overwrite') + '</span>'
+                + '<select id="' + idOf('overwrite') + '"' + (ow ? '' : ' class="inh"') + '>' + owOpts.map(([v, l]) => C.option(v, l, { selected: v === ow })).join('') + '</select></label>' : '')
             + (P ? P.stripFor(promote, pointOf('outDir'), 'Output folder', String(t.outDir || ''), t.outDir)
                 + P.stripFor(promote, pointOf('overwrite'), 'File already there', (OW.find(o => o[0] === ow) || [])[1] || ow, ow) : '')
             + '</div>';

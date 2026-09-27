@@ -24213,9 +24213,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         supervisorDefault: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor,
         // …and what one agent or one project says on top of it (agentFarm.flexOverrides)
         supervisorOverrides: () => supervisorOverrideMap(cfg().get<unknown>('flexOverrides')),
-        // U-151 — what the workflow form's boxes inherit: each workflow-level point's Farm Settings value
+        // U-151 — what the workflow form's and step card's boxes inherit: each such point's Farm Settings value
         flexSettings: () => Object.fromEntries(FLEX_POINTS
-            .filter(fp => fp.levels.workflow && (fp.levels.settings?.surface ?? '').startsWith('setting:'))
+            .filter(fp => (fp.levels.workflow || fp.levels.step) && (fp.levels.settings?.surface ?? '').startsWith('setting:'))
             .map(fp => [fp.id, settingsLayer(fp, k => flexDeps.readSetting(k))] as [string, unknown])
             .filter(([, v]) => v !== undefined && v !== '')),
         // the same two cores flex.set writes through: one agent / one project, or Farm Settings

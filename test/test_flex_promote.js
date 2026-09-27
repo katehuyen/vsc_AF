@@ -116,6 +116,15 @@ console.log('== the step card ==');
         const r = start2();
         const ups = r.query('[data-flexup]').map(e => e.dataset.flexup).sort().join();
         ok('↑ beside every step box with its own value and a level above, nowhere else', ups === 'library.base,library.record,tool.outDir,workflow.wake');
+        const html = r.html();
+        const apos = '(\'|&#39;)';
+        ok('an empty step box shows the workflow\'s value faint', new RegExp('id="nt-st-libLang" value="" placeholder="EN — the workflow' + apos + 's"').test(html)
+            && new RegExp('id="nt-st-libTemplate" value="" placeholder="Video-Raw — the workflow' + apos + 's"').test(html));
+        ok('MIRROR: the tooltip opens with the value and where it comes from',
+            /title="EN — inherited from the workflow/.test(html) && /title="TEST — set on this step/.test(html));
+        ok('an empty tool picker leads with the Farm Settings value, faint (SHORTHAND ↳)',
+            /id="nt-st-tOverwrite" class="inh"/.test(html) && /↳ suffix — write beside it/.test(html) && /suffix — write beside it — inherited from Farm Settings/.test(html));
+        ok('a picker holding its own value is not faint', /id="nt-st-libRecord">/.test(html));
         ok('pressed: the strip offers this flow, marked as a move inside the form',
             /data-flexup-strip="library\.base"/.test(r.html()) && r.query('[data-flexup-to]').length === 1 && /Moved into the workflow/.test(r.html()));
         const before = r.posted.length;
@@ -195,6 +204,7 @@ console.log('== the wire ==');
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('‼️ the host writes through flex.set\'s own cores',
         /flexPromote: async[\s\S]{0,300}setFlexOverride\(flexDeps[\s\S]{0,120}setFlexSetting\(flexDeps/.test(ext));
+    ok('the step card\'s boxes get their Farm Settings values too', /flexSettings: \(\) => Object\.fromEntries\(FLEX_POINTS[\s\S]{0,40}\.filter\(fp => \(fp\.levels\.workflow \|\| fp\.levels\.step\)/.test(ext));
     ok('a promotion made over the bridge reaches an open task form',
         /affectsConfiguration\('agentFarm\.flexOverrides'\)[\s\S]{0,120}TasksPanel\.refreshIfOpen\(\)/.test(ext));
     const base = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'base.ts'), 'utf8');

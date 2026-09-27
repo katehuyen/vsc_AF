@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.699.0 - The step card shows what its empty boxes inherit (U-151, part 3c-4) (2026-09-27)
+
+- **An empty Library box on a step shows the workflow's value, faint**
+  ("EN — the workflow's"), and the Records picker leads with the
+  workflow's choice (↳). A tool step's output folder and "file already
+  there" show the Farm Settings value the same way.
+- **Every such box's tooltip opens with the value and where it comes
+  from** — set on this step, inherited from the workflow or Farm Settings,
+  or built-in. A picker is drawn faint only while it inherits.
+
 ## 3.698.0 - A bridge call made while the window reloads no longer fails half-booted (2026-09-27)
 
 - **Fixed:** a bridge request already waiting when Agent Farm started (for

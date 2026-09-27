@@ -63,12 +63,12 @@
             <input type="text" id="nt-${id}" value="${C.esc(value == null ? '' : String(value))}" placeholder="${C.esc(ph)}"></label>`;
     }
     // MIRROR: a narrow picker can cut its own text, so its tooltip opens with the current choice
-    function select(C, id, label, opts, value, tip, up) {
-        // SHORTHAND: an inherited first option reads '↳ <value>'; its origin opens the tooltip (MIRROR)
-        const cur = (opts.find(o => o[0] === (value || '')) || opts[0])[1]
-            + (!value && String(opts[0][1]).indexOf('↳ ') === 0 ? ' — inherited from Farm Settings' : '');
+    function select(C, id, label, opts, value, tip, up, from) {
+        // SHORTHAND: an inherited first option reads '↳ <value>', faint; its origin opens the tooltip (MIRROR)
+        const inh = !value && String(opts[0][1]).indexOf('↳ ') === 0;
+        const cur = (opts.find(o => o[0] === (value || '')) || opts[0])[1] + (inh ? ' — inherited from ' + (from || 'Farm Settings') : '');
         return `<label class="ntf" title="${C.esc(cur + '\n\n' + tip)}"><span>${C.esc(label)}${up || ''}</span>
-            <select id="nt-${id}">${opts.map(([v, l]) => C.option(v, l, { selected: v === (value || '') })).join('')}</select></label>`;
+            <select id="nt-${id}"${inh ? ' class="inh"' : ''}>${opts.map(([v, l]) => C.option(v, l, { selected: v === (value || '') })).join('')}</select></label>`;
     }
 
     // U-151 — the step row's boxes and the flex point each one sets: [box id, draft key, label]
@@ -79,9 +79,17 @@
     let stepOwnAtRender = '';
     const stepOwn = s => ST_BOXES.filter(b => String((s || {})[b[1]] || '').trim()).map(b => b[1]).join(',');
 
-    /** A media or tool step's Library row. U-151 — `promote` = { open, levels(point) } draws ↑ beside a box with its own value. */
-    function row(s, C, promote) {
+    /**
+     * A media or tool step's Library row. U-151 — `promote` = { open, levels(point) } draws ↑ beside a box with its own value;
+     * `wf` = the workflow draft: an empty box shows the workflow's value faint (MIRROR: value, then origin).
+     */
+    function row(s, C, promote, wf) {
+        const w = wf || {};
         const P = promote && window.AFFlexPromote;
+        const mirror = (key, ph) => (String(s[key] || '').trim() ? s[key] + ' — set on this step'
+            : String(w[key] || '').trim() ? w[key] + ' — inherited from the workflow' : ph + ' — inherited');
+        const recLabel = v => (RECORD.find(o => o[0] === v) || [])[1] || v;
+        const recOpts = [['', '↳ ' + recLabel(w.libRecord || 'all')]].concat(RECORD.slice(1));
         const up = (id, key) => (P ? P.up(promote, stPoint(id), s[key]) : '');
         const shown = b => b[0] === ST_RECORD ? ((RECORD.find(o => o[0] === s.libRecord) || [])[1] || s.libRecord) : String(s[b[1]] || '');
         const strip = P ? ST_BOXES.map(b => P.stripFor(promote, stPoint(b[0]), b[2], shown(b), s[b[1]])).join('') : '';
@@ -89,8 +97,9 @@
         return `<div class="ntsec"><b>Library</b>
             <span class="muted small">Where this step's files are filed and recorded. Blank = the workflow's.</span></div>
             <div class="ntgrid">
-                ${ST_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, s[key], ph, tip, up(id, key))).join('')}
-                ${select(C, ST_RECORD, 'Records', RECORD, s.libRecord, 'Which of this step\'s files get an Airtable record. Every file is filed either way — nothing is thrown away: with "only what passed", a failed file is kept in raw without a record.', up(ST_RECORD, 'libRecord'))}
+                ${ST_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, s[key], String(w[key] || '').trim() ? w[key] + ' — the workflow\'s' : ph,
+                    mirror(key, ph) + '\n\n' + tip, up(id, key))).join('')}
+                ${select(C, ST_RECORD, 'Records', recOpts, s.libRecord, 'Which of this step\'s files get an Airtable record. Every file is filed either way — nothing is thrown away: with "only what passed", a failed file is kept in raw without a record.', up(ST_RECORD, 'libRecord'), w.libRecord ? 'the workflow' : 'built-in')}
                 ${select(C, ST_STAGE, 'Stage', STAGES, s.libStage, STAGE_TIP)}
                 ${strip}
             </div>`;

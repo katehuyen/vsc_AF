@@ -955,13 +955,13 @@ const variants = () => ([
     // ↑ pressed on the database — the only level above a step here is this flow (a move inside the form).
     {
         id: 'tasks-wf-step-promote',
-        label: 'Tasks → a workflow\'s step card: ↑ beside the tool\'s output folder, the Library database and records, and Wake after it — pressed on the database: make it this flow\'s, or ↺ back (U-151)',
-        data: data(),
+        label: 'Tasks → a workflow\'s step card: ↑ beside the tool\'s output folder, the Library database and records, and Wake after it — pressed on the database: make it this flow\'s, or ↺ back; the empty boxes show what they inherit faint — language and template from the workflow, "file already there" from Farm Settings (U-151)',
+        data: (() => { const d = data(); d.launch.flexSettings = { 'tool.overwrite': 'suffix' }; return d; })(),
         act: (r) => {
             r.send({
                 type: 'plan-compose', kind: 'workflow',
                 seed: {
-                    mode2: 'edit', id: 'w12', title: '34 sn dilim', stepIdx: 0, libBase: '', libLang: '', libStart: '', libRecord: '', libTemplate: '',
+                    mode2: 'edit', id: 'w12', title: '34 sn dilim', stepIdx: 0, libBase: '', libLang: 'EN', libStart: '', libRecord: '', libTemplate: 'Video-Raw',
                     steps: [{
                         sid: 's1', stype: 'tool', title: 'Böl', libBase: 'TEST', libRecord: 'passed', libStage: 'asset',
                         toolJson: '{"recipe":"split","input":"{input.clip}","outDir":"D:/out"}',
