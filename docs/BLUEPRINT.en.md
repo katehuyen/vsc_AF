@@ -1200,6 +1200,8 @@ Agent Farm monitors two independent resource boundaries:
 | **Model Context Window** | Last model call tokens ÷ model context window ceiling | **≥ 35%** | **≥ 40%** | `35%`: Start nothing new, finish in-flight atomic step.<br>`40%`: Stop here, commit clean progress, write handover note and end run. |
 | **Account 5-Hour Quota** | The session's own assigned sign-in account (`five_hour`) | *Default off* (`0%`) | **≥ 90%** | `90%`: Account 5-hour window reached 90%. Commit clean progress, write handover note (or pass baton) and exit. |
 
+> **‼️ A fresh reading for the line (S-107, 3.728.0):** the running session's slot is read on the WORKING beat — resolved like the guard resolves it (its Console card's slot, then its sealed launch manifest), and a card mid-turn makes its slot active — so a resumed run is no longer read every five minutes. A guard reading older than two minutes also asks for a fresh one of that slot (at most once a minute, the automatic door, holds respected): a 5-minute-old figure had skipped a 95% line straight to 99%.
+
 > **‼️ 5-Hour Window vs. Weekly Quota Isolation:** Prior to 3.624.0, quota whispering could conflate the 7-day weekly usage rate (`seven_day`) with the 5-hour window, mistakenly ordering a handover on a session whose 5-hour window was only at 34%. Strict isolation is enforced: quota whispering reads exclusively from the session's assigned **5-hour window**; weekly quota is never used as a handover trigger. Furthermore, quota usage is never read from the default home path (`~/.claude`); it strictly evaluates the session's own `CLAUDE_CONFIG_DIR` account slot.
 
 #### Colored Signal Dots (.sigdot) and Visual Status on the Status Row

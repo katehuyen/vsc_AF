@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.728.0 - The quota line is read fresh enough to be met (S-107) (2026-09-28)
+
+- A running session's account is now read on the working beat even when
+  its launch record cannot be found (a resumed Console run): its card's
+  account is used, the same one the quota guard reads, and a card in the
+  middle of a turn counts as working. A guard reading older than two
+  minutes also asks for a fresh one — a five-minute-old figure had skipped a
+  95% handover line straight to 99%.
+
 ## 3.727.0 - The policies' account wall follows the quota handover line (S-105) (2026-09-28)
 
 - New setting defaultAccountCeiling (default 90, next to quotaHandoverPct

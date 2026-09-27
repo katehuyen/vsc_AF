@@ -1241,6 +1241,8 @@ Sistem iki ayrı duvarı bağımsız olarak denetler:
 | **Model Context Penceresi** | Son model çağrısının token yükü ÷ modelin context pencere tavanı | **≥ %35** | **≥ %40** | `%35`: Yeni alt göreve başlama, elindeki atomik adımı bitir.<br>`%40`: Burada dur, temiz kodları commit'le, devir notunu yaz ve oturumu sonlandır. |
 | **Hesabın 5 Saatlik Kotası** | Oturumun `CLAUDE_CONFIG_DIR` ile bağlandığı kendi hesabı (`five_hour`) | *Varsayılan kapalı* (`%0`) | **≥ %90** | `%90`: Hesabın 5 saatlik kullanım penceresi %90'a ulaştı. Temiz işi commit'le, devir notunu yaz (veya batondaysan bayrağı devret) ve çık. |
 
+> **‼️ Çizgi için taze okuma (S-107, 3.728.0):** koşan oturumun slotu ÇALIŞAN tempoda okunur — muhafızın çözdüğü gibi çözülür (Console kartının slotu, sonra mühürlü başlatma manifesti) ve turun ortasındaki bir kart slotunu aktif sayar; resume edilmiş bir koşu artık beş dakikada bir okunmaz. İki dakikadan eski bir muhafız okuması o slot için taze okuma da ister (dakikada en çok bir, otomatik kapı, bekletmelere uyar): 5 dakikalık bayat bir rakam %95 çizgisini atlayıp doğrudan %99'a sıçramıştı.
+
 > **‼️ 5 Saatlik Pencere vs. Haftalık Kota Ayrımı:** 3.624.0 öncesinde kota fısıltısı, haftalık kullanım oranını (`seven_day`) 5 saatlik pencere sanarak kotası %34 olan bir oturuma erkenden durdurma emri verebiliyordu. Bu ayrım kesinleştirildi: Fısıltı daima oturumun çalıştığı hesabın **5 saatlik kullanım penceresini** okur; haftalık kota asla devir tetiği yapılmaz. Ayrıca kota bilgisi asla ev dizininden (`~/.claude`) okunmaz; oturum hangi hesap slotunda açıldıysa o slotun dizinindeki kimlik kullanılır.
 
 #### Alt Şeritte Renkli Sinyal Noktaları (.sigdot) ve Görsel Durumlar

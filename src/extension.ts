@@ -1643,14 +1643,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // S-75 — the session's OWN sign-in: its Console card's slot, else the slot
     // its sealed launch manifest names. No slot known = no line (a figure
     // from the wrong account is worse than none — 2026-09-06, home 95% vs own 23%).
-    const sessionQuotaSample = (sessionId: string): QuotaSample | undefined => {
+    const sessionSlotOf = (sessionId: string): string => {
         const card = consoleHost.list().find(s => s.sessionId === sessionId);
         const launchId = card?.launchId || index.allWithExternal().find(x => x.sessionId === sessionId)?.launchId;
-        const slotId = (card?.account || '').trim()
+        return (card?.account || '').trim()
             || (launchId ? (launchManifests().find(m => m.launchId === launchId)?.account ?? '') : '');
+    };
+    // ‼️ S-107 — a guard reading older than this asks for a fresh one: a 5-minute-old figure skipped a 95% line to 99%
+    const QUOTA_STALE_MS = 120_000;
+    const staleAsked = new Map<string, number>();
+    const sessionQuotaSample = (sessionId: string): QuotaSample | undefined => {
+        const slotId = sessionSlotOf(sessionId);
         if (!slotId) { return undefined; }
         const u: SlotUsage | undefined = accountUsage.current().find((x: SlotUsage) => x.slotId === slotId);
         if (!u || u.state === 'no-source') { return undefined; }
+        const now = Date.now();
+        if (now - (Number(u.fetchedAt) || 0) > QUOTA_STALE_MS && now - (staleAsked.get(slotId) ?? 0) > 60_000 && accountsAutoRefresh()) {
+            staleAsked.set(slotId, now);
+            void accountUsage.refreshSlot(slotId, 'auto').catch(() => undefined);
+        }
         /**
          * ‼️ X-353 — THIS LINE IS THE FIVE-HOUR WINDOW AND NOTHING ELSE.
          *
@@ -20511,9 +20522,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const slotActive = (slotId: string): boolean => {
         const standing = activeAccounts();
+        // ‼️ S-107 — a Console card mid-turn is working on its slot whatever the monitor or a manifest says
+        if (consoleHost.list().some(c => c.account === slotId && c.status === 'working')) { return true; }
         return live.sessions().some(s => {
             if (s.status !== 'working' && s.status !== 'tool') { return false; }
-            const own = sessionAccountOf(s.sessionId)?.id;
+            // the card's slot first, as the quota guard reads it: a resumed run whose manifest is not found still has one
+            const own = sessionSlotOf(s.sessionId) || sessionAccountOf(s.sessionId)?.id;
             if (own) { return own === slotId; }
             return standing[String(s.source || 'claude').trim().toLowerCase()] === slotId;
         });
