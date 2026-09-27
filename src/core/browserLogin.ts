@@ -15,11 +15,17 @@ export function browserProfilesRoot(globalStorage: string): string {
     return path.join(globalStorage, 'browser-profiles');
 }
 
-/** Every recipe, with its profile folder and whether anybody has opened it yet. */
-export function listBrowserRecipes(root: string): { id: string; label: string; url: string; hosts: string[]; note: string; profileDir: string; profileExists: boolean }[] {
+/** A Chrome holds its profile's `lockfile` open exclusively while it runs (measured on Windows: EBUSY) — a second one cannot open the profile. */
+export function profileInUse(profileDir: string): boolean {
+    try { fs.closeSync(fs.openSync(path.join(profileDir, 'lockfile'), 'r+')); return false; }
+    catch (e) { const c = (e as NodeJS.ErrnoException).code; return c === 'EBUSY' || c === 'EPERM' || c === 'EACCES'; }
+}
+
+/** Every recipe, with its profile folder, whether anybody has opened it yet, and whether a Chrome holds it now. */
+export function listBrowserRecipes(root: string): { id: string; label: string; url: string; hosts: string[]; note: string; profileDir: string; profileExists: boolean; inUse: boolean }[] {
     return BROWSER_RECIPES.map(r => {
         const profileDir = path.join(root, r.id);
-        return { id: r.id, label: r.label, url: r.url, hosts: r.hosts, note: r.note, profileDir, profileExists: fs.existsSync(profileDir) };
+        return { id: r.id, label: r.label, url: r.url, hosts: r.hosts, note: r.note, profileDir, profileExists: fs.existsSync(profileDir), inUse: profileInUse(profileDir) };
     });
 }
 

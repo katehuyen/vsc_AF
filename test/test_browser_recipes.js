@@ -72,6 +72,12 @@ ok('the web recipe needs a site; no Chrome is said plainly; an unknown recipe is
     /pass url=/.test(L.openRecipeLogin({ recipe: 'web', root: tmp, run: () => { } }).error)
     && /Chrome was not found/.test(L.openRecipeLogin({ recipe: 'flow', root: tmp, env: {}, exists: () => false, run: () => { } }).error)
     && /No browser recipe "sora"/.test(L.openRecipeLogin({ recipe: 'sora', root: tmp }).error));
+const lockDir = path.join(tmp, 'lockp');
+fs.mkdirSync(lockDir, { recursive: true });
+const free = [L.profileInUse(lockDir), (fs.writeFileSync(path.join(lockDir, 'lockfile'), ''), L.profileInUse(lockDir))];
+fs.chmodSync(path.join(lockDir, 'lockfile'), 0o444);
+ok('a profile is in use only when its lockfile cannot be opened (Chrome holds it: EBUSY)', free[0] === false && free[1] === false && L.profileInUse(lockDir) === (process.platform === 'win32'));
+fs.chmodSync(path.join(lockDir, 'lockfile'), 0o666);
 const listed = L.listBrowserRecipes(path.join(tmp, 'profiles'));
 ok('the list says which profile has been opened', listed.find(r => r.id === 'higgsfield').profileExists && !listed.find(r => r.id === 'flow').profileExists);
 
@@ -138,6 +144,17 @@ ok('the list says which profile has been opened', listed.find(r => r.id === 'hig
         const r3 = mgr.runWorkflow(mgr.addWorkflow('Bilinmeyen', step({ url: '', goal: 'g', recipe: 'sora' })));
         const t3 = await settle(r3);
         ok('an unknown recipe fails the step by name, nothing spawned', t3.status === 'failed' && commands.length === 2);
+
+        const lf = path.join(tmp, 'profiles', 'flow', 'lockfile');
+        fs.mkdirSync(path.dirname(lf), { recursive: true });
+        fs.writeFileSync(lf, '');
+        fs.chmodSync(lf, 0o444);
+        const r4 = mgr.runWorkflow(mgr.addWorkflow('Profil açık', step({ url: '', goal: 'g', recipe: 'flow', confirm: 'auto' })));
+        const t4 = await settle(r4);
+        fs.chmodSync(lf, 0o666);
+        if (process.platform === 'win32') {
+            ok('‼️ a profile another Chrome holds fails the step before anything is paid for', t4.status === 'failed' && commands.length === 2);
+        }
     } finally {
         mgr.dispose();
         fs.rmSync(tmp, { recursive: true, force: true });

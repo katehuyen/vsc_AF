@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.718.0 - A recipe profile another Chrome holds stops the step before it is paid for (M-54) (2026-09-27)
+
+- A recipe step whose browser profile is still open in another Chrome window
+  (usually the sign-in window left open) now fails at once, naming the
+  window to close, instead of starting an agent run that finds the profile
+  locked (measured: a Chrome holds its profile's lockfile, EBUSY).
+  browser.recipes says inUse per recipe.
+
 ## 3.717.0 - The browser recipe book: a signed-in profile, downloads filed (M-54) (2026-09-27)
 
 - A browser step can name a recipe (web · Google Flow · Higgsfield web). It

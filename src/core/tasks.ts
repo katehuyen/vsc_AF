@@ -22,6 +22,7 @@ import { afterFail, climbDecision, JudgeDecision, RunEconomy, runEconomy } from 
 import { alignCandidates, candidatesOf, mergeCandidates, pickedBody, pickLine, withArchiveBody } from './mediaCandidates';
 import { browserMcpArgs, browserRecipeRefusal, buildRecipePrompt, planBrowser, playwrightMcpConfig } from './browserRecipes';
 import { type BrowserRun, fileBrowserDownloads } from './browserDownloads';
+import { profileInUse } from './browserLogin';
 import {
     anchorAgent, applyRunEdits, checkpointLimits, CheckpointSpec, escalateModel, handoffFromBoard, routeOf as checkpointRoute, RunEdits,
     stepsFromInsert, superviseCheckpoint
@@ -7298,6 +7299,10 @@ export class TaskManager implements vscode.Disposable {
         if (recipeNo) { fail(recipeNo); return; }
         if (plan.recipe && engineOf(step.engine).id !== 'claude') {
             fail(`a recipe step runs on claude only (its own Playwright MCP), not on ${engineOf(step.engine).label}`);
+            return;
+        }
+        if (plan.recipe && profileInUse(plan.profileDir!)) {
+            fail(`the "${plan.recipe.id}" browser profile is open in another Chrome window (a sign-in window?) — close it and run again`);
             return;
         }
         if (!hostAllowed(url, allowHosts)) {
