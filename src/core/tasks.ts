@@ -11,7 +11,7 @@ import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
 import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
-import { judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
+import { judgeJson, judgeReply, judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
 import { BrandKit, brandProductionFor, fillBrand, resolveBrand } from './brandKit';
@@ -153,6 +153,8 @@ export interface FarmTask {
     verified?: 'pass' | 'fail' | 'unjudged';
     /** A-27 — the reason this attempt's check FAILed: the next attempt is held against it */
     verifyFail?: string;
+    /** A-27 — what its checks cost (every judge call, every rung): part of the step's spend (stepSpend) */
+    judgeUSD?: number;
     /** A-27 — what its check decided beyond the verdict: climbs, retries withheld (src/core/judgeDecision.ts) */
     judgeDecisions?: JudgeDecision[];
     /** M-45 — this row is the supervisor woken after its step, by these conditions (src/core/workflowWake.ts) */
@@ -5359,7 +5361,7 @@ export class TaskManager implements vscode.Disposable {
      * that could not run is `unjudged`, never a PASS nobody gave.
      */
     private runJudge(cwd: string, criteria: string, body: string, step?: StepJudge):
-        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string }> {
+        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; costUSD?: number }> {
         return new Promise(resolve => {
             const want = judgeWant(step, this.opts.judgeArgs?.());
             const judge = want.origin;
@@ -5368,15 +5370,17 @@ export class TaskManager implements vscode.Disposable {
                 `ÖLÇÜT: ${criteria} --- ÇIKTI: ${body.slice(0, 4000)} --- ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
-            void execOneShot({ cwd, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000 }).then(r => {
-                if (r.error && !r.out) {
-                    const why = 'the judge could not run (' + r.error.slice(0, 80) + ')';
-                    resolve({ pass: false, reason: why, unjudged: why, judge });
+            void execOneShot({ cwd, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000, ...judgeJson(want.engine) }).then(r => {
+                const { text, costUSD, error } = judgeReply(want.engine, r.out);
+                const spent = costUSD ? { costUSD } : {};
+                if ((r.error || error) && !text) {
+                    const why = 'the judge could not run (' + (r.error || error || '').slice(0, 80) + ')';
+                    resolve({ pass: false, reason: why, unjudged: why, judge, ...spent });
                     return;
                 }
-                const line = r.out.split('\n').find(l => l.trim()) ?? '';
+                const line = text.split('\n').find(l => l.trim()) ?? '';
                 const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
-                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge });
+                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge, ...spent });
             });
         });
     }
@@ -5390,7 +5394,7 @@ export class TaskManager implements vscode.Disposable {
      * not run, is `unjudged` — never a PASS nobody looked at.
      */
     private runVisionJudge(assetFile: string, criteria: string, step?: StepJudge):
-        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string }> {
+        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; costUSD?: number }> {
         return new Promise(resolve => {
             const want = visionJudgeWant(assetFile, step, this.opts.judgeArgs?.());
             const judge = want.origin;
@@ -5407,16 +5411,18 @@ export class TaskManager implements vscode.Disposable {
             void execOneShot({
                 cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000,
                 // agy's default mode may act on the files; measured 2026-09-26: in plan mode it still opens and judges them
-                readOnly: want.engine === 'agy'
+                readOnly: want.engine === 'agy', ...judgeJson(want.engine)
             }).then(r => {
-                if (r.error && !r.out) {
-                    const why = 'the vision judge could not run (' + r.error.slice(0, 80) + ')';
-                    resolve({ pass: false, reason: why, unjudged: why, judge });
+                const { text, costUSD, error } = judgeReply(want.engine, r.out);
+                const spent = costUSD ? { costUSD } : {};
+                if ((r.error || error) && !text) {
+                    const why = 'the vision judge could not run (' + (r.error || error || '').slice(0, 80) + ')';
+                    resolve({ pass: false, reason: why, unjudged: why, judge, ...spent });
                     return;
                 }
-                const line = r.out.split('\n').filter(l => l.trim()).pop() ?? '';
+                const line = text.split('\n').filter(l => l.trim()).pop() ?? '';
                 const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
-                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge });
+                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge, ...spent });
             });
         });
     }
@@ -5496,10 +5502,13 @@ export class TaskManager implements vscode.Disposable {
 
     /** A-27 — parallel-cheap: the candidates judged in order, the first PASS handed on alone (src/core/mediaCandidates.ts). */
     private async pickCandidate(task: FarmTask, step: WorkflowStep, files: string[], meta: MediaMeta):
-        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string }> {
-        const seen: { pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string }[] = [];
+        Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string; costUSD?: number }> {
+        const seen: { pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string; costUSD?: number }[] = [];
+        let spent = 0;
         for (const [i, f] of files.entries()) {
-            const j = await this.climbJudge(task, step, sj => this.runVisionJudge(f, step.verify!.criteria, sj));
+            const j0 = await this.climbJudge(task, step, sj => this.runVisionJudge(f, step.verify!.criteria, sj));
+            spent += j0.costUSD ?? 0;
+            const j = { ...j0, ...(spent ? { costUSD: spent } : {}) };
             if (j.pass && !j.unjudged) {
                 const line = pickLine(i, files.length, j.reason);
                 try {
@@ -5515,12 +5524,12 @@ export class TaskManager implements vscode.Disposable {
             seen.push(j);
         }
         const judged = seen.filter(j => !j.unjudged);
-        if (!judged.length) { return seen[0]; }
-        return { ...judged[judged.length - 1], reason: seen.map((j, k) => `candidate ${k + 1}: ${j.unjudged ?? j.reason}`).join(' | ') };
+        if (!judged.length) { return seen[seen.length - 1]; }
+        return { ...judged[judged.length - 1], ...(spent ? { costUSD: spent } : {}), reason: seen.map((j, k) => `candidate ${k + 1}: ${j.unjudged ?? j.reason}`).join(' | ') };
     }
 
     /** A-27 — cheap-first, and one rung up on a FAIL before a retry is paid for (src/core/judgeLadder.ts). */
-    private async climbJudge<J extends { pass: boolean; reason: string; unjudged?: string; judge: string }>(
+    private async climbJudge<J extends { pass: boolean; reason: string; unjudged?: string; judge: string; costUSD?: number }>(
         task: FarmTask, step: WorkflowStep, judge: (sj: StepJudge | undefined) => Promise<J>): Promise<J & { climbed?: string }> {
         const lad = ladderFor(step.verify, task.workflowRunId ? this.runRecords.get(task.workflowRunId)?.judgeLadder : undefined, this.opts.judgeLadderSetting?.());
         if (!lad.rungs.length) { return judge(step.verify); }
@@ -5528,13 +5537,16 @@ export class TaskManager implements vscode.Disposable {
         const low = await judge({ model: lad.rungs[0] });
         if (low.unjudged || low.pass || lad.rungs.length < 2) { return { ...low, judge: rung(0) }; }
         const up = await judge({ model: lad.rungs[1] });
-        if (up.unjudged) { return { ...low, judge: rung(0) }; }
-        return { ...up, judge: `${rung(0)} → ${rung(1)}`, climbed: escalationLine({ model: lad.rungs[0], reason: low.reason }, { model: lad.rungs[1], pass: up.pass, reason: up.reason }) };
+        const both = (low.costUSD ?? 0) + (up.costUSD ?? 0);
+        const spent = both ? { costUSD: both } : {};
+        if (up.unjudged) { return { ...low, ...spent, judge: rung(0) }; }
+        return { ...up, ...spent, judge: `${rung(0)} → ${rung(1)}`, climbed: escalationLine({ model: lad.rungs[0], reason: low.reason }, { model: lad.rungs[1], pass: up.pass, reason: up.reason }) };
     }
 
     /** A-27 — records what a check decided beyond its verdict, and whether a retry is bought (src/core/judgeDecision.ts). */
-    private judgeNext(task: FarmTask, w: FarmWorkflow, step: WorkflowStep, judged: { pass: boolean; reason: string; climbed?: string },
+    private judgeNext(task: FarmTask, w: FarmWorkflow, step: WorkflowStep, judged: { pass: boolean; reason: string; climbed?: string; costUSD?: number },
         attempt: number, retries: number): 'pass' | 'retry' | 'fail' {
+        if (judged.costUSD) { task.judgeUSD = Math.round(((task.judgeUSD ?? 0) + judged.costUSD) * 1e6) / 1e6; }
         const cost = stepSpend(task) ?? 0;
         const made: JudgeDecision[] = judged.climbed ? [climbDecision(judged.pass, judged.climbed, attempt < retries, cost)] : [];
         let go: 'pass' | 'retry' | 'fail' = 'pass';

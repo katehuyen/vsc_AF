@@ -47,8 +47,11 @@ export async function billMedia(
     return estimateMediaCost(model, response, rules, seconds);
 }
 
-/** What a step spent — an agent's tokens (costUSD) or a media call's estimate (mediaCost); every run total reads this. */
-export const stepSpend = (t: { costUSD?: number; mediaCost?: number }): number | undefined => t.costUSD ?? t.mediaCost;
+/** What a step spent — an agent's tokens (costUSD) or a media call's estimate (mediaCost), and its checks (judgeUSD, A-27); every run total and the hard cap read this. */
+export const stepSpend = (t: { costUSD?: number; mediaCost?: number; judgeUSD?: number }): number | undefined => {
+    const own = t.costUSD ?? t.mediaCost;
+    return own === undefined && !t.judgeUSD ? undefined : (own ?? 0) + (t.judgeUSD ?? 0);
+};
 
 export function withOutputs(response: unknown, files: string[]): Record<string, unknown> {
     return response && typeof response === 'object' && !Array.isArray(response)

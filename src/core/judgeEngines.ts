@@ -14,7 +14,7 @@ import * as path from 'path';
 import { deadReason } from './flexForms';
 import { flexPoint } from './flexPoints';
 import { resolveFlex } from './flexResolve';
-import { oneShotEngines } from './oneShot';
+import { oneShotEngines, oneShotEnvelope } from './oneShot';
 
 export type Modality = 'image' | 'video' | 'audio' | 'pdf' | 'text';
 export type UnjudgedBehavior = 'ask' | 'pass' | 'stop';
@@ -99,6 +99,19 @@ export function visionJudgeWant(file: string, step: StepJudge | undefined, setti
 
 export const normalizeUnjudged = (v: unknown): UnjudgedBehavior =>
     UNJUDGED_BEHAVIORS.includes(v as UnjudgedBehavior) ? v as UnjudgedBehavior : 'ask';
+
+/** A-27 — a judge call asks claude for its envelope, so the check's spend reaches the run; other engines answer in plain text. */
+export const judgeJson = (engine: string): { json?: true } => (engine === 'claude' ? { json: true } : {});
+
+/** The judge's reply text and what the call cost, read out of the envelope when there is one; an error envelope is no verdict. */
+export function judgeReply(engine: string, out: string): { text: string; costUSD?: number; error?: string } {
+    const env = engine === 'claude' ? oneShotEnvelope('claude', out) : null;
+    if (!env) { return { text: out }; }
+    return {
+        text: env.isError ? '' : env.result, ...(env.costUSD ? { costUSD: env.costUSD } : {}),
+        ...(env.isError ? { error: `the turn ended in ${env.subtype ?? 'an error'}` } : {})
+    };
+}
 
 /**
  * What an unjudged step does. `answer` is the user's word when the behaviour is

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.713.0 - A check's own cost reaches the run (A-27) (2026-09-27)
+
+- **Judge spend counted**: a workflow step's quality check (text and
+  vision, every rung of the judge ladder, every candidate) now reports what
+  it cost, and that spend is part of the step's — the run total, the board,
+  the hard spend cap and the savings estimate all count it. Before, a check
+  was free as far as the run could tell.
+- A judge call that ends in an error is "not judged", never a FAIL nobody
+  gave.
+
 ## 3.712.0 - Parallel-cheap: a media step makes several candidates and its check picks one (A-27, part 3) (2026-09-27)
 
 - **Candidates** (1-4) on a workflow media step: that many are made at

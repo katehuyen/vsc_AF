@@ -101,6 +101,22 @@ ok('picking a Cost preset redraws the Run card', /run\.preset \? \['preset:' \+ 
         ok('‼️ a method verdict buys no retry and wakes the supervisor to replan', attempts(r3) === 1 && t3.verified === 'fail' && !!woke && woke.wokeBy.includes('replan'));
         ok('…which is told why', prompts.some(p => /replan \(Replan: the judge says the method is wrong/.test(p)));
         eq('…and the run counts it', mgr.workflowRunState(r3).economy.replans, 1);
+
+        // ‼️ what a check costs reaches the step and the run: claude is asked for its envelope, every rung counted
+        const asked = [];
+        const env = (result, usd) => JSON.stringify({ type: 'result', result, total_cost_usd: usd, is_error: false });
+        const answers = { haiku: env('FAIL eksik', 0.002), sonnet: env('PASS tamam', 0.011) };
+        oneShot.execOneShot = async (o) => { asked.push(!!o.json); return { out: answers[o.model] || env('PASS', 0.001), error: '' }; };
+        const wl = mgr.addWorkflow('Hakem parası', step({ criteria: 'Türkçe olsun', retries: 1 }));
+        const r4 = mgr.runWorkflow(wl, { judgeLadder: 'haiku,sonnet' });
+        const t4 = await finish(r4, 0);
+        ok('the claude judge is asked for its envelope, and read out of it', asked.length === 2 && asked.every(Boolean) && t4.verified === 'pass');
+        eq('both rungs are the step\'s check spend', t4.judgeUSD, 0.013);
+        ok('…and the run\'s total counts it beside the step\'s own', Math.abs(mgr.workflowRunState(r4).costUSD - 0.113) < 1e-9);
+        oneShot.execOneShot = async () => ({ out: JSON.stringify({ type: 'result', result: '', subtype: 'error_max_turns', is_error: true, total_cost_usd: 0.004 }), error: '' });
+        const r5 = mgr.runWorkflow(mgr.addWorkflow('Hakem hatası', step({ criteria: 'Türkçe olsun', retries: 1 })));
+        const t5 = await finish(r5, 0);
+        ok('‼️ an error envelope is no verdict: unjudged, never a FAIL nobody gave', t5.verified === 'unjudged' && /the judge could not run \(the turn ended in error_max_turns\)/.test(fs.readFileSync(t5.outputFile, 'utf8')));
     } finally {
         mgr.dispose();
         fs.rmSync(tmp, { recursive: true, force: true });
