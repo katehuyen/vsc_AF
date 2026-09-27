@@ -214,7 +214,8 @@
         // every recipe parameter, its default the recipe's own (media/afRecipes.js)
         ...RECIPES.RECIPES.flatMap(r => r.params.map(q => ({
             id: RECIPES.paramPoint(r.id, q.name), label: r.label + ' — ' + q.name,
-            type: q.type === 'number' || q.type === 'enum' ? q.type : 'text',
+            // a required number with no default has nothing to type-check until the step gives it; the recipe checks it then
+            type: (q.type === 'number' || q.type === 'enum') && q.default !== undefined ? q.type : 'text',
             default: q.default === undefined ? '' : q.default, remembered: false,
             ...(q.options ? { options: q.options } : {}), ...(q.min !== undefined ? { min: q.min, max: q.max } : {}),
             levels: { step: { surface: 'media/afTool.js#st-tp', bridge: 'workflows.add:steps.tool.params' } }

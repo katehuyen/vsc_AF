@@ -91,6 +91,7 @@ export type { TaskRound } from './taskRounds';
 import { archiveMonths, readArchive } from './taskstats';
 import { openExternalTerminal } from './extTerminal';
 import { extractJson, sanitizePrompt } from './util';
+import { fillJsonTemplate } from './jsonTemplate';
 import { LiveCard, reattachPlan } from './consoleTaskRevive';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -6914,7 +6915,8 @@ export class TaskManager implements vscode.Disposable {
 
         const provider = providerFor(media.model);
         const auth = (this.opts.mediaAuth?.(provider.id) ?? '').trim();
-        let input = retry ? injectMediaFeedback(resolve(media.input), retry.feedback) : resolve(media.input);
+        const filled = fillJsonTemplate(media.input, resolve);
+        let input = retry ? injectMediaFeedback(filled, retry.feedback) : filled;
         const info: { model: string; stepTitle: string; workflowTitle: string; input: string; projectId?: string; sceneId?: string; note?: string; uploads?: FarmTask['uploads'] } = {
             model: media.model, stepTitle: step.title, workflowTitle: w.title,
             input, projectId: media.projectId, sceneId: media.sceneId

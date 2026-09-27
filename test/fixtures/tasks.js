@@ -897,6 +897,20 @@ const variants = () => ([
             drive(r, { 'nt-st-tInput': '{input.clip}', 'nt-st-tp-overlapSec': '1' }, 'nt-st-tOverwrite');
         }
     },
+    // M-53 — the short recipe inside a for-each: every box a template off the picked moment.
+    {
+        id: 'tasks-step-tool-short',
+        label: 'Tasks → a workflow tool step: cut a short — start, end and SRT off each picked moment (M-53)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Kısaları kes', 'nt-st-stype': 'tool' }, 'nt-st-stype');
+            drive(r, { 'nt-st-tRecipe': 'short' }, 'nt-st-tRecipe');
+            drive(r, { 'nt-st-tInput': '{input.video}', 'nt-st-tp-start': '{item.start}', 'nt-st-tp-end': '{item.end}', 'nt-st-tp-srt': '{item.srt}' }, 'nt-st-tOverwrite');
+        }
+    },
     // X-418 — a tool step that files its parts into another database, as assets: the step's Library row set.
     {
         id: 'tasks-step-tool-library',

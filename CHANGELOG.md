@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.708.0 - The recipe book: three content workflows in one pick (M-53, part 3) (2026-09-27)
+
+- **New Recipe Workflow installs a whole content workflow** — Video parça
+  düzenleme, Uzundan kısalar, Haftalık kanal ritmi — with its inputs, its
+  roles (filled by the Roles box or the showrunner), its checkpoints and
+  its wake conditions. No judge or supervisor model is pinned, so the cost
+  preset in force decides them. Bridge: `workflows.recipes`,
+  `workflows.addRecipe`.
+- **A new tool recipe, `short`**: cut one moment, reframe it and draw its
+  SRT subtitles in a single re-encode.
+- **Fixed: a media step's JSON input broke on a Windows path, a quote or a
+  line end** handed over from an earlier step, and a local file it named
+  was never uploaded. The input is now filled inside its string values.
+
 ## 3.707.0 - A role for one run, from Run with… (M-53, part 2) (2026-09-27)
 
 - **Run with… has a box per role** the workflow's steps name. Its first line

@@ -5670,8 +5670,10 @@ const { opencodeStatus, syncToOpencode } =
         for (const op of ['schedules.add', 'templates.add', 'workflows.add', 'workflows.step.add']) {
             const b = blockOf(op);
             ok(`${op} reads its dimensions through the checked reader`,
-                /runDims\(|bridgeStep\b/.test(b));
+                /runDims\(|bridgeStep\b|addWorkflowFromArgs\(/.test(b));
         }
+        ok('…and the save workflows.add shares with the recipe book maps every step through bridgeStep',
+            /const addWorkflowFromArgs = [\s\S]{0,600}stepsIn\.map\(bridgeStep\)/.test(extSrc));
 
         // ---- three-state `cli`, so the refusal is not a dead end ----
         // ‼️ Refusing "retry it on OpenCode" for every task that carries a

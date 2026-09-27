@@ -11,7 +11,7 @@ const O = path.join('D:', 'out');
 const IN = path.join('D:', 'clips', 'klip.mp4');
 const plan = (recipe, params, extra) => R.planRecipe(Object.assign({ recipe, input: IN, params, outDir: O }, extra || {}), { durationSec: 34 });
 
-eq('nine recipes', R.RECIPES.map(r => r.id), ['split', 'concat', 'extractAudio', 'muxAudio', 'reframe', 'burnSubtitles', 'keyframes', 'loudnorm', 'transcode']);
+eq('ten recipes', R.RECIPES.map(r => r.id), ['split', 'concat', 'extractAudio', 'muxAudio', 'reframe', 'burnSubtitles', 'short', 'keyframes', 'loudnorm', 'transcode']);
 ok('every parameter says what it is for', R.RECIPES.every(r => r.params.every(p => p.describe && p.describe.length > 8)));
 ok('the presets name real recipes and real parameters', R.RECIPE_PRESETS.every(p => R.recipe(p.recipe) && !('error' in R.recipeParams(R.recipe(p.recipe), p.params))));
 
@@ -43,6 +43,17 @@ p = plan('reframe', { aspect: '16:9', mode: 'pad', height: 1080 });
 ok('pad to 1920×1080 with bars', /scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080/.test(p.runs[0][p.runs[0].indexOf('-vf') + 1]));
 p = plan('burnSubtitles', { subtitles: 'C:\\subs\\a.srt' });
 eq('a Windows path inside a filter: slashes, the drive colon escaped', p.runs[0][p.runs[0].indexOf('-vf') + 1], "subtitles='C\\:/subs/a.srt'");
+p = plan('short', { start: 12.5, end: 40, srt: '1\r\n00:00:00,500 --> 00:00:02,000\r\nMerhaba\r\n' });
+const sr = p.runs && p.runs[0];
+ok('‼️ short: ONE re-encode — seek before the input, the length after it', p.runs.length === 1 && sr[sr.indexOf('-ss') + 1] === '12.500' && sr.indexOf('-ss') < sr.indexOf('-i') && sr[sr.indexOf('-t') + 1] === '27.500' && sr.includes('libx264'));
+ok('short: reframed to 9:16 and its subtitles drawn in the same filter chain', /^crop=trunc\(min\(iw\\,ih\*0\.562500\).*,subtitles='D\\:\/out\/klip_short_12\.5-40\.srt'$/.test(sr[sr.indexOf('-vf') + 1]));
+eq('short: the SRT text is written beside the clip, line ends made plain', [path.basename(p.files[0].path), p.files[0].text], ['klip_short_12.5-40.srt', '1\n00:00:00,500 --> 00:00:02,000\nMerhaba\n']);
+eq('short: the moment is in the file name, so two cuts of one input never collide', path.basename(p.outputs[0]), 'klip_short_12.5-40.mp4');
+p = plan('short', { start: 3, end: 9 });
+ok('short: no SRT, no subtitle filter and no helper file', !p.runs[0][p.runs[0].indexOf('-vf') + 1].includes('subtitles') && p.files.length === 0);
+ok('short: an end before its start is refused in words', /end \(4s\) must be after its start \(9s\)/.test(plan('short', { start: 9, end: 4 }).error));
+ok('short: a start past the input is refused', /past the end of the input \(34\.0s\)/.test(plan('short', { start: 40, end: 50 }).error));
+ok('short: the end is required', /needs "end"/.test(plan('short', { start: 1 }).error));
 p = plan('keyframes', { mode: 'count', count: 8 });
 ok('8 key frames evenly over 34 s', p.runs[0].includes('fps=8/34.000') && p.runs[0].includes('8'));
 p = plan('keyframes', { mode: 'scene', threshold: 0.4 });

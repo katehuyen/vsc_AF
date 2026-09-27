@@ -247,6 +247,7 @@ import { checkTriggerMapping, checkWorkflowInputs } from './core/workflowInputs'
 import { setWorkflowGoal } from './core/checkpointStep';
 import { setWorkflowWake, wakeDictionary, wakeFromArg } from './core/workflowWake';
 import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from './core/workflowRoles';
+import { CONTENT_RECIPES, ContentRecipe, contentRecipe, freeTitle, recipeRoles, recipeSummary } from './core/contentRecipes';
 import { liveArgOfPoint, phoneRunList, phoneWord } from './core/workflowLive';
 import { actionOption, askKeyboard, askText, parseAskTap } from './core/workflowAsk';
 import { WorkflowAsks } from './workflowAskDoors';
@@ -8033,6 +8034,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(role ? { role } : {})
         } as WorkflowStep;
     };
+    /** workflows.add's whole save — the op, the recipe book and the command all go through it. */
+    const addWorkflowFromArgs = (args: Record<string, unknown>): FarmWorkflow => {
+        const title = argStr(args, 'title');
+        need(!taskManager.workflows.some(w => w.title === title),
+            `A workflow titled "${title}" already exists.`);
+        const stepsIn = Array.isArray(args.steps) ? args.steps as Record<string, unknown>[] : [];
+        need(stepsIn.length, 'steps is required — at least one step.');
+        const steps: WorkflowStep[] = stepsIn.map(bridgeStep);
+        const ins = checkWorkflowInputs(args.inputs, steps);
+        need(!ins.error, `inputs: ${ins.error}.`);
+        const supNo = supervisorRunRefusal(args.supervisor as WorkflowSupervisor | undefined);
+        need(!supNo, `${supNo}.`);
+        const libNo = libraryRefusal(args.library, 'workflow');
+        need(!libNo, `${libNo}.`);
+        const wk = wakeFromArg(args.wake);
+        need(!wk.error, `${wk.error}.`);
+        const prod = productionRef(agents, args.production);
+        need(!prod.error, `${prod.error}.`);
+        const rolesNo = rolesRefusal(args.roles, agents);
+        need(!rolesNo, `${rolesNo}.`);
+        const w = taskManager.addWorkflow(title, steps, ins.inputs);
+        if (prod.id) { w.production = prod.id; taskManager.persist(); }
+        const roles = cleanRoles(args.roles);
+        if (roles) { w.roles = roles; taskManager.persist(); }
+        if (wk.wake) { setWorkflowWake(w, wk.wake); taskManager.persist(); }
+        if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); taskManager.persist(); }
+        const lib = cleanLibrary(args.library as LibrarySpec | undefined);
+        if (lib) { w.library = lib; taskManager.persist(); }
+        if (args.goal !== undefined || args.criteria !== undefined) { setWorkflowGoal(w, args.goal, args.criteria); taskManager.persist(); }
+        return w;
+    };
+    /** M-53 — one recipe of the book (src/core/contentRecipes.ts) saved as a workflow, through the workflows.add validator. */
+    const installRecipe = (ref: string, o: { agent?: string; title?: string } = {}) => {
+        const r = contentRecipe(ref) as ContentRecipe;
+        need(r, `There is no recipe "${ref}" — ${CONTENT_RECIPES.map(x => x.id).join(', ')}.`);
+        need(!r.needsAgent || String(o.agent ?? '').trim(), `"${r.label}" puts one agent on its steps — pass agent.`);
+        const args = r.build({ agent: o.agent });
+        const title = freeTitle(String(o.title ?? '').trim() || args.title, taskManager.workflows.map(x => x.title));
+        const w = addWorkflowFromArgs({ ...args, title } as unknown as Record<string, unknown>);
+        return { id: w.id, title: w.title, recipe: r.id, steps: w.steps.length, roles: recipeRoles(r), inputs: (w.inputs ?? []).map(i => i.name) };
+    };
     /**
      * ‼️ U-103 — THE ARGUMENTS A MISSION OP TAKES, TRANSLATED ONCE.
      *
@@ -15794,33 +15836,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'workflows.add',
             describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id) or role? (M-53 — a role slot such as senarist or kurgu instead of an agent: the workflow roles= fills it, else the showrunner; not on a media/tool/webhook step), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), tool? (M-49 — no agent, no model: a local ffmpeg recipe; its result {outputs, runs, ms} is the step\'s JSON: {recipe (tools.recipes lists them) | preset, input (a path or a template: {input.clip}, {prev_json.outputs.0}, {item}), params? (the recipe\'s own names — a template value is filled at run time; a blank one is the preset\'s, else the recipe default — flex points tool.<recipe>.<param>), outDir? (default Farm Settings tool.outDir, else af-tool beside the input), overwrite? (never|suffix|always)} — refused at save by name), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on), wake? (wake conditions for this step alone, shaped as the workflow wake below; omit = the workflow ones, "mechanical" = none after this step), brand? (M-50 — this step\'s own brand kit fields — style, negative, colors, typography, voice, aspect, duration, logo, logoPlace, character — over its production\'s, the shape studio.brand.set takes; studio.brand.get workflow= step= shows what it reads and from where)} — advanced webhook/media/browser fields pass through as in the builder; a media step\'s media.projectId is its own production, whose brand kit it reads]), roles? (M-53 — {"<role>": "<agent name|id>"}: which agent fills each role the steps name; an open role goes to the showrunner, agentFarm.showrunner; workflows.roles says who and why), production? (M-50 — the production (id or title) whose brand kit every step reads as {brand.<path>} — {brand.style}, {brand.character.<key>.ref}; set the kit with studio.brand.set; refused when no such production exists), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), library? (X-418 — where every file the run makes is filed and recorded in the local Airtable: {base? (the Airtable database; default the Airtable page\'s default), lang?, autoStart? (ask|auto|never, default auto — a closed engine is started first), record? (all = failures too, the default | passed | none = the library is off), template? (default <Type>-<Stage> when the base has it), stages? (X-417 — this production\'s own stage folder per kind of file: {input?, intermediate? (parts and passed candidates), failed?, rejected?, final?} → source|raw|semi|final|asset; blank = the built-in source · semi · raw · raw · final), enrich? (X-419 — a model looks at the recorded files and fills their record\'s meaning: {when? (end = once the run has ended, the default | record = as each file is final or failed | never), scope? (final-failed, the default | final | all), model? (images, claude; default sonnet), videoModel? (video, agy; default gemini-3.8-flash-low), effort? (claude; default low), sections? (comma list: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage), cap? (dollars per record, enforced on claude only)}; blank = the Farm settings agentFarm.libraryEnrich*; one record at a time with media.enrich)}; a media or tool step overrides it with steps[].library {base?, lang?, record?, template?, stage? (source|raw|semi|final|asset — its files go there, never promoted at the end)}; unset stage: a candidate or part → semi, a FAIL or a left-out → raw, the run\'s last output → final, its inputs from outside the library → source), wake? (M-45 — what wakes the supervisor after a step ends: "mechanical" (never — the default), "smart" (every step), "hybrid" (a failed quality check, a failed step, the run past $2) or a condition list [{id, field, operator, value?} | {id, all:[…]}] over workflows.wakeFields; ORed. Nothing fires = the mechanical path unchanged; something fires = the supervisor decides as at a checkpoint, and the row names the condition), inputs? ([{name, type? (file|folder|text|choice|number|url|airtable, default text), default?, required?, description?, choices? (choice), airtable? (X-420 — type airtable: a search of the local Airtable run before the first step, its records becoming the value as a JSON list of {id, file, name, stage, type, topic, tags, status, failed} — a for-each step walks it with {item.file} / {item.id}: {base?, query? (every word in name/topic/tags/description/file name), stages? (comma list; default the setting agentFarm.airtableInputStages, else asset, final), kind? (image|video|audio), status?, tags? (all of them), success? (passed|failed), limit? (1-200, default 20), sort? (newest|oldest|name, default newest)}; a run value is search text, or a file path = that file\'s own record; agent steps of such a run are told to look in that database first; preview with media.find)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
-                const title = argStr(args, 'title');
-                need(!taskManager.workflows.some(w => w.title === title),
-                    `A workflow titled "${title}" already exists.`);
-                const stepsIn = Array.isArray(args.steps) ? args.steps as Record<string, unknown>[] : [];
-                need(stepsIn.length, 'steps is required — at least one step.');
-                const steps: WorkflowStep[] = stepsIn.map(bridgeStep);
-                const ins = checkWorkflowInputs(args.inputs, steps);
-                need(!ins.error, `inputs: ${ins.error}.`);
-                const supNo = supervisorRunRefusal(args.supervisor as WorkflowSupervisor | undefined);
-                need(!supNo, `${supNo}.`);
-                const libNo = libraryRefusal(args.library, 'workflow');
-                need(!libNo, `${libNo}.`);
-                const wk = wakeFromArg(args.wake);
-                need(!wk.error, `${wk.error}.`);
-                const prod = productionRef(agents, args.production);
-                need(!prod.error, `${prod.error}.`);
-                const rolesNo = rolesRefusal(args.roles, agents);
-                need(!rolesNo, `${rolesNo}.`);
-                const w = taskManager.addWorkflow(title, steps, ins.inputs);
-                if (prod.id) { w.production = prod.id; taskManager.persist(); }
-                const roles = cleanRoles(args.roles);
-                if (roles) { w.roles = roles; taskManager.persist(); }
-                if (wk.wake) { setWorkflowWake(w, wk.wake); taskManager.persist(); }
-                if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); taskManager.persist(); }
-                const lib = cleanLibrary(args.library as LibrarySpec | undefined);
-                if (lib) { w.library = lib; taskManager.persist(); }
-                if (args.goal !== undefined || args.criteria !== undefined) { setWorkflowGoal(w, args.goal, args.criteria); taskManager.persist(); }
+                const w = addWorkflowFromArgs(args);
                 return { id: w.id, title: w.title, steps: w.steps.length };
             }
         },
@@ -15869,6 +15885,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const w = bridgeWorkflow(optStr(args, 'workflow') || optStr(args, 'id') || argStr(args, 'title'));
                 return rolesReport(w, cfg().get<string>('showrunner', 'youtuber'), agents);
             }
+        },
+        {
+            op: 'workflows.recipes',
+            describe: 'M-53 — THE RECIPE BOOK: every recipe workflows.addRecipe installs, the list the New Recipe Workflow command offers. Answers [{id, label, kind (content = its steps name roles, filled by the workflow roles box or the showrunner | quick = one agent is put on its agent steps), describe, needsAgent, roles, steps, inputs (* = required)}].',
+            handler: () => CONTENT_RECIPES.map(recipeSummary)
+        },
+        {
+            op: 'workflows.addRecipe',
+            describe: 'M-53 — install one recipe as a workflow in one call, through the same save and validator as workflows.add. args: recipe (an id or label off workflows.recipes), agent? (name|id — required by a quick recipe, which puts it on its agent steps), title? (default the recipe\'s own; a taken title gets " (2)"). A content recipe pins no judge or supervisor model, so the cost preset in force (presets.apply Economy · Balanced · Quality) decides them; its roles go to the showrunner until bound — workflows.update roles=, or one run with workflows.run roles=. Answers {id, title, recipe, steps, roles, inputs}.',
+            handler: (args) => installRecipe(optStr(args, 'recipe') || optStr(args, 'id') || argStr(args, 'recipe'),
+                { agent: optStr(args, 'agent') || undefined, title: optStr(args, 'title') || undefined })
         },
         {
             op: 'workflows.step.add',
@@ -38597,66 +38624,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.addRecipe', async () => {
-            const recipes: { label: string; description: string; build: (agent: AgentInfo) => WorkflowStep[] }[] = [
-                // Labels/titles are UI (English); step prompts stay Turkish —
-                // they are instructions to the user's Turkish-speaking agents.
-                {
-                    label: 'Text → Image',
-                    description: 'the agent writes the image prompt, Flux renders it',
-                    build: (agent) => [
-                        {
-                            agentId: agent.id, agentName: agent.name, title: 'image prompt',
-                            prompt: 'Şu konu için tek paragraflık, İngilizce, ayrıntılı bir görsel üretim promptu yaz (sadece promptu yaz): KONUYU BURAYA YAZ',
-                            mode: 'headless'
-                        },
-                        {
-                            agentId: '', agentName: 'media', title: 'render image', prompt: '', mode: 'headless',
-                            media: { model: 'fal-ai/flux/schnell', input: '{"prompt": "{prev_text}"}' }
-                        }
-                    ]
-                },
-                {
-                    label: 'Text → Image → Video',
-                    description: 'content factory: prompt → image → short video',
-                    build: (agent) => [
-                        {
-                            agentId: agent.id, agentName: agent.name, title: 'scene prompt',
-                            prompt: 'Şu konu için İngilizce, sinematik tek paragraf görsel/video promptu yaz (sadece promptu): KONUYU BURAYA YAZ',
-                            mode: 'headless'
-                        },
-                        {
-                            agentId: '', agentName: 'media', title: 'cover image', prompt: '', mode: 'headless',
-                            media: { model: 'fal-ai/flux/schnell', input: '{"prompt": "{prev_text}"}' }
-                        },
-                        {
-                            agentId: '', agentName: 'media', title: 'short video', prompt: '', mode: 'headless',
-                            media: { model: 'fal-ai/kling-video/v2/master/text-to-video', input: '{"prompt": "{prev_text}", "duration": "5"}', timeoutMin: 20 }
-                        }
-                    ]
-                },
-                {
-                    label: 'Audio → Text (Whisper)',
-                    description: 'transcribe the audio file, the agent summarizes it',
-                    build: (agent) => [
-                        {
-                            agentId: '', agentName: 'media', title: 'transcript', prompt: '', mode: 'headless',
-                            media: { model: 'fal-ai/whisper', input: '{"audio_url": "SES DOSYASI URL BURAYA"}' }
-                        },
-                        {
-                            agentId: agent.id, agentName: agent.name, title: 'summarize',
-                            prompt: 'Şu transkripti Türkçe maddelerle özetle: {prev_text}',
-                            mode: 'headless'
-                        }
-                    ]
-                }
-            ];
-            const pick = await vscode.window.showQuickPick(recipes, { ignoreFocusOut: true, placeHolder: 'Pick a recipe (steps are editable after install)' });
+            const items = CONTENT_RECIPES.map(r => ({
+                label: r.label, description: r.describe, id: r.id, needsAgent: r.needsAgent,
+                detail: r.needsAgent ? 'asks for one agent' : `roles ${recipeRoles(r).join(', ')} — the Roles box or the showrunner fills them`
+            }));
+            const pick = await vscode.window.showQuickPick(items, { ignoreFocusOut: true, matchOnDescription: true, placeHolder: 'Pick a recipe — it is installed as a workflow you can edit' });
             if (!pick) { return; }
-            const agent = await resolveAgent(undefined);
-            if (!agent) { return; }
-            taskManager.addWorkflow(pick.label, pick.build(agent));
-            void vscode.window.showInformationMessage(
-                `Agent Farm: "${pick.label}" recipe installed — edit the steps (the KONU/URL placeholders) under Tasks → Workflows and run with ▶. Media steps need the FAL_KEY secret.`);
+            let agentRef: string | undefined;
+            if (pick.needsAgent) {
+                const agent = await resolveAgent(undefined);
+                if (!agent) { return; }
+                agentRef = agent.id;
+            }
+            try {
+                const res = installRecipe(pick.id, { agent: agentRef });
+                void vscode.window.showInformationMessage(pick.needsAgent
+                    ? `Agent Farm: "${res.title}" installed — edit the KONU/URL placeholders under Tasks → Workflows and run with ▶. Media steps need the FAL_KEY secret.`
+                    : `Agent Farm: "${res.title}" installed — run it with ▶ or Run with…; its roles (${res.roles.join(', ')}) go to the showrunner unless you bind them. Media steps need the FAL_KEY secret.`);
+            } catch (err) {
+                void vscode.window.showErrorMessage(`Agent Farm: ${err instanceof Error ? err.message : String(err)}`);
+            }
         }),
 
         // ‼️ THE VAULT'S OWN CARD — U-14, surface 5. Two input boxes could ask

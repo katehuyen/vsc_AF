@@ -7,7 +7,7 @@
  */
 import * as path from 'path';
 
-export type RecipeId = 'split' | 'concat' | 'extractAudio' | 'muxAudio' | 'reframe' | 'burnSubtitles' | 'keyframes' | 'loudnorm' | 'transcode';
+export type RecipeId = 'split' | 'concat' | 'extractAudio' | 'muxAudio' | 'reframe' | 'burnSubtitles' | 'short' | 'keyframes' | 'loudnorm' | 'transcode';
 export type Overwrite = 'never' | 'always' | 'suffix';
 export interface RecipeParam {
     name: string;
@@ -91,6 +91,14 @@ export const filterPath = (p: string): string => `'${p.replace(/\\/g, '/').repla
 
 const ratio = (a: string): number => { const [w, h] = a.split(':').map(Number); return w / h; };
 const even = (x: number): number => Math.max(2, Math.round(x / 2) * 2);
+const secs = (x: number): string => String(Math.round(x * 10) / 10);
+/** The reframe filter: crop to the aspect from the centre, or fit inside it with bars. */
+function reframeVf(p: Record<string, unknown>): string {
+    const a = ratio(p.aspect as string);
+    if (p.mode === 'crop') { return `crop=trunc(min(iw\\,ih*${a.toFixed(6)})/2)*2:trunc(min(ih\\,iw/${a.toFixed(6)})/2)*2`; }
+    const H = even(p.height as number), W = even(H * a);
+    return `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+}
 
 /**
  * The plan for one call. `durationSec` is the input's length (split and
@@ -162,15 +170,26 @@ export function planRecipe(call: RecipeCall, facts: { durationSec?: number; exis
                     files: [], outputs: [f]
                 };
             }
-            case 'reframe': {
-                const a = ratio(p.aspect as string), tag = String(p.aspect).replace(':', 'x');
-                const vf = p.mode === 'crop'
-                    ? `crop=trunc(min(iw\\,ih*${a.toFixed(6)})/2)*2:trunc(min(ih\\,iw/${a.toFixed(6)})/2)*2`
-                    : (() => { const H = even(p.height as number), W = even(H * a); return `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1`; })();
-                return one(['-vf', vf, '-c:a', 'copy'], out(`${base}_${tag}${ext}`));
-            }
+            case 'reframe':
+                return one(['-vf', reframeVf(p), '-c:a', 'copy'], out(`${base}_${String(p.aspect).replace(':', 'x')}${ext}`));
             case 'burnSubtitles':
                 return one(['-vf', `subtitles=${filterPath(String(p.subtitles))}`, '-c:a', 'copy'], out(`${base}_subbed${ext}`));
+            case 'short': {
+                // seeking before -i restarts the clock at the moment, so the SRT is timed from its first frame
+                const s = p.start as number, e = p.end as number;
+                if (e <= s) { return { error: `short end (${e}s) must be after its start (${s}s)` }; }
+                if (facts.durationSec && s >= facts.durationSec) { return { error: `short start (${s}s) is past the end of the input (${facts.durationSec.toFixed(1)}s)` }; }
+                const f = out(`${base}_short_${secs(s)}-${secs(e)}${ext}`);
+                const srt = String(p.srt ?? '').trim();
+                const subFile = f.slice(0, f.length - path.extname(f).length) + '.srt';
+                const vf = reframeVf(p) + (srt ? `,subtitles=${filterPath(subFile)}` : '');
+                return {
+                    runs: [[...head, '-ss', s.toFixed(3), '-i', call.input!, '-t', (e - s).toFixed(3), '-vf', vf,
+                        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', f]],
+                    files: srt ? [{ path: subFile, text: srt.replace(/\r\n/g, '\n') + '\n' }] : [],
+                    outputs: [f]
+                };
+            }
             case 'keyframes': {
                 const pattern = out(`${base}_kf%03d.jpg`);
                 if (p.mode === 'scene') {

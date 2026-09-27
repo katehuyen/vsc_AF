@@ -75,7 +75,10 @@ eq('kinds', [K.kindOfStep({}), K.kindOfStep({ media: {} }), K.kindOfStep({ check
     const block = op => { const i = ext.indexOf(`op: '${op}'`); return i < 0 ? '' : ext.slice(i, ext.indexOf('\n        },', i)); };
     ok('workflows.wakeFields is registered and answers the core\'s dictionary', /handler: \(\) => wakeDictionary\(\)/.test(block('workflows.wakeFields')));
     for (const op of ['workflows.add', 'workflows.update', 'workflows.run']) {
-        ok(`${op} reads wake through wakeFromArg and says so in its describe`, /wakeFromArg\(args\.wake\)/.test(block(op)) && /wake\?/.test(block(op)));
+        // workflows.add hands its whole save to addWorkflowFromArgs, which the recipe book shares
+        const reads = op === 'workflows.add' ? /addWorkflowFromArgs\(args\)/.test(block(op)) && /const addWorkflowFromArgs = [\s\S]{0,1500}wakeFromArg\(args\.wake\)/.test(ext)
+            : /wakeFromArg\(args\.wake\)/.test(block(op));
+        ok(`${op} reads wake through wakeFromArg and says so in its describe`, reads && /wake\?/.test(block(op)));
     }
     ok('a bridge step reads its own wake through the same door', /wakeFromArg\(raw\.wake\)/.test(ext));
     const d = K.wakeDictionary();

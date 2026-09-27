@@ -434,8 +434,8 @@
         "cmd:agentfarm.addRecipe"
       ],
       "ops": [
-        "workflows.add",
-        "workflows.step.update"
+        "workflows.addRecipe",
+        "workflows.recipes"
       ]
     },
     {

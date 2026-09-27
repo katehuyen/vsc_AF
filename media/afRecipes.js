@@ -1,6 +1,6 @@
 // Agent Farm — THE TOOL STEP'S RECIPES, AS DATA. (M-49)
 //
-// The nine ffmpeg recipes and their presets, declared once: `src/core/mediaRecipes.ts`
+// The ten ffmpeg recipes and their presets, declared once: `src/core/mediaRecipes.ts`
 // builds their argument lists from this, `media/afTool.js` draws the step form
 // from it, and `media/afFlex.js` makes every parameter a step-level flex point
 // `tool.<recipe>.<param>` out of it. Lives in `media/` because the page needs it
@@ -31,6 +31,10 @@
             params: [e('aspect', '9:16', ['16:9', '9:16', '1:1'], 'The target aspect.'), e('mode', 'crop', ['crop', 'pad'], 'crop = fill the frame, losing the sides · pad = keep all, add bars.'), n('height', 1920, 240, 4320, 'The output height in pixels (pad).')] },
         { id: 'burnSubtitles', label: 'Burn in subtitles', input: true, describe: 'Draw a subtitle file (.srt, .ass) onto the picture.',
             params: [{ name: 'subtitles', type: 'file', required: true, describe: 'The subtitle file.' }] },
+        { id: 'short', label: 'Cut a short', input: true, describe: 'Cut one moment out of the input, reframe it and draw its subtitles, in a single re-encode (three recipes chained would re-encode three times).',
+            params: [n('start', 0, 0, 86400, 'Where the moment starts, seconds into the input.'), { name: 'end', type: 'number', min: 0, max: 86400, required: true, describe: 'Where the moment ends, seconds into the input.' },
+                e('aspect', '9:16', ['9:16', '1:1', '16:9'], 'The target aspect.'), e('mode', 'crop', ['crop', 'pad'], 'crop = fill the frame, losing the sides · pad = keep all, add bars.'), n('height', 1920, 240, 4320, 'The output height in pixels (pad).'),
+                { name: 'srt', type: 'text', describe: 'The subtitles as SRT text, timed from the start of the moment (00:00:00,000 = its first frame); blank = no subtitles.' }] },
         { id: 'keyframes', label: 'Key frames', input: true, describe: 'Save stills: N evenly spaced, or one at each scene change.',
             params: [e('mode', 'count', ['count', 'scene'], 'count = N evenly spaced · scene = at each cut.'), n('count', 8, 1, 200, 'How many (count).'), n('threshold', 0.3, 0.05, 0.9, 'How big a change is a cut (scene).')] },
         { id: 'loudnorm', label: 'Normalise loudness', input: true, describe: 'Bring the sound to a broadcast loudness (EBU R128); the picture is copied untouched.',
