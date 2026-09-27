@@ -2711,10 +2711,25 @@
     /** The Live category, with the two alert-sound boxes replaced by the card
      *  IN THEIR OWN PLACE — beside the notification switches, where the reader
      *  who confused the two will be looking. */
+    // U-158 — the stuck warning is one question (after how long, and whether it sounds), so it is one group
+    const STUCK_KEYS = ['agentFarm.stuckThresholdSeconds', 'agentFarm.notifyStuck'];
+
+    function stuckGroup(items) {
+        const mine = STUCK_KEYS.map(k => items.find(it => it.key === k)).filter(Boolean);
+        if (!mine.length) { return ''; }
+        return `<div class="setgroup" id="stuck-warning">
+                <h3 class="setgrouph">Stuck warning</h3>
+                <div class="setgroupwhy">A session that is working and says nothing for this many seconds is marked stalled: Needs You gets a row, and the alert plays if it is on. Set any value; 0 turns the warning off — no session is ever marked stalled, however long it is silent.</div>
+                ${mine.map(itemHtml).join('')}
+            </div>`;
+    }
+
     function alertsSection(cat) {
         const al = DATA.alerts;
-        const items = (cat && cat.items) || [];
-        if (!al) { return items.map(itemHtml).join(''); }
+        const all = (cat && cat.items) || [];
+        const items = all.filter(it => STUCK_KEYS.indexOf(it.key) < 0);
+        const stuck = stuckGroup(all);
+        if (!al) { return items.map(itemHtml).join('') + stuck; }
         // Whichever of the two the filter leaves standing draws the card, once.
         // Keyed on `alerts.on` alone, a search for "voice" would file the card
         // away with the box it replaced.
@@ -2726,7 +2741,7 @@
             if (drawn) { return ''; }
             drawn = true;
             return alertsCard(al);
-        }).join('');
+        }).join('') + stuck;
     }
 
     function render() {

@@ -1350,7 +1350,7 @@ Kaldırmak için: **Agent Farm: Remove Live Hooks** — yalnızca Agent Farm'ın
 | Ayar | Varsayılan | Ne zaman |
 | --- | --- | --- |
 | `agentFarm.notifyPermission` | açık | Ajan izin onayı beklemeye başlayınca |
-| `agentFarm.notifyStuck` | açık | Çalışan oturumdan `stuckThresholdSeconds` (240 sn) boyunca olay gelmeyince |
+| `agentFarm.notifyStuck` | açık | Çalışan oturumdan `stuckThresholdSeconds` (240 sn; 0 = asla) boyunca olay gelmeyince |
 | `agentFarm.notifyTurnEnd` | kapalı | Ajan turunu her bitirdiğinde (gürültülü olabilir) |
 
 Bildirimdeki **Open Timeline** düğmesi seni doğrudan kulvar görünümüne götürür. Ayrıca durum çubuğu izin/takılma varken sarıya döner: `🤖 2 active • $1.42 today • 🔔 1 waiting`.
@@ -3622,7 +3622,7 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
 | `agentFarm.liveMonitor` | true | Canlı olay dinleyicisini çalıştır |
 | `agentFarm.livePort` | 8377 | Dinleyici portu (değiştirince hook'ları yeniden kur) |
-| `agentFarm.stuckThresholdSeconds` | 240 | Takılma eşiği |
+| `agentFarm.stuckThresholdSeconds` | 240 | Takılma eşiği; 0 = hiçbir oturum takıldı sayılmaz, uyarı verilmez (U-158, 3.724.0 — Farm Settings "Stuck warning" grubu) |
 | `agentFarm.notifyPermission` | true | İzin bekleme bildirimi |
 | `agentFarm.notifyStuck` | true | Takılma bildirimi |
 | `agentFarm.notifyTurnEnd` | false | Tur sonu bildirimi |

@@ -160,6 +160,11 @@ interface HookPayload {
     engine?: string;
 }
 
+/** U-158 — agentFarm.stuckThresholdSeconds 0 (or less, or not a number) = never mark a session stalled. */
+export function stuckOn(cfg: Pick<LiveConfig, 'stuckThresholdMs'>): boolean {
+    return Number.isFinite(cfg.stuckThresholdMs) && cfg.stuckThresholdMs > 0;
+}
+
 export interface LiveConfig {
     enabled: boolean;
     port: number;
@@ -676,7 +681,7 @@ export class LiveMonitor implements vscode.Disposable {
             if (s.status === 'ended') { this.sessionsMap.delete(id); continue; }
             // Mid-work before the reload: either the next hook event refreshes it,
             // or it is long gone — mark it stalled without notifying.
-            if ((s.status === 'working' || s.status === 'tool') && now - s.lastEventTs > cfg.stuckThresholdMs) {
+            if (stuckOn(cfg) && (s.status === 'working' || s.status === 'tool') && now - s.lastEventTs > cfg.stuckThresholdMs) {
                 s.status = 'stalled';
                 s.notifiedStuck = true;
             }
@@ -1306,7 +1311,7 @@ export class LiveMonitor implements vscode.Disposable {
         const now = Date.now();
         let changed = false;
         for (const s of this.sessionsMap.values()) {
-            if ((s.status === 'working' || s.status === 'tool') &&
+            if (stuckOn(cfg) && (s.status === 'working' || s.status === 'tool') &&
                 now - s.lastEventTs > cfg.stuckThresholdMs) {
                 s.status = 'stalled';
                 changed = true;

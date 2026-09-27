@@ -1309,7 +1309,7 @@ Opens with the **Agent Farm: Open Live Timeline** command or the pulse icon in t
 | Setting | Default | When |
 | --- | --- | --- |
 | `agentFarm.notifyPermission` | on | When an agent starts waiting for permission approval |
-| `agentFarm.notifyStuck` | on | When no event arrives from a running session for `stuckThresholdSeconds` (240s) |
+| `agentFarm.notifyStuck` | on | When no event arrives from a running session for `stuckThresholdSeconds` (240s; 0 = never) |
 | `agentFarm.notifyTurnEnd` | off | Every time an agent finishes its turn (can be noisy) |
 
 The **Open Timeline** button in the notification takes you straight to the swim-lane view. The status bar also turns yellow when there's a permission/stall: `🤖 2 active • $1.42 today • 🔔 1 waiting`.
@@ -3575,7 +3575,7 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 | `agentFarm.pricing` | the table above | Model pricing rules |
 | `agentFarm.liveMonitor` | true | Run the live event listener |
 | `agentFarm.livePort` | 8377 | Listener port (reinstall hooks when you change it) |
-| `agentFarm.stuckThresholdSeconds` | 240 | Stall threshold |
+| `agentFarm.stuckThresholdSeconds` | 240 | Stall threshold; 0 = never mark a session stalled (U-158, 3.724.0 — Farm Settings "Stuck warning" group) |
 | `agentFarm.notifyPermission` | true | Permission-wait notification |
 | `agentFarm.notifyStuck` | true | Stall notification |
 | `agentFarm.notifyTurnEnd` | false | Turn-end notification |

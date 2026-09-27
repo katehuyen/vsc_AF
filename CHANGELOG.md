@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.724.0 - The stuck warning can be tuned or turned off (U-158) (2026-09-28)
+
+- Farm Settings → Live Monitoring & Alerts has a "Stuck warning" group: how
+  many seconds a working session may stay silent before it is marked
+  stalled (stuckThresholdSeconds — any value), and whether it sounds
+  (notifyStuck). 0 turns the warning off: no session is ever marked
+  stalled, no Needs You row, no alert, however long it is silent.
+
 ## 3.723.0 - A relay survives engine faults (X-427) (2026-09-28)
 
 - A turn that failed on the engine's side used to leave a relay leg idle for

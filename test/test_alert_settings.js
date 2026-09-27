@@ -43,6 +43,21 @@ const byAttr = (p, attr, key) =>
     p.query(`[data-${attr}]`).find(b => b.dataset[attr] === key);
 
 // ---------------------------------------------------------------------------
+// 0. U-158 — the stuck warning is its own group, and says that 0 turns it off
+// ---------------------------------------------------------------------------
+{
+    const html = open(fx.inUse()).html();
+    const g = html.indexOf('id="stuck-warning"');
+    ok('‼️ a "Stuck warning" group holds the threshold and its alert', g >= 0 && /Stuck warning/.test(html)
+        && html.indexOf('data-item="agentFarm.stuckThresholdSeconds"') > g && html.indexOf('data-item="agentFarm.notifyStuck"') > g);
+    ok('…drawn once each, and it says 0 turns the warning off', (html.match(/data-item="agentFarm\.stuckThresholdSeconds"/g) || []).length === 1
+        && /0 turns the warning off/.test(html));
+    ok('…after the alert sounds card, as the threshold always was', html.indexOf('🔔 Alert sounds') < g);
+    const plain = open(Object.assign(fx.inUse(), { alerts: undefined })).html();
+    ok('…also on a build that sends no alerts card', /id="stuck-warning"/.test(plain) && (plain.match(/data-item="agentFarm\.notifyStuck"/g) || []).length === 1);
+}
+
+// ---------------------------------------------------------------------------
 // 1. the card replaces the boxes — in their place, and once
 // ---------------------------------------------------------------------------
 {

@@ -48,6 +48,11 @@ const ITEMS = (on, voices) => ([
         key: 'agentFarm.stuckThresholdSeconds', type: 'number', default: 180,
         value: 180, modified: false,
         description: 'Seconds of silence before a working session is called stalled.'
+    },
+    {
+        key: 'agentFarm.notifyStuck', type: 'boolean', default: true,
+        value: true, modified: false,
+        description: 'Show a notification when an agent looks stalled — after stuckThresholdSeconds of silence (0 there = never).'
     }
 ]);
 

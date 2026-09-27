@@ -128,19 +128,34 @@ function rig(over = {}) {
 
 // ------------------------------------------------------------------- stalled
 {
-    // A threshold below zero makes "any elapsed time at all" stalled, so the
-    // sweep can be driven in one tick without a sleep deciding the result.
-    const { live, cfg, seen, ev } = rig({ stuckThresholdMs: -1 });
+    // A 1 ms threshold and a 3 ms spin make the silence long enough on every
+    // machine, so no sleep decides the result (0 is "never" since U-158).
+    const spin = () => { const t = Date.now(); while (Date.now() - t < 3) { /* spin */ } };
+    const { live, cfg, seen, ev } = rig({ stuckThresholdMs: 1 });
     ev('S1', 'SessionStart', {});
     ev('S1', 'UserPromptSubmit', { prompt: 'hi' });
     eq('working session has emitted nothing yet', seen, []);
+    spin();
     live.checkStuck();
     eq('crossing into stalled emits once', seen, ['S1:stalled']);
     // ‼️ THE STATUS IS REWRITTEN ON EVERY SWEEP while it stays stuck, so the
     // edge is the "already told you" flag and not the assignment.
     live.checkStuck();
     eq('staying stalled does not re-emit', seen, ['S1:stalled']);
-    eq('cfg untouched', cfg.stuckThresholdMs, -1);
+    eq('cfg untouched', cfg.stuckThresholdMs, 1);
+}
+{
+    // ‼️ U-158 — 0 means NEVER: however long a working session is silent, it is not marked stalled and nothing is said.
+    const { live, seen, ev } = rig({ stuckThresholdMs: 0 });
+    ev('S0', 'SessionStart', {});
+    ev('S0', 'UserPromptSubmit', { prompt: 'hi' });
+    const t = Date.now(); while (Date.now() - t < 3) { /* spin */ }
+    live.checkStuck();
+    eq('threshold 0: no stalled alert', seen, []);
+    eq('threshold 0: the session stays working', live.sessions().find(s => s.sessionId === 'S0').status, 'working');
+    const L = require(path.resolve(__dirname, '../out/core/live.js'));
+    eq('stuckOn: 0, negative and not-a-number are off; any positive value is on',
+        [0, -5, NaN, 1, 240000].map(ms => L.stuckOn({ stuckThresholdMs: ms })), [false, false, false, true, true]);
 }
 
 // ------------------------------- a host that throws must not break the farm
