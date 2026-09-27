@@ -930,6 +930,27 @@ const variants = () => ([
             });
         }
     },
+    // U-151 — the workflow form's enrich boxes: the empty ones show the Farm Settings value faint, the
+    // one this workflow sets carries ↑, pressed — the only level above a workflow here is everywhere.
+    {
+        id: 'tasks-wf-library-promote',
+        label: 'Tasks → a workflow form\'s "Fill the records" boxes: Farm Settings values faint, ↑ pressed on the model this workflow sets — make it the default everywhere, or ↺ back (U-151)',
+        data: (() => { const d = data(); d.launch.flexSettings = { 'library.enrich.effort': 'medium', 'library.enrich.when': 'end', 'library.enrich.cap': 0.1 }; return d; })(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w12', title: '34 sn dilim', stepIdx: null, libBase: '', libLang: '', libStart: '', libRecord: '', libTemplate: '',
+                    libMapInput: '', libMapIntermediate: '', libMapFailed: '', libMapRejected: '', libMapFinal: '',
+                    libEnWhen: '', libEnScope: '', libEnModel: 'opus', libEnVideo: '', libEnEffort: '', libEnSections: '', libEnCap: '',
+                    steps: [{ sid: 's1', stype: 'tool', title: 'Böl', toolJson: '{"recipe":"split","input":"{input.clip}"}' }]
+                }
+            });
+            const up = r.query('[data-flexup]').find(e => e.dataset.flexup === 'library.enrich.model');
+            if (!up) { throw new Error('no ↑ beside the enrich model box'); }
+            up.click();
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',

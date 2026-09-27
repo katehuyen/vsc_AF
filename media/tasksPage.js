@@ -2254,7 +2254,7 @@
                 : stepCardHtml(c)}
             ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}
             ${window.AFCheckpoint ? window.AFCheckpoint.goalEditor(c, C) : ''}
-            ${window.AFLibrary ? window.AFLibrary.wfEditor(c, C) : ''}
+            ${window.AFLibrary ? window.AFLibrary.wfEditor(c, C, window.AFFlexPromote ? { open: supUp } : undefined, (DATA.launch || {}).flexSettings) : ''}
             ${window.AFWake ? window.AFWake.workflowBlock(c, DATA.wakeDict, C) : ''}`;
     }
 
@@ -3258,15 +3258,26 @@
     function supPromote(c) {
         if (!window.AFFlexPromote) { return undefined; }
         const p = ((DATA.launch || {}).projects || []).find(x => c && x.id === c.project);
-        return { open: supUp, levels: window.AFFlexPromote.levelsFor(c && c.agent, p ? { id: p.id, name: p.name } : null) };
+        return { open: supUp.indexOf('retry.supervisor.') === 0 ? supKey(supUp) : '', levels: window.AFFlexPromote.levelsFor(c && c.agent, p ? { id: p.id, name: p.name } : null) };
     }
     const supKey = point => String(point || '').replace('retry.supervisor.', '');
     const supOwn = () => {
         const r = (composer || {}).retrySupervisor || {};
         return Object.keys(r).filter(k => String(r[k] == null ? '' : r[k]).trim()).sort().join(',');
     };
+    /** U-151 — the draft field a promotable point lives in: the supervisor row's, or the workflow form's enrich box. */
+    function flexValue(point) {
+        if (String(point).indexOf('retry.supervisor.') === 0) { return ((composer || {}).retrySupervisor || {})[supKey(point)]; }
+        const k = window.AFLibrary ? window.AFLibrary.draftKeyOf(point) : '';
+        return k ? (composer || {})[k] : undefined;
+    }
     function supDrop(point) {
-        if (composer && composer.retrySupervisor) { composer.retrySupervisor[supKey(point)] = ''; }
+        if (String(point).indexOf('retry.supervisor.') === 0) {
+            if (composer && composer.retrySupervisor) { composer.retrySupervisor[supKey(point)] = ''; }
+        } else {
+            const k = window.AFLibrary ? window.AFLibrary.draftKeyOf(point) : '';
+            if (composer && k) { composer[k] = ''; }
+        }
         supUp = '';
         render();
     }
@@ -4517,9 +4528,9 @@
             }));
             if (window.AFFlexPromote) {
                 window.AFFlexPromote.wire(document, m => vscode.postMessage(m), {
-                    open: point => { readComposer(); supUp = supUp === supKey(point) ? '' : supKey(point); render(); },
+                    open: point => { readComposer(); supUp = supUp === point ? '' : point; render(); },
                     back: point => { readComposer(); supDrop(point); },
-                    value: point => { readComposer(); return ((composer || {}).retrySupervisor || {})[supKey(point)]; }
+                    value: point => { readComposer(); return flexValue(point); }
                 });
             }
             byId('nt-tier', 'change', () => { readComposer(); });
@@ -4700,7 +4711,7 @@
                 render();
             });
             if (window.AFCheckpoint) { window.AFCheckpoint.wireGoal(byId, () => composer); }
-            if (window.AFLibrary) { window.AFLibrary.wireWf(byId, () => composer); }
+            if (window.AFLibrary) { window.AFLibrary.wireWf(byId, () => composer, window.AFFlexPromote ? render : null); }
             if (window.AFWake) { window.AFWake.wireWorkflow(byId, () => composer, DATA.wakeDict, render); }
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',

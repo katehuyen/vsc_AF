@@ -76,6 +76,29 @@ const start = () => { const r = runPage(fixture.script, variant.data, fixture.wi
         r.query('#nt-supmodel')[0].value === '' && r.posted.slice(before).every(m => m.type !== 'flexPromote'));
 }
 
+console.log('== the workflow form (library.enrich) ==');
+{
+    ok('a box names its point through the registry', P.pointAt('media/afLibrary.js#wf-libEnModel') === 'library.enrich.model'
+        && P.pointAt('media/nowhere.js#x') === '');
+    ok('above a workflow, an enrich point has only everywhere', P.levelsAbove('library.enrich.model', 'workflow', {}).map(l => l.level).join() === 'settings');
+    ok('the registry decides the levels: a supervisor point above a run',
+        P.levelsAbove('retry.supervisor.model', 'run', { agent: 'developer', project: { id: 'prj_1', name: 'AgentFarm' } }).map(l => l.level).join() === 'project,agent,settings');
+    ok('a level the run has no target for is left out', P.levelsAbove('retry.supervisor.model', 'run', {}).map(l => l.level).join() === 'settings');
+    const wv = fixture.variants().find(v => v.id === 'tasks-wf-library-promote');
+    const r = runPage(fixture.script, wv.data, fixture.window || {}, wv.state);
+    wv.act(r);
+    const html = r.html();
+    ok('an empty box shows its Farm Settings value faint', /placeholder="medium — Farm Settings"/.test(html) && /placeholder="0\.1 — Farm Settings"/.test(html));
+    ok('…and an empty select says it too, SHORTHAND', /↳ at the run&#39;s end|↳ at the run's end/.test(html));
+    ok('↑ only beside the box this workflow sets', (html.match(/data-flexup="/g) || []).length === 1);
+    r.query('[data-flexup-to]').find(e => e.dataset.level === 'settings').click();
+    const m = r.last();
+    ok('‼️ everywhere posts the enrich point with its value', m && m.type === 'flexPromote' && m.point === 'library.enrich.model'
+        && m.level === 'settings' && m.target === '' && m.value === 'opus');
+    r.send({ type: 'flexPromoted', point: 'library.enrich.model' });
+    ok('written: the workflow\'s box empties', r.query('#nt-wf-libEnModel')[0].value === '' && !/data-flexup-strip=/.test(r.html()));
+}
+
 console.log('== the wire ==');
 {
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');

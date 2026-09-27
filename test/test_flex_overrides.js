@@ -69,6 +69,9 @@ const store = (init) => {
         ok('and resolved from the agent level', r.from === 'agent' && r.value === 'codex' && r.target === 'developer');
         const refused = async (fn, re) => { try { await fn(); return false; } catch (e) { return re.test(e.message); } };
         ok('no target is refused', await refused(() => A.setFlexOverride(deps, 'retry.supervisor.engine', 'agent', ' ', 'x'), /target/));
+        const before = JSON.stringify(s);
+        ok('‼️ a Farm-wide value that is not a VS Code setting is refused, naming its op, and nothing is written',
+            await refused(() => A.setFlexSetting(deps, 'library.base', 'appX'), /airtable\.config\.set/) && JSON.stringify(s) === before);
         ok('a value the point refuses is refused', await refused(() => A.setFlexOverride(deps, 'retry.supervisor.maxCalls', 'project', 'prj_a', 99), /not a valid/));
         ok('a point not set per agent is refused, naming where it is set',
             await refused(() => A.setFlexOverride(deps, 'judge.args', 'agent', 'developer', 'x'), /is not set per agent/));

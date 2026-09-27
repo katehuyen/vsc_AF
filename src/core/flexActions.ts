@@ -45,6 +45,11 @@ export async function setFlexSetting(deps: FlexDeps, id: string, value: unknown)
     const p = pointOrThrow(id);
     const e = p.levels.settings;
     if (!e) { throw new Error(`${id} has no Farm Settings value — it is set ${Object.keys(p.levels).join(', ')}.`); }
+    // ‼️ a Farm-wide value kept outside VS Code's settings (the Airtable page's defaults) has its own op;
+    // reading its surface as a setting key wrote a nonsense key and reported success
+    if (!e.surface.startsWith('setting:')) {
+        throw new Error(`${id}'s Farm-wide value is not a VS Code setting — ${e.bridge} writes it.`);
+    }
     if (value !== undefined && !flexValid(p, value)) { throw new Error(`${JSON.stringify(value)} is not a valid ${p.type} for ${id}.`); }
     const [key, sub] = e.surface.slice('setting:'.length).split('#');
     if (!sub) {

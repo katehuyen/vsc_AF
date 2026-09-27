@@ -58,14 +58,16 @@
         return select(C, m[0], m[2], opts, value, 'The stage folder for ' + m[4] + '. Blank = ' + m[3] + ', the built-in. A stage a step names on its own Library row wins over this.');
     }
 
-    function text(C, id, label, value, ph, tip) {
-        return `<label class="ntf" title="${C.esc(tip)}"><span>${C.esc(label)}</span>
+    function text(C, id, label, value, ph, tip, up) {
+        return `<label class="ntf" title="${C.esc(tip)}"><span>${C.esc(label)}${up || ''}</span>
             <input type="text" id="nt-${id}" value="${C.esc(value == null ? '' : String(value))}" placeholder="${C.esc(ph)}"></label>`;
     }
     // MIRROR: a narrow picker can cut its own text, so its tooltip opens with the current choice
-    function select(C, id, label, opts, value, tip) {
-        const cur = (opts.find(o => o[0] === (value || '')) || opts[0])[1];
-        return `<label class="ntf" title="${C.esc(cur + '\n\n' + tip)}"><span>${C.esc(label)}</span>
+    function select(C, id, label, opts, value, tip, up) {
+        // SHORTHAND: an inherited first option reads '↳ <value>'; its origin opens the tooltip (MIRROR)
+        const cur = (opts.find(o => o[0] === (value || '')) || opts[0])[1]
+            + (!value && String(opts[0][1]).indexOf('↳ ') === 0 ? ' — inherited from Farm Settings' : '');
+        return `<label class="ntf" title="${C.esc(cur + '\n\n' + tip)}"><span>${C.esc(label)}${up || ''}</span>
             <select id="nt-${id}">${opts.map(([v, l]) => C.option(v, l, { selected: v === (value || '') })).join('')}</select></label>`;
     }
 
@@ -95,8 +97,27 @@
         [ST_RECORD, ST_STAGE].forEach(id => byId('nt-' + id, 'change', () => readStep()));
     }
 
-    /** The workflow form's Library block. */
-    function wfEditor(c, C) {
+    // U-151 — the enrich boxes and the flex point each one sets (read off the registry)
+    const EN_BOXES = [['wf-libEnWhen', 'libEnWhen', 'When'], ['wf-libEnScope', 'libEnScope', 'Which files']].concat(EN_TEXT.map(t => [t[0], t[1], t[2]]));
+    const enPoint = id => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afLibrary.js#' + id) : '');
+    /** point id -> the workflow draft's key, for the page's '↑ make default' */
+    function draftKeyOf(point) { const b = EN_BOXES.find(x => enPoint(x[0]) === point); return b ? b[1] : ''; }
+    let ownAtRender = '';
+    const ownOf = c => EN_BOXES.filter(b => String((c || {})[b[1]] || '').trim()).map(b => b[1]).join(',');
+
+    /**
+     * The workflow form's Library block. U-151 — `promote` = { open: point id } draws ↑ beside an enrich box
+     * that holds its own value; `inh` = { point id: the Farm Settings value } is what an empty box inherits.
+     */
+    function wfEditor(c, C, promote, inh) {
+        const P = promote && window.AFFlexPromote;
+        const up = id => (P ? P.button(enPoint(id), c[(EN_BOXES.find(b => b[0] === id) || [])[1]], promote.open === enPoint(id)) : '');
+        const farm = id => { const v = (inh || {})[enPoint(id)]; return v === undefined || v === null || v === '' ? '' : String(v); };
+        const enOpts = (id, opts) => (farm(id) ? [['', '↳ ' + ((opts.find(o => o[0] === farm(id)) || [])[1] || farm(id))]].concat(opts.slice(1)) : opts);
+        const openBox = P ? EN_BOXES.find(b => enPoint(b[0]) === promote.open && String(c[b[1]] || '').trim()) : null;
+        const shownOf = b => { const t = [EN_WHEN, EN_SCOPE][['wf-libEnWhen', 'wf-libEnScope'].indexOf(b[0])]; return t ? ((t.find(o => o[0] === c[b[1]]) || [])[1] || c[b[1]]) : String(c[b[1]]); };
+        const strip = openBox ? P.strip(enPoint(openBox[0]), openBox[2], shownOf(openBox), P.levelsAbove(enPoint(openBox[0]), 'workflow', {})) : '';
+        ownAtRender = ownOf(c);
         return `<div class="ntsec"><b>Library</b>
             <span class="muted small">Every file a run makes — passed, failed, left out, parts — is filed into the local Airtable's media library and gets a full record. Blank = the Airtable page's defaults.</span></div>
             <div class="ntgrid">
@@ -108,13 +129,16 @@
             <div class="ntgrid">${WF_MAP.map(m => mapSelect(C, m, c[m[1]])).join('')}</div>
             <div class="ntsec"><span class="muted small">Fill the records — a model looks at each file and fills its record's meaning (topic, taxonomy, tone, platform fit, SEO, salvage notes on a failure…). Blank = the Farm settings.</span></div>
             <div class="ntgrid">
-                ${select(C, 'wf-libEnWhen', 'When', EN_WHEN, c.libEnWhen, 'When the records are filled: once the run has ended (one pass), as soon as each file is final or failed, or never — then only media.enrich fills one.')}
-                ${select(C, 'wf-libEnScope', 'Which files', EN_SCOPE, c.libEnScope, 'Which recorded files get filled: the final output and the failed or left-out files (their salvage notes), the final output only, or every file — parts too, one model turn each.')}
-                ${EN_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, c[key], ph, tip)).join('')}
+                ${select(C, 'wf-libEnWhen', 'When', enOpts('wf-libEnWhen', EN_WHEN), c.libEnWhen, 'When the records are filled: once the run has ended (one pass), as soon as each file is final or failed, or never — then only media.enrich fills one.', up('wf-libEnWhen'))}
+                ${select(C, 'wf-libEnScope', 'Which files', enOpts('wf-libEnScope', EN_SCOPE), c.libEnScope, 'Which recorded files get filled: the final output and the failed or left-out files (their salvage notes), the final output only, or every file — parts too, one model turn each.', up('wf-libEnScope'))}
+                ${EN_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, c[key], farm(id) ? farm(id) + ' — Farm Settings' : ph, tip, up(id))).join('')}
+                ${strip}
             </div>`;
     }
 
-    function wireWf(byId, draft) {
+    function wireWf(byId, draft, redraw) {
+        // U-151 — a box that took or lost its own value gains or loses its ↑
+        if (redraw) { EN_BOXES.forEach(([id]) => byId('nt-' + id, 'change', () => { if (ownOf(draft()) !== ownAtRender) { redraw(); } })); }
         WF_TEXT.forEach(([id, key]) => byId('nt-' + id, 'input', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
         WF_MAP.forEach(([id, key]) => byId('nt-' + id, 'change', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
         [['wf-libEnWhen', 'libEnWhen'], ['wf-libEnScope', 'libEnScope']].forEach(([id, key]) => byId('nt-' + id, 'change', e => { const d = draft(); if (d) { d[key] = e.target.value; } }));
@@ -123,5 +147,5 @@
         byId('nt-' + WF_START, 'change', e => { const d = draft(); if (d) { d.libStart = e.target.value; } });
     }
 
-    window.AFLibrary = { blank, row, summary, read, wire, wfEditor, wireWf, STEP_KEYS };
+    window.AFLibrary = { blank, row, summary, read, wire, wfEditor, wireWf, draftKeyOf, STEP_KEYS };
 })();

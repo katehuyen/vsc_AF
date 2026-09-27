@@ -23,6 +23,27 @@
         return out;
     }
 
+    /** The point a surface's box sets, read off the registry (`levels.<l>.surface`). */
+    function pointAt(surface) {
+        const F = window.AFFlex;
+        const hit = F && (F.POINTS || []).find(p => Object.keys(p.levels || {}).some(l => (p.levels[l] || {}).surface === surface));
+        return hit ? hit.id : '';
+    }
+
+    const ORDER = ['settings', 'agent', 'project', 'workflow', 'step', 'run'];
+    /** The levels ABOVE `from` the point can be set at and the run has a target for — most specific first. */
+    function levelsAbove(point, from, ctx) {
+        const p = window.AFFlex && window.AFFlex.point(point);
+        const c = ctx || {};
+        if (!p) { return []; }
+        return ORDER.slice(0, Math.max(0, ORDER.indexOf(from))).reverse().filter(l => p.levels[l]).map(l => (
+            l === 'settings' ? { level: l, target: '', name: 'everywhere', who: 'Farm Settings' }
+                : l === 'agent' ? (c.agent ? { level: l, target: c.agent, name: 'this agent', who: c.agent } : null)
+                    : l === 'project' ? (c.project && c.project.id ? { level: l, target: c.project.id, name: 'this project', who: c.project.name || c.project.id } : null)
+                        : l === 'workflow' ? (c.workflow && c.workflow.id ? { level: l, target: c.workflow.id, name: 'this flow', who: c.workflow.title || c.workflow.id } : null)
+                            : null)).filter(Boolean);
+    }
+
     function button(point, value, open) {
         if (!own(value)) { return ''; }
         return `<button type="button" class="flexup${open ? ' on' : ''}" data-flexup="${esc(point)}" aria-expanded="${open}"`
@@ -88,7 +109,7 @@
             .flexup-strip button { padding:2px 8px; }`;
     }
 
-    const api = { levelsFor, button, strip, typed, wire, css };
+    const api = { levelsFor, pointAt, levelsAbove, button, strip, typed, wire, css };
     if (typeof window !== 'undefined') { window.AFFlexPromote = api; }
     if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
 })();

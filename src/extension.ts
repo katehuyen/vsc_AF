@@ -251,7 +251,8 @@ import { WorkflowAsks } from './workflowAskDoors';
 import { workflowLiveCommand } from './workflowLiveUi';
 import { setWorkflowSupervisor, supervisorRunRefusal, WorkflowSupervisor } from './core/supervisorRun';
 import { askEscalationOf, escalateAsk, leaderAskPrompt } from './core/workflowMission';
-import { resolveFlex } from './core/flexResolve';
+import { resolveFlex, settingsLayer } from './core/flexResolve';
+import { FLEX_POINTS } from './core/flexPoints';
 import { RECIPE_PRESETS, RECIPES } from './core/mediaRecipes';
 import { toolCall, toolStepRefusal } from './core/toolCall';
 import { runRecipe } from './core/toolRun';
@@ -24209,6 +24210,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         supervisorDefault: () => normalizeRetry(cfg().get<unknown>('taskRetry'))?.supervisor,
         // …and what one agent or one project says on top of it (agentFarm.flexOverrides)
         supervisorOverrides: () => supervisorOverrideMap(cfg().get<unknown>('flexOverrides')),
+        // U-151 — what the workflow form's boxes inherit: each workflow-level point's Farm Settings value
+        flexSettings: () => Object.fromEntries(FLEX_POINTS
+            .filter(fp => fp.levels.workflow && (fp.levels.settings?.surface ?? '').startsWith('setting:'))
+            .map(fp => [fp.id, settingsLayer(fp, k => flexDeps.readSetting(k))] as [string, unknown])
+            .filter(([, v]) => v !== undefined && v !== '')),
         // the same two cores flex.set writes through: one agent / one project, or Farm Settings
         flexPromote: async (args: { point: string; level: string; target: string; value: unknown }) => (
             args.level === 'agent' || args.level === 'project'

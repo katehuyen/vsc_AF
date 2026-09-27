@@ -134,6 +134,8 @@ export interface TasksDeps {
     supervisorOverrides?(): unknown;
     /** U-151 — '↑ make default': one flex value written at a level, through flex.set's own core. */
     flexPromote?(args: { point: string; level: string; target: string; value: unknown }): Promise<unknown>;
+    /** U-151 — { point id: its Farm Settings value } for the points the workflow form's boxes inherit. */
+    flexSettings?(): Record<string, unknown>;
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
@@ -952,6 +954,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             // U-151 — what the supervisor's empty boxes inherit
             supervisor: deps.supervisorDefault?.() ?? null,
             supervisorOverrides: deps.supervisorOverrides?.() ?? null,
+            flexSettings: deps.flexSettings?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),

@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.695.0 - ↑ Make a workflow's enrich value the default everywhere (U-151, part 3c-1) (2026-09-27)
+
+- **The workflow form's "Fill the records" boxes** get the same ↑ as the
+  supervisor row: a model, effort, cap… this workflow sets can be made the
+  Farm Settings default in one move, or dropped (↺).
+- **Their empty boxes now show what they inherit** from Farm Settings, faint
+  ("medium — Farm Settings"), instead of the built-in value only.
+- **Fixed:** `flex.set` for a value kept on the Airtable page (a library's
+  database or language) wrote a nonsense setting and reported success; it now
+  refuses and names the op that writes it.
+
 ## 3.694.0 - ↑ Make a supervisor value the default, or ↺ go back to inherited (U-151, part 3b) (2026-09-27)
 
 - **A supervisor box on the New-task form that holds its own value shows a
