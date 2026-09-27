@@ -100,13 +100,19 @@
             ${has ? `<div class="wkbox">${editor(ST, s.wake, d, C, false)}</div>` : ''}`;
     }
 
-    /** The Run card's "this run only". */
-    function runRow(wfMode, v, d, C) {
+    /** The Run card's "this run only". U-151 — `promote` draws ↑ → this flow's own set. */
+    function runRow(wfMode, v, d, C, promote) {
         if (!d) { return ''; }
-        return `<label class="ntf" title="${C.esc('Wake conditions for this run only. Empty = the workflow\'s own (' + (wfMode || 'mechanical') + ').')}"><span>Wake</span>
+        const P = promote && window.AFFlexPromote;
+        const key = runKey();
+        const shown = v ? ((d.presets || []).find(p => p.id === v) || {}).label || v : '';
+        return `<label class="ntf" title="${C.esc('Wake conditions for this run only. Empty = the workflow\'s own (' + (wfMode || 'mechanical') + ').')}"><span>Wake${P ? P.up(promote, key, shown) : ''}</span>
             <select id="nt-${RUN}">${[['', 'the workflow\'s — ' + (wfMode || 'mechanical')]].concat((d.presets || []).map(p => [p.id, p.label]))
-            .map(([id, label]) => C.option(id, label, { selected: id === (v || '') })).join('')}</select></label>`;
+            .map(([id, label]) => C.option(id, label, { selected: id === (v || '') })).join('')}</select></label>
+            ${P ? P.stripFor(promote, key, 'Wake', shown, shown) : ''}`;
     }
+    /** U-151 — the Run card's key: the point, qualified so it never meets the step card's. */
+    const runKey = () => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afWake.js#' + RUN) : '') + '#run';
 
     function wireEditor(pfx, byId, get, d, render) {
         (d.presets || []).forEach(p => byId(`nt-${pfx}-p-${p.id}`, 'click', () => { get().splice(0, Infinity, ...clone(p.conditions)); render(); }));

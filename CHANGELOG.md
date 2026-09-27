@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.697.0 - ↑ Make a Run card value the workflow's own default (U-151, part 3c-3) (2026-09-27)
+
+- **The Run card gets the ↑.** An input whose value differs from the
+  workflow's default, and a Wake preset picked for this run, can be made
+  that workflow's own default in one move — written onto the workflow, so
+  the next run starts with it. ↺ puts the workflow's default back.
+- **`flex.set level=workflow`** (bridge): `target` = the workflow's id or
+  title, `name` = which input — sets its wake set (a preset name or a
+  condition list) or an input's default; a value the input does not take
+  is refused by name.
+- The Run card now keeps what you typed when it redraws.
+
 ## 3.696.0 - ↑ Make a step's value this flow's, or the default everywhere (U-151, part 3c-2) (2026-09-27)
 
 - **The step card gets the ↑ too.** A media or tool step's Library boxes

@@ -852,8 +852,8 @@
             </td>
         </tr>${wiRun && wiRun.id === p.id && window.AFWorkflowInputs ? `<tr class="detail"><td colspan="10"><div class="detailbox">
             <div class="ntsub"><b>Run “${C.esc(p.title)}” with</b> <span class="muted">each box starts at the last run's value, else the input's default</span></div>
-            ${window.AFWorkflowInputs.runCard(p.inputs, p.lastInputs, C)}
-            ${window.AFWake ? `<div class="ntgrid">${window.AFWake.runRow(p.wakeMode, wiRun.wake, DATA.wakeDict, C)}</div>` : ''}
+            ${window.AFWorkflowInputs.runCard(p.inputs, p.lastInputs, C, runPromote(p), wiRun.values)}
+            ${window.AFWake ? `<div class="ntgrid">${window.AFWake.runRow(p.wakeMode, wiRun.wake, DATA.wakeDict, C, runPromote(p))}</div>` : ''}
             <div class="ctl-row"><button id="nt-wi-go">Run with these</button><button class="secondary" id="nt-wi-cancel">Cancel</button></div>
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
     }
@@ -3284,18 +3284,37 @@
         }
         return null;
     }
-    /** U-151 — the draft field a promotable point lives in: the supervisor row's, the workflow form's enrich box, or the step card's. */
+    /** U-151 — the Run card's promote hook: the level above a run here is the workflow itself, written by the host. */
+    function runPromote(p) {
+        if (!window.AFFlexPromote) { return undefined; }
+        return { open: supUp, levels: key => window.AFFlexPromote.levelsAbove(String(key).split('#')[0], 'run', { workflow: { id: p.id, title: p.title } }) };
+    }
+    /** U-151 — a Run card box ('workflow.input#<name>' · 'workflow.wake#run'); `keep` = the box keeps its value once written. */
+    function runFlex(key) {
+        const cut = String(key).indexOf('#');
+        if (!wiRun || cut < 0) { return null; }
+        const point = key.slice(0, cut), name = key.slice(cut + 1);
+        if (point === 'workflow.wake' && name === 'run') { return { get: () => wiRun.wake, drop: () => { wiRun.wake = ''; } }; }
+        const i = point === 'workflow.input' ? wfInputs(wiRun.id).find(x => x.name === name) : null;
+        return i ? { get: () => wiRun.values[name], drop: () => { wiRun.values[name] = i.default || ''; }, keep: true } : null;
+    }
+    /** U-151 — the draft field a promotable point lives in: the supervisor row's, the workflow form's enrich box, the step card's or the Run card's. */
     function flexValue(point) {
         if (String(point).indexOf('retry.supervisor.') === 0) { return ((composer || {}).retrySupervisor || {})[supKey(point)]; }
+        const rf = runFlex(point);
+        if (rf) { return rf.get(); }
         const sf = stepFlex(point);
         if (sf) { return sf.get(); }
         const k = window.AFLibrary ? window.AFLibrary.draftKeyOf(point) : '';
         return k ? (composer || {})[k] : undefined;
     }
     function supDrop(point) {
-        const sf = String(point).indexOf('retry.supervisor.') === 0 ? null : stepFlex(point);
+        const rf = runFlex(point);
+        const sf = String(point).indexOf('retry.supervisor.') === 0 || rf ? null : stepFlex(point);
         if (String(point).indexOf('retry.supervisor.') === 0) {
             if (composer && composer.retrySupervisor) { composer.retrySupervisor[supKey(point)] = ''; }
+        } else if (rf) {
+            rf.drop();
         } else if (sf) {
             sf.drop();
         } else {
@@ -4343,17 +4362,41 @@
             }
             post({ type: 'plan', act: el.dataset.plan, kind: el.dataset.kind, id: el.dataset.id });
         });
+        // U-151 — every '↑ make default' on the page: the task form, the workflow form, its step card, the Run card
+        if (window.AFFlexPromote) {
+            window.AFFlexPromote.wire(document, m => vscode.postMessage(m), {
+                open: point => { readComposer(); supUp = supUp === point ? '' : point; render(); },
+                back: point => { readComposer(); supDrop(point); },
+                value: point => { readComposer(); return flexValue(point); },
+                local: (point, level) => {
+                    const sf = level === 'workflow' ? stepFlex(point) : null;
+                    if (!sf || !sf.lift) { return false; }
+                    sf.lift();
+                    supUp = '';
+                    render();
+                    return true;
+                }
+            });
+        }
         if (window.AFWorkflowInputs) {
             window.AFWorkflowInputs.wire(document, {
                 drafts: composer && composer.kind === 'workflow' ? composer.inputs : null,
                 inputs: composer && composer.kind === 'trigger' ? wfInputs(composer.workflowId) : wiRun ? wfInputs(wiRun.id) : [],
                 mapping: composer && composer.kind === 'trigger' ? composer.wiMap : null,
                 runValues: wiRun && !(composer && composer.kind === 'trigger') ? wiRun.values : null,
-                redraw: () => { persist(); render(); }
+                redraw: () => { persist(); render(); },
+                rerun: window.AFFlexPromote ? render : null
             });
             click('#nt-wi-cancel', () => { wiRun = null; render(); });
             const wkSel = document.getElementById('nt-wi-wake');
-            if (wkSel && wiRun) { wkSel.addEventListener('change', e => { wiRun.wake = e.target.value; }); }
+            if (wkSel && wiRun) {
+                wkSel.addEventListener('change', e => {
+                    const was = !!wiRun.wake;
+                    wiRun.wake = e.target.value;
+                    // U-151 — a run that took (or dropped) its own wake set gains (or loses) its ↑
+                    if (window.AFFlexPromote && was !== !!wiRun.wake) { render(); }
+                });
+            }
             click('#nt-wi-go', () => {
                 post({ type: 'plan', act: 'run', kind: 'workflow', id: wiRun.id, inputs: window.AFWorkflowInputs.given(wiRun.values), ...(wiRun.wake ? { wake: wiRun.wake } : {}) });
                 wiRun = null;
@@ -4550,21 +4593,6 @@
                 // U-151 — a box that took or lost its own value gains or loses its ↑
                 if (window.AFFlexPromote && supOwn() !== was) { render(); }
             }));
-            if (window.AFFlexPromote) {
-                window.AFFlexPromote.wire(document, m => vscode.postMessage(m), {
-                    open: point => { readComposer(); supUp = supUp === point ? '' : point; render(); },
-                    back: point => { readComposer(); supDrop(point); },
-                    value: point => { readComposer(); return flexValue(point); },
-                    local: (point, level) => {
-                        const sf = level === 'workflow' ? stepFlex(point) : null;
-                        if (!sf || !sf.lift) { return false; }
-                        sf.lift();
-                        supUp = '';
-                        render();
-                        return true;
-                    }
-                });
-            }
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();
@@ -5013,7 +5041,12 @@
         if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; repaint(); }
         if (ev.data.type === 'focus' && ev.data.tab) { tab = ev.data.tab; persist(); render(); }
         // U-151 — the value now lives where it was promoted to; the box inherits it
-        if (ev.data.type === 'flexPromoted' && ev.data.point) { supDrop(ev.data.point); }
+        if (ev.data.type === 'flexPromoted' && ev.data.point) {
+            // a run input made the workflow's default keeps its value: it IS the default now
+            const key = ev.data.name ? ev.data.point + '#' + ev.data.name : ev.data.point;
+            const rf = runFlex(key);
+            if (rf && rf.keep) { supUp = ''; render(); } else { supDrop(key); }
+        }
         // ‼️ "OPEN THIS TASK" HAS TO LAND ON THE TASK. A project's Work tab and
         // a timeline row both say Open about one run; opening the page at the
         // top of a list of two hundred and leaving the reader to find it is the

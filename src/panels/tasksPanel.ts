@@ -133,7 +133,7 @@ export interface TasksDeps {
     /** U-151 — each agent's (by name) and project's (by id) supervisor fields, laid over the default. */
     supervisorOverrides?(): unknown;
     /** U-151 — '↑ make default': one flex value written at a level, through flex.set's own core. */
-    flexPromote?(args: { point: string; level: string; target: string; value: unknown }): Promise<unknown>;
+    flexPromote?(args: { point: string; level: string; target: string; value: unknown; name?: string }): Promise<unknown>;
     /** U-151 — { point id: its Farm Settings value } for the points the workflow form's boxes inherit. */
     flexSettings?(): Record<string, unknown>;
     /** X-18 — which engines this machine can run, for the form's engine row.
@@ -2706,9 +2706,10 @@ export class TasksPanel {
                 if (!this.deps.flexPromote) { break; }
                 try {
                     await this.deps.flexPromote({
-                        point: String(msg.point ?? ''), level: String(msg.level ?? ''), target: String(msg.target ?? ''), value: msg.value
+                        point: String(msg.point ?? ''), level: String(msg.level ?? ''), target: String(msg.target ?? ''), value: msg.value,
+                        ...(msg.name ? { name: String(msg.name) } : {})
                     });
-                    void this.panel.webview.postMessage({ type: 'flexPromoted', point: msg.point });
+                    void this.panel.webview.postMessage({ type: 'flexPromoted', point: msg.point, ...(msg.name ? { name: msg.name } : {}) });
                     this.refresh();
                 } catch (e) {
                     void vscode.window.showErrorMessage(`Agent Farm: ${(e as Error).message}`);

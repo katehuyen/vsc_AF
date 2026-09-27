@@ -149,6 +149,44 @@ console.log('== the step card ==');
     }
 }
 
+console.log('== the Run card ==');
+{
+    const wfc = { workflow: { id: 'w9', title: 'Klip kes' } };
+    ok('above a run, an input and the wake set have this flow', P.levelsAbove('workflow.input', 'run', wfc).map(l => l.level).join() === 'workflow'
+        && P.levelsAbove('workflow.wake', 'run', wfc).map(l => l.level).join() === 'workflow');
+    const rv = fixture.variants().find(v => v.id === 'tasks-wf-runcard-promote');
+    const start3 = () => { const r = runPage(fixture.script, rv.data, fixture.window || {}, rv.state); rv.act(r); return r; };
+    const upOf = (r, pt) => r.query('[data-flexup]').find(e => e.dataset.flexup === pt);
+    const toWf = r => r.query('[data-flexup-to]').find(e => e.dataset.level === 'workflow');
+    {
+        const r = start3();
+        const ups = r.query('[data-flexup]').map(e => e.dataset.flexup).sort().join();
+        ok('↑ beside every box that differs from the workflow\'s default, and beside Wake', ups === 'workflow.input#clip,workflow.input#size,workflow.wake#run');
+        ok('pressed on size: the strip offers this flow, written by the host',
+            /data-flexup-strip="workflow\.input#size"/.test(r.html()) && r.query('[data-flexup-to]').length === 1 && /Written there/.test(r.html()));
+        toWf(r).click();
+        const m = r.last();
+        ok('‼️ this flow posts the point, the input\'s name, the workflow and the value', m && m.type === 'flexPromote' && m.point === 'workflow.input'
+            && m.name === 'size' && m.level === 'workflow' && m.target === 'w9' && m.value === 'long');
+        r.send({ type: 'flexPromoted', point: 'workflow.input', name: 'size' });
+        ok('written: the box keeps its value — it IS the default now', r.query('#nt-wi-run-size')[0].value === 'long' && !/data-flexup-strip=/.test(r.html()));
+    }
+    {
+        const r = start3();
+        upOf(r, 'workflow.wake#run').click();
+        toWf(r).click();
+        const m = r.last();
+        ok('the wake set goes to the workflow as its preset', m && m.point === 'workflow.wake' && m.level === 'workflow' && m.target === 'w9' && m.value === 'hybrid');
+        r.send({ type: 'flexPromoted', point: 'workflow.wake', name: 'run' });
+        ok('written: the run takes the workflow\'s again', r.query('#nt-wi-wake')[0].value === '' && !upOf(r, 'workflow.wake#run'));
+    }
+    {
+        const r = start3();
+        r.query('[data-flexup-back]')[0].click();
+        ok('↺ on a run box puts the workflow\'s default back', r.query('#nt-wi-run-size')[0].value === 'short' && !upOf(r, 'workflow.input#size'));
+    }
+}
+
 console.log('== the wire ==');
 {
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');

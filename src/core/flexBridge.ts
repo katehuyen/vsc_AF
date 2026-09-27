@@ -16,6 +16,8 @@ import { PRESETS as SENTRY_PRESETS } from './sentryPolicy';
 export type FlexBridgeDeps = FlexDeps & {
     /** M-46 — a running workflow's own value (level live); absent = this window has no runs to set */
     setLive?: (runId: string, point: string, value: unknown) => unknown;
+    /** U-151 — one workflow record's own value (level workflow): `target` = its id or title, `name` = which input */
+    setWorkflow?: (target: string, point: string, value: unknown, name?: string) => unknown;
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -85,11 +87,17 @@ export function registerFlexOps(bridge: BridgeRegistry, deps: FlexBridgeDeps): v
                 + 'checked against the point; one inside an object setting (agentFarm.taskRetry) is written into it, the '
                 + 'other fields kept. U-151: level agent or project with target (the agent\'s NAME, the project\'s id) '
                 + 'sets it for that one agent or project (agentFarm.flexOverrides) — above Farm Settings, below the run. '
+                + 'Level workflow with target (the workflow\'s id or title) writes that workflow\'s own value: workflow.wake '
+                + '(a preset name or a condition list) and workflow.input (name = which input; its default). '
                 + 'Returns the point resolved.',
             handler: async (args) => {
                 const level = levelArg(args);
                 if (level === 'live' && deps.setLive) {
                     return deps.setLive(argStr(args, 'runId'), argStr(args, 'point'), args.value === null ? undefined : args.value);
+                }
+                if (level === 'workflow' && deps.setWorkflow) {
+                    return deps.setWorkflow(argStr(args, 'target'), argStr(args, 'point'), args.value === null ? undefined : args.value,
+                        optStr(args, 'name') || undefined);
                 }
                 if (level === 'agent' || level === 'project') {
                     return setFlexOverride(deps, argStr(args, 'point'), level, argStr(args, 'target'),

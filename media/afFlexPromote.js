@@ -102,12 +102,15 @@
         }));
         all('[data-flexup-to]').forEach(b => b.addEventListener('click', ev => {
             ev.preventDefault();
-            const point = b.dataset.flexupTo;
-            if (on.local && on.local(point, b.dataset.level)) { return; }
-            post({
+            // a box key is the point, or 'point#qualifier' where one point has several boxes (a run's inputs)
+            const key = b.dataset.flexupTo;
+            if (on.local && on.local(key, b.dataset.level)) { return; }
+            const cut = key.indexOf('#');
+            const point = cut < 0 ? key : key.slice(0, cut);
+            post(Object.assign({
                 type: 'flexPromote', point, level: b.dataset.level,
-                target: b.dataset.target || '', value: typed(point, on.value(point))
-            });
+                target: b.dataset.target || '', value: typed(point, on.value(key))
+            }, cut < 0 ? {} : { name: key.slice(cut + 1) }));
         }));
         all('[data-flexup-back]').forEach(b => b.addEventListener('click', ev => {
             ev.preventDefault();

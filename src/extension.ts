@@ -125,6 +125,7 @@ import {
 } from './core/settingsDoor';
 import { registerSettingsOps } from './core/settingsBridge';
 import { registerFlexOps } from './core/flexBridge';
+import { setWorkflowFlex } from './core/flexWorkflow';
 import { matchTaskSession } from './core/taskcost';
 import {
     buildDelegationPrompt, delegationTitle, DismissEntry, filterDismissed,
@@ -24216,11 +24217,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .map(fp => [fp.id, settingsLayer(fp, k => flexDeps.readSetting(k))] as [string, unknown])
             .filter(([, v]) => v !== undefined && v !== '')),
         // the same two cores flex.set writes through: one agent / one project, or Farm Settings
-        flexPromote: async (args: { point: string; level: string; target: string; value: unknown }) => (
+        flexPromote: async (args: { point: string; level: string; target: string; value: unknown; name?: string }) => (
             args.level === 'agent' || args.level === 'project'
                 ? setFlexOverride(flexDeps, args.point, args.level, args.target, args.value)
                 : args.level === 'settings' ? setFlexSetting(flexDeps, args.point, args.value)
-                    : Promise.reject(new Error(`level ${args.level}: make it the default for a project, an agent or everywhere.`))),
+                    : args.level === 'workflow' ? flexDeps.setWorkflow(args.target, args.point, args.value, args.name)
+                        : Promise.reject(new Error(`level ${args.level}: make it the default for a workflow, a project, an agent or everywhere.`))),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
@@ -27137,6 +27139,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             need(!('error' in a), `${String((a as { error?: string }).error)}.`);
             const r = taskManager.setRunLive(runId, a as Record<string, unknown>);
             need(!r.error, `${r.error}.`);
+            return r;
+        },
+        // U-151 — flex.set level=workflow and the Run card's '↑ this flow': one workflow record's own value
+        setWorkflow: (target: string, point: string, value: unknown, name?: string) => {
+            const r = setWorkflowFlex(bridgeWorkflow(target), point, value, name);
+            taskManager.persist();
             return r;
         },
         writeSetting: writeUserSetting,

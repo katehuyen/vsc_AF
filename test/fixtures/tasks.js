@@ -1051,6 +1051,24 @@ const variants = () => ([
         }),
         act: (r) => { r.query('[data-plan="run"][data-kind="workflow"]')[0].click(); }
     },
+    // U-151 — the Run card: this run's size differs from the workflow's default and it wakes on Hybrid;
+    // ↑ pressed on size — the level above a run here is the workflow itself.
+    {
+        id: 'tasks-wf-runcard-promote',
+        label: 'Tasks → Plan → a workflow\'s Run card: ↑ beside the inputs that differ from its default and beside Wake — pressed on size: make it this flow\'s default, or ↺ back (U-151)',
+        data: Object.assign(data(), {
+            tab: 'plan', plan: [wfWithInputs()],
+            workflows: [{ id: 'w9', title: 'Klip kes', steps: 1, inputs: wfWithInputs().inputs }]
+        }),
+        act: (r) => {
+            r.query('[data-plan="run"][data-kind="workflow"]')[0].click();
+            drive(r, { 'nt-wi-run-size': 'long' }, 'nt-wi-run-size');
+            drive(r, { 'nt-wi-wake': 'hybrid' }, 'nt-wi-wake');
+            const up = r.query('[data-flexup]').find(e => e.dataset.flexup === 'workflow.input#size');
+            if (!up) { throw new Error('no ↑ beside the size box'); }
+            up.click();
+        }
+    },
     // M-38 — a trigger that runs that workflow: what it hands each input when it fires.
     {
         id: 'tasks-wf-triggermap',
