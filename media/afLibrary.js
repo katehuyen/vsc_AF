@@ -71,14 +71,28 @@
             <select id="nt-${id}">${opts.map(([v, l]) => C.option(v, l, { selected: v === (value || '') })).join('')}</select></label>`;
     }
 
-    /** A media or tool step's Library row. */
-    function row(s, C) {
+    // U-151 — the step row's boxes and the flex point each one sets: [box id, draft key, label]
+    const ST_BOXES = ST_TEXT.map(t => [t[0], t[1], t[2]]).concat([[ST_RECORD, 'libRecord', 'Records'], [ST_STAGE, 'libStage', 'Stage']]);
+    const stPoint = id => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afLibrary.js#' + id) : '');
+    /** point id -> the step draft's key; the workflow draft keeps the same value under the same key */
+    function stepKeyOf(point) { const b = ST_BOXES.find(x => stPoint(x[0]) === point); return b ? b[1] : ''; }
+    let stepOwnAtRender = '';
+    const stepOwn = s => ST_BOXES.filter(b => String((s || {})[b[1]] || '').trim()).map(b => b[1]).join(',');
+
+    /** A media or tool step's Library row. U-151 — `promote` = { open, levels(point) } draws ↑ beside a box with its own value. */
+    function row(s, C, promote) {
+        const P = promote && window.AFFlexPromote;
+        const up = (id, key) => (P ? P.up(promote, stPoint(id), s[key]) : '');
+        const shown = b => b[0] === ST_RECORD ? ((RECORD.find(o => o[0] === s.libRecord) || [])[1] || s.libRecord) : String(s[b[1]] || '');
+        const strip = P ? ST_BOXES.map(b => P.stripFor(promote, stPoint(b[0]), b[2], shown(b), s[b[1]])).join('') : '';
+        stepOwnAtRender = stepOwn(s);
         return `<div class="ntsec"><b>Library</b>
             <span class="muted small">Where this step's files are filed and recorded. Blank = the workflow's.</span></div>
             <div class="ntgrid">
-                ${ST_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, s[key], ph, tip)).join('')}
-                ${select(C, ST_RECORD, 'Records', RECORD, s.libRecord, 'Which of this step\'s files get an Airtable record. Every file is filed either way — nothing is thrown away: with "only what passed", a failed file is kept in raw without a record.')}
+                ${ST_TEXT.map(([id, key, label, ph, tip]) => text(C, id, label, s[key], ph, tip, up(id, key))).join('')}
+                ${select(C, ST_RECORD, 'Records', RECORD, s.libRecord, 'Which of this step\'s files get an Airtable record. Every file is filed either way — nothing is thrown away: with "only what passed", a failed file is kept in raw without a record.', up(ST_RECORD, 'libRecord'))}
                 ${select(C, ST_STAGE, 'Stage', STAGES, s.libStage, STAGE_TIP)}
+                ${strip}
             </div>`;
     }
 
@@ -92,9 +106,11 @@
         STEP_KEYS.forEach(k => { const el = g(k); if (el && el.value != null) { s[k] = String(el.value); } });
     }
 
-    function wire(byId, readStep) {
+    function wire(byId, readStep, redraw, step) {
         ST_TEXT.forEach(([id]) => byId('nt-' + id, 'input', () => readStep()));
         [ST_RECORD, ST_STAGE].forEach(id => byId('nt-' + id, 'change', () => readStep()));
+        // U-151 — a box that took or lost its own value gains or loses its ↑
+        if (redraw) { ST_BOXES.forEach(([id]) => byId('nt-' + id, 'change', () => { readStep(); if (stepOwn(step()) !== stepOwnAtRender) { redraw(); } })); }
     }
 
     // U-151 — the enrich boxes and the flex point each one sets (read off the registry)
@@ -147,5 +163,5 @@
         byId('nt-' + WF_START, 'change', e => { const d = draft(); if (d) { d.libStart = e.target.value; } });
     }
 
-    window.AFLibrary = { blank, row, summary, read, wire, wfEditor, wireWf, draftKeyOf, STEP_KEYS };
+    window.AFLibrary = { blank, row, summary, read, wire, wfEditor, wireWf, draftKeyOf, stepKeyOf, STEP_KEYS };
 })();

@@ -83,14 +83,20 @@
             <div class="wkbox">${editor(WF, c.wake, d, C, true)}</div>`;
     }
 
-    /** The step card's override: the workflow's set, a preset, or its own conditions. */
-    function stepRow(s, wf, d, C) {
+    /** U-151 — the flex point the step's override sets, read off the registry. */
+    const stPoint = () => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afWake.js#' + ST) : '');
+
+    /** The step card's override: the workflow's set, a preset, or its own conditions. U-151 — `promote` draws ↑ → this flow. */
+    function stepRow(s, wf, d, C, promote) {
         if (!d) { return ''; }
         const has = Array.isArray(s.wake);
         const pick = has ? modeOf(d, s.wake) : '';
         const opts = [['', 'the workflow\'s — ' + modeLabel(d, wf || [])]].concat((d.presets || []).map(p => [p.id, p.label]), [['custom', 'its own conditions']]);
-        return `<div class="ntgrid"><label class="ntf" title="${C.esc('Which conditions wake the supervisor after THIS step. The workflow\'s = the Wake block below.')}"><span>Wake after it</span>
-            <select id="nt-${ST}">${opts.map(([id, label]) => C.option(id, label, { selected: id === pick })).join('')}</select></label></div>
+        const P = promote && window.AFFlexPromote;
+        const shown = has ? modeLabel(d, s.wake) : '';
+        return `<div class="ntgrid"><label class="ntf" title="${C.esc('Which conditions wake the supervisor after THIS step. The workflow\'s = the Wake block below.')}"><span>Wake after it${P ? P.up(promote, stPoint(), shown) : ''}</span>
+            <select id="nt-${ST}">${opts.map(([id, label]) => C.option(id, label, { selected: id === pick })).join('')}</select></label>
+            ${P ? P.stripFor(promote, stPoint(), 'Wake after it', shown, shown) : ''}</div>
             ${has ? `<div class="wkbox">${editor(ST, s.wake, d, C, false)}</div>` : ''}`;
     }
 
@@ -154,5 +160,5 @@
         if (Array.isArray(s.wake)) { wireEditor(ST, byId, () => s.wake, d, render); }
     }
 
-    window.AFWake = { WF, ST, RUN, modeOf, modeLabel, workflowBlock, stepRow, runRow, wireWorkflow, wireStep };
+    window.AFWake = { WF, ST, RUN, modeOf, modeLabel, workflowBlock, stepRow, runRow, wireWorkflow, wireStep, stepPoint: stPoint };
 })();

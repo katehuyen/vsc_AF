@@ -57,9 +57,25 @@
             + '" placeholder="' + C.esc(ph) + '" value="' + C.esc(boxValue(w.own)) + '"></label>';
     }
 
-    /** The step card's tool row. */
-    function row(s, C) {
+    // U-151 — the boxes with a level above the step (Farm Settings): point id -> the tool's field
+    const UP = ['outDir', 'overwrite'];
+    const pointOf = k => (window.AFFlexPromote ? window.AFFlexPromote.pointAt('media/afTool.js#' + BOX[k]) : '');
+    function fieldOf(point) { return UP.find(k => pointOf(k) === point) || ''; }
+    /** The field back to inherited: taken out of the step's toolJson. */
+    function drop(s, k) {
         const t = spec(s);
+        delete t[k];
+        s.toolJson = Object.keys(t).length ? JSON.stringify(t) : '';
+    }
+    let ownAtRender = '';
+    const ownOf = s => UP.filter(k => String(spec(s || {})[k] || '').trim()).join(',');
+
+    /** The step card's tool row. U-151 — `promote` = { open, levels(point) } draws ↑ beside a box with its own value. */
+    function row(s, C, promote) {
+        const t = spec(s);
+        const P = promote && window.AFFlexPromote;
+        const up = k => (P ? P.up(promote, pointOf(k), t[k]) : '');
+        ownAtRender = ownOf(s);
         const r = recipeOf(t);
         const recipes = [['', 'Pick a recipe…']].concat(R().RECIPES.map(x => [x.id, x.label]));
         const presets = r ? R().PRESETS.filter(p => p.recipe === r.id) : [];
@@ -76,10 +92,12 @@
             + (r && r.input ? '<label class="ntf wide" title="' + tip(C, 'Current: ' + show(t.input), 'The file it works on: a path, or a template filled when it runs — {input.clip} (a workflow input), {prev_json.outputs.0} (the step before), {item} (a for-each element).\n\nFlex point tool.input (step).') + '"><span>Input *</span>'
                 + '<input type="text" id="' + idOf('input') + '" placeholder="{input.clip}" value="' + C.esc(boxValue(t.input)) + '"></label>' : '')
             + (r ? r.params.map(q => paramBox(C, t, r, q)).join('') : '')
-            + (r ? '<label class="ntf wide" title="' + tip(C, 'Current: ' + (t.outDir ? t.outDir + ' — from this step' : 'Farm Settings, else an af-tool folder beside the input'), 'Where the outputs are written. Blank = the Farm Settings folder (agentFarm.toolOutDir), and if that is blank too, af-tool beside the input.\n\nFlex point tool.outDir (step · Farm Settings).') + '"><span>Output folder</span>'
+            + (r ? '<label class="ntf wide" title="' + tip(C, 'Current: ' + (t.outDir ? t.outDir + ' — from this step' : 'Farm Settings, else an af-tool folder beside the input'), 'Where the outputs are written. Blank = the Farm Settings folder (agentFarm.toolOutDir), and if that is blank too, af-tool beside the input.\n\nFlex point tool.outDir (step · Farm Settings).') + '"><span>Output folder' + up('outDir') + '</span>'
                 + '<input type="text" id="' + idOf('outDir') + '" placeholder="Farm Settings, else beside the input" value="' + C.esc(boxValue(t.outDir)) + '"></label>'
-                + '<label class="ntf" title="' + tip(C, 'Current: ' + (ow ? ow + ' — from this step' : 'Farm Settings'), 'What happens when an output file is already there.\n\nFlex point tool.overwrite (step · Farm Settings).') + '"><span>File already there</span>'
+                + '<label class="ntf" title="' + tip(C, 'Current: ' + (ow ? ow + ' — from this step' : 'Farm Settings'), 'What happens when an output file is already there.\n\nFlex point tool.overwrite (step · Farm Settings).') + '"><span>File already there' + up('overwrite') + '</span>'
                 + '<select id="' + idOf('overwrite') + '">' + OW.map(([v, l]) => C.option(v, l, { selected: v === ow })).join('') + '</select></label>' : '')
+            + (P ? P.stripFor(promote, pointOf('outDir'), 'Output folder', String(t.outDir || ''), t.outDir)
+                + P.stripFor(promote, pointOf('overwrite'), 'File already there', (OW.find(o => o[0] === ow) || [])[1] || ow, ow) : '')
             + '</div>';
     }
 
@@ -138,9 +156,11 @@
     function wire(byId, readStep, render, step) {
         ['recipe', 'preset', 'overwrite'].forEach(k => byId(idOf(k), 'change', () => { readStep(); render(); }));
         ['input', 'outDir'].forEach(k => byId(idOf(k), 'input', () => readStep()));
+        // U-151 — the folder box that took or lost its own value gains or loses its ↑
+        byId(idOf('outDir'), 'change', () => { readStep(); if (window.AFFlexPromote && ownOf(step) !== ownAtRender) { render(); } });
         const r = step ? recipeOf(spec(step)) : undefined;
         (r ? r.params : []).forEach(q => byId(idOf('param') + '-' + q.name, q.type === 'enum' ? 'change' : 'input', () => readStep()));
     }
 
-    window.AFTool = { BOX, spec, row, summary, error, read, wire, stored };
+    window.AFTool = { BOX, spec, row, summary, error, read, wire, stored, fieldOf, drop };
 })();

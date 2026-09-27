@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.696.0 - ↑ Make a step's value this flow's, or the default everywhere (U-151, part 3c-2) (2026-09-27)
+
+- **The step card gets the ↑ too.** A media or tool step's Library boxes
+  (database, language, template, records) and its "Wake after it" choice
+  can be moved up to the workflow in one move: the value goes into the
+  workflow's own box on the same form and leaves the step, so every step
+  that says nothing takes it once you save.
+- **A tool step's output folder and "file already there"** can be made the
+  Farm Settings default everywhere, or dropped (↺).
+- A box whose value has nowhere higher to go (the step's stage) draws no ↑,
+  and a Farm-wide value kept on the Airtable page is no longer offered from
+  a form — it is set on that page.
+
 ## 3.695.0 - ↑ Make a workflow's enrich value the default everywhere (U-151, part 3c-1) (2026-09-27)
 
 - **The workflow form's "Fill the records" boxes** get the same ↑ as the

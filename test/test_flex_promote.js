@@ -99,6 +99,56 @@ console.log('== the workflow form (library.enrich) ==');
     ok('written: the workflow\'s box empties', r.query('#nt-wf-libEnModel')[0].value === '' && !/data-flexup-strip=/.test(r.html()));
 }
 
+console.log('== the step card ==');
+{
+    const wf = { workflow: { id: 'w12', title: '34 sn dilim' } };
+    ok('above a step, a library box has this flow', P.levelsAbove('library.template', 'step', wf).map(l => l.level).join() === 'workflow');
+    ok('‼️ a Farm-wide value the Airtable page keeps is not offered — the host cannot write it as a setting',
+        P.levelsAbove('library.base', 'step', wf).map(l => l.level).join() === 'workflow' && P.levelsAbove('library.base', 'workflow', {}).length === 0);
+    ok('a tool box has only everywhere', P.levelsAbove('tool.outDir', 'step', wf).map(l => l.level).join() === 'settings');
+    ok('the wake override has this flow', P.levelsAbove('workflow.wake', 'step', wf).map(l => l.level).join() === 'workflow');
+    ok('a point with nothing above it draws no ↑', P.up({ open: '', levels: pt => P.levelsAbove(pt, 'step', wf) }, 'library.stage', 'asset') === '');
+    const sv = fixture.variants().find(v => v.id === 'tasks-wf-step-promote');
+    const start2 = () => { const r = runPage(fixture.script, sv.data, fixture.window || {}, sv.state); sv.act(r); return r; };
+    const upOf = (r, pt) => r.query('[data-flexup]').find(e => e.dataset.flexup === pt);
+    const toOf = (r, level) => r.query('[data-flexup-to]').find(e => e.dataset.level === level);
+    {
+        const r = start2();
+        const ups = r.query('[data-flexup]').map(e => e.dataset.flexup).sort().join();
+        ok('↑ beside every step box with its own value and a level above, nowhere else', ups === 'library.base,library.record,tool.outDir,workflow.wake');
+        ok('pressed: the strip offers this flow, marked as a move inside the form',
+            /data-flexup-strip="library\.base"/.test(r.html()) && r.query('[data-flexup-to]').length === 1 && /Moved into the workflow/.test(r.html()));
+        const before = r.posted.length;
+        toOf(r, 'workflow').click();
+        ok('‼️ this flow posts nothing — it moves the value into the workflow\'s own box',
+            r.posted.slice(before).every(m => m.type !== 'flexPromote')
+            && r.query('#nt-st-libBase')[0].value === '' && r.query('#nt-wf-libBase')[0].value === 'TEST' && !/data-flexup-strip=/.test(r.html()));
+    }
+    {
+        const r = start2();
+        upOf(r, 'tool.outDir').click();
+        toOf(r, 'settings').click();
+        const m = r.last();
+        ok('‼️ the output folder goes everywhere through the host', m && m.type === 'flexPromote' && m.point === 'tool.outDir'
+            && m.level === 'settings' && m.target === '' && m.value === 'D:/out');
+        r.send({ type: 'flexPromoted', point: 'tool.outDir' });
+        ok('written: the step\'s folder box empties', r.query('#nt-st-tOutDir')[0].value === '' && !upOf(r, 'tool.outDir'));
+    }
+    {
+        const r = start2();
+        upOf(r, 'workflow.wake').click();
+        toOf(r, 'workflow').click();
+        ok('the wake override becomes the workflow\'s set, the step follows it again',
+            r.query('#nt-st-wake')[0].value === '' && r.query('#nt-wf-wake-f-0').length === 1 && !upOf(r, 'workflow.wake'));
+    }
+    {
+        const r = start2();
+        upOf(r, 'library.record').click();
+        r.query('[data-flexup-back]')[0].click();
+        ok('↺ on a step box empties it and keeps the workflow\'s', r.query('#nt-st-libRecord')[0].value === '' && !upOf(r, 'library.record'));
+    }
+}
+
 console.log('== the wire ==');
 {
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');

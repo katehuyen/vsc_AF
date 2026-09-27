@@ -36,8 +36,10 @@
         const p = window.AFFlex && window.AFFlex.point(point);
         const c = ctx || {};
         if (!p) { return []; }
+        // a Farm-wide value kept outside VS Code's settings (the Airtable page's defaults) is not written from here
+        const farm = String((p.levels.settings || {}).surface || '').indexOf('setting:') === 0;
         return ORDER.slice(0, Math.max(0, ORDER.indexOf(from))).reverse().filter(l => p.levels[l]).map(l => (
-            l === 'settings' ? { level: l, target: '', name: 'everywhere', who: 'Farm Settings' }
+            l === 'settings' ? (farm ? { level: l, target: '', name: 'everywhere', who: 'Farm Settings' } : null)
                 : l === 'agent' ? (c.agent ? { level: l, target: c.agent, name: 'this agent', who: c.agent } : null)
                     : l === 'project' ? (c.project && c.project.id ? { level: l, target: c.project.id, name: 'this project', who: c.project.name || c.project.id } : null)
                         : l === 'workflow' ? (c.workflow && c.workflow.id ? { level: l, target: c.workflow.id, name: 'this flow', who: c.workflow.title || c.workflow.id } : null)
@@ -48,21 +50,34 @@
         if (!own(value)) { return ''; }
         return `<button type="button" class="flexup${open ? ' on' : ''}" data-flexup="${esc(point)}" aria-expanded="${open}"`
             + ` title="${esc('Make this value a default, or go back to the inherited one\n\n'
-                + 'Opens a strip under the row: this project · this agent · everywhere (Farm Settings), and ↺ back to inherited.')}">↑</button>`;
+                + 'Opens a strip under the row: the levels above this box (this flow · this project · this agent · everywhere), and ↺ back to inherited.')}">↑</button>`;
     }
 
     /** `label` names the box, `shown` is the value as the box words it. */
     function strip(point, label, shown, levels) {
         const to = l => `<button type="button" class="secondary" data-flexup-to="${esc(point)}" data-level="${l.level}"`
             + ` data-target="${esc(l.target)}" title="${esc(label + ' = ' + shown + ' — the default for ' + l.name + ' (' + l.who + ')\n\n'
-                + 'Written there and taken off this form: from now on every run '
-                + (l.level === 'settings' ? 'that says nothing inherits it.' : 'of ' + l.name.replace('this ', 'that ') + ' inherits it.'))}">`
+                + (l.local ? 'Moved into the workflow\'s own box and taken off this step: every step of it that says nothing inherits it once the workflow is saved.'
+                    : 'Written there and taken off this form: from now on every run '
+                    + (l.level === 'settings' ? 'that says nothing inherits it.' : 'of ' + l.name.replace('this ', 'that ') + ' inherits it.')))}">`
             + `${esc(l.name)} · ${esc(l.who)}</button>`;
         return `<div class="ntf wide flexup-strip" data-flexup-strip="${esc(point)}">`
             + `<span class="lbl">↑ ${esc(label)} = <b>${esc(shown)}</b> — make it the default for</span>`
             + levels.map(to).join('')
             + `<button type="button" class="secondary" data-flexup-back="${esc(point)}"`
-            + ` title="${esc('↺ Back to inherited\n\nEmpties the box: this run takes the value its agent, project or Farm Settings states.')}">↺ back to inherited</button></div>`;
+            + ` title="${esc('↺ Back to inherited\n\nEmpties the box: it takes the value the level above it states again — the workflow, the agent or project, Farm Settings.')}">↺ back to inherited</button></div>`;
+    }
+
+    /**
+     * A surface's hook `promote` = { open: point id, levels(point) }: the ↑ beside one box, and its strip
+     * when it is the open one — nothing for a box that inherits or a point with no level above it.
+     */
+    function up(promote, point, value) {
+        return promote && point && promote.levels(point).length ? button(point, value, promote.open === point) : '';
+    }
+    function stripFor(promote, point, label, shown, value) {
+        return promote && point && promote.open === point && own(value) && promote.levels(point).length
+            ? strip(point, label, shown, promote.levels(point)) : '';
     }
 
     /** What a box holds, as the point's own type — the host checks it against the point. */
@@ -76,7 +91,8 @@
 
     /**
      * `on.open(point)` toggles the strip, `on.back(point)` empties the box,
-     * `on.value(point)` reads what it holds now; the promotion itself is posted.
+     * `on.value(point)` reads what it holds now; the promotion itself is posted —
+     * unless `on.local(point, level)` moved it inside the form and says so.
      */
     function wire(root, post, on) {
         const all = sel => Array.from((root || document).querySelectorAll(sel));
@@ -87,6 +103,7 @@
         all('[data-flexup-to]').forEach(b => b.addEventListener('click', ev => {
             ev.preventDefault();
             const point = b.dataset.flexupTo;
+            if (on.local && on.local(point, b.dataset.level)) { return; }
             post({
                 type: 'flexPromote', point, level: b.dataset.level,
                 target: b.dataset.target || '', value: typed(point, on.value(point))
@@ -109,7 +126,7 @@
             .flexup-strip button { padding:2px 8px; }`;
     }
 
-    const api = { levelsFor, pointAt, levelsAbove, button, strip, typed, wire, css };
+    const api = { levelsFor, pointAt, levelsAbove, button, strip, up, stripFor, typed, wire, css };
     if (typeof window !== 'undefined') { window.AFFlexPromote = api; }
     if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
 })();

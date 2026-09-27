@@ -951,6 +951,29 @@ const variants = () => ([
             up.click();
         }
     },
+    // U-151 — the step card: a tool step with its own output folder, database, records and wake set;
+    // ↑ pressed on the database — the only level above a step here is this flow (a move inside the form).
+    {
+        id: 'tasks-wf-step-promote',
+        label: 'Tasks → a workflow\'s step card: ↑ beside the tool\'s output folder, the Library database and records, and Wake after it — pressed on the database: make it this flow\'s, or ↺ back (U-151)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w12', title: '34 sn dilim', stepIdx: 0, libBase: '', libLang: '', libStart: '', libRecord: '', libTemplate: '',
+                    steps: [{
+                        sid: 's1', stype: 'tool', title: 'Böl', libBase: 'TEST', libRecord: 'passed', libStage: 'asset',
+                        toolJson: '{"recipe":"split","input":"{input.clip}","outDir":"D:/out"}',
+                        wake: [{ id: 'step-failed', field: 'step.status', operator: 'eq', value: 'failed' }]
+                    }]
+                }
+            });
+            const up = r.query('[data-flexup]').find(e => e.dataset.flexup === 'library.base');
+            if (!up) { throw new Error('no ↑ beside the step\'s database box'); }
+            up.click();
+        }
+    },
     // M-43 — a chain with one checkpoint on its list, and the workflow's goal + success criteria the supervisor reads.
     {
         id: 'tasks-wf-goal',

@@ -2446,7 +2446,7 @@
                 ${textF('st-apMsg', 'Message', s.apMsg, 'Review the output before it goes live',
                                             'Shown when the chain stops to ask you. {prev_text} is substituted.', true)}
             </div>` : ''}
-            ${s.stype === 'tool' && window.AFTool ? window.AFTool.row(s, C) : ''}
+            ${s.stype === 'tool' && window.AFTool ? window.AFTool.row(s, C, stepPromote(c)) : ''}
             ${s.stype === 'select' ? `<div class="ntgrid">
                 ${textF('st-selMsg', 'Message', s.selMsg, 'Pick the frames that go on to video',
                                                 'Shown above the gallery picker. {prev_text} is substituted.', true)}
@@ -2454,7 +2454,7 @@
                 ${numF('st-selMax', 'Keep at most', s.selMax, '0 = no ceiling.')}
             </div>` : ''}
             ${s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.row(s, C) : ''}
-            ${(s.stype === 'media' || s.stype === 'tool') && window.AFLibrary ? window.AFLibrary.row(s, C) : ''}
+            ${(s.stype === 'media' || s.stype === 'tool') && window.AFLibrary ? window.AFLibrary.row(s, C, stepPromote(c)) : ''}
             <div class="ntsec"><b>How it behaves in the chain</b>
                 <span class="muted small">These are the same on every kind of step — they are about the CHAIN,
                     not about what this step does.</span></div>
@@ -2476,7 +2476,7 @@
                 ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
             </div>
             ${s.stype === 'checkpoint' ? '' : forEachRow(s)}
-            ${s.stype !== 'checkpoint' && window.AFWake ? window.AFWake.stepRow(s, c.wake, DATA.wakeDict, C) : ''}
+            ${s.stype !== 'checkpoint' && window.AFWake ? window.AFWake.stepRow(s, c.wake, DATA.wakeDict, C, stepPromote(c)) : ''}
             ${wantsVerify ? `<div class="ntgrid">
                 ${textF('st-verifyCriteria', s.stype === 'media' ? 'Vision QA criteria' : 'Verify the output',
                     s.verifyCriteria,
@@ -3265,15 +3265,39 @@
         const r = (composer || {}).retrySupervisor || {};
         return Object.keys(r).filter(k => String(r[k] == null ? '' : r[k]).trim()).sort().join(',');
     };
-    /** U-151 — the draft field a promotable point lives in: the supervisor row's, or the workflow form's enrich box. */
+    /** U-151 — the step card's promote hook: the levels above a step; 'this flow' is a move inside this form. */
+    function stepPromote(c) {
+        if (!window.AFFlexPromote) { return undefined; }
+        const wf = { id: c.id || 'new', title: c.title || 'this workflow' };
+        return { open: supUp, levels: point => window.AFFlexPromote.levelsAbove(point, 'step', { workflow: wf }).map(l => (l.level === 'workflow' ? Object.assign({ local: true }, l) : l)) };
+    }
+    /** U-151 — a step-card box: what it holds, how it goes back to inherited, how it moves up into the workflow. */
+    function stepFlex(point) {
+        const s = composer && composer.step;
+        if (!s) { return null; }
+        const lk = window.AFLibrary ? window.AFLibrary.stepKeyOf(point) : '';
+        if (lk) { return { get: () => s[lk], drop: () => { s[lk] = ''; }, lift: () => { composer[lk] = s[lk]; s[lk] = ''; } }; }
+        const tk = window.AFTool ? window.AFTool.fieldOf(point) : '';
+        if (tk) { return { get: () => window.AFTool.spec(s)[tk], drop: () => window.AFTool.drop(s, tk) }; }
+        if (window.AFWake && point === window.AFWake.stepPoint()) {
+            return { get: () => s.wake, drop: () => { delete s.wake; }, lift: () => { composer.wake = JSON.parse(JSON.stringify(s.wake || [])); delete s.wake; } };
+        }
+        return null;
+    }
+    /** U-151 — the draft field a promotable point lives in: the supervisor row's, the workflow form's enrich box, or the step card's. */
     function flexValue(point) {
         if (String(point).indexOf('retry.supervisor.') === 0) { return ((composer || {}).retrySupervisor || {})[supKey(point)]; }
+        const sf = stepFlex(point);
+        if (sf) { return sf.get(); }
         const k = window.AFLibrary ? window.AFLibrary.draftKeyOf(point) : '';
         return k ? (composer || {})[k] : undefined;
     }
     function supDrop(point) {
+        const sf = String(point).indexOf('retry.supervisor.') === 0 ? null : stepFlex(point);
         if (String(point).indexOf('retry.supervisor.') === 0) {
             if (composer && composer.retrySupervisor) { composer.retrySupervisor[supKey(point)] = ''; }
+        } else if (sf) {
+            sf.drop();
         } else {
             const k = window.AFLibrary ? window.AFLibrary.draftKeyOf(point) : '';
             if (composer && k) { composer[k] = ''; }
@@ -4530,7 +4554,15 @@
                 window.AFFlexPromote.wire(document, m => vscode.postMessage(m), {
                     open: point => { readComposer(); supUp = supUp === point ? '' : point; render(); },
                     back: point => { readComposer(); supDrop(point); },
-                    value: point => { readComposer(); return flexValue(point); }
+                    value: point => { readComposer(); return flexValue(point); },
+                    local: (point, level) => {
+                        const sf = level === 'workflow' ? stepFlex(point) : null;
+                        if (!sf || !sf.lift) { return false; }
+                        sf.lift();
+                        supUp = '';
+                        render();
+                        return true;
+                    }
                 });
             }
             byId('nt-tier', 'change', () => { readComposer(); });
@@ -4756,7 +4788,7 @@
                 ['feConc', 'feRetries', 'feCap', 'feBudget'].forEach(id => byId('nt-st-' + id, 'input', () => readStep()));
                 ['feFail', 'feCapMode'].forEach(id => byId('nt-st-' + id, 'change', () => readStep()));
                 if (window.AFCheckpoint) { window.AFCheckpoint.wire(byId, readStep, render); }
-                if (window.AFLibrary) { window.AFLibrary.wire(byId, readStep); }
+                if (window.AFLibrary) { window.AFLibrary.wire(byId, readStep, window.AFFlexPromote ? render : null, () => composer.step); }
                 if (window.AFTool && composer.step && composer.step.stype === 'tool') { window.AFTool.wire(byId, readStep, render, composer.step); }
                 if (window.AFWake && composer.step) { window.AFWake.wireStep(byId, () => composer.step, DATA.wakeDict, render); }
             }
