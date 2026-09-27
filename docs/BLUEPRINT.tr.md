@@ -1683,6 +1683,29 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 
 Retry supervisor (M-13; kesilen bir görevin nasıl devam edeceğine karar verir) aynı çekirdeğin özel hâlidir (M-48). Yukarıdaki her seçim bir esneme noktasıdır: Farm Settings'te, iş akışı formunda, adım kartında, koşuda ya da canlı verilen değer `core/flexResolve.ts` ile kökeniyle birlikte çözülür.
 
+### Akışı beslemek — girdiler, koşu panosu, her biri için, yerel yüklemeler {#feeding-the-flow}
+
+(M-35: M-38 · M-39 · M-40 · M-41.) Denetimli bir zincirin okuduğu ve aktardığı şeyler. Her parça kendi başına, denetimli olsun olmasın her iş akışında çalışır.
+
+**Girdiler (M-38, `src/core/workflowInputs.ts`).** Bir iş akışı başlarken ne verildiğini bildirir: `inputs: [{name, type, default?, required?, description?, choices?}]`, tür `file · folder · text · choice · number · url · airtable` (`airtable` girdisi bir arama taşır; kayıtları ilk adımdan önce değer olur — X-420). Her adım girdiyi `{input.<name>}` olarak okur. Bir koşu değerlerini üç yerden alır ve her değer nereden geldiğini hatırlar: **run** (**Run with…** kartı, `workflows.run inputs={…}`), **trigger** (tetiğin eşlemesi; tetiklenişten `{watch}` `{file}` `{payload}` `{payload.a.b}` ile doldurulur), **workflow** (girdinin kendi varsayılanı). Zorunlu bir değeri eksik olan koşu **başlamaz** ve hangi girdi olduğunu, nedenini söyler.
+
+```json
+{ "title": "Klip düzenleme", "inputs": [{ "name": "clip", "type": "file", "required": true }, { "name": "brief", "type": "text", "default": "daha sıcak renkler" }],
+  "steps": [{ "id": "edit", "agent": "kurgu", "title": "Düzenle", "prompt": "{input.clip} dosyasını düzenle: {input.brief}" }] }
+```
+Onu çalıştıran bir klasör tetiği `{"clip": "{file}"}` eşler; elle: `workflows.run id=<id> inputs={"clip":"D:/in/a.mp4"}`.
+
+**Koşu panosu (M-39, `src/core/runContext.ts`).** Koşu yalnız sonuncuyu değil, biten her adımı **kalıcı bir kimlikle** hatırlar (verilmemişse `s<n>`; kopyalanmış ya da tekrarlanan kimlik yeniden numaralanır); böylece araya eklenen ya da atlanılan bir adım sonrakinin okuduğunu kaydırmaz: `{steps.<id>.text}`, `{steps.<id>.json.a.b}`, `{steps.<id>.file}`, `{steps.<id>.verdict}`, ayrıca `{run.cost}` ve `{run.note}`. `{prev_text}` / `{prev_json.x}` / `{prev_output}` hâlâ hemen önceki adımdır (`{prev_text}` Farm Settings `workflowPrevTextChars` ile, 1.500 karakterde kesilir). Pano koşu kaydında durur ve yeniden yüklemeden sağ çıkar; yöneticinin brifingi ondan kurulur. Örnek: bir yayın adımının metadatası `{"title": "{steps.idea.json.title}", "description": "{steps.script.text}"}`.
+
+**Her biri için (M-40, `src/core/forEachStep.ts`).** `forEach: {list, …}` taşıyan bir adım bir listenin her öğesi için bir kez koşar: `{steps.<id>.json.path}`, `{steps.<id>.text}` (satır başına bir öğe), `{prev_json.path}`, `{prev_text}` ya da `{input.<name>}`. Her öğe, prompt'u `{item}`, `{item.a.b}` ve `{index}` (0'dan başlar) gören bir daldır. Esneme noktaları (adım düzeyi): `concurrency` (4, 1–16), öğe başına `retries` (0–5), `cap` (20, en çok 200) ve `capMode` — `soft` (ilk *cap* öğe koşar, kalanı dışarıda kalır ve toplama `capped` der) ya da `hard` (daha uzun liste adımı reddeder), öğe başına `budgetUSD` ve `onBranchFail` — `continue` (diğerleri sürer; başarısız olan işaretlenir) ya da `drop` (tekrarlarından sonra başarısız olan tek öğe adımı bitirir). Toplama (fan-in) sonraki adıma her dalı **liste sırasıyla** `json.items[]` olarak verir — `{index, item, status, text?, json?, file?, reason?}` — ayrıca `total` ve `capped`; metni öğe başına bir bölümdür. Dallar koşu kaydında yaşar: yeniden yüklemede yalnız bitmemiş olanlar sürer.
+
+```json
+{ "id": "shots", "agent": "kurgu", "title": "Her sahneyi üret", "forEach": { "list": "{steps.script.json.shots}", "concurrency": 2, "onBranchFail": "continue" },
+  "prompt": "Sahne {index}: {item.prompt}" }
+```
+
+**Yerel dosyalar sağlayıcıya (M-41, `src/core/mediaUploadBridge.ts`).** Girdisi bu bilgisayardaki bir dosyayı adlayan medya adımı onu sağlayıcının deposuna kendisi yükler (fal ya da replicate — Farm Settings `mediaUploadProvider`, yoksa fal) ve modele https URL'sini verir; aynı içerik bir kez yüklenir ve URL'nin süresi dolana kadar yeniden kullanılır. Adımın görevi her yüklemeyi tutar (yol, URL, sağlayıcı, önbellekten mi). Köprüde aynı kapı: `media.upload path=<dosya> provider=?` → `{url, provider, cached, hash, expiresAt?}`. Medya adımının kullandığı anahtarı kullanır; anahtar yoksa bunu söyler.
+
 ## Esneklik — esneme noktaları, çözüm zinciri, ön ayarlar {#esneklik}
 
 Bir insanın seçtiği her değer — bir kutu, bir ayar, bir bridge argümanı — bir **esneme noktasıdır** (X-366). Bir kez tanımlanır ve tek bir yoldan çözülür; böylece her yüzey onun hakkında aynı şeyi söyler.
@@ -2379,6 +2402,20 @@ mı geldiğini taşır.
 
 ## Medya Üretim Hattı
 
+### İçerik katmanı bir bakışta (X-365 dalga I, M-37) {#content-layer}
+
+Bir içeriği fikirden yayına ve oradan bir sonraki fikre taşıyan parçalar — her biri kendi bölümündedir:
+
+- **Varlık omurgası** — üretilen her dosya yerel Airtable medya kütüphanesine, doğru aşama klasörüne, tam kaydıyla düşer (X-372; bkz. Airtable Engine Modülü).
+- **Zinciri beslemek** — girdiler, koşu panosu, her biri için, yerel yüklemeler (M-38–M-41; bkz. Akışı beslemek) ve modaliteye duyarlı hakem (M-42).
+- **Yerel medya işleri** — tool adımının ffmpeg reçeteleri, sıfır token (M-49; bkz. Tool adımı).
+- **Marka kiti** (M-50) ve **rol yuvaları / içerik ekibi** — showrunner olarak `youtuber`, üç içerik reçetesi (M-53); ikisi de Prodüksiyon Sahneleri altında.
+- **Maliyet** — koşunun sert harcama tavanı, hakem merdiveni, ucuz-paralel adaylar, bir kontrolün kendi maliyeti (A-27).
+- **Tarayıcı reçete kitabı** — Google Flow ve Higgsfield kendi girişli profillerinde, indirmeler galeriye dosyalanır (M-54; bkz. Tarayıcı Adımları).
+- **Takvim ve yayın** — yayın başına bir vault notu, n8n akışınız üzerinden yayın adımı (M-51), geciken yayınlar Living ve Needs You'da (M-61); bkz. İçerik Takvimi ve Yayın Adımı.
+- **Analitik geri besleme** — metrik adımı ve fikir/senaryo adımlarında ve yöneticinin brifingindeki `{performance}` (M-52).
+- **Dikey dilim** — 34 saniyelik video zinciri uçtan uca, sıfır kopyala-yapıştır (M-55); tüm katmanın kabulü.
+
 1.0 ile eklenti kategori değiştirdi: metin ajanların ve **medya modelleri** (görsel/video/ses) aynı zincirde çalışır — İçerik Fabrikası.
 
 ### 🎬 Studio — hattın tek sayfası (3.30.0) {#studio}
@@ -2462,6 +2499,25 @@ Sahneleri tek tek üretip onayladıktan sonra **"klasördeki klipler"i Premiere'
 ### Reçeteler
 
 `Agent Farm: New Recipe Workflow…` hazır fabrika şablonları kurar: **Metin → Görsel**, **Metin → Görsel → Video**, **Ses → Metin (Whisper)**. Kurulan zincirdeki yer tutucuları (KONU, URL) düzenleyip çalıştırırsın — boş sayfa problemi yok.
+
+### Tool adımı — yerel medya reçeteleri, sıfır token (M-49) {#tool-steps}
+
+**Tool adımı** (`steps[].tool`, adım kartındaki **tool** türü, `media/afTool.js`; `src/core/mediaRecipes.ts`, `src/core/toolCall.ts`) tek bir yerel **ffmpeg reçetesi** koşar — ajan yok, model yok, token yok. ffmpeg kabuk satırıyla değil argüman listesiyle başlatılır; bir değerin içinden hiçbir şey enjekte edilemez. Reçeteler (`tools.recipes` her birini parametreleri, varsayılanları ve aralıklarıyla listeler):
+
+| Reçete | Ne yapar | Parametreler |
+|---|---|---|
+| `split` | sabit uzunlukta, istenirse örtüşen parçalara böler; her parça anahtar karede başlasın diye yeniden kodlanır | `segmentSec`, `overlapSec` |
+| `concat` | dosyaları verilen sırayla uç uca ekler (akış kopyası — aynı codec ve boyut) | `files`, `name` |
+| `extractAudio` | ses izini tek başına yazar | `format` |
+| `muxAudio` | bir ses dosyasını görüntünün altına, eşleme için kaydırarak koyar | `audio`, `offsetSec` |
+| `reframe` | en-boy oranını değiştirir: ortadan kırpar ya da bantlarla sığdırır | `aspect`, `mode`, `height` |
+| `burnSubtitles` | .srt/.ass dosyasını görüntüye basar | `subtitles` |
+| `short` | tek bir anı keser, yeniden çerçeveler ve altyazısını tek kodlamada basar | `start`, `end`, `aspect`, `mode`, `height`, `srt` |
+| `keyframes` | durağan kareler: eşit aralıklı N tane ya da her sahne değişiminde bir | `mode`, `count`, `threshold` |
+| `loudnorm` | yayın ses yüksekliği (EBU R128), görüntü kopyalanır | `lufs`, `truePeak` |
+| `transcode` | bir codec ve kaliteye yeniden kodlar | `codec`, `crf`, `preset`, `audioKbps` |
+
+Bir adım `{recipe | preset, input?, params?, outDir?, overwrite?}` biçimindedir; değerler şablon olabilir (`{input.clip}`, `{steps.split.json.outputs}`, `{item}`) ve `files` parametresi panodan bir liste alır. Adlı **ön ayarlar** adımın vermediği parametreleri doldurur: *Omni Flash parts* (split, 10 sn), *Vertical short (9:16)* (reframe, kırp), *Web loudness* (loudnorm −16 LUFS). Esneme noktaları: `tool.outDir` (Farm Settings, yoksa girdinin yanında bir `af-tool` klasörü) ve `tool.overwrite` (`never` · `always` · `suffix`). Sonuç, adımın panodaki JSON'udur — `{ok, recipe, outputs, runs, ms, durationSec?, error?}` — böylece `{steps.<id>.json.outputs}` bir her-biri-için adımını ya da birleştirmeyi besler; her çıktı medya kütüphanesine dosyalanır (ara ürün ya da kurtarma notlu başarısız). Kaydetme bilinmeyen bir reçete, ön ayar ya da parametre adını reddeder. Elle aynı kapı: `tools.run recipe=… input=… params={…}`.
 
 ## Tarayıcı Adımları
 

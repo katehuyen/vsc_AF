@@ -1642,6 +1642,29 @@ Between a workflow (a fixed chain) and a mission (a leader that plans): **the ch
 
 The retry supervisor (M-13, a cut-off task deciding how it goes on) is the same core in its special case (M-48). Every choice above is a flex point: a value set in Farm Settings, the workflow form, the step card, the run or live, resolved by `core/flexResolve.ts` with its origin.
 
+### Feeding the flow — inputs, the run's board, for-each, local uploads {#feeding-the-flow}
+
+(M-35: M-38 · M-39 · M-40 · M-41.) What a supervised chain reads and hands on. Each part works on its own, in any workflow, supervised or not.
+
+**Inputs (M-38, `src/core/workflowInputs.ts`).** A workflow declares what it is given when it starts: `inputs: [{name, type, default?, required?, description?, choices?}]`, type `file · folder · text · choice · number · url · airtable` (an `airtable` input carries a search whose records become the value before the first step — X-420). Every step reads one as `{input.<name>}`. A run gets its values from three places, and each value remembers which: **run** (the **Run with…** card, `workflows.run inputs={…}`), **trigger** (a trigger's mapping, filled from its firing with `{watch}` `{file}` `{payload}` `{payload.a.b}`), **workflow** (the input's own default). A run missing a required value **does not start** and says which input and why.
+
+```json
+{ "title": "Clip edit", "inputs": [{ "name": "clip", "type": "file", "required": true }, { "name": "brief", "type": "text", "default": "warmer colours" }],
+  "steps": [{ "id": "edit", "agent": "kurgu", "title": "Edit", "prompt": "Edit {input.clip}: {input.brief}" }] }
+```
+A folder trigger that runs it maps `{"clip": "{file}"}`; by hand: `workflows.run id=<id> inputs={"clip":"D:/in/a.mp4"}`.
+
+**The run's board (M-39, `src/core/runContext.ts`).** A run remembers every finished step, not only the last one, under a **stable id** (`s<n>` when none is given; a copied or repeated id is renumbered), so an inserted or jumped-to step never shifts what a later one reads: `{steps.<id>.text}`, `{steps.<id>.json.a.b}`, `{steps.<id>.file}`, `{steps.<id>.verdict}`, plus `{run.cost}` and `{run.note}`. `{prev_text}` / `{prev_json.x}` / `{prev_output}` still mean the step right before (`{prev_text}` cut at Farm Settings' `workflowPrevTextChars`, 1,500). The board lives on the run record and survives a reload; the supervisor's brief is built from it. Example: a publish step's metadata `{"title": "{steps.idea.json.title}", "description": "{steps.script.text}"}`.
+
+**For each (M-40, `src/core/forEachStep.ts`).** A step with `forEach: {list, …}` runs once per element of a list: `{steps.<id>.json.path}`, `{steps.<id>.text}` (one item per line), `{prev_json.path}`, `{prev_text}` or `{input.<name>}`. Each element is a branch whose prompt sees `{item}`, `{item.a.b}` and `{index}` (0-based). Flex points (step level): `concurrency` (4, 1–16), `retries` per element (0–5), `cap` (20, at most 200) with `capMode` `soft` (the first *cap* elements run, the rest are left out and the fan-in says `capped`) or `hard` (a longer list refuses the step), `budgetUSD` per element, and `onBranchFail` — `continue` (the others go on; the failed one is marked) or `drop` (one failed element, after its retries, ends the step). The fan-in hands the next step every branch **in list order** as `json.items[]` — `{index, item, status, text?, json?, file?, reason?}` — plus `total` and `capped`; its text is one section per element. The branches live on the run record: a reload resumes only the ones that had not finished.
+
+```json
+{ "id": "shots", "agent": "kurgu", "title": "Render each shot", "forEach": { "list": "{steps.script.json.shots}", "concurrency": 2, "onBranchFail": "continue" },
+  "prompt": "Shot {index}: {item.prompt}" }
+```
+
+**Local files to a provider (M-41, `src/core/mediaUploadBridge.ts`).** A media step whose input names a file on this computer uploads it to the provider's storage by itself (fal or replicate — Farm Settings `mediaUploadProvider`, else fal) and hands the model the https URL; the same content is uploaded once and reused until the URL expires. The step's task keeps each upload (path, URL, provider, cached). The same door on the bridge: `media.upload path=<file> provider=?` → `{url, provider, cached, hash, expiresAt?}`. It uses the key the media step uses, and says so when there is none.
+
 ## Flexibility — flex points, the resolution chain, presets {#esneklik}
 
 Every value a person chooses — a box, a setting, a bridge argument — is a **flex point** (X-366). It is declared once and resolved one way, so every surface says the same thing about it.
@@ -2338,6 +2361,20 @@ whether the answer came from the engine or the setting.
 
 ## Media Production Pipeline
 
+### The content layer at a glance (X-365 wave I, M-37) {#content-layer}
+
+The pieces that take a piece of content from an idea to a publish and back to the next idea — each is its own section:
+
+- **Asset backbone** — every produced file lands in the local Airtable media library, in the right stage folder, with its full record (X-372; see Airtable Engine Module).
+- **Feeding the chain** — inputs, the run's board, for-each, local uploads (M-38–M-41; see Feeding the flow) and a modality-aware judge (M-42).
+- **Local media work** — the tool step's ffmpeg recipes, zero tokens (M-49; see Tool step).
+- **Brand kit** (M-50) and **role slots / the content team** — `youtuber` as showrunner, the three content recipes (M-53); both under Production Scenes.
+- **Cost** — the run's hard spend cap, the judge's ladder, parallel-cheap candidates, a check's own cost (A-27).
+- **Browser recipe book** — Google Flow and Higgsfield on a signed-in profile of their own, downloads filed into the gallery (M-54; see Browser Steps).
+- **Calendar and publish** — one vault note per publish, the publish step through your n8n flow (M-51), overdue publishes on Living and Needs You (M-61); see Content Calendar and Publish Step.
+- **Analytics feedback** — the metrics step and `{performance}` in the idea/script steps and the supervisor's brief (M-52).
+- **The vertical slice** — the 34-second video chain end to end with zero copy-paste (M-55), the acceptance of the whole layer.
+
 ### 🎬 Studio — the pipeline on one page (3.30.0) {#studio}
 
 Four parts worked and none of them was connected to the others: the scene manifest (`production.json`), the asset wall (the Gallery), the sequence export (Premiere) and the machinery that generates and ingests (providers, watched folders, budget). So **the thing the user actually works** — *plan → generate → triage → assign → approve → assemble* — existed nowhere as a whole.
@@ -2421,6 +2458,25 @@ After producing and approving scenes one by one, you turn **"the clips in a fold
 ### Recipes
 
 `Agent Farm: New Recipe Workflow…` sets up ready-made factory templates: **Text → Image**, **Text → Image → Video**, **Audio → Text (Whisper)**. You edit the placeholders (TOPIC, URL) in the installed chain and run it — no blank-page problem.
+
+### Tool step — local media recipes, zero tokens (M-49) {#tool-steps}
+
+A **tool step** (`steps[].tool`, the step card's **tool** type, `media/afTool.js`; `src/core/mediaRecipes.ts`, `src/core/toolCall.ts`) runs one local **ffmpeg recipe** — no agent, no model, no token. ffmpeg is spawned with an argument list, never a shell line, so nothing can be injected through a value. The recipes (`tools.recipes` lists each with its parameters, defaults and ranges):
+
+| Recipe | What it does | Parameters |
+|---|---|---|
+| `split` | cut into parts of a fixed length, optionally overlapping; each part re-encoded to start on a key frame | `segmentSec`, `overlapSec` |
+| `concat` | join files end to end in the given order (stream copy — same codec and size) | `files`, `name` |
+| `extractAudio` | the sound track on its own | `format` |
+| `muxAudio` | lay an audio file under the picture, shifted for sync | `audio`, `offsetSec` |
+| `reframe` | change the aspect: crop from the centre or fit with bars | `aspect`, `mode`, `height` |
+| `burnSubtitles` | draw a .srt/.ass file onto the picture | `subtitles` |
+| `short` | one moment cut, reframed and subtitled in a single re-encode | `start`, `end`, `aspect`, `mode`, `height`, `srt` |
+| `keyframes` | stills: N evenly spaced, or one per scene change | `mode`, `count`, `threshold` |
+| `loudnorm` | broadcast loudness (EBU R128), picture copied | `lufs`, `truePeak` |
+| `transcode` | re-encode to a codec and quality | `codec`, `crf`, `preset`, `audioKbps` |
+
+A step is `{recipe | preset, input?, params?, outDir?, overwrite?}`; values may be templates (`{input.clip}`, `{steps.split.json.outputs}`, `{item}`), and a `files` parameter takes a list off the board. Named **presets** fill parameters the step does not give: *Omni Flash parts* (split, 10 s), *Vertical short (9:16)* (reframe, crop), *Web loudness* (loudnorm −16 LUFS). Flex points: `tool.outDir` (Farm Settings, else an `af-tool` folder beside the input) and `tool.overwrite` (`never` · `always` · `suffix`). The result is the step's JSON on the board — `{ok, recipe, outputs, runs, ms, durationSec?, error?}` — so `{steps.<id>.json.outputs}` feeds a for-each or a join; every output is filed into the media library (intermediate, or failed with a salvage note). Save refuses an unknown recipe, preset or parameter name. The same door by hand: `tools.run recipe=… input=… params={…}`.
 
 ## Browser Steps {#browser-steps}
 
