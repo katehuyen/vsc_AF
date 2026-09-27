@@ -34021,7 +34021,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         code: r.code, event: r.event, ts: r.ts, at: localStamp(r.ts),
         session: r.session ?? null, short: r.session ? shortSession(r.session) : null,
         turn: r.turn ?? null, agent: r.agent ?? null, by: r.by,
-        uncertain: r.uncertain ?? null, note: r.note ?? null
+        uncertain: r.uncertain ?? null, note: r.note ?? null,
+        ...(r.stop ? { stop: true } : {})
     });
 
     // ---------- what the page's document tabs are drawn from ----------

@@ -37,7 +37,7 @@ function run(code, agent, events, opts) {
         events: events.map((e, i) => ({
             code, event: e.event, ts: e.ts, at: '', session: id, short,
             turn: turns[i].n, agent, by: e.by || 'agent',
-            uncertain: e.uncertain || null, note: e.note || null
+            uncertain: e.uncertain || null, note: e.note || null, ...(e.stop ? { stop: true } : {})
         }))
     };
 }
@@ -93,7 +93,10 @@ function rows() {
             firstTs: T - 3 * DAY, lastTs: T - 30 * 60000,
             sessions: [
                 run('U-25', 'developer', [
-                    { event: 'touch', ts: T - 3 * DAY, note: 'ilk bakış, kök neden bulunamadı', uncertain: 'multi' }
+                    { event: 'touch', ts: T - 3 * DAY, note: 'ilk bakış, kök neden bulunamadı', uncertain: 'multi' },
+                    // M-56 — Start then stop on an item that was never closed
+                    { event: 'doing', ts: T - 3 * DAY + 60000 },
+                    { event: 'reopen', stop: true, ts: T - 3 * DAY + 120000 }
                 ], { turn: 4, sessionTurns: 12, cost: 0.9, model: 'sonnet' }),
                 run('U-25', 'developer', [
                     { event: 'doing', ts: T - 30 * 60000 }

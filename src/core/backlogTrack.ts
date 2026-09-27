@@ -188,6 +188,9 @@ export interface TrackRecord {
      * case to protect against the rare one — but it is stored SAID.
      */
     prevGuess?: boolean;
+    /** M-56 — derived on reading, never stored: a `reopen` straight out of
+     *  `doing` is a STOP (the item was never closed), and starts no round. */
+    stop?: boolean;
     /**
      * ‼️ X-36 (V2) — A ROUND WHOSE WORDING WAS LOST IS COMPLETED BY ANOTHER
      * RECORD, NOT BY EDITING THE OLD ONE.
@@ -497,7 +500,7 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
             noteFixes.set(r.restoresTs, r);
         }
     }
-    const mine = noteFixes.size
+    const fixed = noteFixes.size
         ? raw.map(r => {
             const fix = noteFixes.get(r.ts);
             return fix?.note && CLOSING.includes(r.event)
@@ -506,6 +509,24 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
                 ? { ...r, note: fix.note, noteRestored: true, noteCut: fix.noteCut } : r;
         })
         : raw;
+    // ‼️ M-56 — A ROUND BEGINS WHERE A CLOSED ITEM COMES BACK TO LIFE, and
+    // nowhere else. Start then stop takes an open item to doing and back: the
+    // record says `reopen` (it IS a move to open) but nothing was closed, so it
+    // is a stop — and a ledger already carrying such stops reads right without
+    // being rewritten. A reopen with no state before it keeps counting.
+    const roundStarts = new Set<TrackRecord>();
+    let was: BacklogState | undefined;
+    const mine = fixed.map(r => {
+        const now = stateOfEvent(r.event);
+        const live = now === 'open' || now === 'doing';
+        const stop = r.event === 'reopen' && was === 'doing';
+        const out = stop ? { ...r, stop: true } : r;
+        if (live && !stop && (was === 'done' || was === 'cancelled' || (was === undefined && r.event === 'reopen'))) {
+            roundStarts.add(out);
+        }
+        if (now) { was = now; }
+        return out;
+    });
     const runs: TrackSessionRun[] = [];
     const loose: TrackRecord[] = [];
     for (const r of mine) {
@@ -549,7 +570,7 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
         delete next.prevGuess;
         return next;
     };
-    const reopened = mine.filter(r => r.event === 'reopen').map(restore);
+    const reopened = mine.filter(r => roundStarts.has(r)).map(restore);
     const last = closings[closings.length - 1];
     const lastReopen = reopened[reopened.length - 1];
     const closed = last && (!lastReopen || lastReopen.ts < last.ts) ? last : undefined;

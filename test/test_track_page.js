@@ -198,6 +198,19 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
 }
 
 // ---------------------------------------------------------------------------
+// M-56 — a move back to open out of doing is drawn as a STOP, not a reopen
+// ---------------------------------------------------------------------------
+{
+    const rows = track();
+    rows.rows[0].sessions[0].events.push({ code: 'U-9', event: 'reopen', stop: true, ts: T - DAY + 5000,
+        at: '', session: 'aaaa1111-x', short: 'aaaa1111', turn: 12, agent: 'developer', by: 'panel', uncertain: null, note: null });
+    const h = run({ tabData: { track: rows } }).html();
+    ok('M-56 — the stop is drawn as ■ stop, in its own class',
+        /class="pj-trk-ev e-stop"[^>]*>■ stop</.test(h));
+    ok('…and its hover says why it is not a round', h.includes('it was never closed, so no new round'));
+}
+
+// ---------------------------------------------------------------------------
 // U-156 — a long closing note opens in place, like the item's own words
 // ---------------------------------------------------------------------------
 {

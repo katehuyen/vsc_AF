@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.732.0 - Start then stop is not a new round (M-56) (2026-09-28)
+
+- A backlog item's round now grows only when an item that was CLOSED (done
+  or cancelled) comes back to life — reopened, or started again. Pressing
+  Start on an open item and then stopping it is a stop, not a reopen: the
+  round badge, the Track tab and Backloglog.md no longer count it. Ledgers
+  that already carry such stops are read right without being rewritten, so
+  inflated rounds drop back on their own.
+- The Track tab draws such a move as "■ stop" instead of "↺ reopen", and its
+  hover says why it starts no round.
+
 ## 3.731.0 - A resumed session comes back as it ran, whichever door resumed it (S-102) (2026-09-28)
 
 - Resuming a session from the Sessions page (right-click → Resume in

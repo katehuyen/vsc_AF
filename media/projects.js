@@ -6226,8 +6226,12 @@
      * rich panel, measured against the row (docs/CONVENTIONS.md → Hover).
      */
     function trkEvHtml(e, cls) {
+        // M-56 — a move back to open straight out of doing is a STOP: the item
+        // was never closed, so it is drawn as one and starts no round.
+        const kind = e.stop ? 'stop' : e.event;
         const head = window.AFTip.lines([
-            `${e.event} · ${window.AFTime.stamp(e.ts)}`,
+            `${kind} · ${window.AFTime.stamp(e.ts)}`,
+            e.stop ? 'Stopped — back to open from doing; it was never closed, so no new round' : '',
             `Recorded by: ${e.by}`,
             e.uncertain ? `Uncertain: ${e.uncertain}` : ''
         ]);
@@ -6236,9 +6240,9 @@
         // word about the event, so the only way to find a note was to hover two
         // hundred chips on the chance — which is the same as not having them.
         // The mark is the reader's reason to stop.
-        const chip = `<span class="pj-trk-ev e-${C.esc(e.event)}${e.note ? ' noted' : ''}"`
+        const chip = `<span class="pj-trk-ev e-${C.esc(kind)}${e.note ? ' noted' : ''}"`
             + `${e.note ? '' : ` title="${C.esc(head)}"`}>`
-            + `${C.esc(TRK_EVENT_ICON[e.event] || '·')} ${C.esc(e.event)}`
+            + `${C.esc(e.stop ? '■' : TRK_EVENT_ICON[e.event] || '·')} ${C.esc(kind)}`
             + `${e.note ? '<span class="pj-trk-notemark">✎</span>' : ''}</span>`;
         return window.AFTip.wrap(chip, head, e.note || '', `${cls ? cls + ' ' : ''}tip-block`);
     }
@@ -6270,7 +6274,7 @@
                 cls: 'tl-code'
             });
             const note = e.note || words;
-            return head + `<div class="pj-trk-tl e-${C.esc(e.event)}" ${trkCtx(x.row)} data-trkrow data-code="${C.esc(x.row.code)}" data-line="${x.row.line || 0}">
+            return head + `<div class="pj-trk-tl e-${C.esc(e.stop ? 'stop' : e.event)}" ${trkCtx(x.row)} data-trkrow data-code="${C.esc(x.row.code)}" data-line="${x.row.line || 0}">
                 <span class="pj-trk-tltime" title="${C.esc(window.AFTime.tip(e.ts, 'Recorded'))}">${C.esc(window.AFTime.clock(e.ts))}</span>
                 ${trkEvHtml(e, 'tl-ev')}
                 ${codeBtn}

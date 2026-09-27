@@ -608,6 +608,32 @@ const RECORDS = [
             sum.rounds.length === 1 && sum.rounds[0].prevText === 'ilk isteğim');
     }
 
+    // ‼️ M-56 — Start then stop is NOT a round. The item was open before, open
+    // after, and never closed; the stop is recorded as a move to open, and it is
+    // read as what it is — including in a ledger written before this rule.
+    {
+        const recs = [
+            { code: 'M-9', event: 'opened', ts: T0, by: 'agent' },
+            { code: 'M-9', event: 'doing', ts: T0 + 1000, by: 'panel' },
+            { code: 'M-9', event: 'reopen', ts: T0 + 2000, by: 'panel', prevText: 'aynı söz' },
+            { code: 'M-9', event: 'doing', ts: T0 + 3000, by: 'panel' },
+            { code: 'M-9', event: 'reopen', ts: T0 + 4000, by: 'outside' }
+        ];
+        const sum = T.summarizeCode('M-9', recs);
+        ok('M-56 — start, stop, start, stop leaves the item on its first round', sum.round === 1 && sum.rounds.length === 0);
+        const evs = [...sum.loose, ...sum.runs.flatMap(s => s.events)].filter(e => e.event === 'reopen');
+        ok('…and each of those moves back to open is marked a stop for the page', evs.length === 2 && evs.every(e => e.stop === true));
+        const real = T.summarizeCode('M-9', [...recs,
+            { code: 'M-9', event: 'done', ts: T0 + 5000, by: 'agent', note: 'bitti' },
+            { code: 'M-9', event: 'reopen', ts: T0 + 6000, by: 'panel', prevText: 'ikinci istek' }]);
+        ok('…while a reopen after a CLOSE is a round, as before', real.round === 2 && real.rounds.length === 1
+            && real.rounds[0].prevText === 'ikinci istek');
+        const viaStart = T.summarizeCode('M-9', [...recs,
+            { code: 'M-9', event: 'cancelled', ts: T0 + 5000, by: 'agent', note: 'vazgeçildi' },
+            { code: 'M-9', event: 'doing', ts: T0 + 6000, by: 'panel' }]);
+        ok('…and so is a closed item started again straight into doing', viaStart.round === 2 && !viaStart.closed);
+    }
+
     // (3) ‼️ THE DUPLICATION TRAP. Every row shape `itemBlock` emits has to be
     // recognised as a MACHINE row on the way back in, or it is read as the
     // human's prose, preserved, and written again next to the freshly generated
