@@ -15,6 +15,7 @@
 import { askActions, WorkflowQuestion } from './workflowAsk';
 import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
 import { type OverduePublish, publishNeedItems } from './calendarSignals';
+import { type FaultEpisode, faultNeedItems } from './engineFaultWatch';
 
 export type NeedKind =
     | 'permission'        // a live session is blocked on a permission dialog
@@ -25,7 +26,8 @@ export type NeedKind =
     | 'mission'           // a mission waits on the human (question / interrupted)
     | 'question'          // M-46 — a workflow supervisor asks the human
     | 'console-question'  // K-45 — a Console question no timer will answer
-    | 'publish-overdue';  // M-61 — a content calendar publish past its time, still open
+    | 'publish-overdue'   // M-61 — a content calendar publish past its time, still open
+    | 'engine-fault';     // X-427 — a relay leg's engine fails and only a person can move it
 
 export interface NeedAction {
     id: string;
@@ -91,7 +93,8 @@ const URGENCY: Record<NeedKind, number> = {
     'interrupted': 2,
     'stalled': 2,
     'conflict': 3,
-    'publish-overdue': 3
+    'publish-overdue': 3,
+    'engine-fault': 2
 };
 
 export interface PendingApproval {
@@ -182,6 +185,8 @@ export interface NeedsInput {
     consoleAsks?: ConsoleNeedAsk[];
     /** M-61 — the content calendar's overdue publishes (src/core/calendarSignals.ts) */
     overduePublishes?: OverduePublish[];
+    /** X-427 — relay legs whose engine fault needs a person (src/core/engineFaultWatch.ts) */
+    engineFaults?: FaultEpisode[];
     /** M-46 — a workflow supervisor's open questions (src/core/workflowAsk.ts) */
     workflowQuestions?: WorkflowQuestion[];
     /** Missions blocked on the human: an open question or an interrupted run. */
@@ -318,6 +323,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
     }
     items.push(...consoleNeedItems(input.consoleAsks ?? [], URGENCY['console-question']));
     items.push(...publishNeedItems(input.overduePublishes ?? [], URGENCY['publish-overdue']));
+    items.push(...faultNeedItems(input.engineFaults ?? [], URGENCY['engine-fault']));
 
     for (const a of input.approvals) {
         const isStep = a.kind === 'approval';
@@ -380,7 +386,7 @@ export function blockingCount(items: NeedItem[]): number {
     return items.filter(i =>
         i.kind === 'permission' || i.kind === 'browser-approval'
         || i.kind === 'stalled' || i.kind === 'interrupted' || i.kind === 'mission' || i.kind === 'question'
-        || i.kind === 'console-question').length;
+        || i.kind === 'console-question' || i.kind === 'engine-fault').length;
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +425,8 @@ export function needKey(item: NeedItem): string {
             return `conflict|${r.agentId ?? '*'}|${r.filePath ?? '*'}`;
         case 'publish-overdue':
             return `publish-overdue|${r.filePath ?? '?'}`;
+        case 'engine-fault':
+            return `engine-fault|${r.sessionId ?? '?'}`;
     }
 }
 

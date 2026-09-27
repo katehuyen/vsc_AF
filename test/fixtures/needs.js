@@ -169,6 +169,29 @@ module.exports = {
                         lateMs: 5 * 3_600_000 }
                 ]
             })
+        },
+        {
+            id: 'needs-engine-fault-one',
+            label: 'Needs You — one relay leg flagged again, the chain held for a person (X-427)',
+            data: data({ liveSessions: [], approvals: [], insights: [], engineFaults: [engineFault('held')] })
+        },
+        {
+            id: 'needs-engine-fault-two',
+            label: 'Needs You — a held flagged chain and an engine still down past the ceiling (X-427)',
+            data: data({ liveSessions: [], approvals: [], insights: [], engineFaults: [engineFault('held'), engineFault('gave-up')] })
         }
     ]
 };
+
+function engineFault(state) {
+    const held = state === 'held';
+    return {
+        sessionId: held ? '0675c6cf-86ae-4340-a299-2e3979e98272' : 'a1b2c3d4-0000-4000-8000-000000000001', cardId: held ? 'con_7' : 'con_9',
+        chainId: held ? 'chn_muin1eiu002hyo' : 'chn_mujq0k7w001abc', leg: held ? 12 : 4, kind: held ? 'flagged' : 'outage', state,
+        said: held ? 'API Error: Opus 5.5\'s safeguards flagged this message (https://www.anthropic.com/legal/aup). This sometimes happens with safe, normal conversations.'
+            : 'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+        since: Date.now() - (held ? 20 * 60_000 : 25 * 3_600_000), nudges: held ? 0 : 30,
+        why: held ? 'the engine flagged leg 12, and 3 flagged passes in a row already reached the cap (3) — the chain waits for you'
+            : 'the engine has failed leg 4 for 25 h — past the 24 h ceiling, Agent Farm stops asking and waits for you'
+    };
+}

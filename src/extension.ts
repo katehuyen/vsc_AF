@@ -359,6 +359,9 @@ import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, rowSessionId, successorRow } from './core/batonDoor';
 import { PassedLegCard, PassedLegEnder, PassedLegFacts } from './core/batonEnd';
 import { BatonRunner } from './core/batonRunner';
+import { faultText } from './core/engineFault';
+import { EngineFaultWatch } from './core/engineFaultWatch';
+import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { legFactsFrom } from './core/batonLegFacts';
 import { legGitReaders } from './core/legRoots';
 import { BatonStore } from './core/batonStore';
@@ -17269,6 +17272,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         log: l => console.log(`[Agent Farm] ${l}`)
     });
     context.subscriptions.push({ dispose: () => batonEnder.dispose() });
+    // ‼️ X-427 — a leg whose ENGINE failed a turn: flagged → passed for it, outage/auth → the same session asked again (engineFaultWatch.ts)
+    const ownSetting = (k: string): unknown => { const i = vscode.workspace.getConfiguration().inspect<unknown>(`agentFarm.${k}`); return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined; };
+    const engineFaults = new EngineFaultWatch({
+        batons: () => batonStore.all(),
+        cards: () => {
+            try {
+                return consoleHost.list().filter(c => !!c.sessionId).map(c => ({
+                    id: c.id, sessionId: c.sessionId!, status: c.status, queued: c.queued?.length ?? 0,
+                    asking: !!(c.pendingAsk || c.pendingPermission), lastTurn: c.lastTurn, text: faultText(c.messages)
+                }));
+            } catch { return []; }
+        },
+        opts: () => faultOpts(ownSetting),
+        pass: (sid, why, model) => batonRunner.enginePass(sid, why, model),
+        nudge: (id, text) => !!consoleHost.send(id, text),
+        say: (title, body, key, level, type) => { noticesStore.add({ agentName: 'agent-farm', title, body, type, level, sourceKey: key }); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
+        changed: () => needsEmitter.fire(),
+        log: l => console.log(`[Agent Farm] ${l}`)
+    });
+    registerFaultOps(bridge, engineFaults, () => faultOpts(ownSetting));
     context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
@@ -17282,7 +17305,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The boot pass waits for the monitor to rebuild and the Console to reclaim
     // its seats; a baton judged before that would see every session as unknown.
     const batonBootSweep = setTimeout(() => { batonRunner.sweep(); updateBatonBar(); }, 20_000);
-    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); }, 60_000);
+    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); engineFaults.check(); }, 60_000);
     context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); } });
 
     registerA2AOps(bridge, {
@@ -19455,7 +19478,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         consoleAsks: consoleNeedsOf?.() ?? [],
         // M-61 — a publish past its time and still open, with the step that sends it when one names the note
         overduePublishes: calendarView(readCalendar(contentCalendarDir()), Date.now()).overdue
-            .map(entry => ({ entry, lateMs: Date.now() - whenOf(entry), step: publishStepOf(entry, taskManager.workflows) }))
+            .map(entry => ({ entry, lateMs: Date.now() - whenOf(entry), step: publishStepOf(entry, taskManager.workflows) })),
+        // X-427 — a relay leg whose engine fault needs a person
+        engineFaults: engineFaults.list()
     });
 
     // Cleared rows: the key stays only while its row is still produced, so a

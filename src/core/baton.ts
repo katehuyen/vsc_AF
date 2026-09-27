@@ -86,6 +86,8 @@ export interface Baton {
     maxLegs?: number;
     /** S-83 — the failsafe opened this hop for a leg that ended without passing: why */
     rescue?: string;
+    /** X-427 — the engine flagged the leg's conversation and Agent Farm passed for it (engineFaultWatch.ts) */
+    fault?: 'flagged';
     /** S-84 — the A2A card this pass hung on the board (batonBoard.ts) */
     a2aNoteId?: string;
     /** S-96 — on the opener of a RUNNING leg only: the user made that leg the chain's last (batonLastLeg.ts) */

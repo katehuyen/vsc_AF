@@ -36,7 +36,8 @@
         'interrupted':      { icon: '✂️', label: 'INTERRUPTED',  cls: 'warn' },
         'stalled':          { icon: '⏳', label: 'STALLED',      cls: 'warn' },
         'conflict':         { icon: '⇄',  label: 'CONFLICT',     cls: 'warn' },
-        'publish-overdue':  { icon: '📣', label: 'OVERDUE',      cls: 'warn' }
+        'publish-overdue':  { icon: '📣', label: 'OVERDUE',      cls: 'warn' },
+        'engine-fault':     { icon: '⚡', label: 'ENGINE',       cls: 'warn' }
     };
 
     /**

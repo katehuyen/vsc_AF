@@ -160,6 +160,11 @@ export class BatonRunner {
         });
     }
 
+    /** X-427 — the engine flagged a running leg: its baton is written for it (batonLegEnd.ts). */
+    enginePass(sessionId: string, why: string, model?: string): Promise<Baton | undefined> {
+        return this.legs ? this.legs.enginePass(sessionId, why, model) : Promise.resolve(undefined);
+    }
+
     /**
      * S-84 — the chain is over: its cards stay readable for a day (the race is
      * worth reading after it ends) and the hygiene sweep then clears them. A

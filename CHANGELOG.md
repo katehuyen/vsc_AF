@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.723.0 - A relay survives engine faults (X-427) (2026-09-28)
+
+- A turn that failed on the engine's side used to leave a relay leg idle for
+  ever: nothing ended, so the failsafe never came. Every minute the running
+  legs are now read at turn end and the engine's words decide.
+- Flagged ("safeguards flagged this message … can't respond"): Agent Farm
+  passes the baton for the leg — the successor opens from what it left,
+  through the same brakes, and the flagged card is closed. Three flagged
+  passes in a row (batonFlaggedPasses) hold the chain for you; from the
+  second one the successor can open on another model (batonFlaggedModel).
+- Engine down, overloaded, unreachable, rate limited or refusing the sign-in:
+  no new leg. The same session is asked to continue at 1, 2, 4 … minutes, at
+  most an hour apart, for up to 24 hours (batonFaultWaitHours); a working
+  turn clears it. Past that, and for a refused sign-in, Needs You gets an
+  ENGINE row that opens the session. Bridge: baton.faults.
+
 ## 3.721.0 - Overdue publishes on Living and Needs You (M-61) (2026-09-27)
 
 - Living has a row for the content calendar: the overdue publishes and how

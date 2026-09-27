@@ -21,6 +21,9 @@ import type { FolderRead } from './legRoots';
 
 export type NoticeLevel = 1 | 2 | 3 | 4;
 
+/** Said to a successor of a flagged leg: the refusal was the conversation's, not the job's. */
+export const FLAGGED_ADVICE = 'The engine flagged the predecessor\'s CONVERSATION, not the job: continue the work, and do not paste its last messages back word for word — read what you need and say it in your own words.';
+
 export interface LegEndDeps {
     store: BatonStore;
     /** what is known about the session's end (card, task row, context guard, note, git) */
@@ -92,8 +95,49 @@ export class LegEndWatch {
         }
     }
 
+    /**
+     * X-427 — the engine flagged a running leg's conversation: its baton is
+     * written FOR it and left waiting for its end, which the ender gives (the
+     * card is closed at rest) — so the successor opens on the usual release,
+     * never beside a live session. Undefined = not a running leg, or already judged.
+     */
+    async enginePass(sessionId: string, why: string, model?: string): Promise<Baton | undefined> {
+        const sid = String(sessionId ?? '').trim();
+        const all = this.deps.store.all();
+        const opener = legOpener(all, sid);
+        if (!sid || !opener || this.judging.has(sid) || all.some(b => b.from.sessionId === sid && !isSeal(b))) { return undefined; }
+        this.judging.add(sid);
+        try {
+            const now = this.deps.now();
+            const facts = await this.deps.legFacts(sid, now);
+            const draft = await this.draftRescue(opener, sid, { ...facts, sessionId: sid, endedAt: now }, [why], why, now, { model });
+            if (draft.state === 'stopped') { return draft; }
+            this.deps.store.put(draft);
+            this.say(`Relay passed for a flagged leg — chain ${draft.chainId}`,
+                `${why}.\n\nThe baton waits for the session's end; Agent Farm closes its card at rest and hop ${draft.hop} opens from what it left — `
+                + `✕ Stop chain on its card, or baton.stop chain=${draft.chainId}, stops it.`, `baton:${draft.id}:flagged`, 2, 'info');
+            return draft;
+        } finally {
+            this.judging.delete(sid);
+        }
+    }
+
     private async rescue(opener: Baton, sid: string, facts: LegEndFacts, evidence: string[], why: string, now: number): Promise<Baton> {
-        const prompt = rescueEvidence(facts, evidence, isSeal(opener) ? undefined : opener.prompt);
+        const draft = await this.draftRescue(opener, sid, facts, evidence, why, now);
+        if (draft.state === 'stopped') { return draft; }
+        this.deps.store.put(draft);
+        this.say(`Relay rescued — chain ${draft.chainId}`,
+            `${why}.\n\nThe failsafe opened hop ${draft.hop} from what it left behind — ✕ Stop chain on its card, or baton.stop chain=${draft.chainId}, stops it.`,
+            `baton:${draft.id}:rescued`, 2, 'info');
+        return this.release(draft, `failsafe: ${why}`);
+    }
+
+    /** The rescue baton, through the brakes: `stopped` (stored, said) when one holds, else the draft to store. */
+    private async draftRescue(
+        opener: Baton, sid: string, facts: LegEndFacts, evidence: string[], why: string, now: number, flagged?: { model?: string }
+    ): Promise<Baton> {
+        let prompt = rescueEvidence(facts, evidence, isSeal(opener) ? undefined : opener.prompt);
+        if (flagged) { prompt += `\n\n${FLAGGED_ADVICE}`; }
         const launchId = this.deps.launchIdOf?.(sid);
         const manifest = launchId ? this.deps.manifestOf?.(launchId) : undefined;
         const passed = passBaton({ prompt, sessionId: sid, launchId, manifest, prior: this.deps.store.all(), now });
@@ -104,7 +148,9 @@ export class LegEndWatch {
             inherit: opener.inherit, want: opener.want,
             state: 'waiting-end', why: 'the session has ended', createdAt: now, updatedAt: now
         };
-        draft = { ...draft, rescue: why, note: `failsafe — ${why}` };
+        draft = flagged
+            ? { ...draft, rescue: why, note: `engine — ${why}`, fault: 'flagged', ...(flagged.model ? { inherit: { ...draft.inherit, model: flagged.model } } : {}) }
+            : { ...draft, rescue: why, note: `failsafe — ${why}` };
         draft = await markFolder(draft, this.deps.headOf, this.deps.dirtOf);
         const all = this.deps.store.all();
         const brake = batonBrake(draft, all, chainMaxLegs(all, draft.chainId, this.deps.maxLegs ? this.deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
@@ -112,15 +158,11 @@ export class LegEndWatch {
             const m = moveBaton(draft, 'stopped', `braked — ${brake.why}`, now);
             const stopped = m.ok ? m.baton : draft;
             this.deps.store.put(stopped);
-            this.say(`Relay stopped — chain ${draft.chainId}`, `The failsafe would have rescued leg ${opener.hop + 1} (${why}), but ${brake.why}`,
+            this.say(`Relay stopped — chain ${draft.chainId}`, `The ${flagged ? 'mechanical pass' : 'failsafe'} would have rescued leg ${opener.hop + 1} (${why}), but ${brake.why}`,
                 `baton:${draft.id}:braked`, 2, 'warning');
             return stopped;
         }
-        this.deps.store.put(draft);
-        this.say(`Relay rescued — chain ${draft.chainId}`,
-            `${why}.\n\nThe failsafe opened hop ${draft.hop} from what it left behind — ✕ Stop chain on its card, or baton.stop chain=${draft.chainId}, stops it.`,
-            `baton:${draft.id}:rescued`, 2, 'info');
-        return this.release(draft, `failsafe: ${why}`);
+        return draft;
     }
 
     private say(title: string, body: string, key: string, level: NoticeLevel, type: 'info' | 'warning'): void {

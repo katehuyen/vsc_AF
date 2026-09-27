@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.722.0",
+  "version": "3.723.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8859,6 +8859,23 @@
           "default": "",
           "editPresentation": "multilineText",
           "description": "Baton relay (S-83): your own first message for a leg the FAILSAFE opens — when a leg ends without passing the baton although it was cut off (a QUOTA/CONTEXT HANDOVER had reached it, it wrote a handover note in its last two minutes, it exited with an error, or it left uncommitted work). Empty = the built-in \"=== BATON RELAY — … · EMERGENCY HANDOVER ===\" header, which names the predecessor and how to read its last turns. Variables: {fromSessionId} (the ended session, in full), {agentId}, {chain}, {leg} (the leg this run is — hop + 1), {hop} (handovers so far), {maxHops} (the leg ceiling, \"none\" when the chain has none), {why} (why it was rescued), {evidence} (its handover note's Durum/Kalan/İlk 5 dakika sections, or its uncommitted state), {userDirective} (agentFarm.batonInjectedDirective). A template that does not name {evidence} still gets it, last, under a ---. A leg that finished cleanly, or that you ended yourself, is never rescued: the chain simply ends, and a successor that dies within 30 seconds without a tool call stops it (crash-loop guard)."
+        },
+        "agentFarm.batonFaultWaitHours": {
+          "type": "number",
+          "default": 24,
+          "minimum": 0,
+          "description": "Baton relay (X-427): when a running leg's turn fails because the ENGINE is down, overloaded, unreachable, rate limited or refuses the sign-in, no new leg is opened (it would fail the same way) — the same session is asked to continue at growing intervals (1 min, 2, 4 … up to one hour apart). Past this many hours without a working turn Agent Farm stops asking and Needs You gets a row. 0 = keep asking hourly with no ceiling."
+        },
+        "agentFarm.batonFlaggedPasses": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "description": "Baton relay (X-427): when the engine FLAGS a running leg's conversation (\"safeguards flagged this message … can't respond\"), nothing said in that session is answered again, so Agent Farm passes the baton for it: the successor opens from what the leg left, through the same brakes as any pass, and the flagged card is closed. This is how many such passes may come in a row before the chain holds for you (Needs You). 0 = no cap of its own — the chain's leg ceiling still applies."
+        },
+        "agentFarm.batonFlaggedModel": {
+          "type": "string",
+          "default": "",
+          "description": "Baton relay (X-427): the model a successor opens on when the leg before it was ALSO opened by a flagged pass — the engine's own advice is a new session first, then another model. Empty = the chain keeps its own model. The chain carries on with whatever model its successor opened on."
         },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
