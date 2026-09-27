@@ -139,6 +139,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afRunWith.js',
     // afBrand.js — the brand kit: the workflow form's production box (M-50).
     'afBrand.js',
+    // afRoles.js — role slots: the step card's Role box, the workflow form's Roles box (M-53).
+    'afRoles.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).
     'afSupervisorStrip.js'];
 

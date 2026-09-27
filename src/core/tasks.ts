@@ -31,6 +31,7 @@ import { missionHandoffText } from './workflowMission';
 import { fillTool, toolCall, toolResolved, ToolStepSpec } from './toolCall';
 import { mediaDuration, runRecipe, ToolResult } from './toolRun';
 import { billMedia, stepSpend, withOutputs } from './mediaStepResult';
+import { fillRole, RoleMap } from './workflowRoles';
 import type { RecipeCall } from './mediaRecipes';
 import { resolveFlex } from './flexResolve';
 import { AutoUpload, prepareMediaInput, uploadFile, UploadDone, UploadProvider } from './mediaUpload';
@@ -1252,6 +1253,8 @@ export interface WorkflowStep extends RunDimensions {
     wake?: WakeSpec;
     /** M-50 — this step's own brand kit fields, over its production's (src/core/brandKit.ts) */
     brand?: BrandKit;
+    /** M-53 — a role slot instead of an agent: filled where the workflow is used (src/core/workflowRoles.ts) */
+    role?: string;
 }
 
 /** What one step passes to the next. */
@@ -1325,6 +1328,8 @@ export interface FarmWorkflow {
     wake?: WakeSpec;
     /** M-50 — the production whose brand kit its steps read as {brand.*} (src/core/brandKit.ts) */
     production?: string;
+    /** M-53 — which agent fills each role its steps name; an open role goes to the showrunner */
+    roles?: RoleMap;
 }
 
 /**
@@ -1944,6 +1949,8 @@ export interface TaskManagerOptions {
     mediaAuth?: (providerId: string) => string;              // full Authorization header, e.g. "Key <FAL_KEY>" / "Bearer <token>"
     mediaBaseUrl?: (providerId: string) => string | undefined; // override for tests / self-hosted proxies
     mediaPricing?: () => MediaPriceRule[]; // C3 cost estimation rules
+    /** M-53 — the agent every role a workflow leaves open goes to (agentFarm.showrunner) */
+    showrunner?: () => string;
     /** F2: media poll interval override (tests); undefined = provider default (3s). */
     mediaPollMs?: () => number;
     /**
@@ -6569,6 +6576,14 @@ export class TaskManager implements vscode.Disposable {
         return handoff;
     }
 
+    /** M-53 — the agent a step runs as: its own, or the one its role is filled with (the workflow's binding, else the showrunner). */
+    private stepAgent(w: FarmWorkflow, step: WorkflowStep): { agent?: AgentInfo; missing: string } {
+        const agents = this.getAgents();
+        if (!step.role) { return { agent: agents.find(a => a.id === step.agentId), missing: `agent "${step.agentName}" not found` }; }
+        const r = fillRole(step.role, { workflow: w.roles, showrunner: this.opts.showrunner?.(), agents });
+        return { agent: r.agent && agents.find(a => a.id === r.agent!.id), missing: r.error ?? r.why };
+    }
+
     /** M-50 — the kit a step fills {brand.*} from: its production's, its own fields over it. */
     private stepBrand(w: FarmWorkflow, step: WorkflowStep, runId: string): BrandKit | undefined {
         const id = brandProductionFor(w, step, this.runRecords.get(runId));
@@ -6696,15 +6711,15 @@ export class TaskManager implements vscode.Disposable {
             void this.runCheckpointStep(w, index, handoff, runId);
             return;
         }
-        const agent = this.getAgents().find(a => a.id === step.agentId);
+        const { agent, missing } = this.stepAgent(w, step);
         if (!agent) {
             void vscode.window.showWarningMessage(
-                `Agent Farm: workflow "${w.title}" stopped — agent "${step.agentName}" not found.`);
+                `Agent Farm: workflow "${w.title}" stopped — ${missing}.`);
             // ‼️ X-71 — and it is an ENDING, not a silent return. On the first
             // step there is no row at all to infer it from, so a caller waiting
             // on this run waited for ever.
             this.endWorkflowRun(runId, 'failed',
-                `step ${index + 1} could not start — agent "${step.agentName}" not found`, index);
+                `step ${index + 1} could not start — ${missing}`, index);
             return;
         }
         const base = this.runRecords.get(runId)?.airtableBase;
@@ -7124,9 +7139,9 @@ export class TaskManager implements vscode.Disposable {
             const ok = await this.opts.confirmBrowser({ title: step.title, url, goal });
             if (!ok) { fail('not approved'); return; }
         }
-        const agent = this.getAgents().find(a => a.id === step.agentId);
+        const { agent, missing } = this.stepAgent(w, step);
         if (!agent) {
-            fail(`agent "${step.agentName}" not found`);
+            fail(missing);
             return;
         }
         const prompt = buildBrowserPrompt(url, goal, allowHosts);

@@ -246,6 +246,7 @@ import { judgeEngineRefusal } from './core/judgeEngines';
 import { checkTriggerMapping, checkWorkflowInputs } from './core/workflowInputs';
 import { setWorkflowGoal } from './core/checkpointStep';
 import { setWorkflowWake, wakeDictionary, wakeFromArg } from './core/workflowWake';
+import { cleanRoles, roleKeyRefusal, rolesRefusal, rolesReport } from './core/workflowRoles';
 import { liveArgOfPoint, phoneRunList, phoneWord } from './core/workflowLive';
 import { actionOption, askKeyboard, askText, parseAskTap } from './core/workflowAsk';
 import { WorkflowAsks } from './workflowAskDoors';
@@ -4039,6 +4040,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return pick === 'Upload';
             },
             mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
+            showrunner: () => cfg().get<string>('showrunner', 'youtuber'),
             browserAllowHosts: () => cfg().get<string[]>('browserAllowHosts', []),
             confirmBrowser: ({ title, url, goal }) => {
                 if (cfg().get<string>('browserApproval', 'ask') !== 'ask') {
@@ -7995,7 +7997,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         need(!libNo, `Step ${i + 1}: ${libNo}.`);
         need(!toolNo, `Step ${i + 1}: tool — ${toolNo}.`);
         const { agent: agentRef, ...passthrough } = raw;
-        const who = label && !String(agentRef ?? '').trim()
+        // M-53 — a role slot instead of an agent: filled where the workflow is used (src/core/workflowRoles.ts)
+        const role = raw.role === undefined ? '' : String(raw.role).trim();
+        need(!role || !roleKeyRefusal(role), `Step ${i + 1}: ${roleKeyRefusal(role)}.`);
+        need(!(role && label), `Step ${i + 1}: a role is for an agent or browser step, not a ${label} step.`);
+        need(!(role && String(agentRef ?? '').trim()), `Step ${i + 1}: a step names an agent or a role, not both.`);
+        const who = role ? { id: '', name: role }
+            : label && !String(agentRef ?? '').trim()
             ? { id: '', name: label }
             : findAgent(String(agentRef ?? ''));
         // ‼️ A STEP IS A TASK, SO ITS RUN DIMENSIONS ARE READ AND CHECKED THE
@@ -8008,7 +8016,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const verifyIn = raw.verify && typeof raw.verify === 'object' ? raw.verify as Record<string, unknown> : undefined;
         const judgeNo = judgeEngineRefusal(verifyIn?.engine);
         need(!judgeNo, `Step ${i + 1}: verify.engine — ${judgeNo}.`);
-        const { wake: _wakeIn, brand: brandIn, ...rest } = passthrough;
+        const { wake: _wakeIn, brand: brandIn, role: _roleIn, ...rest } = passthrough;
         const wk = raw.checkpoint ? {} : wakeFromArg(raw.wake);
         need(!wk.error, `Step ${i + 1}: ${wk.error}.`);
         const brandNo = brandRefusal(brandIn);
@@ -8021,7 +8029,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             mode: raw.mode === 'interactive' ? 'interactive' : 'headless',
             ...dims,
             ...(wk.wake ? { wake: wk.wake } : {}),
-            ...(brand ? { brand } : {})
+            ...(brand ? { brand } : {}),
+            ...(role ? { role } : {})
         } as WorkflowStep;
     };
     /**
@@ -15779,7 +15788,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'workflows.add',
-            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), tool? (M-49 — no agent, no model: a local ffmpeg recipe; its result {outputs, runs, ms} is the step\'s JSON: {recipe (tools.recipes lists them) | preset, input (a path or a template: {input.clip}, {prev_json.outputs.0}, {item}), params? (the recipe\'s own names — a template value is filled at run time; a blank one is the preset\'s, else the recipe default — flex points tool.<recipe>.<param>), outDir? (default Farm Settings tool.outDir, else af-tool beside the input), overwrite? (never|suffix|always)} — refused at save by name), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on), wake? (wake conditions for this step alone, shaped as the workflow wake below; omit = the workflow ones, "mechanical" = none after this step), brand? (M-50 — this step\'s own brand kit fields — style, negative, colors, typography, voice, aspect, duration, logo, logoPlace, character — over its production\'s, the shape studio.brand.set takes; studio.brand.get workflow= step= shows what it reads and from where)} — advanced webhook/media/browser fields pass through as in the builder; a media step\'s media.projectId is its own production, whose brand kit it reads]), production? (M-50 — the production (id or title) whose brand kit every step reads as {brand.<path>} — {brand.style}, {brand.character.<key>.ref}; set the kit with studio.brand.set; refused when no such production exists), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), library? (X-418 — where every file the run makes is filed and recorded in the local Airtable: {base? (the Airtable database; default the Airtable page\'s default), lang?, autoStart? (ask|auto|never, default auto — a closed engine is started first), record? (all = failures too, the default | passed | none = the library is off), template? (default <Type>-<Stage> when the base has it), stages? (X-417 — this production\'s own stage folder per kind of file: {input?, intermediate? (parts and passed candidates), failed?, rejected?, final?} → source|raw|semi|final|asset; blank = the built-in source · semi · raw · raw · final), enrich? (X-419 — a model looks at the recorded files and fills their record\'s meaning: {when? (end = once the run has ended, the default | record = as each file is final or failed | never), scope? (final-failed, the default | final | all), model? (images, claude; default sonnet), videoModel? (video, agy; default gemini-3.8-flash-low), effort? (claude; default low), sections? (comma list: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage), cap? (dollars per record, enforced on claude only)}; blank = the Farm settings agentFarm.libraryEnrich*; one record at a time with media.enrich)}; a media or tool step overrides it with steps[].library {base?, lang?, record?, template?, stage? (source|raw|semi|final|asset — its files go there, never promoted at the end)}; unset stage: a candidate or part → semi, a FAIL or a left-out → raw, the run\'s last output → final, its inputs from outside the library → source), wake? (M-45 — what wakes the supervisor after a step ends: "mechanical" (never — the default), "smart" (every step), "hybrid" (a failed quality check, a failed step, the run past $2) or a condition list [{id, field, operator, value?} | {id, all:[…]}] over workflows.wakeFields; ORed. Nothing fires = the mechanical path unchanged; something fires = the supervisor decides as at a checkpoint, and the row names the condition), inputs? ([{name, type? (file|folder|text|choice|number|url|airtable, default text), default?, required?, description?, choices? (choice), airtable? (X-420 — type airtable: a search of the local Airtable run before the first step, its records becoming the value as a JSON list of {id, file, name, stage, type, topic, tags, status, failed} — a for-each step walks it with {item.file} / {item.id}: {base?, query? (every word in name/topic/tags/description/file name), stages? (comma list; default the setting agentFarm.airtableInputStages, else asset, final), kind? (image|video|audio), status?, tags? (all of them), success? (passed|failed), limit? (1-200, default 20), sort? (newest|oldest|name, default newest)}; a run value is search text, or a file path = that file\'s own record; agent steps of such a run are told to look in that database first; preview with media.find)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
+            describe: 'Create a workflow (step chain). args: title, steps ([{id? (stable across moves; given as s<n> when absent — a later step reads it as {steps.<id>.text|json.a.b|file|verdict}, plus {run.cost}), agent (name|id) or role? (M-53 — a role slot such as senarist or kurgu instead of an agent: the workflow roles= fills it, else the showrunner; not on a media/tool/webhook step), title, prompt, mode? (headless|interactive), engine? (' + ENGINE_ENUM + ' — ‼️ per STEP, so one chain can hand work from one engine to another; an unknown one is refused HERE rather than at fire time), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?, onFail? ("stop"|"continue"|1-based step), runIf?, outputContract? ("text"|"json"), verify? ({criteria, retries?, engine?, model? — the judge of this step; an engine with no one-shot judge turn is refused HERE}), forEach? ({list: one of {steps.<id>.json.x} {steps.<id>.text} {prev_json.x} {prev_text} {input.x}, concurrency? (1-16, default 4; 1 = one after another), onBranchFail? ("continue" default | "drop" = the step fails and its onFail applies), retries? (0-5), cap? (1-200, default 20), capMode? ("soft" runs the first cap | "hard" fails the step), budgetUSD? (an element that cost more counts as failed)} — the step runs once per element, its prompt reads {item} {item.a.b} {index}, and the next step gets {prev_json.items} in list order; workflows.status shows the fan-out in flight as forEach), tool? (M-49 — no agent, no model: a local ffmpeg recipe; its result {outputs, runs, ms} is the step\'s JSON: {recipe (tools.recipes lists them) | preset, input (a path or a template: {input.clip}, {prev_json.outputs.0}, {item}), params? (the recipe\'s own names — a template value is filled at run time; a blank one is the preset\'s, else the recipe default — flex points tool.<recipe>.<param>), outDir? (default Farm Settings tool.outDir, else af-tool beside the input), overwrite? (never|suffix|always)} — refused at save by name), checkpoint? (M-43 — no agent; the supervisor is woken here and routes the run: {message? (what it should look at), allowed? (comma list of proceed,retry,jump,insert,ask_user,stop), maxInsert? (0-5, default 2), insertKinds? (agent,approval), maxRetries? (per step, 0-5, default 2), minConfidence? (0-1, default 0.6), lowConfidence? (ask|mechanical|escalate)} — refused, broken or unanswered decisions carry on), wake? (wake conditions for this step alone, shaped as the workflow wake below; omit = the workflow ones, "mechanical" = none after this step), brand? (M-50 — this step\'s own brand kit fields — style, negative, colors, typography, voice, aspect, duration, logo, logoPlace, character — over its production\'s, the shape studio.brand.set takes; studio.brand.get workflow= step= shows what it reads and from where)} — advanced webhook/media/browser fields pass through as in the builder; a media step\'s media.projectId is its own production, whose brand kit it reads]), roles? (M-53 — {"<role>": "<agent name|id>"}: which agent fills each role the steps name; an open role goes to the showrunner, agentFarm.showrunner; workflows.roles says who and why), production? (M-50 — the production (id or title) whose brand kit every step reads as {brand.<path>} — {brand.style}, {brand.character.<key>.ref}; set the kit with studio.brand.set; refused when no such production exists), goal? (M-43 — what the chain is for; its supervisor reads it), criteria? (a list, or one per line — how the supervisor tells it got there), supervisor? (M-44 — who answers at its checkpoints: one read-only session per run, resumed between checkpoints: {model? (empty = the judge model), effort?, account?, maxCalls? (per run, default 10), budgetUSD? (0 = none), budgetMode? (soft = said | hard = no further turn), maxFailures? (in a row, default 3), timeoutMin? (per call, default 5)} — past a ceiling the run goes the mechanical way and says why), library? (X-418 — where every file the run makes is filed and recorded in the local Airtable: {base? (the Airtable database; default the Airtable page\'s default), lang?, autoStart? (ask|auto|never, default auto — a closed engine is started first), record? (all = failures too, the default | passed | none = the library is off), template? (default <Type>-<Stage> when the base has it), stages? (X-417 — this production\'s own stage folder per kind of file: {input?, intermediate? (parts and passed candidates), failed?, rejected?, final?} → source|raw|semi|final|asset; blank = the built-in source · semi · raw · raw · final), enrich? (X-419 — a model looks at the recorded files and fills their record\'s meaning: {when? (end = once the run has ended, the default | record = as each file is final or failed | never), scope? (final-failed, the default | final | all), model? (images, claude; default sonnet), videoModel? (video, agy; default gemini-3.8-flash-low), effort? (claude; default low), sections? (comma list: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage), cap? (dollars per record, enforced on claude only)}; blank = the Farm settings agentFarm.libraryEnrich*; one record at a time with media.enrich)}; a media or tool step overrides it with steps[].library {base?, lang?, record?, template?, stage? (source|raw|semi|final|asset — its files go there, never promoted at the end)}; unset stage: a candidate or part → semi, a FAIL or a left-out → raw, the run\'s last output → final, its inputs from outside the library → source), wake? (M-45 — what wakes the supervisor after a step ends: "mechanical" (never — the default), "smart" (every step), "hybrid" (a failed quality check, a failed step, the run past $2) or a condition list [{id, field, operator, value?} | {id, all:[…]}] over workflows.wakeFields; ORed. Nothing fires = the mechanical path unchanged; something fires = the supervisor decides as at a checkpoint, and the row names the condition), inputs? ([{name, type? (file|folder|text|choice|number|url|airtable, default text), default?, required?, description?, choices? (choice), airtable? (X-420 — type airtable: a search of the local Airtable run before the first step, its records becoming the value as a JSON list of {id, file, name, stage, type, topic, tags, status, failed} — a for-each step walks it with {item.file} / {item.id}: {base?, query? (every word in name/topic/tags/description/file name), stages? (comma list; default the setting agentFarm.airtableInputStages, else asset, final), kind? (image|video|audio), status?, tags? (all of them), success? (passed|failed), limit? (1-200, default 20), sort? (newest|oldest|name, default newest)}; a run value is search text, or a file path = that file\'s own record; agent steps of such a run are told to look in that database first; preview with media.find)}] — what a run is given; a step reads one as {input.name}, and a step reading an undeclared one is refused)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.workflows.some(w => w.title === title),
@@ -15797,8 +15806,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!wk.error, `${wk.error}.`);
                 const prod = productionRef(agents, args.production);
                 need(!prod.error, `${prod.error}.`);
+                const rolesNo = rolesRefusal(args.roles, agents);
+                need(!rolesNo, `${rolesNo}.`);
                 const w = taskManager.addWorkflow(title, steps, ins.inputs);
                 if (prod.id) { w.production = prod.id; taskManager.persist(); }
+                const roles = cleanRoles(args.roles);
+                if (roles) { w.roles = roles; taskManager.persist(); }
                 if (wk.wake) { setWorkflowWake(w, wk.wake); taskManager.persist(); }
                 if (args.supervisor !== undefined) { setWorkflowSupervisor(w, args.supervisor as WorkflowSupervisor); taskManager.persist(); }
                 const lib = cleanLibrary(args.library as LibrarySpec | undefined);
@@ -15831,8 +15844,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!wk.error, `${wk.error}.`);
                 const prod = productionRef(agents, args.production);
                 need(!prod.error, `${prod.error}.`);
+                const rolesNo = rolesRefusal(args.roles, agents);
+                need(!rolesNo, `${rolesNo}.`);
                 w.steps = steps;
                 if (prod.id !== undefined) { if (prod.id) { w.production = prod.id; } else { delete w.production; } }
+                if (args.roles !== undefined) { const roles = cleanRoles(args.roles); if (roles) { w.roles = roles; } else { delete w.roles; } }
                 if (args.wake !== undefined) { setWorkflowWake(w, wk.wake); }
                 if (ins.inputs.length) { w.inputs = ins.inputs; } else { delete w.inputs; }
                 setWorkflowGoal(w, args.goal === undefined ? w.goal : args.goal, args.criteria === undefined ? w.criteria : args.criteria);
@@ -15840,6 +15856,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (args.library !== undefined) { const lib = cleanLibrary(args.library as LibrarySpec); if (lib) { w.library = lib; } else { delete w.library; } }
                 taskManager.persist();
                 return { id: w.id, title: w.title, steps: w.steps.length };
+            }
+        },
+        {
+            op: 'workflows.roles',
+            describe: 'M-53 — WHO FILLS EACH ROLE of a workflow: every role its steps name (steps[].role), the agent it goes to and why — the workflow\'s own binding (workflows.add/update roles=), else the showrunner (Farm Settings agentFarm.showrunner, default youtuber). args: workflow (id or title). Answers {roles: [{role, agent?, from, why, error?}], showrunner}; a role that goes to no existing agent carries the error the run would stop with.',
+            handler: (args) => {
+                const w = bridgeWorkflow(optStr(args, 'workflow') || optStr(args, 'id') || argStr(args, 'title'));
+                return rolesReport(w, cfg().get<string>('showrunner', 'youtuber'), agents);
             }
         },
         {
@@ -24321,6 +24345,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return out;
         },
         // M-50 — each production's brand kit, so a step card can show what an empty box inherits
+        showrunner: () => cfg().get<string>('showrunner', 'youtuber'),
         brandKits: () => Object.fromEntries(discoverProductions(agents)
             .filter(p => p.production.brand).map(p => [p.production.id, p.production.brand as BrandKit])),
         // M-24 — the saved prompts, for the four boxes in the New-task form

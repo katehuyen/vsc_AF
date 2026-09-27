@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.705.0",
+  "version": "3.706.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9178,6 +9178,11 @@
           ],
           "default": "never",
           "markdownDescription": "What a **tool** step does when a file it would write is already there."
+        },
+        "agentFarm.showrunner": {
+          "type": "string",
+          "default": "youtuber",
+          "markdownDescription": "The **showrunner** — the agent that fills every role a workflow step names (senarist, kurgu, yayinci …) when the workflow binds it to nobody (M-53). A workflow binds a role on its form (Roles) or with `workflows.add roles=`; `workflows.roles` says who fills what and why."
         },
         "agentFarm.airtableInputStages": {
           "type": "string",

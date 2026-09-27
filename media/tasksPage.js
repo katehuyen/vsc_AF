@@ -2259,6 +2259,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ${window.AFWorkflowInputs ? window.AFWorkflowInputs.editor(c.inputs, C) : ''}
             ${window.AFCheckpoint ? window.AFCheckpoint.goalEditor(c, C) : ''}
             ${window.AFBrand ? window.AFBrand.workflowBox(c, DATA.scenes, C) : ''}
+            ${window.AFRoles ? window.AFRoles.workflowBox(c, DATA.agents, DATA.showrunner, C) : ''}
             ${window.AFLibrary ? window.AFLibrary.wfEditor(c, C, window.AFFlexPromote ? { open: supUp } : undefined, (DATA.launch || {}).flexSettings) : ''}
             ${window.AFWake ? window.AFWake.workflowBlock(c, DATA.wakeDict, C) : ''}`;
     }
@@ -2398,6 +2399,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 'The name the run is given when this step fires — it is what you will look for on the Runs tab.', true)}
                 ${wantsAgent ? `<label class="ntf" title="Whose folder it runs in, and whose CLAUDE.md it wakes up with."><span>Agent <em>required</em></span>
                     <select id="nt-st-agent">${agentOpts}</select></label>` : ''}
+                ${window.AFRoles ? window.AFRoles.stepField(s, c, C) : ''}
                 ${s.stype === 'agent' ? `<label class="ntf" title="Headless is the mode a chain normally runs in: the output is archived and handed to the next step."><span>Mode</span>
                     <select id="nt-st-smode">
                         ${C.option('headless', 'headless', { selected: s.smode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never — and the step can be retried automatically.' })}
@@ -4786,6 +4788,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             if (window.AFLibrary) { window.AFLibrary.wireWf(byId, () => composer, window.AFFlexPromote ? render : null); }
             if (window.AFWake) { window.AFWake.wireWorkflow(byId, () => composer, DATA.wakeDict, render); }
             if (window.AFBrand) { window.AFBrand.wireWf(byId, () => composer); }
+            if (window.AFRoles) { window.AFRoles.wireWf(byId, () => composer); }
             if (composer.stepIdx !== null) {
                 ['title', 'prompt', 'runIf', 'verifyCriteria', 'verifyRetries',
                     'whUrl', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone', 'whInterval',
@@ -4833,6 +4836,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 if (window.AFTool && composer.step && composer.step.stype === 'tool') { window.AFTool.wire(byId, readStep, render, composer.step); }
                 if (window.AFWake && composer.step) { window.AFWake.wireStep(byId, () => composer.step, DATA.wakeDict, render); }
                 if (window.AFBrand && composer.step) { window.AFBrand.wireStep(byId, () => composer.step, DATA.brandKits, () => composer); }
+                if (window.AFRoles && composer.step) { window.AFRoles.wireStep(byId, () => composer.step, render); }
             }
         }
 

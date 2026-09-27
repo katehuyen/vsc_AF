@@ -29,6 +29,7 @@ import { LibrarySpec, libraryFromDraft, libraryRefusal, librarySeed, StepLibrary
 import { normalizeLegCeiling } from '../core/baton';
 import { setWorkflowWake, wakeDictionary, wakeFromArg, wakeMode } from '../core/workflowWake';
 import { BrandKit, brandRefs, cleanBrand } from '../core/brandKit';
+import { cleanRoles, roleKeyRefusal, rolesRefusal } from '../core/workflowRoles';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -188,6 +189,8 @@ export interface TasksDeps {
     scenes?: () => { id: string; label: string }[];
     /** M-50 — every production's brand kit by its id, for the step card's faint inherited values */
     brandKits?: () => Record<string, BrandKit>;
+    /** M-53 — the agent every role a workflow leaves open goes to (agentFarm.showrunner) */
+    showrunner?: () => string;
     /** live tasks merged with the finished-task archive */
     allRecords(): TaskRecord[];
     /** urgent Needs-You rows (permission waits + browser approvals). */
@@ -956,6 +959,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         // Production scenes a media step can file its assets under.
         scenes: deps.scenes ? deps.scenes() : [],
         brandKits: deps.brandKits ? deps.brandKits() : {},
+        showrunner: deps.showrunner ? deps.showrunner() : 'youtuber',
         // ---- what the New-task form offers. One vocabulary with the session
         // launcher (core/launch.ts), so "run it on opus at low effort" means the
         // same thing whether you start a session or queue a task.
@@ -1112,6 +1116,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         runIf: s.runIf ?? '',
         contract: s.outputContract === 'json' ? 'json' : 'text',
         sid: s.id ?? '',
+        role: s.role ?? '',
         verifyCriteria: s.verify?.criteria ?? '',
         verifyRetries: s.verify?.retries ?? 1,
         verifyEngine: s.verify?.engine ?? '',
@@ -1196,7 +1201,9 @@ export function stepFromDraft(
         forEach: forEachFromDraft(str),
         ...(wake.wake ? { wake: wake.wake } : {}),
         // M-50 — the step's own brand fields survive an edit on the page
-        ...(brand ? { brand } : {})
+        ...(brand ? { brand } : {}),
+        // M-53 — a role slot instead of an agent, on the kinds an agent runs
+        ...(str('role') && (stype === 'agent' || stype === 'browser') ? { role: str('role') } : {})
     };
     const verify = str('verifyCriteria')
         ? {
@@ -1280,7 +1287,9 @@ export function stepFromDraft(
             }
         };
     }
-    const agent = agents.find(a => a.name === str('agent'));
+    const roleNo = chain.role ? roleKeyRefusal(chain.role) : '';
+    if (roleNo) { return { error: `Step ${n} ("${title}"): ${roleNo}.` }; }
+    const agent = chain.role ? { id: '', name: chain.role } : agents.find(a => a.name === str('agent'));
     if (!agent) { return { error: `Step ${n} ("${title}") has no agent.` }; }
     if (stype === 'browser') {
         if (!str('bUrl')) { return { error: `Step ${n} ("${title}") is a browser step with no start URL.` }; }
@@ -1835,7 +1844,7 @@ export class TasksPanel {
                 : typeof step === 'number' && step >= 0 && step < steps.length ? step
                     : null;
             send(w
-                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], production: w.production ?? '', stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
+                ? { mode2: 'edit', id: w.id, title: w.title, steps, inputs: w.inputs ?? [], goal: w.goal ?? '', criteria: (w.criteria ?? []).join('\n'), ...supervisorSeed(w.supervisor), ...librarySeed(w.library, 'workflow'), wake: w.wake ?? [], production: w.production ?? '', roles: w.roles ?? {}, stepIdx: at, step: at !== null && at >= 0 ? steps[at] : null }
                 : { mode2: 'new', steps: [], inputs: [], ...librarySeed(undefined, 'workflow'), wake: [], stepIdx: step === 'new' ? -1 : null, step: null });
             return;
         }
@@ -2077,6 +2086,10 @@ export class TasksPanel {
             // M-50 — the production whose brand kit its steps read; the box offers only productions that exist
             const prod = str('production');
             if (prod && !(this.deps.scenes?.() ?? []).some(x => x.id === prod)) { this.say(`Production: no production "${prod}" any more — pick another.`); return; }
+            // M-53 — which agent fills each role the steps name; an open role goes to the showrunner
+            const rolesNo = rolesRefusal(item.roles, this.deps.getAgents());
+            if (rolesNo) { this.say(`Roles: ${rolesNo}.`); return; }
+            const roles = cleanRoles(item.roles);
             const note = steps.length
                 ? `${steps.length} step(s).`
                 : 'It has no steps yet, so running it does nothing.';
@@ -2090,6 +2103,7 @@ export class TasksPanel {
                 if (wlib) { existing.library = wlib; } else { delete existing.library; }
                 setWorkflowWake(existing, wk.wake);
                 if (prod) { existing.production = prod; } else { delete existing.production; }
+                if (roles) { existing.roles = roles; } else { delete existing.roles; }
                 m.persist();
                 done(`Workflow “${existing.title}” saved — ${note}`);
             } else {
@@ -2099,6 +2113,7 @@ export class TasksPanel {
                 if (wlib) { made.library = wlib; }
                 setWorkflowWake(made, wk.wake);
                 if (prod) { made.production = prod; }
+                if (roles) { made.roles = roles; }
                 m.persist();
                 done(`Workflow “${str('title')}” created — ${note}`);
             }

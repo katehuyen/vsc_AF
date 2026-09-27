@@ -992,6 +992,24 @@ const variants = () => ([
             });
         }
     },
+    // M-53 — two steps name roles: senarist is this workflow's (developer), kurgu is left to the showrunner; the first step's card is open.
+    {
+        id: 'tasks-wf-roles',
+        label: 'Tasks → a workflow whose steps name roles: senarist given to developer, kurgu left to the showrunner youtuber; the senarist step open (M-53)',
+        data: Object.assign(data(), { showrunner: 'youtuber' }),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w17', title: 'Kısa video', stepIdx: 0, goal: '', criteria: '', roles: { senarist: 'developer' },
+                    steps: [
+                        { sid: 's1', stype: 'agent', title: 'Senaryo', agent: 'developer', role: 'senarist', prompt: 'Konu için 30 sn senaryo yaz', smode: 'headless' },
+                        { sid: 's2', stype: 'agent', title: 'Kurgu notu', agent: 'developer', role: 'kurgu', prompt: 'Senaryoyu kurgu notuna çevir', smode: 'headless' }
+                    ]
+                }
+            });
+        }
+    },
     // M-50 — the workflow names the production whose brand kit its steps read as {brand.*}.
     {
         id: 'tasks-wf-brand',

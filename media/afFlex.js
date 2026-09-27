@@ -312,6 +312,14 @@
                 run: { surface: 'media/afRunWith.js#wi-production', bridge: 'workflows.run:production' }
             }
         },
+        // M-53 — which agent fills a role a step names: the workflow's own binding, else the showrunner (src/core/workflowRoles.ts)
+        {
+            id: 'workflow.role', label: 'Role filled by (agent)', type: 'text', default: 'youtuber', remembered: false,
+            levels: {
+                settings: { surface: 'setting:agentFarm.showrunner', bridge: 'settings.set:agentFarm.showrunner' },
+                workflow: { surface: 'media/afRoles.js#wf-roles', bridge: 'workflows.add:roles' }
+            }
+        },
         brandPoint('style', 'style'), brandPoint('negative', 'negative prompt'), brandPoint('colors', 'colours'),
         brandPoint('typography', 'typography'), brandPoint('voice', 'voice id'), brandPoint('aspect', 'aspect'),
         brandPoint('duration', 'duration'), brandPoint('logo', 'logo rule'), brandPoint('logoPlace', 'logo placement'),

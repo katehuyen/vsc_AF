@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.706.0 - Role slots: a step names a role, the workflow or the showrunner fills it (M-53, part 1) (2026-09-27)
+
+- **A workflow step can name a role instead of an agent** — `senarist`,
+  `kurgu`, `yayinci`, … in the new **Role** box on an agent or browser step's
+  card (bridge: `steps[].role`). The recipe no longer bakes in who does it.
+- **The workflow form has a Roles box**: one picker per role its steps name.
+  A role left open goes to the **showrunner** — Farm Settings
+  `agentFarm.showrunner`, default `youtuber`. Bridge: `workflows.add` /
+  `workflows.update roles={"senarist": "yazar"}`.
+- **`workflows.roles`** says who fills each role and why; a role bound to an
+  agent that no longer exists stops the run and names both.
+
 ## 3.705.0 - A media step's spend and files reach the rest of the run (M-55 groundwork) (2026-09-27)
 
 - **Gemini Omni Flash is priced** (`gemini-omni`, $0.13 a second), and a
