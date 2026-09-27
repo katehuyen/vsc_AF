@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.729.0 - A long closing note opens in place on the Track tab (U-156) (2026-09-28)
+
+- The CLOSED line of a Track card is cut at 220 characters like before, but
+  now carries the same **more / less** link as the item's own words above
+  it: the whole note opens on the card and folds back, without the hover
+  panel. Opening the note leaves the item's words as they were, and an open
+  note no longer repeats itself in the panel.
+
 ## 3.728.0 - The quota line is read fresh enough to be met (S-107) (2026-09-28)
 
 - A running session's account is now read on the working beat even when

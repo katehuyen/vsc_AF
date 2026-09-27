@@ -6044,7 +6044,7 @@
                   with nothing behind it. It is drawn, said to be the closer's,
                   and long ones open whole in the panel rather than being cut. */''}
             ${row.closedNote ? window.AFTip.wrap(
-            `<div class="pj-trk-close"><b>closed</b> ${C.esc(trkClip(row.closedNote, 220))}</div>`,
+            `<div class="pj-trk-close"><b>closed</b> ${trkCloseWords(row)}</div>`,
             `${row.code} · closed by ${C.esc(row.closedBy || '?')}`
             + (row.closedTs ? ` · ${window.AFTime.stamp(row.closedTs)}` : '')
             // P-14 (V3) — a note recovered later is right, but it is not a
@@ -6055,7 +6055,8 @@
                     ? 'Recovered later: the note written at the time was cut by the old 300-character '
                     + 'ceiling, and this is the full text supplied afterwards beside it. The closing '
                     + 'record itself was not edited.\n' : '',
-                row.closedNote.length > 220 || row.closedNoteRestored ? row.closedNote : ''
+                (row.closedNote.length > TRK_CLOSE_CUT || row.closedNoteRestored)
+                    && !trkOpen.has(trkCloseKey(row)) ? row.closedNote : ''
             ]), 'tip-block') : ''}
             ${row.note ? `<div class="pj-trk-note" title="${C.esc('Your own closing note, read out of Backloglog.md. This page never writes it — edit it there.')}">${C.esc(row.note)}</div>` : ''}
         </div>`;
@@ -6065,6 +6066,20 @@
     function trkClip(s, n) {
         const t = String(s || '');
         return t.length > n ? t.slice(0, n - 1) + '…' : t;
+    }
+
+    // U-156 — the closing note opens in place like the item's words above it;
+    // its own key, so opening one never opens the other.
+    const TRK_CLOSE_CUT = 220;
+    function trkCloseKey(row) { return 'close:' + row.code; }
+    function trkCloseWords(row) {
+        const key = trkCloseKey(row);
+        const open = trkOpen.has(key);
+        const long = row.closedNote.length > TRK_CLOSE_CUT;
+        const more = long
+            ? ` <button class="pj-bl-more" data-trkmore="${C.esc(key)}">${open ? 'less' : 'more'}</button>`
+            : '';
+        return C.esc(open ? row.closedNote : trkClip(row.closedNote, TRK_CLOSE_CUT)) + more;
     }
 
     /**

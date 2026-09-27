@@ -198,6 +198,26 @@ const el = (r, attr, value) => els(r, attr).find(e => e.dataset[attr.replace(/-(
 }
 
 // ---------------------------------------------------------------------------
+// U-156 — a long closing note opens in place, like the item's own words
+// ---------------------------------------------------------------------------
+{
+    const rows = track();
+    rows.rows[0].closedNote = 'Uzun kapanış notu: ' + 'bir cümle daha, '.repeat(30) + 'SON KELİME.';
+    const r = run({ tabData: { track: rows } });
+    const btn = () => el(r, 'trkmore', 'close:U-9');
+    const says = w => r.html().includes(`data-trkmore="close:U-9">${w}</button>`);
+    ok('U-156 — a closing note past the cut carries its own more',
+        btn() && says('more') && !r.html().includes('SON KELİME. <button'));
+    btn().click();
+    ok('…which draws the whole note in place and turns into less',
+        r.html().includes('SON KELİME. <button') && says('less'));
+    ok('…opening the note only, never the item words above it',
+        r.html().includes('data-trkmore="U-9">more</button>'));
+    btn().click();
+    ok('…and less folds it back', says('more') && !r.html().includes('SON KELİME. <button'));
+}
+
+// ---------------------------------------------------------------------------
 // ‼️ X-36 — AN ITEM ASKED FOR MORE THAN ONCE SAYS SO, AND SAYS WHAT IT ASKED
 //
 // A backlog line holds ONE text: whatever it says now. So an item reopened
