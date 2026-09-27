@@ -18559,7 +18559,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } catch { /* fs.watch unavailable — the interval below still polls */ }
     const bridgeTimer = setInterval(() => void processBridge(), 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(bridgeTimer) });
-    void processBridge();
+    // ‼️ not now: a request already waiting at boot ran synchronously HERE, mid-activate, and an op
+    // reading a service declared further down (consoleHost) answered "Cannot access before initialization"
+    setTimeout(() => void processBridge(), 0);
 
     /** Mission-scoped live block for the panel: agent statuses + hook events of
      *  the ACTIVE runs' participants only. undefined while nothing runs, so an

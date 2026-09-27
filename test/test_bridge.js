@@ -6025,6 +6025,11 @@ const { opencodeStatus, syncToOpencode } =
                 /const known = bridgeAnswered\.get\(id\);[\s\S]{0,200}answer\(known\)/.test(body));
             ok('…the dispatch is not awaited',
                 /bridge\.dispatch\(parsed\.op, parsed\.args, parsed\.from\)\.then\(finish/.test(body));
+            // a request waiting at boot must not run mid-activate: an op reading a service declared
+            // further down answered "Cannot access 'consoleHost' before initialization"
+            const boot = ext.slice(ext.indexOf('closeStalePendingRequests();', at), ext.indexOf('closeStalePendingRequests();', at) + 1200);
+            ok('‼️ the first scan waits for activate() to finish', /setTimeout\(\(\) => void processBridge\(\), 0\)/.test(boot)
+                && !/\n    void processBridge\(\);/.test(boot));
             // ‼️ X-310 — AND IT CARRIES WHO WROTE THE REQUEST. The restart ops exempt the
             // asker's own turn from blocking and speak into its seat alone on the other
             // side; a runner that dropped the envelope's caller would leave them with

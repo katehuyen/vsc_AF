@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.698.0 - A bridge call made while the window reloads no longer fails half-booted (2026-09-27)
+
+- **Fixed:** a bridge request already waiting when Agent Farm started (for
+  example `farm.health` sent while the window was reloading) ran in the
+  middle of start-up and could answer "Cannot access 'consoleHost' before
+  initialization". The first scan now waits until start-up has finished.
+
 ## 3.697.0 - ↑ Make a Run card value the workflow's own default (U-151, part 3c-3) (2026-09-27)
 
 - **The Run card gets the ↑.** An input whose value differs from the
