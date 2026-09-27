@@ -11,7 +11,7 @@ import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
 import { normalizeLegCeiling } from './baton';
 import { execOneShot } from './oneShot';
-import { judgeJson, judgeReply, judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
+import { judgeJson, judgeLean, judgeReply, judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
 import { boardWrite, ensureStepIds, fillBoard, RunBoard, stepKey } from './runContext';
 import { BrandKit, brandProductionFor, fillBrand, resolveBrand } from './brandKit';
@@ -5370,7 +5370,7 @@ export class TaskManager implements vscode.Disposable {
                 `ÖLÇÜT: ${criteria} --- ÇIKTI: ${body.slice(0, 4000)} --- ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
-            void execOneShot({ cwd, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000, ...judgeJson(want.engine) }).then(r => {
+            void execOneShot({ cwd, engine: want.engine, model: want.model, args: judgeLean(want.engine, false, want.args), prompt, timeoutMs: 180_000, ...judgeJson(want.engine) }).then(r => {
                 const { text, costUSD, error } = judgeReply(want.engine, r.out);
                 const spent = costUSD ? { costUSD } : {};
                 if ((r.error || error) && !text) {
@@ -5409,7 +5409,7 @@ export class TaskManager implements vscode.Disposable {
                 `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
             void execOneShot({
-                cwd: this.outputsDir, engine: want.engine, model: want.model, args: want.args, prompt, timeoutMs: 180_000,
+                cwd: this.outputsDir, engine: want.engine, model: want.model, args: judgeLean(want.engine, true, want.args), prompt, timeoutMs: 180_000,
                 // agy's default mode may act on the files; measured 2026-09-26: in plan mode it still opens and judges them
                 readOnly: want.engine === 'agy', ...judgeJson(want.engine)
             }).then(r => {

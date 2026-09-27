@@ -100,6 +100,17 @@ export function visionJudgeWant(file: string, step: StepJudge | undefined, setti
 export const normalizeUnjudged = (v: unknown): UnjudgedBehavior =>
     UNJUDGED_BEHAVIORS.includes(v as UnjudgedBehavior) ? v as UnjudgedBehavior : 'ask';
 
+/**
+ * A-27 — a claude check needs no MCP servers and not Claude Code's own system prompt, and the text
+ * check no tools (the vision check keeps Read to open the file). The same cut on the supervisor was
+ * measured on haiku at $0.153 → $0.0104 a turn; a check with them was $0.0245 against a $0.02 step.
+ */
+export const JUDGE_SYSTEM = 'You are a quality judge. Read what you are shown and answer with the one line the prompt asks for.';
+export function judgeLean(engine: string, vision: boolean, args?: string): string {
+    const lean = engine === 'claude' ? `--tools ${vision ? 'Read' : '""'} --strict-mcp-config --system-prompt "${JUDGE_SYSTEM}"` : '';
+    return [String(args ?? '').trim(), lean].filter(Boolean).join(' ');
+}
+
 /** A-27 — a judge call asks claude for its envelope, so the check's spend reaches the run; other engines answer in plain text. */
 export const judgeJson = (engine: string): { json?: true } => (engine === 'claude' ? { json: true } : {});
 

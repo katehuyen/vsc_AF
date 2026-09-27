@@ -39,7 +39,8 @@ eq('the archive body is swapped, header and footer kept', C.withArchiveBody(arch
     const oneShot = require(path.join(ROOT, 'out/core/oneShot.js'));
     let verdicts = [];
     const judged = [];
-    oneShot.execOneShot = async (o) => { judged.push(o.prompt.match(/["']([^"']+)["'] dosyas/)?.[1]); return { out: verdicts.shift() || 'PASS', error: '' }; };
+    const visionArgs = [];
+    oneShot.execOneShot = async (o) => { visionArgs.push(o.args); judged.push(o.prompt.match(/["']([^"']+)["'] dosyas/)?.[1]); return { out: verdicts.shift() || 'PASS', error: '' }; };
     const { TaskManager } = require(path.join(ROOT, 'out/core/tasks.js'));
     let base = '', n = 0;
     const server = http.createServer((req, res) => {
@@ -84,6 +85,7 @@ eq('the archive body is swapped, header and footer kept', C.withArchiveBody(arch
         const body = JSON.parse(fs.readFileSync(t1.outputFile, 'utf8').split('\n---\n\n')[1].split('\n\n---\nFinished')[0]);
         ok('‼️ three made at once in ONE row, billed three times', mgr.tasks.filter(x => x.workflowRunId === r1).length === 1 && n === 3 && Math.abs(t1.mediaCost - 0.03) < 1e-9);
         ok('‼️ judged in order until the first PASS: two looks, the second picked', judged.length === 2 && t1.verified === 'pass' && t1.status === 'done');
+        ok('the vision check is lean but keeps Read to open the file', visionArgs.length >= 2 && visionArgs.every(a => /--tools Read --strict-mcp-config --system-prompt/.test(a)));
         ok('the archive now hands on the picked one alone', body.picked.candidate === 2 && body.picked.of === 3 && body.outputs.length === 1 && body.outputs[0] === meta.assetFiles[0] && !body.candidates);
         ok('…whose file leads the gallery record', meta.assetFiles.length === 3 && path.basename(meta.assetFiles[0]) === path.basename(judged[1]));
         ok('the row and the run say what was picked', /Picked candidate 2 of 3: PASS net ve okunur/.test(fs.readFileSync(t1.outputFile, 'utf8'))

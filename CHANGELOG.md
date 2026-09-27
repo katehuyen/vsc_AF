@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.716.0 - A lean check: one twelfth of the cost (A-27) (2026-09-27)
+
+- A workflow step's claude check now runs with no MCP servers and a
+  one-line system prompt instead of Claude Code's own, and the text check
+  with no tools (the vision check keeps Read to open the file). Measured on
+  haiku: $0.0245 → $0.0021 for the same verdict.
+
 ## 3.715.0 - A headless task's own cost is found by its session id (A-27) (2026-09-27)
 
 - Two runs of the same agent back to back fell inside each other's time

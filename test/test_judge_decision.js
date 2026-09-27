@@ -107,12 +107,17 @@ ok('picking a Cost preset redraws the Run card', /run\.preset \? \['preset:' \+ 
         const env = (result, usd) => JSON.stringify({ type: 'result', result, total_cost_usd: usd, is_error: false });
         const answers = { haiku: env('FAIL eksik', 0.002), sonnet: env('PASS tamam', 0.011) };
         const cwds = [];
-        oneShot.execOneShot = async (o) => { asked.push(!!o.json); cwds.push(o.cwd); return { out: answers[o.model] || env('PASS', 0.001), error: '' }; };
+        const argsSeen = [];
+        oneShot.execOneShot = async (o) => { asked.push(!!o.json); cwds.push(o.cwd); argsSeen.push(o.args); return { out: answers[o.model] || env('PASS', 0.001), error: '' }; };
         const wl = mgr.addWorkflow('Hakem parası', step({ criteria: 'Türkçe olsun', retries: 1 }));
         const r4 = mgr.runWorkflow(wl, { judgeLadder: 'haiku,sonnet' });
         const t4 = await finish(r4, 0);
         ok('the claude judge is asked for its envelope, and read out of it', asked.length === 2 && asked.every(Boolean) && t4.verified === 'pass');
         eq('both rungs are the step\'s check spend', t4.judgeUSD, 0.013);
+        ok('‼️ a lean check: no tools, no MCP servers, not Claude Code\'s own system prompt', argsSeen.length === 2
+            && argsSeen.every(a => /^--tools "" --strict-mcp-config --system-prompt "You are a quality judge\./.test(a)));
+        ok('…a step\'s own judge args stay in front of it', require(path.join(ROOT, 'out/core/judgeEngines.js')).judgeLean('claude', false, '--model x') .startsWith('--model x --tools ""')
+            && require(path.join(ROOT, 'out/core/judgeEngines.js')).judgeLean('agy', false, '--model y') === '--model y');
         ok('‼️ judged in the outputs folder, never the agent\'s (its CLAUDE.md made a haiku check dearer than the step)', cwds.length === 2 && cwds.every(c => c === mgr.outputsDir));
         ok('…and the run\'s total counts it beside the step\'s own', Math.abs(mgr.workflowRunState(r4).costUSD - 0.113) < 1e-9);
         oneShot.execOneShot = async () => ({ out: JSON.stringify({ type: 'result', result: '', subtype: 'error_max_turns', is_error: true, total_cost_usd: 0.004 }), error: '' });
