@@ -22,7 +22,7 @@ function optionsRefusal(where: string, type: string, c: Record<string, unknown>)
     return bad !== undefined ? `${where}: option "${bad}" needs a name and a text description` : '';
 }
 
-function questionRefusal(id: string, raw: unknown): string {
+export function questionRefusal(id: string, raw: unknown): string {
     const where = `question "${id}"`;
     if (!isObj(raw)) { return `${where} is an object: {type, instructions, criteria?, check?}`; }
     const q = raw as unknown as KapiciQuestion;

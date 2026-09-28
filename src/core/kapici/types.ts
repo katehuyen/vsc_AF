@@ -117,11 +117,16 @@ export interface KapiciVerdict {
     ruleId: string;
     ruleVersion: number;
     layer: RuleLayer;
+    model?: string;
+    /** Served from the short-lived cache; nothing was asked. */
+    cached?: boolean;
 }
 
 /** The one door Agent Farm comes in through. */
 export interface KapiciDeps {
     secret(name: string): Promise<string | undefined>;
+    /** Every value in the Secret vault, so masking catches them even where no pattern would. */
+    secretValues?(): Promise<string[]>;
     judge?(prompt: string, signal?: AbortSignal): Promise<string>;
     now(): number;
     log(line: string): void;

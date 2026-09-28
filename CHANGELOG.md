@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.744.0 - Groundwork for Kapıcı, an optional decision gate (2026-09-28)
+
+- Nothing you use changes in this release. It carries the engine of Kapıcı:
+  a way for Agent Farm to ask a small, fast classifier a few typed questions
+  ("which of these should happen next?", "is this risky?") where today it
+  follows a fixed rule or asks a full language model. It is not switched on
+  anywhere yet; when it arrives, every place that can use it gets its own
+  setting, off by default, and with it off everything works exactly as today.
+- What is already true of it: anything that looks like a key or a token, and
+  every value in your Secret vault, is masked before a question leaves the
+  machine; numbers, dates and counts are checked locally and never sent; a
+  missing key, a missing rule or a failure hands the decision back to the
+  usual path instead of stopping anything; and every decision is logged
+  without the text it was asked about.
+
 ## 3.743.0 - An edit's quality check sees what it started from (2026-09-28)
 
 - When a media step edits an image or video it was given — a file from this
