@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.740.0 - Resuming a session brings back everything it ran with, from every door (2026-09-28)
+
+- Resume in Console from the Sessions page, the palette, a session's own page
+  or the Console's list now brings a conversation back exactly the way its
+  own ended card's Resume does — same model, effort, permission mode and
+  sign-in. For a conversation with no card, what it was started with (model,
+  effort, permission mode, Superpowers) fills in whatever its transcript does
+  not say, before any default is used; before, a session that ran under
+  bypass on a slot could come back on the machine's account asking
+  permission.
+- A tool step (split, extract audio, …) no longer leaves an empty "af-tool"
+  folder next to your input file once its outputs are filed in the library.
+
 ## 3.739.0 - The video check looks at the right file; a supervisor's question can be seen and answered from anywhere (2026-09-28)
 
 - A media step's quality check now looks for the clip in the library folder

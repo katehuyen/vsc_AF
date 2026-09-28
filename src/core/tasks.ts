@@ -7155,6 +7155,8 @@ export class TaskManager implements vscode.Disposable {
             });
             r.outputs = filed.files;
             libLines.push(...filed.lines);
+            // the default scratch folder beside the user's input, emptied by the filing: not left behind in their folder
+            if (!('error' in c) && path.basename(c.outDir) === 'af-tool') { try { fs.rmdirSync(c.outDir); } catch { /* not empty, or gone */ } }
         }
         try {
             fs.writeFileSync(outFile, `# ${task.title}\n\n- Tool: ${r.recipe}${r.error ? ` — ${r.error}` : ''}\n${[...how.why, ...libLines].map(l => `- ${l}`).join('\n')}\n\n---\n\n${JSON.stringify(r, null, 2)}\n\n---\n`

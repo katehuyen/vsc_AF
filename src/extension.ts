@@ -11440,10 +11440,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? sessionFromArg(optStr(args, 'resume'))
                     : undefined;
                 const inherit = resumed ? lastRunDimensions(resumed) : {};
-                if (!o.model && inherit.model) { o.model = inherit.model; }
-                if (!o.effort && inherit.effort) { o.effort = inherit.effort; }
-                if (!o.permissionMode && inherit.permissionMode) {
-                    o.permissionMode = inherit.permissionMode;
+                // S-102 — what its own launch asked for fills what the transcript is silent on
+                const asked = resumed ? sessionRequestedOf(resumed.sessionId, String(resumed.source || 'claude')) : {};
+                if (!o.model && (inherit.model || asked.model)) { o.model = inherit.model || asked.model; }
+                if (!o.effort && (inherit.effort || asked.effort)) { o.effort = inherit.effort || asked.effort; }
+                if (!o.permissionMode && (inherit.permissionMode || asked.permissionMode)) {
+                    o.permissionMode = inherit.permissionMode || asked.permissionMode;
                 }
                 /**
                  * ‼️ X-109 — AND THE ROUTE IS THE GATE'S, on the same S-45
@@ -24114,6 +24116,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!id) { return undefined; }
         return { id, label: statedAccountLabel(id, storedAccounts()) || id };
     };
+    /** S-102 — what the session's own launch asked for, for every dimension its transcript is silent on (the mode, above all). */
+    const sessionRequestedOf = (sessionId: string, engine: string): { model?: string; effort?: string; permissionMode?: string; superpowers?: boolean } => {
+        const m = manifestOf(launchManifests(), index.byId(sessionId));
+        if (!m || (m.engine || 'claude') !== engine) { return {}; }
+        return { ...m.requested, ...(m.superpowers === undefined ? {} : { superpowers: m.superpowers }) };
+    };
     const viewerDeps = {
         extensionUri: context.extensionUri,
         accountFor: sessionAccountOf,
@@ -29153,6 +29161,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // resume door. Called lazily on purpose: it is declared further down this
         // activation and only ever runs after a click.
         sessionAccount: (sessionId: string) => sessionAccountOf(sessionId)?.id,
+        sessionRequested: (sessionId: string, engine: string) => sessionRequestedOf(sessionId, engine),
         lastLaunch: (agentId: string) => lastLaunchOf(agentId),
         rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
             void rememberLaunch(agentId, o, surface),
@@ -35957,14 +35966,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * fresh session in that folder would.
                  */
                 const inherit = lastRunDimensions(s);
+                // S-102 — what its own launch asked for fills what the transcript is silent on
+                const asked = sessionRequestedOf(s.sessionId, engine);
                 const want = narrowLaunch(engineModelMatrix()[engine],
-                    inherit.model || defaulted.model,
-                    inherit.effort || defaulted.effort);
+                    inherit.model || asked.model || defaulted.model,
+                    inherit.effort || asked.effort || defaulted.effort);
                 const merged: LaunchOptions = {
                     ...defaulted,
                     model: want.model,
                     effort: want.effort,
-                    permissionMode: inherit.permissionMode || defaulted.permissionMode
+                    permissionMode: inherit.permissionMode || asked.permissionMode || defaulted.permissionMode
                 };
                 // ‼️ …and it carries the project context too — the flag does not
                 // survive `--resume` (measured), so a resumed session that is
@@ -37542,6 +37553,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                     return;
                 }
+                // ‼️ S-102 — a conversation with an ended Console card comes back the way that card's own
+                // Resume brings it: the card recorded the model, effort, mode and sign-in it ran with,
+                // which neither the transcript (silent on the mode) nor the fleet defaults know.
+                const card = consoleHost.list().find(x => x.sessionId === s.sessionId && (x.status === 'ended' || x.status === 'error'));
+                if (card) { await vscode.commands.executeCommand('agentfarm.consoleResumeSession', { hostId: card.id }); return; }
                 const agent = agents.find(a => a.name === s.agentName);
                 const d = launchDefaults();
                 const defaultEngine = (d.engine || 'claude') as EngineId;
@@ -37565,13 +37581,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * model no longer offers must not become a flag now.
                  */
                 const inherit = lastRunDimensions(s);
+                // …then what its own launch asked for, where the transcript says nothing
+                const asked = sessionRequestedOf(s.sessionId, engine);
                 const sameEngine = defaultEngine === engine;
                 // ‼️ S-102 — the agent's own defaults for this engine sit between the
                 // transcript and the fleet, as on the Console's own resume.
                 const own: LaunchOptions = agent ? withAgentEngineDefaults(agent, { engine }) : {};
                 const want = narrowLaunch(engineModelMatrix()[engine],
-                    inherit.model || own.model || (sameEngine ? d.model : undefined),
-                    inherit.effort || own.effort || (sameEngine ? d.effort : undefined));
+                    inherit.model || asked.model || own.model || (sameEngine ? d.model : undefined),
+                    inherit.effort || asked.effort || own.effort || (sameEngine ? d.effort : undefined));
                 // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN, read off its
                 // launch record through the gate; nothing on this door names
                 // one, so nothing is asked and the standing route is never
@@ -37601,7 +37619,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // reaches the process is still resolved against the
                     // folder's own layers (K-22), so this cannot grant more
                     // than a fresh session there would.
-                    permissionMode: inherit.permissionMode || d.permissionMode,
+                    permissionMode: inherit.permissionMode || asked.permissionMode || d.permissionMode,
                     // ‼️ …and the project it is TOLD about is its OWN, never the
                     // window's active one — see sessionOwnProject. The context
                     // does not survive `--resume` (measured), so this is the
@@ -37612,7 +37630,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // while the Console's own resume carried both.
                     account: sessionAccountOf(s.sessionId)?.id,
                     ...(consoleHost.list().some(x => x.sessionId === s.sessionId)
-                        ? {} : { superpowers: superpowersOnFor(s.agentName ?? '') }),
+                        ? {} : { superpowers: asked.superpowers ?? superpowersOnFor(s.agentName ?? '') }),
                     // resume means CONTINUE: the earlier conversation comes with
                     // it, and so does what it has already spent
                     history: consoleHistory(s.sessionId),

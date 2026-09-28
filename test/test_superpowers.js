@@ -235,8 +235,9 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
         /context: init\.resume \? undefined : this\.readProjectContext\(projectId, superpowers\)/.test(host));
 
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
-    ok('‼️ a resume off the SHELF comes back at the agent\'s default — the transcript does not record the flag',
-        /host\.list\(\)\.some\(x => x\.sessionId === sessionId\)\s*\n\s*\? \{\}\s*\n\s*: \{ superpowers: this\.deps\.superpowersDefault\(row\.agentName \?\? ''\) \}/.test(panel));
+    // S-102 — the transcript does not record the flag, but the session's own launch manifest does: that first, the agent's default after
+    ok('‼️ a resume off the SHELF comes back as it was launched, else at the agent\'s default — the transcript does not record the flag',
+        /host\.list\(\)\.some\(x => x\.sessionId === sessionId\)\s*\n\s*\? \{\}\s*\n\s*: \{ superpowers: asked\.superpowers \?\? this\.deps\.superpowersDefault\(row\.agentName \?\? ''\) \}/.test(panel));
     ok('…while a card the panel still holds answers for itself', /\? \{\}/.test(panel));
     ok('the next session starts from its own agent\'s answer, not the last one\'s',
         /this\.composerSuperpowers = undefined;/.test(panel));

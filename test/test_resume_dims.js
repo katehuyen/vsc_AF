@@ -224,14 +224,14 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     // added between them is not a violation of it, and a test that failed on
     // one would be pinning the line rather than the rule.
     ok('…and the transcript comes FIRST in the model chain',
-        /inherit\.model\s*\|\|\s*box\.model\s*\|\|\s*(?:\w+\.model\s*\|\|\s*)?d\.model/.test(cp));
+        /inherit\.model\s*\|\|\s*asked\.model\s*\|\|\s*box\.model\s*\|\|\s*(?:\w+\.model\s*\|\|\s*)?d\.model/.test(cp));
     ok('…and in the effort chain',
-        /inherit\.effort\s*\|\|\s*box\.effort\s*\|\|\s*(?:\w+\.effort\s*\|\|\s*)?d\.effort/.test(cp));
+        /inherit\.effort\s*\|\|\s*asked\.effort\s*\|\|\s*box\.effort\s*\|\|\s*(?:\w+\.effort\s*\|\|\s*)?d\.effort/.test(cp));
     // …and the fleet default is still the LAST word on both, never skipped.
     ok('‼️ the fleet default still closes both chains',
         /box\.model[^;]*d\.model/.test(cp) && /box\.effort[^;]*d\.effort/.test(cp));
     ok('…and in the permission chain',
-        /inherit\.permissionMode\s*\|\|\s*box\.permissionMode\s*\|\|\s*d\.permissionMode/.test(cp));
+        /inherit\.permissionMode\s*\|\|\s*asked\.permissionMode\s*\|\|\s*box\.permissionMode\s*\|\|\s*d\.permissionMode/.test(cp));
     ok('…and the pair still goes through narrowLaunch',
         /narrowLaunch\(this\.engineModelsFor\(engine\),\s*\n\s*inherit\.model/.test(cp));
 
@@ -239,9 +239,9 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     ok('the terminal resume reads the session it was handed',
         /const\s+inherit\s*=\s*lastRunDimensions\(s\)/.test(ex));
     ok('…and narrows the inherited pair for that engine',
-        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*defaulted\.model/.test(ex));
+        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*asked\.model\s*\|\|\s*defaulted\.model/.test(ex));
     ok('…and the inherited mode beats the fleet/agent default',
-        /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*defaulted\.permissionMode/.test(ex));
+        /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*asked\.permissionMode\s*\|\|\s*defaulted\.permissionMode/.test(ex));
     // ‼️ K-22 — inheriting a mode must not be a way AROUND the folder's policy.
     ok('…and the resolved permission is still what reaches the command line',
         /permission:\s*resolveLaunchPermission\(merged\.permissionMode/.test(ex));
@@ -252,13 +252,13 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     // is the one that made the case: it ALREADY reached for the model and
     // reached wrong, through `models[models.length - 1]`.
     ok('resumeInConsole inherits all three rather than guessing at one',
-        /const\s+inherit\s*=\s*lastRunDimensions\(s\);\s*\n\s*const\s+sameEngine/.test(ex));
+        /const\s+inherit\s*=\s*lastRunDimensions\(s\);[\s\S]{0,160}const\s+asked\s*=\s*sessionRequestedOf\(s\.sessionId, engine\);\s*\n\s*const\s+sameEngine/.test(ex));
     ok('…and no longer reads the model off the first-seen set',
         !/models\[s\.models\.length - 1\]/.test(ex) && !/s\.models\[s\.models\.length - 1\]/.test(ex));
     ok('…and narrows the inherited pair for the row\'s engine',
-        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*own\.model\s*\|\|\s*\(sameEngine/.test(ex));
+        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*asked\.model\s*\|\|\s*own\.model\s*\|\|\s*\(sameEngine/.test(ex));
     ok('…and its inherited mode beats the fleet default',
-        /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*d\.permissionMode/.test(ex));
+        /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*asked\.permissionMode\s*\|\|\s*d\.permissionMode/.test(ex));
 
     // ‼️ S-102 — THE DOOR DOES NOT DECIDE WHAT A RESUME RUNS AS. The Console's
     // own resume carried the session's sign-in, the agent's defaults and the
@@ -274,7 +274,7 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     ok('…the agent\'s own defaults between the transcript and the fleet, as the panel does',
         /const own: LaunchOptions = agent \? withAgentEngineDefaults\(agent, \{ engine \}\) : \{\}/.test(ricBody));
     ok('…and a fresh card\'s Superpowers default, the seat\'s own when a card exists',
-        /consoleHost\.list\(\)\.some\(x => x\.sessionId === s\.sessionId\)\s*\n?\s*\?\s*\{\}\s*:\s*\{ superpowers: superpowersOnFor\(/.test(ricBody));
+        /consoleHost\.list\(\)\.some\(x => x\.sessionId === s\.sessionId\)\s*\n?\s*\?\s*\{\}\s*:\s*\{ superpowers: asked\.superpowers \?\? superpowersOnFor\(/.test(ricBody));
     const crs = ex.slice(ex.indexOf("registerCommand('agentfarm.consoleResumeSession'"));
     ok('S-102: the ended card\'s own Resume carries its sign-in too',
         /account:\s*s\.account \|\| sessionAccountOf\(s\.sessionId\)\?\.id/.test(crs.slice(0, crs.indexOf('ConsolePanel.show('))));
@@ -293,9 +293,18 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     ok('sessions.start looks the resumed transcript up',
         /const\s+resumed\s*=\s*optStr\(args, 'resume'\)\s*\n\s*\?\s*sessionFromArg\(optStr\(args, 'resume'\)\)/.test(ex));
     ok('…and fills only what the caller left out',
-        /if \(!o\.model && inherit\.model\)/.test(ex)
-        && /if \(!o\.effort && inherit\.effort\)/.test(ex)
-        && /if \(!o\.permissionMode && inherit\.permissionMode\)/.test(ex));
+        /if \(!o\.model && \(inherit\.model \|\| asked\.model\)\)/.test(ex)
+        && /if \(!o\.effort && \(inherit\.effort \|\| asked\.effort\)\)/.test(ex)
+        && /if \(!o\.permissionMode && \(inherit\.permissionMode \|\| asked\.permissionMode\)\)/.test(ex));
+    // ‼️ S-102 (reopened) — the ended card's own Resume was the one door that worked: it replays what the
+    // card recorded. Every other door now hands a conversation that HAS an ended card to that Resume, and a
+    // conversation without one fills what its transcript is silent on (the mode) from its launch manifest.
+    ok('‼️ S-102: resumeInConsole hands a conversation with an ended card to that card\'s own Resume',
+        /const card = consoleHost\.list\(\)\.find\(x => x\.sessionId === s\.sessionId && \(x\.status === 'ended' \|\| x\.status === 'error'\)\);\s*\n\s*if \(card\) \{ await vscode\.commands\.executeCommand\('agentfarm\.consoleResumeSession', \{ hostId: card\.id \}\); return; \}/.test(ricBody));
+    ok('‼️ S-102: …and so does the Console panel\'s list row',
+        /const card = host\.list\(\)\.find\(x => x\.sessionId === sessionId && \(x\.status === 'ended' \|\| x\.status === 'error'\)\);\s*\n\s*if \(card\) \{ void vscode\.commands\.executeCommand\('agentfarm\.consoleResumeSession', \{ hostId: card\.id \}\); break; \}/.test(cp));
+    ok('‼️ S-102: the manifest\'s ask is read for the row\'s own engine only',
+        /const m = manifestOf\(launchManifests\(\), index\.byId\(sessionId\)\);\s*\n\s*if \(!m \|\| \(m\.engine \|\| 'claude'\) !== engine\) \{ return \{\}; \}/.test(ex));
     ok('…and says so in its describe, because that is all an agent reads',
         /resume\? \(session id[^)]*inherited from its transcript/.test(ex));
 }

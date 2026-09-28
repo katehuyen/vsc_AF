@@ -389,6 +389,8 @@ export interface ConsoleDeps {
      * that had been running on a slot. The user reported exactly that.
      */
     sessionAccount?(sessionId: string): string | undefined;
+    /** S-102 — what the session's own launch asked for (its manifest), for what its transcript is silent on */
+    sessionRequested?(sessionId: string, engine: string): { model?: string; effort?: string; permissionMode?: string; superpowers?: boolean };
     /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
@@ -2340,6 +2342,10 @@ export class ConsolePanel {
                     this.refresh();
                     return;
                 }
+                // ‼️ S-102 — an ended card of its own brings it back the way that card's Resume does (its
+                // recorded model, effort, mode and sign-in), the same on every door
+                const card = host.list().find(x => x.sessionId === sessionId && (x.status === 'ended' || x.status === 'error'));
+                if (card) { void vscode.commands.executeCommand('agentfarm.consoleResumeSession', { hostId: card.id }); break; }
                 const agent = this.deps.getAgents().find(a => a.name === row.agentName);
                 const d = this.deps.launchDefaults();
                 // X-152 — the composer's boxes are the host's own record
@@ -2361,21 +2367,23 @@ export class ConsolePanel {
                 // carried back from a transcript can never grant more than
                 // starting a fresh session in that folder would.
                 const inherit = lastRunDimensions(row);
+                // S-102 — …then what its own launch asked for, where the transcript says nothing
+                const asked = this.deps.sessionRequested?.(sessionId, engine) ?? {};
                 // …with this agent's own Settings row between the box and the
                 // fleet, exactly as the composer resolves it.
                 const ownBack = agent
                     ? this.deps.agentEngineDefaults?.(agent.dir, engine) ?? {}
                     : {};
                 const back = narrowLaunch(this.engineModelsFor(engine),
-                    inherit.model || box.model || ownBack.model || d.model,
-                    inherit.effort || box.effort || ownBack.effort || d.effort);
+                    inherit.model || asked.model || box.model || ownBack.model || d.model,
+                    inherit.effort || asked.effort || box.effort || ownBack.effort || d.effort);
                 this.selected = host.start({
                     agentId: agent?.id ?? '', agentName: row.agentName ?? 'session',
                     cwd: row.cwd, resume: sessionId, engine,
                     model: back.model,
                     effort: back.effort,
                     // S-45 — the mode the transcript last stated (see above).
-                    permissionMode: inherit.permissionMode || box.permissionMode || d.permissionMode,
+                    permissionMode: inherit.permissionMode || asked.permissionMode || box.permissionMode || d.permissionMode,
                     // ‼️ …and the project it comes back UNDER is its OWN. Left
                     // out, ConsoleHost.start falls back to the window's active
                     // project — which is not this session's answer and is
@@ -2409,7 +2417,7 @@ export class ConsolePanel {
                     // fallback is the agent's own default.
                     ...(host.list().some(x => x.sessionId === sessionId)
                         ? {}
-                        : { superpowers: this.deps.superpowersDefault(row.agentName ?? '') }),
+                        : { superpowers: asked.superpowers ?? this.deps.superpowersDefault(row.agentName ?? '') }),
                     // resume means CONTINUE: what was said comes back with it
                     history: this.deps.history(sessionId),
                     // …and so does what it cost, or the composer's line would
