@@ -1759,6 +1759,16 @@
       }
     },
     {
+      "capability": "copyChainId",
+      "ui": [
+        "cmd:agentfarm.copyChainId",
+        "ctx:agentfarm.copyChainId"
+      ],
+      "ops": [
+        "baton.legs"
+      ]
+    },
+    {
       "capability": "copyCliHookCommand",
       "ui": [
         "cmd:agentfarm.copyCliHookCommand"
@@ -5669,6 +5679,16 @@
       }
     },
     {
+      "capability": "sessionViewer.ts#chainGo",
+      "ui": [
+        "page:sessionViewer.ts#chainGo"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the leg before or after in the same tab; an agent reads the same neighbours with baton.legs."
+      }
+    },
+    {
       "capability": "sessionViewer.ts#copyStep",
       "ui": [
         "page:sessionViewer.ts#copyStep"
@@ -6545,6 +6565,16 @@
       ],
       "ops": [
         "toolbox.copy"
+      ]
+    },
+    {
+      "capability": "showChain",
+      "ui": [
+        "cmd:agentfarm.showChain",
+        "ctx:agentfarm.showChain"
+      ],
+      "ops": [
+        "sessions.page"
       ]
     },
     {

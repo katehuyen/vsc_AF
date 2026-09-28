@@ -914,6 +914,8 @@
             C.esc(DATA.cwd || ''),
             `<button class="idcopy" id="idcopy" data-copy="${C.esc(DATA.sessionId)}"
                 title="Click to copy this session id">${C.esc(DATA.sessionId)}</button>`,
+            // U-167 — the relay this run was a leg of: its id, ‹ › and first/last
+            window.AFChainNav ? window.AFChainNav.html(DATA.chain) : '',
             DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''
         ];
         return bits.filter(Boolean).join(' · ');
@@ -1299,6 +1301,7 @@
                 idb.addEventListener('click', () =>
                     window.AFTextTools.copyFrom(idb, idb.dataset.copy || ''));
             }
+            if (window.AFChainNav) { window.AFChainNav.wire(document.getElementById('app'), vscode); }
         }
         // Export MD asks first (current view vs everything, + folded-title choice
         // when turns are collapsed); the host asks, builds from the view sent

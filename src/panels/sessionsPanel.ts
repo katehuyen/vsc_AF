@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { PricingEngine } from '../core/pricing';
-import { SessionIndex } from '../core/sessions';
+import { SessionIndex, SessionInfo } from '../core/sessions';
+import { chainIndexNow } from '../core/chainMembership';
 import { LaunchManifest } from '../core/launchManifest';
 import { handleAfNav, htmlShell } from './base';
 import { sessionRowPool } from './dashboard';
@@ -72,6 +73,22 @@ export interface SessionsPageScope {
     missionTitle?: string;
     /** X-111 — open with the Providers filter set to this route id (`(none)` = no route). */
     provider?: string;
+    /** U-166 — open on one baton relay chain: its legs are always in the pool, its id in the text filter. */
+    chain?: string;
+}
+
+/**
+ * U-166 — a chain's legs are on the page however far down the top-N cut they
+ * fall: the pool is built as always, then any leg it left out is added.
+ */
+function withChainLegs(sessions: SessionInfo[], chain: string | undefined, pool: (list: SessionInfo[]) => unknown[]): unknown[] {
+    const rows = pool(sessions);
+    const legs = chain ? chainIndexNow().byChain.get(chain)?.legs ?? [] : [];
+    if (!legs.length) { return rows; }
+    const shipped = new Set(rows.map(r => (r as { sessionId?: string }).sessionId));
+    const want = new Set(legs.map(l => l.sessionId).filter(sid => !shipped.has(sid)));
+    const missing = sessions.filter(s => want.has(s.sessionId));
+    return missing.length ? [...rows, ...pool(missing)] : rows;
 }
 
 function buildData(
@@ -100,12 +117,12 @@ function buildData(
         scope: {
             project: scope?.project ?? '', agentName: scope?.agentName ?? '',
             missionId: scope?.missionId ?? '', missionTitle: scope?.missionTitle ?? '',
-            provider: scope?.provider ?? ''
+            provider: scope?.provider ?? '', chain: scope?.chain ?? ''
         },
-        sessions: sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
+        sessions: withChainLegs(sessions, scope?.chain, list => sessionRowPool(list, s => deps.index.isSessionActive(s, now), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name), deps.launchManifests?.(),
-            stated => deps.accountLabel?.(stated) ?? stated),
+            stated => deps.accountLabel?.(stated) ?? stated)),
         sessionTableN: tableN
     };
 }

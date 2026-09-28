@@ -2560,6 +2560,7 @@ const { opencodeStatus, syncToOpencode } =
             return origLoad.apply(this, arguments);
         };
         const SP = require(path.join(__dirname, '..', 'out', 'panels', 'searchPanel.js'));
+        const SF = require(path.join(__dirname, '..', 'out', 'core', 'sessionFind.js'));
         Module._load = origLoad;
         // ‼️ DERIVED, NOT TYPED OUT — which is the whole assertion. The fifth
         // engine appeared here without this file being edited for it; the list
@@ -2572,12 +2573,12 @@ const { opencodeStatus, syncToOpencode } =
             { sessionId: 'ffffffff-bbbb', file: 'b.jsonl', title: 'about 4d361981', agentName: 'dev', lastTs: 9, mtime: 9, tags: [] },
             { sessionId: 'cccccccc-cccc', file: 'c.jsonl', title: 'other', agentName: 'ops', lastTs: 5, mtime: 5, tags: ['4d361981'] }
         ];
-        const found = SP.findSessions(pool, '4d361981', 10);
+        const found = SF.findSessions(pool, '4d361981', 10);
         ok('‼️ an exact id prefix outranks a session that merely mentions it',
             found.length === 3 && found[0].sessionId === '4d361981-aaaa');
         ok('…a title match comes before a label match', found[1].file === 'b.jsonl');
         ok('…and no query at all means the most recent, newest first',
-            SP.findSessions(pool, '', 2).map(s => s.file).join(',') === 'b.jsonl,c.jsonl');
+            SF.findSessions(pool, '', 2).map(s => s.file).join(',') === 'b.jsonl,c.jsonl');
     }
 
     // ---------- §19.C: usage.plan — the real subscription quota ----------

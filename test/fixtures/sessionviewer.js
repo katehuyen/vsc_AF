@@ -185,6 +185,17 @@ module.exports = {
             // quiet: the quota line alone under the gauge, the host's own words.
             label: 'Session viewer — QUOTA HANDOVER delivered, the window quiet: 5h 91% HANDOVER under the gauge',
             data: data({ over: { contextSignal: quotaView() } })
+        },
+        {
+            id: 'sessionviewer-chain-first',
+            // U-167 — the smallest arity first: leg 1 has ONE live arrow.
+            label: 'Session viewer — leg 1 of a running relay: ‹ dead, › to leg 2, the chain id to copy, "first"',
+            data: data({ over: { chain: { chainId: 'chn_muin1eiu002hyo', leg: 1, of: 25, prev: '', next: '3df2d806-2f82-4bf6-acd8-2a3ce985b83d', first: true, last: false, open: true } } })
+        },
+        {
+            id: 'sessionviewer-chain-last',
+            label: 'Session viewer — the final leg of an ended relay: ‹ to leg 24, › dead, "last"',
+            data: data({ over: { chain: { chainId: 'chn_muin1eiu002hyo', leg: 25, of: 25, prev: '3df2d806-2f82-4bf6-acd8-2a3ce985b83d', next: '', first: false, last: true, open: false } } })
         }
     ]
 };

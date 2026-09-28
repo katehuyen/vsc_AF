@@ -353,6 +353,7 @@ import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf }
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
+import { registerChainOps } from './core/chainOps';
 import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
@@ -657,7 +658,9 @@ import {
 } from './panels/base';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
-import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
+import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchPanel';
+import { findSessions } from './core/sessionFind';
+import { chainIndexNow, setChainSource } from './core/chainMembership';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
@@ -11091,15 +11094,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.find',
             describe: 'Find a session BY ITS ID — or by an id prefix, a transcript path, a title, an agent name or a label. Every engine, the whole index, not just the recent ones; ranked exact id → prefix → mention. This is the op for "the user quoted 4d361981, what is it": it answers with the row (id, title, agent, engine, project-less facts, when, cost, turns) and the transcript `file` the viewer takes. '
                 + '‼️ X-44 — `engine` is where the FILE lives, which is not always who ran it. Every row also carries `producer` (the engine that DID the work), `storage`, `provenance` (native | imported | imported-unknown-source), `canonicalId` (the id of the run — differs from `id` when this row is an imported copy), `importedFrom`/`importedAt`, `aliasOf` and `importAliases`. Count on `canonicalId`; resume and open on `id`. '
-                + 'args: q (what you know — an id, part of one, a path, a phrase; the eight-character prefix this extension prints on every track chip and log line is enough; omit for the most recent), limit? (default 20)',
+                + 'U-165 — a baton relay\'s chain id (chn_…) finds every leg of that chain, the first one too, and every row says its `chain` { id, leg } (null off a relay; baton.legs walks it). '
+                + 'args: q (what you know — an id, part of one, a chain id, a path, a phrase; the eight-character prefix this extension prints on every track chip and log line is enough; omit for the most recent), limit? (default 20)',
             handler: (args) => {
                 // B-29 — a q that is not text is refused, never read as "no q → the newest"
                 need(args.q === undefined || args.q === null || typeof args.q === 'string' || typeof args.q === 'number',
                     `q must be text — an id, its prefix or a title fragment, not ${typeof args.q}.`);
                 const q = optStr(args, 'q');
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
+                const chains = chainIndexNow();
                 return findSessions(index.allWithExternal(), q, limit).map(s => ({
                     id: s.sessionId,
+                    chain: ((c) => (c ? { id: c.chainId, leg: c.leg } : null))(chains.bySession.get(s.sessionId)),
                     file: s.file,
                     title: s.title,
                     agent: s.agentName ?? null,
@@ -11754,12 +11760,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'its planner\'s own lane and every delegation it opened, with no dialogs of yours left mixed in. '
                 + 'This is the only scope that ADDS rows rather than narrowing: mission sessions are excluded from this page by default, '
                 + 'because a mission opens one session per delegation and would otherwise bury the log of your own conversations. '
-                + 'args: project? (name), agent? (agent name), mission? (run id), provider? (X-111 — a provider id: opens the page with its Providers filter set to that route, e.g. "kimi"; "(none)" = the runs on no route)',
+                + 'U-166 — `chain` (a baton relay\'s chn_… id) opens the page on that chain: every leg is on it (however old), every origin is shown, and the chain id sits in the text filter — the right-click "Show This Chain". '
+                + 'args: project? (name), agent? (agent name), mission? (run id), provider? (X-111 — a provider id: opens the page with its Providers filter set to that route, e.g. "kimi"; "(none)" = the runs on no route), chain? (chn_… id)',
             handler: (args) => {
                 const project = optStr(args, 'project') ?? '';
                 const agentName = optStr(args, 'agent') ?? '';
                 const missionId = optStr(args, 'mission') ?? '';
                 const provider = optStr(args, 'provider') ?? '';
+                const chain = optStr(args, 'chain') ?? '';
+                if (chain) {
+                    need(chainIndexNow().byChain.has(chain), `no chain "${chain}" on record — baton.status lists the chains`);
+                }
                 if (agentName) {
                     need(agents.some(a => a.name === agentName), `no agent called "${agentName}"`);
                 }
@@ -11768,11 +11779,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 void vscode.commands.executeCommand('agentfarm.openSessions', {
                     ...(project ? { project } : {}), ...(agentName ? { agentName } : {}),
-                    ...(missionId ? { missionId } : {}), ...(provider ? { provider } : {})
+                    ...(missionId ? { missionId } : {}), ...(provider ? { provider } : {}), ...(chain ? { chain } : {})
                 });
                 return {
                     opened: 'sessions', project: project || null, agent: agentName || null,
-                    mission: missionId || null, provider: provider || null
+                    mission: missionId || null, provider: provider || null, chain: chain || null
                 };
             }
         },
@@ -17096,6 +17107,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     }
     setBatonSource(() => batonStore.all());
+    setChainSource(() => batonStore.links());
+    // U-166 — the sessions a Chain ID menu item shows on, one set for every surface's right-click
+    const publishChainSessions = () => {
+        const set: Record<string, true> = {};
+        for (const sid of chainIndexNow().bySession.keys()) { set[sid] = true; }
+        void vscode.commands.executeCommand('setContext', 'agentfarm.chainSessions', set);
+    };
+    publishChainSessions();
+    context.subscriptions.push(batonStore.onDidChange(publishChainSessions));
     const gitShortStatus = async (cwd: string) => { const c = await changesSummary(cwd); return c.note ? undefined : c.status; };
     // ‼️ S-83 — a leg's work lands in its folder AND its project's repositories; every relay door reads both
     const legGit = legGitReaders({
@@ -17373,6 +17393,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openLeg: sid => { void vscode.commands.executeCommand('agentfarm.openConsole', { sessionId: sid }); }
     };
     registerLegsOp(bridge, batonLegsDeps);
+    registerChainOps(bridge, { sessions: () => index.allWithExternal() });
     // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
     // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
     const batonLegFacts = (sid: string): PassedLegFacts => {
@@ -24287,6 +24308,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // depth, and the file itself does not say so on every line.
         laneFor: (file: string) =>
             index.allWithExternal().find(s => s.file === file)?.isSidechain === true,
+        fileForSession: (sessionId: string) =>
+            index.allWithExternal().find(s => s.sessionId === sessionId)?.file,
         // ‼️ S-37 — the ONE place 🧑/🤖 and 🌙 are decided for the viewer, and
         // it is the same record and the same two functions the Sessions table
         // reads. The page used to work it out of the transcript it had just
@@ -36204,6 +36227,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.setStatusBarMessage(
                     `$(clippy) Agent Farm: ${ids.length === 1 ? ids[0].slice(0, 8) : `${ids.length} ids`} copied`, 4000);
             }),
+        // U-166 — a relay's id is a handle like a session's: copied, or opened as the chain's own list
+        vscode.commands.registerCommand('agentfarm.copyChainId',
+            async (arg?: SessionRef | SessionInfo) => {
+                const chains = chainIndexNow();
+                const ids = [...new Set(sessionsFromArg(arg)
+                    .map(s => (s.sessionId ? chains.bySession.get(s.sessionId)?.chainId : undefined))
+                    .filter((x): x is string => !!x))];
+                if (!ids.length) {
+                    void vscode.window.showInformationMessage('Agent Farm: this session ran no leg of a baton relay.');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(ids.join('\n'));
+                void vscode.window.setStatusBarMessage(
+                    `$(clippy) Agent Farm: ${ids.length === 1 ? ids[0] : `${ids.length} chain ids`} copied`, 4000);
+            }),
+        vscode.commands.registerCommand('agentfarm.showChain',
+            async (arg?: SessionRef | SessionInfo | { chainId?: string }) => {
+                const chains = chainIndexNow();
+                const named = arg && typeof (arg as { chainId?: unknown }).chainId === 'string' ? (arg as { chainId: string }).chainId : '';
+                const chainId = named || sessionsFromArg(arg as SessionRef)
+                    .map(s => (s.sessionId ? chains.bySession.get(s.sessionId)?.chainId : undefined))
+                    .find((x): x is string => !!x) || '';
+                if (!chainId || !chains.byChain.has(chainId)) {
+                    void vscode.window.showInformationMessage('Agent Farm: this session ran no leg of a baton relay.');
+                    return;
+                }
+                void vscode.commands.executeCommand('agentfarm.openSessions', { chain: chainId });
+            }),
         // ‼️ U-76 — WHAT THAT POINT SAID, ON THE CLIPBOARD, WITHOUT LEAVING THE
         // PAGE. Left-click opens the transcript at the moment and the step's own
         // copy button is two clicks further on; this is the same text one click
@@ -38054,7 +38105,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // tooltip, an agent's page — can open it already narrowed, rather than
         // dropping you in the fleet-wide list to find the filter yourself.
         vscode.commands.registerCommand('agentfarm.openSessions',
-            (arg?: { project?: string; agentName?: string; missionId?: string; provider?: string }) => {
+            (arg?: { project?: string; agentName?: string; missionId?: string; provider?: string; chain?: string }) => {
                 // ‼️ X-95 — the mission scope names itself here rather than at
                 // every call site: a run id is what a caller has, and the title
                 // is what the page has to print. One lookup, one truth.
@@ -38077,7 +38128,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
                     ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {}),
                     ...(missionId ? { missionId, missionTitle: missionTitleOf(missionId) } : {}),
-                    ...(typeof arg?.provider === 'string' && arg.provider ? { provider: arg.provider } : {})
+                    ...(typeof arg?.provider === 'string' && arg.provider ? { provider: arg.provider } : {}),
+                    ...(typeof arg?.chain === 'string' && arg.chain ? { chain: arg.chain } : {})
                 });
             }),
 

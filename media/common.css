@@ -1078,3 +1078,12 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     font-size: 11px; padding: 6px 2px 2px;
     color: var(--vscode-testing-iconPassed, #89d185);
 }
+
+/* U-167 - a relay chain on a session's page (media/afChainNav.js) */
+.afchain { white-space: nowrap; }
+.afchain-nav { background: var(--vscode-button-secondaryBackground, #3a3d41); border: 1px solid var(--vscode-descriptionForeground, #888); border-radius: 3px; font-size: 1.15em; margin: 0 2px;
+    color: inherit; font-family: inherit; line-height: 1.1; padding: 0 7px; cursor: pointer; opacity: .9; }
+.afchain-nav:hover:not([disabled]) { opacity: 1; color: var(--vscode-textLink-foreground); }
+.afchain-nav[disabled] { opacity: .3; cursor: default; }
+.afchain-badge { font-size: .85em; padding: 0 5px; border-radius: 8px; margin-left: 3px;
+    border: 1px solid var(--vscode-textLink-foreground); color: var(--vscode-textLink-foreground); }

@@ -536,10 +536,13 @@
                 // taken one back to its session did not look at it. A bare word
                 // is a substring, so the printed prefix finds the row without
                 // anybody typing a whole UUID.
+                // …and U-165: the chain id, so every leg of a relay is found,
+                // the first one too — its opening prompt never names the chain.
                 // …and X-111: the route's id and label, so "kimi" typed in the
                 // box finds the Claude-via-Kimi sessions the same way a tick does.
                 if (!text.empty && !text.test((r.title || '') + ' ' + (r.agent || '') + ' '
                     + (r.tags || []).join(' ') + ' ' + (r.sessionId || '') + ' '
+                    + (r.chain ? r.chain.chainId + ' ' : '')
                     + providersOf(r).join(' ') + ' ' + window.AFProvider.label(identityOf(r)))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 // The picker lists LABELS ("Antigravity"), because that is what
@@ -1847,6 +1850,19 @@
             renderSection();
         }
 
+        /**
+         * U-166 — SCOPE THE TABLE TO ONE RELAY CHAIN ("Show This Chain"): its id
+         * in the text box, where the same ✕ clears it, and every origin shown —
+         * a relay's legs are automation runs, which the table hides by default.
+         */
+        function setChainFilter(id) {
+            filters.text = id || '';
+            if (id) { filters.showUser = true; filters.showAuto = true; filters.showMission = true; }
+            filtersOpen = true;
+            saveState();
+            renderSection();
+        }
+
         function onMessage(ev) {
             if (!ev.data || ev.data.type !== 'sessionTurns') { return false; }
             const c = turnCache[ev.data.file];
@@ -1855,7 +1871,7 @@
             return true;
         }
 
-        return { setRows, onMessage, setProjectFilter, setMissionFilter, setProviderFilter };
+        return { setRows, onMessage, setProjectFilter, setMissionFilter, setProviderFilter, setChainFilter };
     }
 
     window.AFSessionsTable = { SORTS, create };

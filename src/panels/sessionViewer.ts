@@ -14,6 +14,7 @@ import { RunIdentity } from '../core/turnRuntime';
 import { oneShotEnv } from '../core/oneShot';
 import { revealPath } from '../core/reveal';
 import { buildSessionMarkdown, SessionExportView } from '../core/sessionExport';
+import { chainIndexNow, chainPlace } from '../core/chainMembership';
 import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
 
 export interface ViewerDeps {
@@ -104,6 +105,8 @@ export interface ViewerDeps {
      * USER and AGENT, which is the very confusion X-25 is about.
      */
     laneFor?(file: string): boolean;
+    /** U-167 — a session's transcript, for the chain arrows */
+    fileForSession?(sessionId: string): string | undefined;
     /**
      * ‼️ S-37 — WHO RAN THIS, ANSWERED BY THE SIDE THAT HOLDS THE EVIDENCE.
      *
@@ -959,8 +962,32 @@ export class SessionViewerPanel {
             data.agentName = owner.agentName;
         }
         if (this.deps.laneFor?.(this.file)) { data.lane = true; }
+        const place = chainPlace(chainIndexNow(), String(data.sessionId ?? ''));
+        if (place) {
+            data.chain = {
+                chainId: place.chainId, leg: place.leg, of: place.legs[place.legs.length - 1]?.leg ?? place.leg,
+                prev: place.prev ?? '', next: place.next ?? '', first: place.first, last: place.last, open: place.open
+            };
+        }
         this.panel.title = tabCaption(String(data.sessionId ?? ''), String(data.title ?? ''));
         return data;
+    }
+
+    /**
+     * U-167 — ‹ › walk a chain IN THIS TAB, like a browser's history: the
+     * panel takes the other leg's transcript (its watcher too). A leg already
+     * open in a tab of its own is revealed there instead of opened twice.
+     */
+    private goTo(file: string): void {
+        const other = SessionViewerPanel.open.get(file);
+        if (other && other !== this) { other.panel.reveal(); return; }
+        SessionViewerPanel.open.delete(this.file);
+        this.file = file;
+        SessionViewerPanel.open.set(file, this);
+        try { this.watcher?.close(); } catch { /* already closed */ }
+        this.watchFile();
+        this.panel.webview.html = htmlShell(
+            this.panel.webview, this.deps.extensionUri, 'Session Viewer', this.viewData(), 'sessionViewer.js');
     }
 
     /** Live refresh: push fresh data (KPIs, context gauge, new messages) while the session is still running. */
@@ -1189,6 +1216,14 @@ export class SessionViewerPanel {
             case 'refresh':
                 this.panel.webview.postMessage({ type: 'data', data: this.viewData() });
                 break;
+            case 'chainGo': {
+                const sid = typeof msg.sessionId === 'string' ? msg.sessionId : '';
+                const file = sid ? this.deps.fileForSession?.(sid) : undefined;
+                if (file) { this.goTo(file); } else {
+                    void vscode.window.showInformationMessage(`Agent Farm: session ${sid.slice(0, 8)} has no transcript on this machine.`);
+                }
+                break;
+            }
             case 'openAgent': {
                 const owner = this.deps.agentForSession?.(this.file,
                     typeof msg.cwd === 'string' && msg.cwd ? msg.cwd : undefined);

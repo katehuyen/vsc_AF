@@ -18,6 +18,7 @@ import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
 import { Baton } from '../core/baton';
 import { batonCardView } from '../core/batonView';
+import { chainIndexNow, chainPlace, placeCardView } from '../core/chainMembership';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -318,6 +319,7 @@ export function sessionRowPool(
     };
     const batons = (() => { try { return batonSource?.() ?? []; } catch { return []; } })();
     const relayIds = new Set<string>();
+    const chains = chainIndexNow();
     for (const b of batons) { relayIds.add(b.from.sessionId); if (b.toSessionId) { relayIds.add(b.toSessionId); } }
     const rows = sessions.map(s => ({
         ...spanFields(s),
@@ -369,7 +371,10 @@ export function sessionRowPool(
         // the majority of the log, and the log is first of all a person's own.
         mission: sessionMission(s) ?? null,
         // S-77 — this run's leg of a baton relay (the card's own view); null off a relay
-        chain: s.sessionId && relayIds.has(s.sessionId) ? (batonCardView(batons, s.sessionId) ?? null) : null,
+        // U-168 - and a chain whose batons the store dropped still has its legs
+        chain: s.sessionId
+            ? ((relayIds.has(s.sessionId) ? batonCardView(batons, s.sessionId) : undefined) ?? placeCardView(chainPlace(chains, s.sessionId)) ?? null)
+            : null,
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,
         tags: s.tags ?? [],

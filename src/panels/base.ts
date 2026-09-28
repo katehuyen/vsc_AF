@@ -355,6 +355,7 @@ export function htmlShell(
     const ctx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afCtx.js'));
     const sessCtx = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSessionCtx.js'));
     const textTools = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTextTools.js'));
+    const chainNav = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afChainNav.js'));
     // The saved-prompt picker. Ships everywhere for the reason it was made
     // shared (M-24): the rule is "a box that takes a prompt offers the prompts
     // you saved", and a component a page had to opt into is the component the
@@ -547,6 +548,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${ctx}"></script>
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
+<script nonce="${nonce}" src="${chainNav}"></script>
 <script nonce="${nonce}" src="${snippets}"></script>
 <script nonce="${nonce}" src="${slash}"></script>
 <script nonce="${nonce}" src="${repaint}"></script>

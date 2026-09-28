@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.754.0",
+  "version": "3.755.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -668,6 +668,18 @@
         "title": "Copy Agent Folder",
         "category": "Agent Farm",
         "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.copyChainId",
+        "title": "Copy Chain ID",
+        "category": "Agent Farm",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "agentfarm.showChain",
+        "title": "Show This Chain",
+        "category": "Agent Farm",
+        "icon": "$(list-tree)"
       },
       {
         "command": "agentfarm.copySessionPath",
@@ -4450,6 +4462,16 @@
           "group": "5_copy@1"
         },
         {
+          "command": "agentfarm.copyChainId",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/ && sessionId in agentfarm.chainSessions",
+          "group": "5_copy@2"
+        },
+        {
+          "command": "agentfarm.showChain",
+          "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/ && sessionId in agentfarm.chainSessions",
+          "group": "1_open@6"
+        },
+        {
           "command": "agentfarm.copySessionCwd",
           "when": "webviewSection =~ /^(afSessionRow|afNeedSession|afTurnRow|afSearchHit|afTimelineAgent)$/ && cwd",
           "group": "5_copy@2"
@@ -4493,6 +4515,16 @@
           "command": "agentfarm.copySessionId",
           "when": "webviewSection =~ /^afConsole(Session|Resumable)$/",
           "group": "1_session@7"
+        },
+        {
+          "command": "agentfarm.copyChainId",
+          "when": "webviewSection =~ /^afConsole(Session|Resumable)$/ && sessionId in agentfarm.chainSessions",
+          "group": "1_session@10"
+        },
+        {
+          "command": "agentfarm.showChain",
+          "when": "webviewSection =~ /^afConsole(Session|Resumable)$/ && sessionId in agentfarm.chainSessions",
+          "group": "1_session@11"
         },
         {
           "command": "agentfarm.sessionToWiki",
@@ -4563,6 +4595,16 @@
           "command": "agentfarm.copySessionId",
           "when": "webviewSection == 'afTimelineSession'",
           "group": "1_session@6"
+        },
+        {
+          "command": "agentfarm.copyChainId",
+          "when": "webviewSection == 'afTimelineSession' && sessionId in agentfarm.chainSessions",
+          "group": "1_session@10"
+        },
+        {
+          "command": "agentfarm.showChain",
+          "when": "webviewSection == 'afTimelineSession' && sessionId in agentfarm.chainSessions",
+          "group": "1_session@11"
         },
         {
           "command": "agentfarm.sessionToWiki",
@@ -6177,6 +6219,16 @@
       "commandPalette": [
         {
           "command": "agentfarm.startSessionRow",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.copyChainId",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.showChain",
           "when": "false",
           "group": "ctx"
         },

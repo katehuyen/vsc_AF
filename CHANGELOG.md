@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.755.0 - A baton relay's chain id works like a session id (2026-09-29)
+
+- Typing a chain id (`chn_…`) into the Sessions page's filter box, the Search
+  page's session filter, "Find session ID…" or `sessions.find` now finds every
+  leg of that relay — the first leg too. Until now the first leg was missing,
+  because only the later legs name the chain in their opening prompt.
+- Right-click on a session that ran a leg of a relay — in the session tables,
+  the search results, the Console and the Live Timeline — offers "Copy Chain
+  ID" and "Show This Chain". Show This Chain opens the Sessions page on that
+  chain: every leg is on it however old, automation runs included, and the
+  chain id sits in the filter box, where the same ✕ clears it. On a session
+  that is not part of a relay the two items do not appear.
+- A session's own page shows its relay beside the session id: ‹ and › open
+  the leg before and after in the same tab, the way a browser walks its
+  history; the chain id is copied with one click; the first leg carries a
+  "first" badge and the final leg of a finished chain a "last" badge ("latest"
+  while the chain is still running). Hovering the ⑂ leg counter says where
+  the chain stands.
+- A chain keeps its legs after the relay store drops its oldest records, so an
+  old chain can still be found, filtered and walked.
+- New bridge op `baton.legs` (chain or session): a chain's legs in order, and a
+  session's place in it. `sessions.find` rows carry `chain { id, leg }`, and
+  `sessions.page` takes `chain`.
+
 ## 3.754.0 - One quota reading, everywhere at once; the quota clock is never cut; the stuck warning explains itself (2026-09-29)
 
 - A quota figure read anywhere now reaches every place that shows it at the

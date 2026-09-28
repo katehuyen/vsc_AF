@@ -78,6 +78,8 @@ const CONSOLE_ANY = 'webviewSection =~ /^afConsole(Session|Resumable)$/';
 const CONSOLE_RESUMABLE = "webviewSection == 'afConsoleResumable'";
 const CONSOLE_LIVE = "webviewSection == 'afConsoleSession'";
 const TIMELINE_SESSION = "webviewSection == 'afTimelineSession'";
+/** U-166 — only a session that ran a leg of a baton relay: the host keeps the set (chainMembership). */
+const CHAINED = ' && sessionId in agentfarm.chainSessions';
 
 /**
  * ‼️ A-23 — WHERE A **LIVE** SESSION IS THE SUBJECT, which is a smaller family
@@ -289,6 +291,8 @@ export const CTX_ITEMS: CtxItem[] = [
     // happens next is automatic; it is the same weight of gesture as labelling.
     { command: 'agentfarm.sessionToWiki', when: SESSION_ROW, group: '2_mark@5' },
     { command: 'agentfarm.copySessionPath', when: SESSION_ROW, group: '5_copy@1' },
+    { command: 'agentfarm.copyChainId', when: SESSION_ROW + CHAINED, group: '5_copy@2' },
+    { command: 'agentfarm.showChain', when: SESSION_ROW + CHAINED, group: '1_open@6' },
     { command: 'agentfarm.copySessionCwd', when: `${SESSION_ROW} && cwd`, group: '5_copy@2' },
     // ‼️ A-23 — the `session` step of the sound chain, from the row it belongs
     // to. It sits with the MARKS because that is what it is: a property put on
@@ -306,6 +310,8 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.pinSession', when: CONSOLE_ANY, group: '1_session@5' },
     { command: 'agentfarm.tagSession', when: CONSOLE_ANY, group: '1_session@6' },
     { command: 'agentfarm.copySessionId', when: CONSOLE_ANY, group: '1_session@7' },
+    { command: 'agentfarm.copyChainId', when: CONSOLE_ANY + CHAINED, group: '1_session@10' },
+    { command: 'agentfarm.showChain', when: CONSOLE_ANY + CHAINED, group: '1_session@11' },
     // ‼️ S-38 — the same mark on the Console's own cards. The conversation you
     // are having is the one most likely to be worth keeping, and it is the one
     // surface where you are reading the answer as it arrives.
@@ -342,6 +348,8 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.pinSession', when: TIMELINE_SESSION, group: '1_session@4' },
     { command: 'agentfarm.tagSession', when: TIMELINE_SESSION, group: '1_session@5' },
     { command: 'agentfarm.copySessionId', when: TIMELINE_SESSION, group: '1_session@6' },
+    { command: 'agentfarm.copyChainId', when: TIMELINE_SESSION + CHAINED, group: '1_session@10' },
+    { command: 'agentfarm.showChain', when: TIMELINE_SESSION + CHAINED, group: '1_session@11' },
     { command: 'agentfarm.sessionToWiki', when: TIMELINE_SESSION, group: '1_session@9' },
     { command: 'agentfarm.resumeInConsole', when: TIMELINE_SESSION, group: '1_session@7' },
     { command: 'agentfarm.resumeSession', when: TIMELINE_SESSION, group: '1_session@8' },

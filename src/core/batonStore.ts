@@ -9,9 +9,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Baton, isLive, pruneBatons } from './baton';
+import { ChainLink, linkOf } from './chainMembership';
+
+/** U-168 - how many links of dropped batons are kept: a chain's membership outlives its batons. */
+export const LINK_CAP = 3000;
 
 export class BatonStore {
     private batons = new Map<string, Baton>();
+    /** U-168 - the thin link of every finished baton the cap dropped */
+    private archived: ChainLink[] = [];
     private saveTimer: NodeJS.Timeout | undefined;
 
     constructor(private readonly storeFile?: string) {
@@ -28,6 +34,11 @@ export class BatonStore {
     liveFrom(sessionId: string): Baton | undefined {
         const sid = String(sessionId ?? '').trim();
         return this.all().find(b => b.from.sessionId === sid && isLive(b));
+    }
+
+    /** U-163 - every chain link: the kept batons' and the dropped ones' */
+    links(): ChainLink[] {
+        return [...this.archived, ...this.all().map(linkOf)];
     }
 
     chain(chainId: string): Baton[] {
@@ -52,7 +63,8 @@ export class BatonStore {
         const f = this.storeFile;
         if (!f || !fs.existsSync(f)) { return; }
         try {
-            const raw = JSON.parse(fs.readFileSync(f, 'utf8')) as { batons?: Baton[] };
+            const raw = JSON.parse(fs.readFileSync(f, 'utf8')) as { batons?: Baton[]; links?: ChainLink[] };
+            this.archived = (raw.links ?? []).filter(l => l && typeof l.chainId === 'string' && typeof l.from === 'string');
             for (const b of raw.batons ?? []) {
                 if (b && typeof b.id === 'string' && b.id && b.from && typeof b.from.sessionId === 'string') {
                     this.batons.set(b.id, b);
@@ -63,12 +75,17 @@ export class BatonStore {
 
     private write(): void {
         const f = this.storeFile;
-        if (!f) { return; }
         const kept = pruneBatons(this.all());
+        const keep = new Set(kept.map(b => b.id));
+        const dropped = this.all().filter(b => !keep.has(b.id)).map(linkOf);
+        if (dropped.length) {
+            this.archived = [...this.archived, ...dropped].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, LINK_CAP);
+        }
         this.batons = new Map(kept.map(b => [b.id, b]));
+        if (!f) { return; }
         try {
             fs.mkdirSync(path.dirname(f), { recursive: true });
-            fs.writeFileSync(f, JSON.stringify({ batons: kept }, null, 1), 'utf8');
+            fs.writeFileSync(f, JSON.stringify({ batons: kept, links: this.archived }, null, 1), 'utf8');
         } catch { /* the next change writes again */ }
     }
 

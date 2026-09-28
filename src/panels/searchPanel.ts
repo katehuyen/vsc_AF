@@ -9,6 +9,7 @@ import {
     canonicalSessionKey, producerEngineOf, SessionIndex, SessionInfo, sessionOrigin
 } from '../core/sessions';
 import { ENGINES } from '../core/consoleEngine';
+import { chainIndexNow, chainSessionsMatching } from '../core/chainMembership';
 import { handleAfNav, htmlShell } from './base';
 
 export interface SearchDeps {
@@ -121,6 +122,7 @@ export function scopeSessions(
     const origin = f.origin === 'user' || f.origin === 'auto' ? f.origin : '';
     const lane = f.lane === 'main' || f.lane === 'sub' ? f.lane : '';
     const session = (f.session ?? '').trim().toLowerCase();
+    const chained = session ? chainSessionsMatching(chainIndexNow(), session) : undefined;
     return pool.filter(s => {
         if (!has(f.agents, s.agentName ?? '')) { return false; }
         if (!has(f.engines, engineOf(s))) { return false; }
@@ -136,7 +138,7 @@ export function scopeSessions(
             // 8-character prefix is the form this extension prints everywhere
             // ("4d361981#1"), so it must be the form that finds.
             const hay = `${s.sessionId} ${s.title} ${s.file}`.toLowerCase();
-            if (!hay.includes(session)) { return false; }
+            if (!hay.includes(session) && !chained?.has(s.sessionId)) { return false; }
         }
         return true;
     });
@@ -459,35 +461,4 @@ export class SearchPanel {
         if (this.running) { this.running.aborted = true; this.running = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
-}
-
-/**
- * The session an id / path / phrase points at, and the candidates when it
- * points at several — shared by the `findSession` command and the
- * `sessions.find` bridge op so the two can never answer differently (X-34).
- */
-export function findSessions(
-    pool: SessionInfo[], q: string, limit = 20
-): SessionInfo[] {
-    const needle = String(q ?? '').trim().toLowerCase();
-    if (!needle) {
-        return pool.slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime)).slice(0, limit);
-    }
-    const score = (s: SessionInfo): number => {
-        const id = s.sessionId.toLowerCase();
-        if (id === needle) { return 0; }
-        if (id.startsWith(needle)) { return 1; }
-        if (id.includes(needle)) { return 2; }
-        if (s.file.toLowerCase().includes(needle)) { return 3; }
-        if ((s.title ?? '').toLowerCase().includes(needle)) { return 4; }
-        if ((s.agentName ?? '').toLowerCase().includes(needle)) { return 5; }
-        if ((s.tags ?? []).some(t => t.toLowerCase().includes(needle))) { return 6; }
-        return -1;
-    };
-    return pool
-        .map(s => ({ s, n: score(s) }))
-        .filter(x => x.n >= 0)
-        .sort((a, b) => a.n - b.n || (b.s.lastTs || b.s.mtime) - (a.s.lastTs || a.s.mtime))
-        .slice(0, limit)
-        .map(x => x.s);
 }

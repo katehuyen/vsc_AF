@@ -66,7 +66,8 @@
                 + (DATA.scope && DATA.scope.missionId
                     ? ` · 🎯 ${C.esc(DATA.scope.missionTitle || DATA.scope.missionId)}` : '')
                 + (DATA.scope && DATA.scope.provider
-                    ? ` · via ${C.esc(window.AFProvider.label(DATA.scope.provider) || DATA.scope.provider)}` : ''),
+                    ? ` · via ${C.esc(window.AFProvider.label(DATA.scope.provider) || DATA.scope.provider)}` : '')
+                + (DATA.scope && DATA.scope.chain ? ` · ⑂ chain ${C.esc(DATA.scope.chain)}` : ''),
             searchTitle: 'Search inside every transcript',
             guide: 'dashboard'
         })}
@@ -83,12 +84,13 @@
         // that clears it is the same ✕ that clears every other filter.
         const sc = DATA.scope || {};
         const key = (sc.missionId ? 'm:' + sc.missionId : '') + (sc.project ? 'p:' + sc.project : '')
-            + (sc.provider ? 'r:' + sc.provider : '');
+            + (sc.provider ? 'r:' + sc.provider : '') + (sc.chain ? 'c:' + sc.chain : '');
         if (key && key !== scopeApplied) {
             scopeApplied = key;
             if (sc.missionId) { table.setMissionFilter(sc.missionId); }
             if (sc.project) { table.setProjectFilter(sc.project); }
             if (sc.provider) { table.setProviderFilter(sc.provider); }
+            if (sc.chain) { table.setChainFilter(sc.chain); }
         }
     }
 

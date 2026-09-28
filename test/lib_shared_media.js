@@ -21,6 +21,9 @@ const path = require('path');
 
 const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afTextTools.js',
+    // afChainNav.js — a relay chain on a session's page: its id, the legs
+    // before and after, first/last (U-167).
+    'afChainNav.js',
     // afSnippets.js was the twelfth — the saved prompts, one right-click from
     // any box that takes a prompt (M-24). Shared the moment a second surface
     // wanted it: the Console's send buttons and the Tasks form's four boxes.
