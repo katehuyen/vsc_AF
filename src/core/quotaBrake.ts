@@ -18,6 +18,8 @@
 export interface QuotaBrakeInput {
     /** agentFarm.quotaGuardPercent — 0 or less = no brake */
     guard: number;
+    /** agentFarm.quotaHandoverPct — a slot at or past it tells its run to hand over at once, so a row stating that slot is held there even with the guard off (0 = off) */
+    handover?: number;
     /** the row's account box, as written (slot id, `@rule`, or empty) */
     stated?: string;
     /** what the box resolves to right now — the slot id, or nothing (a refusal is the account gate's business) */
@@ -37,17 +39,22 @@ export interface QuotaBrakeHold {
 }
 
 export function quotaBrake(i: QuotaBrakeInput): QuotaBrakeHold | undefined {
-    if (!(i.guard > 0)) { return undefined; }
+    const h = Number(i.handover);
+    const line = Number.isFinite(h) && h > 0 && !(i.guard > 0 && i.guard <= h) ? h : 0;
+    const slotGuard = line || (i.guard > 0 ? i.guard : 0);
+    if (!(slotGuard > 0)) { return undefined; }
     const stated = String(i.stated ?? '').trim();
     if (stated) {
         const r = i.resolve(stated);
         if (r?.id) {
             const u = i.usageOf(r.id);
             if (u && u.known && Number.isFinite(u.percent)) {
-                return u.percent >= i.guard
+                return u.percent >= slotGuard
                     ? {
                         code: 'quota:5h', basis: 'account', slotId: r.id,
-                        reason: `quota guard (${Math.round(u.percent)}% of ${r.label || r.id}'s 5h window)`
+                        reason: line
+                            ? `quota handover line (${Math.round(u.percent)}% of ${r.label || r.id}'s 5h window, at or past ${line}%: it would hand over before doing anything)`
+                            : `quota guard (${Math.round(u.percent)}% of ${r.label || r.id}'s 5h window)`
                     }
                     : undefined;
             }
@@ -56,6 +63,7 @@ export function quotaBrake(i: QuotaBrakeInput): QuotaBrakeHold | undefined {
             // board, one that lets a window burn is not
         }
     }
+    if (!(i.guard > 0)) { return undefined; }
     const pct = i.machinePct();
     if (pct === undefined) { return undefined; }
     return pct >= i.guard

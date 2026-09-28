@@ -3832,6 +3832,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // that states none keeps the machine figure it always had.
             quotaCheck: (task) => quotaBrake({
                 guard: cfg().get<number>('quotaGuardPercent', 0),
+                handover: cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct),
                 stated: task.account,
                 resolve: stated => {
                     try {

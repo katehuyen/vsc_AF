@@ -181,6 +181,15 @@ const host = (answers, extra) => {
     ok('‼️ stop ends the run as stopped, saying why', ended.status === 'stopped' && /supervisor stopped the run at step 2: konu yanlış/.test(ended.reason || ''));
     eq('…and nothing is queued', queued(w.id).length, 0);
 
+    // M-55 — a stop on the LAST checkpoint is the run reaching its end: done, so the library files its output as final
+    w = mgr.addWorkflow('Son', [st('s1', { prompt: 'yaz' }), { ...st('s2'), agentId: '', agentName: 'checkpoint', checkpoint: { message: 'tamam mı?' } }]);
+    run = mgr.runWorkflow(w);
+    answers.push(J({ decision: 'stop', why: 'ölçütler karşılandı', confidence: 0.9 }));
+    complete(queued(w.id)[0], 'metin');
+    await tick();
+    const last = mgr.workflowRunState(run);
+    ok('‼️ a stop on the last checkpoint ends the run as done, saying why', last.status === 'done' && /ended the run at its last step: ölçütler karşılandı/.test(last.reason || ''));
+
     w = chain('Bozuk');
     run = mgr.runWorkflow(w);
     answers.push('evet devam edelim');

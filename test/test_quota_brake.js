@@ -25,6 +25,14 @@ const base = {
 };
 
 ok('no guard, no brake', quotaBrake({ ...base, guard: 0, stated: 'claude-a' }) === undefined);
+// M-54 — a step pinned to a slot at 93% started, was told to hand over at once, and its step read done
+const line = quotaBrake({ ...base, guard: 0, handover: 90, stated: 'claude-a' });
+ok('‼️ with the guard off, a row on a slot past the handover line is still held, and says why', line && line.basis === 'account' && line.slotId === 'claude-a' && /handover line \(95% of claude-a's 5h window, at or past 90%/.test(line.reason));
+ok('…a slot under the line runs', quotaBrake({ ...base, guard: 0, handover: 90, stated: 'claude-b' }) === undefined);
+ok('…the line never brakes a row with no account (the machine figure stays the guard\'s alone)', quotaBrake({ ...base, guard: 0, handover: 90, stated: '' }) === undefined);
+ok('…a guard stricter than the line keeps its own word', /quota guard \(95%/.test(quotaBrake({ ...base, guard: 80, handover: 90, stated: 'claude-a' }).reason));
+ok('…a guard looser than the line gives way to it', quotaBrake({ ...base, guard: 99, handover: 90, stated: 'claude-a' }).reason.includes('handover line'));
+ok('…and handover 0 is off', quotaBrake({ ...base, guard: 0, handover: 0, stated: 'claude-a' }) === undefined);
 const none = quotaBrake({ ...base, stated: '' });
 ok('a row with no account keeps the machine figure', none && none.basis === 'machine' && /95% of 5h window/.test(none.reason));
 ok('…and passes when the machine has room', quotaBrake({ ...base, stated: '', machinePct: () => 40 }) === undefined);

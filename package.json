@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.737.0",
+  "version": "3.738.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9644,7 +9644,7 @@
         "agentFarm.quotaGuardPercent": {
           "type": "number",
           "default": 0,
-          "description": "Defer automatic task starts when the 5h window reaches this percent of windowTokenLimit (0 = off; requires windowTokenLimit)."
+          "description": "Defer automatic task starts when the 5h window reaches this percent of windowTokenLimit (0 = off; requires windowTokenLimit). Separately, and even at 0, a task that names an account whose own 5h window is at or past the quota handover line waits for that window instead of starting only to hand over at once."
         },
         "agentFarm.outputsMaxMB": {
           "type": "number",

@@ -49,6 +49,7 @@ eq('the flags: that config, nothing else, its tools allowed', R.browserMcpArgs('
 const p = R.buildRecipePrompt(flow, 'make a clip of {x}');
 ok('the prompt names the site\'s way, the hosts, the login rule and the download rule', /GOAL: make a clip/.test(p) && /Google Flow: if Google first shows an account chooser, click the account already listed/.test(p) && /Open or create a project/.test(p)
     && /labs\.google, accounts\.google\.com/.test(p) && /LOGIN NEEDED: Google Flow/.test(p) && /download button/.test(p));
+ok('‼️ M-54 — Flow is driven as the chat it now is: the request box, no suggestion chips, one send, a wait that looks again', /"What do you want to create\?" box/.test(p) && /never click its suggestion chips/.test(p) && /every 20 seconds, never submit twice/.test(p));
 ok('…and forbids switching accounts and names the guard page', /Never switch, add or sign out of an account/.test(p) && p.includes(R.GUARD_MARK));
 
 /* ---------- the hosts, held by the browser ---------- */

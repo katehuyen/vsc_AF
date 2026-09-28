@@ -7687,7 +7687,14 @@ export class TaskManager implements vscode.Disposable {
         task.endedAt = Date.now();
         this.save();
         this.pump();
-        if (route.go === 'stop') {
+        if (route.go === 'stop' && !wake && index >= (this.runView(w.id, runId, w) as FarmWorkflow).steps.length - 1) {
+            // nothing after it is abandoned: a stop on the last checkpoint is the run reaching its end, so its output is filed as final
+            this.runCounts.delete(runId);
+            this.handoffs.delete(runId);
+            this.endWorkflowRun(runId, 'done', `the supervisor ended the run at its last step: ${route.why}`, index);
+            this.opts.forward?.('workflow-done', `Workflow "${w.title}" completed`);
+            void vscode.window.showInformationMessage(`Agent Farm: workflow "${w.title}" completed ✓.`);
+        } else if (route.go === 'stop') {
             this.runCounts.delete(runId);
             this.handoffs.delete(runId);
             this.endWorkflowRun(runId, 'stopped', `the supervisor stopped the run at step ${index + 1}: ${route.why}`, index);

@@ -34,7 +34,7 @@ export const BROWSER_RECIPES: BrowserRecipe[] = [
         // Flow moved: labs.google/fx/tools/flow now redirects to flow.google.com (measured 2026-09-28)
         id: 'flow', label: 'Google Flow (Veo)', url: 'https://flow.google.com',
         hosts: ['flow.google.com', 'labs.google', 'accounts.google.com'],
-        hint: 'Google Flow: if Google first shows an account chooser, click the account already listed there (never "Use another account", never type anything). Open or create a project, choose the model the goal names, type the prompt, generate, and wait until the clip has finished rendering (minutes - wait and look again, never submit twice). Then open the clip and use its Download button (the original MP4 if it asks).',
+        hint: 'Google Flow: if Google first shows an account chooser, click the account already listed there (never "Use another account", never type anything). Open or create a project. Flow is a chat: type the request into the "What do you want to create?" box on the right (say image or video, and what the goal names) and send it once; never click its suggestion chips, and if it asks a question instead of generating, answer it in one line. Wait until the result has finished rendering (minutes - look again every 20 seconds, never submit twice). Then open it and use its Download button (the first size or the original MP4 if it asks).',
         note: 'Google Flow has no public API: this drives the web app on its own signed-in profile. Sign in once with browser.login recipe=flow.'
     },
     {

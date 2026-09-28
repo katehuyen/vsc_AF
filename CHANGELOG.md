@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.738.0 - A run the supervisor ends at its last step is done; a task no longer starts on a spent account (2026-09-28)
+
+- When a workflow's last step is a checkpoint and the supervisor answers
+  "stop" there, the run now ends as done, not stopped: nothing after it was
+  abandoned. So its last output is filed in the media library's final folder,
+  its outside inputs in source, and those records get their full form filled
+  (before, a successful video run left its finished video in the semi folder
+  with a bare record). A stop anywhere earlier, or after a failed step, still
+  ends the run as stopped.
+- A task that names an account whose own five-hour window is at or past the
+  quota handover line now waits for that window, with the reason on the board.
+  It used to start anyway, be told to hand over at once, and end as done
+  without having done anything.
+- The Google Flow browser recipe now tells its step that Flow is a chat: type
+  the request into "What do you want to create?", never click the suggestion
+  chips, send once and look again every 20 seconds until the result is ready.
+  With it, a one-image test generated, downloaded, landed in the library's
+  final folder and had its record filled, with no hand on it.
+
 ## 3.737.0 - Google Flow at its new address; Omni Flash billed at its real price (2026-09-28)
 
 - The Google Flow browser recipe now starts at flow.google.com (Google moved
