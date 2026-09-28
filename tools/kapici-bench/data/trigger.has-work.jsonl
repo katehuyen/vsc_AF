@@ -1,0 +1,30 @@
+{"state":{"event":"watch change","file":"gorevler.md","content":"- [ ] Müşteri X'e teklif dosyasını gönder\n- [ ] Ekim faturalarını kes"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"inbox/talep-0931.md","content":"Uygulamada giriş ekranı Android 14'te açılmıyor, bakar mısın?"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"notlar.md","diff":"+Yarın 10:00'da muhasebeciyle görüşme, KDV belgelerini hazırla"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"bugs.md","diff":"+- Export button crashes when the list is empty"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"requests/translate.txt","content":"Please translate the attached release notes into Turkish and German."},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"plan.md","diff":"-- [ ] Taslak\n+- [ ] Taslak\n+- [ ] Sunumu cuma gününe kadar bitir"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"mail/2026-09-28.eml","content":"Subject: Invoice overdue\nYour invoice #4411 is 30 days overdue, please pay by Friday."},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"TODO.md","diff":"+- Rapor şablonunu yeni logoyla güncelle"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"config.json","diff":"-  \"timeoutMs\": 3000\n+  \"timeoutMs\": 30000"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"feedback.csv","diff":"+2026-09-28,5 yıldız,\"Dikte bazen son kelimeyi yutuyor\""},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"yeni-fikir.md","content":"Uzantıya kısayol tuşuyla kaydı başlatma özelliği ekleyelim."},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"orders/1043.json","content":"{\"customer\":\"ACME\",\"items\":3,\"status\":\"new\"}"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"src/parser.ts","diff":"-  return a + b;\n+  return a - b;"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"sorular.md","diff":"+Kira sözleşmesi yenilemesinde artış oranı ne olmalı?"},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"randevu.md","content":"Diş hekimi randevusu 3 Ekim 14:30 — takvime ekle ve bir gün önce hatırlat."},"expect":{"work":true}}
+{"state":{"event":"watch change","file":"~$teklif.docx","content":""},"expect":{"work":false}}
+{"state":{"event":"watch change","file":".git/index.lock","content":""},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"rapor.md.tmp","content":""},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"notlar.md.bak","content":"(eski kopya)"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"app.ts","diff":"-if(a){b()}\n+if (a) { b(); }"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"README.md","diff":"-Kurulum  \n+Kurulum"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"bos.md","content":""},"expect":{"work":false}}
+{"state":{"event":"watch change","file":".obsidian/workspace.json","diff":"-\"active\": \"a1b2\"\n+\"active\": \"c3d4\""},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"gorevler.md","diff":"","note":"auto-save, content identical"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"Thumbs.db","content":"<binary>"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"style.css","diff":"-color:red;\n+color: red;"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":".DS_Store","content":"<binary>"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"notlar.md","diff":"-\n+\n"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"package-lock.json","diff":"-  \"lockfileVersion\": 3,\n+  \"lockfileVersion\": 3,\r"},"expect":{"work":false}}
+{"state":{"event":"watch change","file":"draft.md.swp","content":"<binary>"},"expect":{"work":false}}

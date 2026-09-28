@@ -1,0 +1,30 @@
+{"state":"Chrome uzantısında mikrofon izni verilince sayfa donuyor, konsolda 'Cannot read properties of undefined' hatası var","expect":{"agent":"developer"}}
+{"state":"Android uygulaması Play Store'da yeni sürümde açılışta çöküyor, logcat çıktısı ekte","expect":{"agent":"developer"}}
+{"state":"package.json'daki bağımlılıkları güncelle ve kırılan testleri düzelt","expect":{"agent":"developer"}}
+{"state":"Bu fonksiyonu 300 satırın altına indirecek şekilde modüllere böl","expect":{"agent":"developer"}}
+{"state":"Git'te yanlış branch'e commit attım, nasıl geri alırım?","expect":{"agent":"developer"}}
+{"state":"API'den gelen JSON'da tarih alanı bazen null geliyor, parser patlıyor","expect":{"agent":"developer"}}
+{"state":"Add a dark mode toggle to the settings page and persist the choice","expect":{"agent":"developer"}}
+{"state":"The CI pipeline times out on the integration tests since yesterday","expect":{"agent":"developer"}}
+{"state":"Webview'deki tablo dar ekranda taşıyor, CSS'i düzelt","expect":{"agent":"developer"}}
+{"state":"SQL sorgusu çok yavaş, index eklemek gerekir mi bak","expect":{"agent":"developer"}}
+{"state":"Son günlerde sabahları yataktan çıkmak çok zor geliyor, hiçbir şeye isteğim yok","expect":{"agent":"psikolog"}}
+{"state":"Annemle yine tartıştık, kendimi suçlu hissediyorum","expect":{"agent":"psikolog"}}
+{"state":"İş yerinde sürekli yetersiz hissediyorum, herkes benden daha iyi gibi","expect":{"agent":"psikolog"}}
+{"state":"Gece uyuyamıyorum, kafamda hep aynı düşünceler dönüyor","expect":{"agent":"psikolog"}}
+{"state":"Projeyi bitiremeyeceğim diye çok kaygılıyım, nefesim daralıyor","expect":{"agent":"psikolog"}}
+{"state":"Motivasyonumu tamamen kaybettim, eskiden sevdiğim şeyler artık zevk vermiyor","expect":{"agent":"psikolog"}}
+{"state":"I keep procrastinating and then I hate myself for it","expect":{"agent":"psikolog"}}
+{"state":"Arkadaşım beni aramayınca değersiz hissediyorum, bu normal mi?","expect":{"agent":"psikolog"}}
+{"state":"Sinirlenince çok sert konuşuyorum, sonra pişman oluyorum","expect":{"agent":"psikolog"}}
+{"state":"Tükenmişlik mi yaşıyorum bilmiyorum, her şey çok ağır geliyor","expect":{"agent":"psikolog"}}
+{"state":"Ekim ayı kira stopajını hesapla ve muhtasar beyannameye ekle","expect":{"agent":"muhasebe"}}
+{"state":"Tedarikçiden gelen e-faturayı sisteme işle, KDV oranı yüzde 20","expect":{"agent":"muhasebe"}}
+{"state":"Bu ayki banka ekstresiyle kasa hesabını mutabık hale getir","expect":{"agent":"muhasebe"}}
+{"state":"Müşteriye 15.000 TL'lik proforma fatura hazırla","expect":{"agent":"muhasebe"}}
+{"state":"Geçen çeyreğin gelir-gider tablosunu çıkar","expect":{"agent":"muhasebe"}}
+{"state":"SGK primlerinin son ödeme tarihi ne zaman, tutarı ne kadar?","expect":{"agent":"muhasebe"}}
+{"state":"Record the refund we issued to the customer last Tuesday in the ledger","expect":{"agent":"muhasebe"}}
+{"state":"Amortisman tablosunu yeni aldığımız bilgisayar için güncelle","expect":{"agent":"muhasebe"}}
+{"state":"Google Play geliri için döviz kurundan TL karşılığını hesaplayıp kaydet","expect":{"agent":"muhasebe"}}
+{"state":"Yıllık gelir vergisi beyannamesi için gerekli belgeleri listele","expect":{"agent":"muhasebe"}}

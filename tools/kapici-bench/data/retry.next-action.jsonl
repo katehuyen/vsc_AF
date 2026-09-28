@@ -1,0 +1,30 @@
+{"state":{"failure":"usage limit reached","resetAt":"2026-09-29T02:00:00Z","lastOutput":"Refactor done, running the test suite now."},"expect":{"action":"wait"}}
+{"state":{"failure":"5-hour quota exhausted","resetAt":"2026-09-28T21:00:00Z","lastOutput":"Kaydedildi, sıradaki dosyaya geçiyorum."},"expect":{"action":"wait"}}
+{"state":{"failure":"rate limit 429 from the API","resetAt":"2026-09-28T17:05:00Z","lastOutput":"Fetched 40 of 120 pages, continuing."},"expect":{"action":"wait"}}
+{"state":{"failure":"weekly limit reached","resetAt":"2026-10-01T09:00:00Z","lastOutput":"Migration script written and verified on a copy."},"expect":{"action":"wait"}}
+{"state":{"failure":"usage limit reached","resetAt":"2026-09-28T19:30:00Z","lastOutput":"Tüm testler geçti, commit mesajını yazıyorum."},"expect":{"action":"wait"}}
+{"state":{"failure":"session limit hit","resetAt":"2026-09-28T23:59:00Z","lastOutput":"Translated 12 of 20 sections; the remaining ones follow the same pattern."},"expect":{"action":"wait"}}
+{"state":{"failure":"max turns reached","lastOutput":"Step 2 of 4 finished (parser fixed); now updating the docs.","resumable":true},"options":{"action":["resume","retryOriginal","stop","needsUser"]},"expect":{"action":"resume"}}
+{"state":{"failure":"max turns reached","lastOutput":"Dosyaların yarısı yeniden adlandırıldı, kalanlara devam ediyorum.","resumable":true},"options":{"action":["resume","retryOriginal","stop","needsUser"]},"expect":{"action":"resume"}}
+{"state":{"failure":"context window full","lastOutput":"Chapters 1-5 summarised into notes.md; chapter 6 next.","resumable":true},"options":{"action":["resume","retryOriginal","stop","needsUser"]},"expect":{"action":"resume"}}
+{"state":{"failure":"timeout after 30 minutes","lastOutput":"Downloaded 800 of 1000 images, all valid so far.","resumable":true},"options":{"action":["resume","retryOriginal","stop","needsUser"]},"expect":{"action":"resume"}}
+{"state":{"failure":"max turns reached","lastOutput":"Üç rapordan ikisi yazıldı ve kaydedildi, üçüncüsüne başlıyorum.","resumable":true},"options":{"action":["resume","retryOriginal","stop","needsUser"]},"expect":{"action":"resume"}}
+{"state":{"failure":"process killed by host restart","lastOutput":"Lint fixes applied to 14 of 22 files.","resumable":true},"options":{"action":["resume","retryOriginal","stop","needsUser"]},"expect":{"action":"resume"}}
+{"state":{"failure":"max turns reached","lastOutput":"I have been editing the staging config, but the task was about production. Nothing requested is done."},"expect":{"action":"retryOriginal"}}
+{"state":{"failure":"max turns reached","lastOutput":"Yanlış klasörde çalışıyordum; istenen proje burada değil, hiçbir değişiklik doğru yere gitmedi."},"expect":{"action":"retryOriginal"}}
+{"state":{"failure":"error","lastOutput":"The run looped for 40 turns re-reading the same file without making any change."},"expect":{"action":"retryOriginal"}}
+{"state":{"failure":"max turns reached","lastOutput":"Wrote a Python script, but the task asked for a change in the TypeScript codebase."},"expect":{"action":"retryOriginal"}}
+{"state":{"failure":"context window full","lastOutput":"Spent the whole run on an unrelated refactor of the logger; the requested bug is untouched."},"expect":{"action":"retryOriginal"}}
+{"state":{"failure":"max turns reached","lastOutput":"Görevi yanlış anladım, özet yerine tam çeviri yaptım; istenen çıktı üretilmedi."},"expect":{"action":"retryOriginal"}}
+{"state":{"failure":"error","lastOutput":"The repository the task points to no longer exists; the remote returns 404."},"expect":{"action":"stop"}}
+{"state":{"failure":"error","lastOutput":"İstenen API 2025'te kapatılmış; çağrılacak bir uç nokta yok."},"expect":{"action":"stop"}}
+{"state":{"failure":"max turns reached","lastOutput":"The task asks to prove the function never terminates, but it trivially returns on line 2; the request is contradictory."},"expect":{"action":"stop"}}
+{"state":{"failure":"error","lastOutput":"The input file the task names is empty and there is no other source for the data."},"expect":{"action":"stop"}}
+{"state":{"failure":"error","lastOutput":"Görev, projede hiç olmayan bir modülü düzeltmemi istiyor; modül hiç yazılmamış."},"expect":{"action":"stop"}}
+{"state":{"failure":"error","lastOutput":"The library the task requires does not support this platform at all (Windows is not supported)."},"expect":{"action":"stop"}}
+{"state":{"failure":"max turns reached","lastOutput":"Deleting the old user table is irreversible; I need the user's explicit approval before I drop it."},"expect":{"action":"needsUser"}}
+{"state":{"failure":"max turns reached","lastOutput":"İki fiyatlandırma seçeneği var; hangisini uygulayacağımı kullanıcının seçmesi gerekiyor."},"expect":{"action":"needsUser"}}
+{"state":{"failure":"error","lastOutput":"The deploy needs a login to the store console that only the user has."},"expect":{"action":"needsUser"}}
+{"state":{"failure":"max turns reached","lastOutput":"The spec says both 'keep the old API' and 'remove the old API'; someone has to decide which."},"expect":{"action":"needsUser"}}
+{"state":{"failure":"error","lastOutput":"Ödeme sağlayıcısı kredi kartı onayı istiyor; bunu yalnız kullanıcı verebilir."},"expect":{"action":"needsUser"}}
+{"state":{"failure":"max turns reached","lastOutput":"Publishing this release to real users is a business decision; waiting for the owner's go-ahead."},"expect":{"action":"needsUser"}}
