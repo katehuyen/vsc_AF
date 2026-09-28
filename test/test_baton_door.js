@@ -45,6 +45,9 @@ function baton(o = {}) {
         /Predecessor: session aaaaaaaa \(developer · claude\/opus · project prj_1\) ended its run/.test(lines[1]));
     ok('‼️ it teaches the successor to pass the baton itself, by the file recipe', /baton\.pass "@<file>"/.test(p) && /_REF\/handover\.md/.test(p));
     ok('…and that nothing starts while it is alive', /Nothing starts while you are alive/.test(p));
+    ok('‼️ …and that a leg may not end the chain while anything can still be done — only gaps the user alone can close end it',
+        /While anything can still be done, pass; end the chain only when every remaining gap is essential and only the user can close it\./.test(p)
+        && !/nobody passes/.test(p));
     ok('the predecessor\'s own words are underneath, after the rule, untouched',
         lines[lines.length - 2] === '---' && lines[lines.length - 1] === b.prompt);
     ok('with a ceiling the leg reads n/N, both counted in legs', /leg 2\/6 ===/.test(successorPrompt(b, { maxHops: 6 })));

@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.734.0 - A relay leg does not end the chain while work remains (2026-09-28)
+
+- The header every baton leg starts from no longer says the chain simply
+  ends when nobody passes. It now says: while anything can still be done,
+  pass; end the chain only when every remaining gap is essential and only
+  the user can close it.
+
 ## 3.733.0 - Quota figures in their own look, everywhere (U-154) (2026-09-28)
 
 - Percent, time left and reset time are no longer one thin plain line: each

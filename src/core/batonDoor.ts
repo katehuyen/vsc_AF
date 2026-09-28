@@ -119,7 +119,7 @@ export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
         'The words below are its own — continue the work from there, in this folder and this project; you start fresh, with no memory of its context beyond these words.',
         'If you cannot finish either, pass the baton yourself when your run is ending (_REF/handover.md): write { "prompt": "<what your successor starts from>" } to a file and run',
         '  node af.js baton.pass "@<file>"',
-        'Nothing starts while you are alive. The chain ends when the work is done and nobody passes.',
+        'Nothing starts while you are alive. While anything can still be done, pass; end the chain only when every remaining gap is essential and only the user can close it.',
         ...(directive ? [`Standing directive (the user's, on every leg): ${directive}`] : []),
         '---',
         b.prompt
