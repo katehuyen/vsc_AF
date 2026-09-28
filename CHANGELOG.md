@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.737.0 - Google Flow at its new address; Omni Flash billed at its real price (2026-09-28)
+
+- The Google Flow browser recipe now starts at flow.google.com (Google moved
+  Flow there; the old labs.google address only redirects) and may use that
+  host. If Google first shows an account chooser, the step picks the account
+  already listed there, never another one.
+- A Gemini Omni Flash 1.1 edit is now estimated at fal's real price, $0.03 a
+  second (it was estimated at $0.13, four times too high).
+
 ## 3.736.0 - A media call that never answers no longer hangs its step (2026-09-28)
 
 - Every request a media step makes (fal / Replicate submit, status polls,

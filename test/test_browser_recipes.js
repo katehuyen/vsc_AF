@@ -30,7 +30,7 @@ const none = R.planBrowser({ url: 'https://example.com/x', goal: 'g', allowHosts
 ok('no recipe: no profile and no download folder — the agent\'s own MCP, as before', !none.recipe && !none.profileDir && !none.downloadDir && none.url === 'https://example.com/x');
 eq('…its hosts its own, else Farm Settings\'', [none.hosts, R.planBrowser({ url: 'u', goal: 'g' }, { ...env, settingsHosts: ['a.com'] }).hosts], [['example.com'], ['a.com']]);
 const flow = R.planBrowser({ url: '', goal: 'g', recipe: 'flow' }, env);
-ok('a recipe fills the URL and hosts the step left empty', flow.url === 'https://labs.google/fx/tools/flow' && flow.hosts.includes('labs.google') && /preset: flow/.test(flow.why[0]));
+ok('a recipe fills the URL and hosts the step left empty', flow.url === 'https://flow.google.com' && flow.hosts.includes('flow.google.com') && flow.hosts.includes('labs.google') && /preset: flow/.test(flow.why[0]));
 ok('…gets its own profile and a download folder of the step\'s own', flow.profileDir === path.join(env.profilesRoot, 'flow') && flow.downloadDir === env.runDir);
 eq('the step\'s own hosts and folder win over the recipe\'s', [R.planBrowser({ goal: 'g', recipe: 'flow', allowHosts: ['x.com'], downloadDir: 'D:\\dl' }, env).hosts, R.planBrowser({ goal: 'g', recipe: 'flow', downloadDir: 'D:\\dl' }, env).downloadDir], [['x.com'], 'D:\\dl']);
 eq('approval: built-in ask, Farm Settings auto, the step\'s own wins', [
@@ -47,7 +47,7 @@ eq('its only browser: Playwright MCP on the profile, saving into the download fo
 eq('…npx itself elsewhere', R.playwrightMcpConfig(flow, 'linux').mcpServers.afbrowser.command, 'npx');
 eq('the flags: that config, nothing else, its tools allowed', R.browserMcpArgs('C:\\o\\b.mcp.json'), '--mcp-config "C:\\o\\b.mcp.json" --strict-mcp-config --allowedTools mcp__afbrowser');
 const p = R.buildRecipePrompt(flow, 'make a clip of {x}');
-ok('the prompt names the site\'s way, the hosts, the login rule and the download rule', /GOAL: make a clip/.test(p) && /Google Flow: open or create/.test(p)
+ok('the prompt names the site\'s way, the hosts, the login rule and the download rule', /GOAL: make a clip/.test(p) && /Google Flow: if Google first shows an account chooser, click the account already listed/.test(p) && /Open or create a project/.test(p)
     && /labs\.google, accounts\.google\.com/.test(p) && /LOGIN NEEDED: Google Flow/.test(p) && /download button/.test(p));
 ok('…and forbids switching accounts and names the guard page', /Never switch, add or sign out of an account/.test(p) && p.includes(R.GUARD_MARK));
 

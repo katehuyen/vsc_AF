@@ -18,6 +18,8 @@ export interface MediaPriceRule {
 export const DEFAULT_MEDIA_PRICING: MediaPriceRule[] = [
     { match: 'flux.*schnell', usd: 0.003, per: 'image' },
     { match: 'flux', usd: 0.025, per: 'image' },
+    // fal's own pricing API, 2026-09-28: the v1.1 edit endpoint bills $0.03 a second
+    { match: 'gemini-omni-flash/v1\\.1/edit', usd: 0.03, per: 'second' },
     { match: 'gemini-omni', usd: 0.13, per: 'second' },
     { match: 'nano-banana|gemini.*image', usd: 0.04, per: 'image' },
     { match: 'kling', usd: 0.1, per: 'second' },
@@ -79,7 +81,7 @@ interface FalQueueSubmit {
     detail?: unknown;
 }
 
-/** A request that never answers must still END: an Omni edit step sat "running" for 20+ minutes with no event, the poll loop's own timeout unreachable behind one unbounded fetch. */
+/** A request that never answers must still END: the poll loop's own timeout is checked only between polls, so one unbounded fetch would hold a step "running" for good. */
 export const REQUEST_TIMEOUT_MS = 120_000;
 /** Bytes going up or coming down (a video) get longer than a JSON call. */
 export const TRANSFER_TIMEOUT_MS = 600_000;

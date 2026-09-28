@@ -14,7 +14,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
     const rules = M.DEFAULT_MEDIA_PRICING;
     const omni = 'google/gemini-omni-flash/v1.1/edit';
 
-    ok('Gemini Omni Flash has a per-second price rule', M.priceRuleFor(omni, rules)?.per === 'second');
+    ok('Gemini Omni Flash has a per-second price rule, fal\'s measured $0.03 for the v1.1 edit', M.priceRuleFor(omni, rules)?.per === 'second' && M.priceRuleFor(omni, rules)?.usd === 0.03);
     ok('its image-to-video endpoint is not caught by the gemini image rule', M.priceRuleFor('google/gemini-omni-flash/v1.1/image-to-video', rules)?.match === 'gemini-omni');
     ok('nano-banana still bills per image', M.priceRuleFor('fal-ai/nano-banana/edit', rules)?.per === 'image');
 
@@ -27,18 +27,18 @@ const near = (a, b) => Math.abs(a - b) < 1e-9;
     const lens = { 'a.mp4': 10, 'b.mp4': 4.2, 'c.png': 99 };
     const len = async f => { measured[f] = (measured[f] || 0) + 1; return lens[f]; };
 
-    ok('‼️ an answer with only a file is billed on the measured length (10 s = $1.30), never a guessed 5 s',
-        near(await B.billMedia(omni, { video: { url: 'u' } }, rules, ['a.mp4'], len), 1.3));
-    ok('several produced clips are summed', near(await B.billMedia(omni, { video: { url: 'u' } }, rules, ['a.mp4', 'b.mp4'], len), 0.13 * 14.2));
-    ok('a still image among them is not measured', !measured['c.png'] && near(await B.billMedia(omni, {}, rules, ['c.png', 'a.mp4'], len), 1.3) && !measured['c.png']);
+    ok('‼️ an answer with only a file is billed on the measured length (10 s = $0.30), never a guessed 5 s',
+        near(await B.billMedia(omni, { video: { url: 'u' } }, rules, ['a.mp4'], len), 0.3));
+    ok('several produced clips are summed', near(await B.billMedia(omni, { video: { url: 'u' } }, rules, ['a.mp4', 'b.mp4'], len), 0.03 * 14.2));
+    ok('a still image among them is not measured', !measured['c.png'] && near(await B.billMedia(omni, {}, rules, ['c.png', 'a.mp4'], len), 0.3) && !measured['c.png']);
 
     const before = measured['a.mp4'];
     ok('a duration in the answer wins and nothing is measured',
-        near(await B.billMedia(omni, { video: { url: 'u', duration: 8 } }, rules, ['a.mp4'], len), 0.13 * 8) && measured['a.mp4'] === before);
+        near(await B.billMedia(omni, { video: { url: 'u', duration: 8 } }, rules, ['a.mp4'], len), 0.03 * 8) && measured['a.mp4'] === before);
     ok('an image model is never measured', near(await B.billMedia('fal-ai/flux/dev', { images: [1, 2] }, rules, ['a.mp4'], len), 0.05) && measured['a.mp4'] === before);
     ok('an unpriced model costs 0 and is never measured', (await B.billMedia('fal-ai/unknown', {}, rules, ['a.mp4'], len)) === 0 && measured['a.mp4'] === before);
-    ok('nothing measurable falls back to the 5 s estimate', near(await B.billMedia(omni, {}, rules, ['a.mp4'], async () => undefined), 0.65));
-    ok('a measurer that throws falls back too', near(await B.billMedia(omni, {}, rules, ['a.mp4'], async () => { throw new Error('no ffmpeg'); }), 0.65));
+    ok('nothing measurable falls back to the 5 s estimate', near(await B.billMedia(omni, {}, rules, ['a.mp4'], async () => undefined), 0.15));
+    ok('a measurer that throws falls back too', near(await B.billMedia(omni, {}, rules, ['a.mp4'], async () => { throw new Error('no ffmpeg'); }), 0.15));
     ok('estimateMediaCost alone keeps its old answer', near(M.estimateMediaCost('fal-ai/kling-video', {}, rules), 0.5));
 
     const src = fs.readFileSync(path.join(ROOT, 'src/core/tasks.ts'), 'utf8');
