@@ -41,7 +41,7 @@
 export type WaitClearedBy = 'clock' | 'event' | 'human';
 
 /** Whose wait it is. `window` is the extension host itself. */
-export type WaitSubjectKind = 'task' | 'mission' | 'sentry' | 'window';
+export type WaitSubjectKind = 'task' | 'mission' | 'sentry' | 'window' | 'workflow';
 
 export interface WaitSubject {
     kind: WaitSubjectKind;
@@ -116,7 +116,8 @@ export const WAIT_KINDS: string[] = [
     'task-unknown',
     ...MISSION_WAIT_RULES.map(r => r.kind),
     'sentry-wake',
-    'restart-armed'
+    'restart-armed',
+    'workflow-question'
 ];
 
 /** A queued row as the board already holds it. */
@@ -165,6 +166,8 @@ export interface WaitWorld {
     missions?: MissionWaitRow[];
     sentry?: SentryWaitRow;
     armed?: ArmedWaitRow;
+    /** a workflow supervisor's open ask_user — its checkpoint row reads only "running" meanwhile */
+    questions?: { id: string; runId: string; workflowTitle?: string; question: string; askedAt?: number }[];
 }
 
 const named = (id: string, name?: string): string => String(name ?? '').trim() || id;
@@ -275,6 +278,18 @@ export function fleetWaits(w: WaitWorld): FleetWait[] {
 
     const armed = armedRestartWait(w.armed, now);
     if (armed) { out.push(armed); }
+
+    for (const q of w.questions ?? []) {
+        out.push({
+            kind: 'workflow-question',
+            subject: { kind: 'workflow', id: q.runId, name: named(q.runId, q.workflowTitle) },
+            reason: `its supervisor asks: ${q.question}`,
+            since: typeof q.askedAt === 'number' ? q.askedAt : now,
+            blockedBy: [],
+            clearedBy: 'human',
+            op: 'workflows.answer'
+        });
+    }
 
     return out.sort((a, b) => {
         if (a.until !== undefined && b.until !== undefined) { return a.until - b.until; }

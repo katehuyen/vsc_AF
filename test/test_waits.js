@@ -288,8 +288,18 @@ const only = (w) => { const l = fleetWaits(w); return l.length === 1 ? l[0] : un
     ok('every mission rule\'s kind is in the vocabulary',
         MISSION_WAIT_RULES.every(r => WAIT_KINDS.indexOf(r.kind) >= 0));
     ok('…and no kind is declared that nothing produces',
-        WAIT_KINDS.every(k => k === 'sentry-wake' || k === 'restart-armed' || k === 'task-unknown'
+        WAIT_KINDS.every(k => k === 'sentry-wake' || k === 'restart-armed' || k === 'task-unknown' || k === 'workflow-question'
             || TASK_WAIT_RULES.some(r => r.kind === k) || MISSION_WAIT_RULES.some(r => r.kind === k)));
+}
+
+// ---- M-55: a supervisor's open question is a wait a person ends -------------
+{
+    const l = fleetWaits({ now: 5000, questions: [{ id: 'wq1', runId: 'run9', workflowTitle: 'video hattı', question: 'Nasıl ilerleyelim?', askedAt: 4000 }] });
+    const w = l[0];
+    ok('‼️ an open workflow question is on the list — its checkpoint row said only "running"',
+        l.length === 1 && w.kind === 'workflow-question' && w.clearedBy === 'human' && w.op === 'workflows.answer');
+    ok('…naming the run and the question in its own words', w.subject.kind === 'workflow' && w.subject.id === 'run9'
+        && w.subject.name === 'video hattı' && w.reason === 'its supervisor asks: Nasıl ilerleyelim?' && w.since === 4000);
 }
 
 console.log(`test_waits: ${pass} passed, ${fail} failed`);

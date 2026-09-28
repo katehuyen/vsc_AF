@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.739.0 - The video check looks at the right file; a supervisor's question can be seen and answered from anywhere (2026-09-28)
+
+- A media step's quality check now looks for the clip in the library folder
+  it was filed into, and its criteria are filled with the run's inputs (the
+  brief) first. It used to look in the old outputs folder and be asked about
+  "{input.brief}" literally, so every clip "failed" — and a retry was paid
+  for edits that had done exactly what was asked.
+- When a workflow's supervisor asks you a question, the wait list now shows
+  it, and it can be answered from outside the window too, not only from the
+  notification, Needs You or the phone.
+
 ## 3.738.0 - A run the supervisor ends at its last step is done; a task no longer starts on a spent account (2026-09-28)
 
 - When a workflow's last step is a checkpoint and the supervisor answers

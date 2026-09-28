@@ -123,6 +123,30 @@ function makeMediaTask(attempt) {
     eq('no asset + judge.unjudged = pass → continues, said so', advanced, 'done');
     delete tm.opts.judgeUnjudged;
 
+    // M-55 — the library had moved the clip out of the outputs dir and the judge was sent there with its bare
+    // name ("the file is not on this system"), its criteria still reading {input.brief}: four false FAILs, a paid retry
+    delete tm.runVisionJudge;
+    const oneShot = require(path.join(OUT, 'oneShot.js'));
+    const realShot = oneShot.execOneShot;
+    const seen = [];
+    oneShot.execOneShot = async (o) => { seen.push(o); return { out: 'PASS sıcak', error: '' }; };
+    const libDir = path.join(tmp, 'library', 'semi'); fs.mkdirSync(libDir, { recursive: true });
+    const wf2 = tm.addWorkflow('W2', [{ agentId: '', agentName: 'media', title: 'düzenle', prompt: '', mode: 'headless',
+        media: { model: 'flux', input: '{"prompt":"x"}' }, verify: { criteria: 'The clip shows: {input.brief}.', retries: 0 } }]);
+    tm.runRecords.set(runId, { inputs: { brief: 'sıcak gün batımı tonları' } });
+    advanced = null;
+    t = makeMediaTask(0);
+    t.workflowId = wf2.id;
+    const moved = path.join(libDir, path.basename(media.readMediaMetas(outputsDir).find(m => m.taskId === t.id).assetFiles[0]));
+    fs.renameSync(media.readMediaMetas(outputsDir).find(m => m.taskId === t.id).assetFiles[0], moved);
+    const metaFile = path.join(outputsDir, t.id + '.media.json');
+    fs.writeFileSync(metaFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(metaFile, 'utf8')), assetFiles: [moved] }), 'utf8');
+    await tm.verifyMediaThenAdvance(t, wf2, wf2.steps[0]);
+    oneShot.execOneShot = realShot;
+    eq('‼️ the vision judge runs in the folder the file is in now', seen.length && seen[0].cwd, libDir);
+    ok('‼️ …and reads criteria with the run\'s inputs filled', seen.length && /The clip shows: sıcak gün batımı tonları\./.test(seen[0].prompt) && !/\{input\./.test(seen[0].prompt));
+    eq('…so it can pass', advanced, 'done');
+
     // finish() routes media+verify to the vision path (not the crashing text path)
     let calledVision = false;
     tm.verifyMediaThenAdvance = async () => { calledVision = true; };

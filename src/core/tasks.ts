@@ -5435,7 +5435,8 @@ export class TaskManager implements vscode.Disposable {
     /**
      * Wave B2 — vision judge: a vision-capable model opens the produced asset
      * file (via its Read tool) and rules PASS/FAIL against the criteria. Runs in
-     * the outputs dir so the Read is inside the working directory.
+     * the file's own folder so the Read is inside the working directory — the
+     * library may already have moved it out of the outputs dir.
      *
      * ‼️ M-42 — an asset the judging engine cannot open, or a judge that could
      * not run, is `unjudged` — never a PASS nobody looked at.
@@ -5456,7 +5457,7 @@ export class TaskManager implements vscode.Disposable {
                 `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
             void execOneShot({
-                cwd: this.outputsDir, engine: want.engine, model: want.model, args: judgeLean(want.engine, true, want.args), prompt, timeoutMs: 180_000,
+                cwd: path.dirname(assetFile), engine: want.engine, model: want.model, args: judgeLean(want.engine, true, want.args), prompt, timeoutMs: 180_000,
                 // agy's default mode may act on the files; measured 2026-09-26: in plan mode it still opens and judges them
                 readOnly: want.engine === 'agy', ...judgeJson(want.engine)
             }).then(r => {
@@ -5472,6 +5473,14 @@ export class TaskManager implements vscode.Disposable {
                 resolve({ pass, reason: line.slice(0, 200) || '(no verdict)', judge, ...spent });
             });
         });
+    }
+
+    /** The judge's criteria with the run's placeholders ({input.x}, {steps.id…}) filled, as the step's own input was. */
+    private judgeCriteria(task: FarmTask, step: WorkflowStep): string {
+        const raw = step.verify!.criteria;
+        if (!raw.includes('{')) { return raw; }
+        const rec = this.runRecords.get(task.workflowRunId ?? '');
+        return (this.opts.resolveTemplate ?? ((x: string) => x))(this.substitute(raw, { inputs: rec?.inputs, board: rec?.board }));
     }
 
     /** M-42 — a step no judge could look at: the user's judge.unjudged decides, never a silent PASS. */
@@ -5507,7 +5516,7 @@ export class TaskManager implements vscode.Disposable {
             return;
         }
         const judged = files.length > 1 && candidatesOf(step.media?.candidates) > 1 ? await this.pickCandidate(task, step, files, meta!)
-            : await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, step.verify!.criteria, sj));
+            : await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, this.judgeCriteria(task, step), sj));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Vision verify', judged.judge);
             return;
@@ -5553,7 +5562,7 @@ export class TaskManager implements vscode.Disposable {
         const seen: { pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string; costUSD?: number }[] = [];
         let spent = 0;
         for (const [i, f] of files.entries()) {
-            const j0 = await this.climbJudge(task, step, sj => this.runVisionJudge(f, step.verify!.criteria, sj));
+            const j0 = await this.climbJudge(task, step, sj => this.runVisionJudge(f, this.judgeCriteria(task, step), sj));
             spent += j0.costUSD ?? 0;
             const j = { ...j0, ...(spent ? { costUSD: spent } : {}) };
             if (j.pass && !j.unjudged) {
@@ -5621,7 +5630,7 @@ export class TaskManager implements vscode.Disposable {
         const body = archivedOutputBody(fs.readFileSync(task.outputFile as string, 'utf8'));
         const attempt = task.attempt ?? 0;
         // A-27 — judged where no agent's CLAUDE.md is loaded: in the agent's folder a haiku check (measured) cost more than the step it judged
-        const judged = await this.climbJudge(task, step, sj => this.runJudge(this.outputsDir, step.verify!.criteria, body, sj));
+        const judged = await this.climbJudge(task, step, sj => this.runJudge(this.outputsDir, this.judgeCriteria(task, step), body, sj));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Verify', judged.judge);
             return;

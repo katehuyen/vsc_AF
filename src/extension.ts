@@ -9168,6 +9168,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'workflows.answer',
+            describe: 'Answer a workflow supervisor\'s open question (its ask_user) — the same answer as its Needs You buttons, the window\'s notification or the phone; the first answer wins and the supervisor decides again with it. No args = the open questions (id, runId, workflow, question, options). args: id? (the question; or runId when that run has exactly one open), option? (1-based index into its options), answer? (free text, for a question with no options or to say something else)',
+            handler: (args) => {
+                const open = workflowAsks.list();
+                const id = optStr(args, 'id'), runId = optStr(args, 'runId');
+                if (!id && !runId) { return { open }; }
+                const q = id ? workflowAsks.get(id) : open.filter(x => x.runId === runId).length === 1 ? open.find(x => x.runId === runId) : undefined;
+                need(q, id ? 'No open question with that id — it was answered, or a window reload dropped it (the run then went the mechanical way).' : 'That run has no single open question — call workflows.answer with no args to list them.');
+                const n = Number(args.option);
+                const text = optStr(args, 'answer') ?? (Number.isInteger(n) && n >= 1 && n <= q!.options.length ? q!.options[n - 1] : undefined);
+                need(text, `Give option (1-${q!.options.length}) or answer.`);
+                need(workflowAsks.settle(q!.id, text!), 'Somebody answered it first.');
+                return { answered: q!.id, runId: q!.runId, answer: text };
+            }
+        },
+        {
             op: 'workflows.wakeFields',
             describe: 'M-45 — what a workflow\'s wake conditions can read: every field (with its type, closed values and meaning), every operator (and the field types it applies to) and the three presets with the conditions each one fills in. args: none',
             handler: () => wakeDictionary()
@@ -18685,7 +18701,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 running: taskManager.sentryBusy(),
                 wakeAt: rec.wakeAt, lastWhy: rec.lastWhy, lastAt: rec.lastAt
             } : undefined,
-            armed: armedRestart ?? undefined
+            armed: armedRestart ?? undefined,
+            questions: workflowAsks.list()
         });
     };
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
