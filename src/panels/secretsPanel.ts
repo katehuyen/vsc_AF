@@ -28,7 +28,8 @@ function buildData(deps: SecretsPanelDeps): Record<string, unknown> {
         description: s.description,
         // resolve stored agent ids to names; a dangling id (agent removed) shows as-is
         agents: s.agents.map(id => ({ id, name: byId.get(id) ?? id, missing: !byId.has(id) })),
-        allAgents: s.agents.length === 0,
+        allAgents: s.agents.length === 0 && !s.farmOnly,
+        farmOnly: s.farmOnly,
         updatedAt: s.updatedAt,
         createdAt: s.createdAt
     }));
@@ -134,6 +135,9 @@ export class SecretsPanel {
         const description = s('description');
         const agents = Array.isArray(raw.agents)
             ? (raw.agents as unknown[]).map(String).filter(Boolean) : [];
+        const farmOnly = raw.farmOnly === true;
+        const reach = farmOnly ? 'Farm only: Agent Farm reads it itself and no agent\'s task receives it.'
+            : agents.length ? agents.length + ' agent(s) may use it.' : '';
 
         if (!name) { return this.say('It needs a name — that name is the environment variable and the {secret:NAME} reference.'); }
         if (!NAME_RE.test(name)) { return this.say('Letters, digits, _ . and - only — it has to be a legal environment variable name.'); }
@@ -149,14 +153,15 @@ export class SecretsPanel {
 
         if (value) {
             // set() writes the value and merges the metadata in one go.
-            await this.deps.vault.set(name, value, { description, agents });
+            await this.deps.vault.set(name, value, { description, agents, farmOnly });
         } else {
-            await this.deps.vault.setMeta(name, { description, agents });
+            await this.deps.vault.setMeta(name, { description, agents, farmOnly });
         }
         this.refresh();
         this.say(editing
-            ? `"${name}" updated${value ? ' — value replaced' : ''}. ${agents.length ? agents.length + ' agent(s) may use it.' : 'Every agent may use it.'}`
-            : `"${name}" stored in the OS keychain. It reaches a task as an environment variable and a prompt as {secret:${name}}. ${agents.length ? agents.length + ' agent(s) may use it.' : 'Every agent may use it until you scope it.'}`,
+            ? `"${name}" updated${value ? ' — value replaced' : ''}. ${reach || 'Every agent may use it.'}`
+            : farmOnly ? `"${name}" stored in the OS keychain. ${reach}`
+                : `"${name}" stored in the OS keychain. It reaches a task as an environment variable and a prompt as {secret:${name}}. ${reach || 'Every agent may use it until you scope it.'}`,
             true);
     }
 

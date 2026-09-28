@@ -29,6 +29,8 @@ export interface SecretMeta {
     description?: string;
     /** Agent ids allowed to receive this secret. Empty/absent = all agents. */
     agents?: string[];
+    /** Agent Farm reads it itself (get); no agent's task environment ever receives it, whatever `agents` says. */
+    farmOnly?: boolean;
     createdAt: number;
     updatedAt: number;
 }
@@ -38,9 +40,15 @@ export interface SecretInfo {
     name: string;
     description: string;
     agents: string[];
+    farmOnly: boolean;
     createdAt: number;
     updatedAt: number;
 }
+
+export type SecretMetaPatch = { description?: string; agents?: string[]; farmOnly?: boolean };
+
+/** Secrets only Agent Farm itself uses: moved into the farm-only scope once, if their scope was never chosen. */
+export const FARM_ONLY_ADOPT = ['TYPESAFE_API_KEY'];
 
 export class SecretsVault {
     private cache = new Map<string, string>();
@@ -70,7 +78,7 @@ export class SecretsVault {
     /** Store (or replace) a secret's value; `patch` optionally sets its
      *  description/agent-scope in the same call. createdAt is preserved across
      *  value replacements; updatedAt always advances. */
-    async set(name: string, value: string, patch?: { description?: string; agents?: string[] }): Promise<void> {
+    async set(name: string, value: string, patch?: SecretMetaPatch): Promise<void> {
         await this.storage.store(PREFIX + name, value);
         const names = new Set(this.names());
         names.add(name);
@@ -81,18 +89,28 @@ export class SecretsVault {
 
     /** Edit a secret's metadata (description / agent-scope) without touching its
      *  value. A no-op if the name is unknown. */
-    async setMeta(name: string, patch: { description?: string; agents?: string[] }): Promise<void> {
+    async setMeta(name: string, patch: SecretMetaPatch): Promise<void> {
         if (!this.names().includes(name)) { return; }
         await this.writeMeta(name, patch);
     }
 
-    private async writeMeta(name: string, patch?: { description?: string; agents?: string[] }): Promise<void> {
+    /** Each named secret whose farm-only choice was never made (neither true nor false) becomes farm-only; the names moved. */
+    async adoptFarmOnly(names: string[]): Promise<string[]> {
+        const meta = this.allMeta();
+        const moved = names.filter(n => this.names().includes(n) && meta[n]?.farmOnly === undefined);
+        for (const n of moved) { await this.writeMeta(n, { farmOnly: true }); }
+        return moved;
+    }
+
+    private async writeMeta(name: string, patch?: SecretMetaPatch): Promise<void> {
         const all = this.allMeta();
         const prev = all[name];
         const now = Date.now();
+        const farmOnly = patch?.farmOnly !== undefined ? patch.farmOnly : prev?.farmOnly;
         const next: SecretMeta = {
             description: patch?.description !== undefined ? patch.description : prev?.description,
             agents: patch?.agents !== undefined ? patch.agents : prev?.agents,
+            ...(farmOnly !== undefined ? { farmOnly } : {}),
             createdAt: prev?.createdAt ?? now,
             updatedAt: now
         };
@@ -117,6 +135,7 @@ export class SecretsVault {
                 name,
                 description: m?.description ?? '',
                 agents: m?.agents ?? [],
+                farmOnly: m?.farmOnly === true,
                 createdAt: m?.createdAt ?? 0,
                 updatedAt: m?.updatedAt ?? 0
             };
@@ -130,6 +149,7 @@ export class SecretsVault {
 
     /** True when `agentId` is allowed to receive `name` (unrestricted = all). */
     private allowed(name: string, agentId: string | undefined, meta: Record<string, SecretMeta>): boolean {
+        if (meta[name]?.farmOnly === true) { return false; }
         const scope = meta[name]?.agents;
         if (!scope || scope.length === 0) { return true; }   // unrestricted → every agent
         return agentId !== undefined && scope.includes(agentId);

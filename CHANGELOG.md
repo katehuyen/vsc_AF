@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.745.0 - A key only Agent Farm may use; Kapıcı answers over the bridge (2026-09-28)
+
+- The Secrets page has a new choice on every key's card: **Farm only**. A
+  key marked this way is used by Agent Farm itself and is never handed to any
+  agent's task, whichever agents are ticked. The row shows a purple
+  "farm only" tag. The key Kapıcı will use (TYPESAFE_API_KEY) is moved there
+  once if you never chose its scope; a choice you made on the card is never
+  changed. If you stored a Vercel AI Gateway key for Kapıcı, open its card and
+  tick Farm only.
+- Agents can now ask Kapıcı through the bridge: put a situation to one of its
+  rules, ask one-off questions, list the rules, run a rule's examples, read
+  recent decisions and check whether its key is present. Five settings under
+  Kapıcı choose the rule folder, how long to wait, who is asked, the road to
+  the classifier (TypeSafe or the Vercel AI Gateway) and the key's name. Still
+  nothing in Agent Farm decides with it on its own.
+
 ## 3.744.0 - Groundwork for Kapıcı, an optional decision gate (2026-09-28)
 
 - Nothing you use changes in this release. It carries the engine of Kapıcı:

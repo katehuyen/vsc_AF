@@ -138,6 +138,45 @@ function fakes() {
     ok('the empty state still points at it, since it is the only thing to do there',
         page.includes('No secrets stored yet — click <b>+ Add secret</b>'));
 }
+
+// ---------- X-409 — farm only: Agent Farm reads it, no agent receives it ----
+{
+    const { storage, state } = fakes();
+    const v = new SecretsVault(storage, state);
+    await v.set('OLD_KEY', 'old-value-123');
+    await v.set('SCOPED', 'scoped-value', { agents: ['dev'] });
+    await v.set('KAPICI_KEY', 'kapici-value', { farmOnly: true });
+    await v.set('BOTH', 'both-value', { farmOnly: true, agents: ['dev'] });
+    for (const agent of ['dev', 'other', undefined]) {
+        const env = v.env(agent);
+        ok('farm-only never in env() for ' + agent, !('KAPICI_KEY' in env) && !('BOTH' in env));
+    }
+    ok('farm-only still read by get()', v.get('KAPICI_KEY') === 'kapici-value' && v.get('BOTH') === 'both-value');
+    ok('farm-only still substituted in an explicit {secret:NAME}', v.substitute('{secret:KAPICI_KEY}') === 'kapici-value');
+    ok('existing records unchanged: unscoped to all', v.env('other').OLD_KEY === 'old-value-123' && v.env(undefined).OLD_KEY === 'old-value-123');
+    ok('existing records unchanged: scoped to its agent', v.env('dev').SCOPED === 'scoped-value' && !('SCOPED' in v.env('other')));
+    const rows = Object.fromEntries(v.list().map(r => [r.name, r]));
+    ok('list says farmOnly, false by default', rows.KAPICI_KEY.farmOnly === true && rows.OLD_KEY.farmOnly === false);
+    await v.set('KAPICI_KEY', 'kapici-value-2');
+    ok('replacing the value keeps farm-only', v.list().find(r => r.name === 'KAPICI_KEY').farmOnly === true && !('KAPICI_KEY' in v.env('dev')));
+    await v.setMeta('KAPICI_KEY', { farmOnly: false });
+    ok('turned off, it reaches agents again', v.env('dev').KAPICI_KEY === 'kapici-value-2');
+
+    await v.set('TYPESAFE_API_KEY', 'ts-value');
+    await v.set('CHOSEN', 'c', { farmOnly: false });
+    const moved = await v.adoptFarmOnly(['TYPESAFE_API_KEY', 'CHOSEN', 'ABSENT']);
+    ok('TYPESAFE_API_KEY moved into farm-only', moved.join() === 'TYPESAFE_API_KEY' && !('TYPESAFE_API_KEY' in v.env('dev')) && v.get('TYPESAFE_API_KEY') === 'ts-value');
+    ok('a scope already chosen is never overridden, an absent name is skipped', v.env('dev').CHOSEN === 'c');
+    ok('adoption runs once: a later explicit off stays off', (await v.setMeta('TYPESAFE_API_KEY', { farmOnly: false }), (await v.adoptFarmOnly(['TYPESAFE_API_KEY'])).length === 0));
+    ok('the adopt list names the Kapici key', require(path.join(__dirname, '..', 'out', 'core', 'secrets.js')).FARM_ONLY_ADOPT.includes('TYPESAFE_API_KEY'));
+
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'secrets.js'), 'utf8');
+    ok('page: the farm-only box travels with the save', /farmOnly: !!form\.farmOnly/.test(page));
+    ok('page: the box mirrors its value first, then explains', /tip: 'Farm only: ' \+ \(form\.farmOnly \? 'on' : 'off'\) \+ '\\n\\n/.test(page));
+    ok('page: a farm-only row says so', page.includes('<span class="tag farm"'));
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'secretsPanel.ts'), 'utf8');
+    ok('panel: saves the flag both ways', /vault\.set\(name, value, \{ description, agents, farmOnly \}\)/.test(panel) && /vault\.setMeta\(name, \{ description, agents, farmOnly \}\)/.test(panel));
+}
 console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

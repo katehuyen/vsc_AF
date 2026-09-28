@@ -35,13 +35,29 @@ const FULL = [
     {
         name: 'TELEGRAM_BOT_TOKEN', description: '',
         allAgents: false, agents: [{ id: 'a2', name: 'asistan' }], updatedAt: NOW - 20 * 60e3
+    },
+    {
+        name: 'TYPESAFE_API_KEY', description: 'Kapıcı decision gate — Agent Farm reads it itself.',
+        allAgents: false, farmOnly: true, agents: [], updatedAt: NOW - 5 * 60e3
     }
 ];
 
 const data = () => base(FULL);
 
 const variants = () => ([
-    { id: 'secrets', label: 'Secrets — three stored', data: base(FULL) },
+    { id: 'secrets', label: 'Secrets — four stored, one farm only', data: base(FULL) },
+    {
+        id: 'secrets-farm-form',
+        label: 'Secrets — menu: edit card of a farm-only key (agent ticks hidden)',
+        data: base(FULL),
+        act: r => { r.query('[data-edit="TYPESAFE_API_KEY"]').slice(0, 1).forEach(b => b.fire('click')); }
+    },
+    {
+        id: 'secrets-agent-form',
+        label: 'Secrets — menu: edit card of an agent-scoped key (farm only off, agents shown)',
+        data: base(FULL),
+        act: r => { r.query('[data-edit="REPLICATE_API_TOKEN"]').slice(0, 1).forEach(b => b.fire('click')); }
+    },
     {
         id: 'secrets-empty',
         label: 'Secrets — ‼️ nothing stored yet, where the one gesture has to be findable',

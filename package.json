@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.744.0",
+  "version": "3.745.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9215,6 +9215,54 @@
             "The quality check sees the result alone."
           ],
           "description": "Whether an edit's quality check is shown what it started from. Without it, a judge can take something already in the source for an unwanted addition and fail a correct edit."
+        },
+        "agentFarm.kapici.rulesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Folder of your own Kapıcı rules (one JSON file per rule). Empty = a _KAPICI folder inside every agent root. A project's .kapici folder is read too and wins over this one; the shipped rules come first."
+        },
+        "agentFarm.kapici.timeoutMs": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 200,
+          "maximum": 30000,
+          "description": "How long Kapıcı waits for the classifier before handing the decision back to the usual path (milliseconds). A rule may set its own. The language-model judge, when used, waits at least a minute."
+        },
+        "agentFarm.kapici.providers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "heuristic",
+              "jev",
+              "llm"
+            ]
+          },
+          "default": [
+            "heuristic",
+            "jev"
+          ],
+          "description": "Who Kapıcı asks, in order, when a rule names no one: heuristic (local checks — numbers, dates, counts, patterns — never sent anywhere), jev (the small classifier; needs its key in the Secret vault), llm (the judge model — slower, costs a model call). A sensitive rule never goes to jev."
+        },
+        "agentFarm.kapici.route": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "typesafe",
+            "vercel"
+          ],
+          "enumDescriptions": [
+            "By the key found in the Secret vault: TYPESAFE_API_KEY goes to TypeSafe, AI_GATEWAY_API_KEY to the Vercel AI Gateway.",
+            "Straight to TypeSafe (api.typesafe.ai), model jev-1.13.0.",
+            "Through the Vercel AI Gateway (ai-gateway.vercel.sh), model typesafe-ai/jev — same questions, same answers."
+          ],
+          "description": "Which road Kapıcı takes to the classifier."
+        },
+        "agentFarm.kapici.keyName": {
+          "type": "string",
+          "default": "",
+          "description": "The Secret vault name of the classifier's key. Empty = TYPESAFE_API_KEY, else AI_GATEWAY_API_KEY, whichever the vault holds. Mark it Farm only on the Secrets page so no agent receives it."
         },
         "agentFarm.mediaUploadAuto": {
           "type": "string",

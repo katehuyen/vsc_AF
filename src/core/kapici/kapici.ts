@@ -44,11 +44,13 @@ export interface KapiciConfig {
     timeoutMs?: number;
     llmTimeoutMs?: number;
     cacheTtlMs?: number;
+    /** Who is asked when a rule names no one. */
+    defaultChain?: ProviderName[];
 }
 
 /** The providers a rule is put to, in its order, among those that exist; jev never for a sensitive rule. */
-export function providerChain(rule: KapiciRule, available: KapiciProviders): ProviderName[] {
-    const wanted = rule.providers ?? (rule.sensitive ? SENSITIVE_CHAIN : DEFAULT_CHAIN);
+export function providerChain(rule: KapiciRule, available: KapiciProviders, fallback: ProviderName[] = DEFAULT_CHAIN): ProviderName[] {
+    const wanted = rule.providers ?? (rule.sensitive ? SENSITIVE_CHAIN : fallback);
     return wanted.filter(n => !(rule.sensitive && n === 'jev') && !!available[n]);
 }
 
@@ -134,7 +136,7 @@ export class Kapici {
 
     private async chain(l: LoadedRule, questions: Record<string, KapiciQuestion>, state: KapiciState, input: PreparedInput, o: EvaluateOptions, t0: number): Promise<KapiciVerdict> {
         const rule = l.rule;
-        const names = providerChain(rule, this.providers);
+        const names = providerChain(rule, this.providers, this.cfg.defaultChain?.length ? this.cfg.defaultChain : DEFAULT_CHAIN);
         const kept: Record<string, KapiciAnswer> = {};
         let cost: number | undefined;
         let last: KapiciVerdict | undefined;

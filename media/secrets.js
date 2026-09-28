@@ -58,6 +58,7 @@
             name: s.name || '',
             value: '',
             description: known ? (known.description || '') : '',
+            farmOnly: !!(known && known.farmOnly),
             // The scope is a tick per agent. "None ticked" is not "no agent" —
             // it is the vault's own "unrestricted", and the card says so out
             // loud, because that default is the opposite of what an empty
@@ -103,16 +104,23 @@
                     tip: 'The only thing about a secret you will still recognise in six months.'
                 })
             ])
-                + F.sec('Who may use it',
-                    'Nothing ticked means EVERY agent — that is the vault\'s own default, not "no agent". Tick some and only their tasks receive it.')
-                + F.grid((DATA.agents || []).map(a =>
+                + F.sec('Who may use it', form.farmOnly
+                    ? 'Farm only: Agent Farm uses it itself and no agent\'s task receives it.'
+                    : 'Nothing ticked means EVERY agent — that is the vault\'s own default, not "no agent". Tick some and only their tasks receive it.')
+                + F.grid([F.check('farmOnly', 'Farm only — no agent receives it', !!form.farmOnly, {
+                    redraw: true,
+                    tip: 'Farm only: ' + (form.farmOnly ? 'on' : 'off') + '\n\nFor a key Agent Farm uses itself (the Kapıcı decision gate, search embeddings). It is never put into any agent\'s task environment, whichever agents are ticked; Agent Farm still reads it. A workflow step that names it as {secret:NAME} still gets it — that is your own explicit reference.'
+                })])
+                + (form.farmOnly ? '' : F.grid((DATA.agents || []).map(a =>
                     F.check('ag_' + a.id, a.name, !!form.scope['ag_' + a.id], {
                         redraw: true,
                         tip: 'Only ' + a.name + '\'s tasks would receive it.'
-                    })))
-                + F.msg(ticked
-                    ? ticked + ' agent(s) ticked — no other agent\'s task receives this secret.'
-                    : 'Unrestricted: every agent\'s tasks receive it.'),
+                    }))))
+                + F.msg(form.farmOnly
+                    ? 'Farm only: Agent Farm reads it itself; no agent\'s task receives it.'
+                    : ticked
+                        ? ticked + ' agent(s) ticked — no other agent\'s task receives this secret.'
+                        : 'Unrestricted: every agent\'s tasks receive it.'),
             msg: secMsg, warn: !secMsgOk,
             submit: editing ? 'Save changes' : 'Store it in the keychain'
         });
@@ -137,6 +145,7 @@
                     secret: {
                         mode: form.mode, name: form.name, value: form.value,
                         description: form.description,
+                        farmOnly: !!form.farmOnly,
                         agents: Object.keys(form.scope)
                             .filter(k => form.scope[k]).map(k => k.slice(3))
                     }
@@ -157,6 +166,9 @@
     }
 
     function scopeCell(s) {
+        if (s.farmOnly) {
+            return `<span class="tag farm" title="farm only — Agent Farm reads it itself; never injected into any agent's tasks">farm only</span>`;
+        }
         if (s.allAgents) {
             return `<span class="tag all" title="unrestricted — injected into every agent's tasks">all agents</span>`;
         }
@@ -170,7 +182,7 @@
         // the box is a QUERY, not a substring — media/afQuery.js
         const q = window.AFQuery.compile(state.q);
         const list = DATA.secrets.filter(s =>
-            q.test(s.name + ' ' + s.description + ' ' + s.agents.map(a => a.name).join(' ')));
+            q.test(s.name + ' ' + s.description + ' ' + s.agents.map(a => a.name).join(' ') + (s.farmOnly ? ' farm only' : '')));
         if (!list.length) {
             return `<tr><td colspan="6" class="muted" style="padding:14px">${
                 DATA.secrets.length ? 'Nothing matches the filter.' : 'No secrets stored yet — click <b>+ Add secret</b>.'
@@ -190,9 +202,11 @@
 
     function render() {
         const n = DATA.secrets.length;
-        const scoped = DATA.secrets.filter(s => !s.allAgents).length;
+        const farm = DATA.secrets.filter(s => s.farmOnly).length;
+        const scoped = DATA.secrets.filter(s => !s.allAgents && !s.farmOnly).length;
         const sub = `${n} secret${n === 1 ? '' : 's'} in the OS keychain`
             + (scoped ? ` · ${scoped} agent-scoped` : '')
+            + (farm ? ` · ${farm} farm-only` : '')
             + ` · ${DATA.agentCount} agent${DATA.agentCount === 1 ? '' : 's'} in the farm`;
 
         document.getElementById('app').innerHTML = `
@@ -230,6 +244,7 @@
                 .tag.missing { color: var(--vscode-charts-orange, #d18616); text-decoration: line-through; }
                 .tag.none, .tag.missing { }
                 .tag.none { color: var(--vscode-charts-orange, #d18616); }
+                .tag.farm { color: var(--vscode-charts-purple, #b180d7); }
             </style>
             ${window.AFHeader.html({
                 page: 'secrets',
@@ -240,7 +255,8 @@
                 Values live in the <b>OS keychain</b> (VS Code SecretStorage) — never in settings files or git.
                 Each is injected into an agent's tasks as an <b>environment variable</b> and is available in prompts as
                 <code>{secret:NAME}</code>. <b>Scope</b> is the usage authorization: <span class="tag all">all agents</span>
-                by default, or restrict a secret to specific agents so only their tasks receive it. The value itself is
+                by default, or restrict a secret to specific agents so only their tasks receive it, or make it
+                <span class="tag farm">farm only</span> when Agent Farm uses it itself and no agent should. The value itself is
                 never shown here — use <b>replace</b> to change it.
             </div>
             ${form ? formHtml() : (secMsg ? window.AFForm.msg(secMsg, !secMsgOk) : '')}

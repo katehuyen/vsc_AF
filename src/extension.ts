@@ -142,7 +142,7 @@ import { IngestFolder, IngestWatcher } from './core/ingest';
 import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProduction } from './core/production';
 import { buildEdl, buildFcpXml, detectSceneId, pickSequenceAssets } from './core/premiere';
 import { applyMergedContent } from './core/memorySync';
-import { SecretsVault } from './core/secrets';
+import { FARM_ONLY_ADOPT, SecretsVault } from './core/secrets';
 import { contextAfter, contextWindowOf, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, RawUsage, setPublishedWindows, setQuotaConfig, totalTokens, Usage } from './core/pricing';
 import {
     BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
@@ -587,6 +587,7 @@ import { libraryWall } from './core/studioLibrary';
 import { StudioEditRequest, writeStudioEdit } from './core/studioLibraryWrite';
 import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
+import { KapiciHost, kapiciSettings, registerKapiciOps } from './core/kapiciBridge';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { EnginesPanel } from './panels/enginesPanel';
@@ -1008,6 +1009,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // B2: secrets vault (OS keychain via SecretStorage), cached for sync use.
     const vault = new SecretsVault(context.secrets, context.globalState);
     await vault.refresh();
+    await vault.adoptFarmOnly(FARM_ONLY_ADOPT);
 
     // D1/D2: file-backed stores for quality scores and instruction suggestions.
     fs.mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
@@ -27314,6 +27316,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerMediaUploadOps(bridge, {
         upload: (file, provider) => (taskManagerRef as TaskManager).uploadMediaFile(file, provider)
     });
+
+    registerKapiciOps(bridge, new KapiciHost({
+        secret: n => vault.get(n),
+        secretValues: () => vault.names().map(n => vault.get(n) ?? '').filter(Boolean),
+        settings: () => kapiciSettings((k, d) => cfg().get(k, d)),
+        agentRoots: () => cfg().get<string[]>('agentRoots', []),
+        judge: p => execOneShot({ cwd: os.homedir(), args: judgeArgs(), prompt: p, timeoutMs: 60_000 })
+            .then(r => { if (r.error) { throw new Error(r.error); } return r.out; }),
+        auditDir: path.join(context.globalStorageUri.fsPath, 'kapici'),
+        log: l => console.warn('[agent-farm] ' + l)
+    }));
 
     // ---------- B-8: the working infrastructure over the bridge ----------
     // The live hooks, the headless service, the usage lap and the price of an
