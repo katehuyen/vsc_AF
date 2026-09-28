@@ -85,7 +85,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
     // the bridge door
     const at = src.indexOf("op: 'console.start',");
-    const body = src.slice(at, at + 14000);
+    // the handler up to the next op — a fixed length broke when its describe grew
+    const body = src.slice(at, src.indexOf("op: '", at + 20));
     ok('‼️ console.start settles a held Claude id BEFORE it spawns: a leftover of ours is reclaimed and waited out',
         /if \(resume && engine === 'claude'\) \{\s*const left = leftoverOwner\(resume\);\s*if \(left\) \{\s*const got = await consoleHost\.reclaim\(resume\);\s*need\(got\.free,/.test(body));
     ok('…and any other holder is refused by name rather than doubled',

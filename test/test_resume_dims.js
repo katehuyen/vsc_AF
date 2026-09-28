@@ -286,6 +286,21 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
         && /Omit on a resume= and the sign-in that conversation ran on continues it/.test(ex));
     ok('…and a slot since forgotten falls to the rule instead of refusing the resume',
         /askedAccount \|\| \(ownAccount && !launchAccountRefusal\(/.test(ex));
+    // ‼️ S-102 (measured 2026-09-29) — console.start resume= came back on the sign-in it ran on
+    // but at the FLEET's effort: its manifest said xhigh, the card said nothing.
+    const cstAt = ex.indexOf("op: 'console.start'");
+    const cst = ex.slice(cstAt, ex.indexOf('firstPrompt: optStr(args, \'prompt\')', cstAt));
+    ok('S-102: console.start resume= reads the transcript and its own launch manifest',
+        /const inherit = lastRunDimensions\(past\);\s*\n\s*const asked = resume \? sessionRequestedOf\(resume, engine\) : \{\};/.test(cst));
+    ok('…narrows the inherited pair for the engine, the fleet closing both chains',
+        /narrowLaunch\(engineModelMatrix\(\)\[engine as EngineId\],\s*\n\s*inherit\.model \|\| asked\.model \|\| d\.model, inherit\.effort \|\| asked\.effort \|\| d\.effort\)/.test(cst));
+    ok('…a caller\'s own argument still wins on all three',
+        /const runModel = optStr\(args, 'model'\) \|\| pair\.model;/.test(cst)
+        && /const runEffort = optStr\(args, 'effort'\) \|\| pair\.effort;/.test(cst)
+        && /const runMode = optStr\(args, 'permissionMode'\) \|\| inherit\.permissionMode \|\| asked\.permissionMode \|\| d\.permissionMode;/.test(cst));
+    ok('…and the card is started with them, not with the fleet defaults',
+        /model: gate\?\.model \|\| runModel,\s*\n\s*effort: runEffort,\s*\n\s*permissionMode: runMode,/.test(cst)
+        && !/effort: optStr\(args, 'effort'\) \|\| d\.effort/.test(cst));
 
     // The bridge door — and the ONE place the order is deliberately the other
     // way round: an argument a caller wrote is a real choice, unlike a composer

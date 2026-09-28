@@ -97,8 +97,19 @@ const { opencodeStatus, syncToOpencode } =
     const refused = await reg.dispatch('x.strict', { name: 'no' });
     ok('need() turns into an error outcome', !refused.ok && /must not be/.test(refused.error));
 
-    const fine = await reg.dispatch('x.strict', { name: ' ali ', extra: 7 });
-    ok('argStr trims; optStr ignores non-strings', fine.ok && fine.result.name === 'ali' && got === '');
+    const fine = await reg.dispatch('x.strict', { name: ' ali ', extra: true });
+    ok('argStr trims; optStr ignores what is not text or a number', fine.ok && fine.result.name === 'ali' && got === '');
+    // B-29 — `q=12345678` reaches an op as a number; it is the id that was typed, not "absent".
+    const digits = await reg.dispatch('x.strict', { name: 12345678, extra: 7 });
+    ok('B-29: a number in a string field is its text (argStr and optStr)',
+        digits.ok && digits.result.name === '12345678' && got === '7');
+    {
+        const exSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const find = exSrc.slice(exSrc.indexOf("op: 'sessions.find'"), exSrc.indexOf("op: 'sessions.find'") + 2400);
+        ok('B-29: sessions.find refuses a q that is not text before it can fall to "the newest"',
+            /need\(args\.q === undefined \|\| args\.q === null \|\| typeof args\.q === 'string' \|\| typeof args\.q === 'number',/.test(find)
+            && find.indexOf('need(args.q') < find.indexOf("const q = optStr(args, 'q')"));
+    }
 
     // ---------- one spelling of "which sessions" ----------
     // ‼️ Once a panel can do something to a SELECTION, the bridge has to be able
@@ -5766,6 +5777,11 @@ const { opencodeStatus, syncToOpencode } =
             && pKeyValue.handled === false
             && pKeyValue.limit === 5
             && pKeyValue.query === 'two words');
+        // B-29 — an id prefix that only LOOKS like a number keeps its text
+        const pIds = resolvePayload(parseCliArgs(['node', 'af.js', 'sessions.find', 'q=921e0095', 'a=12345678', 'b=007', 'c=1.50', 'd=-3', 'e=0.25']));
+        ok('B-29: key=value coerces only numbers that round-trip',
+            pIds.q === '921e0095' && pIds.a === 12345678 && pIds.b === '007' && pIds.c === '1.50'
+            && pIds.d === -3 && pIds.e === 0.25);
 
         let duplicateKeyRejected = false;
         try {

@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.753.0 - A resumed session keeps its effort and mode on every door; digit-only ids reach the op (2026-09-29)
+
+- Resuming a session from an agent's call (console.start with resume) came back
+  on the sign-in it ran on but at the fleet's effort and permission mode: a
+  session started at xhigh came back with no effort at all. It now continues
+  the way the other resume doors do — what its transcript says, then what its
+  own launch asked for, then the defaults — and a value the caller passes still
+  wins.
+- An id that looks like a number (`q=12345678`, `q=921e0095`) typed as
+  `key=value` to the command-line helper was turned into a number, and an op
+  reading it as text saw nothing: `sessions.find` then answered with the newest
+  twenty sessions instead of the one asked for. Only numbers that read back
+  exactly as typed are converted now, a number in a text field is read as the
+  text it was, and `sessions.find` refuses a query that is not text.
+
 ## 3.752.0 - Kapıcı reaches the classifier through OpenRouter (2026-09-28)
 
 - A third road to the classifier: OpenRouter. Vercel's free credit does not

@@ -172,7 +172,9 @@ export function resolvePayload(opts: CliOptions): Record<string, unknown> {
                 payload[key] = false;
             } else if (rawValue === 'null') {
                 payload[key] = null;
-            } else if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(rawValue)) {
+            } else if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(rawValue)
+                && String(Number(rawValue)) === rawValue) {
+                // B-29 — only text that survives the trip: `921e0095` (an id prefix) is not 9.21e+97.
                 payload[key] = Number(rawValue);
             } else {
                 payload[key] = rawValue;

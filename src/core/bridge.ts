@@ -288,17 +288,27 @@ export function bridgePage<T>(
     };
 }
 
+/**
+ * ‼️ B-29 — A NUMBER IN A STRING FIELD IS ITS TEXT, NOT NOTHING. `af.js sessions.find q=12345678`
+ * arrives as a number (an id prefix of digits only), and reading it as absent answered with the
+ * newest sessions instead of the one asked for. af.js coerces only text that round-trips, so
+ * `String(n)` is exactly what was typed.
+ */
+function strOf(v: unknown): string {
+    if (typeof v === 'string') { return v.trim(); }
+    return typeof v === 'number' && isFinite(v) ? String(v) : '';
+}
+
 /** A required string arg, trimmed. */
 export function argStr(args: Record<string, unknown>, key: string): string {
-    const v = args[key];
-    need(typeof v === 'string' && v.trim(), `Missing required string arg "${key}".`);
-    return (v as string).trim();
+    const v = strOf(args[key]);
+    need(v, `Missing required string arg "${key}".`);
+    return v;
 }
 
 /** An optional string arg ('' when absent). */
 export function optStr(args: Record<string, unknown>, key: string): string {
-    const v = args[key];
-    return typeof v === 'string' ? v.trim() : '';
+    return strOf(args[key]);
 }
 
 /**
