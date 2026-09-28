@@ -3124,12 +3124,14 @@
                                 : c.id === 'access' ? accessSection(c)
                                     : c.id === 'sentry' ? sentrySection(c)
                                         : c.id === 'discipline' ? disciplineSection(c)
+                                        : c.id === 'kapici' && window.AFKapici ? window.AFKapici.section(DATA.kapici, C) + c.items.map(itemHtml).join('')
                                         : c.id === 'flow' ? window.AFFlexSettings.html(DATA.flex, C, errors.flex)
                                             : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
         `;
 
         // -- wiring --
+        if (window.AFKapici) { window.AFKapici.wire(m => vscode.postMessage(m)); }
         /** U-139 — Enter releases a one-line box so its `change` handler runs.
          *  A multi-line box keeps Enter for its newline. Bound on the element
          *  the caller already has, never by a second query: two lookups of one

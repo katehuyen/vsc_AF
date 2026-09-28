@@ -811,7 +811,7 @@
             : `<span class="muted" title="${C.esc('This definition names no agent — the launcher asks for one, '
                 + 'or picks its default, at the moment it runs.')}">—</span>`}</td>
             ${launchCell(p)}
-            <td class="guardcell">${guard}</td>
+            <td class="guardcell">${guard}${p.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(p.kapici, C) + '</div>' : ''}</td>
             ${/* ‼️ M-25 — WHAT IT COST, AND WHAT THAT DIVIDES INTO. A money
                   figure with a run count under it implies a rate the reader was
                   being left to work out; and a $0.00 with runs behind it is the
@@ -3734,7 +3734,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                   panel (docs/CONVENTIONS.md): the run's identity belongs to this
                   cell, the reason it is not moving belongs to its status. */''}
             <td class="main">${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
-                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${roundBadge(r)}${r.supervisor && window.AFSupervisorStrip
+                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${roundBadge(r)}${r.kapici && window.AFKapici ? ' · ' + window.AFKapici.chip(r.kapici, C) : ''}${r.supervisor && window.AFSupervisorStrip
                     ? ' · ' + window.AFSupervisorStrip.badge(r.supervisor) + ' ' + C.esc(r.supervisor.word) : ''}</div>`,
             `${C.esc(r.agentName)} · ${window.AFTip.sizeNote(r.prompt)} of prompt`,
             window.AFTip.lines([

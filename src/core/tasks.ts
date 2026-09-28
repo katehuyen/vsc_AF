@@ -37,6 +37,7 @@ import { kindOfStep, mechanicalWords, resolveWake, wakeDirective, wakeFacts, Wak
 import { applyLive, decisionFromArg, landWords, liveLines, livePatch, pendingWords, RunLive, wordFromArg, WordSource, wordsForBrief } from './workflowLive';
 import { flexPoint } from './flexPoints';
 import { SupervisorCall, supervisorCall, supervisorTrail, SupervisorTrail } from './supervisorTrail';
+import type { KapiciChip } from './kapiciChip';
 import { DEFAULT_STEP_INPUT, KAPICI_MODEL, KapiciStepHook, kapiciStepRoute, KapiciStepSpec } from './kapiciStep';
 import { missionHandoffText } from './workflowMission';
 import { fillTool, toolCall, toolResolved, ToolStepSpec } from './toolCall';
@@ -172,6 +173,8 @@ export interface FarmTask {
     wokeAfter?: TaskStatus;
     /** U-153 — what the supervisor decided on this checkpoint visit (src/core/supervisorTrail.ts) */
     supervisorCall?: SupervisorCall;
+    /** U-155 — the Kapıcı verdict that routed this task to its agent (src/core/kapiciChip.ts) */
+    kapici?: KapiciChip;
     /** estimated cost of a media step (USD). */
     mediaCost?: number;
     /** why a requested start is waiting (concurrency / quota) — the sentence a
@@ -1335,6 +1338,8 @@ export interface FarmTrigger {
     skipCount?: number;
     lastSkippedAt?: number;
     lastSkipReason?: string;
+    /** U-155 — the last Kapıcı precondition verdict, fired or skipped */
+    lastKapici?: KapiciChip;
 }
 
 export interface FarmWorkflow {

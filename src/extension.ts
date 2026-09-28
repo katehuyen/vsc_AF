@@ -24029,6 +24029,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // that used to build their object out of input boxes — U-14).
     const toolboxDeps = {
         extensionUri: context.extensionUri,
+        kapiciRules: () => kapiciHost.ruleList(),
         getAgents: () => agents,
         index,
         cacheFile: toolboxProbeCacheFile,
@@ -39748,6 +39749,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // find out — is not what a list of `agentFarm.*` keys is for.
                     openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
                     openAccounts: () => { AccountsPanel.show(accountsPanelDeps); },
+                    kapici: () => ({ ...kapiciHost.status(), agreement: kapiciHost.agreement(30) }),
+                    openSecrets: () => { void vscode.commands.executeCommand('agentfarm.openSecrets'); },
                     // U-29 — the per-agent model box reads the chosen engine's own
                     // catalog, not a list typed into a setting.
                     engineModels: () => engineModelMatrix(),

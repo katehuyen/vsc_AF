@@ -1,3 +1,4 @@
+import { chipOf, KapiciChip } from './kapiciChip';
 import { extractJson, sanitizePrompt } from './util';
 import { execOneShot } from './oneShot';
 import { ConsumerSetting, gate } from './kapici/shadow';
@@ -25,6 +26,8 @@ export interface DispatchResult {
     agent?: string;
     method: 'rule' | 'model' | 'kapici' | 'none';
     reason: string;
+    /** U-155 — set when Kapıcı picked the agent: what the row's chip draws */
+    kapici?: KapiciChip;
 }
 
 /** agentFarm.kapici.dispatch: off (default) never calls it; shadow audits beside today's path; on asks it before the classifier. */
@@ -114,7 +117,7 @@ export async function dispatchText(
         decisionOf: r => r.agent ?? 'none',
         fromVerdict: v => {
             const known = candidates.find(c => c.name.toLowerCase() === v.decision.toLowerCase());
-            return known ? { agent: known.name, method: 'kapici', reason: v.reason } : undefined;
+            return known ? { agent: known.name, method: 'kapici', reason: v.reason, kapici: chipOf(v, 'dispatch', known.name) } : undefined;
         },
         log: k.log
     })).value;

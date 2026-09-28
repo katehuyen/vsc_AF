@@ -39,6 +39,7 @@ import { BROWSER_RECIPES, browserRecipe } from '../core/browserRecipes';
 import { publishRefusal, type PublishSpec } from '../core/publishStep';
 import { metricsRefusal, type MetricsSpec } from '../core/contentMetrics';
 import { kapiciStepRefusal, type KapiciStepSpec } from '../core/kapiciStep';
+import type { KapiciChip } from '../core/kapiciChip';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -306,6 +307,8 @@ interface PlanRow {
     engine: string;
     guard: string;
     hasGuard: boolean;
+    /** U-155 — a Kapıcı guard's last verdict */
+    kapici?: KapiciChip;
     /** false for definitions with no on/off state (workflows, templates) */
     switchable: boolean;
     enabled: boolean;
@@ -666,6 +669,7 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
                 ? '' : engineOf(t.action.engine).label,
             guard: describePrecondition(t.fireIf),
             hasGuard: !!t.fireIf?.kind,
+            ...(t.lastKapici ? { kapici: t.lastKapici } : {}),
             switchable: true, enabled: t.enabled,
             ...st,
             lastNote: t.lastSkipReason && !st.lastReason ? t.lastSkipReason
@@ -870,6 +874,7 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             hasOutput: !!t.outputFile,
             ...(t.status === 'queued' && t.supervision ? { supervised: true } : {}),
             ...(t.supervisorCall ? { supervisor: trailRow({ ...t, supervisorCall: t.supervisorCall }) } : {}),
+            ...(t.kapici ? { kapici: t.kapici } : {}),
             outputFile: t.outputFile,
             sessionFile: t.costSessionFile,
             // ‼️ M-8 — the id, not just the path. A transcript file is named

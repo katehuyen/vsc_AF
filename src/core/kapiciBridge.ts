@@ -12,7 +12,8 @@ import type { SupervisorKapici } from './kapiciSupervisor';
 import { gitDiff, TriggerKapici } from './kapiciTrigger';
 import { KapiciStepHook, stepRuleFit } from './kapiciStep';
 import { ConsumerSetting } from './kapici/shadow';
-import { AuditEntry, readAudit } from './kapici/audit';
+import { readAudit } from './kapici/audit';
+import { Agreement, shadowAgreement } from './kapici/agreement';
 import { BUILTIN_RULES } from './kapici/builtinRules';
 import { DEFAULT_TIMEOUT_MS, Kapici, standardProviders } from './kapici/kapici';
 import { FetchLike, JEV_ROUTES, JevRoute } from './kapici/providers/jev';
@@ -141,6 +142,26 @@ export class KapiciHost {
         };
     }
 
+    /** The rules and the files that failed, as kapici.rules answers them. */
+    ruleList(projectRoot?: string) {
+        const { rules, problems } = this.registry.load(projectRoot);
+        return {
+            rules: rules.map(l => ({
+                id: l.rule.id, version: l.rule.version, description: l.rule.description, layer: l.layer, ...(l.file ? { file: l.file } : {}),
+                ...(l.overrides?.length ? { overrides: l.overrides } : {}), providers: l.rule.providers ?? null,
+                questions: Object.fromEntries(Object.entries(l.rule.questions).map(([id, q]) => [id, q.type + (q.check ? ' (local check)' : '')])),
+                minConfidence: l.rule.minConfidence, onLowConfidence: l.rule.onLowConfidence, onFailure: l.rule.onFailure,
+                golden: l.rule.golden.length, ...(l.rule.sensitive ? { sensitive: true } : {})
+            })),
+            problems
+        };
+    }
+
+    /** Per consumer, how often the shadow agreed over the last `days`. */
+    agreement(days = 30): Record<string, Agreement> {
+        return shadowAgreement(readAudit(this.d.auditDir, { since: Date.now() - days * 86_400_000, limit: 5000 }));
+    }
+
     status() {
         const s = this.d.settings();
         const k = this.key();
@@ -189,30 +210,6 @@ export function meets(a: KapiciAnswer | undefined, want: string | boolean | numb
     return a.choice === want;
 }
 
-export interface Agreement {
-    compared: number; agreed: number; rate: number;
-    /** Kapici's confidence over the compared decisions. */
-    confidence: { min: number; median: number; max: number };
-    /** The newest few where the two differed. */
-    disagreements: { at: string; kapici: string; actual: string; confidence: number }[];
-}
-
-/** Per consumer: how often Kapici's decision matched what today's mechanism did (entries newest first). */
-export function shadowAgreement(entries: AuditEntry[]): Record<string, Agreement> {
-    const by: Record<string, AuditEntry[]> = {};
-    for (const e of entries) { if (e.actual !== undefined) { (by[e.consumer] = by[e.consumer] ?? []).push(e); } }
-    const r3 = (n: number) => Math.round(n * 1000) / 1000;
-    return Object.fromEntries(Object.entries(by).map(([c, list]) => {
-        const agreed = list.filter(e => e.agreed).length;
-        const conf = list.map(e => e.confidence ?? 0).sort((a, b) => a - b);
-        return [c, {
-            compared: list.length, agreed, rate: r3(agreed / list.length),
-            confidence: { min: r3(conf[0]), median: r3(conf[Math.floor((conf.length - 1) / 2)]), max: r3(conf[conf.length - 1]) },
-            disagreements: list.filter(e => !e.agreed).slice(0, 5).map(e => ({ at: e.at, kapici: e.decision, actual: e.actual as string, confidence: e.confidence }))
-        }];
-    }));
-}
-
 export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): void {
     const project = (args: Record<string, unknown>) => optStr(args, 'project') || undefined;
     bridge.register([
@@ -239,16 +236,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
             op: 'kapici.rules',
             describe: 'Every Kapıcı rule visible (from a project too, with project=<root>): id, version, description, the layer that won (builtin | system | project) and what it overrode, its file, providers, questions, golden example count; plus every rule file that failed, with the reason.',
             handler: async (args) => {
-                const { rules, problems } = host.registry.load(project(args));
-                return {
-                    rules: rules.map(l => ({
-                        id: l.rule.id, version: l.rule.version, description: l.rule.description, layer: l.layer, ...(l.file ? { file: l.file } : {}),
-                        ...(l.overrides?.length ? { overrides: l.overrides } : {}), providers: l.rule.providers ?? null,
-                        questions: Object.fromEntries(Object.entries(l.rule.questions).map(([id, q]) => [id, q.type + (q.check ? ' (local check)' : '')])),
-                        golden: l.rule.golden.length, ...(l.rule.sensitive ? { sensitive: true } : {})
-                    })),
-                    problems
-                };
+                return host.ruleList(project(args));
             }
         },
         {

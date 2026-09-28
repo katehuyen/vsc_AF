@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.750.0 - Kapıcı shows what it decided, where you already look (2026-09-28)
+
+- A trigger guarded by Kapıcı shows its last answer under the guard on the Plan
+  tab — fired or skipped, and how sure — and a task Kapıcı sent to its agent
+  shows the same small chip on the Runs tab. Hover it for each question's
+  answer, who answered and how fast.
+- Farm Settings has a Kapıcı section: every Kapıcı setting in one place, headed
+  by whether its key is in the Secret vault (never the key itself), how many
+  rules it has and whether any rule file is broken, and — for each part in
+  shadow — how often Kapıcı agreed with what happened. A button opens the
+  Secret vault.
+- The Toolbox has a Kapıcı tab listing every rule it can ask.
+
 ## 3.749.0 - A Kapıcı step can decide whether a workflow goes on (2026-09-28)
 
 - A workflow has a new kind of step, Kapıcı: it reads what the run has made so

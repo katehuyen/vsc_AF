@@ -235,7 +235,7 @@ const CATEGORY_OF: Record<string, string> = {
     dispatchRules: 'tasks', dispatchClassifier: 'tasks', modelPolicy: 'tasks',
     quotaDowngradePercent: 'tasks', quotaDowngradeModel: 'tasks',
     judgeArgs: 'tasks', judgeUnjudged: 'tasks', judgeCompare: 'tasks',
-    'kapici.rulesDir': 'tasks', 'kapici.timeoutMs': 'tasks', 'kapici.providers': 'tasks', 'kapici.route': 'tasks', 'kapici.keyName': 'tasks', 'kapici.dispatch': 'tasks', 'kapici.retry': 'tasks', 'kapici.trigger': 'tasks', 'kapici.workflow': 'tasks',workflowPrevTextChars: 'tasks', workflowAskEscalation: 'tasks', toolOutDir: 'media', toolOverwrite: 'media', libraryEnrich: 'media', airtableInputStages: 'media', showrunner: 'tasks', workflowSpendCap: 'tasks', judgeLadder: 'tasks', airtableInputLimit: 'media', airtableInputSort: 'media', studioLibraryBase: 'media', studioLibraryStages: 'media', studioLibraryKind: 'media', studioLibrarySuccess: 'media', studioLibraryPromote: 'media', allInUnsure: 'media', allInWhen: 'media',libraryEnrichScope: 'media', libraryEnrichModel: 'media', libraryEnrichVideoModel: 'media', libraryEnrichEffort: 'media', libraryEnrichSections: 'media', libraryEnrichCap: 'media', mediaUploadAuto: 'media', mediaUploadProvider: 'media', mediaUploadRetentionDays: 'media', evalRunArgs: 'tasks', taskRetry: 'tasks',
+    'kapici.rulesDir': 'kapici', 'kapici.timeoutMs': 'kapici', 'kapici.providers': 'kapici', 'kapici.route': 'kapici', 'kapici.keyName': 'kapici', 'kapici.dispatch': 'kapici', 'kapici.retry': 'kapici', 'kapici.trigger': 'kapici', 'kapici.workflow': 'kapici',workflowPrevTextChars: 'tasks', workflowAskEscalation: 'tasks', toolOutDir: 'media', toolOverwrite: 'media', libraryEnrich: 'media', airtableInputStages: 'media', showrunner: 'tasks', workflowSpendCap: 'tasks', judgeLadder: 'tasks', airtableInputLimit: 'media', airtableInputSort: 'media', studioLibraryBase: 'media', studioLibraryStages: 'media', studioLibraryKind: 'media', studioLibrarySuccess: 'media', studioLibraryPromote: 'media', allInUnsure: 'media', allInWhen: 'media',libraryEnrichScope: 'media', libraryEnrichModel: 'media', libraryEnrichVideoModel: 'media', libraryEnrichEffort: 'media', libraryEnrichSections: 'media', libraryEnrichCap: 'media', mediaUploadAuto: 'media', mediaUploadProvider: 'media', mediaUploadRetentionDays: 'media', evalRunArgs: 'tasks', taskRetry: 'tasks',
     /**
      * ‼️ X-193 — THE SENTRY IS ITS OWN SECTION, and thirteen settings is the
      * argument. They were filed under Tasks & Automation because each of them,
@@ -352,6 +352,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['discipline', 'Handover Discipline'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
+    ['kapici', 'Kapıcı — the decision gate'],
     ['flow', 'Flow & Content — preferences and presets'],
     ['sentry', 'Sentry — unattended campaigns'],
     ['media', 'Media & Browser'],

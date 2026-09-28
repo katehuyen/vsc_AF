@@ -23,12 +23,14 @@
         // SERVICES, so it has no count for the tab bar and no count card on the
         // overview. Both places are guarded by name rather than by a `counts`
         // lookup that would quietly draw "0".
-        { id: 'service', label: 'Services' }
+        { id: 'service', label: 'Services' },
+        // U-155 — Kapıcı's rules: like services, not an inventory of files, so it has no count either
+        { id: 'kapici', label: 'Kapıcı' }
     ];
 
     /** The tabs that are an inventory of files. `service` is deliberately not
      *  one of them — see the note on TABS. */
-    const COUNTED = TABS.filter(t => t.id !== 'overview' && t.id !== 'service');
+    const COUNTED = TABS.filter(t => t.id !== 'overview' && t.id !== 'service' && t.id !== 'kapici');
 
     const EXPLAIN = {
         skill: 'Multi-step procedures claude loads on demand — invoked as /name or picked automatically when the task matches the description.',
@@ -812,6 +814,15 @@
         </div>`;
     }
 
+    /** U-155 — the rules Kapıcı can ask, which layer won, and the files that failed to load. */
+    function kapiciTab() {
+        const K = DATA.kapici || { rules: [], problems: [] };
+        const broken = (K.problems || []).map(p => `<li><code>${esc(p.file || p.layer || '?')}</code> — ${esc(p.error)}</li>`).join('');
+        return `<p class="muted small">Kapıcı answers a yes/no, a choice or a score from a rule, without a model. A rule file in an agent root's _KAPICI folder (or the folder Farm Settings names) replaces a built-in one with the same id.</p>`
+            + (window.AFKapici ? window.AFKapici.rules(K.rules, C) : '')
+            + (broken ? `<h3>Rule files that did not load</h3><ul>${broken}</ul>` : '');
+    }
+
     function serviceTab() {
         return window.AFTelegram.card(tg(), {
             controls: true, agents: DATA.agents || [], msg: svcMsg
@@ -860,7 +871,7 @@
         const total = Object.keys(c).reduce((a, k) => a + c[k].user + c[k].agent, 0);
         const tabBar = TABS.map(t => {
             // ‼️ The services tab counts nothing — see the note on TABS.
-            const n = (t.id === 'overview' || t.id === 'service') ? '' :
+            const n = (t.id === 'overview' || t.id === 'service' || t.id === 'kapici') ? '' :
                 ` <span class="cnt">${(c[t.id] || { user: 0, agent: 0 }).user + (c[t.id] || { user: 0, agent: 0 }).agent}</span>`;
             return `<button class="seg${state.tab === t.id ? ' active' : ''}" data-tab="${t.id}">${t.label}${n}</button>`;
         }).join('');
@@ -874,7 +885,8 @@
             state.tab === 'hook' ? hookTab() :
             state.tab === 'plugin' ? pluginTab() :
             state.tab === 'style' ? styleTab() :
-            state.tab === 'service' ? serviceTab() : settingsTab();
+            state.tab === 'service' ? serviceTab() :
+            state.tab === 'kapici' ? kapiciTab() : settingsTab();
 
         document.getElementById('app').innerHTML = `
             <style>

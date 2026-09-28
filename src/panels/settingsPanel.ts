@@ -120,6 +120,9 @@ export interface FarmSettingsDeps {
     openEngines?(): void;
     /** X-237 — open the Accounts page, the Engines page's accounts section on its own. */
     openAccounts?(): void;
+    /** U-155 — Kapıcı's status (the key present or not, never its value; rules; shadow agreement) and the vault it points to */
+    kapici?(): unknown;
+    openSecrets?(): void;
     /** U-29 — what each engine currently offers, so the per-agent model box
      *  is drawn from the engine's own catalog rather than a typed list. */
     engineModels?(): Record<string, EngineModels>;
@@ -592,6 +595,7 @@ export class FarmSettingsPanel {
             // happened in the terminal thirty seconds ago is exactly the change
             // somebody comes back to this page to confirm.
             engines: this.deps.engines?.() ?? null,
+            kapici: this.deps.kapici?.() ?? null,
             // U-84 — read on every draw for the same reason the four above are:
             // a token connected in another window, a poll that has just failed
             // and today's spend are all facts that change under an open page.
@@ -793,6 +797,9 @@ export class FarmSettingsPanel {
                 break;
             case 'openAccounts':
                 this.deps.openAccounts?.();
+                break;
+            case 'openSecrets':
+                this.deps.openSecrets?.();
                 break;
             case 'engineKey':
                 if (typeof msg.name === 'string' && msg.name) {

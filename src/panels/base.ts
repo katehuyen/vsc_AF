@@ -484,6 +484,8 @@ export function htmlShell(
     const metrics = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afMetrics.js'));
     // M-60 — the Kapıcı step's card row
     const kapiciStep = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afKapiciStep.js'));
+    // U-155 — Kapıcı's chip, Farm Settings' section head and the Toolbox's rule list
+    const kapiciUi = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afKapici.js'));
     // M-49 — the tool step's recipes as data (read by afFlex.js too, so it loads first) and its step-card row
     const recipes = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRecipes.js'));
     const tool = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTool.js'));
@@ -579,6 +581,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${publish}"></script>
 <script nonce="${nonce}" src="${metrics}"></script>
 <script nonce="${nonce}" src="${kapiciStep}"></script>
+<script nonce="${nonce}" src="${kapiciUi}"></script>
 <script nonce="${nonce}" src="${tool}"></script>
 <script nonce="${nonce}" src="${library}"></script>
 <script nonce="${nonce}" src="${airtableInput}"></script>

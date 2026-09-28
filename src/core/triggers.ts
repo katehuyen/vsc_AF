@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
 import { DispatchKapici, DispatchRule, dispatchText } from './dispatch';
 import { kapiciFiring, TriggerKapici } from './kapiciTrigger';
+import { chipOf } from './kapiciChip';
 import { LiveEvent, LiveMonitor } from './live';
 import { FarmTrigger, RunDimensions, runExtras, TaskManager, TaskMode } from './tasks';
 import { normPath, safeReadFile, truncate } from './util';
@@ -147,6 +148,7 @@ export class TriggerManager implements vscode.Disposable {
             .then(v => {
                 const t = this.tasks.triggers.find(x => x.id === trigger.id);
                 if (!t || !t.enabled) { return; }
+                if (v.verdict) { t.lastKapici = chipOf(v.verdict, 'trigger', v.fire ? 'fired' : 'skipped'); }
                 if (v.fire) { this.fire(t, reason, payload, file); } else { this.skip(t, v.detail); }
             })
             .finally(() => this.asking.delete(trigger.id));
@@ -246,6 +248,7 @@ export class TriggerManager implements vscode.Disposable {
         const dims = action as RunDimensions;
         const task = this.tasks.addTask(agent, `${action.title} → ${agent.name}`, prompt, action.mode,
             { fromTrigger: trigger.id, projectId: dims.projectId || undefined, ...runExtras(dims) });
+        if (result.kapici) { task.kapici = result.kapici; }
         void vscode.window.showInformationMessage(
             `Agent Farm: dispatch "${trigger.title}" (${reason}) → ${agent.name} [${result.method}: ${truncate(result.reason, 60)}].`);
         this.tasks.startTask(task);

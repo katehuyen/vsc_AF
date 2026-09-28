@@ -35,6 +35,8 @@ export interface ToolboxPanelDeps {
     index: SessionIndex;
     /** disk cache for MCP probe results (shared with the bridge op) */
     cacheFile: string;
+    /** U-155 — every Kapıcı rule and every rule file that failed (the kapici.rules op's answer) */
+    kapiciRules?(): unknown;
     refreshTrees(): void;
     home?: string;
     /** U-84 — optional so every existing caller and test keeps working; the
@@ -138,7 +140,8 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
             userClaudeDir: userClaudeDir(deps.home),
             userConfigJson: userConfigJson(deps.home)
         },
-        services: buildServices(deps)
+        services: buildServices(deps),
+        kapici: deps.kapiciRules ? deps.kapiciRules() : null
     };
 }
 
