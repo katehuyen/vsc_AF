@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.756.0 - A table's last row opens its hover panel whole (2026-09-29)
+
+- A hover panel in the last row or two of a table (Tasks → Plan and Runs: the
+  title, the status, the Kapıcı chip; every other table page too) was cut at
+  the table's floor, and the table grew a scrollbar where the rest of it went,
+  even with the whole window free below. The panel now measures the box that
+  really clips it: it opens upwards inside the table when that is roomier, and
+  a panel the table cannot hold either way is lifted out of it and placed on
+  the window, under or over its row.
+- The bridge catalogue now says that a task's retry supervisor can be Kapıcı
+  (`retry.supervisor.engine: "kapici"`, no model asked) — it always could, but
+  nothing told an agent reading `tasks.add`.
+
 ## 3.755.0 - A baton relay's chain id works like a session id (2026-09-29)
 
 - Typing a chain id (`chn_…`) into the Sessions page's filter box, the Search

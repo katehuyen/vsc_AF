@@ -74,8 +74,12 @@
         if (!vw || !vh || !h || !wd) { done(); return; }
         // Vertical: below the anchor by default, above it when below does not
         // fit AND above is the roomier half. Where neither fits, the roomier
-        // half still shows more of the panel than the cramped one.
-        if (h > vh - EDGE - a.bottom && a.top - EDGE > vh - EDGE - a.bottom) {
+        // half still shows more of the panel than the cramped one. Measured
+        // against the box that really clips it (U-162), not the window alone.
+        const box = clipBox(tip, vw, vh);
+        const below = box.b - a.bottom, above = a.top - box.t;
+        if (box.y && h > Math.max(below, above) && escape(w, a, h, wd, vw, vh)) { done(); return; }
+        if (h > below && above > below) {
             w.classList.add('af-up');
         }
         // Horizontal only where the page has not already decided it.
@@ -83,8 +87,50 @@
             && wd > vw - EDGE - a.left && a.right - EDGE > vw - EDGE - a.left) {
             w.classList.add('af-left');
         }
-        contain(w, tip, vw);
+        contain(w, tip, box);
         done();
+    }
+
+    /* ------------------------------------------------------------------
+       ‼️ U-162 — THE BOX THAT CLIPS A PANEL CLIPS IT IN BOTH DIRECTIONS.
+
+       `.tablewrap { overflow-x:auto }` is also a scroll box vertically — CSS
+       computes the other axis to auto — so the panel of a table's last row
+       was cut at the table's floor, with a scrollbar where the rest of it
+       went, while the window below had all the room it needed. So the flip
+       reads the window narrowed by every ancestor whose overflow is not
+       visible, on each axis; and a panel that box cannot hold either way
+       leaves it — `af-fixed` places it on the window, under the anchor or
+       over it, only while it is open (common.css).
+       ------------------------------------------------------------------ */
+    function clipBox(tip, vw, vh) {
+        const box = { l: EDGE, r: vw - EDGE, t: EDGE, b: vh - EDGE, y: false };
+        if (typeof getComputedStyle !== 'function') { return box; }
+        for (let n = tip.offsetParent; n && n !== doc.documentElement && n !== doc.body; n = n.parentElement) {
+            const cs = getComputedStyle(n);
+            if (!cs) { continue; }
+            const x = /auto|scroll|hidden|clip/.test(cs.overflowX || '');
+            const y = /auto|scroll|hidden|clip/.test(cs.overflowY || '');
+            if (!x && !y) { continue; }
+            const c = n.getBoundingClientRect();
+            if (x) { box.l = Math.max(box.l, c.left); box.r = Math.min(box.r, c.right); }
+            if (y && c.top > box.t) { box.t = c.top; box.y = true; }
+            if (y && c.bottom < box.b) { box.b = c.bottom; box.y = true; }
+        }
+        return box;
+    }
+
+    function escape(w, a, h, wd, vw, vh) {
+        const tip = w.querySelector('.af-tip');
+        if (!tip || !tip.style || typeof tip.style.setProperty !== 'function') { return false; }
+        const winBelow = vh - EDGE - a.bottom, winAbove = a.top - EDGE;
+        const top = h <= winBelow || winBelow >= winAbove ? a.bottom + 2 : Math.max(EDGE, a.top - h - 2);
+        const want = w.classList.contains('tip-right') ? a.right - wd : a.left;
+        const left = Math.max(EDGE, Math.min(want, vw - EDGE - wd));
+        tip.style.setProperty('--af-fix-t', Math.round(top) + 'px');
+        tip.style.setProperty('--af-fix-l', Math.round(left) + 'px');
+        w.classList.add('af-fixed');
+        return true;
     }
 
     /* ------------------------------------------------------------------
@@ -104,27 +150,20 @@
        ------------------------------------------------------------------ */
     function unfit(w, tip) {
         w.classList.remove('af-fit');
+        w.classList.remove('af-fixed');
         if (tip.style && typeof tip.style.removeProperty === 'function') {
             tip.style.removeProperty('--af-fit-l');
             tip.style.removeProperty('--af-fit-w');
+            tip.style.removeProperty('--af-fix-t');
+            tip.style.removeProperty('--af-fix-l');
         }
     }
 
-    function contain(w, tip, vw) {
+    function contain(w, tip, box) {
         if (!tip.style || typeof tip.style.setProperty !== 'function') { return; }
         const b = tip.getBoundingClientRect();
         if (!b || !isFinite(b.left) || !isFinite(b.right) || !(b.right > b.left)) { return; }
-        let l = EDGE, r = vw - EDGE;
-        if (typeof getComputedStyle === 'function') {
-            for (let n = tip.offsetParent; n && n !== doc.documentElement && n !== doc.body; n = n.parentElement) {
-                const cs = getComputedStyle(n);
-                if (cs && /auto|scroll|hidden|clip/.test(cs.overflowX || '')) {
-                    const c = n.getBoundingClientRect();
-                    l = Math.max(l, c.left);
-                    r = Math.min(r, c.right);
-                }
-            }
-        }
+        const l = box.l, r = box.r;
         if (b.left >= l - 0.5 && b.right <= r + 0.5) { return; }
         // Its own width, unrounded downwards, unless the box forces less: a
         // pixel shaved off a panel that fits re-wraps its longest line.

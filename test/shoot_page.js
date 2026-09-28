@@ -83,10 +83,18 @@ function instrument(html, scene) {
         + 'for(var i=0;i<hs.length;i++){if(i!==' + (scene - 1) + '){'
         + 'if(hs[i]){hs[i].remove();}if(pg[i]){pg[i].remove();}}}'
         : '';
-    const probe = '<script>window.addEventListener("load",function(){'
+    // ‼️ U-162 — AN OPEN PANEL IS DRAWN WHERE THE PAGE WOULD PUT IT. The render
+    // opens a `tip:` scene's panel with the static `af-on`, and no page script
+    // runs, so the edge flip never happened: a panel the real page opens upwards
+    // or lifts out of its table was photographed cut at the table's floor. The
+    // component is loaded here and flips every open panel once the scene is cut.
+    const edge = '<script>' + fs.readFileSync(path.join(ROOT, 'media', 'afTipEdge.js'), 'utf8').replace(/<\/script/gi, '<\\/script') + '</script>';
+    const flipOpen = 'if(window.AFTipEdge){[].slice.call(document.querySelectorAll(".af-tipw.af-on")).forEach(function(w){window.AFTipEdge.flip(w);});}';
+    const probe = edge + '<script>window.addEventListener("load",function(){'
         + 'var hs=[].slice.call(document.querySelectorAll("h1.rndr-h"));'
         + 'var t=hs.map(function(e){return e.textContent;});'
         + keep
+        + flipOpen
         + 'if(location.search.indexOf("af=measure")<0){return;}'
         // ‼️ MEASURE WHAT IS DRAWN, NOT WHAT THE PAGE SAYS IT IS.
         //

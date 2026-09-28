@@ -40,7 +40,7 @@ const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
     ok('‼️ A-12 still holds: a CLOSED panel carries no fit width — the collapse rule is not overruled',
         !/\.af-tipw\.af-fit > \.af-tip/.test(css) && !/--af-fit-w[^;]*!important/.test(css));
     const tip = rd('media/afTipEdge.js');
-    ok('the flip hands every non-free panel to contain()', /\n\s*contain\(w, tip, vw\);/.test(tip));
+    ok('the flip hands every non-free panel to contain()', /\n\s*contain\(w, tip, box\);/.test(tip));
     ok('…and clears the last answer before measuring a new one', /unfit\(w, tip\);/.test(tip));
     const con = rd('media/console.js');
     ok('the Console caps an ordinary panel at a reading width',
@@ -108,7 +108,7 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     fs.writeFileSync(expr, wrap(src), 'utf8');
     // The same component with contain() taken out — so the guard is shown to
     // bite on the very page it certifies, not assumed to.
-    fs.writeFileSync(exprOff, wrap(src.replace(/\n(\s*)contain\(w, tip, vw\);/, '\n$1/* off */')), 'utf8');
+    fs.writeFileSync(exprOff, wrap(src.replace(/\n(\s*)contain\(w, tip, box\);/, '\n$1/* off */')), 'utf8');
     const measure = (file, width) => {
         try { return JSON.parse(node([path.join('test', 'measure_page.js'), 'console', '@' + file, '--width', String(width)])); }
         catch { return null; }

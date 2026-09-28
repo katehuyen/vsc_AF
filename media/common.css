@@ -420,6 +420,13 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     left: var(--af-fit-l); right: auto;
     max-width: var(--af-fit-w); min-width: min(280px, var(--af-fit-w));
 }
+/* ‼️ U-162 — A PANEL THE BOX AROUND IT CANNOT HOLD EITHER WAY LEAVES IT
+   (afTipEdge.js escape()): placed on the window, under or over its anchor.
+   Open states only, for the reason af-fit is. */
+.af-tipw.af-fixed:is(:hover, .af-open, .af-on, .af-hold, .af-measure) > .af-tip {
+    position: fixed; top: var(--af-fix-t); left: var(--af-fix-l);
+    right: auto; bottom: auto; margin: 0; z-index: 60;
+}
 /* ‼️ U-146 — A PANEL IS NEVER SEEN THROUGH A DIMMED ROW. Opacity below 1 on an
    ancestor composites the panel at that opacity too, and nothing on the panel
    can undo it; afTipEdge.js marks such an ancestor `af-dimhost` and this lifts
