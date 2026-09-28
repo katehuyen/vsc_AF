@@ -175,6 +175,16 @@ const r = runPage('accounts.js', DATA);
         rows.length > 0 && rows.every(w => !w.at || w.resetCls === (w.at !== 'no reset time')));
     ok('…and the page says the stale red beats the user\'s own colour for the clock figures',
         /\.acwr\.stale, \.acwr\.stale \.afq-left, \.acwr\.stale \.afq-reset \{ color:/.test(read('media', 'afAccounts.js')));
+    // U-164 — "1d 20h left Sep 30, 2026, 07:00 PM" was cut after "P" by a fixed 170px column
+    {
+        const css = read('media', 'afAccounts.js');
+        const acwr = (css.match(/\.acwr \{[^}]*\}/) || [''])[0];
+        ok('U-164: the clock column is never cut — no fixed width, no ellipsis',
+            acwr && !/overflow:hidden|text-overflow|[^-]width:170px/.test(acwr) && /min-width:170px/.test(acwr));
+        ok('…the rows share one grid, so the widest clock sets the column and the tracks stay equal',
+            /\.acwgrid \{ display:grid; grid-template-columns:auto auto minmax\(40px,1fr\) auto;/.test(css)
+            && /\.acwgrid > \.acwrow \{ display:contents; \}/.test(css) && /'<div class="acwgrid">' \+ drawn\.map\(barRow\)/.test(css));
+    }
     ok('every window is a row of its own, and there are as many as the data carries',
         rows.length === fixture.data().accounts.reduce((n, a) => n + (a.bars || []).filter(b => b.percent >= 0).length, 0));
     /**

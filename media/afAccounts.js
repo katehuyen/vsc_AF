@@ -172,7 +172,7 @@
         // other case only: a reading with a percentage and NO window list,
         // where there is no short name to put in the gutter at all.
         const rows = drawn.length
-            ? drawn.map(barRow).join('')
+            ? '<div class="acwgrid">' + drawn.map(barRow).join('') + '</div>'
             : '<div class="acwt"><span>' + esc(winName) + '</span><strong class="afq-pct">' + a.percent + '%</strong></div>'
                 + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>';
         // U-144 — only the caption layout still needs a line of its own; a
@@ -1380,8 +1380,13 @@
            is the fact and stays readable; the time of day is the check on it
            and steps back. A window that has already turned over says so in the
            colour that means the figure beside it is stale. */
-        .acwr { flex:none; width:170px; font-size:11px; font-variant-numeric:tabular-nums;
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        /* U-164 - the clock is never cut: the rows share one grid, so the
+           widest clock sets the column and the tracks stay the same length. */
+        .acwgrid { display:grid; grid-template-columns:auto auto minmax(40px,1fr) auto;
+            column-gap:6px; row-gap:2px; align-items:center; line-height:1; }
+        .acwgrid > .acwrow { display:contents; }
+        .acwr { min-width:170px; font-size:11px; font-variant-numeric:tabular-nums;
+            white-space:nowrap; }
         .acwc { opacity:.6; margin-left:5px; }
         .acwr.stale, .acwr.stale .afq-left, .acwr.stale .afq-reset { color:var(--vscode-charts-red,#f14c4c); }
         .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }

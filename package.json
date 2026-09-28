@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.753.0",
+  "version": "3.754.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8951,7 +8951,7 @@
           "type": "number",
           "default": 240,
           "minimum": 0,
-          "description": "Stuck warning: a working session with no hook events for this many seconds is marked STALLED — Needs You gets a row, and the alert plays when notifyStuck is on. Any value you like; 0 = never: no session is ever marked stalled and no stuck warning is given, however long it is silent."
+          "description": "Stuck warning — WHEN: a working session with no hook events for this many seconds is marked STALLED (its card says so and Needs You gets a row, whether or not notifyStuck is on). Any value you like; 0 = never: no session is ever marked stalled, so notifyStuck has nothing to announce."
         },
         "agentFarm.quotaStyle.percent": {
           "type": "string",
@@ -8976,7 +8976,7 @@
         "agentFarm.notifyStuck": {
           "type": "boolean",
           "default": true,
-          "description": "Show a notification when an agent looks stalled — after stuckThresholdSeconds of silence (0 there = never)."
+          "description": "Stuck warning — HOW: also pop up a notification when a session is marked stalled. Off, the stalled mark and the Needs You row still appear, without the pop-up. Nothing to announce while stuckThresholdSeconds is 0."
         },
         "agentFarm.notifyTurnEnd": {
           "type": "boolean",

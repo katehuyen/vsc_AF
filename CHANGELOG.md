@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.754.0 - One quota reading, everywhere at once; the quota clock is never cut; the stuck warning explains itself (2026-09-29)
+
+- A quota figure read anywhere now reaches every place that shows it at the
+  same moment. The toolbar and the account boxes asked the same service about
+  the same sign-in but each kept its own answer, so the Console's account box
+  could say 54% while the toolbar still said 37% for a long while. Both now
+  keep the newest reading of each sign-in in one place, and a new reading
+  repaints the toolbar, the Console, the Accounts page and the Engines page
+  together.
+- The Accounts page no longer cuts a window's reset time ("1d 20h left
+  Sep 30, 2026, 07:00 P…"): the clock column is as wide as its longest clock,
+  and the bars in a card stay the same length.
+- Settings ▸ Stuck warning says what each part does: the number decides when a
+  silent session counts as stalled (0 = never), and the box only adds a pop-up
+  on top of that mark — the mark and the Needs You row come either way.
+
 ## 3.753.0 - A resumed session keeps its effort and mode on every door; digit-only ids reach the op (2026-09-29)
 
 - Resuming a session from an agent's call (console.start with resume) came back

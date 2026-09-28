@@ -884,7 +884,10 @@ async function main() {
         // posts the sentence itself (two announcers = two notices per fall).
         const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         ok('‼️ extension.ts wires the announcement onto the thing that measures',
-            ext.includes('onRead: usage => { announceSlotHealth(usage); ConsolePanel.postAccountsIfOpen(); }'));
+            /onRead: usage => \{\s*announceSlotHealth\(usage\); ConsolePanel\.postAccountsIfOpen\(\);/.test(ext));
+        // U-160 — the same reading reaches the toolbar and the account pages at once
+        ok('U-160: onRead also repaints the toolbar and the Accounts / Engines pages',
+            /ConsolePanel\.postAccountsIfOpen\(\);\s*planUsageBar\.paint\(\); AccountsPanel\.refreshIfOpen\(\); EnginesPanel\.refreshIfOpen\(\);/.test(ext));
         ok('…the fleet remembers what it already said, outliving every campaign',
             ext.includes('DOWN_SLOTS_KEY') && ext.includes('globalState.update(DOWN_SLOTS_KEY'));
         ok('…and the sentry turn no longer posts it itself',

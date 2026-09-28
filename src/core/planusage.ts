@@ -23,6 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as https from 'https';
 import { UsageGate, UsageVerdict, tokenKey, DEFAULT_CROSS_SERVICE_MS } from './usageGate';
+import { UsageShelf, newerReading } from './usageShelf';
 
 /**
  * ‼️ THE INTERVAL WAS NEVER THE REASON FOR THE 429s — THE MISSING User-Agent WAS.
@@ -435,6 +436,8 @@ export interface PlanUsageOptions {
      * is what every test that does not care about the other reader wants.
      */
     gate?: UsageGate;
+    /** U-160 — the readings both services took, so neither serves an older figure than the other has. */
+    shelf?: UsageShelf;
     /** The floor between two requests for one TOKEN, across both services.
      *  Defaults to `DEFAULT_CROSS_SERVICE_MS`; never below the hard floor. */
     minIntervalMs?(): number;
@@ -501,7 +504,12 @@ export class PlanUsageService {
      * ‼️ X-212's RULE — THE CACHED SNAPSHOT OF THE SIGN-IN THIS SERVICE IS
      * POINTED AT RIGHT NOW, and never another's. Never touches the network.
      */
-    current(): PlanUsageSnapshot | undefined { return this.snaps.get(tokenKey(this.credFile())); }
+    current(): PlanUsageSnapshot | undefined { return this.mine(this.credFile()); }
+
+    /** ‼️ U-160 — this service's reading of the file or the other reader's, whichever is newer. */
+    private mine(file: string): PlanUsageSnapshot | undefined {
+        return newerReading(this.snaps.get(tokenKey(file)), this.opts.shelf?.latest(file));
+    }
 
     /** When the backoff lets the next automatic read through; 0 = not backed
      *  off. Surfaces are expected to SAY this rather than look idle (Principle 1).
@@ -573,7 +581,7 @@ export class PlanUsageService {
         const file = this.credFile();
         // ‼️ X-212 — the snapshot is looked up BY the file, so the account
         // moving under us can never serve the previous account's percentages.
-        const snap = this.snaps.get(tokenKey(file));
+        const snap = this.mine(file);
         // The TTL is the only gate that is about this CACHE rather than about
         // the token, so it stays here and it stays conditional on having one.
         if (snap && reason === 'beat'
@@ -662,7 +670,9 @@ export class PlanUsageService {
             // it answered: whatever backoff this TOKEN was on is over, for both
             // of its readers at once
             this.gate.cleared(file);
-            return put({ state: 'ok', bars, plan: cred.plan, fetchedAt: now });
+            const read = put({ state: 'ok', bars, plan: cred.plan, fetchedAt: now });
+            this.opts.shelf?.put(file, read, 'plan');
+            return read;
         } catch (e) {
             return put(unavailable('error',
                 `Could not reach the usage endpoint: ${String((e as Error)?.message ?? e).slice(0, 120)}`,

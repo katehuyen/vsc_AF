@@ -911,12 +911,14 @@ const LIVE_PAYLOAD = {
         // Shelved by file, both hold at once.
         ok('‼️ a cached percentage never survives the account under it moving',
             /private snaps = new Map<string, PlanUsageSnapshot>\(\);/.test(pu)
-            && /const snap = this\.snaps\.get\(tokenKey\(file\)\);/.test(pu));
+            && /const snap = this\.mine\(file\);/.test(pu)
+            // U-160 — the other reader's reading of the SAME file may be newer; still keyed by the file
+            && /return newerReading\(this\.snaps\.get\(tokenKey\(file\)\), this\.opts\.shelf\?\.latest\(file\)\);/.test(pu));
         ok('…and every answer, failure included, is shelved under the file it came from',
             /const put = \(s: PlanUsageSnapshot\): PlanUsageSnapshot => \{/.test(pu)
             && /this\.snaps\.set\(tokenKey\(file\), s\);/.test(pu));
         ok('…so `current()` can only ever answer for the sign-in in force now',
-            /current\(\): PlanUsageSnapshot \| undefined \{ return this\.snaps\.get\(tokenKey\(this\.credFile\(\)\)\); \}/.test(pu));
+            /current\(\): PlanUsageSnapshot \| undefined \{ return this\.mine\(this\.credFile\(\)\); \}/.test(pu));
 
         ok('one function names the owner for the bar, the card and the bridge',
             /const usageAccountLabel = \(engine: string\): string =>/.test(ext)

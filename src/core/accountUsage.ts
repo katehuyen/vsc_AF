@@ -5,6 +5,7 @@ import {
     buildBars, fetchUsage, holdWords, rateLimitHold, readOauthCredentials, usageUserAgent
 } from './planusage';
 import { UsageGate, DEFAULT_CROSS_SERVICE_MS } from './usageGate';
+import { UsageShelf } from './usageShelf';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
 import { EngineId } from './engines';
@@ -782,6 +783,8 @@ export interface AccountUsageOptions {
      * readers. Absent = this service keeps its own ledger, the old behaviour.
      */
     gate?: UsageGate;
+    /** U-160 — the readings both services took, so neither serves an older figure than the other has. */
+    shelf?: UsageShelf;
     /** The floor between two requests for one TOKEN, across both services.
      *  Defaults to `DEFAULT_CROSS_SERVICE_MS`; never below the hard floor. */
     minIntervalMs?(): number;
@@ -855,7 +858,19 @@ export class AccountUsageService {
 
     /** Everything known right now — never touches the network. */
     current(): SlotUsage[] {
-        return this.opts.slots().map(s => this.byId.get(s.id) ?? unreadUsage(s));
+        return this.opts.slots().map(s => {
+            const own = this.byId.get(s.id);
+            // ‼️ U-160 — the indicator may have read this token since this service did
+            const shelved = this.opts.shelf?.latest(slotCredentialsFile(s));
+            return shelved && (!own || shelved.fetchedAt > own.fetchedAt)
+                ? usageFrom(s, shelved)
+                : own ?? unreadUsage(s);
+        });
+    }
+
+    /** U-160 — say what is known now to whoever listens, for a reading this service did not take. */
+    announce(): void {
+        try { this.opts.onRead?.(this.current()); } catch { /* announcing never breaks a read */ }
     }
 
     /** When the FLEET-WIDE backoff lets the next automatic read through; 0 =
@@ -1200,7 +1215,9 @@ export class AccountUsageService {
             // limited (X-278).
             this.gate.cleared(file);
             this.backoffUntil = 0;
-            return put(usageFrom(slot, { state: 'ok', bars, plan: cred.plan, fetchedAt: now }));
+            const read: PlanUsageSnapshot = { state: 'ok', bars, plan: cred.plan, fetchedAt: now };
+            this.opts.shelf?.put(file, read, 'accounts');
+            return put(usageFrom(slot, read));
         } catch (e) {
             return put(bad('error',
                 `Could not reach the usage endpoint: ${String((e as Error)?.message ?? e).slice(0, 120)}`,

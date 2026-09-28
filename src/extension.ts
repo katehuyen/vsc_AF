@@ -108,7 +108,8 @@ import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalText, cont
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
-import { UsageGate, crossServiceMs } from './core/usageGate';
+import { UsageGate, crossServiceMs, tokenKey } from './core/usageGate';
+import { UsageShelf } from './core/usageShelf';
 import { EngineUsage, enginePeak, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
     AgentEngineDefaults, agentKey, agentSeedDefault, resolveDefault, storedAccount, storedDefault,
@@ -19887,12 +19888,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * recognise each other without either having to know the other exists.
      */
     const usageGate = new UsageGate();
+    const usageShelf = new UsageShelf();
     const usageMinIntervalMs = (): number =>
         crossServiceMs(cfg().get<number>('planUsageMinIntervalSeconds', 10));
     const planUsage = new PlanUsageService({
         ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion,
         credentialsFile: usageCredentialsFile,
-        gate: usageGate, minIntervalMs: usageMinIntervalMs
+        gate: usageGate, shelf: usageShelf, minIntervalMs: usageMinIntervalMs
     });
     /**
      * ‼️ X-212 — WHOSE PLAN A SURFACE IS SHOWING, in words, for every surface.
@@ -20660,7 +20662,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         autoBeat: accountsAutoRefresh,
         edgeFloorMs: planEdgeFloorMs,
         // X-240 — the same ledger the standing account's indicator writes to.
-        gate: usageGate, minIntervalMs: usageMinIntervalMs,
+        gate: usageGate, shelf: usageShelf, minIntervalMs: usageMinIntervalMs,
         cliVersion: installedCliVersion,
         busy: accountIsBusy,
         /**
@@ -20677,10 +20679,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // `if (!this.sentry) return`, so a token that died while the user was
         // working by hand across three accounts was said by nobody.
         // ‼️ X-326 — live sync pushes fresh figures to open Console in-place.
-        onRead: usage => { announceSlotHealth(usage); ConsolePanel.postAccountsIfOpen(); },
+        // ‼️ U-160 — …and to every other surface that draws a sign-in's figure, the
+        // same moment: the toolbar and the Accounts / Engines pages waited for their own timers.
+        onRead: usage => {
+            announceSlotHealth(usage); ConsolePanel.postAccountsIfOpen();
+            planUsageBar.paint(); AccountsPanel.refreshIfOpen(); EnginesPanel.refreshIfOpen();
+        },
         readSessionTail: (slot, dir) => (String(slot.engine || '').toLowerCase() === 'codex'
             ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
             : undefined)
+    });
+    // ‼️ U-160 — a reading either service takes reaches every surface at once: the
+    // toolbar may be showing any account (X-243), and the account boxes hear of the
+    // indicator's reads as they hear of their own.
+    context.subscriptions.push({
+        dispose: usageShelf.onReading((file, _snap, from) => {
+            planUsageBar.paint();
+            if (from !== 'accounts') { accountUsage.announce(); }
+            else if (tokenKey(file) === tokenKey(usageCredentialsFile())) { DashboardPanel.refreshIfOpen(); }
+        })
     });
     /**
      * ‼️ X-243 — THE STATUS BAR FOLLOWS THE CONVERSATION ON SCREEN.
