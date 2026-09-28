@@ -1540,7 +1540,7 @@
                 <b>0 on any field = unlimited</b>, and a mission with no ceilings stops only when the lead
                 finishes it, you cancel it, or the fleet budget bites.</span>
             </div>
-            <div class="frow"><span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = the Orchestrator block above · each delegation = the member's own row, then that agent's own default for the engine it lands on, then your fleet defaults, then the CLI.</span></div>
+            <div class="frow"><span class="muted small" title="A delegation is a launch, so it resolves the same way one does. Per field, highest first: what the member's row says · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = the Orchestrator block above · each delegation = the member's own row, then that agent's own default for the engine it lands on, then your fleet defaults, then the CLI.</span></div>
             <div class="frow"><label>Approval
                 <select id="f-approval">
                     ${C.option('each-round', 'each round — approve every delegation round (recommended)', { selected: form.approvalMode !== 'auto', detail: 'The run stops before every delegation round and waits for you. Nothing is spent while it waits.' })}
@@ -1897,7 +1897,7 @@
             + 'a lane that was resumed served other work too, and some of what is above may be theirs.',
         unattributed: () => '‼️ applied: nothing in that session falls inside the stretch this '
             + 'ran in, so none of its testimony is about this piece of work. Showing the lane\'s '
-            + 'own totals here is what X-124 removed.'
+            + 'own totals here would be testimony about some other work.'
     };
     /** Which evidence a reading is. Defaults to the lane, which is what an
      *  unlabelled reading always was. */
@@ -4362,7 +4362,7 @@
                 { label: 'Engine', now: d.engine,
                     mirror: (sentryForm.leaderEngine || d.engine)
                         + (sentryForm.leaderEngine ? '' : ' — what the setting says') },
-                'Which engine the leader turn spawns. It was a constant until X-249, and honestly '
+                'Which engine the leader turn spawns. It used to be a constant, and honestly '
                 + 'so: the runner could build one command line and read one reply envelope, so a '
                 + 'box over it would have been a box that lies. Both halves are the engine’s own '
                 + 'adapter now.\n\nIt also decides which catalogue the Model box below offers and '
@@ -4383,7 +4383,7 @@
                     '— setting: ' + (d.model || 'engine default') + ' —'))}
             ${leaderAccountOpts(s, d) ? box('s-laccount', 'leaderAccount',
                 { label: 'Account', now: 'the pool decides', mirror: leaderAccountMirror(s, d) },
-                'The leader is the turn that decides WHERE the next round runs, and until X-249 it ran '
+                'The leader is the turn that decides WHERE the next round runs, and it once ran '
                 + 'nowhere in particular: the process was spawned with no environment, so it went to '
                 + 'whatever sign-in this machine happened to be holding — outside the pool you allowed, '
                 + 'invisible to the rotation, and able to wall the very account it was about to choose.\n\n'

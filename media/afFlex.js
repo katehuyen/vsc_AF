@@ -337,7 +337,7 @@
         },
         // S-106 — a handover that is not the quota's stays on its account under this line (src/core/stayAccount.ts)
         {
-            id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 0, min: 0, max: 100, remembered: false,
+            id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 70, min: 0, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.contextHandoverStayAccountPct', bridge: 'settings.set:agentFarm.contextHandoverStayAccountPct' } }
         },
         // S-105 — the wall a policy picks a starting account under, never above the quota handover line (accountPolicy.ts effectiveCeiling)

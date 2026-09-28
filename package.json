@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.734.0",
+  "version": "3.735.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8305,7 +8305,7 @@
         "agentFarm.providerProfiles": {
           "type": "array",
           "default": [],
-          "markdownDescription": "X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: which provider, which endpoint, and which model each tier resolves to. Managed on the Engines page (`Agent Farm: Open Engines` → Providers); this key is the same list in its raw form.\n\n‼️ **No credential is ever written here.** A route's key lives in the OS keychain (SecretStorage), filed under the profile's `id` — which is why the id is permanent and a copy deliberately starts with no key. Anything you type into this array that is not one of the fields below is DROPPED on the way in, so a key pasted here does not become a stored one; it just does not work.\n\n‼️ **This list is Claude's alone.** OpenCode owns its own providers, `auth.json` and `opencode.json` (`opencode auth login`, `/connect`), and a second copy here would make two vaults where the stale one wins silently — so a profile naming another engine is refused rather than ignored.\n\n`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, tier mapping) or its key is replaced — never on a rename. A launch records the revision it ran on, so a route edited afterwards cannot silently rewrite what a past session was served by.",
+          "markdownDescription": "The Anthropic-compatible ROUTES Agent Farm holds for Claude Code: which provider, which endpoint, and which model each tier resolves to. Managed on the Engines page (`Agent Farm: Open Engines` → Providers); this key is the same list in its raw form.\n\n‼️ **No credential is ever written here.** A route's key lives in the OS keychain (SecretStorage), filed under the profile's `id` — which is why the id is permanent and a copy deliberately starts with no key. Anything you type into this array that is not one of the fields below is DROPPED on the way in, so a key pasted here does not become a stored one; it just does not work.\n\n‼️ **This list is Claude's alone.** OpenCode owns its own providers, `auth.json` and `opencode.json` (`opencode auth login`, `/connect`), and a second copy here would make two vaults where the stale one wins silently — so a profile naming another engine is refused rather than ignored.\n\n`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, tier mapping) or its key is replaced — never on a rename. A launch records the revision it ran on, so a route edited afterwards cannot silently rewrite what a past session was served by.",
           "items": {
             "type": "object",
             "properties": {
@@ -8407,12 +8407,16 @@
             "agent": {
               "type": "object",
               "markdownDescription": "Per agent (by name): `{ \"<point id>\": value }`.",
-              "additionalProperties": { "type": "object" }
+              "additionalProperties": {
+                "type": "object"
+              }
             },
             "project": {
               "type": "object",
               "markdownDescription": "Per project (by id): `{ \"<point id>\": value }`.",
-              "additionalProperties": { "type": "object" }
+              "additionalProperties": {
+                "type": "object"
+              }
             }
           }
         },
@@ -8530,13 +8534,50 @@
             "type": "string"
           },
           "default": [
-            "delete", "deleting", "deletion", "drop table", "drop the table", "drop database", "drop schema", "drop index",
-            "force push", "force-push", "push --force", "--force-with-lease", "reset --hard", "rm -rf",
-            "wipe", "purge", "destroy", "overwrite", "overwriting", "overwritten", "truncate", "truncating",
-            "irreversible", "cannot be undone", "permanently", "revoke", "uninstall",
-            "kill process", "kill the process", "kill session", "kill the session", "kill task", "kill the task",
-            "/\\bsil\\b/", "silmek", "silme", "siler", "silin", "silecek",
-            "kaldır", "geri alınamaz", "kalıcı olarak", "üzerine yaz", "sıfırla"
+            "delete",
+            "deleting",
+            "deletion",
+            "drop table",
+            "drop the table",
+            "drop database",
+            "drop schema",
+            "drop index",
+            "force push",
+            "force-push",
+            "push --force",
+            "--force-with-lease",
+            "reset --hard",
+            "rm -rf",
+            "wipe",
+            "purge",
+            "destroy",
+            "overwrite",
+            "overwriting",
+            "overwritten",
+            "truncate",
+            "truncating",
+            "irreversible",
+            "cannot be undone",
+            "permanently",
+            "revoke",
+            "uninstall",
+            "kill process",
+            "kill the process",
+            "kill session",
+            "kill the session",
+            "kill task",
+            "kill the task",
+            "/\\bsil\\b/",
+            "silmek",
+            "silme",
+            "siler",
+            "silin",
+            "silecek",
+            "kaldır",
+            "geri alınamaz",
+            "kalıcı olarak",
+            "üzerine yaz",
+            "sıfırla"
           ],
           "markdownDescription": "The words that make a **Console** question wait for you instead of being answered on the timer. Each entry matches at the start of a word, any case (`silin` catches `silinen`); an entry written `/…/` is a regular expression. Add, remove or edit freely — an empty list stops nothing. How much of a question is read: `#agentFarm.console.autoAnswer.filter#`."
         },
@@ -8765,33 +8806,33 @@
           "default": 35,
           "minimum": 0,
           "maximum": 100,
-          "description": "Context discipline (S-64): when a running session's window is this full, it is told once — CONTEXT CONVERGE — to start nothing new and finish the step in flight. Delivered through the live hook's answer (PostToolUse additionalContext) on Claude Code; an engine whose hooks carry no such channel records the crossing as undelivered. 0 = off. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set."
+          "description": "Context discipline: when a running session's window is this full, it is told once — CONTEXT CONVERGE — to start nothing new and finish the step in flight. Delivered through the live hook's answer (PostToolUse additionalContext) on Claude Code; an engine whose hooks carry no such channel records the crossing as undelivered. 0 = off. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set."
         },
         "agentFarm.contextHandoverPct": {
           "type": "number",
           "default": 40,
           "minimum": 0,
           "maximum": 100,
-          "description": "Context discipline (S-64): when a running session's window is this full, it is told once — CONTEXT HANDOVER — to stop, commit, write the handover note and end the run. A converge line above this one is folded down onto it. 0 = off."
+          "description": "Context discipline: when a running session's window is this full, it is told once — CONTEXT HANDOVER — to stop, commit, write the handover note and end the run. A converge line above this one is folded down onto it. 0 = off."
         },
         "agentFarm.quotaConvergePct": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 100,
-          "description": "Quota discipline (S-75): when the 5-hour window of the account a running session is signed in as is this full, the session is told once — QUOTA CONVERGE — to start nothing new. Off by default: the handover law has no quota converge line — below the handover line a run works at full capacity; set a figure only if you want that earlier warning. Read from that session's OWN sign-in (a Console card's or its launch manifest's account slot), never from the home folder; a session whose sign-in is not known is not told. Same channel and rules as the context lines. 0 = off."
+          "description": "Quota discipline: when the 5-hour window of the account a running session is signed in as is this full, the session is told once — QUOTA CONVERGE — to start nothing new. Off by default: the handover law has no quota converge line — below the handover line a run works at full capacity; set a figure only if you want that earlier warning. Read from that session's OWN sign-in (a Console card's or its launch manifest's account slot), never from the home folder; a session whose sign-in is not known is not told. Same channel and rules as the context lines. 0 = off."
         },
         "agentFarm.quotaHandoverPct": {
           "type": "number",
           "default": 90,
           "minimum": 0,
           "maximum": 100,
-          "description": "Quota discipline (S-75): when the session's own account window is this full, it is told once — QUOTA HANDOVER — to stop, commit, write the handover note and end the run (the handover law's 90%). A converge line above this one is folded down onto it. 0 = off."
+          "description": "Quota discipline: when the session's own account window is this full, it is told once — QUOTA HANDOVER — to stop, commit, write the handover note and end the run (the handover law's 90%). A converge line above this one is folded down onto it. 0 = off."
         },
         "agentFarm.disciplineOrders": {
           "type": "object",
           "default": {},
-          "description": "Handover discipline (S-80): WHAT the two lines actually order the running session to do. The lead words (CONTEXT CONVERGE / CONTEXT HANDOVER / QUOTA CONVERGE / QUOTA HANDOVER) and the reading in front of them are fixed — the handover law waits for exactly those — and this is the instruction that follows. Six branches, because a run in a baton relay is told to pass the baton rather than to write a note. Leave a field empty and its built-in sentence stays in charge; {chain} is replaced by the relay's own chain and hop. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set orders=.",
+          "description": "Handover discipline: WHAT the two lines actually order the running session to do. The lead words (CONTEXT CONVERGE / CONTEXT HANDOVER / QUOTA CONVERGE / QUOTA HANDOVER) and the reading in front of them are fixed — the handover law waits for exactly those — and this is the instruction that follows. Six branches, because a run in a baton relay is told to pass the baton rather than to write a note. Leave a field empty and its built-in sentence stays in charge; {chain} is replaced by the relay's own chain and hop. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set orders=.",
           "properties": {
             "converge": {
               "type": "string",
@@ -8840,56 +8881,56 @@
           "type": "number",
           "default": 6,
           "minimum": 0,
-          "description": "Baton relay (S-78): the most legs one chain may run — the run that started it is leg 1. A pass from the last leg opens nothing: the baton is kept as stopped with the reason, the runner is told to write a handover note instead, and Notices says so once. 0 = no ceiling. The other automatic brake needs no setting: two legs in a row that end on the same git HEAD stop the chain too."
+          "description": "Baton relay: the most legs one chain may run — the run that started it is leg 1. A pass from the last leg opens nothing: the baton is kept as stopped with the reason, the runner is told to write a handover note instead, and Notices says so once. 0 = no ceiling. The other automatic brake needs no setting: two legs in a row that end on the same git HEAD stop the chain too."
         },
         "agentFarm.batonInjectedDirective": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Baton relay (S-82): a standing rule said to EVERY leg of every chain, above the predecessor's own words — for example \"run npm test before you pass the baton\". Empty = nothing is added. In your own handover template it goes where {userDirective} stands; a template that does not name it still gets it, on its own line above the predecessor's words."
+          "description": "Baton relay: a standing rule said to EVERY leg of every chain, above the predecessor's own words — for example \"run npm test before you pass the baton\". Empty = nothing is added. In your own handover template it goes where {userDirective} stands; a template that does not name it still gets it, on its own line above the predecessor's words."
         },
         "agentFarm.batonHandoverTemplate": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Baton relay (S-82): your own first message for every leg, instead of the built-in \"=== BATON RELAY — chain … ===\" header. Variables: {fromSessionId} (the predecessor's session), {agentId} (the agent's name), {chain}, {leg} (the leg this run is — hop + 1, the number the card and the status bar show), {hop} (handovers so far), {maxHops} (the chain's leg ceiling, \"none\" when it has none), {why} (what opened this leg), {userDirective} (agentFarm.batonInjectedDirective), {agentPrompt} (the predecessor's own words). An unknown {name} is left as typed. The predecessor's words are never lost: a template without {agentPrompt} gets them appended under a --- line. Empty = the built-in header stays in charge."
+          "description": "Baton relay: your own first message for every leg, instead of the built-in \"=== BATON RELAY — chain … ===\" header. Variables: {fromSessionId} (the predecessor's session), {agentId} (the agent's name), {chain}, {leg} (the leg this run is — hop + 1, the number the card and the status bar show), {hop} (handovers so far), {maxHops} (the chain's leg ceiling, \"none\" when it has none), {why} (what opened this leg), {userDirective} (agentFarm.batonInjectedDirective), {agentPrompt} (the predecessor's own words). An unknown {name} is left as typed. The predecessor's words are never lost: a template without {agentPrompt} gets them appended under a --- line. Empty = the built-in header stays in charge."
         },
         "agentFarm.batonEmergencyTemplate": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Baton relay (S-83): your own first message for a leg the FAILSAFE opens — when a leg ends without passing the baton although it was cut off (a QUOTA/CONTEXT HANDOVER had reached it, it wrote a handover note in its last two minutes, it exited with an error, or it left uncommitted work). Empty = the built-in \"=== BATON RELAY — … · EMERGENCY HANDOVER ===\" header, which names the predecessor and how to read its last turns. Variables: {fromSessionId} (the ended session, in full), {agentId}, {chain}, {leg} (the leg this run is — hop + 1), {hop} (handovers so far), {maxHops} (the leg ceiling, \"none\" when the chain has none), {why} (why it was rescued), {evidence} (its handover note's Durum/Kalan/İlk 5 dakika sections, or its uncommitted state), {userDirective} (agentFarm.batonInjectedDirective). A template that does not name {evidence} still gets it, last, under a ---. A leg that finished cleanly, or that you ended yourself, is never rescued: the chain simply ends, and a successor that dies within 30 seconds without a tool call stops it (crash-loop guard)."
+          "description": "Baton relay: your own first message for a leg the FAILSAFE opens — when a leg ends without passing the baton although it was cut off (a QUOTA/CONTEXT HANDOVER had reached it, it wrote a handover note in its last two minutes, it exited with an error, or it left uncommitted work). Empty = the built-in \"=== BATON RELAY — … · EMERGENCY HANDOVER ===\" header, which names the predecessor and how to read its last turns. Variables: {fromSessionId} (the ended session, in full), {agentId}, {chain}, {leg} (the leg this run is — hop + 1), {hop} (handovers so far), {maxHops} (the leg ceiling, \"none\" when the chain has none), {why} (why it was rescued), {evidence} (its handover note's Durum/Kalan/İlk 5 dakika sections, or its uncommitted state), {userDirective} (agentFarm.batonInjectedDirective). A template that does not name {evidence} still gets it, last, under a ---. A leg that finished cleanly, or that you ended yourself, is never rescued: the chain simply ends, and a successor that dies within 30 seconds without a tool call stops it (crash-loop guard)."
         },
         "agentFarm.batonFaultWaitHours": {
           "type": "number",
           "default": 24,
           "minimum": 0,
-          "description": "Baton relay (X-427): when a running leg's turn fails because the ENGINE is down, overloaded, unreachable, rate limited or refuses the sign-in, no new leg is opened (it would fail the same way) — the same session is asked to continue at growing intervals (1 min, 2, 4 … up to one hour apart). Past this many hours without a working turn Agent Farm stops asking and Needs You gets a row. 0 = keep asking hourly with no ceiling."
+          "description": "Baton relay: when a running leg's turn fails because the ENGINE is down, overloaded, unreachable, rate limited or refuses the sign-in, no new leg is opened (it would fail the same way) — the same session is asked to continue at growing intervals (1 min, 2, 4 … up to one hour apart). Past this many hours without a working turn Agent Farm stops asking and Needs You gets a row. 0 = keep asking hourly with no ceiling."
         },
         "agentFarm.batonFlaggedPasses": {
           "type": "number",
           "default": 3,
           "minimum": 0,
-          "description": "Baton relay (X-427): when the engine FLAGS a running leg's conversation (\"safeguards flagged this message … can't respond\"), nothing said in that session is answered again, so Agent Farm passes the baton for it: the successor opens from what the leg left, through the same brakes as any pass, and the flagged card is closed. This is how many such passes may come in a row before the chain holds for you (Needs You). 0 = no cap of its own — the chain's leg ceiling still applies."
+          "description": "Baton relay: when the engine FLAGS a running leg's conversation (\"safeguards flagged this message … can't respond\"), nothing said in that session is answered again, so Agent Farm passes the baton for it: the successor opens from what the leg left, through the same brakes as any pass, and the flagged card is closed. This is how many such passes may come in a row before the chain holds for you (Needs You). 0 = no cap of its own — the chain's leg ceiling still applies."
         },
         "agentFarm.batonFlaggedModel": {
           "type": "string",
           "default": "",
-          "description": "Baton relay (X-427): the model a successor opens on when the leg before it was ALSO opened by a flagged pass — the engine's own advice is a new session first, then another model. Empty = the chain keeps its own model. The chain carries on with whatever model its successor opened on."
+          "description": "Baton relay: the model a successor opens on when the leg before it was ALSO opened by a flagged pass — the engine's own advice is a new session first, then another model. Empty = the chain keeps its own model. The chain carries on with whatever model its successor opened on."
         },
         "agentFarm.defaultAccountCeiling": {
           "type": "number",
           "default": 90,
           "minimum": 1,
           "maximum": 100,
-          "description": "Account policies (S-105): the wall every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none uses when it picks the account a session STARTS on — a sign-in at or past this share of its five-hour window is passed over. It never stands above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so the policies walk with the lower of the two, and lowering the handover line lowers the wall with it. The Account Policies table shows the wall in force and why."
+          "description": "Account policies: the wall every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none uses when it picks the account a session STARTS on — a sign-in at or past this share of its five-hour window is passed over. It never stands above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so the policies walk with the lower of the two, and lowering the handover line lowers the wall with it. The Account Policies table shows the wall in force and why."
         },
         "agentFarm.contextHandoverStayAccountPct": {
           "type": "number",
-          "default": 0,
+          "default": 70,
           "minimum": 0,
           "maximum": 100,
-          "description": "Handover discipline (S-106): when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off."
+          "description": "Handover discipline: when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off. Default 70."
         },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
@@ -9229,30 +9270,30 @@
         "agentFarm.showrunner": {
           "type": "string",
           "default": "youtuber",
-          "markdownDescription": "The **showrunner** — the agent that fills every role a workflow step names (senarist, kurgu, yayinci …) when the workflow binds it to nobody (M-53). A workflow binds a role on its form (Roles) or with `workflows.add roles=`; `workflows.roles` says who fills what and why."
+          "markdownDescription": "The **showrunner** — the agent that fills every role a workflow step names (senarist, kurgu, yayinci …) when the workflow binds it to nobody. A workflow binds a role on its form (Roles) or with `workflows.add roles=`; `workflows.roles` says who fills what and why."
         },
         "agentFarm.judgeLadder": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The **judge's ladder** for a workflow step's quality check, cheapest model first (`haiku,sonnet`) (A-27). The check is judged on the first rung; a FAIL is judged once more on the next rung before the step is paid for again — a PASS there overturns it and no retry is made. A step that names its own judge engine or model keeps it. Empty = the one judge of `judgeArgs`. One run sets its own with `workflows.run judgeLadder=` or a cost preset."
+          "markdownDescription": "The **judge's ladder** for a workflow step's quality check, cheapest model first (`haiku,sonnet`). The check is judged on the first rung; a FAIL is judged once more on the next rung before the step is paid for again — a PASS there overturns it and no retry is made. A step that names its own judge engine or model keeps it. Empty = the one judge of `judgeArgs`. One run sets its own with `workflows.run judgeLadder=` or a cost preset."
         },
         "agentFarm.workflowSpendCap": {
           "type": "number",
           "default": 0,
           "minimum": 0,
-          "markdownDescription": "The **hard spend cap** of a workflow run, in dollars (A-27): once a run has spent this much — every step and supervisor turn counted — no further step or for-each branch starts and the run stops, saying so. Nothing is asked. `0` = no cap. A workflow sets its own on its form (Run cap $) or with `workflows.add spendCap=`; one run beats both with `workflows.run spendCap=`. The soft ceiling is a Wake condition on `cost.run`."
+          "markdownDescription": "The **hard spend cap** of a workflow run, in dollars: once a run has spent this much — every step and supervisor turn counted — no further step or for-each branch starts and the run stops, saying so. Nothing is asked. `0` = no cap. A workflow sets its own on its form (Run cap $) or with `workflows.add spendCap=`; one run beats both with `workflows.run spendCap=`. The soft ceiling is a Wake condition on `cost.run`."
         },
         "agentFarm.airtableInputStages": {
           "type": "string",
           "default": "asset, final",
-          "markdownDescription": "Which stage folders an **airtable** workflow input searches when it names none, comma separated (source, raw, semi, final, asset) (X-420)."
+          "markdownDescription": "Which stage folders an **airtable** workflow input searches when it names none, comma separated (source, raw, semi, final, asset)."
         },
         "agentFarm.airtableInputLimit": {
           "type": "number",
           "default": 20,
           "minimum": 1,
           "maximum": 200,
-          "markdownDescription": "At most this many records an **airtable** workflow input hands a run (X-420)."
+          "markdownDescription": "At most this many records an **airtable** workflow input hands a run."
         },
         "agentFarm.airtableInputSort": {
           "type": "string",
@@ -9262,17 +9303,17 @@
             "name"
           ],
           "default": "newest",
-          "markdownDescription": "The order an **airtable** workflow input hands its records in (X-420)."
+          "markdownDescription": "The order an **airtable** workflow input hands its records in."
         },
         "agentFarm.studioLibraryBase": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Which local Airtable database the **Studio** wall reads its media records from. Empty = the Airtable page's default (X-424)."
+          "markdownDescription": "Which local Airtable database the **Studio** wall reads its media records from. Empty = the Airtable page's default."
         },
         "agentFarm.studioLibraryStages": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Which stage folders the **Studio** wall shows, comma separated (source, raw, semi, final, asset). Empty = every stage (X-424)."
+          "markdownDescription": "Which stage folders the **Studio** wall shows, comma separated (source, raw, semi, final, asset). Empty = every stage."
         },
         "agentFarm.studioLibraryKind": {
           "type": "string",
@@ -9283,7 +9324,7 @@
             "audio"
           ],
           "default": "",
-          "markdownDescription": "Which kind of media the **Studio** wall shows. Empty = every kind (X-424)."
+          "markdownDescription": "Which kind of media the **Studio** wall shows. Empty = every kind."
         },
         "agentFarm.studioLibrarySuccess": {
           "type": "string",
@@ -9293,7 +9334,7 @@
             "failed"
           ],
           "default": "",
-          "markdownDescription": "Which outcome the **Studio** wall shows: only the files that passed, only the failed ones, or empty = both (X-424)."
+          "markdownDescription": "Which outcome the **Studio** wall shows: only the files that passed, only the failed ones, or empty = both."
         },
         "agentFarm.studioLibraryPromote": {
           "type": "string",
@@ -9306,7 +9347,7 @@
             "Promote at once"
           ],
           "default": "ask",
-          "markdownDescription": "A promotion on the **Studio** wall (raw → asset, semi → final) moves the file into the next stage folder and its Airtable record with it. `ask` confirms first, `auto` does it at once (X-425)."
+          "markdownDescription": "A promotion on the **Studio** wall (raw → asset, semi → final) moves the file into the next stage folder and its Airtable record with it. `ask` confirms first, `auto` does it at once."
         },
         "agentFarm.allInUnsure": {
           "type": "string",
@@ -9319,7 +9360,7 @@
             "Leave it in all_in for the next pass, without a question"
           ],
           "default": "ask",
-          "markdownDescription": "A file in a media library's `all_in` waiting area that the model is not sure of (or cannot open, or that is not media) stays where it is. `ask` posts one Notices question listing them, `wait` leaves them for the next pass. The bridge op `media.allin` can override it per pass (X-422)."
+          "markdownDescription": "A file in a media library's `all_in` waiting area that the model is not sure of (or cannot open, or that is not media) stays where it is. `ask` posts one Notices question listing them, `wait` leaves them for the next pass. The bridge op `media.allin` can override it per pass."
         },
         "agentFarm.allInWhen": {
           "type": "string",
@@ -9332,7 +9373,7 @@
             "Only a call by hand (bridge media.allin) processes it"
           ],
           "default": "daily",
-          "markdownDescription": "When a media library's `all_in` waiting area is processed — each file looked at by a model (about two model turns a file: its stage, then its form). `daily`: the manager's daily media batch runs it. `manual`: only a call by hand does (X-422)."
+          "markdownDescription": "When a media library's `all_in` waiting area is processed — each file looked at by a model (about two model turns a file: its stage, then its form). `daily`: the manager's daily media batch runs it. `manual`: only a call by hand does."
         },
         "agentFarm.libraryEnrich": {
           "type": "string",
@@ -9347,7 +9388,7 @@
             "Never — only media.enrich fills a record."
           ],
           "default": "end",
-          "markdownDescription": "When a model looks at a run's recorded files and fills their record's meaning (X-419). A workflow's Library block can say otherwise."
+          "markdownDescription": "When a model looks at a run's recorded files and fills their record's meaning. A workflow's Library block can say otherwise."
         },
         "agentFarm.libraryEnrichScope": {
           "type": "string",
@@ -9362,34 +9403,34 @@
             "Every recorded file, parts too — one model turn each."
           ],
           "default": "final-failed",
-          "markdownDescription": "Which of a run's recorded files get their meaning filled (X-419)."
+          "markdownDescription": "Which of a run's recorded files get their meaning filled."
         },
         "agentFarm.libraryEnrichModel": {
           "type": "string",
           "default": "sonnet",
-          "markdownDescription": "The claude model that looks at an **image** to fill its record (X-419)."
+          "markdownDescription": "The claude model that looks at an **image** to fill its record."
         },
         "agentFarm.libraryEnrichVideoModel": {
           "type": "string",
           "default": "gemini-3.8-flash-low",
-          "markdownDescription": "The agy model that looks at a **video** to fill its record (X-419) — it sees the frames, not the sound."
+          "markdownDescription": "The agy model that looks at a **video** to fill its record — it sees the frames, not the sound."
         },
         "agentFarm.libraryEnrichEffort": {
           "type": "string",
           "default": "low",
-          "markdownDescription": "The claude effort for filling a record (X-419)."
+          "markdownDescription": "The claude effort for filling a record."
         },
         "agentFarm.libraryEnrichSections": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Which record sections a model fills, comma separated: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage. Empty = all (X-419)."
+          "markdownDescription": "Which record sections a model fills, comma separated: identity, taxonomy, function, tone, education, marketing, platform, accessibility, seo, tags, salvage. Empty = all."
         },
         "agentFarm.libraryEnrichCap": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 50,
-          "markdownDescription": "Dollars per record a claude turn may spend filling it; 0 = no cap. A turn's own start costs about $0.02 (measured on haiku), so a cap under $0.05 stops every turn. agy reports no cost, so it is not enforced there (X-419)."
+          "markdownDescription": "Dollars per record a claude turn may spend filling it; 0 = no cap. A turn's own start costs about $0.02 (measured on haiku), so a cap under $0.05 stops every turn. agy reports no cost, so it is not enforced there."
         },
         "agentFarm.workflowAskEscalation": {
           "type": "string",
@@ -9639,7 +9680,7 @@
           "type": "object",
           "default": {},
           "x-af-keys": "agentDir",
-          "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine. ‼️ X-101 — a Claude row may also carry `providerId` (the id of a route in agentFarm.providerProfiles) and `tier` (opus / sonnet / …). That pair is a different kind of answer from model and effort: it is not a flag but an environment ISOLATION — the chosen route's base url, key and tier model are injected and every inherited ANTHROPIC_* / route-bearing CLAUDE_* variable is cleared first, so a base url left in the user's shell cannot answer the same question twice. With no providerId set nothing is cleared and nothing is injected, which is what every engine without a provider axis does permanently. Ask `providers.runtime` on the bridge to see exactly what a launch would run on."
+          "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine. ‼️ A Claude row may also carry `providerId` (the id of a route in agentFarm.providerProfiles) and `tier` (opus / sonnet / …). That pair is a different kind of answer from model and effort: it is not a flag but an environment ISOLATION — the chosen route's base url, key and tier model are injected and every inherited ANTHROPIC_* / route-bearing CLAUDE_* variable is cleared first, so a base url left in the user's shell cannot answer the same question twice. With no providerId set nothing is cleared and nothing is injected, which is what every engine without a provider axis does permanently. Ask `providers.runtime` on the bridge to see exactly what a launch would run on."
         },
         "agentFarm.agyHome": {
           "type": "string",
@@ -9670,7 +9711,7 @@
             "never"
           ],
           "default": "ask",
-          "markdownDescription": "M-51 — before a publish step sends anything: `ask` waits for a yes (default), `auto` publishes without asking, `never` rehearses — it builds and records the payload and sends nothing. A step's own approval wins."
+          "markdownDescription": "Before a publish step sends anything: `ask` waits for a yes (default), `auto` publishes without asking, `never` rehearses — it builds and records the payload and sends nothing. A step's own approval wins."
         },
         "agentFarm.publishPlatforms": {
           "type": "array",
@@ -9682,7 +9723,7 @@
             "instagram",
             "tiktok"
           ],
-          "markdownDescription": "M-51 — the platforms a publish step offers, in your order of priority (the first is the step card's default)."
+          "markdownDescription": "The platforms a publish step offers, in your order of priority (the first is the step card's default)."
         },
         "agentFarm.metricsFields": {
           "type": "array",
@@ -9704,17 +9745,17 @@
             "watchSeconds",
             "engagement"
           ],
-          "markdownDescription": "M-52 — which numbers a metrics step asks your n8n flow for and the briefs show. Whatever the flow answers still lands on the media record. A step's own list wins."
+          "markdownDescription": "Which numbers a metrics step asks your n8n flow for and the briefs show. Whatever the flow answers still lands on the media record. A step's own list wins."
         },
         "agentFarm.performanceBrief": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "M-52 — put \"how similar published content performed\" into the briefs: the `{performance}` placeholder of an idea or script step, and the workflow supervisor's brief. Off = both stay empty. The numbers come from the metrics step's last pull."
+          "markdownDescription": "Put \"how similar published content performed\" into the briefs: the `{performance}` placeholder of an idea or script step, and the workflow supervisor's brief. Off = both stay empty. The numbers come from the metrics step's last pull."
         },
         "agentFarm.contentCalendarDir": {
           "type": "string",
           "default": "",
-          "markdownDescription": "M-51 — the content calendar: a vault folder holding one note per publish, in the Full Calendar plugin's frontmatter (title, date, startTime, completed) plus platform, status (planned · producing · ready · published · cancelled), url, record and publishedAt. A publish step updates its note when it ends. Accepts the path variables `${vault}` `${workspace}` `${home}` — see agentFarm.vaultDir. Empty = `${vault}/01_INBOX/02_Calendar/CONTENT`."
+          "markdownDescription": "The content calendar: a vault folder holding one note per publish, in the Full Calendar plugin's frontmatter (title, date, startTime, completed) plus platform, status (planned · producing · ready · published · cancelled), url, record and publishedAt. A publish step updates its note when it ends. Accepts the path variables `${vault}` `${workspace}` `${home}` — see agentFarm.vaultDir. Empty = `${vault}/01_INBOX/02_Calendar/CONTENT`."
         },
         "agentFarm.reportDir": {
           "type": "string",
@@ -10576,12 +10617,12 @@
             "x-af-browse": "file"
           },
           "default": [],
-          "markdownDescription": "The POOL of your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (the X-188 path variables are allowed: `${vault}`, `${workspace}`, `${projectNotes}`, `${today}` …). Same shape as Saved prompts, and read TWICE for two jobs: a block whose heading names a verdict — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — is a TEMPLATE and fills mechanically; every block, including the ones whose heading names something of your own (`Genel tembihler`, `Sabaha karşı`), is MATERIAL the leader blends into the next session's opening words. It is material, never a template it copies.\n\n`agentFarm.sentryTemplatesFile` is read first and this list follows it — they are assembled, not chosen between, so a file named in both is read once. A path whose variables cannot be filled is skipped WITH ITS REASON rather than pointed at the wrong folder; a path that is gone is reported and the rest of the pool still reads. Empty is the normal case: the built-in templates answer every verdict with no file of yours anywhere. `sentry.instructions` on the bridge shows what was read, what was refused, and what a leader woken on a given verdict would actually be given."
+          "markdownDescription": "The POOL of your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (path variables are allowed: `${vault}`, `${workspace}`, `${projectNotes}`, `${today}` …). Same shape as Saved prompts, and read TWICE for two jobs: a block whose heading names a verdict — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — is a TEMPLATE and fills mechanically; every block, including the ones whose heading names something of your own (`Genel tembihler`, `Sabaha karşı`), is MATERIAL the leader blends into the next session's opening words. It is material, never a template it copies.\n\n`agentFarm.sentryTemplatesFile` is read first and this list follows it — they are assembled, not chosen between, so a file named in both is read once. A path whose variables cannot be filled is skipped WITH ITS REASON rather than pointed at the wrong folder; a path that is gone is reported and the rest of the pool still reads. Empty is the normal case: the built-in templates answer every verdict with no file of yours anywhere. `sentry.instructions` on the bridge shows what was read, what was refused, and what a leader woken on a given verdict would actually be given."
         },
         "agentFarm.sentryLeaderEngine": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The ENGINE a sentry LEADER turn spawns. It was a constant until X-249, and honestly so: the runner could build one command line and read one reply envelope, so a settable box would have been a box that lies. Both halves are now the engine's own adapter, so this is a real choice — and an engine nobody has written an adapter for is REFUSED BY NAME, which names the ones that can be spawned AND read, rather than quietly spawning `claude` and reporting a turn nobody asked for. A campaign may name its own; this is what answers when none does. Empty = `claude`."
+          "markdownDescription": "The ENGINE a sentry LEADER turn spawns. It used to be a constant, and honestly so: the runner could build one command line and read one reply envelope, so a settable box would have been a box that lies. Both halves are now the engine's own adapter, so this is a real choice — and an engine nobody has written an adapter for is REFUSED BY NAME, which names the ones that can be spawned AND read, rather than quietly spawning `claude` and reporting a turn nobody asked for. A campaign may name its own; this is what answers when none does. Empty = `claude`."
         },
         "agentFarm.sentryLeaderModel": {
           "type": "string",

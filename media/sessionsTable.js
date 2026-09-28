@@ -85,7 +85,7 @@
         { id: 'duration', label: 'Duration', key: r => ranOf(r),
             tip: 'the longest RUN first, not the longest span: the turns\' own time added up, '
                 + 'so a session resumed the next day sorts on the work in it and not on the '
-                + 'night in the middle — nor on the twenty minutes somebody spent typing (S-53)' },
+                + 'night in the middle — nor on the twenty minutes somebody spent typing' },
         { id: 'turns', label: 'Turns', key: r => r.turns || 0,
             tip: 'the most prompts first — one turn is one ask and everything done to answer it' }
     ];

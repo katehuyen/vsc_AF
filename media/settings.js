@@ -1986,7 +1986,7 @@
                 `<div class="setdesc">Categories: <b>${(w.categories || []).length}</b> · ${C.esc((w.categories || []).slice(0, 8).map(c => c.name).join(' · '))}${(w.categories || []).length > 8 ? ` +${(w.categories || []).length - 8}` : ''}</div>`,
                 `${(w.categories || []).length} categor${(w.categories || []).length === 1 ? 'y' : 'ies'} · ${w.pages} page(s)`,
                 (w.categories || []).map(c => `${c.name} — ${c.pages} page${c.pages === 1 ? '' : 's'}`).join('\n')
-                + '\n\nA folder here is a category the moment it exists, whether or not a page has been\nwritten into it (U-91). The picker offers every one of these.')
+                + '\n\nA folder here is a category the moment it exists, whether or not a page has been\nwritten into it. The picker offers every one of these.')
             : `<div class="setdesc">No categories yet — a folder under the root becomes one the moment you make it, in Obsidian or from the tagger's picker.</div>`;
 
         const why = !w.exists

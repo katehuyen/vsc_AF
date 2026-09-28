@@ -69,12 +69,12 @@
     const LAUNCH_DIMENSIONS = [
         {
             id: 'engine', owner: 'user', remembered: true, perEngine: false, redraws: true,
-            why: 'X-18 - which program runs. Absent means claude, which is what every caller written before engines existed meant.'
+            why: 'Which program runs. Absent means claude, which is what every caller written before engines existed meant.'
         },
         {
             id: 'account', owner: 'user', remembered: false, perEngine: false, redraws: false,
             appliesTo: c => c.hasAccounts !== false,
-            why: 'X-169 - WHICH SIGN-IN of that engine runs it. NOT remembered, and that is the '
+            why: 'WHICH SIGN-IN of that engine runs it. NOT remembered, and that is the '
                 + 'decision rather than an omission: a model is a preference, an account is a '
                 + 'STATE (how much of a plan is left, which changes hourly). Remembered per agent '
                 + 'it would pin an agent to an exhausted plan and outrank the account switch '
@@ -83,12 +83,12 @@
         {
             id: 'providerId', owner: 'user', remembered: true, perEngine: true, redraws: true,
             appliesTo: c => c.hasProviderAxis !== false,
-            why: 'X-103 - which endpoint answers. NOT derived from the model: opencode/big-pickle looks like it names its own provider and splitting on the slash agrees most of the time, which is what makes it the wrong rule.'
+            why: 'Which endpoint answers. NOT derived from the model: opencode/big-pickle looks like it names its own provider and splitting on the slash agrees most of the time, which is what makes it the wrong rule.'
         },
         {
             id: 'tier', owner: 'user', remembered: true, perEngine: true, redraws: true,
             appliesTo: c => c.hasTiers !== false,
-            why: 'X-103 - which tier of THAT route, and a different question from the model: opus is kimi-k2-thinking on one route and MiniMax-M2 on another.'
+            why: 'Which tier of THAT route, and a different question from the model: opus is kimi-k2-thinking on one route and MiniMax-M2 on another.'
         },
         {
             id: 'variant', owner: 'engine', remembered: true, perEngine: true, redraws: false,
@@ -97,24 +97,24 @@
         },
         {
             id: 'model', owner: 'user', remembered: true, perEngine: true, redraws: true,
-            why: 'S-20 - a model belongs to ONE engine, and it decides what an effort MEANS (X-30). Narrowed by media/afLaunch.js.'
+            why: 'A model belongs to ONE engine, and it decides what an effort MEANS. Narrowed by media/afLaunch.js.'
         },
         {
             id: 'effort', owner: 'user', remembered: true, perEngine: true, redraws: false,
             appliesTo: c => c.takesEffort !== false,
-            why: 'X-35/U-59 - an engine with no effort flag offers none, and passing one exits non-zero. Narrowed by media/afLaunch.js against the model.'
+            why: 'An engine with no effort flag offers none, and passing one exits non-zero. Narrowed by media/afLaunch.js against the model.'
         },
         {
             id: 'permissionMode', owner: 'user', remembered: true, perEngine: true, redraws: false,
-            why: 'X-145 - per engine like the model: reading it off the flat record was how a mode chosen for one engine arrived on the next as a flag nobody typed.'
+            why: 'Per engine like the model: reading it off the flat record was how a mode chosen for one engine arrived on the next as a flag nobody typed.'
         },
         {
             id: 'superpowers', owner: 'user', remembered: true, perEngine: false, redraws: false,
-            why: 'K-34 - THREE states, and absent is one of them: undefined means the agent own default decides. Flat rather than per engine because the discipline is the agent, not the program.'
+            why: 'THREE states, and absent is one of them: undefined means the agent own default decides. Flat rather than per engine because the discipline is the agent, not the program.'
         },
         {
             id: 'permission', owner: 'farm', remembered: false, perEngine: false, redraws: false,
-            why: 'K-22 - what the permission mode actually MEANS, resolved against Claude own settings layers before the command line is built. Absent means nobody resolved it.'
+            why: 'What the permission mode actually MEANS, resolved against Claude own settings layers before the command line is built. Absent means nobody resolved it.'
         },
         {
             id: 'name', owner: 'user', remembered: false, perEngine: false, redraws: false,
@@ -134,7 +134,7 @@
         },
         {
             id: 'routePinned', owner: 'farm', remembered: false, perEngine: false, redraws: false,
-            why: 'X-109 - providerId/tier are the resume gate\'s answer, taken as they are (an empty providerId included) and never filled from the agent\'s record: a resumed session runs on the route it ran on. Per-launch like resume itself.'
+            why: 'providerId/tier are the resume gate\'s answer, taken as they are (an empty providerId included) and never filled from the agent\'s record: a resumed session runs on the route it ran on. Per-launch like resume itself.'
         },
         {
             id: 'projectContextFile', owner: 'farm', remembered: false, perEngine: false, redraws: false,
@@ -146,7 +146,7 @@
         },
         {
             id: 'cli', owner: 'user', remembered: false, perEngine: false, redraws: false,
-            why: 'M-22 - the other executor. The one field that is not a flag: a CLI profile REPLACES the command line rather than adding to it, which is why a run carrying both it and an engine is refused rather than blended.'
+            why: 'The other executor. The one field that is not a flag: a CLI profile REPLACES the command line rather than adding to it, which is why a run carrying both it and an engine is refused rather than blended.'
         }
     ];
 

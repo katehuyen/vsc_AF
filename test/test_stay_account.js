@@ -33,9 +33,10 @@ console.log('\n== the verdict ==');
 
 console.log('\n== the line, on the flex chain ==');
 {
-    ok('nothing written: 0 (off), from the built-in default', S.stayPctOf(() => undefined).value === 0 && /built-in/.test(S.stayPctOf(() => undefined).sentence));
-    ok('the user\'s value wins', S.stayPctOf(k => (k === 'contextHandoverStayAccountPct' ? 60 : undefined)).value === 60);
-    ok('a value past 100 is refused by the resolver and the rule stays off', S.stayPctOf(() => 250).value === 0);
+    ok('‼️ nothing written: 70, from the built-in default — the rule is ON out of the box', S.stayPctOf(() => undefined).value === 70 && /built-in/.test(S.stayPctOf(() => undefined).sentence));
+    ok('the user\'s value wins, 0 included (their way to turn it off)', S.stayPctOf(k => (k === 'contextHandoverStayAccountPct' ? 60 : undefined)).value === 60
+        && S.stayPctOf(k => (k === 'contextHandoverStayAccountPct' ? 0 : undefined)).value === 0);
+    ok('a value past 100 is refused by the resolver and the built-in 70 stands', S.stayPctOf(() => 250).value === 70);
 }
 
 console.log('\n== the relay\'s next leg ==');
@@ -84,7 +85,7 @@ console.log('\n== the wiring ==');
     ok('the sentry step gets the finished round\'s stay', /stay: handoverStay\(successorSessionOf\(finishedTask\), finishedTask\.account\)/.test(ext));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
-    ok('the setting is contributed, 0–100, default 0', props['agentFarm.contextHandoverStayAccountPct'] && props['agentFarm.contextHandoverStayAccountPct'].default === 0);
+    ok('the setting is contributed, 0–100, default 70', props['agentFarm.contextHandoverStayAccountPct'] && props['agentFarm.contextHandoverStayAccountPct'].default === 70);
 }
 
 console.log(`\ntest_stay_account: ${pass} passed, ${fail} failed`);

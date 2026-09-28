@@ -104,9 +104,40 @@ export function planBrowser(b: BrowserStepSpec, env: {
     return plan;
 }
 
-/** The MCP config a recipe step's claude runs with — its only browser. */
-export function playwrightMcpConfig(plan: BrowserPlan, platform: string = process.platform): Record<string, unknown> {
-    const args = ['-y', PLAYWRIGHT_MCP, '--user-data-dir', plan.profileDir ?? '', '--output-dir', plan.downloadDir ?? ''];
+export const GUARD_MARK = 'BLOCKED BY AGENT FARM';
+
+/**
+ * The step's hosts held by the browser, not only by the prompt: a haiku told "labs.google only"
+ * walked to flow.google.com and into Switch account (measured, M-54). Runs before the site's own
+ * code in every page; top frame only, because sites embed other hosts' frames (sign-in, video).
+ * The page is swapped for about:blank carrying the reason: stopping it in place leaves the
+ * navigation waiting for a DOMContentLoaded that never comes (measured: a 30 s timeout).
+ */
+export function hostGuardScript(hosts: string[]): string {
+    const list = JSON.stringify(hosts.map(h => h.trim().toLowerCase()).filter(Boolean));
+    return `(() => {
+  if (window.top !== window) { return; }
+  const mark = '${GUARD_MARK}';
+  const host = String(location.hostname || '').toLowerCase();
+  if (!host) {
+    const said = decodeURIComponent(String(location.hash || '').slice(1));
+    if (!said.startsWith(mark)) { return; }
+    const show = () => { document.title = mark; (document.body || document.documentElement).textContent = said; };
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', show); } else { show(); }
+    return;
+  }
+  const hosts = ${list};
+  if (!hosts.length || hosts.some(h => host === h || host.endsWith('.' + h))) { return; }
+  window.stop();
+  location.replace('about:blank#' + encodeURIComponent(mark + ': ' + host + ' is outside this step\\'s allowed hosts (' + hosts.join(', ') + '). Go back to an allowed page and never open this host again.'));
+})();
+`;
+}
+
+/** The MCP config a recipe step's claude runs with — its only browser; `guardFile` holds hostGuardScript. */
+export function playwrightMcpConfig(plan: BrowserPlan, platform: string = process.platform, guardFile?: string): Record<string, unknown> {
+    const args = ['-y', PLAYWRIGHT_MCP, '--user-data-dir', plan.profileDir ?? '', '--output-dir', plan.downloadDir ?? '',
+        ...(guardFile ? ['--init-script', guardFile] : [])];
     const server = platform === 'win32' ? { command: 'cmd', args: ['/c', 'npx', ...args] } : { command: 'npx', args };
     return { mcpServers: { [BROWSER_SERVER]: server } };
 }
@@ -122,8 +153,8 @@ export function buildRecipePrompt(plan: BrowserPlan, goal: string): string {
     return `Browser task. Use ONLY the ${BROWSER_SERVER} browser tools (Playwright). ` +
         `1) Go to: ${plan.url} 2) GOAL: ${goal} ` +
         (r.hint ? `How this site works: ${r.hint} ` : '') +
-        `HARD RULE: navigate only within these domains: ${plan.hosts.join(', ')} - never open a link outside them. ` +
-        `This browser keeps its own profile for this site, so an earlier sign-in is still there. If the site asks you to sign in, do NOT type or invent credentials: stop and report exactly "LOGIN NEEDED: ${r.label}". ` +
+        `HARD RULE: navigate only within these domains: ${plan.hosts.join(', ')} - never open a link outside them or type another address; a page that says "${GUARD_MARK}" is one you must leave. ` +
+        `This browser keeps its own profile for this site, so an earlier sign-in is still there. Never switch, add or sign out of an account. If the site asks you to sign in, do NOT type or invent credentials: stop and report exactly "LOGIN NEEDED: ${r.label}". ` +
         `To keep a result, use the site's own download button: every download is saved automatically and filed into the gallery after you finish - do not move or rename files. ` +
         `When you are done, report in plain text what you did and the names of the files you downloaded (the next step receives it as {prev_text}).`;
 }

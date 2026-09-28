@@ -1124,7 +1124,7 @@
                     title="Turn ${i}${n ? ' of ' + n : ''} — ${off ? 'left OUT of the compile; press to put it back' : 'press to leave it out'}">${i}</button>`;
             }
             chips = `<div class="wk-eline">
-                <span class="wk-elabel" title="X-58 — the turns inside this mark's scope that the compile must NOT read. Everything is in until you take it out.">turns</span>
+                <span class="wk-elabel" title="The turns inside this mark's scope that the compile must NOT read. Everything is in until you take it out.">turns</span>
                 <span class="wk-tns">${out}</span>
                 <span class="muted small">${edit.exclude.length
                 ? `${kept} of ${span} — except ${edit.exclude.slice().sort((a, b) => a - b).join(', ')}`
@@ -1147,7 +1147,7 @@
                 ${chips}
                 <div class="wk-eline">
                     <span class="wk-elabel" title="${c.raw
-            ? 'X-140 — for a dropped file this is the DIRECTIVE the compiling agent is handed: it is the only way to say which part of the file matters, because there are no turns to exclude.'
+            ? 'For a dropped file this is the DIRECTIVE the compiling agent is handed: it is the only way to say which part of the file matters, because there are no turns to exclude.'
             : 'Why this was worth keeping. It travels into the compile instruction, so it is the one place to say what the transcript does not.'}">${c.raw ? 'directive' : 'note'}</span>
                     <input type="text" id="wk-enote" class="wk-enote${c.raw ? ' wk-edirective' : ''}" value="${esc(edit.note)}"
                         placeholder="${c.raw ? 'what the agent should take from this file (optional)' : 'why it is worth keeping (optional)'}">

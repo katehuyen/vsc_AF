@@ -5085,7 +5085,7 @@
     ];
 
     const TRK_EVENTS = [
-        { id: 'opened', icon: '🌱', tip: 'The item came into existence — the line was written and given its code. X-135: without this the newest thing in the file had no record at all, so both time orderings drew it as the oldest.' },
+        { id: 'opened', icon: '🌱', tip: 'The item came into existence — the line was written and given its code. Without this the newest thing in the file had no record at all, so both time orderings drew it as the oldest.' },
         { id: 'touch', icon: '·', tip: '"Worked on, not finished" — the attempts. A log of endings alone throws away exactly the part somebody needs three months later.' },
         { id: 'doing', icon: '▶', tip: 'Started — the line in the backlog went from [ ] to [/].' },
         { id: 'done', icon: '✓', tip: 'Closed as finished.' },

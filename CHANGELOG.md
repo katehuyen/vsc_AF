@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.735.0 - No developer codes on screen; a browser step's hosts are held by the browser (2026-09-28)
+
+- Settings, commands, tooltips and page labels no longer show the internal
+  work-item codes they were built under ("Handover discipline (S-106)" and
+  about sixty more); each says only what it does. A new test fails the build
+  if one comes back.
+- Staying on the same account after a handover that was not the quota's is
+  now ON by default at 70% (it shipped off). Set 0 to turn it off.
+- A browser recipe step (Google Flow, Higgsfield, any site) can no longer
+  wander off its allowed hosts: a page on another host is stopped before it
+  runs and replaced by a page that says why, and the step's instructions now
+  forbid switching, adding or signing out of an account.
+
 ## 3.734.0 - A relay leg does not end the chain while work remains (2026-09-28)
 
 - The header every baton leg starts from no longer says the chain simply

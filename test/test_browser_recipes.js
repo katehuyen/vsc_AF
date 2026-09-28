@@ -49,6 +49,29 @@ eq('the flags: that config, nothing else, its tools allowed', R.browserMcpArgs('
 const p = R.buildRecipePrompt(flow, 'make a clip of {x}');
 ok('the prompt names the site\'s way, the hosts, the login rule and the download rule', /GOAL: make a clip/.test(p) && /Google Flow: open or create/.test(p)
     && /labs\.google, accounts\.google\.com/.test(p) && /LOGIN NEEDED: Google Flow/.test(p) && /download button/.test(p));
+ok('…and forbids switching accounts and names the guard page', /Never switch, add or sign out of an account/.test(p) && p.includes(R.GUARD_MARK));
+
+/* ---------- the hosts, held by the browser ---------- */
+eq('a guard file rides as --init-script', R.playwrightMcpConfig(flow, 'linux', '/o/k.guard.js').mcpServers.afbrowser.args.slice(-2), ['--init-script', '/o/k.guard.js']);
+const vm = require('vm');
+const page = (host, top = true, hash = '') => {
+    const body = { textContent: '' };
+    const w = { stopped: false, stop() { w.stopped = true; }, went: '',
+        location: { hostname: host, hash, replace(u) { w.went = u; } },
+        document: { readyState: 'complete', title: '', body, documentElement: body } };
+    w.window = w; w.top = top ? w : {};
+    vm.runInNewContext(R.hostGuardScript(['labs.google', 'accounts.google.com']), w);
+    return { stopped: w.stopped, went: w.went, title: w.document.title, text: body.textContent };
+};
+eq('an allowed host and its subdomains load untouched', [page('labs.google').stopped, page('www.labs.google').stopped, page('accounts.google.com').stopped], [false, false, false]);
+const off = page('flow.google.com');
+const said = decodeURIComponent(off.went.replace(/^about:blank#/, ''));
+ok('a host outside the list is stopped before the site runs and swapped for a blank page carrying why', off.stopped && /^about:blank#/.test(off.went)
+    && said.startsWith(R.GUARD_MARK) && /flow\.google\.com is outside/.test(said) && /labs\.google, accounts\.google\.com/.test(said));
+const shown = page('', true, '#' + encodeURIComponent(said));
+ok('…and that blank page reads the reason out in its title and body', shown.title === R.GUARD_MARK && shown.text === said);
+eq('…a look-alike suffix is not a subdomain', page('evillabs.google').stopped, true);
+eq('a frame inside an allowed page is left alone, as is a hostless page not ours', [page('flow.google.com', false).stopped, page('').stopped, page('', true, '#top').text], [false, false, '']);
 
 /* ---------- what it downloaded ---------- */
 const dl = path.join(tmp, 'dl');
@@ -128,6 +151,9 @@ ok('the list says which profile has been opened', listed.find(r => r.id === 'hig
         ok('‼️ a recipe step runs claude on that config alone, its tools allowed', /--mcp-config "[^"]+\.mcp\.json" --strict-mcp-config --allowedTools mcp__afbrowser/.test(cmd));
         ok('…the config opens the recipe\'s profile and saves into the step\'s folder', conf.mcpServers.afbrowser.args.join(' ').includes(path.join(tmp, 'profiles', 'flow'))
             && conf.mcpServers.afbrowser.args.includes(t1.browserRun.downloadDir));
+        const guardAt = conf.mcpServers.afbrowser.args[conf.mcpServers.afbrowser.args.indexOf('--init-script') + 1] || '';
+        ok('‼️ …and the recipe\'s hosts are held by a guard script written beside it', /\.guard\.js$/.test(guardAt) && fs.existsSync(guardAt)
+            && fs.readFileSync(guardAt, 'utf8').includes('"labs.google","accounts.google.com"'));
         ok('the step\'s own confirm:auto skipped the question Farm Settings would ask', asked === 0);
         ok('the step ends done', t1.status === 'done');
         const meta = JSON.parse(fs.readFileSync(path.join(mgr.outputsDir, t1.id + '.media.json'), 'utf8'));

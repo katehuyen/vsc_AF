@@ -20,7 +20,7 @@ import { capWaitingBranches, runSpendCap, SpendCap, spendCapStop } from './runSp
 import { escalationLine, ladderFor } from './judgeLadder';
 import { afterFail, climbDecision, JudgeDecision, RunEconomy, runEconomy } from './judgeDecision';
 import { alignCandidates, candidatesOf, mergeCandidates, pickedBody, pickLine, withArchiveBody } from './mediaCandidates';
-import { browserMcpArgs, browserRecipeRefusal, buildRecipePrompt, planBrowser, playwrightMcpConfig } from './browserRecipes';
+import { browserMcpArgs, browserRecipeRefusal, buildRecipePrompt, hostGuardScript, planBrowser, playwrightMcpConfig } from './browserRecipes';
 import { type BrowserRun, fileBrowserDownloads } from './browserDownloads';
 import { profileInUse } from './browserLogin';
 import { buildPublishPayload, calendarPatchOf, planPublish, readPublishResult, type PublishSpec } from './publishStep';
@@ -7439,9 +7439,11 @@ export class TaskManager implements vscode.Disposable {
         let browserRun: BrowserRun | undefined;
         if (plan.recipe) {
             const mcpConfig = path.join(this.outputsDir, `${key}.mcp.json`);
+            const guard = plan.hosts.length ? path.join(this.outputsDir, `${key}.guard.js`) : undefined;
             try {
                 fs.mkdirSync(plan.downloadDir!, { recursive: true });
-                fs.writeFileSync(mcpConfig, JSON.stringify(playwrightMcpConfig(plan), null, 2), 'utf8');
+                if (guard) { fs.writeFileSync(guard, hostGuardScript(plan.hosts), 'utf8'); }
+                fs.writeFileSync(mcpConfig, JSON.stringify(playwrightMcpConfig(plan, process.platform, guard), null, 2), 'utf8');
             } catch (e) { fail(`its browser could not be set up — ${(e as Error).message}`); return; }
             browserRun = { downloadDir: plan.downloadDir!, since: Date.now(), recipe: plan.recipe.id, mcpConfig };
         }

@@ -2678,7 +2678,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     </div>
 
                     <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
-                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">2. Conversation & Session Continuity (S-19)</b>
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">2. Conversation & Session Continuity</b>
                         <table style="width:100%; border-collapse:collapse; margin-top:6px; font-size:11px;">
                             <tr style="background:var(--vscode-editor-inactiveSelectionBackground, #3333);">
                                 <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">Option</th>
@@ -2702,7 +2702,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     </div>
 
                     <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
-                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">3. Rate Limits, Timing & Formulas (M-3, M-10)</b>
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">3. Rate Limits, Timing & Formulas</b>
                         <div style="margin-top: 4px;">
                             <ul>
                                 <li><b>Limit Reset (<code>resetAware</code>):</b> When a 5-hour usage limit is hit, the engine reads the exact reset timestamp (e.g. <i>"resets 5am"</i>) and sleeps until <code>resetAt + safetyBufferMin</code> (e.g. 05:03). <b>Applies ONLY to attempt 1</b>; subsequent attempts use interval minutes in case of transient network/API issues.</li>
@@ -2714,7 +2714,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     </div>
 
                     <div style="margin-bottom: 14px; border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
-                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">4. Failure Phases & Three Prompt Types (M-10, M-12)</b>
+                        <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">4. Failure Phases & Three Prompt Types</b>
                         <table style="width:100%; border-collapse:collapse; margin-top:6px; font-size:11px;">
                             <tr style="background:var(--vscode-editor-inactiveSelectionBackground, #3333);">
                                 <th style="padding:5px 8px; text-align:left; border:1px solid var(--vscode-widget-border, #4443);">Prompt Field</th>

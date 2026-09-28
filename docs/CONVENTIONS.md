@@ -943,6 +943,19 @@ one click.
 
 ---
 
+## ‼️ A backlog code never reaches the user
+
+`S-106`, `X-427`, `M-55` are the developers' shorthand. A setting's description, a
+command title, a tooltip, a page label or a `why` line says **what the thing does**,
+never which item built it — the user read "Handover discipline (S-106)" on their own
+Settings page and it stays there for good. Cite codes in **comments**, commit bodies
+and the CHANGELOG, nowhere a person reads while using the product. A code the user
+wrote themselves (a Backlog line on the Projects page) is their data, not a label.
+`test/test_no_dev_codes.js` fails the build on any code in a `package.json`
+user string or a page string literal; its `ALLOW` list is for the user's own data only.
+
+---
+
 ## Filtering
 
 ### A search box is a QUERY box
