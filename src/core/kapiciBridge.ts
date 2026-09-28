@@ -23,7 +23,8 @@ import { CallOptions, KapiciAnswer, KapiciDeps, KapiciQuestion, KapiciState, PRO
 /** The vault names looked for when agentFarm.kapici.keyName is empty, and the road each one takes. */
 export const KEY_CANDIDATES: { name: string; route: JevRoute }[] = [
     { name: 'TYPESAFE_API_KEY', route: 'typesafe' },
-    { name: 'AI_GATEWAY_API_KEY', route: 'vercel' }
+    { name: 'AI_GATEWAY_API_KEY', route: 'vercel' },
+    { name: 'OPENROUTER_API_KEY', route: 'openrouter' }
 ];
 export const STATE_FILE_MAX = 4 * 1024 * 1024;
 
@@ -37,7 +38,7 @@ export function kapiciSettings(get: <T>(key: string, fallback: T) => T): KapiciS
         rulesDir: String(get<string>('kapici.rulesDir', '') ?? '').trim(),
         timeoutMs: Math.max(200, Number(get<number>('kapici.timeoutMs', DEFAULT_TIMEOUT_MS)) || DEFAULT_TIMEOUT_MS),
         providers: providers.length ? providers : ['heuristic', 'jev'],
-        route: route === 'typesafe' || route === 'vercel' ? route : 'auto',
+        route: route === 'typesafe' || route === 'vercel' || route === 'openrouter' ? route : 'auto',
         keyName: String(get<string>('kapici.keyName', '') ?? '').trim()
     };
 }
@@ -45,7 +46,7 @@ export function kapiciSettings(get: <T>(key: string, fallback: T) => T): KapiciS
 /** Which vault entry, and so which road: a named key wins; else the first candidate the vault holds. */
 export function resolveKey(s: KapiciSettings, has: (name: string) => boolean): { name: string; route: JevRoute; present: boolean } {
     if (s.keyName) {
-        const route: JevRoute = s.route !== 'auto' ? s.route : /gateway|vercel/i.test(s.keyName) ? 'vercel' : 'typesafe';
+        const route: JevRoute = s.route !== 'auto' ? s.route : /openrouter/i.test(s.keyName) ? 'openrouter' : /gateway|vercel/i.test(s.keyName) ? 'vercel' : 'typesafe';
         return { name: s.keyName, route, present: has(s.keyName) };
     }
     const fits = KEY_CANDIDATES.filter(c => s.route === 'auto' || c.route === s.route);
@@ -269,7 +270,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
         },
         {
             op: 'kapici.status',
-            describe: 'Kapıcı\'s state: which vault key it would use and whether it is PRESENT (never its value), the road (typesafe | vercel) with its address and model, the provider order, whether an LLM judge is wired, the timeout, how many rules load and which files failed, the rule folders and the audit folder.',
+            describe: 'Kapıcı\'s state: which vault key it would use and whether it is PRESENT (never its value), the road (typesafe | vercel | openrouter) with its address and model, the provider order, whether an LLM judge is wired, the timeout, how many rules load and which files failed, the rule folders and the audit folder.',
             handler: async () => host.status()
         }
     ]);

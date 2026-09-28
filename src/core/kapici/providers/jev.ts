@@ -1,15 +1,17 @@
 /**
  * X-412 — Jev through the TypeSafe API, or the same request through the Vercel
- * AI Gateway. Built-in fetch, one deadline for the whole call, one backed-off
+ * AI Gateway or OpenRouter. Built-in fetch, one deadline for the whole call, one backed-off
  * retry on 429/529 while the deadline allows; 401/422 are never retried. The
  * key is read per call and never appears in an error text.
  */
 import { KapiciAnswer, KapiciProvider, KapiciQuestion, KapiciState, ProviderErrorKind, ProviderResult } from '../types';
 
-export type JevRoute = 'typesafe' | 'vercel';
+export type JevRoute = 'typesafe' | 'vercel' | 'openrouter';
 export const JEV_ROUTES: Record<JevRoute, { url: string; model: string }> = {
     typesafe: { url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.13.0' },
-    vercel: { url: 'https://ai-gateway.vercel.sh/typesafe/v1/systemone', model: 'typesafe-ai/jev' }
+    vercel: { url: 'https://ai-gateway.vercel.sh/typesafe/v1/systemone', model: 'typesafe-ai/jev' },
+    // Measured: /api/v1/alpha/decisions is a 404; this address answers with the same body.
+    openrouter: { url: 'https://openrouter.ai/api/alpha/decisions', model: 'typesafe/jev-1.13' }
 };
 /** USD per million input tokens; output is free. */
 export const JEV_PRICE_PER_MTOK = 0.042;
@@ -123,9 +125,11 @@ export function jevProvider(o: JevOptions): KapiciProvider {
                             if (ans) { answers[id] = ans; }
                         }
                         const tokens = isObj(reply.usage) ? num(reply.usage.input_tokens) : undefined;
+                        const billed = isObj(reply.usage) ? num(reply.usage.cost) : undefined;
+                        const costUsd = billed ?? (tokens !== undefined ? tokens * JEV_PRICE_PER_MTOK / 1e6 : undefined);
                         return {
                             answers, model: typeof reply.model === 'string' && reply.model ? reply.model : model, latencyMs: now() - t0,
-                            ...(tokens !== undefined ? { costUsd: tokens * JEV_PRICE_PER_MTOK / 1e6 } : {})
+                            ...(costUsd !== undefined ? { costUsd } : {})
                         };
                     }
                     const retryable = res.status === 429 || res.status === 529;

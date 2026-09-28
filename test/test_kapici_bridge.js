@@ -30,6 +30,10 @@ const KEY = 'vck_CANARY_gateway_key_0123456789';
     ok('key: a named vercel-looking key goes to vercel', KB.resolveKey(Object.assign({}, base, { keyName: 'MY_VERCEL_KEY' }), () => true).route === 'vercel');
     ok('key: a pinned route wins', KB.resolveKey(Object.assign({}, base, { keyName: 'MY_VERCEL_KEY', route: 'typesafe' }), () => true).route === 'typesafe');
     ok('key: route vercel picks the gateway candidate', KB.resolveKey(Object.assign({}, base, { route: 'vercel' }), () => true).name === 'AI_GATEWAY_API_KEY');
+    ok('key: a named OpenRouter key takes the openrouter road', KB.resolveKey(Object.assign({}, base, { keyName: 'OpenRouter' }), () => true).route === 'openrouter');
+    k = KB.resolveKey(base, n => n === 'OPENROUTER_API_KEY');
+    ok('key: the OpenRouter candidate is found when it is the only one', k.name === 'OPENROUTER_API_KEY' && k.route === 'openrouter' && k.present);
+    ok('settings: openrouter is a road', KB.kapiciSettings(get({ 'kapici.route': 'openrouter' })).route === 'openrouter');
 
     // --- the host and the ops, with a fake fetch standing in for the classifier
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-kapici-bridge-'));
@@ -60,7 +64,7 @@ const KEY = 'vck_CANARY_gateway_key_0123456789';
     let r = await run('kapici.status');
     ok('status: key PRESENT by name, never its value', r.ok && r.result.key.name === 'AI_GATEWAY_API_KEY' && r.result.key.present === true && !JSON.stringify(r.result).includes(KEY));
     ok('status: road, address, model', r.result.key.route === 'vercel' && /ai-gateway\.vercel\.sh/.test(r.result.key.url) && r.result.key.model === 'typesafe-ai/jev');
-    ok('status: candidates and rule count', r.result.candidates.length === 2 && r.result.rules === 3 && r.result.providers.llm === false);
+    ok('status: candidates and rule count', r.result.candidates.length === KB.KEY_CANDIDATES.length && r.result.rules === 3 && r.result.providers.llm === false);
 
     r = await run('kapici.eval', { rule: 'retry.next-action', state: { failure: 'usage limit', note: 'token ' + KEY } });
     ok('eval: a verdict through the gateway', r.ok && r.result.decision === 'resume' && r.result.provider === 'jev' && calls[0].url.includes('vercel') && calls[0].auth === 'Bearer ' + KEY);

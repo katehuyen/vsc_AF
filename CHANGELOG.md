@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.752.0 - Kapıcı reaches the classifier through OpenRouter (2026-09-28)
+
+- A third road to the classifier: OpenRouter. Vercel's free credit does not
+  cover it, so the Vercel road answered "upgrade to paid credits"; OpenRouter
+  bills the same questions from the credit already on the account (about a
+  hundredth of a cent per question, measured). A vault key named with
+  "openrouter" picks this road by itself, and OPENROUTER_API_KEY is looked for
+  when no key is named.
+- A decision's cost is now the amount the service billed when it says so,
+  instead of an estimate from the token count.
+
 ## 3.751.0 - Kapıcı's yes/no questions reach the classifier in a shape it accepts (2026-09-28)
 
 - A yes/no question with a written criterion (the shipped "is there real work"

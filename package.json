@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.751.0",
+  "version": "3.752.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9250,19 +9250,21 @@
           "enum": [
             "auto",
             "typesafe",
-            "vercel"
+            "vercel",
+            "openrouter"
           ],
           "enumDescriptions": [
-            "By the key found in the Secret vault: TYPESAFE_API_KEY goes to TypeSafe, AI_GATEWAY_API_KEY to the Vercel AI Gateway.",
+            "By the key found in the Secret vault: TYPESAFE_API_KEY goes to TypeSafe, AI_GATEWAY_API_KEY to the Vercel AI Gateway, OPENROUTER_API_KEY to OpenRouter. A named key goes by its name.",
             "Straight to TypeSafe (api.typesafe.ai), model jev-1.13.0.",
-            "Through the Vercel AI Gateway (ai-gateway.vercel.sh), model typesafe-ai/jev — same questions, same answers."
+            "Through the Vercel AI Gateway (ai-gateway.vercel.sh), model typesafe-ai/jev — same questions, same answers. Vercel's free credit does not cover Jev.",
+            "Through OpenRouter's decisions endpoint (openrouter.ai/api/alpha/decisions), model typesafe/jev-1.13 — same questions, same answers, billed from the OpenRouter credit."
           ],
           "description": "Which road Kapıcı takes to the classifier."
         },
         "agentFarm.kapici.keyName": {
           "type": "string",
           "default": "",
-          "description": "The Secret vault name of the classifier's key. Empty = TYPESAFE_API_KEY, else AI_GATEWAY_API_KEY, whichever the vault holds. Mark it Farm only on the Secrets page so no agent receives it."
+          "description": "The Secret vault name of the classifier's key. Empty = TYPESAFE_API_KEY, else AI_GATEWAY_API_KEY, else OPENROUTER_API_KEY, whichever the vault holds. A name containing openrouter / vercel / gateway picks that road when the road is auto. Mark it Farm only on the Secrets page so no agent receives it."
         },
         "agentFarm.kapici.dispatch": {
           "type": "string",

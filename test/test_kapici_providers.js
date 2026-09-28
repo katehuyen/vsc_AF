@@ -49,6 +49,10 @@ const ask = (p, qs = RETRY.questions, timeoutMs = 3000, signal) => p.ask('state 
     f = fakeFetch([good()]);
     await ask(jev(f, { route: 'vercel' }));
     ok('jev: vercel gateway route', f.calls[0].url === 'https://ai-gateway.vercel.sh/typesafe/v1/systemone' && f.calls[0].body.model === 'typesafe-ai/jev');
+    f = fakeFetch([good({ usage: { input_tokens: 290, output_tokens: 22, cost: 0.00001218 } })]);
+    r = await ask(jev(f, { route: 'openrouter' }));
+    ok('jev: openrouter decisions route', f.calls[0].url === 'https://openrouter.ai/api/alpha/decisions' && f.calls[0].body.model === 'typesafe/jev-1.13' && Object.keys(f.calls[0].body).join() === 'model,state,questions');
+    ok('jev: a billed cost in the reply wins over the token estimate', r.costUsd === 0.00001218);
     f = fakeFetch([good()]);
     await ask(jev(f, { url: 'https://example.test/x', model: 'jev-1.14.0' }));
     ok('jev: address and model overridable', f.calls[0].url === 'https://example.test/x' && f.calls[0].body.model === 'jev-1.14.0');
