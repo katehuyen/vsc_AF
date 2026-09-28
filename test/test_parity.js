@@ -405,6 +405,18 @@ const manifest = JSON.parse(read(MANIFEST_FILE));
         !!pack && /applyPackFiles\(/.test(pack.wired));
 }
 
+// ‼️ X-53 — an `if (msg.type === '…')` chain is a handler too; a switch was all
+// the gate could read, so needsPanel's seven doors were never in the manifest.
+{
+    const page = "if (msg.type === 'refresh') { this.refresh(); return; }\n        if (msg.type === 'action' && msg.item) { this.deps.act(msg.item); return; }\n        const on = msg.type === 'approve';";
+    const arms = P.discoverPageActions('x.ts', page).map(a => a.id);
+    ok('‼️ each if-arm on msg.type is a page action of its own',
+        arms.includes('page:x.ts#refresh') && arms.includes('page:x.ts#action'));
+    ok('…while a comparison that is not an if-arm is not a door', !arms.includes('page:x.ts#approve'));
+    ok('…and the live panels\' if-chains are read', ui.some(u => u.id === 'page:needsPanel.ts#action')
+        && ui.some(u => u.id === 'page:selectionPanel.ts#confirm'));
+}
+
 ok('the scan found the surface at all — commands, page actions and ops',
     ui.filter(u => u.kind === 'command').length > 150
     && ui.filter(u => u.kind === 'page').length > 300

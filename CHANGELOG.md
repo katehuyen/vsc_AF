@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.741.0 - An agent can press the Needs You buttons and answer a pick step too (2026-09-28)
+
+- Everything waiting on a button in Needs You — a browser, workflow or
+  mission approval, a permission prompt, a cut run to resume or drop, a
+  mission's question — can now be answered by an agent as well, through the
+  same action your click runs. Buttons that only open a view stay yours.
+- A workflow's "pick the assets" step can now be answered from outside the
+  picker page too; the first answer wins and the page closes by itself. The
+  same count rule applies (at least / at most), and closing the page without
+  choosing still cancels the step.
+- The completeness check that makes sure every button has an agent-side
+  equivalent now also reads panels written as a chain of checks rather than a
+  list of cases — eleven buttons it could not see before are now accounted for.
+
 ## 3.740.0 - Resuming a session brings back everything it ran with, from every door (2026-09-28)
 
 - Resume in Console from the Sessions page, the palette, a session's own page

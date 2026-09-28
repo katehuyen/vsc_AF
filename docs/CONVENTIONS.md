@@ -468,7 +468,8 @@ is wrong on the day the next field is added, and nothing tells anybody.
 **Every user-triggerable action is recorded in `parity.manifest.json`, and the
 build fails if a new one is not.** `test/test_parity.js` reads the three places
 a capability can be declared — `contributes.commands`, the right-click
-catalogue, and the `case '…':` arms of the panels' message handlers — and
+catalogue, and the arms of the panels' message handlers (`case '…':` and
+`if (msg.type === '…')` alike) — and
 checks each against the manifest, where it carries its UI doors and **either**
 the bridge op(s) that do the same thing **or** a reasoned exemption. This is
 the rule in `_REF/agentfarm-dev.md` with a machine behind it: B-3 closed 62

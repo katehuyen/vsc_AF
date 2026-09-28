@@ -654,6 +654,8 @@ import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
+import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
+import { planNeedAct } from './core/needsAct';
 import {
     buildData as buildViewerData, runContextCapture, SessionViewerPanel
 } from './panels/sessionViewer';
@@ -1191,6 +1193,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const needsEmitter = new vscode.EventEmitter<void>();
     context.subscriptions.push(needsEmitter);
     approvalQueue.onChange = () => needsEmitter.fire();
+    // X-53 — a workflow select step answered on its picker page or over the bridge, first wins
+    const selectionWaits = new SelectionWaits();
 
     // D4 semantic layer: file-based vector index + provider config from settings/vault.
     const semIndex = new SemanticIndex(path.join(context.globalStorageUri.fsPath, 'semantic-index.json'));
@@ -4124,9 +4128,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             // Wave B: visual selection gate — a gallery-picker webview.
             confirmSelection: (info) => {
+                const { id, promise } = selectionWaits.add(info);
                 void vscode.window.showInformationMessage(
                     `Agent Farm: pick assets for "${info.title}" (${info.candidates.length} candidate(s))`);
-                return SelectionPanel.pick(context.extensionUri, info);
+                SelectionPanel.pick(context.extensionUri, selectionWaits.get(id)!, selectionWaits, promise);
+                return promise;
             },
             // B11: multi-window safety (see taskLease above).
             isRunner: () => taskRunner,
@@ -9181,6 +9187,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(text, `Give option (1-${q!.options.length}) or answer.`);
                 need(workflowAsks.settle(q!.id, text!), 'Somebody answered it first.');
                 return { answered: q!.id, runId: q!.runId, answer: text };
+            }
+        },
+        {
+            op: 'workflows.select',
+            describe: 'Answer a workflow select step — the asset picker it opens; the same choice as the page\'s Keep / Cancel, and the first answer wins (the page closes). No args = the open selections, each with its numbered candidates (n, title, kind, url, file) and min / max. args: id? (optional when exactly one is open), picks? (1-based candidate numbers) | urls? (candidate urls) | cancel? (true = cancel the step; its onFail policy applies)',
+            handler: (args) => {
+                const open = selectionWaits.list();
+                const id = optStr(args, 'id');
+                const wants = id || args.cancel === true || Array.isArray(args.picks) || Array.isArray(args.urls);
+                if (!wants) {
+                    return { open: open.map(s => ({ ...s, candidates: s.candidates.map((c, i) => ({ n: i + 1, ...c })) })) };
+                }
+                const sel = id ? selectionWaits.get(id) : open.length === 1 ? open[0] : undefined;
+                need(sel, id ? 'No open selection with that id — it was answered, or a window reload dropped it.' : 'Name the selection (id) — call workflows.select with no args to list them.');
+                const s = sel!;
+                if (args.cancel === true) {
+                    need(selectionWaits.settle(s.id, null), 'Somebody answered it first.');
+                    return { cancelled: s.id, title: s.title };
+                }
+                const urls = Array.isArray(args.picks) ? urlsOfPicks(s, args.picks.map(Number)) : Array.isArray(args.urls) ? args.urls.map(String) : undefined;
+                need(urls, `picks are 1-based candidate numbers (1-${s.candidates.length}).`);
+                const refusal = selectionRefusal(s, urls!);
+                need(!refusal, refusal ?? '');
+                need(selectionWaits.settle(s.id, urls!), 'Somebody answered it first.');
+                return { selected: s.id, title: s.title, kept: urls };
             }
         },
         {
@@ -24234,13 +24265,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // ---------- G1/G5: Needs You queue + kanban board ----------
 
-    const handleNeedAction = async (actionId: string, item: NeedItem): Promise<void> => {
+    // `answer` is the typed text a bridge caller passes instead of the input box a press opens
+    const handleNeedAction = async (actionId: string, item: NeedItem, answer?: string): Promise<void> => {
         // M-46 — a workflow supervisor's question: one button per option, or a typed answer
         const wq = item.ref.questionId ? actionOption(actionId) : undefined;
         if (wq !== undefined) {
             const q = workflowAsks.get(item.ref.questionId!);
             if (!q) { return; }
-            const a = wq === 'text' ? await workflowAsks.pick(q) : q.options[wq];
+            const a = wq === 'text' ? (answer ?? await workflowAsks.pick(q)) : q.options[wq];
             if (a !== undefined) { workflowAsks.settle(q.id, a); }
             return;
         }
@@ -24311,7 +24343,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (item.ref.runId) { taskManager.dismissInterrupted(item.ref.runId); }
                 break;
             case 'mission-answer':
-                if (item.ref.missionRunId) { await answerMissionQuestion(item.ref.missionRunId); }
+                if (item.ref.missionRunId) { await answerMissionQuestion(item.ref.missionRunId, answer); }
                 break;
             case 'mission-resume':
                 if (item.ref.missionRunId) { resumeMission(item.ref.missionRunId); }
@@ -24370,6 +24402,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'needs.restore',
             describe: 'Bring every cleared Needs You row back. args: none',
             handler: async () => ({ restored: await restoreNeeds() })
+        },
+        {
+            op: 'needs.act',
+            describe: 'Press a button on a Needs You row — the same function the panel\'s button runs: approve / reject a browser, workflow or mission approval, permission-allow / permission-deny, resume-run / dismiss-run, mission-resume / mission-dismiss, mission-answer, interrupt, sync-antigravity, wq-<n> (a supervisor question\'s option). Buttons that only open a view are refused with the op to read instead. args: key (from needs.list), action (a button id from that row\'s actions), answer? (the text for mission-answer and wq-text)',
+            handler: async (args) => {
+                const key = argStr(args, 'key'), action = argStr(args, 'action');
+                const plan = planNeedAct(buildNeeds(), key, action, optStr(args, 'answer'));
+                need(!('error' in plan), 'error' in plan ? plan.error : '');
+                const p = plan as { item: NeedItem; action: string; answer?: string };
+                await handleNeedAction(p.action, p.item, p.answer);
+                return { key, action, stillOpen: buildNeeds().some(i => needKey(i) === key) };
+            }
         },
         // ---- the fleet can MAKE an agent, so the bridge can too (B-2) --------
         // Registered here rather than beside agents.list because the write lives

@@ -1655,6 +1655,7 @@ Zincire bir **Approval gate** koyarsın (2.19.0): o adıma gelince zincir DURUR 
 - **Seçilenlerin URL'leri handoff olur:** sonraki adım `{prev_json.selected.0}` (tek URL) veya `{prev_text}` (satır satır tüm seçilen URL'ler) ile yalnız seçilenlerle çalışır. Kritik incelik: yerel dosya yolu değil, modelin ürettiği **uzak URL** akar — böylece bir sonraki fal.ai adımı (görsel→video) doğrudan tüketir.
 - Seçilmeyenler galeride `✗ dropped`, seçilenler `✓ kept` rozetiyle işaretlenir.
 - **Cancel:** adımın **onFail** politikası uygulanır. Tasks ağacında görünür `select` satırı; headless'ta (UI yoksa) hepsi tutulur ki zincir asılı kalmasın.
+- **Ajan tarafı (3.741.0):** `workflows.select` — argümansız çağrı açık seçimleri numaralı adaylarıyla listeler; `picks` (1'den başlar) ya da `urls` tutar, `cancel:true` iptal eder. Sayfadaki sayı kuralı aynen geçerli; ilk cevap kazanır ve sayfa kendiliğinden kapanır.
 
 Tipik zincir: *ajan prompt yazar → media (4 aday üret) → **görsel seçim (2 tut)** → media (görsel→video, `{prev_json.selected.0}`)*.
 
@@ -3219,7 +3220,7 @@ Filo büyüyünce dar boğaz sensin: kim izin bekliyor, hangi tarayıcı adımı
 
 Durum çubuğu bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuyruğu açar.
 
-**Ajan tarafı:** `needs.list` · `needs.clear` (`keys` veya `all:true`) · `needs.restore`.
+**Ajan tarafı:** `needs.list` · `needs.clear` (`keys` veya `all:true`) · `needs.restore` · `needs.act` (`key` + `action` — satırın düğmesine panelin kendi işleyicisi üzerinden basar; yazı isteyen düğmenin metnini `answer` taşır; yalnız görünüm açan düğmeler, okunacak op'u söyleyerek reddedilir).
 
 ### Beş Kavram — hangisi ne? {#gorev-kavramlari}
 

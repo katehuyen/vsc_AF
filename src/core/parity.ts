@@ -210,10 +210,12 @@ export function discoverCommandHandlers(src: string, file = 'extension.ts'): UiA
 export function discoverPageActions(file: string, src: string): UiAction[] {
     const out: UiAction[] = [];
     const marks: { act: string; at: number; end: number }[] = [];
-    const re = /case\s+'([^']+)'\s*:/g;
+    // ‼️ Some handlers are an `if (msg.type === '…')` chain, not a switch — 11
+    // arms in four panels were doors the gate could not see.
+    const re = /case\s+'([^']+)'\s*:|\bif\s*\(\s*(?:msg|m|message)\.type\s*===\s*'([^']+)'/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src))) {
-        marks.push({ act: m[1], at: m.index, end: m.index + m[0].length });
+        marks.push({ act: m[1] ?? m[2], at: m.index, end: m.index + m[0].length });
     }
     const bodies = marks.map((mark, i) =>
         src.slice(mark.end, i + 1 < marks.length ? marks[i + 1].at : Math.min(src.length, mark.end + 1200)));

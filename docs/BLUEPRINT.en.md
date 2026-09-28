@@ -1614,6 +1614,7 @@ The heart of production: **pick 2 of 8 candidate images and continue only with t
 - **The selected ones' URLs become the handoff:** the next step works with only the selected ones via `{prev_json.selected.0}` (a single URL) or `{prev_text}` (all selected URLs, line by line). The critical subtlety: not the local file path but the **remote URL** the model produced flows — so the next fal.ai step (image→video) consumes it directly.
 - The unselected are marked `✗ dropped` in the gallery, the selected `✓ kept`.
 - **Cancel:** the step's **onFail** policy is applied. A visible `select` row in the Tasks tree; in headless (no UI) all are kept so the chain doesn't hang.
+- **Agent side (3.741.0):** `workflows.select` — no args lists the open picks with numbered candidates; `picks` (1-based) or `urls` keeps, `cancel:true` cancels. Same count rule as the page; the first answer wins and the page closes itself.
 
 Typical chain: *agent writes prompt → media (produce 4 candidates) → **visual selection (keep 2)** → media (image→video, `{prev_json.selected.0}`)*.
 
@@ -3175,7 +3176,7 @@ As the fleet grows, the bottleneck is you: who's waiting for permission, which b
 
 The status bar counts this queue: if `🔔 N need you` shows, clicking it opens the queue.
 
-**Agent side:** `needs.list` · `needs.clear` (`keys` or `all:true`) · `needs.restore`.
+**Agent side:** `needs.list` · `needs.clear` (`keys` or `all:true`) · `needs.restore` · `needs.act` (`key` + `action` — presses a row's button through the panel's own handler; `answer` carries the text a typed button asks for; view-only buttons are refused with the op to read instead).
 
 ### Five concepts — which is which? {#gorev-kavramlari}
 
