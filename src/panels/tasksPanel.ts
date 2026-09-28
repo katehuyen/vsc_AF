@@ -38,6 +38,7 @@ import { candidatesRefusal } from '../core/mediaCandidates';
 import { BROWSER_RECIPES, browserRecipe } from '../core/browserRecipes';
 import { publishRefusal, type PublishSpec } from '../core/publishStep';
 import { metricsRefusal, type MetricsSpec } from '../core/contentMetrics';
+import { kapiciStepRefusal, type KapiciStepSpec } from '../core/kapiciStep';
 import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { supervisorDraft } from '../core/retrySupervisor';
@@ -106,6 +107,9 @@ export interface TasksDeps {
      * box - which is the right answer for the three engines with no provider
      * axis and for a Claude with no profiles set up yet.
      */
+    /** M-60 — the Kapıcı rules a step can route on (the step card's list), and the save-time check of one */
+    kapiciRules?(): { id: string; description: string }[];
+    kapiciRuleRefusal?(id: string): string;
     /** M-58 — agentFarm.kapici.retry is not off, so Kapıcı is offered as a supervisor engine. */
     kapiciSupervisor?(): boolean;
     engineRoutes?(): Record<string, {
@@ -1001,6 +1005,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
         calendarNotes: deps.calendarNotes ? deps.calendarNotes() : [],
         brandKits: deps.brandKits ? deps.brandKits() : {},
         showrunner: deps.showrunner ? deps.showrunner() : 'youtuber',
+        kapiciRules: deps.kapiciRules ? deps.kapiciRules() : [],
         // ---- what the New-task form offers. One vocabulary with the session
         // launcher (core/launch.ts), so "run it on opus at low effort" means the
         // same thing whether you start a session or queue a task.
@@ -1118,10 +1123,10 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
  * next to the manager, exactly like the schedule and trigger seeds above — the
  * page never learns the model's shape and the model never learns the form's.
  */
-const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool', 'publish', 'metrics'];
+const STEP_SYNTHETIC = ['webhook', 'media', 'approval', 'select', 'checkpoint', 'tool', 'publish', 'metrics', 'kapici'];
 
 function stepSeed(s: WorkflowStep): Record<string, unknown> {
-    const stype = s.tool ? 'tool' : s.publish ? 'publish' : s.metrics ? 'metrics' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
+    const stype = s.kapici ? 'kapici' : s.tool ? 'tool' : s.publish ? 'publish' : s.metrics ? 'metrics' : s.webhook ? 'webhook' : s.media ? 'media' : s.browser ? 'browser'
         : s.approval ? 'approval' : s.select ? 'select' : s.checkpoint ? 'checkpoint' : 'agent';
     const hdr = Object.entries(s.webhook?.headers ?? {})[0];
     const scene = s.media?.projectId
@@ -1194,6 +1199,7 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         puPlatform: s.publish?.platform ?? '', puEntry: s.publish?.entry ?? '', puUrl: s.publish?.url ?? '', puBody: s.publish?.body ?? '',
         puApproval: s.publish?.approval ?? '', puSchedule: s.publish?.schedule ?? '', puConnection: s.publish?.connection ?? '',
         mtUrl: s.metrics?.url ?? '', mtPlatform: s.metrics?.platform ?? '', mtDays: s.metrics?.days ? String(s.metrics.days) : '', mtFields: (s.metrics?.fields ?? []).join(', '),
+        kpRule: s.kapici?.rule ?? '', kpInput: s.kapici?.input ?? '', kpReject: s.kapici?.onReject ?? '',
         apMsg: s.approval?.message ?? '',
         toolJson: s.tool ? JSON.stringify(s.tool) : '',
         selMsg: s.select?.message ?? '',
@@ -1334,6 +1340,12 @@ export function stepFromDraft(
         const no = publishRefusal(publish);
         if (no) { return { error: `Step ${n} ("${title}"): ${no}.` }; }
         return { step: { ...named('publish'), title, ...chain, publish: JSON.parse(JSON.stringify(publish)) as PublishSpec } };
+    }
+    if (stype === 'kapici') {
+        const kapici: KapiciStepSpec = { rule: str('kpRule'), ...(str('kpInput') ? { input: str('kpInput') } : {}), ...(str('kpReject') === 'ask_user' ? { onReject: 'ask_user' as const } : {}) };
+        const no = kapiciStepRefusal(kapici, chain);
+        if (no) { return { error: `Step ${n} ("${title}"): ${no}.` }; }
+        return { step: { ...named('kapici'), title, ...chain, kapici } };
     }
     if (stype === 'metrics') {
         const fields = str('mtFields').split(/[\s,]+/).filter(Boolean);
@@ -2148,6 +2160,8 @@ export class TasksPanel {
             for (let i = 0; i < drafts.length; i++) {
                 const built = stepFromDraft(drafts[i], this.deps.getAgents(), i + 1);
                 if (built.error) { this.say(built.error); return; }
+                const kno = built.step?.kapici ? this.deps.kapiciRuleRefusal?.(built.step.kapici.rule) : '';
+                if (kno) { this.say(`Step ${i + 1} ("${built.step!.title}"): ${kno}.`); return; }
                 steps.push(built.step as WorkflowStep);
             }
             const ins = checkWorkflowInputs(item.inputs, steps);

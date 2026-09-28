@@ -10,6 +10,7 @@
  */
 import { resolveFlex } from './flexResolve';
 import { ensureStepIds, unknownStepRefs } from './runContext';
+import { kapiciStepRefusal } from './kapiciStep';
 import { ForEachSpec, forEachRefusal } from './forEachStep';
 import { CheckpointSpec, checkpointRefusal } from './checkpointStep';
 import { AirtableQuery, cleanQuery, queryRefusal } from './airtableInput';
@@ -154,7 +155,7 @@ export function undeclaredInputRefs(texts: readonly unknown[], schema: readonly 
  * `{input.x}`, or (M-39) a `{steps.<id>…}` naming a step the chain lacks. Gives
  * every step its stable id on the way.
  */
-export function checkWorkflowInputs(raw: unknown, steps: { id?: string; forEach?: ForEachSpec; parallel?: boolean; checkpoint?: CheckpointSpec }[]): { inputs: WorkflowInput[]; error: string } {
+export function checkWorkflowInputs(raw: unknown, steps: { id?: string; forEach?: ForEachSpec; parallel?: boolean; checkpoint?: CheckpointSpec; kapici?: unknown }[]): { inputs: WorkflowInput[]; error: string } {
     const n = normalizeInputs(raw);
     if (n.errors.length) { return { inputs: n.inputs, error: n.errors.join('; ') }; }
     const loose = undeclaredInputRefs(steps, n.inputs);
@@ -166,7 +167,7 @@ export function checkWorkflowInputs(raw: unknown, steps: { id?: string; forEach?
     if (lost.length) {
         return { inputs: n.inputs, error: `a step reads ${lost.map(x => `{steps.${x}…}`).join(', ')}, but the workflow has no step with that id — it has ${steps.map(s => s.id).join(', ')}` };
     }
-    const fe = steps.map((s, i) => [i, forEachRefusal(s, steps.slice(0, i).map(x => x.id as string)) || checkpointRefusal(s)] as const).find(([, r]) => r);
+    const fe = steps.map((s, i) => [i, forEachRefusal(s, steps.slice(0, i).map(x => x.id as string)) || checkpointRefusal(s) || (s.kapici ? kapiciStepRefusal(s.kapici, s) : '')] as const).find(([, r]) => r);
     return { inputs: n.inputs, error: fe ? `step ${fe[0] + 1}: ${fe[1]}` : '' };
 }
 

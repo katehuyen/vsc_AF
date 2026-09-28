@@ -37,6 +37,7 @@ import { kindOfStep, mechanicalWords, resolveWake, wakeDirective, wakeFacts, Wak
 import { applyLive, decisionFromArg, landWords, liveLines, livePatch, pendingWords, RunLive, wordFromArg, WordSource, wordsForBrief } from './workflowLive';
 import { flexPoint } from './flexPoints';
 import { SupervisorCall, supervisorCall, supervisorTrail, SupervisorTrail } from './supervisorTrail';
+import { DEFAULT_STEP_INPUT, KAPICI_MODEL, KapiciStepHook, kapiciStepRoute, KapiciStepSpec } from './kapiciStep';
 import { missionHandoffText } from './workflowMission';
 import { fillTool, toolCall, toolResolved, ToolStepSpec } from './toolCall';
 import { mediaDuration, runRecipe, ToolResult } from './toolRun';
@@ -1233,6 +1234,8 @@ export interface WorkflowStep extends RunDimensions {
     publish?: PublishSpec;
     /** M-52 — the published content's numbers pulled through a connection, onto the records and the performance snapshot (src/core/contentMetrics.ts) */
     metrics?: MetricsSpec;
+    /** M-60 — Kapıcı routes the chain here: proceed, stop or ask you (src/core/kapiciStep.ts) */
+    kapici?: KapiciStepSpec;
     /** X-418 — where this step's files are filed and recorded, over the workflow's (src/core/runLibrarySpec.ts) */
     library?: StepLibrarySpec;
     webhook?: {
@@ -2102,6 +2105,8 @@ export interface TaskManagerOptions {
     recordPublished?: (r: { id: string; platform: string; status: string; url?: string; at: string }) => Promise<string>;
     /** M-52 — Farm Settings' metricsFields; a step's own wins */
     metricsFields?: () => string[];
+    /** M-60 — agentFarm.kapici.workflow; undefined when off */
+    kapiciStep?: () => KapiciStepHook | undefined;
     /** M-52 — a publish's numbers on its media record; answers one line for the archive and the record's topic */
     recordMetrics?: (id: string, m: Metrics) => Promise<{ line: string; topic?: string }>;
     /** M-52 — where the performance snapshot lives */
@@ -6915,6 +6920,10 @@ export class TaskManager implements vscode.Disposable {
             void this.runPublishStep(w, index, handoff, runId);
             return;
         }
+        if (step.kapici) {
+            void this.runKapiciStep(w, index, handoff, runId);
+            return;
+        }
         if (step.metrics) {
             void this.runMetricsStep(w, index, handoff, runId);
             return;
@@ -7144,6 +7153,51 @@ export class TaskManager implements vscode.Disposable {
                 .catch(e => `Record not updated — ${String(e)}`));
         }
         done(true, { ...result, status: patch.status, platform: pub.platform, payload });
+    }
+
+    /** M-60 — Kapıcı routes the chain here (src/core/kapiciStep.ts): carry on, stop, or ask you. The upstream handoff passes through. */
+    private async runKapiciStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
+        const step = w.steps[index];
+        const spec = step.kapici!;
+        const task = this.stepTask(w, index, runId, 'kapici', { prompt: `Kapıcı: ${spec.rule}`, status: 'running' }, handoff);
+        fs.mkdirSync(this.outputsDir, { recursive: true });
+        const outFile = path.join(this.outputsDir, `${task.id}.md`);
+        task.outputFile = outFile;
+        this.save();
+        const hook = this.opts.kapiciStep?.();
+        const o = await kapiciStepRoute(spec, this.substitute(spec.input || DEFAULT_STEP_INPUT, handoff), hook);
+        let route = o.route;
+        let yours = '';
+        if (route === 'ask_user') {
+            // No gate wired (headless service / tests) = carry on, as an approval step does.
+            const confirm = this.opts.confirmApproval;
+            const ok = confirm ? await this.askingHuman(runId, w.title, task, { kind: 'approval', title: step.title, goal: o.why }, () => confirm({ title: step.title, message: o.why })) : true;
+            route = ok ? 'proceed' : 'stop';
+            yours = ok ? ' — you let it carry on' : ' — you stopped it';
+        }
+        const why = o.why + yours;
+        task.supervisorCall = supervisorCall({
+            trigger: `Kapıcı ${spec.rule}`, decision: { decision: o.route, why, ...(o.by === 'kapici' && o.verdict ? { confidence: o.verdict.confidence } : {}) },
+            ...(o.by === 'today' ? { mechanical: o.why } : {}), model: KAPICI_MODEL,
+            limitsOrigin: `Kapıcı rule ${spec.rule}`, supervisorOrigin: `Kapıcı for workflows: ${hook?.mode ?? 'off'}`, at: Date.now()
+        });
+        const text = `${route}: ${why}`;
+        const rec = this.runRecords.get(runId);
+        if (rec) { rec.board = boardWrite(rec.board, { id: stepKey(step, index), index, title: task.title, status: 'done', text, json: { route, rule: spec.rule, by: o.by }, at: Date.now() }); }
+        try {
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Kapıcı step · rule ${spec.rule} · ${hook?.mode ?? 'off'}\n\n---\n\n**${text}**\n\n---\n`
+                + `Finished: ${new Date().toLocaleString()} · ${route === 'stop' ? 'STOPPED' : 'OK'}\n`, 'utf8');
+        } catch { /* archive gone */ }
+        task.status = 'done';
+        task.endedAt = Date.now();
+        this.save();
+        this.pump();
+        if (route !== 'stop') { this.routeToStep(w, index + 1, handoff, runId); return; }
+        this.runCounts.delete(runId);
+        this.handoffs.delete(runId);
+        const last = index >= (this.runView(w.id, runId, w) as FarmWorkflow).steps.length - 1;
+        this.endWorkflowRun(runId, last ? 'done' : 'stopped', `Kapıcı ${last ? 'ended the run at its last step' : `stopped the run at step ${index + 1}`}: ${why}`, index);
+        void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" — Kapıcı stopped it at step ${index + 1}.`);
     }
 
     /** M-52 — the calendar's published notes measured through the connection (src/core/contentMetrics.ts). */

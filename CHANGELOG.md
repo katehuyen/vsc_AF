@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.749.0 - A Kapıcı step can decide whether a workflow goes on (2026-09-28)
+
+- A workflow has a new kind of step, Kapıcı: it reads what the run has made so
+  far (the previous step's output, or whatever you point it at) and asks one
+  Kapıcı rule whether the chain should carry on, stop, or ask you — with no
+  model and no cost. When the rule rejects, the step stops the run or asks you,
+  as you choose. Its decision shows on the Runs table like a checkpoint's.
+- Saving a workflow checks that the rule exists and can make that decision.
+- A new setting, Kapıcı → decides its workflow steps. Off (the default) lets
+  every Kapıcı step carry on as if it were not there. Shadow carries on and
+  records what Kapıcı would have decided. On lets it decide.
+
 ## 3.748.0 - Kapıcı can tell a trigger there is nothing to do (2026-09-28)
 
 - A trigger can take Kapıcı as its precondition: before it wakes an agent, Kapıcı

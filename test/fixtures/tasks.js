@@ -455,6 +455,14 @@ const variants = () => ([
             word: 'retry s2', why: 'Başlık 90 karakteri aşıyor; daha kısa bir başlıkla yeniden çalıştır.', confidence: 0.81, costUSD: 0.0187,
             model: 'claude-haiku-4-5', limitsOrigin: 'allowed: the step · the rest: built-in', supervisorOrigin: 'model: the workflow · the rest: built-in', at: Date.now() - 240000 }
     }] }) },
+    // M-60 — a Kapıcı step that stopped its run: the same strip a checkpoint draws, answered by Kapıcı
+    { id: 'tasks-run-kapici', label: 'Tasks → Runs — a Kapıcı step that stopped its run: its decision on the row (M-60)', data: Object.assign(data(), { runs: [{
+        id: 'rkp', title: 'Klip hattı 2/4: Kapı', agentName: 'kapici', mode: 'headless', status: 'done',
+        source: 'Klip hattı', sourceKind: 'workflow', when: min(2), durMin: 0.1, detail: '', engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rkp.md', prompt: 'Kapıcı: metin.tek-satir',
+        supervisor: { taskId: 'rkp', step: 2, title: 'Klip hattı 2/4: Kapı', trigger: 'Kapıcı metin.tek-satir', badge: '■', decision: 'stop',
+            word: 'stop', why: 'Kapıcı: metin.tek-satir — line p=0.08 (confidence 0.92)', confidence: 0.92,
+            model: 'Kapıcı', limitsOrigin: 'Kapıcı rule metin.tek-satir', supervisorOrigin: 'Kapıcı for workflows: on', at: Date.now() - 120000 }
+    }] }) },
     // A-27 — what a check decided beyond its verdict, under the status badge: one decision, then a climb upheld and the retries stopped
     { id: 'tasks-run-judge', label: 'Tasks → Runs — a check that climbed the judge ladder, and one whose retries were stopped (A-27)', data: Object.assign(data(), { runs: [{
         id: 'rj1', title: 'Klip hattı 2/5: Başlık yaz', agentName: 'senarist', mode: 'headless', status: 'done', verified: 'pass',
@@ -907,6 +915,19 @@ const variants = () => ([
             drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
             r.query('#nt-stadd')[0].click();
             drive(r, { 'nt-st-title': 'Parçala', 'nt-st-stype': 'tool' }, 'nt-st-stype');
+        }
+    },
+    // M-60 — a Kapıcı step: the rule that decides (the rules that can route a step listed), what it reads, what a reject does.
+    {
+        id: 'tasks-step-kapici',
+        label: 'Tasks → a workflow Kapıcı step: the rule that decides, what it reads, what a reject does (M-60)',
+        data: (() => { const d = data(); d.kapiciRules = [{ id: 'trigger.has-work', description: 'Does this firing carry real work for the agent it would wake?' }, { id: 'metin.tek-satir', description: 'Is the text one short line?' }]; return d; })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            drive(r, { 'nt-st-title': 'Kapı', 'nt-st-stype': 'kapici' }, 'nt-st-stype');
+            drive(r, { 'nt-st-kpRule': 'metin.tek-satir', 'nt-st-kpReject': 'ask_user' }, 'nt-st-kpReject');
         }
     },
     // M-49 — a split with its preset: blank boxes show the preset's values, one box overridden.

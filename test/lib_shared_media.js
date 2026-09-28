@@ -129,6 +129,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afPublish.js',
     // afMetrics.js — a metrics step's card row (M-52).
     'afMetrics.js',
+    // afKapiciStep.js — a Kapıcı step's card row (M-60).
+    'afKapiciStep.js',
     // afTool.js — a tool step's card row: recipe, preset, input, its parameters (M-49).
     'afTool.js',
     // afLibrary.js — where a run's files are filed and recorded: the workflow form's block, a media or tool step's row (X-418).

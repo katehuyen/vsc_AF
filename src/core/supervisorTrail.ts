@@ -5,6 +5,7 @@
  * Timeline strip and `workflows.supervisor.status` all read THIS, so the three
  * cannot disagree. Pure.
  */
+import { KAPICI_MODEL } from './kapiciStep';
 import { DecisionKind, SupervisorDecision } from './supervisorDecision';
 import { liveLines, RunLive } from './workflowLive';
 
@@ -99,7 +100,7 @@ export function supervisorTrail(runId: string, tasks: readonly TrailTask[],
     const spent = rows.reduce((a, r) => a + (r.costUSD ?? 0), 0);
     return {
         runId, rows,
-        calls: rec?.supervisor?.calls ?? rows.filter(r => r.model && r.model !== 'you').length,
+        calls: rec?.supervisor?.calls ?? rows.filter(r => r.model && r.model !== 'you' && r.model !== KAPICI_MODEL).length,
         costUSD: rec?.supervisor?.costUSD ?? spent,
         live: liveLines(rec?.live)
     };

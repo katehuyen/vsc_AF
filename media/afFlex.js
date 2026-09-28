@@ -130,6 +130,14 @@
         return Object.assign({ id: 'tool.' + field, label: label, type: type, default: dflt, remembered: false, levels: levels }, x);
     }
 
+    /** A Kapıcı step's own choice (M-60): set on the step card's Kapıcı row, carried by the step's `kapici`. */
+    function kapiciPoint(field, label, type, dflt, box, extra) {
+        return Object.assign({
+            id: 'kapici.step.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: { step: { surface: 'media/afKapiciStep.js#st-' + box, bridge: 'workflows.add:steps.kapici.' + field } }
+        }, extra || {});
+    }
+
     /** X-416/X-417/X-418 — where a run's files are filed and recorded: the workflow form's Library row, a media or tool step's Library row. */
     function libPoint(field, label, type, dflt, at, extra) {
         const levels = {};
@@ -450,6 +458,10 @@
         setting('kapici.dispatch', 'Kapıcı — helps route incoming work', 'enum', 'off', 'agentFarm.kapici.dispatch', { options: ['off', 'shadow', 'on'] }),
         setting('kapici.retry', 'Kapıcı — helps decide held retries', 'enum', 'off', 'agentFarm.kapici.retry', { options: ['off', 'shadow', 'on'] }),
         setting('kapici.trigger', 'Kapıcı — asks triggers whether there is work', 'enum', 'off', 'agentFarm.kapici.trigger', { options: ['off', 'shadow', 'on'] }),
+        setting('kapici.workflow', 'Kapıcı — decides its workflow steps', 'enum', 'off', 'agentFarm.kapici.workflow', { options: ['off', 'shadow', 'on'] }),
+        kapiciPoint('rule', 'Kapıcı step — its rule', 'text', '', 'kpRule'),
+        kapiciPoint('input', 'Kapıcı step — what it reads', 'text', '{prev_text}', 'kpInput'),
+        kapiciPoint('onReject', 'Kapıcı step — if it rejects', 'enum', 'stop', 'kpReject', { options: ['stop', 'ask_user'] }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),
         setting('sentry.leaderBudgetUsd', 'Sentry leader budget $/day', 'number', 2,
             'agentFarm.sentryLeaderBudgetUsd', { min: 0 }),

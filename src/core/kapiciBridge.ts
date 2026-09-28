@@ -10,6 +10,7 @@ import { argStr, BridgeRegistry, need, optBool, optNum, optStr } from './bridge'
 import type { DispatchKapici } from './dispatch';
 import type { SupervisorKapici } from './kapiciSupervisor';
 import { gitDiff, TriggerKapici } from './kapiciTrigger';
+import { KapiciStepHook, stepRuleFit } from './kapiciStep';
 import { ConsumerSetting } from './kapici/shadow';
 import { AuditEntry, readAudit } from './kapici/audit';
 import { BUILTIN_RULES } from './kapici/builtinRules';
@@ -118,6 +119,16 @@ export class KapiciHost {
             log: l => this.d.log(l)
         };
     }
+
+    /** The workflow step consumer (M-60): nothing when off. */
+    step(mode: ConsumerSetting): KapiciStepHook | undefined {
+        return mode === 'off' ? undefined : { mode, log: l => this.d.log(l),
+            evaluate: (rule, state, m, actual) => this.get().evaluate(rule, state, { consumer: 'workflow', mode: m, ...(actual !== undefined ? { actual } : {}) }) };
+    }
+
+    /** '' when the rule exists and can route a step; the rules that can, for the step card. */
+    stepRuleRefusal(id: string): string { const f = this.registry.find(id); return 'error' in f ? f.error : stepRuleFit(f.rule); }
+    stepRules(): { id: string; description: string }[] { return this.registry.load().rules.filter(l => !stepRuleFit(l.rule)).map(l => ({ id: l.rule.id, description: l.rule.description })); }
 
     /** The retry supervisor consumer (M-58): nothing when off. The incident bundle is the state; the doable actions narrow the choice. */
     retry(mode: ConsumerSetting): SupervisorKapici | undefined {

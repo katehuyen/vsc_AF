@@ -10,7 +10,7 @@ import { resolveFlex } from './flexResolve';
 export const ROLE_KEY = /^[a-z][a-z0-9-]{0,23}$/;
 export const DEFAULT_SHOWRUNNER = 'youtuber';
 /** step kinds that stand in an agent's place in a step's agentName — never a role's name */
-const RESERVED = ['media', 'webhook', 'approval', 'select', 'checkpoint', 'tool', 'browser', 'showrunner'];
+const RESERVED = ['media', 'webhook', 'approval', 'select', 'checkpoint', 'tool', 'browser', 'showrunner', 'kapici'];
 
 export type RoleMap = Record<string, string>;
 export interface RoleAgent { id: string; name: string }

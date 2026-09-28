@@ -1142,6 +1142,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         { id: 'approval', icon: '✋', label: 'approval — the chain waits for you' },
         { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' },
         { id: 'checkpoint', icon: '◆', label: 'checkpoint — the supervisor decides here' },
+        { id: 'kapici', icon: '🚪', label: 'Kapıcı — a rule decides: carry on, stop or ask you' },
         { id: 'tool', icon: '🛠', label: 'tool — a local ffmpeg recipe, no model' }
     ];
     const PREV = '{prev_output}';
@@ -1160,7 +1161,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             mModel: 'fal-ai/flux/schnell', mInput: '{"prompt": "{prev_text}"}', mCandidates: 1, mScene: '',
             bUrl: '', bGoal: '', bHosts: '', bRecipe: '', bConfirm: '', bDownloadDir: '',
             apMsg: '', selMsg: '', selMin: 1, selMax: 0, toolJson: ''
-        }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, window.AFPublish ? window.AFPublish.blank() : {}, window.AFMetrics ? window.AFMetrics.blank() : {}, window.AFLibrary ? window.AFLibrary.blank() : {}, seed || {});
+        }, window.AFCheckpoint ? window.AFCheckpoint.blank() : {}, window.AFPublish ? window.AFPublish.blank() : {}, window.AFMetrics ? window.AFMetrics.blank() : {}, window.AFKapiciStep ? window.AFKapiciStep.blank() : {}, window.AFLibrary ? window.AFLibrary.blank() : {}, seed || {});
         // A webhook or media step carries no real agent, so switching one to
         // "agent" would land on an empty picker that LOOKS filled — the select
         // draws the first name whatever the draft says.
@@ -2121,6 +2122,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                         : s.stype === 'tool' && window.AFTool ? window.AFTool.summary(s)
                         : s.stype === 'publish' && window.AFPublish ? window.AFPublish.summary(s)
                         : s.stype === 'metrics' && window.AFMetrics ? window.AFMetrics.summary(s)
+                        : s.stype === 'kapici' && window.AFKapiciStep ? window.AFKapiciStep.summary(s)
                             : agentOf('(no agent)') + ' · ' + (s.smode || 'headless');
         const flags = [];
         if (s.parallel) { flags.push('∥ runs in parallel'); }
@@ -2487,6 +2489,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ${s.stype === 'checkpoint' && window.AFCheckpoint ? window.AFCheckpoint.row(s, C) : ''}
             ${s.stype === 'publish' && window.AFPublish ? window.AFPublish.row(s, C, DATA) : ''}
             ${s.stype === 'metrics' && window.AFMetrics ? window.AFMetrics.row(s, C, DATA) : ''}
+            ${s.stype === 'kapici' && window.AFKapiciStep ? window.AFKapiciStep.row(s, C, DATA) : ''}
             ${(s.stype === 'media' || s.stype === 'tool') && window.AFLibrary ? window.AFLibrary.row(s, C, stepPromote(c), c) : ''}
             <div class="ntsec"><b>How it behaves in the chain</b>
                 <span class="muted small">These are the same on every kind of step — they are about the CHAIN,
@@ -2508,7 +2511,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 ], s.contract, 'A json contract runs it with --output-format json and parses the result.') : ''}
                 ${n > 1 ? `<label class="cbx" title="Adjacent parallel steps form one group; the step after the group receives all their outputs merged."><input type="checkbox" id="nt-st-parallel"${s.parallel ? ' checked' : ''}> runs in parallel with the steps next to it</label>` : ''}
             </div>
-            ${s.stype === 'checkpoint' ? '' : forEachRow(s)}
+            ${s.stype === 'checkpoint' || s.stype === 'kapici' ? '' : forEachRow(s)}
             ${window.AFBrand ? window.AFBrand.stepRow(s, c, DATA.brandKits, DATA.scenes, C) : ''}
             ${s.stype !== 'checkpoint' && window.AFWake ? window.AFWake.stepRow(s, c.wake, DATA.wakeDict, C, stepPromote(c)) : ''}
             ${wantsVerify ? `<div class="ntgrid">
@@ -2582,6 +2585,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         if ((s.stype === 'media' || s.stype === 'tool') && window.AFLibrary) { window.AFLibrary.read(s, g); }
         if (s.stype === 'publish' && window.AFPublish) { window.AFPublish.read(s, g); }
         if (s.stype === 'metrics' && window.AFMetrics) { window.AFMetrics.read(s, g); }
+        if (s.stype === 'kapici' && window.AFKapiciStep) { window.AFKapiciStep.read(s, g); }
     }
 
     /** What a step cannot be saved without — said inside the step card. */
@@ -2601,6 +2605,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         }
         if (s.stype === 'publish' && window.AFPublish && window.AFPublish.error(s)) { return window.AFPublish.error(s); }
         if (s.stype === 'metrics' && window.AFMetrics && window.AFMetrics.error(s)) { return window.AFMetrics.error(s); }
+        if (s.stype === 'kapici' && window.AFKapiciStep && window.AFKapiciStep.error(s)) { return window.AFKapiciStep.error(s); }
         if (s.stype === 'media') {
             if (!String(s.mModel || '').trim()) { return 'A media step needs a model id.'; }
             if (!String(s.mInput || '').trim()) { return 'A media step needs its JSON input.'; }
@@ -4874,6 +4879,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 if (window.AFCheckpoint) { window.AFCheckpoint.wire(byId, readStep, render); }
                 if (window.AFPublish) { window.AFPublish.wire(byId, readStep); }
                 if (window.AFMetrics) { window.AFMetrics.wire(byId, readStep); }
+                if (window.AFKapiciStep) { window.AFKapiciStep.wire(byId, readStep, render); }
                 if (window.AFLibrary) { window.AFLibrary.wire(byId, readStep, window.AFFlexPromote ? render : null, () => composer.step); }
                 if (window.AFTool && composer.step && composer.step.stype === 'tool') { window.AFTool.wire(byId, readStep, render, composer.step); }
                 if (window.AFWake && composer.step) { window.AFWake.wireStep(byId, () => composer.step, DATA.wakeDict, render); }
