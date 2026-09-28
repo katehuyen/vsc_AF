@@ -4600,8 +4600,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const triggerManager = new TriggerManager(taskManager, () => agents, live, {
         judgeArgs,
         rules: () => cfg().get<DispatchRule[]>('dispatchRules', []),
-        useClassifier: () => cfg().get<boolean>('dispatchClassifier', true)
-    });
+        useClassifier: () => cfg().get<boolean>('dispatchClassifier', true),
+        kapici: () => kapiciHost.dispatch(consumerMode(cfg().get('kapici.dispatch')))
+    }, () => kapiciHost.trigger(consumerMode(cfg().get('kapici.trigger'))));
     triggerManagerRef = triggerManager;
     context.subscriptions.push(triggerManager);
 
@@ -10430,7 +10431,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // duplicate; this handler is the UNION of the two, so nothing the
             // older shape accepted has been taken away.
             op: 'triggers.add',
-            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch}, {file} (the path that changed) and {payload}. A workflow action may map its firing onto the workflow\'s inputs: inputs? ({"<input>": "{file}" | "{watch}" | "{payload}" | "{payload.a.b}" | any text}) — unstated, the changed file goes to the first file input and the watched path to the first folder input. A webhook trigger returns its POST url.'
+            describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork|kapici, path?, except?[], minCount?, hours?, recursive?, rule? + input? (file|diff) for kapici — Kapıcı asks the rule, default trigger.has-work, last and only when agentFarm.kapici.trigger is not off} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch}, {file} (the path that changed) and {payload}. A workflow action may map its firing onto the workflow\'s inputs: inputs? ({"<input>": "{file}" | "{watch}" | "{payload}" | "{payload.a.b}" | any text}) — unstated, the changed file goes to the first file input and the watched path to the first folder input. A webhook trigger returns its POST url.'
                 + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + BATON_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
@@ -10505,9 +10506,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     need(kinds.includes(hookEvent),
                         `Unknown hookEvent "${hookEvent}" — use one of: ${kinds.join(', ')}.`);
                 }
-                const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf);
+                const fireIf = args.fireIf === undefined ? undefined : parsePrecondition(args.fireIf, { kapici: true });
                 need(args.fireIf === undefined || fireIf,
-                    'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
+                    'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork | kapici (rule? a rule id, input? file | diff).');
                 const num = (k: string, d: number, min: number): number => {
                     const v = args[k];
                     if (v === undefined) { return d; }
@@ -15956,8 +15957,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (args.fireIf !== undefined) {
                     if (args.fireIf === null || args.fireIf === '') { tr.fireIf = undefined; }
                     else {
-                        const pre = parsePrecondition(args.fireIf);
-                        need(pre, 'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork.');
+                        const pre = parsePrecondition(args.fireIf, { kapici: true });
+                        need(pre, 'fireIf.kind must be folderHasFiles | fileMissing | pathChangedWithin | queueHasWork | kapici (rule? a rule id, input? file | diff).');
                         tr.fireIf = pre;
                     }
                     updated.push('fireIf');

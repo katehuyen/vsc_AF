@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { DEFAULT_TRIGGER_RULE, kapiciFields } from './kapiciTrigger';
 
 /**
  * Automation gate — the single answer to two questions every unattended launch
@@ -29,7 +30,9 @@ export type PreconditionKind =
     /** the path was modified within the last `hours` */
     | 'pathChangedWithin'
     /** the work queue holds at least `minCount` actionable items */
-    | 'queueHasWork';
+    | 'queueHasWork'
+    /** triggers only: Kapıcı's `rule` decides at fire time, from the changed file or its diff (M-59) */
+    | 'kapici';
 
 export interface Precondition {
     kind: PreconditionKind;
@@ -43,6 +46,10 @@ export interface Precondition {
     hours?: number;
     /** look into sub-folders too (folderHasFiles) */
     recursive?: boolean;
+    /** kapici: the rule asked (default trigger.has-work) */
+    rule?: string;
+    /** kapici: what the rule reads — the changed file's content, or its git diff */
+    input?: 'file' | 'diff';
 }
 
 export interface PreconditionVerdict {
@@ -148,6 +155,8 @@ export function evaluatePrecondition(
                 ? { ok: true, detail: `${n} queue item(s) waiting` }
                 : { ok: false, detail: `queue has ${n} item(s) (need ${need})` };
         }
+        case 'kapici':
+            return { ok: true, detail: `Kapıcı asks ${pre.rule || DEFAULT_TRIGGER_RULE} when it fires` };
         default:
             return { ok: true, detail: `unknown precondition "${String(pre.kind)}" — treated as pass` };
     }
@@ -169,20 +178,23 @@ export function describePrecondition(pre: Precondition | undefined): string {
             return `${short(pre.path)} changed <${pre.hours ?? 24}h`;
         case 'queueHasWork':
             return `queue ≥ ${pre.minCount ?? 1}`;
+        case 'kapici':
+            return `Kapıcı ${pre.rule || DEFAULT_TRIGGER_RULE}${pre.input === 'diff' ? ' (diff)' : ''}`;
         default:
             return String(pre.kind);
     }
 }
 
-/** Normalize anything (bridge args, edited JSON) into a Precondition, or undefined. */
-export function parsePrecondition(raw: unknown): Precondition | undefined {
+/** Normalize anything (bridge args, edited JSON) into a Precondition, or undefined. `kapici` = a trigger's, where that kind is allowed. */
+export function parsePrecondition(raw: unknown, o2: { kapici?: boolean } = {}): Precondition | undefined {
     if (!raw || typeof raw !== 'object') { return undefined; }
     const o = raw as Record<string, unknown>;
     const kind = String(o.kind ?? '').trim() as PreconditionKind;
     const kinds: PreconditionKind[] =
         ['folderHasFiles', 'fileMissing', 'pathChangedWithin', 'queueHasWork'];
-    if (!kinds.includes(kind)) { return undefined; }
+    if (!kinds.includes(kind) && !(kind === 'kapici' && o2.kapici)) { return undefined; }
     const pre: Precondition = { kind };
+    if (kind === 'kapici') { const k = kapiciFields(o); return k ? { ...pre, ...k } : undefined; }
     if (typeof o.path === 'string' && o.path.trim()) { pre.path = o.path.trim(); }
     if (Array.isArray(o.except)) {
         pre.except = o.except.filter(x => typeof x === 'string' && x.trim()).map(x => String(x).trim());

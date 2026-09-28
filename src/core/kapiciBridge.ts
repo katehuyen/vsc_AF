@@ -9,6 +9,7 @@ import * as path from 'path';
 import { argStr, BridgeRegistry, need, optBool, optNum, optStr } from './bridge';
 import type { DispatchKapici } from './dispatch';
 import type { SupervisorKapici } from './kapiciSupervisor';
+import { gitDiff, TriggerKapici } from './kapiciTrigger';
 import { ConsumerSetting } from './kapici/shadow';
 import { AuditEntry, readAudit } from './kapici/audit';
 import { BUILTIN_RULES } from './kapici/builtinRules';
@@ -103,6 +104,17 @@ export class KapiciHost {
             mode,
             evaluate: (text, options, m, actual) => this.get().evaluate('dispatch.route', text,
                 { consumer: 'dispatch', mode: m, options: { agent: options }, ...(actual !== undefined ? { actual } : {}) }),
+            log: l => this.d.log(l)
+        };
+    }
+
+    /** The trigger precondition consumer (M-59): nothing when off. The firing is the state; the rule is the precondition's own. */
+    trigger(mode: ConsumerSetting): TriggerKapici | undefined {
+        if (mode === 'off') { return undefined; }
+        return {
+            mode,
+            evaluate: (rule, state, m, actual) => this.get().evaluate(rule, state, { consumer: 'trigger', mode: m, ...(actual !== undefined ? { actual } : {}) }),
+            diff: gitDiff,
             log: l => this.d.log(l)
         };
     }

@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.748.0 - Kapıcı can tell a trigger there is nothing to do (2026-09-28)
+
+- A trigger can take Kapıcı as its precondition: before it wakes an agent, Kapıcı
+  reads what changed (the file, or only its change) and says whether there is
+  real work in it, so an auto-save, a lock file or a formatting-only edit costs
+  no run. It is asked last, after the trigger's cheaper brakes, and a firing that
+  arrives while it is still deciding is skipped and says so. It ships with a
+  ready rule for this, or you can name your own.
+- A new setting, Kapıcı → asks triggers whether there is work, decides whether it
+  is asked. Off (the default) fires exactly as without it. Shadow fires as
+  always and records beside each firing what Kapıcı would have said. On skips
+  the firing when Kapıcı is sure there is no work, and fires whenever it is not
+  sure. Every skip says why.
+- A trigger that routes incoming work to an agent now goes through Kapıcı too
+  when Kapıcı helps route incoming work.
+
 ## 3.747.0 - Kapıcı can help decide what a stopped task does next (2026-09-28)
 
 - A new setting, Kapıcı → helps decide held retries, lets Kapıcı take part when

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.747.0",
+  "version": "3.748.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9293,6 +9293,21 @@
             "Kapıcı decides first whether to resume, wait or stop; when it is not sure, or cannot answer, the supervisor model decides as before. A retry policy may also name Kapıcı itself as its supervisor, which then asks no model at all."
           ],
           "description": "Whether Kapıcı helps decide what happens to a task whose retry is held for a supervisor. Try shadow for a week or two before switching it on."
+        },
+        "agentFarm.kapici.trigger": {
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "shadow",
+            "on"
+          ],
+          "enumDescriptions": [
+            "A trigger with a Kapıcı precondition fires exactly as if it had none: its other brakes decide, as always.",
+            "Triggers fire as they always have, and Kapıcı quietly says beside each firing whether it saw real work in it, recorded in the Kapıcı audit. Nothing waits for it.",
+            "A trigger with a Kapıcı precondition asks it last, after its cheaper brakes, and does not wake the agent when Kapıcı is sure there is no work. When it is not sure, the trigger fires; when it cannot answer, the rule decides."
+          ],
+          "description": "Whether a trigger's Kapıcı precondition is asked before it wakes an agent — so a change that is only noise (an auto-save, a lock file, a formatting-only edit) costs no run. Try shadow for a week or two before switching it on."
         },
         "agentFarm.mediaUploadAuto": {
           "type": "string",

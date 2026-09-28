@@ -69,4 +69,30 @@ export const RETRY_NEXT_ACTION: KapiciRule = {
     ]
 };
 
-export const BUILTIN_RULES: KapiciRule[] = [DISPATCH_ROUTE, RETRY_NEXT_ACTION];
+export const TRIGGER_HAS_WORK: KapiciRule = {
+    id: 'trigger.has-work',
+    version: 1,
+    description: 'Does this firing carry real work for the agent it would wake?',
+    providers: ['jev', 'llm'],
+    questions: {
+        work: {
+            type: 'noul',
+            instructions: 'This change would wake an AI agent to act on it. Is there real work in it for the agent?',
+            criteria: 'Noise is not work: an auto-save with no real change, a lock, temp or backup file, a whitespace- or formatting-only edit, an empty file.'
+        }
+    },
+    decide: { passIf: { q: 'work', noulGt: 0.5 } },
+    minConfidence: 0.6,
+    onLowConfidence: 'mechanical',
+    onFailure: 'open',
+    inputBudgetChars: 12000,
+    golden: [
+        { state: { event: 'watch change', file: 'yeni-gorev.md', content: 'Ödeme hatırlatmalarını gönder: 3 müşteri gecikmede.' }, expect: { work: true } },
+        { state: { event: 'watch change', file: 'notlar.md', diff: '-Toplantı saat 3\n+Toplantı saat 4\n+Yarın müşteriye teklif gönder' }, expect: { work: true } },
+        { state: { event: 'watch change', file: '~$rapor.docx', content: '' }, expect: { work: false } },
+        { state: { event: 'watch change', file: 'index.lock', content: '' }, expect: { work: false } },
+        { state: { event: 'watch change', file: 'app.ts', diff: '-const a=1;\n+const a = 1;' }, expect: { work: false } }
+    ]
+};
+
+export const BUILTIN_RULES: KapiciRule[] = [DISPATCH_ROUTE, RETRY_NEXT_ACTION, TRIGGER_HAS_WORK];

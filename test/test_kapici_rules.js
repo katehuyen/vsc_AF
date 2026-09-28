@@ -18,7 +18,7 @@ const refuse = (mut, re) => { const r = base(); mut(r); return re.test(S.ruleRef
 
 // --- the shipped rules hold
 for (const r of B.BUILTIN_RULES) { ok(`builtin ${r.id} passes its own schema`, S.ruleRefusal(r) === ''); }
-ok('builtin rules ship dispatch and retry', B.BUILTIN_RULES.map(r => r.id).join() === 'dispatch.route,retry.next-action');
+ok('builtin rules ship dispatch, retry and the trigger precondition', B.BUILTIN_RULES.map(r => r.id).join() === 'dispatch.route,retry.next-action,trigger.has-work');
 
 // --- refusals, each naming the fault
 ok('not an object', /is a JSON object/.test(S.ruleRefusal([])));
@@ -96,7 +96,7 @@ try {
     ok('project beats system (BOM tolerated)', inProj.layer === 'project' && inProj.rule.version === 3 && JSON.stringify(inProj.overrides) === '["builtin","system"]');
     ok('builtin untouched stays builtin', reg.get('dispatch.route', proj).layer === 'builtin' && reg.get('dispatch.route').file === undefined);
     const loaded = reg.load(proj);
-    ok('a broken file is a named problem', loaded.problems.length === 1 && loaded.problems[0].layer === 'system' && /broken: description|needs a description|version/.test(loaded.problems[0].error) && loaded.rules.length === 2);
+    ok('a broken file is a named problem', loaded.problems.length === 1 && loaded.problems[0].layer === 'system' && /broken: description|needs a description|version/.test(loaded.problems[0].error) && loaded.rules.length === 3);
     ok('find: a refused rule says why', /in .*broken\.json is refused/.test(reg.find('broken').error));
     ok('find: a missing rule lists what there is', /no Kapici rule "nope" — kapici.rules lists dispatch.route, retry.next-action/.test(reg.find('nope').error));
 

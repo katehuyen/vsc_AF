@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
-import { DispatchRule, dispatchText } from './dispatch';
+import { DispatchKapici, DispatchRule, dispatchText } from './dispatch';
+import { kapiciFiring, TriggerKapici } from './kapiciTrigger';
 import { LiveEvent, LiveMonitor } from './live';
 import { FarmTrigger, RunDimensions, runExtras, TaskManager, TaskMode } from './tasks';
 import { normPath, safeReadFile, truncate } from './util';
@@ -12,6 +13,8 @@ export interface DispatchOptions {
     judgeArgs: () => string;
     rules: () => DispatchRule[];
     useClassifier: () => boolean;
+    /** agentFarm.kapici.dispatch — undefined when off */
+    kapici?: () => DispatchKapici | undefined;
 }
 
 /**
@@ -26,12 +29,15 @@ export class TriggerManager implements vscode.Disposable {
     private changed = new Map<string, string>();
     private disposables: vscode.Disposable[] = [];
     private armedKey = '';
+    /** M-59 — triggers whose Kapıcı precondition is being asked; a second firing meanwhile is skipped */
+    private asking = new Set<string>();
 
     constructor(
         private tasks: TaskManager,
         private getAgents: () => AgentInfo[],
         live?: LiveMonitor,
-        private dispatchOpts?: DispatchOptions
+        private dispatchOpts?: DispatchOptions,
+        private kapici?: () => TriggerKapici | undefined
     ) {
         if (live) {
             this.disposables.push(live.onEvent(ev => this.onHookEvent(ev)));
@@ -109,6 +115,7 @@ export class TriggerManager implements vscode.Disposable {
      *   1. cooldown / hourly cap  — frequency brakes (how often)
      *   2. the farm gate          — master switch · pause-until · quiet hours
      *   3. the PRECONDITION       — content brake (is there actually work?)
+     *   4. a Kapıcı precondition   — the only asynchronous one, asked last (M-59)
      * A watch trigger fires on any filesystem change, including noise that has
      * nothing to do with the job; without step 3 the only way to learn "there
      * was nothing to do" was to pay for a full agent wake-up.
@@ -128,7 +135,22 @@ export class TriggerManager implements vscode.Disposable {
         if (gate) { return this.skip(trigger, gate.reason); }
         const pre = this.tasks.checkPrecondition(trigger.fireIf);
         if (!pre.ok) { return this.skip(trigger, pre.detail); }
+        if (trigger.fireIf?.kind === 'kapici') { return this.askKapici(trigger, reason, payload, file); }
         return this.fire(trigger, reason, payload, file);
+    }
+
+    /** Accepted now, decided when Kapıcı answers; the trigger is read again then, so a trigger disabled meanwhile does not fire. */
+    private askKapici(trigger: FarmTrigger, reason: string, payload?: unknown, file?: string): boolean {
+        if (this.asking.has(trigger.id)) { return this.skip(trigger, 'Kapıcı is still deciding the previous firing'); }
+        this.asking.add(trigger.id);
+        void kapiciFiring(trigger.fireIf!, { title: trigger.title, reason, file, watch: trigger.watchPath, payload }, this.kapici?.())
+            .then(v => {
+                const t = this.tasks.triggers.find(x => x.id === trigger.id);
+                if (!t || !t.enabled) { return; }
+                if (v.fire) { this.fire(t, reason, payload, file); } else { this.skip(t, v.detail); }
+            })
+            .finally(() => this.asking.delete(trigger.id));
+        return true;
     }
 
     /** A suppressed firing: no agent woken, no cost — but never silent. */
@@ -213,7 +235,7 @@ export class TriggerManager implements vscode.Disposable {
         }));
         const routeText = payloadStr || `${trigger.watchPath ?? ''} ${prompt}`.trim();
         const result = await dispatchText(
-            process.cwd(), opts.judgeArgs(), routeText, opts.rules(), candidates, opts.useClassifier());
+            process.cwd(), opts.judgeArgs(), routeText, opts.rules(), candidates, opts.useClassifier(), opts.kapici?.());
         if (!result.agent) {
             void vscode.window.showWarningMessage(
                 `Agent Farm: dispatch trigger "${trigger.title}" found no agent — ${result.reason}.`);

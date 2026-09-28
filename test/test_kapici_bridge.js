@@ -60,7 +60,7 @@ const KEY = 'vck_CANARY_gateway_key_0123456789';
     let r = await run('kapici.status');
     ok('status: key PRESENT by name, never its value', r.ok && r.result.key.name === 'AI_GATEWAY_API_KEY' && r.result.key.present === true && !JSON.stringify(r.result).includes(KEY));
     ok('status: road, address, model', r.result.key.route === 'vercel' && /ai-gateway\.vercel\.sh/.test(r.result.key.url) && r.result.key.model === 'typesafe-ai/jev');
-    ok('status: candidates and rule count', r.result.candidates.length === 2 && r.result.rules === 2 && r.result.providers.llm === false);
+    ok('status: candidates and rule count', r.result.candidates.length === 2 && r.result.rules === 3 && r.result.providers.llm === false);
 
     r = await run('kapici.eval', { rule: 'retry.next-action', state: { failure: 'usage limit', note: 'token ' + KEY } });
     ok('eval: a verdict through the gateway', r.ok && r.result.decision === 'resume' && r.result.provider === 'jev' && calls[0].url.includes('vercel') && calls[0].auth === 'Bearer ' + KEY);
