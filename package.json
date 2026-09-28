@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.742.0",
+  "version": "3.743.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9202,6 +9202,19 @@
             "Stop the step as failed."
           ],
           "description": "When a quality gate cannot judge an asset — the judge cannot open a video or audio file, or it could not run — what happens. It is never counted as a pass."
+        },
+        "agentFarm.judgeCompare": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "never"
+          ],
+          "enumDescriptions": [
+            "When a media step edits an image or video it was given (a local file it uploaded, or an earlier step's result), its quality check sees that source too and judges only whether what was asked changed.",
+            "The quality check sees the result alone."
+          ],
+          "description": "Whether an edit's quality check is shown what it started from. Without it, a judge can take something already in the source for an unwanted addition and fail a correct edit."
         },
         "agentFarm.mediaUploadAuto": {
           "type": "string",

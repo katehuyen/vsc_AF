@@ -3733,6 +3733,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             airtableInputs: (ins, given) => lookupInputs(ins, given, airtableLookup),
             judgeArgs: () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001'),
             judgeUnjudged: () => cfg().get<string>('judgeUnjudged', 'ask'),
+            judgeCompare: () => cfg().get<string>('judgeCompare', 'auto'),
             toolSettings: () => {
                 const own = (k: string): unknown => {
                     const i = vscode.workspace.getConfiguration().inspect<unknown>(`agentFarm.${k}`);

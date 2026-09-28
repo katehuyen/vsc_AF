@@ -441,6 +441,7 @@
         setting('upload.retentionDays', 'Keep an upload (days)', 'number', 7, 'agentFarm.mediaUploadRetentionDays', { min: 0, max: 365 }),
         setting('judge.unjudged', 'If no judge can look at it', 'tri', 'ask', 'agentFarm.judgeUnjudged',
             { states: { ask: 'ask', auto: 'pass', never: 'stop' } }),
+        setting('judge.compare', 'Show an edit\'s judge its source', 'enum', 'auto', 'agentFarm.judgeCompare', { options: ['auto', 'never'] }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),
         setting('sentry.leaderBudgetUsd', 'Sentry leader budget $/day', 'number', 2,
             'agentFarm.sentryLeaderBudgetUsd', { min: 0 }),

@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.743.0 - An edit's quality check sees what it started from (2026-09-28)
+
+- When a media step edits an image or video it was given — a file from this
+  computer, or an earlier step's result — its quality check now looks at the
+  original and the edited version side by side and only asks whether what you
+  asked for changed. Before, it saw the result alone and could take something
+  that was already in the original for an unwanted addition, failing a correct
+  edit and paying for a retry. Your folders are not touched; the two copies
+  are made in a temporary folder and removed after the check.
+- Setting: "Show an edit's judge its source" (auto / never).
+
 ## 3.742.0 - A step waiting for your answer no longer looks stuck (2026-09-28)
 
 - While a workflow step waits for you — a browser step asking to run, an

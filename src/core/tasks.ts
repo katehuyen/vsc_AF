@@ -104,6 +104,7 @@ import { extractJson, sanitizePrompt } from './util';
 import { fillJsonTemplate } from './jsonTemplate';
 import { LiveCard, reattachPlan } from './consoleTaskRevive';
 import { HumanAsk, humanAskSentence, OpenHumanAsk } from './humanAsk';
+import { compareJudgePrompt, judgeSources, normalizeJudgeCompare, stageComparison } from './judgeCompare';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type TaskMode = 'interactive' | 'headless';
@@ -1770,6 +1771,8 @@ export interface TaskManagerOptions {
     judgeArgs?: () => string;
     /** M-42 — what a step no judge could look at does: ask (default) · pass · stop (`agentFarm.judgeUnjudged`) */
     judgeUnjudged?: () => string;
+    /** M-62 — auto: an edit's vision judge also sees its source · never (`agentFarm.judgeCompare`) */
+    judgeCompare?: () => string;
     /** M-39 — how much of the previous step's text {prev_text} carries (`agentFarm.workflowPrevTextChars`, default 1500) */
     prevTextChars?: () => number;
     /** ‼️ M-3 — the user's DEFAULT retry policy (`agentFarm.taskRetry`), used by
@@ -5469,26 +5472,30 @@ export class TaskManager implements vscode.Disposable {
      * ‼️ M-42 — an asset the judging engine cannot open, or a judge that could
      * not run, is `unjudged` — never a PASS nobody looked at.
      */
-    private runVisionJudge(assetFile: string, criteria: string, step?: StepJudge):
+    private runVisionJudge(assetFile: string, criteria: string, step?: StepJudge, sources: string[] = []):
         Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; costUSD?: number }> {
         return new Promise(resolve => {
             const want = visionJudgeWant(assetFile, step, this.opts.judgeArgs?.());
-            const judge = want.origin;
             const route = visionRoute(assetFile, want.engine);
             if (!route.ok) {
-                resolve({ pass: false, reason: route.why, unjudged: route.why, judge });
+                resolve({ pass: false, reason: route.why, unjudged: route.why, judge: want.origin });
                 return;
             }
-            const prompt = sanitizePrompt(
-                `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu ${want.engine === 'claude' ? 'Read aracıyla ' : ''}aç ve incele; kabuk komutu çalıştırma. ` +
+            // M-62 — an edit is judged against what it started from, side by side in a temp folder
+            let staged: ReturnType<typeof stageComparison> | undefined;
+            try { staged = sources.length ? stageComparison(assetFile, sources) : undefined; } catch { staged = undefined; } // a copy that fails leaves the lone judge
+            const judge = want.origin + (staged ? ` · compared with its source (${sources.map(s => path.basename(s)).join(', ')})` : '');
+            const viaRead = want.engine === 'claude';
+            const prompt = sanitizePrompt(staged ? compareJudgePrompt(staged.after, staged.before, criteria, viaRead) :
+                `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu ${viaRead ? 'Read aracıyla ' : ''}aç ve incele; kabuk komutu çalıştırma. ` +
                 `Şu ÖLÇÜTü karşılıyor mu? ÖLÇÜT: ${criteria}. ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS, FAIL ya da FAIL-METHOD olsun (FAIL-METHOD: yaklaşımın kendisi yanlış, aynı talimatla yeniden denemek düzeltmez), ardından kısa gerekçe yaz.`);
             // X-260 — through the seam.
             void execOneShot({
-                cwd: path.dirname(assetFile), engine: want.engine, model: want.model, args: judgeLean(want.engine, true, want.args), prompt, timeoutMs: 180_000,
+                cwd: staged?.dir ?? path.dirname(assetFile), engine: want.engine, model: want.model, args: judgeLean(want.engine, true, want.args), prompt, timeoutMs: 180_000,
                 // agy's default mode may act on the files; measured 2026-09-26: in plan mode it still opens and judges them
                 readOnly: want.engine === 'agy', ...judgeJson(want.engine)
-            }).then(r => {
+            }).finally(() => staged?.cleanup()).then(r => {
                 const { text, costUSD, error } = judgeReply(want.engine, r.out);
                 const spent = costUSD ? { costUSD } : {};
                 if ((r.error || error) && !text) {
@@ -5545,8 +5552,10 @@ export class TaskManager implements vscode.Disposable {
             await this.settleUnjudged(task, w, 'there is no downloaded asset to look at', attempt, 'Vision verify');
             return;
         }
-        const judged = files.length > 1 && candidatesOf(step.media?.candidates) > 1 ? await this.pickCandidate(task, step, files, meta!)
-            : await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, this.judgeCriteria(task, step), sj));
+        const sources = normalizeJudgeCompare(this.opts.judgeCompare?.()) === 'never' ? []
+            : judgeSources(meta?.input ?? '', task.uploads, readMediaMetas(this.outputsDir), task.id);
+        const judged = files.length > 1 && candidatesOf(step.media?.candidates) > 1 ? await this.pickCandidate(task, step, files, meta!, sources)
+            : await this.climbJudge(task, step, sj => this.runVisionJudge(assetFile, this.judgeCriteria(task, step), sj, sources));
         if (judged.unjudged) {
             await this.settleUnjudged(task, w, judged.unjudged, attempt, 'Vision verify', judged.judge);
             return;
@@ -5587,12 +5596,12 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** A-27 — parallel-cheap: the candidates judged in order, the first PASS handed on alone (src/core/mediaCandidates.ts). */
-    private async pickCandidate(task: FarmTask, step: WorkflowStep, files: string[], meta: MediaMeta):
+    private async pickCandidate(task: FarmTask, step: WorkflowStep, files: string[], meta: MediaMeta, sources: string[]):
         Promise<{ pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string; costUSD?: number }> {
         const seen: { pass: boolean; reason: string; unjudged?: string; judge: string; climbed?: string; costUSD?: number }[] = [];
         let spent = 0;
         for (const [i, f] of files.entries()) {
-            const j0 = await this.climbJudge(task, step, sj => this.runVisionJudge(f, this.judgeCriteria(task, step), sj));
+            const j0 = await this.climbJudge(task, step, sj => this.runVisionJudge(f, this.judgeCriteria(task, step), sj, sources));
             spent += j0.costUSD ?? 0;
             const j = { ...j0, ...(spent ? { costUSD: spent } : {}) };
             if (j.pass && !j.unjudged) {
