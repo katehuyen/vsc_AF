@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.746.0",
+  "version": "3.747.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9278,6 +9278,21 @@
             "When no dispatch rule matches, Kapıcı picks the agent first; when it is not sure, or cannot answer, the classifier model decides as before."
           ],
           "description": "Whether Kapıcı helps decide which agent takes incoming work. Try shadow for a week or two before switching it on."
+        },
+        "agentFarm.kapici.retry": {
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "shadow",
+            "on"
+          ],
+          "enumDescriptions": [
+            "A held retry is decided exactly as it always has: the supervisor model your retry policy names, and its fallback when it cannot answer.",
+            "The supervisor model decides as it always has, and Kapıcı quietly makes its own pick beside it and records whether the two agreed (see how often in the Kapıcı audit). Nothing waits for it.",
+            "Kapıcı decides first whether to resume, wait or stop; when it is not sure, or cannot answer, the supervisor model decides as before. A retry policy may also name Kapıcı itself as its supervisor, which then asks no model at all."
+          ],
+          "description": "Whether Kapıcı helps decide what happens to a task whose retry is held for a supervisor. Try shadow for a week or two before switching it on."
         },
         "agentFarm.mediaUploadAuto": {
           "type": "string",

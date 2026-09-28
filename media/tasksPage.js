@@ -1573,7 +1573,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ['smart', 'continue it — pick up where it was cut off'],
             ['supervisor', 'let a supervisor decide how to continue']
         ])}</label>
-            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, supInh(c), supPromote(c)) : ''}
+            ${(c.retryBehavior === 'supervisor') ? window.AFSupervisor.row(c.retrySupervisor, (DATA.launch || {}).engines, C, supInh(c), supPromote(c), (DATA.launch || {}).kapiciSupervisor) : ''}
             ${(c.retryBehavior === 'smart' || c.retryBehavior === 'supervisor') ? `
             <label class="ntf wide" title="${C.esc(
             'Sent as the NEXT TURN of the run\'s own conversation, so it can be short — everything that '

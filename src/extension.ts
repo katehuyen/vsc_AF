@@ -491,12 +491,13 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import type { SupervisorPolicy } from './core/retrySupervisor';
-import { SupervisorRunner } from './core/supervisorRunner';
+import { KAPICI_ENGINE, SupervisorRunner } from './core/supervisorRunner';
 import { incidentFrom, supervisorAsk } from './core/supervisorWire';
 import {
     describeRetry, normalizeRetry, resolveRetry, RETRY_DEFAULT_SAFETY_MIN, RETRY_MAX_ATTEMPTS,
     RETRY_MAX_DELAY_MIN, RetryPolicy
 } from './core/retry';
+import { continuationPromptFor } from './core/retry';
 import { normalizeRounds, ROUND_DELAY_MAX_MIN } from './core/taskRounds';
 import {
     addGuidance, allowedAgents, buildResumeMessage, DEFAULT_AUTONOMY, DEFAULT_MISSION_LIMITS,
@@ -3821,6 +3822,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // M-13 — room on the supervisor's own pick, read off the same meter the
             // quota brake reads; no figure is 'unknown', never 'free'
             supervisorRoom: p => {
+                if (p.engine === KAPICI_ENGINE) { return 'free'; }
                 try {
                     const r = launchAccountPick({ engine: p.engine, ...(p.model ? { model: p.model } : {}) });
                     if (r.refusal) { return 'full'; }
@@ -17164,6 +17166,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             retriesLeft: t => resolveRetry(t.retry, retryDefault(t)).max - (t.retryAttempt ?? 0)
         }),
         ask: supervisorAsk({ cwdOf: t => t.workDir || findAgent(t.agentId)?.dir || os.homedir(), accountFor: supervisorAccount }),
+        kapici: () => kapiciHost.retry(consumerMode(cfg().get('kapici.retry'))),
+        continuationOf: t => continuationPromptFor(resolveRetry(t.retry, retryDefault(t)), (t.retryAttempt ?? 0) + 1),
         log: l => console.log(`[Agent Farm] ${l}`)
     });
     const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
@@ -24596,6 +24600,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // its Engine box instead of always listing Claude's aliases.
         engineModels: () => engineModelMatrix(),
         engineRoutes: () => engineRouteMatrix(),
+        kapiciSupervisor: () => consumerMode(cfg().get('kapici.retry')) !== 'off',
         // ‼️ X-169 — and the sign-ins each engine has, through the one reader.
         engineAccounts: () => engineAccountMatrix(),
         // ‼️ X-305 — …and the RULES each engine offers, through the twin reader.

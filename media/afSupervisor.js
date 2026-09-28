@@ -121,15 +121,22 @@
         if (el.tagName === 'SELECT') { el.classList.toggle('inh', !el.value); }
     }
 
+    /** M-58 — Kapıcı judges with no model; offered while Kapıcı helps with retries, or kept visible when the policy already names it. */
+    const KAPICI = { id: 'kapici', label: 'Kapıcı — no model', ready: true,
+        next: 'Answers from your Kapıcı rule: no model, no cost, no limit. When it is not sure, "If it is not sure" decides.' };
+    const KAPICI_OFF = Object.assign({}, KAPICI, { label: 'Kapıcı — off for retries',
+        next: 'Kapıcı is off for retries in Farm Settings, so this policy goes straight to "If it is not sure".' });
+
     /**
-     * The boxes. `engines` = [{ id, label, ready, next }]; `C` = the page's option/escape helper;
+     * The boxes. `engines` = [{ id, label, ready, next }]; `C` = the page's option/escape helper; `kapici` = Kapıcı helps with retries;
      * `inh` = Farm Settings' supervisor fields — an empty box shows that value faint (MIRROR: value, then origin).
      * U-151 — `promote` = { open: the key whose strip is open, levels } draws ↑ beside a box that holds its own value.
      */
-    function row(d, engines, C, inh, promote) {
+    function row(d, engines, C, inh, promote, kapici) {
         const s = Object.assign(blank(), d || {});
         const up = inh || {};
-        const list = (engines && engines.length) ? engines : [{ id: 'claude', label: 'Claude Code', ready: true }];
+        const base = (engines && engines.length) ? engines : [{ id: 'claude', label: 'Claude Code', ready: true }];
+        const list = (kapici || s.engine === KAPICI.id) ? base.concat(kapici ? KAPICI : KAPICI_OFF) : base;
         const upEngine = inheritedEngine(up);
         const upLabel = upEngine ? ((list.find(e => e.id === upEngine) || {}).label || upEngine) : '';
         const eng = (upEngine

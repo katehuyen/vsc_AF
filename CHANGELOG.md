@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.747.0 - Kapıcı can help decide what a stopped task does next (2026-09-28)
+
+- A new setting, Kapıcı → helps decide held retries, lets Kapıcı take part when
+  a task that failed or hit a limit is waiting for its supervisor to decide
+  whether to resume, run the original again, wait, stop or ask you. Off (the
+  default) changes nothing. Shadow leaves the supervisor model in charge and
+  lets Kapıcı make its own pick quietly beside it, so its audit shows how often
+  the two agree. On lets Kapıcı decide first and hands anything it is unsure of
+  to the supervisor model as before.
+- A retry policy can name Kapıcı itself as its supervisor ("Kapıcı — no model"
+  in the New-task form, offered while the setting is not off). It then asks no
+  model at all: no cost and no usage limit. It is only offered the moves the
+  task can really make — resume only when there is a session to continue, wait
+  only when the reset time is known — and when it is not sure, your "If it is
+  not sure" choice decides.
+
 ## 3.746.0 - Kapıcı can watch the dispatcher before it helps (2026-09-28)
 
 - A new setting, Kapıcı → helps route incoming work, decides whether Kapıcı

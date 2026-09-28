@@ -15,6 +15,13 @@ import { IncidentBundle, supervisorPrompt } from './retryIncident';
 import { confident, parseDecision, SupervisorPolicy, supervisorRefusal, validateDecision } from './retrySupervisor';
 import { underConfidence } from './decisionCore';
 import { SupervisionOutcome } from './retrySupervision';
+import { answeredAction, kapiciAnswerText, SupervisorKapici, supervisorOptions } from './kapiciSupervisor';
+import { gate } from './kapici/shadow';
+import { KapiciVerdict } from './kapici/types';
+import { DEFAULT_CONTINUATION_PROMPT } from './retry';
+
+/** A policy whose engine is Kapıcı asks no model at all (agentFarm.kapici.retry must not be off). */
+export const KAPICI_ENGINE = 'kapici';
 
 export interface SupervisorAnswer { text: string; costUsd?: number; sessionId?: string; error?: string }
 
@@ -26,6 +33,10 @@ export interface SupervisorRunnerDeps {
     policyOf: (row: FarmTask) => SupervisorPolicy | undefined;
     incidentOf: (row: FarmTask, failed: FarmTask | undefined) => Promise<IncidentBundle>;
     ask: (p: SupervisorPolicy, prompt: string, row: FarmTask) => Promise<SupervisorAnswer>;
+    /** agentFarm.kapici.retry: undefined when off, so the call below is exactly today's. */
+    kapici?: () => SupervisorKapici | undefined;
+    /** The continuation a resume sends — the policy's own text for the next attempt. */
+    continuationOf?: (row: FarmTask) => string;
     now?: () => number;
     log?: (line: string) => void;
 }
@@ -67,9 +78,33 @@ export class SupervisorRunner {
     private async askOne(row: FarmTask, p: SupervisorPolicy, failed: FarmTask | undefined,
         fallback: (note: string, extra?: { spentUsd?: number; sessionId?: string }) => void): Promise<void> {
         let answer: SupervisorAnswer;
+        let by = p.engine;
         try {
             const bundle = await this.deps.incidentOf(row, failed);
-            answer = await this.deps.ask(p, supervisorPrompt(bundle, this.now()), row);
+            const k = this.deps.kapici?.();
+            const ctx = { resumable: !!row.resumeSessionId, ...(row.resetAt ? { resetAt: row.resetAt } : {}) };
+            const options = supervisorOptions(ctx);
+            const fromVerdict = (v: KapiciVerdict): SupervisorAnswer | undefined => {
+                const text = kapiciAnswerText(v, { ...ctx, continuation: this.deps.continuationOf?.(row) ?? DEFAULT_CONTINUATION_PROMPT });
+                return text ? { text, ...(v.costUsd ? { costUsd: v.costUsd } : {}) } : undefined;
+            };
+            if (p.engine === KAPICI_ENGINE) {
+                if (!k) { fallback('the policy names Kapıcı as its supervisor, and Kapıcı is off for retries (agentFarm.kapici.retry)'); return; }
+                const v = await k.evaluate(bundle, options, 'on');
+                const a = v.fallback === undefined ? fromVerdict(v) : undefined;
+                if (!a) { fallback(`Kapıcı could not decide — ${v.reason.slice(0, 160)}`); return; }
+                answer = a;
+            } else if (k) {
+                const g = await gate<SupervisorAnswer>({
+                    mode: k.mode, today: () => this.deps.ask(p, supervisorPrompt(bundle, this.now()), row),
+                    ask: (m, actual) => k.evaluate(bundle, options, m, actual),
+                    decisionOf: a => answeredAction(a.text), fromVerdict, log: k.log
+                });
+                answer = g.value;
+                if (g.by === 'kapici') { by = KAPICI_ENGINE; }
+            } else {
+                answer = await this.deps.ask(p, supervisorPrompt(bundle, this.now()), row);
+            }
         } catch (e) {
             fallback(`the supervisor could not be asked: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
             return;
@@ -87,7 +122,7 @@ export class SupervisorRunner {
             return;
         }
         this.deps.settle(row, { kind: 'decision', decision: checked.decision },
-            { engine: p.engine, originalPrompt: this.originalPrompt(row, failed), ...extra });
-        this.deps.log?.(`supervisor: ${row.id} → ${checked.decision.action}`);
+            { engine: by, originalPrompt: this.originalPrompt(row, failed), ...extra });
+        this.deps.log?.(`supervisor: ${row.id} → ${checked.decision.action}${by === KAPICI_ENGINE ? ' (Kapıcı)' : ''}`);
     }
 }

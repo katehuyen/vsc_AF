@@ -106,6 +106,8 @@ export interface TasksDeps {
      * box - which is the right answer for the three engines with no provider
      * axis and for a Claude with no profiles set up yet.
      */
+    /** M-58 — agentFarm.kapici.retry is not off, so Kapıcı is offered as a supervisor engine. */
+    kapiciSupervisor?(): boolean;
     engineRoutes?(): Record<string, {
         noun: string;
         providers: { id: string; label: string; detail: string; tiers: { id: string; label: string; detail?: string }[] }[];
@@ -1008,6 +1010,7 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             engineModels: deps.engineModels?.() ?? null,
             // X-106 - and which routes it may be pointed at (see ConsoleRoute).
             routes: deps.engineRoutes?.() ?? null,
+            kapiciSupervisor: deps.kapiciSupervisor?.() ?? false,
             // ‼️ X-169 — and which sign-in may pay for it (see engineAccounts).
             accounts: deps.engineAccounts?.() ?? null,
             // X-305 — …and the rules, drawn as their own group above the slots.

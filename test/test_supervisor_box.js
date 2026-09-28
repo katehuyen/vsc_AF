@@ -121,6 +121,15 @@ console.log('\n== U-151: the boxes draw the inherited value faint, MIRROR first 
     ok('the empty box names the agent it inherits from', /placeholder="3 — agent developer"/.test(drawn));
     ok('the engine\'s tip names the project', /↳ Codex</.test(drawn) && /title="codex — inherited from project AgentFarm/.test(drawn));
     eq('no agent, no project: Farm Settings alone', W.inherited(L, '', '')._from, { engine: 'Farm Settings', maxCalls: 'Farm Settings' });
+
+    // M-58 — Kapıcı is a supervisor engine only while it helps with retries; off draws today's list exactly.
+    eq('off: the list is today\'s', W.row(W.blank(), engines, C), W.row(W.blank(), engines, C, undefined, undefined, false));
+    ok('off: no Kapıcı to pick', !/value="kapici"/.test(W.row(W.blank(), engines, C)));
+    const on = W.row(W.blank(), engines, C, undefined, undefined, true);
+    ok('on: Kapıcı is offered after the engines', /Codex<\/option><option value="kapici">Kapıcı — no model<\/option>/.test(on));
+    const kept = W.row({ engine: 'kapici' }, engines, C);
+    ok('a stored Kapıcı policy stays selected while it is off, and says so', /<option value="kapici" selected>Kapıcı — off for retries<\/option>/.test(kept));
+    eq('and round-trips as the policy the runner reads', S.toPolicy({ engine: 'kapici', lowConfidence: 'park' }), { engine: 'kapici', lowConfidence: 'park' });
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

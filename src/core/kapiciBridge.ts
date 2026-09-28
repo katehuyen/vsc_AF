@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { argStr, BridgeRegistry, need, optBool, optNum, optStr } from './bridge';
 import type { DispatchKapici } from './dispatch';
+import type { SupervisorKapici } from './kapiciSupervisor';
 import { ConsumerSetting } from './kapici/shadow';
 import { AuditEntry, readAudit } from './kapici/audit';
 import { BUILTIN_RULES } from './kapici/builtinRules';
@@ -102,6 +103,17 @@ export class KapiciHost {
             mode,
             evaluate: (text, options, m, actual) => this.get().evaluate('dispatch.route', text,
                 { consumer: 'dispatch', mode: m, options: { agent: options }, ...(actual !== undefined ? { actual } : {}) }),
+            log: l => this.d.log(l)
+        };
+    }
+
+    /** The retry supervisor consumer (M-58): nothing when off. The incident bundle is the state; the doable actions narrow the choice. */
+    retry(mode: ConsumerSetting): SupervisorKapici | undefined {
+        if (mode === 'off') { return undefined; }
+        return {
+            mode,
+            evaluate: (bundle, options, m, actual) => this.get().evaluate('retry.next-action', bundle as unknown as Record<string, unknown>,
+                { consumer: 'retry', mode: m, options: { action: options }, ...(actual !== undefined ? { actual } : {}) }),
             log: l => this.d.log(l)
         };
     }

@@ -610,6 +610,20 @@ const variants = () => ([
             drive(r, draft, 'nt-retrybehavior');
         }
     },
+    // M-58 — Kapıcı helps with retries, so it is a supervisor engine that asks no model.
+    {
+        id: 'tasks-retry-supervisor-kapici', label: 'Tasks → the New-task form, Kapıcı picked as the supervisor (M-58)',
+        data: (() => { const d = data(); d.launch.kapiciSupervisor = true; return d; })(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-prompt': 'gece taraması — dosyaları filele', 'nt-retrymode': 'custom', 'nt-retrymax': '3' };
+            drive(r, draft, 'nt-retrymode');
+            Object.assign(draft, { 'nt-retrybehavior': 'supervisor' });
+            drive(r, draft, 'nt-retrybehavior');
+            Object.assign(draft, { 'nt-supengine': 'kapici', 'nt-supfallback': 'park' });
+            drive(r, draft, 'nt-retrybehavior');
+        }
+    },
     // U-151 — Farm Settings names the supervisor and the task says nothing: every
     // box is empty and shows the inherited value faint (the smallest arity).
     {
