@@ -106,7 +106,7 @@ for (const rule of BUILTIN_RULES.filter(r => ruleIds.includes(r.id))) {
                 const qs = questionsFor(rule, layout, c);
                 const r = arm === 'jev' ? jev(c.state, qs) : haiku(c.state, qs);
                 const [qid, want] = Object.entries(c.expect)[0];
-                const a = r.answers[qid];
+                const a = (r.answers || {})[qid];
                 rows.push({ arm, layout, rule: rule.id, i, want, got: a ? (a.choice ?? a.p ?? a.score) : null, confidence: a ? a.confidence : null,
                     ok: correct(qs[qid], a, want), minConfidence: rule.minConfidence, latencyMs: r.latencyMs ?? null, wall: r.wall, costUsd: r.costUsd ?? null,
                     provider: r.provider, fallback: r.fallback, error: r.error || null });

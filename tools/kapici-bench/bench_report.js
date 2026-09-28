@@ -3,7 +3,7 @@
 // Go = Jev's accuracy at most 3 points below Haiku's AND Jev's p50 latency at least 5x better.
 'use strict';
 const fs = require('fs');
-const rows = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const rows = process.argv.slice(2).flatMap(f => JSON.parse(fs.readFileSync(f, 'utf8')));
 
 const pct = (a, b) => (b ? (100 * a / b).toFixed(1) : '—');
 const q = (xs, p) => { if (!xs.length) { return null; } const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
@@ -33,9 +33,14 @@ for (const k of keys) {
         lines.push(`| ${rule} | ${layout} | ${arm} | ${s.n} | ${s.acc.toFixed(1)}% | ${s.errors} | ${s.cov}% | ${s.accCov}% | ${s.p50} | ${s.p95} | ${s.cost.toFixed(5)} | ${s.cal} |`);
     }
     if (by.jev && by.haiku) {
-        const accOk = by.jev.acc >= by.haiku.acc - 3;
-        const latOk = by.jev.p50 * 5 <= by.haiku.p50;
-        verdicts.push(`- **${rule} (${layout})**: ${accOk && latOk ? 'GO' : 'NO-GO'} — accuracy Jev ${by.jev.acc.toFixed(1)}% vs Haiku ${by.haiku.acc.toFixed(1)}% (${accOk ? 'within' : 'outside'} 3 points), p50 ${by.jev.p50} ms vs ${by.haiku.p50} ms (${(by.haiku.p50 / by.jev.p50).toFixed(1)}x; needs 5x).`);
+        // The verdict compares the two arms on the same cases only — a strided Haiku run covers a subset.
+        const pick = arm => rows.filter(r => r.rule === rule && r.layout === layout && r.arm === arm);
+        const both = new Set(pick('haiku').map(r => r.i).filter(i => pick('jev').some(r => r.i === i)));
+        const j = stats(pick('jev').filter(r => both.has(r.i)));
+        const h = stats(pick('haiku').filter(r => both.has(r.i)));
+        const accOk = j.acc >= h.acc - 3;
+        const latOk = j.p50 * 5 <= h.p50;
+        verdicts.push(`- **${rule} (${layout})**, ${both.size} paired cases: ${accOk && latOk ? 'GO' : 'NO-GO'} — accuracy Jev ${j.acc.toFixed(1)}% vs Haiku ${h.acc.toFixed(1)}% (${accOk ? 'within' : 'outside'} 3 points), p50 ${j.p50} ms vs ${h.p50} ms (${(h.p50 / j.p50).toFixed(1)}x; needs 5x).`);
     }
 }
 const tot = arm => rows.filter(r => r.arm === arm).reduce((s, r) => s + (r.costUsd || 0), 0);
