@@ -12,6 +12,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { bounded, TRANSFER_TIMEOUT_MS } from './media';
 
 export type UploadProvider = 'fal' | 'replicate';
 export const UPLOAD_PROVIDERS: readonly UploadProvider[] = ['fal', 'replicate'];
@@ -114,18 +115,18 @@ async function uploadFal(p: string, bytes: Buffer, o: UploadOpts, f: typeof fetc
     }
     const base = (o.baseUrl ?? 'https://rest.fal.ai').replace(/\/$/, '');
     const days = o.retentionDays ?? 0;
-    const init = await f(`${base}/storage/upload/initiate?storage_type=fal-cdn-v3`, {
+    const init = await f(`${base}/storage/upload/initiate?storage_type=fal-cdn-v3`, bounded({
         method: 'POST',
         headers: {
             Authorization: o.auth, 'Content-Type': 'application/json',
             ...(days > 0 ? { 'x-fal-object-lifecycle-preference': JSON.stringify({ expiration_duration_seconds: Math.round(days * 86400) }) } : {})
         },
         body: JSON.stringify({ content_type: contentType(p), file_name: path.basename(p) })
-    });
+    }));
     if (!init.ok) { throw new Error(`fal refused the upload: ${await failText(init)}`); }
     const j = await init.json() as { upload_url?: string; file_url?: string };
     if (!j.upload_url || !j.file_url) { throw new Error('fal answered without upload_url / file_url'); }
-    const put = await f(j.upload_url, { method: 'PUT', headers: { 'Content-Type': contentType(p) }, body: bytes });
+    const put = await f(j.upload_url, bounded({ method: 'PUT', headers: { 'Content-Type': contentType(p) }, body: bytes }, TRANSFER_TIMEOUT_MS));
     if (!put.ok) { throw new Error(`fal did not take the bytes: ${await failText(put)}`); }
     return { url: j.file_url, ...(days > 0 ? { expiresAt: (o.now ?? Date.now)() + days * 86400_000 } : {}) };
 }
@@ -134,7 +135,7 @@ async function uploadReplicate(p: string, bytes: Buffer, o: UploadOpts, f: typeo
     const base = (o.baseUrl ?? 'https://api.replicate.com').replace(/\/$/, '');
     const form = new FormData();
     form.append('content', new Blob([bytes], { type: contentType(p) }), path.basename(p));
-    const r = await f(`${base}/v1/files`, { method: 'POST', headers: { Authorization: o.auth }, body: form });
+    const r = await f(`${base}/v1/files`, bounded({ method: 'POST', headers: { Authorization: o.auth }, body: form }, TRANSFER_TIMEOUT_MS));
     if (!r.ok) { throw new Error(`Replicate refused the upload: ${await failText(r)}`); }
     const j = await r.json() as { urls?: { get?: string }; expires_at?: string };
     if (!j.urls?.get) { throw new Error('Replicate answered without urls.get'); }

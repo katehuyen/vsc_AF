@@ -79,8 +79,17 @@ interface FalQueueSubmit {
     detail?: unknown;
 }
 
-export async function jsonFetch(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
-    const res = await fetch(url, init);
+/** A request that never answers must still END: an Omni edit step sat "running" for 20+ minutes with no event, the poll loop's own timeout unreachable behind one unbounded fetch. */
+export const REQUEST_TIMEOUT_MS = 120_000;
+/** Bytes going up or coming down (a video) get longer than a JSON call. */
+export const TRANSFER_TIMEOUT_MS = 600_000;
+
+export function bounded(init: RequestInit = {}, ms: number = REQUEST_TIMEOUT_MS): RequestInit {
+    return init.signal ? init : { ...init, signal: AbortSignal.timeout(ms) };
+}
+
+export async function jsonFetch(url: string, init: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<{ ok: boolean; status: number; json: unknown; text: string }> {
+    const res = await fetch(url, bounded(init, timeoutMs));
     const text = await res.text();
     let json: unknown;
     try { json = JSON.parse(text); } catch { json = undefined; }
@@ -204,7 +213,7 @@ export function extFromUrl(url: string): string {
 
 export async function downloadAsset(url: string, targetFile: string): Promise<boolean> {
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, bounded({}, TRANSFER_TIMEOUT_MS));
         if (!res.ok) { return false; }
         const buf = Buffer.from(await res.arrayBuffer());
         fs.writeFileSync(targetFile, buf);

@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.736.0 - A media call that never answers no longer hangs its step (2026-09-28)
+
+- Every request a media step makes (fal / Replicate submit, status polls,
+  uploads, result downloads) now has a time limit: two minutes for a call,
+  ten for moving a file. A stalled connection used to leave the step
+  "running" forever with no event; it now fails with the reason, so the run's
+  supervisor and retries can act on it.
+
 ## 3.735.0 - No developer codes on screen; a browser step's hosts are held by the browser (2026-09-28)
 
 - Settings, commands, tooltips and page labels no longer show the internal
