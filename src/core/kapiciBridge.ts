@@ -7,7 +7,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { argStr, BridgeRegistry, need, optBool, optNum, optStr } from './bridge';
-import { readAudit } from './kapici/audit';
+import type { DispatchKapici } from './dispatch';
+import { ConsumerSetting } from './kapici/shadow';
+import { AuditEntry, readAudit } from './kapici/audit';
 import { BUILTIN_RULES } from './kapici/builtinRules';
 import { DEFAULT_TIMEOUT_MS, Kapici, standardProviders } from './kapici/kapici';
 import { FetchLike, JEV_ROUTES, JevRoute } from './kapici/providers/jev';
@@ -93,6 +95,17 @@ export class KapiciHost {
         return this.kapici;
     }
 
+    /** The dispatch consumer (M-57): nothing when off, so dispatchText runs exactly as it always has. */
+    dispatch(mode: ConsumerSetting): DispatchKapici | undefined {
+        if (mode === 'off') { return undefined; }
+        return {
+            mode,
+            evaluate: (text, options, m, actual) => this.get().evaluate('dispatch.route', text,
+                { consumer: 'dispatch', mode: m, options: { agent: options }, ...(actual !== undefined ? { actual } : {}) }),
+            log: l => this.d.log(l)
+        };
+    }
+
     status() {
         const s = this.d.settings();
         const k = this.key();
@@ -139,6 +152,30 @@ export function meets(a: KapiciAnswer | undefined, want: string | boolean | numb
     if (typeof want === 'boolean') { return ((a.p ?? 0) > 0.5) === want; }
     if (typeof want === 'number') { return (a.score ?? -Infinity) >= want; }
     return a.choice === want;
+}
+
+export interface Agreement {
+    compared: number; agreed: number; rate: number;
+    /** Kapici's confidence over the compared decisions. */
+    confidence: { min: number; median: number; max: number };
+    /** The newest few where the two differed. */
+    disagreements: { at: string; kapici: string; actual: string; confidence: number }[];
+}
+
+/** Per consumer: how often Kapici's decision matched what today's mechanism did (entries newest first). */
+export function shadowAgreement(entries: AuditEntry[]): Record<string, Agreement> {
+    const by: Record<string, AuditEntry[]> = {};
+    for (const e of entries) { if (e.actual !== undefined) { (by[e.consumer] = by[e.consumer] ?? []).push(e); } }
+    const r3 = (n: number) => Math.round(n * 1000) / 1000;
+    return Object.fromEntries(Object.entries(by).map(([c, list]) => {
+        const agreed = list.filter(e => e.agreed).length;
+        const conf = list.map(e => e.confidence ?? 0).sort((a, b) => a - b);
+        return [c, {
+            compared: list.length, agreed, rate: r3(agreed / list.length),
+            confidence: { min: r3(conf[0]), median: r3(conf[Math.floor((conf.length - 1) / 2)]), max: r3(conf[conf.length - 1]) },
+            disagreements: list.filter(e => !e.agreed).slice(0, 5).map(e => ({ at: e.at, kapici: e.decision, actual: e.actual as string, confidence: e.confidence }))
+        }];
+    }));
 }
 
 export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): void {
@@ -204,14 +241,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
                 const since = sinceRaw ? (/^\d+$/.test(sinceRaw) ? Number(sinceRaw) : Date.parse(sinceRaw)) : undefined;
                 need(since === undefined || Number.isFinite(since), 'since is an ISO time or epoch milliseconds.');
                 const entries = readAudit(host.status().auditDir, { consumer: optStr(args, 'consumer') || undefined, ruleId: optStr(args, 'rule') || undefined, since, limit: optNum(args, 'limit', 50) });
-                const agreement: Record<string, { compared: number; agreed: number; rate: number }> = {};
-                for (const e of entries) {
-                    if (e.actual === undefined) { continue; }
-                    const a = agreement[e.consumer] ?? (agreement[e.consumer] = { compared: 0, agreed: 0, rate: 0 });
-                    a.compared++; if (e.agreed) { a.agreed++; }
-                    a.rate = Math.round((a.agreed / a.compared) * 1000) / 1000;
-                }
-                return { entries, agreement };
+                return { entries, agreement: shadowAgreement(entries) };
             }
         },
         {

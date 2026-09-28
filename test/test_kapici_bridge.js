@@ -129,7 +129,8 @@ const KEY = 'vck_CANARY_gateway_key_0123456789';
     ok('eval without a key: fallback, says no-key', r.ok && r.result.fallback === 'fallback' && /no-key/.test(r.result.reason));
 
     const ext = fs.readFileSync(path.join(ROOT, 'src/extension.ts'), 'utf8');
-    ok('extension.ts wires it in a few lines', /registerKapiciOps\(bridge, new KapiciHost\(\{/.test(ext));
+    ok('extension.ts wires it in a few lines', /const kapiciHost = new KapiciHost\(\{/.test(ext) && /registerKapiciOps\(bridge, kapiciHost\)/.test(ext));
+    ok('dispatch reads its own setting, off by default', /kapiciHost\.dispatch\(consumerMode\(cfg\(\)\.get\('kapici\.dispatch'\)\)\)/.test(ext) && host.dispatch('off') === undefined);
     ok('kapiciBridge.ts under 300 lines', fs.readFileSync(path.join(ROOT, 'src/core/kapiciBridge.ts'), 'utf8').split('\n').length < 300);
     fs.rmSync(dir, { recursive: true, force: true });
 

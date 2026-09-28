@@ -447,6 +447,7 @@
         setting('kapici.providers', 'Kapıcı — who is asked, in order', 'list', ['heuristic', 'jev'], 'agentFarm.kapici.providers'),
         setting('kapici.route', 'Kapıcı — road to the classifier', 'enum', 'auto', 'agentFarm.kapici.route', { options: ['auto', 'typesafe', 'vercel'] }),
         setting('kapici.keyName', 'Kapıcı — key name in the Secret vault', 'text', '', 'agentFarm.kapici.keyName'),
+        setting('kapici.dispatch', 'Kapıcı — helps route incoming work', 'enum', 'off', 'agentFarm.kapici.dispatch', { options: ['off', 'shadow', 'on'] }),
         setting('sentry.leaderModel', 'Sentry leader model', 'text', '', 'agentFarm.sentryLeaderModel'),
         setting('sentry.leaderBudgetUsd', 'Sentry leader budget $/day', 'number', 2,
             'agentFarm.sentryLeaderBudgetUsd', { min: 0 }),

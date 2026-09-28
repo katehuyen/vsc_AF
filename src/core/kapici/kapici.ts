@@ -147,10 +147,11 @@ export class Kapici {
             if (!Object.keys(qs).length) { continue; }
             const res = await (this.providers[name] as KapiciProvider).ask(name === 'heuristic' ? state : input.text, qs, { timeoutMs: this.timeout(rule, name), signal: o.signal });
             if ('error' in res) {
+                // An error applies onFailure; it never walks on to the next provider — with no key that would be a silent model call every time.
                 err = { error: res.error, kind: res.kind, provider: name };
                 last = undefined;
                 this.deps.log(`kapici ${rule.id}: ${name} ${res.kind} — ${res.error}`);
-                continue;
+                break;
             }
             if (res.costUsd !== undefined) { cost = (cost ?? 0) + res.costUsd; }
             if (name === 'heuristic') { Object.assign(kept, res.answers); }

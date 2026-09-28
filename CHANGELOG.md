@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.746.0 - Kapıcı can watch the dispatcher before it helps (2026-09-28)
+
+- A new setting, Kapıcı → helps route incoming work, decides whether Kapıcı
+  takes part in picking which agent gets a piece of incoming work. Off (the
+  default) changes nothing. Shadow leaves routing exactly as it is and lets
+  Kapıcı make its own pick quietly beside it, so you can see in its audit how
+  often the two agree before trusting it. On lets Kapıcı pick when none of your
+  dispatch rules match, and hands the choice to the classifier model as before
+  whenever it is unsure.
+- When Kapıcı's key is missing or the classifier is down, it now gives the
+  decision straight back instead of trying the slower judge model — no hidden
+  model calls.
+
 ## 3.745.0 - A key only Agent Farm may use; Kapıcı answers over the bridge (2026-09-28)
 
 - The Secrets page has a new choice on every key's card: **Farm only**. A

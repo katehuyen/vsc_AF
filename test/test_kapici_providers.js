@@ -198,7 +198,7 @@ const ask = (p, qs = RETRY.questions, timeoutMs = 3000, signal) => p.ask('state 
     clear();
     k = mk({ heuristic: H.heuristicProvider(), jev: prov('jev', async () => ({ error: 'HTTP 529', kind: 'server' })), llm: prov('llm', answer({ risky: { type: 'noul', p: 0.02, confidence: 0.96 } })) });
     v = await k.evaluate('test.gate', 'a\nb\nc\nd\ne', { consumer: 't' });
-    ok('error falls through to the next provider', v.provider === 'llm' && v.passed && logs.some(l => /jev server/.test(l)));
+    ok('an error applies onFailure; the next provider is not asked', v.fallback === 'closed' && !seen.llm && /jev failed \(server\)/.test(v.reason) && logs.some(l => /jev server/.test(l)));
     k = mk({ heuristic: H.heuristicProvider(), jev: prov('jev', async () => ({ error: 'HTTP 401', kind: 'auth' })) });
     v = await k.evaluate('test.gate', 'a\nb\nc\nd\ne', { consumer: 't' });
     ok('all failed: onFailure closed stops', !v.passed && v.decision === 'closed' && v.fallback === 'closed' && /auth/.test(v.reason));

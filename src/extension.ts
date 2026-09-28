@@ -588,6 +588,7 @@ import { StudioEditRequest, writeStudioEdit } from './core/studioLibraryWrite';
 import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
 import { KapiciHost, kapiciSettings, registerKapiciOps } from './core/kapiciBridge';
+import { consumerMode } from './core/kapici/shadow';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { EnginesPanel } from './panels/enginesPanel';
@@ -1043,9 +1044,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         hint: (fs.existsSync(a.claudeMdPath ?? '') ? fs.readFileSync(a.claudeMdPath!, 'utf8') : '')
             .replace(/^#.*$/m, '').replace(/\s+/g, ' ').trim().slice(0, 160)
     }));
+    const kapiciHost = new KapiciHost({
+        secret: n => vault.get(n),
+        secretValues: () => vault.names().map(n => vault.get(n) ?? '').filter(Boolean),
+        settings: () => kapiciSettings((k, d) => cfg().get(k, d)),
+        agentRoots: () => cfg().get<string[]>('agentRoots', []),
+        judge: p => execOneShot({ cwd: os.homedir(), args: judgeArgs(), prompt: p, timeoutMs: 60_000 })
+            .then(r => { if (r.error) { throw new Error(r.error); } return r.out; }),
+        auditDir: path.join(context.globalStorageUri.fsPath, 'kapici'),
+        log: l => console.warn('[agent-farm] ' + l)
+    });
     const dispatchFor = (text: string) => dispatchText(os.homedir(), judgeArgs(), text,
         cfg().get<DispatchRule[]>('dispatchRules', []), dispatchCandidates(),
-        cfg().get<boolean>('dispatchClassifier', true));
+        cfg().get<boolean>('dispatchClassifier', true), kapiciHost.dispatch(consumerMode(cfg().get('kapici.dispatch'))));
 
     // G3: eval cases + runs (trace→dataset loop).
     const evalStore = new EvalStore(path.join(context.globalStorageUri.fsPath, 'evals.json'));
@@ -27317,16 +27328,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         upload: (file, provider) => (taskManagerRef as TaskManager).uploadMediaFile(file, provider)
     });
 
-    registerKapiciOps(bridge, new KapiciHost({
-        secret: n => vault.get(n),
-        secretValues: () => vault.names().map(n => vault.get(n) ?? '').filter(Boolean),
-        settings: () => kapiciSettings((k, d) => cfg().get(k, d)),
-        agentRoots: () => cfg().get<string[]>('agentRoots', []),
-        judge: p => execOneShot({ cwd: os.homedir(), args: judgeArgs(), prompt: p, timeoutMs: 60_000 })
-            .then(r => { if (r.error) { throw new Error(r.error); } return r.out; }),
-        auditDir: path.join(context.globalStorageUri.fsPath, 'kapici'),
-        log: l => console.warn('[agent-farm] ' + l)
-    }));
+    registerKapiciOps(bridge, kapiciHost);
 
     // ---------- B-8: the working infrastructure over the bridge ----------
     // The live hooks, the headless service, the usage lap and the price of an

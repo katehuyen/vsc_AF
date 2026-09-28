@@ -1,5 +1,7 @@
 import { extractJson, sanitizePrompt } from './util';
 import { execOneShot } from './oneShot';
+import { ConsumerSetting, gate } from './kapici/shadow';
+import { KapiciVerdict } from './kapici/types';
 
 /**
  * F2 — Dispatcher: decides which agent takes an incoming piece of work
@@ -21,8 +23,16 @@ export interface DispatchCandidate {
 
 export interface DispatchResult {
     agent?: string;
-    method: 'rule' | 'model' | 'none';
+    method: 'rule' | 'model' | 'kapici' | 'none';
     reason: string;
+}
+
+/** agentFarm.kapici.dispatch: off (default) never calls it; shadow audits beside today's path; on asks it before the classifier. */
+export interface DispatchKapici {
+    mode: ConsumerSetting;
+    /** dispatch.route with the candidates as its options; `actual` = today's pick in shadow mode. */
+    evaluate(text: string, options: Record<string, string>, mode: 'on' | 'shadow', actual?: string): Promise<KapiciVerdict>;
+    log?(line: string): void;
 }
 
 /** First matching rule wins; broken regexes are skipped, not fatal. */
@@ -76,7 +86,8 @@ export async function dispatchText(
     text: string,
     rules: DispatchRule[],
     candidates: DispatchCandidate[],
-    useClassifier: boolean
+    useClassifier: boolean,
+    kapici?: DispatchKapici
 ): Promise<DispatchResult> {
     const byRule = dispatchByRules(text, rules);
     if (byRule) {
@@ -86,10 +97,25 @@ export async function dispatchText(
         }
         return { method: 'none', reason: `rule /${byRule.rule}/ points to unknown agent "${byRule.agent}"` };
     }
-    if (useClassifier && candidates.length) {
-        const { agent, reason } = await classifyWithModel(cwd, judgeArgs, candidates, text);
-        if (agent) { return { agent, method: 'model', reason }; }
-        return { method: 'none', reason: 'classifier: ' + reason };
-    }
-    return { method: 'none', reason: useClassifier ? 'no agents available' : 'no rule matched (classifier off)' };
+    const today = async (): Promise<DispatchResult> => {
+        if (useClassifier && candidates.length) {
+            const { agent, reason } = await classifyWithModel(cwd, judgeArgs, candidates, text);
+            if (agent) { return { agent, method: 'model', reason }; }
+            return { method: 'none', reason: 'classifier: ' + reason };
+        }
+        return { method: 'none', reason: useClassifier ? 'no agents available' : 'no rule matched (classifier off)' };
+    };
+    if (!kapici || kapici.mode === 'off' || !candidates.length) { return today(); }
+    const options = Object.fromEntries(candidates.map(c => [c.name, (c.hint || '').trim() || c.name]));
+    const k = kapici;
+    return (await gate<DispatchResult>({
+        mode: k.mode, today,
+        ask: (mode, actual) => k.evaluate(text, options, mode, actual),
+        decisionOf: r => r.agent ?? 'none',
+        fromVerdict: v => {
+            const known = candidates.find(c => c.name.toLowerCase() === v.decision.toLowerCase());
+            return known ? { agent: known.name, method: 'kapici', reason: v.reason } : undefined;
+        },
+        log: k.log
+    })).value;
 }
