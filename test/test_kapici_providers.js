@@ -54,6 +54,13 @@ const ask = (p, qs = RETRY.questions, timeoutMs = 3000, signal) => p.ask('state 
     ok('jev: address and model overridable', f.calls[0].url === 'https://example.test/x' && f.calls[0].body.model === 'jev-1.14.0');
     const checked = { n: { type: 'noul', instructions: 'Long?', check: { op: 'chars', gt: 5 } } };
     ok('jev: a check never travels', !('check' in J.wireQuestions(checked).n));
+    // Measured against the live API: criteria must be an object, a text one is refused with HTTP 400.
+    const w = J.wireQuestions({ work: { type: 'noul', instructions: 'Real work?', criteria: 'Noise is not work.' }, pick: { type: 'choice', instructions: 'Who?', criteria: { a: 'A' } }, late: { type: 'choice', instructions: 'Who?', criteria: '$call' } });
+    ok('jev: a text criterion rides in the instructions, never as criteria', w.work.instructions === 'Real work? Noise is not work.' && !('criteria' in w.work));
+    ok('jev: an object criterion travels as it is', JSON.stringify(w.pick.criteria) === '{"a":"A"}' && w.pick.instructions === 'Who?');
+    ok('jev: an unresolved $call is never sent', !('criteria' in w.late) && w.late.instructions === 'Who?');
+    ok('jev: every shipped rule goes out in a shape the API takes', require(path.join(ROOT, 'out/core/kapici/builtinRules.js')).BUILTIN_RULES
+        .every(r => Object.values(J.wireQuestions(r.questions)).every(q => q.criteria === undefined || (typeof q.criteria === 'object' && !Array.isArray(q.criteria)))));
 
     // --- jev: answer shapes
     const qN = { type: 'noul', instructions: 'x' }, qC = { type: 'choice', instructions: 'x', criteria: { a: 'A', b: 'B' } }, qS = { type: 'score', instructions: 'x', criteria: { 1: 'lo', 2: 'mid', 3: 'hi' } };

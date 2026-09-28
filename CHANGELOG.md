@@ -2,6 +2,13 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.751.0 - Kapıcı's yes/no questions reach the classifier in a shape it accepts (2026-09-28)
+
+- A yes/no question with a written criterion (the shipped "is there real work"
+  rule has one) was refused by the classifier before it was ever answered. The
+  criterion now travels inside the question's instructions, which is the shape
+  the classifier takes. Found with the first real call.
+
 ## 3.750.0 - Kapıcı shows what it decided, where you already look (2026-09-28)
 
 - A trigger guarded by Kapıcı shows its last answer under the guard on the Plan

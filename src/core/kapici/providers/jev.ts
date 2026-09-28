@@ -35,9 +35,18 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
-/** The wire shape: type, instructions, criteria — a local check never travels. */
+/**
+ * The wire shape: type, instructions, criteria — a local check never travels.
+ * The API takes criteria as an OBJECT only (option → when it applies; measured: a
+ * text is refused with HTTP 400), so a noul's text criterion is guidance and rides
+ * at the end of its instructions; an unresolved "$call" is never sent.
+ */
 export function wireQuestions(questions: Record<string, KapiciQuestion>): Record<string, { type: string; instructions: string; criteria?: unknown }> {
-    return Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, { type: q.type, instructions: q.instructions, ...(q.criteria !== undefined ? { criteria: q.criteria } : {}) }]));
+    return Object.fromEntries(Object.entries(questions).map(([id, q]) => {
+        const c: unknown = q.criteria;
+        const text = typeof c === 'string' && c !== '$call' && c.trim() ? c.trim() : '';
+        return [id, { type: q.type, instructions: text ? `${q.instructions} ${text}` : q.instructions, ...(isObj(c) ? { criteria: c } : {}) }];
+    }));
 }
 
 /** A noul carries no confidence; the documented statistic for n options, (n·max − 1)/(n − 1), is |2p − 1| for two. */
