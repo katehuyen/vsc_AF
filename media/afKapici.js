@@ -3,8 +3,8 @@
 //   chip(k, C)     — the 🛡 chip on a run or trigger row; its AFTip carries the
 //                    answers, who gave them and how fast (src/core/kapiciChip.ts).
 //   section(K, C)  — the head of Farm Settings' Kapıcı section: the key (present
-//                    or missing, never its value), the rules, and how often each
-//                    consumer's shadow agreed with today's path.
+//                    or missing, never its value), the rules, how often each
+//                    consumer's shadow agreed with today's path, and the MCP.
 //   rules(list, C) — the Toolbox's rule list.
 // Styles are inline on purpose: a page that never loaded a stylesheet for this
 // still draws it right.
@@ -25,7 +25,7 @@
         const ok = k.outcome ? !/skip|stop|reject/.test(k.outcome) : k.passed;
         const trig = `<span class="kpc-chip" style="${CHIP}${sure ? tint(ok) : 'background:rgba(128,128,128,.18)'}">🛡 ${C.esc(word(k))}${sure ? ' ' + pct(k.confidence) : ''}</span>`;
         return T().wrap(trig, 'Kapıcı — ' + k.rule, T().lines([
-            'Decision: ' + k.decision + (k.outcome ? ' → ' + k.outcome : ''),
+            'Decision: ' + k.decision + (k.outcome && k.outcome !== k.decision ? ' → ' + k.outcome : ''),
             'Confidence: ' + (sure ? pct(k.confidence) : 'none — the rule\'s ' + k.fallback + ' path'),
             'Answered by: ' + k.provider + ' · ' + (k.latencyMs || 0) + ' ms',
             ...Object.keys(k.answers || {}).map(q => 'Question ' + q + ': ' + k.answers[q]),
@@ -63,8 +63,21 @@
                 }),
                 '\nIn shadow a consumer works exactly as before and Kapıcı answers beside it; this is how often the two agreed. Switch one on when its rate is high enough for you.'
             ]), 'tip-kpc-agree');
-        return `<div class="kpc-head" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:4px 0 8px">${keyHtml}${rulesHtml}${agreeHtml}`
+        return `<div class="kpc-head" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:4px 0 8px">${keyHtml}${rulesHtml}${agreeHtml}${mcp(K.mcp, C)}`
             + `<button id="kpc-secrets" title="Secret vault\n\nEnter the key there under ${C.esc(key.name)} and tick Farm only — Agent Farm reads it, no agent's environment gets it.">Secret vault…</button></div>`;
+    }
+
+    /** B-28 — whether every Claude Code session gets the kapici_* tools, and the button that gives or takes them. */
+    function mcp(m, C) {
+        if (!m) { return ''; }
+        const given = m.registered && m.upToDate;
+        const word = given ? 'given to agents' : m.registered ? 'points elsewhere' : 'not given';
+        return T().wrap(`<span>MCP: ${word}</span>`, 'MCP — ' + word, T().lines([
+            'Tools: kapici_eval · kapici_ask · kapici_rules',
+            'Server: ' + m.path + (m.staged ? '' : ' — not staged yet (reload the window once)'),
+            'Registered in: ' + m.configFile + (m.registered ? (given ? '' : ' — at another copy; press the button to point it here') : ' — no'),
+            '\nA Claude Code session started after it is given gets the tools. They carry each question to Agent Farm over the bridge, so the key never leaves it; with VS Code closed they say so and nothing runs.'
+        ]), 'tip-kpc-mcp') + `<button id="kpc-mcp" class="secondary" data-on="${given ? '0' : '1'}">${given ? 'Take the MCP back' : 'Give agents the MCP'}</button>`;
     }
 
     function rules(list, C) {
@@ -89,6 +102,8 @@
     function wire(post) {
         const b = document.getElementById('kpc-secrets');
         if (b) { b.addEventListener('click', () => post({ type: 'openSecrets' })); }
+        const m = document.getElementById('kpc-mcp');
+        if (m) { m.addEventListener('click', () => post({ type: 'kapiciMcp', on: m.getAttribute('data-on') === '1' })); }
     }
 
     window.AFKapici = { chip, section, rules, wire, CONSUMERS };

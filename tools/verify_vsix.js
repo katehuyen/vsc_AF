@@ -90,6 +90,11 @@ ok('it is the version package.json claims',
     ok('‼️ every compiled core module shipped'
         + (missingCore.length ? ' (' + missingCore.join(', ') + ')' : ''),
         missingCore.length === 0);
+    // An MCP server is staged out of the VSIX at activation; a file missing here is a server that never starts.
+    const mcp = fs.readdirSync(path.join(ROOT, 'src', 'mcp')).flatMap(d => fs.readdirSync(path.join(ROOT, 'src', 'mcp', d))
+        .filter(f => f.endsWith('.ts')).map(f => 'out/mcp/' + d + '/' + f.replace(/\.ts$/, '.js')));
+    const missingMcp = mcp.filter(f => !has(f));
+    ok('‼️ every MCP server file shipped' + (missingMcp.length ? ' (' + missingMcp.join(', ') + ')' : ''), missingMcp.length === 0);
 }
 
 // -------------------------------------------------------------- what draws

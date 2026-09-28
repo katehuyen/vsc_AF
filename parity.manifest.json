@@ -6268,6 +6268,16 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#kapiciMcp",
+      "ui": [
+        "page:settingsPanel.ts#kapiciMcp"
+      ],
+      "ops": [
+        "kapici.mcp.register",
+        "kapici.mcp.unregister"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#openSecrets",
       "ui": [
         "page:settingsPanel.ts#openSecrets"

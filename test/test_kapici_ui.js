@@ -67,6 +67,14 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('the shadow agreement per consumer', /agreed: triggers 90%/.test(head) && /triggers: 18 of 20 \(90%\)/.test(head) && /routing: nothing compared/.test(head));
         ok('the vault button', /id="kpc-secrets"/.test(head));
         ok('present reads present', /— present<\/span>/.test(K.section(Object.assign({}, S, { key: Object.assign({}, S.key, { present: true }) }), C)));
+        const M = o => Object.assign({ staged: true, path: '${APPDATA}/af/mcp/kapici/index.js', registered: false, upToDate: false, configFile: 'C:/h/.claude.json' }, o);
+        const notGiven = K.section(Object.assign({}, S, { mcp: M({}) }), C);
+        ok('the MCP, not given: the button gives it, the hover names the tools', /MCP: not given/.test(notGiven)
+            && /id="kpc-mcp" class="secondary" data-on="1">Give agents the MCP</.test(notGiven) && /Tools: kapici_eval · kapici_ask · kapici_rules/.test(notGiven));
+        const given = K.section(Object.assign({}, S, { mcp: M({ registered: true, upToDate: true }) }), C);
+        ok('given: the button takes it back', /MCP: given to agents/.test(given) && /data-on="0">Take the MCP back</.test(given));
+        ok('registered at another copy says so, and the button repoints it', /MCP: points elsewhere/.test(K.section(Object.assign({}, S, { mcp: M({ registered: true }) }), C)));
+        ok('no MCP state, no MCP chip', !/kpc-mcp/.test(head));
         const list = K.rules([{ id: 'trigger.has-work', version: 1, description: 'Real work?', layer: 'builtin', providers: ['jev', 'llm'], questions: { work: 'noul' }, minConfidence: 0.6, onLowConfidence: 'mechanical', onFailure: 'open', golden: 5 }], C);
         ok('a rule: its id, layer, questions, golden count, and its paths on hover', /<code>trigger\.has-work<\/code>/.test(list) && /noul · 5 golden/.test(list)
             && /Min confidence: 0\.6 · unsure: mechanical · failure: open/.test(list) && /File: shipped with Agent Farm/.test(list));
@@ -93,7 +101,8 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('the plan row carries it', /\.\.\.\(t\.lastKapici \? \{ kapici: t\.lastKapici \} : \{\}\)/.test(panel));
         ok('the run row carries a task\'s', /\.\.\.\(t\.kapici \? \{ kapici: t\.kapici \} : \{\}\)/.test(panel));
         const page = read('media/tasksPage.js');
-        ok('the guard cell and the run row draw it', /guardcell">\$\{guard\}\$\{p\.kapici && window\.AFKapici/.test(page) && /r\.kapici && window\.AFKapici \? ' · ' \+ window\.AFKapici\.chip\(r\.kapici, C\)/.test(page));
+        ok('the guard cell and the run row draw it', /guardcell">\$\{guard\}\$\{p\.kapici && window\.AFKapici/.test(page) && /setupLines\(r\.setup\)\)\)\}\$\{[^\n]*\}\$\{r\.kapici && window\.AFKapici \? '<div>' \+ window\.AFKapici\.chip\(r\.kapici, C\)/.test(page));
+        ok('…never inside the title\'s own panel (one subject per panel)', !/roundBadge\(r\)\}\$\{r\.kapici/.test(page));
     }
 
     console.log('\n== a dispatch Kapıcı decided carries its verdict ==');
@@ -111,10 +120,29 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('every kapici setting is filed under it', !/'kapici\.[A-Za-z]+': 'tasks'/.test(ops) && (ops.match(/'kapici\.[A-Za-z]+': 'kapici'/g) || []).length === 9);
         ok('…and it has a name', /\['kapici', 'Kapıcı — the decision gate'\]/.test(ops));
         ok('the page heads it with the status, then its settings', /c\.id === 'kapici' && window\.AFKapici \? window\.AFKapici\.section\(DATA\.kapici, C\) \+ c\.items\.map\(itemHtml\)/.test(read('media/settings.js')));
+        ok('the MCP button reaches the same function the op does', /case 'kapiciMcp':/.test(read('src/panels/settingsPanel.ts'))
+            && /kapiciMcp: \(on: boolean\) => \{\s*try \{ setKapiciMcp\(context\.globalStorageUri\.fsPath, on\); \}/.test(read('src/extension.ts'))
+            && /mcp: kapiciMcpState\(context\.globalStorageUri\.fsPath\)/.test(read('src/extension.ts')));
         ok('the vault button goes to the Secret vault', /case 'openSecrets':/.test(read('src/panels/settingsPanel.ts')) && /openSecrets: \(\) => \{ void vscode\.commands\.executeCommand\('agentfarm\.openSecrets'\); \}/.test(read('src/extension.ts')));
         const tb = read('media/toolbox.js');
         ok('the Toolbox tab, counted as nothing', /\{ id: 'kapici', label: 'Kapıcı' \}/.test(tb) && /t\.id !== 'kapici'/.test(tb) && /state\.tab === 'kapici' \? kapiciTab\(\)/.test(tb));
         ok('fed by the same list kapici.rules answers', /kapici: deps\.kapiciRules \? deps\.kapiciRules\(\) : null/.test(read('src/panels/toolboxPanel.ts')) && /return host\.ruleList\(project\(args\)\);/.test(read('src/core/kapiciBridge.ts')));
+    }
+
+    console.log('\n== the trigger form offers Kapıcı as a guard, and only a trigger ==');
+    {
+        const page = read('media/tasksPage.js');
+        ok('offered on a trigger only', /c\.kind === 'trigger' \? GUARDS\.concat\(\[KAPICI_GUARD\]\) : GUARDS/.test(page));
+        ok('its rule and what it reads, only under it', /kp \? pickSel\('guardRule'/.test(page) && /pickSel\('guardInput'/.test(page));
+        ok('a schedule carrying it is refused where it was picked', /c\.guardKind === 'kapici' && c\.kind !== 'trigger'/.test(page));
+        const panel = read('src/panels/tasksPanel.ts');
+        ok('the host reads it through the one parser, allowed for a trigger only',
+            /if \(gk === 'kapici'\) \{ return parsePrecondition\(\{ kind: gk, rule: str\('guardRule'\), input: str\('guardInput'\) \}, \{ kapici: kind === 'trigger' \}\); \}/.test(panel));
+        ok('an edit seeds both back', /guardRule: p\?\.rule \?\? ''/.test(panel) && /guardInput: p\?\.input \?\? ''/.test(panel));
+        eq('empty boxes: the default rule, the default input', A.parsePrecondition({ kind: 'kapici', rule: '', input: '' }, { kapici: true }), { kind: 'kapici' });
+        eq('a diff and a rule of the user\'s own', A.parsePrecondition({ kind: 'kapici', rule: 'metin.tek-satir', input: 'diff' }, { kapici: true }),
+            { kind: 'kapici', rule: 'metin.tek-satir', input: 'diff' });
+        eq('never on a schedule', A.parsePrecondition({ kind: 'kapici', rule: '', input: '' }, { kapici: false }), undefined);
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

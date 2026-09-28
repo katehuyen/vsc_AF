@@ -424,6 +424,29 @@ const planData = () => {
     });
 };
 
+/** U-155 — a trigger whose precondition Kapıcı answers, carrying the verdict the row keeps (built by the real chipOf). */
+const { chipOf } = require('../../out/core/kapiciChip.js');
+const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence: 0.94, reason: 'work p=0.94', provider: 'jev', latencyMs: 180,
+    ruleId: 'trigger.has-work', ruleVersion: 1, layer: 'builtin', answers: { work: { type: 'noul', p: 0.94, confidence: 0.94 } } }, o);
+const KAPICI_LOOK = {
+    fired: { title: 'Gelen kutusu izleyicisi', v: {}, note: 'Kapıcı: trigger.has-work — work p=0.94' },
+    skipped: { title: 'Rapor klasörü izleyicisi', v: { passed: false, decision: 'reject', confidence: 0.91, reason: 'work p=0.09', answers: { work: { type: 'noul', p: 0.09, confidence: 0.91 } } }, note: 'skipped — Kapıcı: trigger.has-work — work p=0.09' },
+    open: { title: 'Webhook: sipariş', v: { decision: 'open', fallback: 'open', confidence: 0, provider: 'rule', latencyMs: 0, reason: 'no key — the rule\'s open path', answers: {} }, note: 'Kapıcı: trigger.has-work — no key, open path' }
+};
+const kapiciRow = (id, look) => {
+    const L = KAPICI_LOOK[look];
+    return {
+        id, kind: 'trigger', title: L.title,
+        when: 'on change · …/00_GELEN', agentName: 'manager', model: '', engine: '',
+        guard: 'Kapıcı trigger.has-work', hasGuard: true, switchable: true, enabled: true,
+        cost7d: 12.4, runs7d: 6, skipped7d: look === 'skipped' ? 9 : 2, skipRate: look === 'skipped' ? 0.6 : 0.25,
+        lastRunAt: min(14), lastNote: L.note, issues: [], overdue: '',
+        kapici: chipOf(verdict(L.v), 'trigger', look === 'open' ? 'fired' : look, min(14)),
+        detail: { prompt: 'gelen dosyayı işle', target: 'runs on manager', timing: 'debounce 60s · cooldown 300s · max 6/h', steps: [], missed: '',
+            setup: [{ label: 'Fires', value: 'on change · …/00_GELEN' }, { label: 'Only if', value: 'Kapıcı trigger.has-work' }] }
+    };
+};
+
 /**
  * ‼️ THE COMPOSER IS READ OFF THE PAGE ON EVERY CHANGE, AND THE SHIM PARSES ONLY
  * OPENING TAGS. A `<select>` that has just been redrawn therefore reports no
@@ -463,6 +486,17 @@ const variants = () => ([
             word: 'stop', why: 'Kapıcı: metin.tek-satir — line p=0.08 (confidence 0.92)', confidence: 0.92,
             model: 'Kapıcı', limitsOrigin: 'Kapıcı rule metin.tek-satir', supervisorOrigin: 'Kapıcı for workflows: on', at: Date.now() - 120000 }
     }] }) },
+    // U-155 — the chip a verdict leaves: ONE Kapıcı trigger alone first, then every look beside the other kinds, then a routed run
+    { id: 'tasks-plan-kapici-one', label: 'Tasks → Plan — one trigger with a Kapıcı precondition: the last verdict under its guard (U-155)', data: Object.assign(planData(), { plan: [kapiciRow('t1', 'fired')] }) },
+    { id: 'tasks-plan-kapici', tip: 'tip-kapici:3', label: 'Tasks → Plan — fired, skipped and a rule\'s open path beside the other kinds; the open path\'s panel open (U-155)',
+        data: Object.assign(planData(), { plan: [kapiciRow('t1', 'fired'), kapiciRow('t2', 'skipped'), kapiciRow('t3', 'open')].concat(plan().filter(p => p.id !== 't1')) }) },
+    { id: 'tasks-run-kapici-route', tip: 'tip-kapici:1', label: 'Tasks → Runs — a task Kapıcı routed: who it chose, under what started it, its panel open (U-155)', data: Object.assign(data(), { runs: [{
+        id: 'rkr', title: 'kaydet butonu bozuk', agentName: 'developer', mode: 'headless', status: 'done',
+        source: 'Gelen iş', sourceKind: 'trigger', when: min(3), durMin: 1.4, detail: '', costUSD: 0.0921,
+        engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rkr.md', prompt: 'kaydet butonu bozuk',
+        kapici: chipOf(verdict({ decision: 'developer', ruleId: 'dispatch.route', reason: 'agent developer 0.88', latencyMs: 240,
+            answers: { agent: { type: 'choice', choice: 'developer', confidence: 0.881 } } }), 'dispatch', 'developer', min(3))
+    }].concat(data().runs.slice(0, 2)) }) },
     // A-27 — what a check decided beyond its verdict, under the status badge: one decision, then a climb upheld and the retries stopped
     { id: 'tasks-run-judge', label: 'Tasks → Runs — a check that climbed the judge ladder, and one whose retries were stopped (A-27)', data: Object.assign(data(), { runs: [{
         id: 'rj1', title: 'Klip hattı 2/5: Başlık yaz', agentName: 'senarist', mode: 'headless', status: 'done', verified: 'pass',
@@ -598,6 +632,19 @@ const variants = () => ([
                 'nt-unknownfallback': 'park'
             });
             drive(r, draft, 'nt-retrybehavior');
+        }
+    },
+    // U-155 — a trigger's guard, Kapıcı: the rule and what it reads exist only under that guard, and only on a trigger
+    {
+        id: 'tasks-trigger-kapici', label: 'Tasks → the New-trigger form, Kapıcı as its guard (U-155)',
+        data: Object.assign(data(), { kapiciRules: [{ id: 'dispatch.route', description: '' }, { id: 'retry.next-action', description: '' },
+            { id: 'trigger.has-work', description: '' }, { id: 'metin.tek-satir', description: '' }] }),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = { 'nt-kind': 'trigger' };
+            drive(r, draft, 'nt-kind');
+            Object.assign(draft, { 'nt-ttype': 'watch', 'nt-watchPath': 'D:/zone/in/00_GELEN', 'nt-prompt': 'gelen dosyayı işle', 'nt-guardKind': 'kapici' });
+            drive(r, draft, 'nt-guardKind');
         }
     },
     // M-13 — the supervisor's boxes exist only under behavior "supervisor".

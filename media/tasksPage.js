@@ -1112,6 +1112,8 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         { id: 'pathChangedWithin', label: 'a path changed recently' },
         { id: 'queueHasWork', label: 'the work queue has items' }
     ];
+    /** U-155 — a trigger's only: Kapıcı reads the firing and says whether it carries work. */
+    const KAPICI_GUARD = { id: 'kapici', label: 'Kapıcı says the firing carries work' };
     const HOOK_EVENTS = [
         { id: 'stop', label: 'stop — an agent finished its turn' },
         { id: 'end', label: 'end — a session ended' },
@@ -1247,7 +1249,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             act: 'task', workflowId: '',
             debounceSec: 5, cooldownSec: 60, maxPerHour: 12,
             // guard — shared by schedule and trigger
-            guardKind: '', guardPath: '', guardExcept: '', guardMin: 1, guardHours: 24, guardRecursive: true,
+            guardKind: '', guardPath: '', guardExcept: '', guardMin: 1, guardHours: 24, guardRecursive: true, guardRule: '', guardInput: '',
             // workflow: the chain itself lives in the draft, so Cancel really
             // cancels — a step added here is not written to the stored workflow
             // until the whole form is saved.
@@ -2004,12 +2006,19 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
      *  wakes a model. It is the same object on a schedule and on a trigger, so
      *  it is drawn once. */
     function guardHtml(c) {
-        const needsPath = c.guardKind && c.guardKind !== 'queueHasWork';
+        const kp = c.guardKind === 'kapici';
+        const needsPath = c.guardKind && c.guardKind !== 'queueHasWork' && !kp;
+        const kpRules = [{ id: '', label: 'trigger.has-work (built in)' }].concat((DATA.kapiciRules || [])
+            .filter(r => r.id !== 'trigger.has-work').map(r => ({ id: r.id, label: r.id })));
         return `<div class="ntsec"><b>Fires only if…</b>
             <span class="muted small">A guard is checked before any agent is woken, and costs nothing.
                 Without one, every wake-up is paid whether or not there was work.</span></div>
             <div class="ntgrid">
-                ${pickSel('guardKind', 'Guard', GUARDS, c.guardKind, 'What has to be true for this to fire at all.')}
+                ${pickSel('guardKind', 'Guard', c.kind === 'trigger' ? GUARDS.concat([KAPICI_GUARD]) : GUARDS, c.guardKind, 'What has to be true for this to fire at all.')}
+                ${kp ? pickSel('guardRule', 'Rule', kpRules, c.guardRule, 'The Kapıcı rule asked. The Toolbox\'s Kapıcı tab lists every rule.')
+                + pickSel('guardInput', 'Reads', [{ id: '', label: 'the event and the file' }, { id: 'diff', label: 'the file\'s git diff' }], c.guardInput,
+                    'What Kapıcı reads besides the event. A diff shows what changed; with no repository it falls back to the file.')
+                + '<span class="muted small" title="Farm Settings ▸ Kapıcı ▸ kapici.trigger">Asked only while Kapıcı for triggers is shadow or on — off, it fires as if this guard were not there.</span>' : ''}
                 ${needsPath ? textF('guardPath', 'Path', c.guardPath, 'D:/…  — {today} and {yesterday} are expanded',
             'The folder or file the guard looks at. {today} / {yesterday} become YYYY-MM-DD.', true) : ''}
                 ${c.guardKind === 'folderHasFiles'
@@ -2018,7 +2027,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 + `<label class="cbx" title="Look into sub-folders too."><input type="checkbox" id="nt-guardRecursive"${c.guardRecursive ? ' checked' : ''}> include sub-folders</label>`
                 : ''}
                 ${c.guardKind === 'pathChangedWithin' ? numF('guardHours', 'Within (hours)', c.guardHours, 'How recently the path must have changed.') : ''}
-                ${c.guardKind && c.guardKind !== 'fileMissing' && c.guardKind !== 'pathChangedWithin'
+                ${c.guardKind && !kp && c.guardKind !== 'fileMissing' && c.guardKind !== 'pathChangedWithin'
                 ? numF('guardMin', 'At least', c.guardMin, 'How many hits are needed before it counts as work.') : ''}
             </div>`;
     }
@@ -3245,6 +3254,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         n('debounceSec', 'debounceSec'); n('cooldownSec', 'cooldownSec'); n('maxPerHour', 'maxPerHour');
         // guard
         v('guardKind', 'guardKind'); v('guardPath', 'guardPath'); v('guardExcept', 'guardExcept');
+        v('guardRule', 'guardRule'); v('guardInput', 'guardInput');
         n('guardMin', 'guardMin'); n('guardHours', 'guardHours'); b('guardRecursive', 'guardRecursive');
     }
 
@@ -3276,7 +3286,10 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         if (c.kind === 'trigger' && c.act === 'workflow' && !c.workflowId) {
             return 'Pick the workflow this trigger runs.';
         }
-        if (c.guardKind && c.guardKind !== 'queueHasWork' && !String(c.guardPath || '').trim()) {
+        if (c.guardKind === 'kapici' && c.kind !== 'trigger') {
+            return 'Kapıcı decides for a trigger only — pick another guard for this one.';
+        }
+        if (c.guardKind && c.guardKind !== 'queueHasWork' && c.guardKind !== 'kapici' && !String(c.guardPath || '').trim()) {
             return 'That guard looks at a path — say which one, or take the guard off.';
         }
         // ‼️ M-10 — A FORMULA IS REFUSED WHERE IT WAS TYPED. The host validates
@@ -3734,7 +3747,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                   panel (docs/CONVENTIONS.md): the run's identity belongs to this
                   cell, the reason it is not moving belongs to its status. */''}
             <td class="main">${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
-                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${roundBadge(r)}${r.kapici && window.AFKapici ? ' · ' + window.AFKapici.chip(r.kapici, C) : ''}${r.supervisor && window.AFSupervisorStrip
+                <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${roundBadge(r)}${r.supervisor && window.AFSupervisorStrip
                     ? ' · ' + window.AFSupervisorStrip.badge(r.supervisor) + ' ' + C.esc(r.supervisor.word) : ''}</div>`,
             `${C.esc(r.agentName)} · ${window.AFTip.sizeNote(r.prompt)} of prompt`,
             window.AFTip.lines([
@@ -3775,7 +3788,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             <td class="from">${tipw(r.sourceKind === 'manual' ? '<span class="muted">you</span>'
                 : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`,
                 r.sourceKind === 'manual' ? 'started by you' : `${r.sourceKind} · ${r.source}`,
-                window.AFTip.lines(setupLines(r.setup)))}</td>
+                window.AFTip.lines(setupLines(r.setup)))}${/* U-155 — who Kapıcı routed it to; beside the source's panel, never inside another one */''}${r.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(r.kapici, C) + '</div>' : ''}</td>
             <td class="eng">${window.AFEngine.badge(r.engine || 'claude',
                 'Engine: ' + engineLabel(r) + '\nPrice per run: '
                 + (r.reportsCost === false ? 'not reported — plan or account billing' : 'reported'))}${runProviderChip(r)}</td>
@@ -4582,7 +4595,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             // M-21 named on the continuation prompt, on a field two days old.
             ['agent', 'effort', 'permissionMode', 'project', 'cli',
                 'interactiveTarget', 'interactiveClose', 'finishSound', 'superpowers',
-                'dow', 'missed', 'hookEvent', 'hookAgent'].forEach(id =>
+                'dow', 'missed', 'hookEvent', 'hookAgent', 'guardRule', 'guardInput'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These REDRAW, because they change which fields — or which
             // OPTIONS — exist: "weekly" adds a day picker, "watch" a path, a

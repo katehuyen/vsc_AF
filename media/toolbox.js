@@ -817,10 +817,10 @@
     /** U-155 — the rules Kapıcı can ask, which layer won, and the files that failed to load. */
     function kapiciTab() {
         const K = DATA.kapici || { rules: [], problems: [] };
-        const broken = (K.problems || []).map(p => `<li><code>${esc(p.file || p.layer || '?')}</code> — ${esc(p.error)}</li>`).join('');
+        const broken = (K.problems || []).map(p => `<li><code>${esc(p.file || p.layer || '?')}</code> — <span style="color:var(--vscode-charts-red,#f14c4c)">${esc(p.error)}</span></li>`).join('');
         return `<p class="muted small">Kapıcı answers a yes/no, a choice or a score from a rule, without a model. A rule file in an agent root's _KAPICI folder (or the folder Farm Settings names) replaces a built-in one with the same id.</p>`
             + (window.AFKapici ? window.AFKapici.rules(K.rules, C) : '')
-            + (broken ? `<h3>Rule files that did not load</h3><ul>${broken}</ul>` : '');
+            + (broken ? `<h3>Rule files that did not load</h3><ul class="small">${broken}</ul>` : '');
     }
 
     function serviceTab() {

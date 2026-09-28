@@ -6,14 +6,22 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 
 - A trigger guarded by Kapıcı shows its last answer under the guard on the Plan
   tab — fired or skipped, and how sure — and a task Kapıcı sent to its agent
-  shows the same small chip on the Runs tab. Hover it for each question's
-  answer, who answered and how fast.
+  shows the same small chip under "Started by" on the Runs tab. Hover it for
+  each question's answer, who answered and how fast.
+- A new trigger (or one you edit) can take Kapıcı as its guard straight from
+  the form: pick the rule and whether it reads the file or its git diff.
 - Farm Settings has a Kapıcı section: every Kapıcı setting in one place, headed
   by whether its key is in the Secret vault (never the key itself), how many
   rules it has and whether any rule file is broken, and — for each part in
   shadow — how often Kapıcı agreed with what happened. A button opens the
   Secret vault.
-- The Toolbox has a Kapıcı tab listing every rule it can ask.
+- The Toolbox has a Kapıcı tab listing every rule it can ask, and in red any
+  rule file that failed to load and why.
+- Kapıcı can be given to every Claude Code session as an MCP server — tools
+  `kapici_eval`, `kapici_ask` and `kapici_rules` — with **Give agents the MCP**
+  in Farm Settings ▸ Kapıcı (and taken back there). Nobody gets it until you
+  press it. The tools carry each question to Agent Farm, so the key never
+  leaves it; with VS Code closed they say so and nothing runs.
 
 ## 3.749.0 - A Kapıcı step can decide whether a workflow goes on (2026-09-28)
 

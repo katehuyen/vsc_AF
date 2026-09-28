@@ -590,6 +590,7 @@ import { StudioEditRequest, writeStudioEdit } from './core/studioLibraryWrite';
 import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
 import { KapiciHost, kapiciSettings, registerKapiciOps } from './core/kapiciBridge';
+import { kapiciMcpState, registerKapiciMcpOps, setKapiciMcp, stageKapiciMcp } from './core/kapiciMcp';
 import { consumerMode } from './core/kapici/shadow';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
@@ -18775,6 +18776,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
     try { stageBridgeCli(context.extensionPath, context.globalStorageUri.fsPath, extVersion); } catch { /* best effort */ }
+    try { stageKapiciMcp(context.extensionPath, context.globalStorageUri.fsPath, extVersion); } catch { /* best effort — kapici.mcp says staged: false */ }
     /**
      * ‼️ X-268 — A REQUEST IS CLAIMED BEFORE IT IS RUN, AND NOTHING WAITS BEHIND
      * ANOTHER REQUEST'S HANDLER.
@@ -27342,6 +27344,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     registerKapiciOps(bridge, kapiciHost);
+    registerKapiciMcpOps(bridge, context.globalStorageUri.fsPath);
 
     // ---------- B-8: the working infrastructure over the bridge ----------
     // The live hooks, the headless service, the usage lap and the price of an
@@ -39749,7 +39752,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // find out — is not what a list of `agentFarm.*` keys is for.
                     openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
                     openAccounts: () => { AccountsPanel.show(accountsPanelDeps); },
-                    kapici: () => ({ ...kapiciHost.status(), agreement: kapiciHost.agreement(30) }),
+                    kapici: () => ({ ...kapiciHost.status(), agreement: kapiciHost.agreement(30), mcp: kapiciMcpState(context.globalStorageUri.fsPath) }),
+                    kapiciMcp: (on: boolean) => {
+                        try { setKapiciMcp(context.globalStorageUri.fsPath, on); } catch (e) { void vscode.window.showErrorMessage(`Kapıcı MCP: ${(e as Error).message}`); }
+                    },
                     openSecrets: () => { void vscode.commands.executeCommand('agentfarm.openSecrets'); },
                     // U-29 — the per-agent model box reads the chosen engine's own
                     // catalog, not a list typed into a setting.

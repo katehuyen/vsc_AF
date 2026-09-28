@@ -122,6 +122,8 @@ export interface FarmSettingsDeps {
     openAccounts?(): void;
     /** U-155 — Kapıcı's status (the key present or not, never its value; rules; shadow agreement) and the vault it points to */
     kapici?(): unknown;
+    /** B-28 — give every Claude Code session the kapici_* MCP tools (true), or take them back */
+    kapiciMcp?(on: boolean): void;
     openSecrets?(): void;
     /** U-29 — what each engine currently offers, so the per-agent model box
      *  is drawn from the engine's own catalog rather than a typed list. */
@@ -800,6 +802,12 @@ export class FarmSettingsPanel {
                 break;
             case 'openSecrets':
                 this.deps.openSecrets?.();
+                break;
+            case 'kapiciMcp':
+                if (typeof msg.on === 'boolean') {
+                    this.deps.kapiciMcp?.(msg.on);
+                    this.refresh();
+                }
                 break;
             case 'engineKey':
                 if (typeof msg.name === 'string' && msg.name) {

@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { humanWaitLine } from '../core/humanAsk';
 import { FINISH_SOUND_SILENT, normalizeFinishSound } from '../core/alertVoices';
-import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
+import { describePrecondition, parsePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
 import {
@@ -1554,7 +1554,9 @@ function guardSeed(p: Precondition | undefined): Record<string, unknown> {
         guardExcept: (p?.except ?? []).join(', '),
         guardMin: p?.minCount ?? 1,
         guardHours: p?.hours ?? 24,
-        guardRecursive: p?.recursive !== false
+        guardRecursive: p?.recursive !== false,
+        guardRule: p?.rule ?? '',
+        guardInput: p?.input ?? ''
     };
 }
 
@@ -1982,6 +1984,7 @@ export class TasksPanel {
         const guard = (): Precondition | undefined => {
             const gk = str('guardKind');
             if (!gk) { return undefined; }
+            if (gk === 'kapici') { return parsePrecondition({ kind: gk, rule: str('guardRule'), input: str('guardInput') }, { kapici: kind === 'trigger' }); }
             const p: Precondition = { kind: gk as Precondition['kind'] };
             if (str('guardPath')) { p.path = str('guardPath'); }
             const except = str('guardExcept').split(',').map(s => s.trim()).filter(Boolean);

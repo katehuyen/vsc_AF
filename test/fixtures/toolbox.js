@@ -119,6 +119,13 @@ const base = (services) => ({
 
 const data = () => base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), hooks: hooks() });
 
+/** U-155 — the shipped rules as kapici.rules answers them (src/core/kapici/builtinRules.ts). */
+const KAPICI_RULES = () => ([
+    { id: 'dispatch.route', version: 1, description: 'Which agent should take this request? The candidates arrive with the call.', layer: 'builtin', providers: ['jev', 'llm'], questions: { agent: 'choice' }, minConfidence: 0.7, onLowConfidence: 'mechanical', onFailure: 'fallback', golden: 5 },
+    { id: 'retry.next-action', version: 1, description: 'What should a run that hit its limit after doing work do next?', layer: 'builtin', providers: ['jev', 'llm'], questions: { action: 'choice' }, minConfidence: 0.75, onLowConfidence: 'mechanical', onFailure: 'fallback', golden: 5 },
+    { id: 'trigger.has-work', version: 1, description: 'Does this firing carry real work for the agent it would wake?', layer: 'builtin', providers: ['jev', 'llm'], questions: { work: 'noul' }, minConfidence: 0.6, onLowConfidence: 'mechanical', onFailure: 'open', golden: 5 }
+]);
+
 /**
  * ‼️ FIVE PICTURES, BECAUSE THE BADGE IS THE WHOLE FEATURE. Each state sends a
  * person somewhere different, and the only way to know the four colours are
@@ -230,7 +237,36 @@ const variants = () => ([
         id: 'toolbox-web-lan',
         label: 'Toolbox — Services: reachable from the network, with the code that opens it',
         data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web() })
+    },
+    // U-155 — the Kapıcı tab: the three rules that ship (as kapici.rules answers them today), then a user
+    // file replacing one, a rule of the user's own, and a file that failed to load — its row's panel open
+    {
+        id: 'toolbox-kapici',
+        label: 'Toolbox — Kapıcı: the rules that ship with Agent Farm (U-155)',
+        data: Object.assign(base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), { tab: 'kapici', kapici: { rules: KAPICI_RULES(), problems: [] } })
+    },
+    {
+        id: 'toolbox-kapici-own',
+        label: 'Toolbox — Kapıcı: a file replacing a shipped rule, one of the user\'s own, one that broke (U-155)',
+        data: kapiciOwn()
+    },
+    {
+        id: 'toolbox-kapici-own-tip', tip: 'tip-kpc-rule:2',
+        label: 'Toolbox — Kapıcı: the replaced rule\'s panel, open (U-155)',
+        data: kapiciOwn()
     }
 ]);
+
+function kapiciOwn() {
+    return Object.assign(base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), { tab: 'kapici', kapici: {
+            rules: KAPICI_RULES().map(r => r.id !== 'retry.next-action' ? r : Object.assign({}, r, {
+                version: 2, layer: 'system', file: 'D:\\zone\\agent\\ajanlar\\_KAPICI\\retry.next-action.json', overrides: ['builtin'],
+                minConfidence: 0.75, onLowConfidence: 'mechanical', onFailure: 'mechanical', golden: 8 })).concat([{
+                id: 'metin.tek-satir', version: 1, description: 'Is this text a single line a title can use?', layer: 'project',
+                file: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm\\.kapici\\metin.tek-satir.json', providers: ['heuristic'],
+                questions: { line: 'noul (local check)' }, minConfidence: 0.9, onLowConfidence: 'closed', onFailure: 'closed', golden: 3 }]),
+            problems: [{ layer: 'system', file: 'D:\\zone\\agent\\ajanlar\\_KAPICI\\medya.tur.json', error: 'questions.kind: needs a type' }]
+        } });
+}
 
 module.exports = { script: 'toolbox.js', data, variants, tg, base, hooks, web };
