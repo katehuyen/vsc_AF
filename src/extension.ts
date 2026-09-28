@@ -4063,11 +4063,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 mode: cfg().get('mediaUploadAuto'), provider: cfg().get('mediaUploadProvider'),
                 retentionDays: cfg().get('mediaUploadRetentionDays')
             }),
-            confirmUpload: async (paths, provider) => {
-                const pick = await vscode.window.showWarningMessage(
+            // S-108 — into the approval queue like the other two, so Needs You and needs.act answer it too
+            confirmUpload: (paths, provider) => {
+                const { id, promise } = approvalQueue.add({ title: provider, goal: paths.join(', '), kind: 'upload' });
+                void vscode.window.showWarningMessage(
                     `Agent Farm: a media step wants to send ${paths.length === 1 ? 'a file' : `${paths.length} files`} from this computer to ${provider}: ${paths.join(', ')}`,
-                    'Upload', 'Stop the step');
-                return pick === 'Upload';
+                    'Upload', 'Stop the step', 'Open Needs You'
+                ).then(choice => {
+                    if (choice === 'Upload' || choice === 'Stop the step') {
+                        approvalQueue.settle(id, choice === 'Upload');
+                    } else if (choice === 'Open Needs You') {
+                        void vscode.commands.executeCommand('agentfarm.openNeeds');
+                    }
+                });
+                return promise;
             },
             mediaPricing: () => cfg().get<MediaPriceRule[]>('mediaPricing', DEFAULT_MEDIA_PRICING),
             showrunner: () => cfg().get<string>('showrunner', 'youtuber'),
@@ -18672,7 +18681,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Everything the fleet is waiting for, in ONE reading and ONE shape — the op '
                 + 'an autonomous process asks before it decides whether to wait, and after a '
                 + 'command made it wait. Every row carries the same answers whatever produced it: '
-                + '`kind`, `subject` (task | mission | sentry | window), `reason` — the sentence '
+                + '`kind`, `subject` (task | mission | sentry | window | workflow), `reason` — the sentence '
                 + 'the source ITSELF wrote, never a second one — `since`, `until` where a clock '
                 + 'decides it, `blockedBy` (`task:<id>` / `session:<id>`, derived from the board '
                 + 'rather than hand-listed), `clearedBy` (clock = it ends by itself · event = when '
@@ -18684,7 +18693,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'reads `launchBlock` and the `MissionRunStatus` union out of the sources. '
                 + '‼️ AN ACCOUNT HANDOVER IS NOT A SEPARATE WAIT: tasks.ts writes it into the '
                 + 'parked row\'s own sentence, so it arrives as the `reason` of a `task-clock` '
-                + 'and counting it twice would make the second copy the stale one. args: none',
+                + 'and counting it twice would make the second copy the stale one. '
+                + '`human-answer` = a workflow step awaiting a person (approval, browser run, upload, pick); '
+                + 'its `op` answers it (needs.act with the needs.list key, or workflows.select). args: none',
             handler: () => {
                 const waits = fleetWaitsNow();
                 return {
@@ -18735,7 +18746,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 wakeAt: rec.wakeAt, lastWhy: rec.lastWhy, lastAt: rec.lastAt
             } : undefined,
             armed: armedRestart ?? undefined,
-            questions: workflowAsks.list()
+            questions: workflowAsks.list(),
+            humanAsks: taskManager.openHumanAsks()
         });
     };
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');

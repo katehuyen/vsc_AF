@@ -103,6 +103,7 @@ import { openExternalTerminal } from './extTerminal';
 import { extractJson, sanitizePrompt } from './util';
 import { fillJsonTemplate } from './jsonTemplate';
 import { LiveCard, reattachPlan } from './consoleTaskRevive';
+import { HumanAsk, humanAskSentence, OpenHumanAsk } from './humanAsk';
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export type TaskMode = 'interactive' | 'headless';
@@ -174,6 +175,8 @@ export interface FarmTask {
     /** why a requested start is waiting (concurrency / quota) — the sentence a
      *  PERSON reads, live figures and all. Never an identity: see `deferredCode`. */
     deferredReason?: string;
+    /** S-108 — a running step awaiting a person's answer (humanAskSentence); gone once answered */
+    waitingOn?: string;
     /**
      * ‼️ M-11 — WHAT IS HOLDING IT, AS AN IDENTITY RATHER THAN AS A SENTENCE.
      *
@@ -2230,6 +2233,29 @@ export class TaskManager implements vscode.Disposable {
     private disposables: vscode.Disposable[] = [];
     private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
     readonly onDidChange = this.onDidChangeEmitter.event;
+    /** S-108 — steps awaiting a person right now; in memory, since the promise dies with the window */
+    private readonly humanAsks = new Map<number, OpenHumanAsk>();
+    private humanAskSeq = 0;
+
+    openHumanAsks(): OpenHumanAsk[] {
+        return [...this.humanAsks.values()];
+    }
+
+    /** Runs a question to a person with the wait written where a reader looks: the row, farm.waits. */
+    private async askingHuman<T>(runId: string, workflowTitle: string, task: FarmTask | undefined, ask: HumanAsk, run: () => Promise<T>): Promise<T> {
+        const n = ++this.humanAskSeq;
+        const what = humanAskSentence(ask);
+        this.humanAsks.set(n, { runId, workflowTitle, taskId: task?.id, taskTitle: task?.title, kind: ask.kind, what, since: Date.now() });
+        if (task) { task.waitingOn = what; }
+        this.save();
+        try {
+            return await run();
+        } finally {
+            this.humanAsks.delete(n);
+            if (task) { delete task.waitingOn; }
+            this.save();
+        }
+    }
 
     constructor(
         private storageFile: string,
@@ -2398,6 +2424,8 @@ export class TaskManager implements vscode.Disposable {
             // B11: a follower window mirrors the store as-is — the stale pass
             // below would cancel rows that are alive in the runner window.
             if (!this.runner()) { return; }
+            // S-108 — no question to a person survives the window that asked it
+            for (const t of this.tasks) { delete t.waitingOn; }
             // Anything marked running from a previous window is stale. Plain
             // tasks go back to the queue; workflow members are cancelled — their
             // process/poll died with the window, and a zombie 'queued' row could
@@ -5486,8 +5514,10 @@ export class TaskManager implements vscode.Disposable {
     /** M-42 — a step no judge could look at: the user's judge.unjudged decides, never a silent PASS. */
     private async settleUnjudged(task: FarmTask, w: FarmWorkflow, why: string, attempt: number, label: string, judge?: string): Promise<void> {
         const behavior = normalizeUnjudged(this.opts.judgeUnjudged?.());
-        const answer = behavior === 'ask' && this.opts.confirmApproval
-            ? await this.opts.confirmApproval({ title: `The judge could not judge "${task.title}"`, message: `${why}. Continue without a verdict?` })
+        const q = { title: `The judge could not judge "${task.title}"`, message: `${why}. Continue without a verdict?` };
+        const confirm = this.opts.confirmApproval;
+        const answer = behavior === 'ask' && confirm
+            ? await this.askingHuman(task.workflowRunId ?? '', w.title, task, { kind: 'approval', title: q.title, goal: q.message }, () => confirm(q))
             : undefined;
         const { pass, line } = unjudgedOutcome(behavior, why, answer);
         try {
@@ -7080,8 +7110,10 @@ export class TaskManager implements vscode.Disposable {
         const payload = buildPublishPayload({ platform: pub.platform, stepTitle: step.title, schedule: plan.schedule, entry, metadata,
             prevJson: handoff.json, prevText: handoff.text, runId, workflowTitle: w.title });
         if (plan.approval === 'never') { lines.push('Rehearsal (approval: never) — nothing was sent'); done(true, { rehearsal: true, payload }); return; }
-        if (plan.approval === 'ask' && this.opts.confirmApproval
-            && !await this.opts.confirmApproval({ title: step.title, message: `Publish "${String(payload.title)}" to ${pub.platform}?` })) {
+        const confirmPub = this.opts.confirmApproval;
+        const pq = { title: step.title, message: `Publish "${String(payload.title)}" to ${pub.platform}?` };
+        if (plan.approval === 'ask' && confirmPub
+            && !await this.askingHuman(runId, w.title, task, { kind: 'approval', title: pq.title, goal: pq.message }, () => confirmPub(pq))) {
             lines.push('Not approved'); done(false, { payload }); return;
         }
         let res: Response;
@@ -7196,7 +7228,7 @@ export class TaskManager implements vscode.Disposable {
             model: media.model, stepTitle: step.title, workflowTitle: w.title,
             input, projectId: media.projectId, sceneId: media.sceneId
         };
-        const sent = await this.uploadLocalInput(input, provider.id);
+        const sent = await this.uploadLocalInput(input, provider.id, runId, w.title, task);
         if ('error' in sent) {
             await this.completeMediaTask(task, info, { ok: false, error: `Media input: ${sent.error}.`, assetUrls: [] });
             return;
@@ -7438,8 +7470,11 @@ export class TaskManager implements vscode.Disposable {
                 : 'no host allowlist configured (set agentFarm.browserAllowHosts or the step\'s allowHosts)');
             return;
         }
-        if (plan.confirm === 'ask' && this.opts.confirmBrowser) {
-            const ok = await this.opts.confirmBrowser({ title: step.title, url, goal });
+        const confirmBrowser = this.opts.confirmBrowser;
+        if (plan.confirm === 'ask' && confirmBrowser) {
+            // no row exists yet — the step's task is made once it may run — so the wait is the run's
+            const ok = await this.askingHuman(runId, w.title, undefined, { kind: 'browser', title: step.title, url, goal },
+                () => confirmBrowser({ title: step.title, url, goal }));
             if (!ok) { fail('not approved'); return; }
         }
         const { agent, missing } = this.stepAgent(w, step, runId);
@@ -7489,8 +7524,9 @@ export class TaskManager implements vscode.Disposable {
         this.save();
 
         // No gate wired (headless service / tests) = auto-approve so chains don't hang.
-        const ok = this.opts.confirmApproval
-            ? await this.opts.confirmApproval({ title: step.title, message })
+        const confirmStep = this.opts.confirmApproval;
+        const ok = confirmStep
+            ? await this.askingHuman(runId, w.title, task, { kind: 'approval', title: step.title, goal: message }, () => confirmStep({ title: step.title, message }))
             : true;
         try {
             fs.writeFileSync(outFile,
@@ -7546,10 +7582,11 @@ export class TaskManager implements vscode.Disposable {
         if (!candidates.length) {
             chosen = []; // nothing to pick — pass an empty selection through
         } else if (this.opts.confirmSelection) {
-            chosen = await this.opts.confirmSelection({
+            const pick = this.opts.confirmSelection;
+            chosen = await this.askingHuman(runId, w.title, task, { kind: 'selection', title: step.title, goal: message || `${candidates.length} candidate(s)` }, () => pick({
                 title: step.title, message, min, max,
                 candidates: candidates.map(c => ({ taskId: c.taskId, title: c.title, url: c.url, file: c.file, kind: c.kind }))
-            });
+            }));
         } else {
             chosen = candidates.map(c => c.url); // no UI wired → keep all
         }
@@ -7646,7 +7683,9 @@ export class TaskManager implements vscode.Disposable {
             performance: this.opts.performance?.([w.title, w.goal ?? '', ...Object.values(rec?.inputs ?? {})].join(' '))
         }, { stepIds: ids, currentStep: before, retries: sup.retries, history: sup.history }, {
             ask, pick: this.opts.askChoice ? (q, o) => this.opts.askChoice!(q, o, { runId, workflowTitle: w.title }) : undefined,
-            confirm: this.opts.confirmApproval ? (title, message) => this.opts.confirmApproval!({ title, message }) : undefined
+            confirm: this.opts.confirmApproval
+                ? (title, message) => this.askingHuman(runId, w.title, task, { kind: 'approval', title, goal: message }, () => this.opts.confirmApproval!({ title, message }))
+                : undefined
         });
         sup.directives = out.directives.slice(own.length);
         // M-46 — the words landed here; a decision of yours is spent; "ask me too" puts this one to you first
@@ -7656,9 +7695,10 @@ export class TaskManager implements vscode.Disposable {
             if (rec.live.callMe && out.decision && !human) {
                 rec.live.callMe = false;
                 const d0 = out.decision;
-                const yes = this.opts.confirmApproval ? await this.opts.confirmApproval({
-                    title: `Workflow "${w.title}" — its supervisor decided: ${d0.decision}${d0.target ? ' ' + d0.target : ''}`, message: d0.why ?? ''
-                }) : true;
+                const cq = { title: `Workflow "${w.title}" — its supervisor decided: ${d0.decision}${d0.target ? ' ' + d0.target : ''}`, message: d0.why ?? '' };
+                const yes = this.opts.confirmApproval
+                    ? await this.askingHuman(runId, w.title, task, { kind: 'approval', title: cq.title, goal: cq.message }, () => this.opts.confirmApproval!(cq))
+                    : true;
                 if (!yes) { out = { ...out, decision: undefined, mechanical: 'you turned the supervisor\'s decision down' }; }
             }
             this.save();
@@ -7943,10 +7983,13 @@ export class TaskManager implements vscode.Disposable {
         };
     }
 
-    private uploadLocalInput(input: string, stepProvider: string) {
+    private uploadLocalInput(input: string, stepProvider: string, runId: string, workflowTitle: string, task: FarmTask) {
         const s = this.uploadSettings(stepProvider);
+        const confirm = this.opts.confirmUpload;
         return prepareMediaInput(input, s.provider, s.mode, this.uploadOpts(s.provider, s.retentionDays),
-            paths => this.opts.confirmUpload ? this.opts.confirmUpload(paths, s.provider) : Promise.resolve(false));
+            paths => confirm
+                ? this.askingHuman(runId, workflowTitle, task, { kind: 'upload', title: s.provider, goal: paths.join(', ') }, () => confirm(paths, s.provider))
+                : Promise.resolve(false));
     }
 
     /** One file onto a provider's storage — the bridge's media.upload, by the step's own code. */

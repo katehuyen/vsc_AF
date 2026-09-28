@@ -3178,6 +3178,8 @@ The status bar counts this queue: if `🔔 N need you` shows, clicking it opens 
 
 **Agent side:** `needs.list` · `needs.clear` (`keys` or `all:true`) · `needs.restore` · `needs.act` (`key` + `action` — presses a row's button through the panel's own handler; `answer` carries the text a typed button asks for; view-only buttons are refused with the op to read instead).
 
+**A step waiting on you says so in three places, in one sentence (3.742.0).** A browser step asking to run, a workflow approval (an approval step, a publish, a judge that could not judge, a supervisor's decision to confirm), a media step asking to upload a local file and a pick step: while the question is open, the step's row reads *waiting for your answer: …*, `farm.waits` lists it as `human-answer` (on the task, or on the run when the browser step has no row yet; `op` names `needs.act`, or `workflows.select` for a pick) and Needs You carries the same sentence; the answer removes it from all three. The upload question now goes through the approval queue too, so it is answerable from Needs You and over the bridge, not only from the notification.
+
 ### Five concepts — which is which? {#gorev-kavramlari}
 
 In one place so they never blur:

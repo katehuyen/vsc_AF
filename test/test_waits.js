@@ -288,7 +288,7 @@ const only = (w) => { const l = fleetWaits(w); return l.length === 1 ? l[0] : un
     ok('every mission rule\'s kind is in the vocabulary',
         MISSION_WAIT_RULES.every(r => WAIT_KINDS.indexOf(r.kind) >= 0));
     ok('…and no kind is declared that nothing produces',
-        WAIT_KINDS.every(k => k === 'sentry-wake' || k === 'restart-armed' || k === 'task-unknown' || k === 'workflow-question'
+        WAIT_KINDS.every(k => k === 'sentry-wake' || k === 'restart-armed' || k === 'task-unknown' || k === 'workflow-question' || k === 'human-answer'
             || TASK_WAIT_RULES.some(r => r.kind === k) || MISSION_WAIT_RULES.some(r => r.kind === k)));
 }
 
@@ -300,6 +300,32 @@ const only = (w) => { const l = fleetWaits(w); return l.length === 1 ? l[0] : un
         l.length === 1 && w.kind === 'workflow-question' && w.clearedBy === 'human' && w.op === 'workflows.answer');
     ok('…naming the run and the question in its own words', w.subject.kind === 'workflow' && w.subject.id === 'run9'
         && w.subject.name === 'video hattı' && w.reason === 'its supervisor asks: Nasıl ilerleyelim?' && w.since === 4000);
+}
+
+// ---- S-108: a step awaiting a person's approval is a wait, in the row's own words
+{
+    const H = require(path.join(__dirname, '..', 'out', 'core', 'humanAsk.js'));
+    const N = require(path.join(__dirname, '..', 'out', 'core', 'needs.js'));
+    const up = { kind: 'upload', title: 'fal', goal: 'D:/clip.mp4' };
+    const what = H.humanAskSentence(up);
+    const l = fleetWaits({ now: 9000, humanAsks: [
+        { runId: 'r1', workflowTitle: 'video', taskId: 't1', taskTitle: 'video 2/5: edit', kind: 'upload', what, since: 8000 },
+        { runId: 'r2', workflowTitle: 'site', kind: 'browser', what: H.humanAskSentence({ kind: 'browser', title: 'login', url: 'https://x', goal: 'sign in' }), since: 8500 },
+        { runId: 'r3', workflowTitle: 'pick', taskId: 't3', kind: 'selection', what: 'pick assets for "p"', since: 8700 }
+    ] });
+    ok('‼️ an open approval is on the list as a wait a person ends', l.length === 3 && l.every(w => w.kind === 'human-answer' && w.clearedBy === 'human'));
+    const u = l.find(w => w.subject.id === 't1');
+    ok('…on the task row that asked, in the sentence that row carries', !!u && u.subject.kind === 'task' && u.subject.name === 'video 2/5: edit'
+        && u.reason === H.humanWaitLine(what) && u.since === 8000 && u.op === 'needs.act');
+    const b = l.find(w => w.subject.id === 'r2');
+    ok('…a browser step with no row yet is the run\'s wait', !!b && b.subject.kind === 'workflow' && b.subject.name === 'site');
+    ok('…and a pick is answered by its own op', l.find(w => w.subject.id === 't3').op === 'workflows.select');
+    const needs = N.buildNeedsQueue({ liveSessions: [], approvals: [{ id: 'ap1', title: 'fal', url: '', goal: 'D:/clip.mp4', createdAt: 1, kind: 'upload' }], insights: [], interruptedRuns: [], missionWaits: [] });
+    const row = needs.find(i => i.ref.approvalId === 'ap1');
+    ok('‼️ the Needs You row says the same sentence, and can be answered there', !!row && (row.detail + (row.body || '')).includes(what)
+        && row.actions.map(a => a.label).join('|') === 'Upload|Stop the step');
+    ok('the three approval kinds read differently', new Set(['browser', 'approval', 'upload', 'selection']
+        .map(k => H.humanAskSentence({ kind: k, title: 'T', url: 'u', goal: 'g' }))).size === 4);
 }
 
 console.log(`test_waits: ${pass} passed, ${fail} failed`);

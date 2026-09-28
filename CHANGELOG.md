@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.742.0 - A step waiting for your answer no longer looks stuck (2026-09-28)
+
+- While a workflow step waits for you — a browser step asking to run, an
+  approval, a publish, a media step asking to upload a file from this
+  computer, or a pick — its row now reads "waiting for your answer: …"
+  instead of just "running", the wait list shows it as something only a
+  person ends, and Needs You shows the same sentence. Once you answer, it
+  disappears from all three. Before, a missed notification made such a step
+  look hung for as long as nobody noticed.
+- The upload question can now be answered from Needs You (and by an agent)
+  as well as from its notification.
+
 ## 3.741.0 - An agent can press the Needs You buttons and answer a pick step too (2026-09-28)
 
 - Everything waiting on a button in Needs You — a browser, workflow or

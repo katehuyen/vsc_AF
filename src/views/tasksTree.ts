@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { describePrecondition } from '../core/automation';
+import { humanWaitLine } from '../core/humanAsk';
 import { FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow, TaskManager } from '../core/tasks';
 import { TriggerManager } from '../core/triggers';
 import { fmtTokens, relTime } from '../core/util';
@@ -264,7 +265,8 @@ export class TasksTreeProvider implements vscode.TreeDataProvider<TaskNode> {
         const prio = t.status === 'queued' && (t.priority ?? 0) > 0 ? ' • ⬆ next' : '';
         const statusLabel = t.status === 'queued' && t.deferredReason
             ? `deferred: ${t.deferredReason}`
-            : t.status + (t.verified ? ` • verify ${t.verified}` : '');
+            : t.status === 'running' && t.waitingOn ? humanWaitLine(t.waitingOn)
+                : t.status + (t.verified ? ` • verify ${t.verified}` : '');
         /**
          * ‼️ WHAT A RUN COST, IN THAT ENGINE'S OWN CURRENCY (X-19 · X-35).
          * Every engine but Claude bills a plan and states no price, so its

@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { humanWaitLine } from '../core/humanAsk';
 import { FINISH_SOUND_SILENT, normalizeFinishSound } from '../core/alertVoices';
 import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
@@ -852,7 +853,8 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             source, sourceKind,
             when: t.endedAt ?? t.startedAt ?? t.createdAt,
             durMin,
-            detail: t.status === 'queued' && t.deferredReason ? t.deferredReason : '',
+            detail: t.status === 'queued' && t.deferredReason ? t.deferredReason
+                : t.status === 'running' && t.waitingOn ? humanWaitLine(t.waitingOn) : '',
             costUSD: t.costUSD,
             engine: engineOf(t.engine).id,
             reportsCost: engineOf(t.engine).reportsCost,

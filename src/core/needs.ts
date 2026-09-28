@@ -13,6 +13,7 @@
  * Pure data in, pure data out — the panel and the status bar both render here.
  */
 import { askActions, WorkflowQuestion } from './workflowAsk';
+import { humanAskSentence } from './humanAsk';
 import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
 import { type OverduePublish, publishNeedItems } from './calendarSignals';
 import { type FaultEpisode, faultNeedItems } from './engineFaultWatch';
@@ -103,8 +104,8 @@ export interface PendingApproval {
     url: string;
     goal: string;
     createdAt: number;
-    /** 'browser' = a browser step wants to run; 'approval' = a workflow human-gate. */
-    kind?: 'browser' | 'approval';
+    /** 'browser' = a browser step wants to run; 'approval' = a workflow human-gate; 'upload' = a media step wants to send local files. */
+    kind?: 'browser' | 'approval' | 'upload';
 }
 
 /**
@@ -121,7 +122,7 @@ export class ApprovalQueue {
         return [...this.pending.values()].map(p => p.info);
     }
 
-    add(info: { title: string; url?: string; goal?: string; kind?: 'browser' | 'approval' }): { id: string; promise: Promise<boolean> } {
+    add(info: { title: string; url?: string; goal?: string; kind?: PendingApproval['kind'] }): { id: string; promise: Promise<boolean> } {
         const id = `ap${++this.seq}-${Date.now().toString(36)}`;
         const promise = new Promise<boolean>(resolve => {
             this.pending.set(id, {
@@ -325,19 +326,22 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
     items.push(...publishNeedItems(input.overduePublishes ?? [], URGENCY['publish-overdue']));
     items.push(...faultNeedItems(input.engineFaults ?? [], URGENCY['engine-fault']));
 
+    // S-108 — the detail is the same sentence the waiting task row and farm.waits carry
     for (const a of input.approvals) {
-        const isStep = a.kind === 'approval';
+        const kind = a.kind ?? 'browser';
         items.push({
             urgency: URGENCY['browser-approval'],
             kind: 'browser-approval',
-            agentName: isStep ? 'workflow' : 'browser',
-            title: isStep ? `Approval needed — "${a.title}"` : `Browser step "${a.title}" wants to run`,
-            ...split(isStep ? (a.goal || 'waiting for your approval') : `${a.url} — ${a.goal}`),
+            agentName: kind === 'browser' ? 'browser' : 'workflow',
+            title: kind === 'approval' ? `Approval needed — "${a.title}"`
+                : kind === 'upload' ? `A media step wants to upload to ${a.title}`
+                    : `Browser step "${a.title}" wants to run`,
+            ...split(humanAskSentence({ kind, title: a.title, url: a.url, goal: a.goal })),
             ts: a.createdAt,
             ref: { approvalId: a.id },
             actions: [
-                { id: 'approve', label: isStep ? 'Approve' : 'Run' },
-                { id: 'reject', label: 'Reject' }
+                { id: 'approve', label: kind === 'approval' ? 'Approve' : kind === 'upload' ? 'Upload' : 'Run' },
+                { id: 'reject', label: kind === 'upload' ? 'Stop the step' : 'Reject' }
             ]
         });
     }

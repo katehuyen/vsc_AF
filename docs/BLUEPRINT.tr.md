@@ -3222,6 +3222,8 @@ Durum çubuğu bu kuyruğu sayar: `🔔 N need you` görünüyorsa tıklamak kuy
 
 **Ajan tarafı:** `needs.list` · `needs.clear` (`keys` veya `all:true`) · `needs.restore` · `needs.act` (`key` + `action` — satırın düğmesine panelin kendi işleyicisi üzerinden basar; yazı isteyen düğmenin metnini `answer` taşır; yalnız görünüm açan düğmeler, okunacak op'u söyleyerek reddedilir).
 
+**Senden cevap bekleyen adım bunu üç yerde, tek cümleyle söyler (3.742.0).** Çalışmak için izin isteyen tarayıcı adımı, bir iş akışı onayı (onay adımı, yayın, yargılayamayan yargıç, onaylanacak denetçi kararı), yerel dosya yüklemek isteyen medya adımı ve seçim adımı: soru açıkken adımın satırı *waiting for your answer: …* yazar, `farm.waits` onu `human-answer` olarak listeler (görevin üzerinde; tarayıcı adımının henüz satırı yoksa koşunun üzerinde; `op` alanı `needs.act`, seçimde `workflows.select`) ve Needs You aynı cümleyi taşır; cevap üçünden de düşürür. Yükleme sorusu da artık onay kuyruğundan geçer; yalnız bildirimden değil, Needs You'dan ve köprüden de cevaplanır.
+
 ### Beş Kavram — hangisi ne? {#gorev-kavramlari}
 
 Karışmaması için tek yerde:

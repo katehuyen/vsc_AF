@@ -87,8 +87,18 @@ tm.startTask = (task) => { captured.push({ startedPrompt: task.prompt, title: ta
 
 (async () => {
     // --- keep 2 → step done, selection flows to next step ---
-    tm.opts.confirmSelection = async (info) => { captured.push({ info }); return ['http://x/1.png', 'http://x/3.png']; };
+    let during = null;
+    tm.opts.confirmSelection = async (info) => {
+        captured.push({ info });
+        const r = tm.tasks.find(t => t.agentName === 'select' && t.status === 'running');
+        during = { asks: tm.openHumanAsks(), row: r && { id: r.id, waitingOn: r.waitingOn } };
+        return ['http://x/1.png', 'http://x/3.png'];
+    };
     await tm.runSelectStep(wf, 1, {}, runId);
+    // S-108 — while the pick is open the row and the wait list say so; once answered both drop it
+    ok('‼️ an open pick is a wait on its own row, in one sentence', during && during.asks.length === 1 && during.asks[0].kind === 'selection'
+        && during.row && during.row.waitingOn === during.asks[0].what && during.asks[0].taskId === during.row.id);
+    ok('…and the answer clears both', tm.openHumanAsks().length === 0 && tm.tasks.every(t => !t.waitingOn));
     const info = captured.find(c => c.info)?.info;
     ok('picker got 3 candidates', info && info.candidates.length === 3);
     eq('picker min/max', [info.min, info.max], [1, 2]);
