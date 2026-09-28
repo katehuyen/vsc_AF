@@ -1629,7 +1629,7 @@ The Live Timeline now has a **Workflow runs** section: every chain run in the la
 
 ## Supervised Workflow {#denetimli-akis}
 
-Between a workflow (a fixed chain) and a mission (a leader that plans): **the chain stays the skeleton, and a supervisor steers it at the points you choose** (X-365, waves G and H). Nothing here is on unless a workflow says so; a workflow that says nothing runs exactly as before — the *mechanical* path.
+Between a workflow (a fixed chain) and a mission (a leader that plans): **the chain stays the skeleton, and a supervisor steers it at the points you choose** (X-365, waves G and H — M-35, M-36). Nothing here is on unless a workflow says so; a workflow that says nothing runs exactly as before — the *mechanical* path.
 
 | Piece | What it does |
 |---|---|

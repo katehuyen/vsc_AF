@@ -1670,7 +1670,7 @@ Live Timeline'da artık **Workflow runs** bölümü var: son 4 saatte koşan her
 
 ## Denetimli Akış {#denetimli-akis}
 
-İş akışı (sabit zincir) ile misyon (plan yapan lider) arasında: **zincir iskelet olarak kalır, senin seçtiğin noktalarda bir yönetici onu yönlendirir** (X-365, G ve H dalgaları). Bir iş akışı söylemedikçe hiçbiri açık değildir; hiçbir şey söylemeyen iş akışı eskisi gibi koşar — *mekanik* yol.
+İş akışı (sabit zincir) ile misyon (plan yapan lider) arasında: **zincir iskelet olarak kalır, senin seçtiğin noktalarda bir yönetici onu yönlendirir** (X-365, G ve H dalgaları — M-35, M-36). Bir iş akışı söylemedikçe hiçbiri açık değildir; hiçbir şey söylemeyen iş akışı eskisi gibi koşar — *mekanik* yol.
 
 | Parça | Ne yapar |
 |---|---|
