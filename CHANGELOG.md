@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.759.0 - Antigravity's quota is read on its own clock, and Tidy repairs the backticks and made-up tags it used to miss (2026-09-29)
+
+- Antigravity's quota read (`agy -p /usage`, which briefly flashes a terminal
+  since agy's 2026-09-29 update) no longer rides Claude's beat. Two settings of
+  its own: `agentFarm.agyUsageRefreshMinutes` (while nothing is running, default
+  240 min; `0` = never while idle) and `agentFarm.agyUsageActiveRefreshSeconds`
+  (while an agent is mid-turn, default 60 s). Check now still reads at once.
+  Claude's plan-usage settings are unchanged.
+- Backlog Tidy: a backtick typed for an apostrophe (`commit`te`) turned the rest
+  of the line inside out in Obsidian — it is put back as `'`. A same-line pair
+  of a made-up tag (`<project-context>…</project-context>`) drew as nothing — it
+  is put in code; real HTML pairs (`<b>…</b>`) are kept. A line whose backticks
+  still do not pair is named in Tidy's message to be fixed by hand.
+
 ## 3.758.0 - "Hand to agent" can no longer run what an agent wrote, and backlog and plan writes survive the lines nobody wrote a test for (2026-09-29)
 
 - Security: "Hand to agent" (from a queue item or a notice) types
