@@ -144,6 +144,8 @@ const baton = (id, chainId, hop, state, from, to) => {
     const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('sessions.recent takes origin "baton" by the same rule', /isBatonRun\(chainIx, s\.sessionId, o\) \? 'baton' : o/.test(ext)
         && /"baton" = legs of a baton relay a program opened/.test(ext));
+    ok('a row\'s own origin says the category the filter reads (sessions.recent and sessions.find)',
+        /origin: categoryOf\(s\)/.test(ext) && /origin: \(\(o\) => isBatonRun\(chains, s\.sessionId, o\) \? 'baton' : o\)\(sessionOrigin\(s\)\)/.test(ext));
 }
 
 console.log(`test_chain_robust.js: ${pass} passed, ${fail} failed`);

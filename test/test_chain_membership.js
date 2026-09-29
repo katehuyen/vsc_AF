@@ -146,6 +146,9 @@ const links = list => list.map(M.linkOf);
     const bySession = await reg.dispatch('baton.legs', { session: 'aaaa2' });
     ok('baton.legs by a session prefix: its place too', bySession.ok && bySession.result.place.leg === 2
         && bySession.result.place.prev === A1 && bySession.result.place.next === A3);
+    const [r1, , r3] = byChain.result.legs;
+    ok('baton.legs rows carry the stretch each leg ran (opened / passed, null when none on record)',
+        r1.opened === running[0].createdAt && r1.passed === running[1].createdAt && r3.opened === running[2].createdAt && r3.passed === null);
     const none = await reg.dispatch('baton.legs', {});
     ok('baton.legs with nothing: refused, naming both', !none.ok && /say which: chain/.test(none.error));
     const stranger = await reg.dispatch('baton.legs', { session: 'other' });

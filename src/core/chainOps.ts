@@ -24,7 +24,7 @@ export function registerChainOps(bridge: BridgeRegistry, deps: ChainOpsDeps): vo
     bridge.register([
         {
             op: 'baton.legs',
-            describe: 'U-163 — A RELAY CHAIN\'S LEGS IN ORDER, by the chain id or by any one of its sessions: every leg\'s session (id, title, agent, first/last time), '
+            describe: 'U-163 — A RELAY CHAIN\'S LEGS IN ORDER, by the chain id or by any one of its sessions: every leg\'s session (id, title, agent, first/last time) and the stretch it ran — `opened` (when the pass that opened it was recorded) and `passed` (when it passed on; null = no pass on record), what the "Ran:" line draws; '
                 + 'whether the chain can still grow (`open`), and — asked by a session — its place: leg, prev, next, first, last (what the session page\'s ‹ › arrows and first/last badges draw). '
                 + 'A chain whose batons the store already dropped still answers: its links are kept. args: chain? (chn_… id) | session? (a full id or an unambiguous prefix)',
             handler: (args) => {
@@ -44,7 +44,8 @@ export function registerChainOps(bridge: BridgeRegistry, deps: ChainOpsDeps): vo
                         const s = byId.get(l.sessionId);
                         return {
                             leg: l.leg, sessionId: l.sessionId, title: s?.title ?? null, agent: s?.agentName ?? null,
-                            firstTs: s?.firstTs ?? null, lastTs: s?.lastTs ?? null, file: s?.file ?? null
+                            firstTs: s?.firstTs ?? null, lastTs: s?.lastTs ?? null, file: s?.file ?? null,
+                            opened: l.opened ?? null, passed: l.passed ?? null
                         };
                     }),
                     ...(place ? {
