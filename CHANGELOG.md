@@ -2,7 +2,7 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## Unreleased - "Hand to agent" can no longer run what an agent wrote, and backlog and plan writes survive the lines nobody wrote a test for (2026-09-29)
+## 3.758.0 - "Hand to agent" can no longer run what an agent wrote, and backlog and plan writes survive the lines nobody wrote a test for (2026-09-29)
 
 - Security: "Hand to agent" (from a queue item or a notice) types
   `claude <text>` into a terminal for you to review — but the text is written by
@@ -31,6 +31,9 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
   writers and for the atomic file writer: each run checks the writers' promises
   against thousands of generated files and fault sequences instead of the
   cases somebody thought of. They found the four defects above.
+- Bridge: `baton.legs` rows carry `opened`/`passed` (the stretch each leg ran),
+  and a relay leg's own `origin` reads `baton` in `sessions.recent` and
+  `sessions.find` — the same category the origin filter already used.
 
 ## 3.757.0 - A relay chain reads right however it flowed, walks in one line on its page, and is its own category (2026-09-29)
 
