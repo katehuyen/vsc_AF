@@ -32,11 +32,12 @@ const mid = V.batonCardView([
     b('b2', 'started', 2, 's2', { extra: { toSessionId: 's3' } })
 ], 's2');
 ok('a middle leg: opened by leg 1, its successor running as a named session, nothing live to stop',
-    mid.leg === 2 && mid.lines[0] === 'Chain: chn_1 — leg 2 of 3 so far.' && /Predecessor: session s1 \(developer · claude\)/.test(mid.lines[1])
-    && /Successor: running — session s3/.test(mid.lines[2]) && !mid.stoppable && /nobody passes/.test(mid.lines[3]));
+    mid.leg === 2 && mid.lines[0] === 'Chain: chn_1 — leg 2 of 3 so far.' && /^Ran: .+ → .+ \(passed\)\.$/.test(mid.lines[1])
+    && /Predecessor: session s1 \(developer · claude\)/.test(mid.lines[2])
+    && /Successor: running — session s3/.test(mid.lines[3]) && !mid.stoppable && /nobody passes/.test(mid.lines[4]));
 
 const runner = V.batonCardView([b('b1', 'started', 1, 's1', { extra: { toSessionId: 's2' } })], 's2');
-ok('a runner that has not passed yet says so', runner.leg === 2 && runner.chip === '⑂ 2' && /Successor: none yet/.test(runner.lines[2]) && runner.head === 'Baton relay — leg 2');
+ok('a runner that has not passed yet says so', runner.leg === 2 && runner.chip === '⑂ 2' && /Successor: none yet/.test(runner.lines[3]) && /no pass yet/.test(runner.lines[1]) && runner.head === 'Baton relay — leg 2');
 
 const parked = V.batonCardView([b('b1', 'parked', 1, 's1', { extra: { wakeAt: new Date(2026, 8, 21, 20, 5).getTime() } })], 's1');
 ok('a parked successor names its wake time', parked.lines.some(l => /parked — every account is full; wakes at 20:05/.test(l)));

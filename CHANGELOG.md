@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.757.0 - A relay chain reads right however it flowed, walks in one line on its page, and is its own category (2026-09-29)
+
+- A relay leg's title no longer comes from the header it was opened with
+  ("=== BATON RELAY — chain … · leg 14/25 ==="). That header froze the leg
+  ceiling of the moment, so a chain whose ceiling was raised from 25 to 35
+  listed "leg 14/25" beside "leg 23/35". Every later leg now carries the title
+  of the session that started the chain — a relay is one job — and the leg
+  number is the ⑂ column's, which is always right. A rename still wins.
+- The chain record no longer assumes the ideal flow: a leg that passed twice
+  (two successors with one number), a chain ended and reopened on the same
+  leg, and a chain whose older records were pruned all list every leg on
+  record, each found by its own session. Previous/next name the leg number, so
+  a gap in the record shows.
+- Every leg says when it ran ("Ran: 27 Sep 21:45 → 28 Sep 01:10 (passed)") in
+  the ⑂ cell's hover and on its session page — a leg resumed long after it
+  passed sorts by its latest activity, and now says which stretch it was.
+- A session's page, on a relay leg: the chain id is written once (click to
+  copy), then « first · ‹ previous · ⑂ 24/25 · next › · last ». Click or
+  right-click the counter for every leg in a scrolling list, and jump to one.
+  The line ends on the relay's chip — "⑂ 24", "⑂ 1 first", "⑂ 25 latest" —
+  in the colour every ⑂ wears. A leg a baton pass opened says "⑂ baton"; its
+  launcher label ("Baton — leg 25 of chain …") moved into the hover, with the
+  chain's live ceiling. Every piece of the line has a hover panel.
+- ⑂ Baton is a session category of its own. The Sessions tables (the Sessions
+  page, the Dashboard, a project's page) show 🧑 You · ⑂ Baton · 🤖 Auto · 🎯
+  Mission, Baton on by default; a relay leg a program opened wears ⑂ in the By
+  column, while a session of yours made leg 1 stays 🧑. Filters has a "⑂
+  Chains" picker left of the Missions picker to let only some relays through,
+  and the toolbar carries the Engines picker so engines can be narrowed with
+  the panel shut. The Search page's Started row reads All · You · ⑂ Baton ·
+  Automation, and `sessions.recent` / `search.transcripts` take
+  `origin: "baton"` — "auto" now means the automation that is not a relay leg.
+
 ## 3.756.0 - A table's last row opens its hover panel whole (2026-09-29)
 
 - A hover panel in the last row or two of a table (Tasks → Plan and Runs: the

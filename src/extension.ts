@@ -660,7 +660,7 @@ import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { findSessions } from './core/sessionFind';
-import { chainIndexNow, setChainSource } from './core/chainMembership';
+import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
@@ -10946,7 +10946,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'regex? (hands the query to RegExp instead — none of that grammar applies), caseSensitive?, wholeWord? (a BARE word must match a whole word too — what quotes already do, without the quotes), '
                 + 'roles? (array of user|automation|assistant|delegator|handler|tool|toolResult; omit = user+automation+assistant = the conversation, [] = NONE — a memory-only or events-only search, the same thing the Search page\'s chips express, so `[]` here reads like it does on `agents?` rather than quietly meaning "the default". ‼️ `delegator` is one agent\'s handover text inside a subagent lane and `handler` is that subagent\'s reply, and `automation` is a prompt a PROGRAM wrote on the same input channel a person uses — a mission/task/schedule/trigger brief, a headless run with no launcher on record, or an imported transcript whose author cannot be verified. All three used to arrive as `user`, so ["user"] now really is only what a PERSON asked), '
                 + 'file? (one transcript path — scopes to that session, and its memory/event sources are dropped because the scan already covers it), '
-                + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (' + ENGINE_ENUM + '…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | auto = a schedule/trigger/task/mission did), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
+                + 'agents? (array of agent names; omit = every agent incl. unassigned sessions, [] = none), engines? (' + ENGINE_ENUM + '…), projects? (project names, "Unassigned" for the sessions that belong to none), models? (model ids as the sessions record them, claude- prefix stripped), origin? (user = a person started it | baton = a leg of a baton relay a program opened | auto = any other schedule/trigger/task/mission run), lane? (main = no subagent transcripts | sub = only them), pinnedOnly?, errorsOnly?, sessionId? (a full id, the eight-character prefix this extension prints everywhere, a transcript path, or part of a title) — these narrow the SESSIONS THAT ARE SCANNED, so `scanned` means what it says, '
                 + 'from?/to? (ISO date or ms — the window applies to WHAT WAS SAID, i.e. the message\'s own time, not the session\'s last-touched date, and it applies to all three sources), memory? (default true), events? (default true), limit? (default 150). '
                 + 'Each hit carries file, sessionId, engine, agentName, title, ts, role, speaker (the agent that wrote a delegation), turn, the snippet split as before/match/after, and `kind` for the two non-transcript sources and for a TITLE hit (X-147: every session\'s title is matched too whenever a conversation role is in scope — role and kind are both `title`, ts is the session\'s activity time). Case-insensitive matching folds the Turkish case pairs i/İ and ı/I, so "ilk" finds "İlk" and "kırmızı" finds "KIRMIZI". '
                 + '‼️ It also carries author (human|automation|unknown) with authorLabel/launcher, and — when the session is not a native one — provenance (imported|imported-unknown-source), producer (the engine that DID the work) and canonicalSessionId (the id of the run). The scan is unique on canonicalSessionId, so a transcript and an imported copy of it are ONE session and one set of counters, not two. '
@@ -11359,7 +11359,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), ' + RUN_SELECTION_ARGS + ', limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
+            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "baton" = legs of a baton relay a program opened — the tables\' ⑂ Baton category; "auto" = every other automation run (schedule/trigger/task/mission, any `claude -p`); omit or "all" = all three), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), ' + RUN_SELECTION_ARGS + ', limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
@@ -11384,8 +11384,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!id) { id = sessionIdentity(s, manifests); identities.set(s.file, id); }
                     return id;
                 };
+                const chainIx = origin === 'auto' || origin === 'baton' ? chainIndexNow() : undefined;
+                const categoryOf = (s: SessionInfo): string => {
+                    const o = sessionOrigin(s);
+                    return chainIx && isBatonRun(chainIx, s.sessionId, o) ? 'baton' : o;
+                };
                 return index.allWithExternal()
-                    .filter(s => origin !== 'user' && origin !== 'auto' ? true : sessionOrigin(s) === origin)
+                    .filter(s => origin !== 'user' && origin !== 'auto' && origin !== 'baton' ? true : categoryOf(s) === origin)
                     .filter(s => wantHeadless === undefined || sessionHeadless(s) === wantHeadless)
                     .filter(s => !wantEngines.length || wantEngines.includes(s.source ?? 'claude'))
                     .filter(s => runSelected(sel, identityOf(s)))
@@ -24308,6 +24313,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // depth, and the file itself does not say so on every line.
         laneFor: (file: string) =>
             index.allWithExternal().find(s => s.file === file)?.isSidechain === true,
+        chainCeiling: (chainId: string) =>
+            chainMaxLegs(batonStore.all(), chainId, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))),
         fileForSession: (sessionId: string) =>
             index.allWithExternal().find(s => s.sessionId === sessionId)?.file,
         // ‼️ S-37 — the ONE place 🧑/🤖 and 🌙 are decided for the viewer, and

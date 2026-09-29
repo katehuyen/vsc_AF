@@ -80,6 +80,22 @@ function viewFor(state) {
     };
 }
 
+// U-173 — a 25-leg relay whose ceiling was raised to 35 mid-chain; `self` is the page's own session.
+const RELAY_T0 = Date.UTC(2026, 8, 26, 17, 2);
+const relayLegs = Array.from({ length: 25 }, (_, i) => ({
+    leg: i + 1, sessionId: i === 23 ? '019fe7bc-545c-70d2-9a11-0b1c2d3e4f50' : `${(0x3df2d806 + i * 7919).toString(16)}-2f82-4bf6-acd8-2a3ce985b83d`,
+    opened: RELAY_T0 + i * 5400000, ...(i < 24 ? { passed: RELAY_T0 + (i + 1) * 5400000 } : {})
+}));
+const chainAt = (leg, open) => {
+    const legs = relayLegs.map(l => (l.leg === 24 && leg !== 24 ? { ...l, sessionId: '3df2d806-2f82-4bf6-acd8-2a3ce985b83d' } : l));
+    const self = leg === 24 ? relayLegs[23].sessionId : legs[leg - 1].sessionId;
+    return {
+        chainId: 'chn_muin1eiu002hyo', self, leg, of: 25, max: 35, legs: open ? legs : legs.map(l => (l.leg === 25 ? { ...l, passed: undefined } : l)),
+        prev: leg > 1 ? legs[leg - 2].sessionId : '', next: leg < 25 ? legs[leg].sessionId : '',
+        first: leg === 1, last: leg === 25, open
+    };
+};
+
 const data = (o) => {
     const state = (o && o.signal) || null;
     const codex = state === 'undelivered';
@@ -189,13 +205,25 @@ module.exports = {
         {
             id: 'sessionviewer-chain-first',
             // U-167 — the smallest arity first: leg 1 has ONE live arrow.
-            label: 'Session viewer — leg 1 of a running relay: ‹ dead, › to leg 2, the chain id to copy, "first"',
-            data: data({ over: { chain: { chainId: 'chn_muin1eiu002hyo', leg: 1, of: 25, prev: '', next: '3df2d806-2f82-4bf6-acd8-2a3ce985b83d', first: true, last: false, open: true } } })
+            label: 'Session viewer — leg 1 of a running relay: « ‹ dead, › » live, the chain id once, chip "⑂ 1 first"',
+            data: data({ over: { chain: chainAt(1, true) } })
+        },
+        {
+            id: 'sessionviewer-chain-middle',
+            // U-173 — the user's own row: leg 24 of 25, launched as a task, ceiling 35.
+            label: 'Session viewer — leg 24 of 25 (ceiling 35): "⑂ baton", no launcher label, « ‹ ⑂ 24/25 › », chip "⑂ 24"',
+            data: data({ over: { origin: 'auto', launchedBy: { kind: 'task', label: 'Baton — leg 24 of chain chn_muin1eiu002hyo' }, chain: chainAt(24, true) } })
         },
         {
             id: 'sessionviewer-chain-last',
-            label: 'Session viewer — the final leg of an ended relay: ‹ to leg 24, › dead, "last"',
-            data: data({ over: { chain: { chainId: 'chn_muin1eiu002hyo', leg: 25, of: 25, prev: '3df2d806-2f82-4bf6-acd8-2a3ce985b83d', next: '', first: false, last: true, open: false } } })
+            label: 'Session viewer — the final leg of an ended relay: « ‹ live, › » dead, chip "⑂ 25 last"',
+            data: data({ over: { origin: 'auto', chain: chainAt(25, false) } })
+        },
+        {
+            id: 'sessionviewer-chain-menu',
+            label: 'Session viewer — menu: the counter\'s leg list, leg 24 marked, bounded and scrolling',
+            data: data({ over: { origin: 'auto', chain: chainAt(24, true) } }),
+            act: r => { r.els.app.innerHTML += `<div class="afchain-menu" style="position:static;margin:8px 0 0 40%">${(r.sandbox.window || r.sandbox).AFChainNav.menuHtml(chainAt(24, true))}</div>`; }
         }
     ]
 };

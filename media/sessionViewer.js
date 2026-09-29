@@ -906,17 +906,29 @@
         // it. It is drawn as a tagged glyph so the words beside it stay short.
         const moon = DATA.headless
             ? '<span title="Headless — this run had no terminal and nobody at the keyboard">🌙</span>' : '';
-        const by = DATA.launchedBy && DATA.launchedBy.kind
-            ? `🤖${moon} ${C.esc(DATA.launchedBy.kind)}${DATA.launchedBy.label ? ' · ' + C.esc(DATA.launchedBy.label) : ''}`
-            : DATA.origin === 'auto' ? `🤖${moon} automation run` : '🧑 your session';
+        // U-173 — a leg a baton pass opened is a BATON run: its launcher label
+        // ("Baton — leg 25 of chain …") only repeated what the chain block says,
+        // so the label moves into the AFTip and the chain id is written once.
+        const relay = DATA.chain && (DATA.chain.leg >= 2 || DATA.origin === 'auto');
+        const launched = DATA.launchedBy && DATA.launchedBy.kind
+            ? `${DATA.launchedBy.kind}${DATA.launchedBy.label ? ' · ' + DATA.launchedBy.label : ''}` : '';
+        const by = relay
+            ? window.AFTip.wrap(`<span class="afbaton">⑂${moon}</span> baton`, 'Baton relay leg',
+                window.AFTip.lines([`Opened by a baton pass — leg ${DATA.chain.leg} of chain ${DATA.chain.chainId}.`,
+                    ...(launched ? [`Launched as: ${launched}`] : []),
+                    ...(DATA.headless ? ['Headless — no terminal, nobody at the keyboard.'] : [])]))
+            : DATA.launchedBy && DATA.launchedBy.kind
+                ? `🤖${moon} ${C.esc(DATA.launchedBy.kind)}${DATA.launchedBy.label ? ' · ' + C.esc(DATA.launchedBy.label) : ''}`
+                : DATA.origin === 'auto' ? `🤖${moon} automation run` : '🧑 your session';
         const bits = [
             by,
             C.esc(DATA.cwd || ''),
             `<button class="idcopy" id="idcopy" data-copy="${C.esc(DATA.sessionId)}"
                 title="Click to copy this session id">${C.esc(DATA.sessionId)}</button>`,
-            // U-167 — the relay this run was a leg of: its id, ‹ › and first/last
+            // U-167 / U-173 — the relay this run was a leg of: its id once, « ‹ ⑂ n/N › »
             window.AFChainNav ? window.AFChainNav.html(DATA.chain) : '',
-            DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : ''
+            DATA.permissionMode ? 'mode: ' + C.esc(DATA.permissionMode) : '',
+            window.AFChainNav && window.AFChainNav.chip ? window.AFChainNav.chip(DATA.chain) : ''
         ];
         return bits.filter(Boolean).join(' · ');
     }

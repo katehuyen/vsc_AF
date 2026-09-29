@@ -9,6 +9,7 @@
 import { Baton, isLive, openerOf } from './baton';
 import { chainMaxLegs, isSeal } from './batonSeal';
 import { BrakeState, brakeStateOf } from './batonLastLeg';
+import { stamp } from './aftime';
 
 /** S-99 — the mark a leg the user made the chain's last carries after its number, wherever the number is drawn. */
 export const LAST_LEG_MARK = '⊣';
@@ -139,6 +140,8 @@ export function batonCardView(list: readonly Baton[], sessionId: string, fallbac
     const legs = Math.max(leg, ...chain.map(b => b.hop + (b.state === 'started' ? 1 : 0)));
     const lines = [
         `Chain: ${chainId} — leg ${leg} of ${legs} so far.`,
+        // U-170 — the stretch this leg ran, so a leg resumed after it passed (its row sorts late) still says where it was
+        `Ran: ${opener ? stamp(opener.createdAt) : '?'} → ${left ? `${stamp(left.createdAt)} (${isLive(left) || left.state === 'started' ? 'passed' : left.state})` : 'no pass yet'}.`,
         opener && !isSeal(opener)
             ? `Predecessor: session ${short(opener.from.sessionId)} (${opener.from.agentId.split(/[\\/]/).pop()} · ${opener.from.engine}) `
                 + (opener.rescue ? `ended without passing — the failsafe opened this run: ${opener.rescue}.` : 'passed the baton to this run.')

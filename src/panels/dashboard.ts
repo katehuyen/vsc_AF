@@ -373,7 +373,7 @@ export function sessionRowPool(
         // S-77 — this run's leg of a baton relay (the card's own view); null off a relay
         // U-168 - and a chain whose batons the store dropped still has its legs
         chain: s.sessionId
-            ? ((relayIds.has(s.sessionId) ? batonCardView(batons, s.sessionId) : undefined) ?? placeCardView(chainPlace(chains, s.sessionId)) ?? null)
+            ? ((relayIds.has(s.sessionId) ? batonCardView(batons, s.sessionId) : undefined) ?? placeCardView(chainPlace(chains, s.sessionId), s.sessionId) ?? null)
             : null,
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,

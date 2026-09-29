@@ -736,6 +736,46 @@ const mkRow = (i, extra) => Object.assign({
         containers.orig.querySelectorAll('[data-fold]').length === 1);
 }
 
+// ---------- part: U-174 — ⑂ Baton is a category of its own ----------------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'bat',
+        columns: ['origin', 'title', 'chain'], stateKey: 'bat'
+    });
+    const leg = (id, n) => ({ chainId: id, leg: n, chip: '⑂ ' + n, head: 'Baton relay — leg ' + n, lines: [] });
+    t.setRows([
+        mkRow(1, { origin: 'user' }),
+        mkRow(2, { origin: 'auto' }),
+        mkRow(3, { origin: 'auto', chain: leg('chn_a', 2), engine: 'codex' }),
+        mkRow(4, { origin: 'auto', chain: leg('chn_b', 3) }),
+        mkRow(5, { origin: 'user', chain: leg('chn_a', 1) }),
+        mkRow(6, { origin: 'auto', chain: leg('chn_c', 2), mission: { id: 'm1', title: 'M' } })
+    ], 10);
+    const html = () => containers.bat.innerHTML;
+    const q = sel => containers.bat.querySelector(sel);
+    const shownRows = () => containers.bat.querySelectorAll('[data-fold]').length;
+    ok('Baton is ON by default, next to You: your rows and the relay legs, no plain automation, no mission',
+        shownRows() === 4 && html().includes('title3') && html().includes('title4') && !html().includes('title2') && !html().includes('title6'));
+    ok('the four switches read You, Baton, Auto, Mission in that order',
+        /af-cat-user[\s\S]*af-cat-baton[\s\S]*af-cat-auto[\s\S]*af-cat-mission/.test(html()) && html().includes('af-cat-baton on'));
+    ok('a relay leg a program opened wears ⑂ in the By column; your own leg 1 stays 🧑',
+        (html().match(/⑂<\/td>/g) || []).length === 2 && (html().match(/🧑<\/td>/g) || []).length === 2);
+    click(q('.af-cat-baton'));
+    ok('Baton turns off alone', shownRows() === 2 && state.afSess.bat.filters.showBaton === false
+        && state.afSess.bat.filters.showUser === true && state.afSess.bat.filters.showAuto === false);
+    click(q('.af-cat-baton'));
+    ok('the toolbar carries the Engines picker with the panel shut', !html().includes('data-afms="sess-engines-bat"') && html().includes('data-afms="sess-engines-bar-bat"'));
+    click(q('.af-filter'));
+    ok('the panel offers ⑂ Chains — the relay legs\' chains only, never a mission\'s', html().includes('data-afms="sess-chains-bat"')
+        && html().includes('chn_a · 1 leg') && html().includes('chn_b · 1 leg') && !html().includes('chn_c'));
+    state.afSess.bat.filters.chains = ['chn_b'];
+    const t2 = sandbox.window.AFSessionsTable.create({ vscode: vscodeStub, C, containerId: 'bat', columns: ['origin', 'title', 'chain'], stateKey: 'bat' });
+    t2.setRows([mkRow(3, { origin: 'auto', chain: leg('chn_a', 2) }), mkRow(4, { origin: 'auto', chain: leg('chn_b', 3) }), mkRow(1, { origin: 'user' })], 10);
+    ok('a chain selection narrows Baton only, and counts as a filter', shownRows() === 2 && html().includes('title4') && !html().includes('title3')
+        && html().includes('title1') && /Filters \(\d+\)/.test(html()));
+}
+
 // ---------- migration: the released coupled shape becomes three booleans ----
 {
     posted = [];

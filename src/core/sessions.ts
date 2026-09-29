@@ -16,6 +16,8 @@ import {
 } from './sessionResident';
 import { SessionStore, StoredSession } from './sessionStore';
 import { dayKey, normPath, truncate } from './util';
+import { ChainIndex, chainIndexNow } from './chainMembership';
+import { relaySubject } from './relayTitle';
 
 export interface DailyBucket {
     cost: number;
@@ -1482,6 +1484,7 @@ export class SessionIndex implements vscode.Disposable {
         }
         if (this.scanGen !== gen) { return; }
         this.sessions = next;
+        this.applyRelayTitles();
         this.reachLive.rebuild(next.values());
         // X-348 — the whole map was replaced, so the kept answer is about
         // objects nobody holds any more: the next call rebuilds it once.
@@ -1747,11 +1750,33 @@ export class SessionIndex implements vscode.Disposable {
      *   1. the user's own rename — an explicit decision, always wins;
      *   2. the name it was STARTED with (`claude -n …`, from the CLI registry) —
      *      naming a session at launch has to mean something afterwards;
-     *   3. the title derived from the first real prompt in the transcript.
+     *   3. a relay leg's chain subject (U-170, relayTitle.ts);
+     *   4. the title derived from the first real prompt in the transcript.
      */
     private applyTitle(info: SessionInfo): void {
         info.cliName = this.cliNames.get(info.sessionId);
-        info.title = this.titleOverrides.get(info.sessionId) ?? info.cliName ?? info.autoTitle;
+        info.title = this.titleOverrides.get(info.sessionId) ?? info.cliName
+            ?? relaySubject(this.relayIndex(), info.sessionId, sid => this.byId(sid)?.title) ?? info.autoTitle;
+    }
+
+    private relayIx?: { ix: ChainIndex; at: number };
+
+    /** The chain record, rebuilt at most every two seconds — a scan asks once per session. */
+    private relayIndex(): ChainIndex {
+        const now = Date.now();
+        if (!this.relayIx || now - this.relayIx.at > 2000) { this.relayIx = { ix: chainIndexNow(), at: now }; }
+        return this.relayIx.ix;
+    }
+
+    /**
+     * A leg takes its first leg's title, and a bulk pass can reach the leg
+     * before its first leg — so every bulk pass ends by naming the legs again.
+     */
+    private applyRelayTitles(): void {
+        const ix = this.relayIndex();
+        for (const s of [...this.sessions.values(), ...this.externalList]) {
+            if ((ix.bySession.get(s.sessionId)?.leg ?? 0) >= 2) { this.applyTitle(s); }
+        }
     }
 
     /**
@@ -1770,6 +1795,7 @@ export class SessionIndex implements vscode.Disposable {
             Object.entries(map).filter(([, v]) => typeof v === 'string' && v.trim()));
         for (const s of this.sessions.values()) { this.applyTitle(s); }
         for (const s of this.externalList) { this.applyTitle(s); }
+        this.applyRelayTitles();
         this.onDidUpdateEmitter.fire();
     }
 
@@ -1779,6 +1805,7 @@ export class SessionIndex implements vscode.Disposable {
             Object.entries(map).filter(([, v]) => typeof v === 'string' && v.trim()));
         for (const s of this.sessions.values()) { this.applyTitle(s); }
         for (const s of this.externalList) { this.applyTitle(s); }
+        this.applyRelayTitles();
         this.onDidUpdateEmitter.fire();
     }
 
@@ -2271,6 +2298,7 @@ export class SessionIndex implements vscode.Disposable {
         for (const s of [...this.externalList, ...this.externalAliases]) {
             this.applyTitle(s); this.applyMark(s);
         }
+        this.applyRelayTitles();
         this.onDidUpdateEmitter.fire();
     }
 

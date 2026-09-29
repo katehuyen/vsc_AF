@@ -9,7 +9,7 @@ import {
     canonicalSessionKey, producerEngineOf, SessionIndex, SessionInfo, sessionOrigin
 } from '../core/sessions';
 import { ENGINES } from '../core/consoleEngine';
-import { chainIndexNow, chainSessionsMatching } from '../core/chainMembership';
+import { chainIndexNow, chainSessionsMatching, isBatonRun } from '../core/chainMembership';
 import { handleAfNav, htmlShell } from './base';
 
 export interface SearchDeps {
@@ -119,16 +119,22 @@ const has = (list: string[] | null | undefined, v: string): boolean =>
 export function scopeSessions(
     pool: SessionInfo[], f: SessionFilters, projectOf: (s: SessionInfo) => string
 ): SessionInfo[] {
-    const origin = f.origin === 'user' || f.origin === 'auto' ? f.origin : '';
+    const origin = f.origin === 'user' || f.origin === 'auto' || f.origin === 'baton' ? f.origin : '';
     const lane = f.lane === 'main' || f.lane === 'sub' ? f.lane : '';
     const session = (f.session ?? '').trim().toLowerCase();
-    const chained = session ? chainSessionsMatching(chainIndexNow(), session) : undefined;
+    const ix = session || origin ? chainIndexNow() : undefined;
+    const chained = session && ix ? chainSessionsMatching(ix, session) : undefined;
+    // U-174 — ⑂ Baton is its own category here as in the Sessions table: Automation means the rest.
+    const category = (s: SessionInfo): string => {
+        const o = sessionOrigin(s);
+        return ix && isBatonRun(ix, s.sessionId, o) ? 'baton' : o;
+    };
     return pool.filter(s => {
         if (!has(f.agents, s.agentName ?? '')) { return false; }
         if (!has(f.engines, engineOf(s))) { return false; }
         if (!has(f.projects, projectOf(s))) { return false; }
         if (f.models && !modelsOf(s).some(m => f.models?.includes(m))) { return false; }
-        if (origin && sessionOrigin(s) !== origin) { return false; }
+        if (origin && category(s) !== origin) { return false; }
         if (lane === 'main' && s.isSidechain) { return false; }
         if (lane === 'sub' && !s.isSidechain) { return false; }
         if (f.pinnedOnly && !s.pinned) { return false; }

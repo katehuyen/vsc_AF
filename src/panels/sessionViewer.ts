@@ -105,6 +105,8 @@ export interface ViewerDeps {
      * USER and AGENT, which is the very confusion X-25 is about.
      */
     laneFor?(file: string): boolean;
+    /** U-170 — a chain's leg ceiling as it is NOW (0 = none), never the one its legs were opened with */
+    chainCeiling?(chainId: string): number;
     /** U-167 — a session's transcript, for the chain arrows */
     fileForSession?(sessionId: string): string | undefined;
     /**
@@ -962,10 +964,13 @@ export class SessionViewerPanel {
             data.agentName = owner.agentName;
         }
         if (this.deps.laneFor?.(this.file)) { data.lane = true; }
-        const place = chainPlace(chainIndexNow(), String(data.sessionId ?? ''));
+        const self = String(data.sessionId ?? '');
+        const place = chainPlace(chainIndexNow(), self);
         if (place) {
+            const max = this.deps.chainCeiling?.(place.chainId);
             data.chain = {
-                chainId: place.chainId, leg: place.leg, of: place.legs[place.legs.length - 1]?.leg ?? place.leg,
+                chainId: place.chainId, self, leg: place.leg, of: place.legs[place.legs.length - 1]?.leg ?? place.leg,
+                legs: place.legs, ...(typeof max === 'number' ? { max } : {}),
                 prev: place.prev ?? '', next: place.next ?? '', first: place.first, last: place.last, open: place.open
             };
         }

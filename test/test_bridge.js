@@ -2295,7 +2295,8 @@ const { opencodeStatus, syncToOpencode } =
         // window sized to yesterday's describe fails the day one grows.
         const block = src.slice(src.indexOf("op: 'sessions.recent'"), src.indexOf("op: 'sessions.start'"));
         ok('extension.ts registers sessions.recent with the origin arg',
-            /origin\?/.test(block) && /sessionOrigin\(s\) === origin/.test(block) && /origin: sessionOrigin\(s\)/.test(block));
+            /origin\?/.test(block) && /categoryOf\(s\) === origin/.test(block) && /const o = sessionOrigin\(s\)/.test(block)
+            && /origin: sessionOrigin\(s\)/.test(block));
         // …and says WHICH mechanism started an automation run, by name — the
         // fact origin is now decided from (core/sessions.ts sessionOrigin).
         ok('…and carries the launcher and the session id an agent needs to act',

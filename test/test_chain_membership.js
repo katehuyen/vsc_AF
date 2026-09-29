@@ -156,7 +156,7 @@ const links = list => list.map(M.linkOf);
     // ---------- the surfaces ----------
     const src = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
     ok('the Sessions filter box reads the chain id', /\(r\.chain \? r\.chain\.chainId/.test(src('media/sessionsTable.js')));
-    ok('the Search page\'s session filter reads the chain id', /chainSessionsMatching\(chainIndexNow\(\), session\)/.test(src('src/panels/searchPanel.ts')));
+    ok('the Search page\'s session filter reads the chain id', /chainSessionsMatching\(ix, session\)/.test(src('src/panels/searchPanel.ts')) && /chainIndexNow\(\)/.test(src('src/panels/searchPanel.ts')));
     ok('"Show This Chain" lands on the table\'s own filter', /setChainFilter/.test(src('media/sessionsTable.js')) && /table\.setChainFilter\(sc\.chain\)/.test(src('media/sessionsPage.js')));
     const chained = CTX_ITEMS.filter(i => i.command === 'agentfarm.copyChainId' || i.command === 'agentfarm.showChain');
     ok('both chain items, on the session rows, the Console and the timeline, and only on a chained session',
@@ -166,14 +166,28 @@ const links = list => list.map(M.linkOf);
     const box = { window: {}, document: undefined };
     vm.runInNewContext(src('media/afChainNav.js'), box);
     const N = box.window.AFChainNav;
-    const first = N.html({ chainId: 'chn_run', leg: 1, of: 3, prev: '', next: A2, first: true, last: false, open: true });
-    ok('leg 1: a dead ‹, a live › to leg 2, the id to copy, "first"', /<button class="afchain-nav" disabled/.test(first)
-        && first.includes(`data-chaingo="${A2}"`) && first.includes('data-chaincopy="chn_run"') && first.includes('>first<'));
-    const newest = N.html({ chainId: 'chn_run', leg: 3, of: 3, prev: A2, next: '', first: false, last: true, open: true });
-    ok('the newest leg of a running chain says "latest", not "last"', newest.includes('>latest<') && !newest.includes('>last<'));
-    const closed = N.html({ chainId: 'chn_run', leg: 3, of: 3, prev: A2, next: '', first: false, last: true, open: false });
-    ok('the final leg of an ended chain says "last"', closed.includes('>last<'));
-    ok('a session in no chain draws nothing', N.html(undefined) === '' && N.html({}) === '');
+    // U-173 — « ‹ ⑂ n/N › », the chain id once, the closing chip, the leg list.
+    const legs3 = [{ leg: 1, sessionId: A1 }, { leg: 2, sessionId: A2 }, { leg: 3, sessionId: A3 }];
+    const at1 = { chainId: 'chn_run', self: A1, leg: 1, of: 3, legs: legs3, prev: '', next: A2, first: true, last: false, open: true };
+    const first = N.html(at1);
+    ok('leg 1: dead « and ‹, live › to leg 2 and » to leg 3, the id to copy',
+        (first.match(/<button [^>]*class="afchain-nav" disabled/g) || []).length === 2
+        && first.includes(`data-chaingo="${A2}"`) && first.includes(`data-chaingo="${A3}"`) && first.includes('data-chaincopy="chn_run"'));
+    ok('the chain id is written ONCE on the strip', (first.match(/chn_run<\/button>/g) || []).length === 1);
+    ok('the counter reads ⑂ 1/3 and opens the leg list', first.includes('data-chainmenu="1"') && first.includes('⑂ 1/3'));
+    ok('leg 1 closes on the chip "⑂ 1 first"', /⑂ 1 <b>first<\/b>/.test(N.chip(at1)));
+    const at3 = open => ({ chainId: 'chn_run', self: A3, leg: 3, of: 3, legs: legs3, prev: A2, next: '', first: false, last: true, open });
+    ok('the newest leg of a running chain says "latest", not "last"', N.chip(at3(true)).includes('<b>latest</b>') && !N.chip(at3(true)).includes('<b>last</b>'));
+    ok('the final leg of an ended chain says "last"', N.chip(at3(false)).includes('<b>last</b>'));
+    const mid = N.chip({ chainId: 'chn_run', self: A2, leg: 2, of: 3, legs: legs3, prev: A1, next: A3, first: false, last: false, open: true });
+    ok('a middle leg closes on its number alone', /⑂ 2<\/span>/.test(mid) && !/<b>/.test(mid.split('</span>')[0]));
+    const menu = N.menuHtml({ ...at3(true), self: A2 });
+    ok('the list has every leg, this one marked and not pressable', (menu.match(/afchain-mi/g) || []).length === 3
+        && /afchain-mi cur" role="option" aria-selected="true" disabled/.test(menu) && menu.includes(`data-chaingo="${A1}"`));
+    ok('a session in no chain draws nothing', N.html(undefined) === '' && N.html({}) === '' && N.chip(undefined) === '' && N.menuHtml(null) === '');
+    const viewerJs = src('media/sessionViewer.js');
+    ok('a successor leg says "⑂ baton" and its launcher label moves into the AFTip', /const relay = DATA\.chain && \(DATA\.chain\.leg >= 2 \|\| DATA\.origin === 'auto'\)/.test(viewerJs)
+        && /Launched as: \$\{launched\}/.test(viewerJs));
 
     console.log(`test_chain_membership.js: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

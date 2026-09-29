@@ -111,10 +111,18 @@
      */
     const CATEGORIES = [
         { id: 'user', key: 'showUser', label: 'You', glyph: '🧑', tip: 'Sessions you started yourself — your dialogs' },
-        { id: 'auto', key: 'showAuto', label: 'Auto', glyph: '🤖', tip: 'Automation outside missions — schedules, triggers and tasks' },
+        { id: 'baton', key: 'showBaton', label: 'Baton', glyph: '⑂', tip: 'Baton relay legs — runs a baton pass opened, and a relay a task started (a session of yours made leg 1 stays under You)' },
+        { id: 'auto', key: 'showAuto', label: 'Auto', glyph: '🤖', tip: 'Automation outside missions and relays — schedules, triggers and tasks' },
         { id: 'mission', key: 'showMission', label: 'Mission', glyph: '🎯', tip: 'Stamped mission sessions — classic and adaptive, planner and delegations' }
     ];
     const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
+    /**
+     * ‼️ U-174 — ⑂ BATON IS A CATEGORY OF ITS OWN, decided like the Search page
+     * and `sessions.recent` decide it (chainMembership.isBatonRun): a program's
+     * run that is a leg of a relay. Its chain id, or '' for every other row.
+     */
+    const batonOf = r => (r.chain && r.chain.chainId && originOf(r) === 'auto' && !(r.mission && r.mission.id) ? r.chain.chainId : '');
+    const categoryOf = r => ((r.mission && r.mission.id) ? 'mission' : batonOf(r) ? 'baton' : originOf(r));
     /**
      * ‼️ X-95 — THE THIRD KIND OF ROW, AND WHY IT IS NOT A THIRD ORIGIN.
      *
@@ -178,6 +186,10 @@
         // The permanent switches. You is the fresh-table default; Auto and
         // Mission are separate opt-ins, never aliases for "All".
         showUser: true, showAuto: false, showMission: false,
+        // U-174 — relays are ON by default: a chain the user started is their own work, carried on
+        showBaton: true,
+        // U-174 — which chains' legs may be listed; same three-state shape as `missions`
+        chains: null,
         // ‼️ S-35 — headless runs are IN by default, so the table on a fresh
         // panel is the table it has always been: a filter that hides rows
         // nobody asked it to hide is how a count stops being trustworthy. It
@@ -507,7 +519,7 @@
             let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.engines ? 1 : 0)
                 + (filters.projects ? 1 : 0)
                 + (filters.providers ? 1 : 0) + (filters.profiles ? 1 : 0) + (filters.models ? 1 : 0)
-                + (filters.missions !== null ? 1 : 0)
+                + (filters.missions !== null ? 1 : 0) + (filters.chains !== null ? 1 : 0)
                 // …but 🌙 IS counted, and for the opposite reason: it lives only
                 // inside the panel, so with the panel shut nothing else on the
                 // page would say that a whole class of runs is being hidden.
@@ -560,9 +572,13 @@
                 // wins over its technical `auto` origin, so 🎯 never needs 🤖
                 // to be on beside it and neither switch changes the other.
                 const mid = missionOf(r);
+                const cid = batonOf(r);
                 if (mid) {
                     if (!filters.showMission) { return false; }
                     if (filters.missions && filters.missions.indexOf(mid) < 0) { return false; }
+                } else if (cid) {
+                    if (!filters.showBaton) { return false; }
+                    if (filters.chains && filters.chains.indexOf(cid) < 0) { return false; }
                 } else if (originOf(r) === 'auto') {
                     if (!filters.showAuto) { return false; }
                 } else if (!filters.showUser) { return false; }
@@ -595,6 +611,9 @@
         const ENGINE_MS = 'sess-engines-' + opts.stateKey;
         const PROJECT_MS = 'sess-projects-' + opts.stateKey;
         const MISSION_MS = 'sess-missions-' + opts.stateKey;
+        const CHAIN_MS = 'sess-chains-' + opts.stateKey;
+        // U-174 — the Engines picker again on the toolbar, usable with the panel shut
+        const ENGINE_BAR_MS = 'sess-engines-bar-' + opts.stateKey;
         const PROVIDER_MS = 'sess-providers-' + opts.stateKey;
         const PROFILE_MS = 'sess-profiles-' + opts.stateKey;
         const MODEL_MS = 'sess-models-' + opts.stateKey;
@@ -707,7 +726,7 @@
             const categories = CATEGORIES.map(o => ftip(
                 `<button class="chip af-cat-${o.id}${filters[o.key] ? ' on' : ''}" aria-pressed="${filters[o.key]}" aria-label="Show ${o.label} sessions">${o.glyph} ${o.label}</button>`,
                 `${o.glyph} ${o.label} — ${filters[o.key] ? 'ON: listed' : 'OFF: hidden'}`,
-                `${o.tip}. Pressing this changes only ${o.label}; the other two categories keep their state.`)).join('');
+                `${o.tip}. Pressing this changes only ${o.label}; the other categories keep their state.`)).join('');
             // ‼️ S-35 — headless is not a fourth category. It narrows the Auto
             // and Mission rows that are on by dropping runs with no terminal.
             // It never changes any of their category switches.
@@ -729,7 +748,19 @@
             const misState = filters.missions === null ? 'every mission'
                 : !filters.missions.length ? 'none selected'
                     : filters.missions.length + ' of ' + misOpts.length;
-            const missionRow = !misN ? '' : `<div class="af-frow">
+            // U-174 — ⑂ Chains, left of 🎯 Missions on the same row: which relays' legs are eligible under ⑂ Baton.
+            const chOpts = window.AFChainNav ? window.AFChainNav.options(rows, batonOf) : [];
+            const chState = filters.chains === null ? 'every chain'
+                : !filters.chains.length ? 'none selected' : filters.chains.length + ' of ' + chOpts.length;
+            const chainPart = !chOpts.length ? '' : `${ftip('<span class="muted small"><span class="afbaton">⑂</span> Chains:</span>',
+                `⑂ Relay chains — ${chState}`,
+                'This picker narrows the Baton category; it never turns another category on or off.\n\n'
+                + `${rows.filter(batonOf).length} of the ${rows.length} sessions in this pool are relay legs, in ${chOpts.length} chain(s). Tick the ones eligible when the ⑂ Baton switch is on.`)}
+                    ${window.AFFilter.multi({
+                id: CHAIN_MS, label: 'Chains', options: chOpts, selected: filters.chains, allLabel: 'every chain',
+                title: 'Which relays\' legs are eligible when ⑂ Baton is on — newest chain first, with the legs this pool holds.'
+            })}`;
+            const missionRow = !misN ? (chainPart ? `<div class="af-frow">${chainPart}</div>` : '') : `<div class="af-frow">${chainPart ? chainPart + '<span class="af-fsep"></span>' : ''}
                     ${ftip(`<span class="muted small">${MISSION_GLYPH} Missions:</span>`,
                 `${MISSION_GLYPH} Mission sessions — ${misState}`,
                 'This picker narrows the Mission category; it never turns You or Auto on or off. Classic and adaptive missions use the same stamp and both appear here.\n\n'
@@ -746,7 +777,7 @@
             return `<div class="af-fpanel">
                 <div class="af-frow">
                     ${ftip('<span class="muted small">Show:</span>', 'Visible session categories',
-                'Three independent switches: You, automation outside missions, and mission runs. Any combination is valid; one never changes another.\n\n'
+                'Four independent switches: You, baton relay legs, automation outside missions and relays, and mission runs. Any combination is valid; one never changes another.\n\n'
                 + '🌙 Headless then narrows the automation categories without changing these switches.')}${categories}<span class="af-fsep"></span>${headlessChip}
                 </div>
                 ${missionRow}
@@ -1263,7 +1294,7 @@
                 if (missionOf(r)) {
                     return `<td class="origcell mission" title="${tipOf(TIP.origin(r))}">${MISSION_GLYPH}</td>`;
                 }
-                const o = CATEGORIES.find(x => x.id === originOf(r)) || CATEGORIES[0];
+                const o = CATEGORIES.find(x => x.id === categoryOf(r)) || CATEGORIES[0];
                 // S-35 — the moon rides on the robot, touching it: two glyphs
                 // side by side are ONE fact about one run, not two columns.
                 const moon = isHeadless(r) ? `<span class="hgl">${HLESS_GLYPH}</span>` : '';
@@ -1423,17 +1454,26 @@
              * current ON/OFF answer and names exactly what the one press changes.
              */
             const misN = missionRowCount();
+            const batN = rows.filter(batonOf).length;
             const categoryChips = CATEGORIES.map(o => {
                 const extra = o.id === 'mission'
                     ? `\n\n${misN} of ${rows.length} sessions in this pool carry a mission stamp. `
                         + (filters.missions === null ? 'Every mission is eligible.'
                             : `${filters.missions.length} mission run(s) are selected in Filters.`)
-                    : '';
+                    : o.id === 'baton'
+                        ? `\n\n${batN} of ${rows.length} sessions in this pool are relay legs. `
+                            + (filters.chains === null ? 'Every chain is eligible.' : `${filters.chains.length} chain(s) are selected in Filters.`)
+                        : '';
                 return ftip(
                     `<button class="chip af-cat-${o.id}${filters[o.key] ? ' on' : ''}" aria-pressed="${filters[o.key]}" aria-label="Show ${o.label} sessions">${o.glyph}</button>`,
                     `${o.glyph} ${o.label} — ${filters[o.key] ? 'ON: listed' : 'OFF: hidden'}`,
-                    `${o.tip}. Press to turn only this category ${filters[o.key] ? 'off' : 'on'}; the other two keep their state.${extra}`);
+                    `${o.tip}. Press to turn only this category ${filters[o.key] ? 'off' : 'on'}; the others keep their state.${extra}`);
             }).join('');
+            const barEngines = engineNames();
+            const engineBar = barEngines.length > 1 ? window.AFFilter.multi({
+                id: ENGINE_BAR_MS, label: 'Engines', options: barEngines, selected: filters.engines,
+                title: 'Which engines to list — the same selection as the Engines box in Filters, here so it works with the panel shut'
+            }) : '';
             // The shelf sits on top: pinned rows first, then whatever criterion
             // is picked — a session you keep coming back to is never scrolled to.
             shown = pool.slice().sort((a, b) =>
@@ -1485,6 +1525,7 @@
                 <button class="chip af-collapse" title="Hide all turn lists">Collapse all</button>
                 <button class="chip af-single${single ? ' on' : ''}" title="Only one session's turns open at a time: unfolding a session folds the previous one">Single-open</button>
                 ${categoryChips}
+                ${engineBar}
                 <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the sessions by category, text, agent, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
                 <!-- ‼️ THE ONE PLACE THE HINT IS SAID. It used to be appended to
                      every cell's tooltip on every row, which is a sentence you
@@ -1621,6 +1662,10 @@
                 });
             }
             const apply = () => { saveState(); renderSection(); };
+            window.AFFilter.wireMulti({
+                root, id: ENGINE_BAR_MS,
+                onChange: sel => { filters.engines = sel; apply(); }
+            });
             const wireEl = (sel, ev, fn) => {
                 const el = root.querySelector(sel);
                 if (el) { el.addEventListener(ev, () => fn(el)); }
@@ -1651,6 +1696,10 @@
                 window.AFFilter.wireMulti({
                     root, id: MISSION_MS,
                     onChange: sel => { filters.missions = sel; apply(); }
+                });
+                window.AFFilter.wireMulti({
+                    root, id: CHAIN_MS,
+                    onChange: sel => { filters.chains = sel; apply(); }
                 });
                 window.AFFilter.wireMulti({
                     root, id: PROVIDER_MS,
@@ -1828,6 +1877,7 @@
         function setMissionFilter(id) {
             filters.missions = id ? [id] : null;
             filters.showUser = !id;
+            filters.showBaton = !id;
             filters.showAuto = !id;
             filters.showMission = !!id;
             // …and the panel is opened, so the reader can SEE the named mission
@@ -1857,7 +1907,7 @@
          */
         function setChainFilter(id) {
             filters.text = id || '';
-            if (id) { filters.showUser = true; filters.showAuto = true; filters.showMission = true; }
+            if (id) { filters.showUser = true; filters.showBaton = true; filters.showAuto = true; filters.showMission = true; filters.chains = null; }
             filtersOpen = true;
             saveState();
             renderSection();

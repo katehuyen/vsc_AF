@@ -241,7 +241,7 @@
             </div>
             <div class="chiprow detail-row">
                 <span class="control-label">Started</span>
-                <span class="seg">${badge('data-origin=""', 'All', !flt.origin)}${badge('data-origin="user"', 'You', flt.origin === 'user')}${badge('data-origin="auto"', 'Automation', flt.origin === 'auto')}</span>
+                <span class="seg">${badge('data-origin=""', 'All', !flt.origin)}${badge('data-origin="user"', 'You', flt.origin === 'user')}${badge('data-origin="baton" title="Legs of a baton relay a program opened (the Sessions table\'s ⑂ Baton)"', '⑂ Baton', flt.origin === 'baton')}${badge('data-origin="auto" title="Every other automation run — schedules, triggers, tasks, missions"', 'Automation', flt.origin === 'auto')}</span>
                 <span class="control-label">Lane</span>
                 <span class="seg">${badge('data-lane=""', 'All', !flt.lane)}${badge('data-lane="main"', 'Main', flt.lane === 'main')}${badge('data-lane="sub"', 'Sub-agent', flt.lane === 'sub')}</span>
                 ${tip(badge('data-flag="pinnedOnly"', '★ Pinned', flt.pinnedOnly), 'Pinned only', 'Only sessions on your shelf.')}

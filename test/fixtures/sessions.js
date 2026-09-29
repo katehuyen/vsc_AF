@@ -201,12 +201,19 @@ function relayData() {
     }, extra);
     const list = [mk('b1', 'started', 1, 'session-3', { toSessionId: 'session-2' }), mk('b2', 'waiting-end', 2, 'session-2')];
     for (const s of d.sessions) { s.chain = V.batonCardView(list, s.sessionId) || null; }
+    // U-174 — the leg a pass opened is a program's run: the ⑂ Baton category, not 🧑
+    for (const s of d.sessions) { if (s.sessionId === 'session-2') { s.origin = 'auto'; } }
     return d;
 }
 
 const variants = () => [
     { id: 'table', label: 'Sessions — the table', data: data() },
     { id: 'relay', label: 'Sessions — two legs of one baton relay: ⑂ 1 and ⑂ 2 in the narrow column, blank everywhere else', data: relayData() },
+    {
+        id: 'baton', label: 'Sessions — ⑂ Baton between 🧑 and 🤖 on the toolbar, the Engines picker beside Filters; panel open: ⑂ Chains left of 🎯 Missions',
+        data: relayData(),
+        act: (r) => { r.query('.af-cat-mission')[0].click(); r.query('.af-filter')[0].click(); }
+    },
     {
         id: 'filters', label: 'Sessions — the filter panel open', data: data(),
         act: (r) => { r.query('.af-filter')[0].click(); }
