@@ -129,7 +129,7 @@ export interface ProjectsPanelDeps {
     backlogJoinParent(id: string, code: string): { error?: string; note?: string };
     /** Carry misfiled items back under their own heading, then put each area's
      *  items in code order. The queue is unaffected by either. */
-    backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[]; sanitized?: number };
+    backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[]; sanitized?: number; mended?: number; unpaired?: string[] };
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string):
         { error?: string; code?: string };
@@ -769,13 +769,20 @@ export class ProjectsPanel {
                 // X-332 — a tag put in code is named too: it was hiding every
                 // heading below it in Obsidian, and the reader should know why
                 // their file suddenly reads right.
-                const tags = res.sanitized
+                const tags = (res.sanitized
                     ? `${res.sanitized} bare tag${res.sanitized === 1 ? '' : 's'} put in code. `
+                    : '')
+                    + (res.mended
+                        ? `${res.mended} backtick${res.mended === 1 ? '' : 's'} typed for an apostrophe put back as '. `
+                        : '');
+                // A line the rule cannot mend is named, never hidden behind a success.
+                const hand = (res.unpaired ?? []).length
+                    ? `${(res.unpaired as string[]).join(', ')}: a backtick with no partner turns the rest of the line inside out — fix by hand. `
                     : '';
                 this.done(res.error, res.error ? undefined
-                    : (home + tags + (res.moved
+                    : (home + tags + hand + (res.moved
                         ? `${res.moved} item${res.moved === 1 ? '' : 's'} back in code order.`
-                        : (home || tags ? '' : (res.note ?? 'Already in code order.')))).trim());
+                        : (home || tags || hand ? '' : (res.note ?? 'Already in code order.')))).trim());
                 break;
             }
             case 'backlogCode': {

@@ -2310,6 +2310,10 @@ export interface TidyResult extends BacklogEditResult {
     reseated: string[];
     /** X-332 — bare `<tag>`s put in a code span. 0 = none were found. */
     sanitized: number;
+    /** Backticks typed for an apostrophe (`commit`te`) put back as `'`. */
+    mended: number;
+    /** Lines whose backticks still do not pair, by item code (else `line N`) — a person fixes these. */
+    unpaired: string[];
 }
 
 /**
@@ -2411,6 +2415,9 @@ export function tidyBacklogFile(text: string): TidyResult {
     // below it, so it is repaired before anything reads the file's shape.
     const clean = sanitizeBacklogMarkdown(String(text ?? ''));
     const sanitized = clean.wrapped;
+    const mended = clean.mended;
+    const codeAt = new Map(parseBacklog(clean.text).items.map(i => [i.line, i.code]));
+    const unpaired = clean.unpaired.map(n => codeAt.get(n) || `line ${n + 1}`);
     const reseat = reseatMisfiled(clean.text);
     const reseated = reseat.moved;
     const src = reseat.text;
@@ -2476,6 +2483,12 @@ export function tidyBacklogFile(text: string): TidyResult {
     if (sanitized) {
         parts.push(`put ${sanitized} bare tag${sanitized === 1 ? '' : 's'} in code`);
     }
+    if (mended) {
+        parts.push(`put ${mended} backtick${mended === 1 ? '' : 's'} typed for an apostrophe back as '`);
+    }
+    if (unpaired.length) {
+        parts.push(`${unpaired.join(', ')} still ${unpaired.length === 1 ? 'has a backtick' : 'have backticks'} with no partner — the rest of the line reads inside out, fix by hand`);
+    }
     if (reseated.length) {
         parts.push(`carried ${reseated.join(', ')} back under ${reseated.length === 1 ? 'its' : 'their'} own heading`);
     }
@@ -2485,11 +2498,11 @@ export function tidyBacklogFile(text: string): TidyResult {
     const left = parts.join('; ');
     if (!moved) {
         return {
-            ok: true, text: src, moved: 0, skipped, reseated, sanitized,
+            ok: true, text: src, moved: 0, skipped, reseated, sanitized, mended, unpaired,
             note: left || 'already in code order'
         };
     }
-    return { ok: true, text: lines.join(eol), moved, skipped, reseated, sanitized, ...(left ? { note: left } : {}) };
+    return { ok: true, text: lines.join(eol), moved, skipped, reseated, sanitized, mended, unpaired, ...(left ? { note: left } : {}) };
 }
 
 const insideBlock = (blocks: { from: number; to: number }[], line: number): boolean =>

@@ -14667,25 +14667,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.tidy',
-            describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. ‼️ X-332 — BEFORE either move, every bare `<tag>` (`<id>`, `<ALAN>`, `</div>`) outside code spans, fences, HTML comments and front matter is put in a code span: Markdown and Obsidian read one as an unclosed HTML tag and swallow every heading and task line after it. Returns `sanitized` (tags put in code), `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
+            describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. ‼️ X-332 — BEFORE either move, every bare `<tag>` (`<id>`, `<ALAN>`, `</div>`) outside code spans, fences, HTML comments and front matter is put in a code span: Markdown and Obsidian read one as an unclosed HTML tag and swallow every heading and task line after it; a same-line pair is kept only when it is a real HTML element (`<b>…</b>`), a made-up one (`<project-context>…</project-context>`) is wrapped. On a line whose backticks do not pair, a backtick typed for an apostrophe inside a word (`commit`te`) is put back as `\'`; a line that still does not pair is named in `unpaired`, never guessed at. Returns `sanitized` (tags put in code), `mended` (apostrophes restored), `unpaired` (codes to fix by hand), `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
                 let skipped: string[] = [];
                 let reseated: string[] = [];
                 let sanitized = 0;
+                let mended = 0;
+                let unpaired: string[] = [];
                 const out = editProjectDoc(folder, file, src => {
                     const res = tidyBacklogFile(src);
                     moved = res.moved;
                     skipped = res.skipped;
                     reseated = res.reseated;
                     sanitized = res.sanitized;
+                    mended = res.mended;
+                    unpaired = res.unpaired;
                     return res;
                 });
                 projectDocWritten(project.id);
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    moved, reseated, skipped, sanitized, note: out.note ?? null
+                    moved, reseated, skipped, sanitized, mended, unpaired, note: out.note ?? null
                 };
             }
         },
@@ -35076,14 +35080,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     let moved = 0;
                     let reseated: string[] = [];
                     let sanitized = 0;
+                    let mended = 0;
+                    let unpaired: string[] = [];
                     const res = edit(id, text => {
                         const r = tidyBacklogFile(text);
                         moved = r.moved;
                         reseated = r.reseated;
                         sanitized = r.sanitized;
+                        mended = r.mended;
+                        unpaired = r.unpaired;
                         return r;
                     });
-                    return { ...res, moved, reseated, sanitized };
+                    return { ...res, moved, reseated, sanitized, mended, unpaired };
                 },
                 backlogCode: (id: string, target: BacklogTarget, area: string) => {
                     let code: string | undefined;

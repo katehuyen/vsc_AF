@@ -105,5 +105,37 @@ const FILE = [
     ok('a clean file in order still says so', plain.sanitized === 0 && plain.note === 'already in code order');
 }
 
+// ---- a pair that is not HTML (measured: X-94) ------------------------------------------
+ok('‼️ a made-up pair closed on its line is wrapped — Obsidian drew it as nothing',
+    t('"<project-context> === X === </project-context>"') === '"`<project-context>` === X === `</project-context>`"');
+ok('…a real element pair is still kept', t('<kbd>Ctrl</kbd> and <mark>x</mark>') === '<kbd>Ctrl</kbd> and <mark>x</mark>');
+
+// ---- a backtick typed for an apostrophe (measured: S-68…S-79) ---------------------------
+ok('‼️ an in-word backtick on an unpaired line is put back as an apostrophe', t('aynı commit`te yazılır') === 'aynı commit\'te yazılır');
+ok('…every one on the line, beside a real span that then pairs',
+    t('BatonRunner`ın dinleyicisi. LiveMonitor `ended` geçişi, SessionEnd`i ve waiting-end`den')
+    === 'BatonRunner\'ın dinleyicisi. LiveMonitor `ended` geçişi, SessionEnd\'i ve waiting-end\'den');
+ok('…a digit before it counts as the word', t('%95`teyken %10`luk slot') === '%95\'teyken %10\'luk slot');
+ok('‼️ …and the tag the broken pairing had hidden in "code" is then wrapped',
+    t('ppid`sini yazar; yatak <config-dir>/x.json ve sessionId`yi') === 'ppid\'sini yazar; yatak `<config-dir>`/x.json ve sessionId\'yi');
+ok('‼️ a span closed before a suffix on a line that pairs is never touched', t('`Notices`a yaz') === '`Notices`a yaz');
+ok('…nor on a line that does not pair — the word holds its opener', t('`Notices`a ve bir ` tek') === '`Notices`a ve bir ` tek');
+ok('‼️ all or none: if the line still would not pair, nothing is mended', t('a`b ve `x') === 'a`b ve `x');
+ok('an escaped backtick is not a candidate', t('a\\`b ve c`d') === 'a\\`b ve c\'d');
+{
+    const doc = ['intro', '- [ ] X-1 regex (`a[`b]`) sonra', '- [ ] X-2 commit`te', '```', 'x`y', '```'].join('\n');
+    const r = S.sanitizeBacklogMarkdown(doc);
+    ok('document: the apostrophe is counted, the fence is left alone', r.mended === 1 && /X-2 commit'te/.test(r.text) && /\nx`y\n/.test(r.text));
+    ok('‼️ …and a line no rule can mend is reported, not guessed at', JSON.stringify(r.unpaired) === '[1]' && /X-1 regex \(`a\[`b\]`\) sonra/.test(r.text));
+    const again = S.sanitizeBacklogMarkdown(r.text);
+    ok('…a second pass changes nothing', again.mended === 0 && again.wrapped === 0 && again.text === r.text);
+}
+{
+    const broken = FILE.replace('K-1 existing item', 'K-1 existing commit`te item').replace('K-2 older item', 'K-2 older (`a[`b]`) item');
+    const r = B.tidyBacklogFile(broken);
+    ok('tidy: the apostrophe is mended and counted', r.mended === 1 && /K-1 existing commit'te item/.test(r.text));
+    ok('‼️ …and the line it cannot mend is named by its code', JSON.stringify(r.unpaired) === '["K-2"]' && /K-2 still has a backtick with no partner/.test(r.note || ''));
+}
+
 console.log(`test_backlog_sanitize: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
