@@ -10877,6 +10877,7 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.90.0",
+    "fast-check": "^4.10.2",
     "typescript": "^5.4.0"
   }
 }

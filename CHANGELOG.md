@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## Unreleased - "Hand to agent" can no longer run what an agent wrote, and backlog and plan writes survive the lines nobody wrote a test for (2026-09-29)
+
+- Security: "Hand to agent" (from a queue item or a notice) types
+  `claude <text>` into a terminal for you to review — but the text is written by
+  agents, and it could run before you read it. A carriage return in it pressed
+  Enter; in PowerShell a `"` ended the string (the old `\"` escape is not an
+  escape there) and `$(…)` inside it was evaluated. The text is now one literal
+  argument quoted for the terminal's own shell (PowerShell, cmd or a POSIX
+  shell), with line breaks, tabs and control bytes turned into spaces. Checked
+  against the real shells with generated hostile text.
+- A worklog line written through the bridge (`projects.log`) no longer splits
+  in Obsidian on a lone carriage return or U+2028/U+2029.
+- Archiving closed items written with a `*`, `+` or `1.` bullet no longer
+  rewrites them as `- * [x] …` — a line that was no longer a task, so the item
+  also vanished from the Backlog page. Archived lines now move verbatim.
+- An item added to an area that has no heading yet, in a backlog whose
+  🗄 Archive sits at the bottom, was written under the archive: open, coded and
+  hidden from every default view. It now goes directly above the archive, and
+  the reply says there is no heading for its area.
+- Taking an indented (nested) item off hold, or removing its closing stamp, no
+  longer squeezes its indentation to one space — which un-nested it in Obsidian.
+- Text carrying a lone carriage return or a Unicode line/paragraph separator
+  (U+2028/U+2029 — typical of text pasted from a PDF or a web page) no longer
+  produces a backlog item, plan line, deliverable or exported table row that is
+  written but never read back. Every line break a reader honours is collapsed.
+- New generated-input tests (fast-check) for the backlog, plan and table
+  writers and for the atomic file writer: each run checks the writers' promises
+  against thousands of generated files and fault sequences instead of the
+  cases somebody thought of. They found the four defects above.
+
 ## 3.757.0 - A relay chain reads right however it flowed, walks in one line on its page, and is its own category (2026-09-29)
 
 - A relay leg's title no longer comes from the header it was opened with

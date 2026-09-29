@@ -1,4 +1,5 @@
 import { full as afFull } from './aftime';
+import { LINE_BREAKS } from './lineBreaks';
 
 /**
  * B-21 — one Markdown table, built in one place.
@@ -23,7 +24,7 @@ export function markdownTable(o: {
     note?: string;
 }): string {
     const cell = (v: unknown): string =>
-        String(v ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+        String(v ?? '').replace(/\|/g, '\\|').replace(LINE_BREAKS, ' ');
     const meta = [`Exported ${afFull(o.at ?? Date.now())}`, `${o.rows.length} row(s)`];
     if (o.note) { meta.push(o.note); }
     const lines = [`# ${o.title}`, '', `_${meta.join(' · ')}_`, ''];

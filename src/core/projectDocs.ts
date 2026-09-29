@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { writeAtomicSync } from './atomicFile';
+import { LINE_BREAKS } from './lineBreaks';
 import { folderNameFor, Project } from './projects';
 import { slugify } from './util';
 
@@ -1215,7 +1216,7 @@ export function addDeliverableRow(text: string, input: DeliverableInput): { ok: 
     const eol = /\r\n/.test(src) ? '\r\n' : '\n';
     const day = String(input.date ?? '').trim() || localDay((input.now ?? new Date()).getTime());
     const table = parseDeliverables(src);
-    const clean = (s: string) => String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+    const clean = (s: string) => String(s ?? '').replace(/\|/g, '\\|').replace(LINE_BREAKS, ' ').trim();
 
     if (table.headerLine < 0) {
         const head = `| What | Version | Date | Where |${eol}|---|---|---|---|${eol}`;

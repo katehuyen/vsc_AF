@@ -1,5 +1,6 @@
 import { eolOf, lineStartOffset, TASK_LINE } from './projectPlan';
 import { sanitizeBacklogMarkdown, sanitizeBacklogTags } from './backlogSanitize';
+import { LINE_BREAKS } from './lineBreaks';
 
 /**
  * The backlog — a project's standing pile of work, in the user's own markdown.
@@ -1388,7 +1389,7 @@ export function setBacklogHold(
 
     const line = want
         ? `${item.raw.trimEnd()} ⛔`
-        : item.raw.replace(HOLD_CUT, '').replace(/\s{2,}/g, ' ').trimEnd();
+        : item.raw.replace(HOLD_CUT, '').replace(/(\S)\s{2,}/g, '$1 ').trimEnd();
     const nextText = replaceLine(src, item.line, line);
     if (nextText === undefined) { return { ok: false, error: 'that line is no longer there' }; }
     const rebuilt = rereadItem(nextText, item, items);
@@ -1504,7 +1505,8 @@ export function stampBacklogClosed(
             const h = hits[i] as { start: number; end: number };
             line = line.slice(0, h.start) + (want ? `[closed:: ${want}]` : '') + line.slice(h.end);
         }
-        if (!want) { line = line.replace(/\s{2,}/g, ' ').trimEnd(); }
+        // `(\S)` first: the indentation is the item's nesting, not a gap to close.
+        if (!want) { line = line.replace(/(\S)\s{2,}/g, '$1 ').trimEnd(); }
     } else if (want) {
         line = `${line.trimEnd()} [closed:: ${want}]`;
     }
@@ -1581,7 +1583,7 @@ export function setBacklogFields(
     // X-332 — new words pass the write gate; a press that did not bring any
     // (a priority, a tag) leaves the old ones exactly as they were.
     const words = (fields.text === undefined ? item.text : sanitizeBacklogTags(fields.text))
-        .replace(/\r?\n/g, ' ').trim();
+        .replace(LINE_BREAKS, ' ').trim();
     if (!words) { return { ok: false, error: 'an item needs some text' }; }
 
     // ‼️ REFUSED BEFORE A BYTE IS WRITTEN. A loop in the parent chain is
@@ -1721,7 +1723,7 @@ export interface AddBacklogResult extends BacklogEditResult {
 export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklogResult {
     const src = String(text ?? '');
     // ‼️ X-332 — the write gate: a bare `<tag>` cannot land, whoever wrote it.
-    const words = sanitizeBacklogTags(String(input.text ?? '').replace(/\r?\n/g, ' ').trim());
+    const words = sanitizeBacklogTags(String(input.text ?? '').replace(LINE_BREAKS, ' ').trim());
     if (!words) { return { ok: false, error: 'an item needs some text' }; }
     const parsed = parseBacklog(src);
     const eol = eolOf(src);
@@ -1781,6 +1783,14 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
         if (mine.length) { neighbour = mine[mine.length - 1]; }
         after = mine.length ? mine[mine.length - 1].line : (parsed.inboxLine as number);
     }
+    // No seat at all: the end of the file is under 🗄, so sit directly above it.
+    let aboveArchive = false;
+    if (after < 0 && parsed.archiveLine !== undefined) {
+        const ls = src.split(/\r?\n/);
+        after = parsed.archiveLine - 1;
+        while (after >= 0 && !ls[after].trim()) { after--; }
+        aboveArchive = true;
+    }
 
     const parts = [`- [${STATE_CHAR[input.state ?? 'open']}]`];
     if (code) { parts.push(code); }
@@ -1797,7 +1807,9 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
     const line = parts.join(' ');
 
     let nextText: string;
-    if (after >= 0) {
+    if (aboveArchive && after < 0) {
+        nextText = line + eol + src;
+    } else if (after >= 0) {
         const at = lineStartOffset(src, after + 1);
         nextText = at >= 0
             ? src.slice(0, at) + line + eol + src.slice(at)
@@ -1818,7 +1830,9 @@ export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklog
         ok: true, text: nextText,
         ...(code ? { code } : {}),
         ...(added ? { item: added } : {}),
-        ...(code ? {} : { note: 'no area given — it went to the inbox without a code' })
+        ...(code
+            ? (aboveArchive ? { note: `there is no ${area} heading — it went directly above 🗄 Archive` } : {})
+            : { note: 'no area given — it went to the inbox without a code' })
     };
 }
 
@@ -2560,7 +2574,8 @@ export function archiveBacklogDone(text: string, opts: ArchiveOptions = {}): Arc
     const eol = eolOf(src);
     const taken = new Set(wanted.map(i => i.line));
     const kept = lines.filter((_, n) => !taken.has(n));
-    const body = wanted.map(i => i.raw.trim().startsWith('-') ? i.raw : `- ${i.raw.trim()}`);
+    // Verbatim: every parsed item already has its bullet (`-`, `*`, `+`, `1.`).
+    const body = wanted.map(i => i.raw);
 
     let out: string[];
     if (parsed.archiveLine !== undefined) {

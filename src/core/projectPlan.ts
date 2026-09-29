@@ -1,3 +1,5 @@
+import { LINE_BREAKS } from './lineBreaks';
+
 /**
  * The plan — the user's own checkbox lines, read and ticked without being
  * rewritten.
@@ -306,7 +308,7 @@ export interface AddPlanItemOptions {
  * one insertion that cannot damage a structure we did not read correctly.
  */
 export function addPlanItem(text: string, item: string, opts: AddPlanItemOptions = {}): PlanEditResult {
-    const body = String(item ?? '').replace(/\r?\n/g, ' ').trim();
+    const body = String(item ?? '').replace(LINE_BREAKS, ' ').trim();
     if (!body) { return { ok: false, error: 'nothing to add' }; }
     const src = String(text ?? '');
     const eol = eolOf(src);

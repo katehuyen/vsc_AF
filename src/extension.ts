@@ -603,6 +603,8 @@ import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
 import { deliverDocument, exportStamp } from './core/exportDoc';
 import { markdownTable, tableOfRecords } from './core/mdTable';
+import { handoffCommand, shellKindOf } from './core/handoffLine';
+import { LINE_BREAKS } from './core/lineBreaks';
 import {
     registerSuperpowersOps, superpowersBlock, superpowersDefaultFor,
     superpowersDefaultsKey, superpowersFallbackRoot, superpowersHealth,
@@ -14086,7 +14088,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const { project, folder, scan } = projectDocsFor(argStr(args, 'project'));
                 need(scan.roles.log,
                     `"${project.name}" has no worklog — a file with \`af-role: log\` in its frontmatter is one`);
-                const entry = argStr(args, 'entry').replace(/\r?\n+/g, ' ').trim();
+                const entry = argStr(args, 'entry').replace(LINE_BREAKS, ' ').trim();
                 need(entry, 'an entry needs some text');
                 // The shape follows what is already in these files rather than
                 // imposing one: a line that brought its own date or bullet is
@@ -17858,10 +17860,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agent = agents.find(a => a.name === pick);
         }
         if (!agent) { return; }
-        const oneLine = text.replace(/\r?\n/g, ' ').replace(/"/g, '\\"').slice(0, 2000);
+        // Agents write this text: one literal argument for this shell, nothing that presses a key.
+        const line = handoffCommand(text, shellKindOf(vscode.env.shell, process.platform));
         const terminal = vscode.window.createTerminal({ name: `AF: ${agent.name}`, cwd: agent.dir });
         terminal.show();
-        terminal.sendText(`claude "${oneLine}"`, false);   // typed, NOT executed
+        terminal.sendText(line, false);   // typed, NOT executed
         void vscode.window.showInformationMessage(`🔗 Opened ${agent.name} — the message is typed into the terminal (not sent). Review it and press Enter.`);
     };
 
