@@ -224,6 +224,7 @@ const CATEGORY_OF: Record<string, string> = {
     windowWeightedTokenLimit: 'cost', quotaWeightMode: 'cost', quotaWeights: 'cost',
     quotaBrakeBasis: 'cost',
     planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost', accountsAutoRefresh: 'cost',
+    agyUsageRefreshMinutes: 'cost', agyUsageActiveRefreshSeconds: 'cost',
     planUsageMinIntervalSeconds: 'cost',
     planUsageStatusBar: 'cost', planUsageWarnPercent: 'cost', planUsageDangerPercent: 'cost',
     planUsageEngine: 'cost',

@@ -108,6 +108,7 @@ import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalText, cont
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
+import { agyUsageBeatMs } from './core/agyUsageBeat';
 import { UsageGate, crossServiceMs, tokenKey } from './core/usageGate';
 import { UsageShelf } from './core/usageShelf';
 import { EngineUsage, enginePeak, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
@@ -20035,13 +20036,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     let agyUsage: { text?: string; fetchedAt?: number; error?: string; fetching?: boolean } = {};
     let agyUsageInFlight: Promise<void> | undefined;
+    // X-437 — Antigravity reads on its own beat, not Claude's.
+    const agyBeatMs = () => agyUsageBeatMs(
+        fleetActive(),
+        Math.max(0, cfg().get<number>('agyUsageRefreshMinutes', 240)),
+        Math.max(0, cfg().get<number>('agyUsageActiveRefreshSeconds', 60)));
     const refreshAgyUsage = (force = false): Promise<void> => {
         if (agyUsage.fetching) { return agyUsageInFlight ?? Promise.resolve(); }
         const age = Date.now() - (agyUsage.fetchedAt ?? 0);
-        if (!force && agyUsage.fetchedAt && age < planBeatMs()) { return Promise.resolve(); }
+        const beat = agyBeatMs();
+        if (!force && agyUsage.fetchedAt && (!beat || age < beat)) { return Promise.resolve(); }
         // An engine that is not on this machine is asked once per beat at most,
         // and its absence is the row's own note rather than a retry storm.
-        if (!force && agyUsage.error && age < planBeatMs()) { return Promise.resolve(); }
+        if (!force && agyUsage.error && (!beat || age < beat)) { return Promise.resolve(); }
         agyUsage = { ...agyUsage, fetching: true };
         let settle = (): void => { /* replaced below */ };
         agyUsageInFlight = new Promise<void>(res => { settle = res; });

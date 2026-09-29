@@ -8794,6 +8794,18 @@
           "minimum": 30,
           "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 30 seconds, and that floor is enforced in code: the endpoint is undocumented and answers a too-frequent poller with a persistent HTTP 429, so a fast setting is not a preference it will honour. A 429 is met with an automatic backoff (3 → 6 → 12 → 15 min) that one success clears; the ⟳ button asks anyway. Ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
         },
+        "agentFarm.agyUsageRefreshMinutes": {
+          "type": "number",
+          "default": 240,
+          "minimum": 0,
+          "description": "How often Antigravity's quota is re-read while NO agent is mid-turn, in minutes. Reading it runs agy -p /usage in the background (no tokens), which briefly flashes a terminal on screen. 0 = never while idle — the quota is then only read while an agent is working, or when you press Check now. Separate from Claude's planUsageRefreshMinutes, which is unchanged."
+        },
+        "agentFarm.agyUsageActiveRefreshSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 30,
+          "description": "How often Antigravity's quota is re-read while at least one agent is mid-turn, in seconds. Separate from Claude's planUsageActiveRefreshSeconds, which is unchanged."
+        },
         "agentFarm.planUsageMinIntervalSeconds": {
           "type": "number",
           "default": 10,
