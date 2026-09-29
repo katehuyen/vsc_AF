@@ -1443,11 +1443,14 @@ export class LiveMonitor implements vscode.Disposable {
      * the whole distinction the plan-usage beat switches on. Unlike
      * `workingAgentIds()` this counts sessions, including ones whose folder
      * matches no registered agent — they burn the same quota.
+     * `source` narrows it to one engine's sessions (`'agy'`): a quota belongs to
+     * its engine, so only that engine's turns can move it.
      */
-    activeTurns(): number {
+    activeTurns(source?: string): number {
         let n = 0;
         for (const s of this.sessionsMap.values()) {
-            if (s.status === 'working' || s.status === 'tool') { n++; }
+            if ((s.status === 'working' || s.status === 'tool')
+                && (source === undefined || s.source === source)) { n++; }
         }
         return n;
     }

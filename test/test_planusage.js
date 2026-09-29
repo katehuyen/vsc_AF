@@ -856,6 +856,61 @@ const LIVE_PAYLOAD = {
             && checkNow.indexOf("usageEngine() === 'agy'") < checkNow.indexOf("usageEngine() !== 'claude'")
             && /cp\.execFile\('agy', \['-p', '\/usage', '--output-format', 'json'\]/.test(ext)
             && /child\.stdin\?\.end\(\);\s*\n\s*return agyUsageInFlight;/.test(ext));
+
+        // ‼️ X-437 — ANTIGRAVITY'S READ IS TIMED BY ANTIGRAVITY'S OWN TURNS.
+        // Every `agy -p /usage` flashes a terminal; it used to ride Claude's
+        // beat, so any Claude agent working made it read every minute.
+        const agyBlock = ext.slice(ext.indexOf('let agyUsage: {'), ext.indexOf('const engineUsageMatrix = ()'));
+        ok('‼️ "running" is an Antigravity turn, not the fleet',
+            /const agyRunning = \(\): boolean => live\.activeTurns\('agy'\) > 0;/.test(agyBlock)
+            && !/fleetActive|planBeatMs|planUsageRefreshMinutes|planUsageActiveRefreshSeconds/.test(agyBlock));
+        ok('…one pure decision gates every automatic read, Check now bypasses it',
+            /if \(!force && !agyReadDue\(agyReadState\(\)\)\) \{ return Promise\.resolve\(\); \}/.test(agyBlock)
+            && /askedAt: Date\.now\(\)/.test(agyBlock));
+        ok('‼️ …a successful answer keeps the time it was asked, or the beat restarts from zero',
+            /\{ text, fetchedAt: Date\.now\(\), askedAt: agyUsage\.askedAt, fetching: false \}/.test(agyBlock));
+        ok('…its values come off the flex chain, the user\'s own setting over the built-in',
+            /agyFlex\('agyUsage\.idleMinutes', 'agyUsageRefreshMinutes'\)/.test(agyBlock)
+            && /agyFlex\('agyUsage\.activeSeconds', 'agyUsageActiveRefreshSeconds'\)/.test(agyBlock)
+            && /resolveFlex\(id, /.test(agyBlock));
+        ok('‼️ one timer drives it, clamped below setTimeout\'s overflow, re-armed after every answer',
+            /Math\.min\(0x7fffffff, Math\.max\(0, at - Date\.now\(\)\)\)/.test(agyBlock)
+            && /settle\(\);\s*\n\s*armAgyRead\(\);/.test(agyBlock));
+        const matrixBody = ext.slice(ext.indexOf('const engineUsageMatrix = ()'), ext.indexOf('const usageEngine = ()'));
+        ok('‼️ painting a surface no longer spawns agy — the timer alone does',
+            matrixBody.length > 0 && !/refreshAgyUsage/.test(matrixBody));
+        const barAt = ext.indexOf('context.subscriptions.push(planUsageBar);');
+        const edgeAt = ext.indexOf('const running = agyRunning();');
+        ok('‼️ a run starting or ending re-arms it, and only once the bar exists (an answer repaints the bar)',
+            barAt > 0 && edgeAt > barAt && ext.indexOf('armAgyRead();', edgeAt) > edgeAt
+            && /if \(running === agyRun\.running\) \{ return; \}/.test(ext)
+            && /: \{ running, since: 0, endedAt: now \};/.test(ext));
+        ok('…and a changed setting takes effect without a reload',
+            /affectsConfiguration\('agentFarm\.agyUsage'\)\) \{ armAgyRead\(\); \}/.test(ext));
+        {
+            const iProps = pkg.contributes.configuration.properties;
+            const idle = iProps['agentFarm.agyUsageRefreshMinutes'];
+            const act = iProps['agentFarm.agyUsageActiveRefreshSeconds'];
+            ok('the idle setting: minutes, 240 by default, 0 allowed',
+                idle.type === 'number' && idle.default === 240 && idle.minimum === 0);
+            ok('the running setting: seconds, 60 by default, floor 30',
+                act.type === 'number' && act.default === 60 && act.minimum === 30);
+            ok('‼️ both say other engines\' turns do not count',
+                /Other engines' turns \(Claude, Codex…\) do not count/.test(idle.description)
+                && /Claude or Codex working does not/.test(act.description));
+            ok('…and Claude\'s own settings keep their defaults',
+                iProps['agentFarm.planUsageRefreshMinutes'].default === 5
+                && iProps['agentFarm.planUsageActiveRefreshSeconds'].default === 60);
+            ok('both sit in the cost category beside Claude\'s',
+                /agyUsageRefreshMinutes: 'cost', agyUsageActiveRefreshSeconds: 'cost'/.test(
+                    fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsops.ts'), 'utf8')));
+            const flex = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFlex.js'), 'utf8');
+            ok('‼️ both are flex points, each with its surface and bridge key',
+                /id: 'agyUsage\.idleMinutes'[^\n]*default: 240, min: 0/.test(flex)
+                && /surface: 'setting:agentFarm\.agyUsageRefreshMinutes', bridge: 'settings\.set:agentFarm\.agyUsageRefreshMinutes'/.test(flex)
+                && /id: 'agyUsage\.activeSeconds'[^\n]*default: 60, min: 30/.test(flex)
+                && /surface: 'setting:agentFarm\.agyUsageActiveRefreshSeconds', bridge: 'settings\.set:agentFarm\.agyUsageActiveRefreshSeconds'/.test(flex));
+        }
         ok('an agent asking usage.plan is told how live the answer is',
             /beat: planBeat\(\),/.test(ext));
         // ‼️ "nothing changed" and "we are not allowed to look" read identically
@@ -867,7 +922,7 @@ const LIVE_PAYLOAD = {
         // the fleet-activity source itself
         const liveSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'live.ts'), 'utf8');
         ok('mid-turn means working or running a tool — nothing else counts',
-            /activeTurns\(\): number \{[\s\S]{0,220}s\.status === 'working' \|\| s\.status === 'tool'/.test(liveSrc));
+            /activeTurns\(source\?: string\): number \{[\s\S]{0,220}s\.status === 'working' \|\| s\.status === 'tool'/.test(liveSrc));
 
         // the indicator's own scheduler: the beat drives the wake-up, but the
         // countdown it prints still has to move between reads

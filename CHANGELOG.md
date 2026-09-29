@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.760.0 - Antigravity's quota is read only when Antigravity itself works (2026-09-29)
+
+- Antigravity's quota read (`agy -p /usage`, which flashes a terminal) was
+  switched to its fast window by ANY agent's turn, so a Claude agent working
+  meant a read — and a flash — every minute. Now only an Antigravity turn
+  counts: while one runs, every `agentFarm.agyUsageActiveRefreshSeconds`
+  (60 s), counted from the run's start; once right after it ends; then every
+  `agentFarm.agyUsageRefreshMinutes` (240 min; `0` = never while Antigravity
+  is idle). It is still read once when the window opens, and Check now always
+  reads. Its own timer drives it: painting the status bar or a card no longer
+  spawns `agy`. Both settings are flex points (Farm Settings ▸ Flow & Content,
+  `flex.set`).
+
 ## 3.759.0 - Antigravity's quota is read on its own clock, and Tidy repairs the backticks and made-up tags it used to miss (2026-09-29)
 
 - Antigravity's quota read (`agy -p /usage`, which briefly flashes a terminal

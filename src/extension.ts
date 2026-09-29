@@ -108,7 +108,7 @@ import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalText, cont
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
-import { agyUsageBeatMs } from './core/agyUsageBeat';
+import { AgyReadState, agyNextReadAt, agyReadDue } from './core/agyUsageBeat';
 import { UsageGate, crossServiceMs, tokenKey } from './core/usageGate';
 import { UsageShelf } from './core/usageShelf';
 import { EngineUsage, enginePeak, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
@@ -20028,28 +20028,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * and every token counter at zero (measured 2026-09-19, agy 1.2.7): a local
      * command, not a turn. Same shape as the catalog fetch next door — in the
      * background, kept with its arrival time, offered as whatever is known —
-     * and on the SAME BEAT as Claude's indicator (`planBeatMs`), so the two
-     * engines' figures age at one rate. The read ends in a repaint (U-31): a
+     * and on ITS OWN beat, which only Antigravity's own turns move (X-437,
+     * `core/agyUsageBeat.ts`). The read ends in a repaint (U-31): a
      * figure that lands in a variable nobody reads again is a figure nobody
      * sees. ‼️ `stdin.end()` is load-bearing here exactly as it is for
      * `agy models`: the binary does not exit while its stdin is open.
      */
-    let agyUsage: { text?: string; fetchedAt?: number; error?: string; fetching?: boolean } = {};
+    let agyUsage: { text?: string; fetchedAt?: number; askedAt?: number; error?: string; fetching?: boolean } = {};
     let agyUsageInFlight: Promise<void> | undefined;
-    // X-437 — Antigravity reads on its own beat, not Claude's.
-    const agyBeatMs = () => agyUsageBeatMs(
-        fleetActive(),
-        Math.max(0, cfg().get<number>('agyUsageRefreshMinutes', 240)),
-        Math.max(0, cfg().get<number>('agyUsageActiveRefreshSeconds', 60)));
+    // X-437 — only Antigravity's own turns move its quota, so only they set its beat.
+    const agyRunning = (): boolean => live.activeTurns('agy') > 0;
+    let agyRun = { running: agyRunning(), since: Date.now(), endedAt: 0 };
+    let agyReadTimer: NodeJS.Timeout | undefined;
+    const agyFlex = (id: string, key: string): number => {
+        const own = ownSetting(key);
+        return Number(resolveFlex(id, own === undefined || own === null || own === '' ? {} : { settings: own }).value);
+    };
+    const agyReadState = (): AgyReadState => ({
+        now: Date.now(), lastAskedAt: agyUsage.askedAt ?? 0,
+        running: agyRun.running, runningSince: agyRun.since, lastRunEndedAt: agyRun.endedAt,
+        idleMinutes: agyFlex('agyUsage.idleMinutes', 'agyUsageRefreshMinutes'),
+        activeSeconds: agyFlex('agyUsage.activeSeconds', 'agyUsageActiveRefreshSeconds')
+    });
     const refreshAgyUsage = (force = false): Promise<void> => {
         if (agyUsage.fetching) { return agyUsageInFlight ?? Promise.resolve(); }
-        const age = Date.now() - (agyUsage.fetchedAt ?? 0);
-        const beat = agyBeatMs();
-        if (!force && agyUsage.fetchedAt && (!beat || age < beat)) { return Promise.resolve(); }
-        // An engine that is not on this machine is asked once per beat at most,
-        // and its absence is the row's own note rather than a retry storm.
-        if (!force && agyUsage.error && (!beat || age < beat)) { return Promise.resolve(); }
-        agyUsage = { ...agyUsage, fetching: true };
+        // A failed read (agy not on this machine) counts as asked, so it waits
+        // out the same beat instead of becoming a retry storm.
+        if (!force && !agyReadDue(agyReadState())) { return Promise.resolve(); }
+        agyUsage = { ...agyUsage, fetching: true, askedAt: Date.now() };
         let settle = (): void => { /* replaced below */ };
         agyUsageInFlight = new Promise<void>(res => { settle = res; });
         const child = cp.execFile('agy', ['-p', '/usage', '--output-format', 'json'], {
@@ -20058,7 +20064,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const text = String(stdout ?? '').trim();
             const before = agyUsage.text ?? '';
             agyUsage = text
-                ? { text, fetchedAt: Date.now(), fetching: false }
+                ? { text, fetchedAt: Date.now(), askedAt: agyUsage.askedAt, fetching: false }
                 : { ...agyUsage, fetching: false, fetchedAt: Date.now(),
                     error: (err as NodeJS.ErrnoException | null)?.code === 'ENOENT' ? 'agy is not on PATH'
                         : String(stderr ?? '').trim().split('\n').pop() || (err ? err.message : 'no answer') };
@@ -20068,15 +20074,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             agyUsageInFlight = undefined;
             settle();
+            armAgyRead();
         });
         child.stdin?.end();
         return agyUsageInFlight;
     };
+    // One timer, armed for the next due read; clamped because setTimeout
+    // overflows past ~24.8 days and would fire at once.
+    const armAgyRead = (): void => {
+        if (agyReadTimer) { clearTimeout(agyReadTimer); agyReadTimer = undefined; }
+        const at = agyNextReadAt(agyReadState());
+        if (!(at > 0)) { return; }
+        agyReadTimer = setTimeout(() => {
+            agyReadTimer = undefined;
+            if (agyReadDue(agyReadState())) { void refreshAgyUsage(); } else { armAgyRead(); }
+        }, Math.min(0x7fffffff, Math.max(0, at - Date.now())));
+    };
     const engineUsageMatrix = (): EngineUsage[] => {
         const snap = planUsage.current();
-        // Every reader of the matrix keeps Antigravity's figure on the beat;
-        // the call returns at once and the answer repaints when it lands.
-        void refreshAgyUsage();
         return readEngineUsage(
             usageProbe,
             p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } },
@@ -20132,6 +20147,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             snap, planBeat(), engineUsageMatrix(), usageEngine(), usageAccountLabel(usageEngine()))
     });
     context.subscriptions.push(planUsageBar);
+    // X-437 — armed only now: a read's answer repaints the bar. A run starting
+    // re-arms the beat; a run ending pulls the settled figure's read forward.
+    context.subscriptions.push(live.onDidUpdate(() => {
+        const running = agyRunning();
+        if (running === agyRun.running) { return; }
+        const now = Date.now();
+        agyRun = running
+            ? { running, since: now, endedAt: agyRun.endedAt }
+            : { running, since: 0, endedAt: now };
+        armAgyRead();
+    }));
+    context.subscriptions.push({ dispose: () => { if (agyReadTimer) { clearTimeout(agyReadTimer); } } });
+    armAgyRead();
     // X-243 — repaint the moment the subject changes, not at the next minute's
     // wake. `paint()` and not `refresh()`: following a conversation is a change
     // of what is drawn, never a reason to spend a request.
@@ -31105,6 +31133,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // show at once — a settings page you have to reload to believe is a
         // settings page you stop trusting.
         if (e.affectsConfiguration('agentFarm.planUsage')) { planUsageBar.refresh(); }
+        if (e.affectsConfiguration('agentFarm.agyUsage')) { armAgyRead(); }
     }));
 
     // ---------- projects ----------

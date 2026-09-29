@@ -353,6 +353,15 @@
             id: 'accounts.defaultCeiling', label: 'Account policies — default wall (%)', type: 'number', default: 90, min: 1, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.defaultAccountCeiling', bridge: 'settings.set:agentFarm.defaultAccountCeiling' } }
         },
+        // X-437 — Antigravity's quota read (agy -p /usage), timed by Antigravity's own turns only (src/core/agyUsageBeat.ts)
+        {
+            id: 'agyUsage.idleMinutes', label: 'Antigravity quota — re-read while it is idle (min, 0 = never)', type: 'number', default: 240, min: 0, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.agyUsageRefreshMinutes', bridge: 'settings.set:agentFarm.agyUsageRefreshMinutes' } }
+        },
+        {
+            id: 'agyUsage.activeSeconds', label: 'Antigravity quota — re-read while it works (s)', type: 'number', default: 60, min: 30, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.agyUsageActiveRefreshSeconds', bridge: 'settings.set:agentFarm.agyUsageActiveRefreshSeconds' } }
+        },
         // A-27 — the judge's ladder, cheapest first: a FAIL is judged one rung up before a retry is paid for (src/core/judgeLadder.ts)
         {
             id: 'judge.ladder', label: 'Judge ladder (cheapest first)', type: 'text', default: '', remembered: false,

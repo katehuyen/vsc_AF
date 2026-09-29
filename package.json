@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.759.0",
+  "version": "3.760.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8798,13 +8798,13 @@
           "type": "number",
           "default": 240,
           "minimum": 0,
-          "description": "How often Antigravity's quota is re-read while NO agent is mid-turn, in minutes. Reading it runs agy -p /usage in the background (no tokens), which briefly flashes a terminal on screen. 0 = never while idle — the quota is then only read while an agent is working, or when you press Check now. Separate from Claude's planUsageRefreshMinutes, which is unchanged."
+          "description": "How often Antigravity's quota is re-read while NO Antigravity turn is running, in minutes. Reading it runs agy -p /usage in the background (no tokens), which briefly flashes a terminal on screen. Other engines' turns (Claude, Codex…) do not count: they spend none of Antigravity's quota. It is read once when the window opens and once right after each Antigravity run ends; after that, every this many minutes. 0 = never while Antigravity is idle — only the reads above, and Check now. Separate from Claude's planUsageRefreshMinutes."
         },
         "agentFarm.agyUsageActiveRefreshSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 30,
-          "description": "How often Antigravity's quota is re-read while at least one agent is mid-turn, in seconds. Separate from Claude's planUsageActiveRefreshSeconds, which is unchanged."
+          "description": "How often Antigravity's quota is re-read while an Antigravity turn is running, in seconds, counted from the run's start (a turn that has just begun has spent nothing yet). Only Antigravity's own turns switch this on; Claude or Codex working does not. Minimum 30 seconds. Separate from Claude's planUsageActiveRefreshSeconds."
         },
         "agentFarm.planUsageMinIntervalSeconds": {
           "type": "number",

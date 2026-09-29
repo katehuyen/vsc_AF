@@ -203,6 +203,97 @@ const probe = (files, tails) => ({
         blank.state === 'unknown' && blank.bars.length === 0 && /no windows/.test(blank.note));
 }
 
+// ---------- X-437: WHEN Antigravity's quota is read — only its own turns decide ----------
+//
+// Every `agy -p /usage` flashes a terminal on screen. The figure moves only
+// while ANTIGRAVITY works, so a Claude or Codex turn is no reason to read it.
+{
+    const { agyNextReadAt, agyReadDue } = require(path.join(__dirname, '..', 'out', 'core', 'agyUsageBeat.js'));
+    const MIN = 60_000, T = 1_000_000_000;
+    const st = (o) => Object.assign({
+        now: T, lastAskedAt: T - MIN, running: false, runningSince: 0, lastRunEndedAt: 0,
+        idleMinutes: 240, activeSeconds: 60
+    }, o);
+
+    ok('never read → once, now (what the bar opens with)',
+        agyNextReadAt(st({ lastAskedAt: 0 })) === T && agyReadDue(st({ lastAskedAt: 0 })));
+    ok('…even with idle 0: the one read at start is kept',
+        agyReadDue(st({ lastAskedAt: 0, idleMinutes: 0 })));
+    ok('idle: the next read is the minutes setting after the last one',
+        agyNextReadAt(st({})) === T - MIN + 240 * MIN && !agyReadDue(st({})));
+    ok('idle: due once the minutes have passed',
+        agyReadDue(st({ now: T - MIN + 240 * MIN })));
+    ok('‼️ idle 0 after the first read = no automatic read, ever, while Antigravity is idle',
+        agyNextReadAt(st({ idleMinutes: 0 })) === 0 && !agyReadDue(st({ idleMinutes: 0, now: T + 365 * 24 * 60 * MIN })));
+
+    // running: counted from the run's start, never from the last idle read
+    ok('‼️ a run that has just started earns no read — nothing is spent yet',
+        !agyReadDue(st({ running: true, runningSince: T, lastAskedAt: T - 300 * MIN })));
+    ok('running: the seconds setting after the start',
+        agyNextReadAt(st({ running: true, runningSince: T, lastAskedAt: T - 300 * MIN })) === T + 60_000);
+    ok('running: …or after the last read inside the run',
+        agyNextReadAt(st({ running: true, runningSince: T - 10 * MIN, lastAskedAt: T - 20_000 })) === T + 40_000);
+    ok('running: the 30 s floor holds',
+        agyNextReadAt(st({ running: true, runningSince: T, activeSeconds: 5 })) === T + 30_000);
+    ok('running: idle 0 does not stop the reads while Antigravity works',
+        agyNextReadAt(st({ running: true, runningSince: T, idleMinutes: 0 })) === T + 60_000);
+
+    // the end of a run: its settled figure, once
+    ok('‼️ a run that ended after the last read → one read, now',
+        agyReadDue(st({ lastRunEndedAt: T - 1000 })) && agyNextReadAt(st({ lastRunEndedAt: T - 1000 })) === T);
+    ok('…with idle 0 too — that read is the run\'s, not the idle beat\'s',
+        agyReadDue(st({ lastRunEndedAt: T - 1000, idleMinutes: 0 })));
+    ok('‼️ …and once it is read, idle 0 stops again',
+        !agyReadDue(st({ lastRunEndedAt: T - 2000, lastAskedAt: T - 1000, idleMinutes: 0 }))
+        && agyNextReadAt(st({ lastRunEndedAt: T - 2000, lastAskedAt: T - 1000, idleMinutes: 0 })) === 0);
+}
+
+// ---------- X-437: "Antigravity is running" is Antigravity's turn, nobody else's ----------
+{
+    const Module = require('module');
+    const origLoad = Module._load;
+    class Emitter {
+        constructor() { this.handlers = []; }
+        get event() { return (fn) => { this.handlers.push(fn); return { dispose() { } }; }; }
+        fire(v) { for (const h of this.handlers) { h(v); } }
+        dispose() { }
+    }
+    Module._load = function (request) {
+        if (request === 'vscode') {
+            return {
+                EventEmitter: Emitter,
+                window: { showInformationMessage: () => Promise.resolve(undefined), showWarningMessage: () => Promise.resolve(undefined) },
+                commands: { executeCommand: () => Promise.resolve(undefined) }
+            };
+        }
+        return origLoad.apply(this, arguments);
+    };
+    const { LiveMonitor } = require(path.join(__dirname, '..', 'out', 'core', 'live.js'));
+    Module._load = origLoad;
+    const cfg = {
+        enabled: true, port: 0, stuckThresholdMs: 999999,
+        notifyPermission: false, notifyStuck: false, notifyTurnEnd: false
+    };
+    const live = new LiveMonitor(() => cfg, () => ({ agentId: 'a1', agentName: 'dev' }));
+    const ev = (id, name, extra) => live.handle(Object.assign({ session_id: id, cwd: '/x', hook_event_name: name }, extra));
+
+    // a Claude turn (a real hook: no `engine`) and a Codex turn (hosted, the mirror names it)
+    ev('claude-1', 'UserPromptSubmit', { prompt: 'hi' });
+    ev('codex-1', 'UserPromptSubmit', { prompt: 'hi', engine: 'codex' });
+    ok('‼️ Claude and Codex working is NOT Antigravity running',
+        live.activeTurns() === 2 && live.activeTurns('agy') === 0);
+    // a hosted Antigravity turn — the Console mirror names its engine
+    ev('agy-1', 'UserPromptSubmit', { prompt: 'hi', engine: 'agy' });
+    ok('a hosted Antigravity turn is Antigravity running', live.activeTurns('agy') === 1);
+    // a terminal Antigravity session: its `cli:agy:` id names the engine
+    ev('cli:agy:a1:1', 'UserPromptSubmit', { prompt: 'hi' });
+    ok('…and so is one opened in a terminal', live.activeTurns('agy') === 2);
+    ev('agy-1', 'Stop', { engine: 'agy' });
+    ev('cli:agy:a1:1', 'Stop');
+    ok('‼️ both Antigravity turns ended → not running, while Claude still works',
+        live.activeTurns('agy') === 0 && live.activeTurns() === 2);
+}
+
 // ---------- U-40: the STRIP, which is not a sentence ----------
 {
     // ‼️ THE LINE THE USER READ OFF THEIR OWN STATUS BAR, VERBATIM:
