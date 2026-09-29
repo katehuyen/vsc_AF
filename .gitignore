@@ -23,3 +23,7 @@ scratch/
 
 # generated dossiers — the transcripts are the record; these are cut from them
 dist/audit/
+
+# built packages never enter git - they stay local only
+dist/vsix/
+*.vsix
