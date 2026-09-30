@@ -38,5 +38,7 @@ export interface RemotePort {
     can(feature: string): FeatureAnswer;
     /** A private directory the remote host may keep its state in (devices, keys, event log). */
     storageDir(): string;
+    /** The folder a page's /res/ files are read from (the extension's media folder); absent = none served. */
+    resourceDir?(): string;
     log(line: string): void;
 }

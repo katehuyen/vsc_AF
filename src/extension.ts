@@ -30477,6 +30477,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         subscribe: l => { remoteListeners.add(l); return () => { remoteListeners.delete(l); }; },
         can: allOpen,
         storageDir: () => remoteDir,
+        resourceDir: () => path.join(context.extensionUri.fsPath, 'media'),
         log: line => console.log('Agent Farm ' + line)
     };
     const remote = createRemoteControl(remotePort);

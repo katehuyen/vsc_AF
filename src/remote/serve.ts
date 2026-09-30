@@ -10,6 +10,7 @@ import type { RemotePort, Unsubscribe } from './port';
 import { scopeGated } from './scopes';
 import { loadOrMakeCert } from './server/certStore';
 import { DeviceBook } from './server/devices';
+import { resourcePage } from './server/resources';
 import { EventLog } from './server/eventLog';
 import { createRemoteServer, type RemoteServer } from './server/host';
 import { CallMemory } from './server/session';
@@ -41,7 +42,7 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt): Promise<R
         callOp: scopeGated((op, args, caller) => port.callOp(op, args, caller)),
         features: () => featureMap(f => port.can(f)),
         views: null,
-        page: null,
+        page: port.resourceDir ? (url: string) => resourcePage(port.resourceDir!(), url) : null,
         helloTimeoutMs: 10_000,
         log: line => port.log(line),
     });
