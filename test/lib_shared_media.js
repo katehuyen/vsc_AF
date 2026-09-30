@@ -159,7 +159,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afMobile.js — the phone layer (U-176): bottom tab bar, Menu sheet, long-press AFTip sheet.
     'afMobile.js',
     // afAsk.js — a host's questions as phone sheets and toasts (X-447).
-    'afAsk.js'];
+    'afAsk.js',
+    // afVoice.js — dictation into a focused text box, in the Android shell only (S-1).
+    'afVoice.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];

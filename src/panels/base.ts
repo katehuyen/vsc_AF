@@ -522,6 +522,8 @@ export function htmlShell(
     const mobile = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afMobile.js'));
     // X-447 — a host's questions asked on the phone that is looking (sheets over afMobile.js).
     const ask = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAsk.js'));
+    // S-1 — dictation into a focused text box, drawn only when the Android shell can dictate.
+    const voice = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afVoice.js'));
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // A served page's acquireVsCodeApi (X-443); inside VS Code it does nothing. First, before anything asks for it.
     const remoteApi = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRemote.js'));
@@ -613,6 +615,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${mobile}"></script>
 <script nonce="${nonce}" src="${ask}"></script>
+<script nonce="${nonce}" src="${voice}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
