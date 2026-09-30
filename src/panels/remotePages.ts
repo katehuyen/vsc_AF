@@ -12,10 +12,18 @@ import type { RemotePage } from './remoteViews';
 export interface RemotePageMakers {
     needs(host: PanelHost): void;
     console(host: PanelHost): void;
+    now(host: PanelHost): void;
 }
 
 export function remotePages(make: RemotePageMakers): Record<string, RemotePage> {
     return {
+        now: {
+            open: 'read', act: 'manage',
+            looks: ['refresh'],
+            answers: [],
+            pcOnly: ['afnav'],
+            make: host => make.now(host)
+        },
         needs: {
             open: 'read', act: 'answer',
             looks: ['refresh'],

@@ -1436,6 +1436,12 @@
         "icon": "$(telescope)"
       },
       {
+        "command": "agentfarm.openNow",
+        "title": "Open Now (what waits, what runs, today)",
+        "category": "Agent Farm",
+        "icon": "$(pulse)"
+      },
+      {
         "command": "agentfarm.openNeeds",
         "title": "Open Needs You (Approval Queue)",
         "category": "Agent Farm",

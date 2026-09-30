@@ -137,6 +137,11 @@
                 + 'output, their cost and why a run did not happen.'
         },
         {
+            id: 'now', label: '◉ Now',
+            tip: 'One screen of what waits for you, what is running, today\'s spend and quotas and the '
+                + 'latest notices, with a box that speaks into a running session. The phone opens it first.'
+        },
+        {
             id: 'missions', label: 'Missions',
             tip: 'Dynamic orchestration — a lead agent plans round by round, delegates to the team under a '
                 + 'budget, and finishes with an honest verdict.'

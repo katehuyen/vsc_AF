@@ -386,11 +386,14 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
 }
 
 /** Count of rows that actively block work (used for the status-bar badge). */
-export function blockingCount(items: NeedItem[]): number {
-    return items.filter(i =>
-        i.kind === 'permission' || i.kind === 'browser-approval'
+export function isBlocking(i: NeedItem): boolean {
+    return i.kind === 'permission' || i.kind === 'browser-approval'
         || i.kind === 'stalled' || i.kind === 'interrupted' || i.kind === 'mission' || i.kind === 'question'
-        || i.kind === 'console-question' || i.kind === 'engine-fault').length;
+        || i.kind === 'console-question' || i.kind === 'engine-fault';
+}
+
+export function blockingCount(items: NeedItem[]): number {
+    return items.filter(isBlocking).length;
 }
 
 // ---------------------------------------------------------------------------

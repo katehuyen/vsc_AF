@@ -177,8 +177,8 @@ const alive = setInterval(() => undefined, 1000);
     ok('views are counted across devices', views.count() === 1);
 
     // ---------- the real page list ----------
-    const real = remotePages({ needs: () => undefined, console: () => undefined });
-    ok('the phone has the Needs and the Console pages', Object.keys(real).sort().join() === 'console,needs');
+    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined });
+    ok('the phone has the Needs, the Console and the Now pages', Object.keys(real).sort().join() === 'console,needs,now');
     ok('Needs: open to read, a refresh looks, a clear or an action needs answer',
         real.needs.open === 'read' && messageScope(real.needs, 'refresh') === 'read'
         && messageScope(real.needs, 'clear') === 'answer' && messageScope(real.needs, 'action') === 'answer');

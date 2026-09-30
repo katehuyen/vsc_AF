@@ -656,6 +656,8 @@ import { GuidePanel } from './panels/guide';
 import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
+import { NowPanel, type NowDeps } from './panels/nowPanel';
+import { buildNow, NOW_LIMITS } from './core/nowPage';
 import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
 import { A2ANotesPanel } from './panels/a2aNotesPanel';
@@ -30459,6 +30461,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { provider: embeddingsCfg().provider, ...res, ...semIndex.stats() };
     };
 
+    // ---- U-177 — the Now page: one snapshot, drawn on a desktop tab or a phone's home page.
+    const buildNowData = () => buildNow({
+        needs: buildNeeds(),
+        sessions: consoleHost.list(),
+        todayCost: todayCost(index.all()),
+        quotas: accountUsage.current().flatMap(u => {
+            const five = fiveHourOf(u);
+            if (!five) { return []; }
+            const sl = findSlot(storedAccounts(), u.slotId);
+            return [{ account: sl ? slotLabel(sl) : u.slotId, engine: u.engine, percent: five.percent, resetsAt: five.resetsAt }];
+        }),
+        notices: noticesStore.list({ limit: NOW_LIMITS.notices }),
+        now: Date.now()
+    });
+    const nowEmitter = new vscode.EventEmitter<void>();
+    context.subscriptions.push(nowEmitter, needsEmitter.event(() => nowEmitter.fire()),
+        consoleHost.onChange(() => nowEmitter.fire()));
+    const nowDeps: NowDeps = {
+        extensionUri: context.extensionUri,
+        build: buildNowData,
+        send: (id, text) => {
+            const r = consoleHost.send(id, text);
+            if (r && !r.refused) { ConsolePanel.refreshIfOpen(); }
+            return r;
+        },
+        onDidChange: nowEmitter.event
+    };
+    bridge.register([{
+        op: 'now.get',
+        describe: 'The Now page\'s snapshot: blocking Needs You rows (capped, with waitingMore), running Console '
+            + 'sessions (what each is doing, since when, whether a question holds it), today\'s spend, each '
+            + 'account\'s five-hour quota and the latest notices. args: none',
+        handler: () => buildNowData()
+    }]);
+
     // ---- X-442 — THE PHONE'S HOST. The RemotePort is the one surface src/remote
     // touches: calls go to the bridge (the phone's scope is checked inside the
     // host), events come from the Console, the Needs You queue, Notices and the
@@ -30477,7 +30514,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         atLeast: scopeAtLeast,
         pages: remotePages({
             needs: host => NeedsPanel.openOn(host, needsDeps),
-            console: host => ConsolePanel.openOn(host, consoleDeps)
+            console: host => ConsolePanel.openOn(host, consoleDeps),
+            now: host => NowPanel.openOn(host, nowDeps)
         })
     });
     const remotePort: RemotePort = {
@@ -40344,6 +40382,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openNeeds', () => {
             NeedsPanel.show(needsDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openNow', () => {
+            NowPanel.show(nowDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openNotices', (arg?: unknown) => {
