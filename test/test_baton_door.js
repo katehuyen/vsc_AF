@@ -145,13 +145,22 @@ function baton(o = {}) {
     ok('‼️ a template REPLACES the header and fills every variable',
         mine.startsWith(`LEG 1/4 of ${b.chainId} for developer after aaaaaaaa-1111\nWhy: ${b.why}\nRule: Be brief.\nCarry on with S-83.`)
         && !/BATON RELAY/.test(mine));
-    ok('…an unknown {name} is left as typed', /keep \{unknown\}$/.test(mine));
+    const RULES = require(path.join(__dirname, '..', 'out', 'core', 'batonRules.js'));
+    const rules = RULES.RELAY_RULES.join('\n');
+    ok('…an unknown {name} is left as typed', /keep \{unknown\}\n/.test(mine));
+    ok('‼️ a template that does not name {relayRules} still carries the relay rules', mine.endsWith('\n' + rules));
+    const placed = successorPrompt(b, { template: 'A\n{relayRules}\nB {agentPrompt}' });
+    ok('…and one that names them has them there, once', placed === 'A\n' + rules + '\nB Carry on with S-83.');
+    const builtIn = successorPrompt(b);
+    ok('‼️ the built-in header carries the relay rules: pass at the line, and only the user ends a chain',
+        builtIn.includes(rules) && /never before it/.test(builtIn) && /Only the user ends a chain/.test(builtIn)
+        && builtIn.indexOf(rules) < builtIn.indexOf('\n---\n'));
     ok('…no ceiling reads "none"', /^LEG 1\/none/.test(successorPrompt(b, { template: tpl })));
     const bare = successorPrompt(b, { template: 'Hop {hop}. Go.', directive: 'Be brief.' });
     ok('‼️ a template that forgets the directive and the words still carries both — directive first, words last',
-        bare === 'Hop 1. Go.\nStanding directive: Be brief.\n---\nCarry on with S-83.');
+        bare === 'Hop 1. Go.\n' + rules + '\nStanding directive: Be brief.\n---\nCarry on with S-83.');
     ok('…a whitespace-only template is no template', /^=== BATON RELAY/.test(successorPrompt(b, { template: ' \n ' })));
-    ok('the variable list is the one the setting documents', D.HANDOVER_TEMPLATE_VARS.join() === 'fromSessionId,agentId,chain,leg,hop,maxHops,why,userDirective,agentPrompt');
+    ok('the variable list is the one the setting documents', D.HANDOVER_TEMPLATE_VARS.join() === 'fromSessionId,agentId,chain,leg,hop,maxHops,why,userDirective,agentPrompt,relayRules');
     const pkg = require(path.join(__dirname, '..', 'package.json')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
     const tplSetting = props['agentFarm.batonHandoverTemplate'];

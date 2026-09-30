@@ -76,6 +76,7 @@ console.log('\n== what a rescued leg is handed ==');
     ok('no note: said so', /It wrote no handover note\./.test(F.rescueEvidence(facts({ exitCode: 2 }), ['it exited with code 2'])));
 
     const b = baton({ id: 'r1', hop: 2, from: from('s-leg2'), state: 'waiting-end', toSessionId: undefined, prompt: 'EVIDENCE', rescue: 'leg 2 ended without passing the baton: it exited with code 2' });
+    const rules = require(path.join(__dirname, '..', 'out', 'core', 'batonRules.js')).RELAY_RULES.join('\n');
     const p = F.emergencyPrompt(b, { agentName: 'developer', maxHops: 6, directive: 'run npm test' });
     ok('the built-in header says EMERGENCY and why', /^=== BATON RELAY — chain chn_a · leg 3\/6 · EMERGENCY HANDOVER ===/.test(p) && /ended WITHOUT passing the baton — leg 2 ended/.test(p));
     ok('‼️ it names the predecessor IN FULL and reads its LAST turns (from=-10, never limit alone)',
@@ -83,12 +84,17 @@ console.log('\n== what a rescued leg is handed ==');
     ok('…the standing directive, then the evidence last', /Standing directive \(the user's, on every leg\): run npm test\n---\nEVIDENCE$/.test(p));
     const u = F.emergencyPrompt(b, { emergencyTemplate: 'SOS {chain} {hop}/{maxHops} {fromSessionId} {agentId} — {why}\n{evidence}\n{nope}', agentName: 'dev', maxHops: 0 });
     ok('the user\'s template is filled; an unknown name is left as typed; no ceiling says none',
-        u === 'SOS chn_a 2/none s-leg2 dev — leg 2 ended without passing the baton: it exited with code 2\nEVIDENCE\n{nope}');
+        u === 'SOS chn_a 2/none s-leg2 dev — leg 2 ended without passing the baton: it exited with code 2\nEVIDENCE\n{nope}\n' + rules);
     const lost = F.emergencyPrompt(b, { emergencyTemplate: 'SOS', directive: 'd' });
-    ok('‼️ a template that forgets {evidence} still hands it over, and the directive', lost === 'SOS\nStanding directive: d\n---\nEVIDENCE');
+    ok('‼️ a template that forgets {evidence} still hands it over, and the directive and the relay rules',
+        lost === 'SOS\n' + rules + '\nStanding directive: d\n---\nEVIDENCE');
+    ok('‼️ the built-in emergency header carries the relay rules above the evidence',
+        p.includes(rules) && p.indexOf(rules) < p.indexOf('\n---\nEVIDENCE'));
+    ok('…a template naming {relayRules} has them there, once',
+        F.emergencyPrompt(b, { emergencyTemplate: '{relayRules}\n{evidence}' }) === rules + '\nEVIDENCE');
     ok('the door uses the emergency header for a rescued baton, the ordinary one otherwise',
         /EMERGENCY HANDOVER/.test(D.successorRow(b, {}).prompt) && !/EMERGENCY/.test(D.successorRow({ ...b, rescue: undefined }, {}).prompt));
-    ok('its variables are listed for the setting', F.EMERGENCY_TEMPLATE_VARS.join(',') === 'fromSessionId,agentId,chain,leg,hop,maxHops,why,evidence,userDirective');
+    ok('its variables are listed for the setting', F.EMERGENCY_TEMPLATE_VARS.join(',') === 'fromSessionId,agentId,chain,leg,hop,maxHops,why,evidence,userDirective,relayRules');
 }
 
 console.log('\n== the closing record ==');

@@ -20,6 +20,7 @@
 import { Baton, BatonState, openerOf } from './baton';
 import { isSeal } from './batonSeal';
 import type { DoorContext } from './batonDoor';
+import { RELAY_RULES, withRelayRules } from './batonRules';
 
 /** (b): a note written this close to the end is the run's last act. */
 export const FAILSAFE_NOTE_WINDOW_MS = 2 * 60_000;
@@ -160,7 +161,7 @@ export function rescueEvidence(f: LegEndFacts, reasons: readonly string[], brief
 }
 
 /** The variables an emergency template may name (agentFarm.batonEmergencyTemplate). */
-export const EMERGENCY_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'leg', 'hop', 'maxHops', 'why', 'evidence', 'userDirective'] as const;
+export const EMERGENCY_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'leg', 'hop', 'maxHops', 'why', 'evidence', 'userDirective', 'relayRules'] as const;
 
 /**
  * The first message of a RESCUED leg. The user's template when set — the
@@ -180,12 +181,14 @@ export function emergencyPrompt(b: Baton, ctx: DoorContext = {}): string {
         maxHops: maxHops || 'none',
         why: b.rescue || b.why,
         evidence: b.prompt,
-        userDirective: directive
+        userDirective: directive,
+        relayRules: RELAY_RULES.join('\n')
     };
     const tpl = String(ctx.emergencyTemplate ?? '').trim();
     if (tpl) {
         let out = tpl.replace(/\{(\w+)\}/g, (m, k: string) => (Object.prototype.hasOwnProperty.call(vars, k) ? vars[k] : m));
         const tail: string[] = [];
+        withRelayRules(tpl, tail);
         if (directive && !/\{userDirective\}/.test(tpl)) { tail.push(`Standing directive: ${directive}`); }
         if (!/\{evidence\}/.test(tpl)) { tail.push('---', b.prompt); }
         if (tail.length) { out = [out.replace(/\s+$/, ''), ...tail].join('\n'); }
@@ -203,6 +206,7 @@ export function emergencyPrompt(b: Baton, ctx: DoorContext = {}): string {
         'then continue exactly where it stopped, in this folder and this project. Check `git status` before you build on uncommitted work.',
         'If you cannot finish either, pass the baton yourself when your run is ending (_REF/handover.md): write { "prompt": "<what your successor starts from>" } to a file and run',
         '  node af.js baton.pass "@<file>"',
+        ...RELAY_RULES,
         ...(directive ? [`Standing directive (the user's, on every leg): ${directive}`] : []),
         '---',
         b.prompt

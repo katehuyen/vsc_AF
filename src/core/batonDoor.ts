@@ -16,6 +16,7 @@ import { Baton, successorSurface } from './baton';
 import { emergencyPrompt } from './batonFailsafe';
 import { InteractiveClose, InteractiveTarget } from './launch';
 import { normPath } from './util';
+import { RELAY_RULES, withRelayRules } from './batonRules';
 
 export interface DoorRow {
     title: string;
@@ -66,7 +67,7 @@ export interface DoorContext {
 }
 
 /** The variables a handover template may name (agentFarm.batonHandoverTemplate). */
-export const HANDOVER_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'leg', 'hop', 'maxHops', 'why', 'userDirective', 'agentPrompt'] as const;
+export const HANDOVER_TEMPLATE_VARS = ['fromSessionId', 'agentId', 'chain', 'leg', 'hop', 'maxHops', 'why', 'userDirective', 'agentPrompt', 'relayRules'] as const;
 
 /**
  * S-82 — the user's template, filled. Unknown `{names}` are left as typed. The
@@ -85,10 +86,12 @@ export function renderHandoverTemplate(template: string, b: Baton, ctx: DoorCont
         maxHops: ctx.maxHops && ctx.maxHops > 0 ? String(ctx.maxHops) : 'none',
         why: b.why,
         userDirective: directive,
-        agentPrompt: b.prompt
+        agentPrompt: b.prompt,
+        relayRules: RELAY_RULES.join('\n')
     };
     let out = template.replace(/\{(\w+)\}/g, (m, k: string) => (Object.prototype.hasOwnProperty.call(vars, k) ? vars[k] : m));
     const tail: string[] = [];
+    withRelayRules(template, tail);
     if (directive && !/\{userDirective\}/.test(template)) { tail.push(`Standing directive: ${directive}`); }
     if (!/\{agentPrompt\}/.test(template)) { tail.push('---', b.prompt); }
     if (tail.length) { out = [out.replace(/\s+$/, ''), ...tail].join('\n'); }
@@ -120,6 +123,7 @@ export function successorPrompt(b: Baton, ctx: DoorContext = {}): string {
         'If you cannot finish either, pass the baton yourself when your run is ending (_REF/handover.md): write { "prompt": "<what your successor starts from>" } to a file and run',
         '  node af.js baton.pass "@<file>"',
         'Nothing starts while you are alive. While anything can still be done, pass; end the chain only when every remaining gap is essential and only the user can close it.',
+        ...RELAY_RULES,
         ...(directive ? [`Standing directive (the user's, on every leg): ${directive}`] : []),
         '---',
         b.prompt

@@ -5,6 +5,7 @@
  */
 import { Baton, openerOf } from './baton';
 import { headsLabel, headsRoots } from './legRoots';
+import { BARREN_REPAIR } from './batonRules';
 
 export interface BatonBrake {
     kind: 'ceiling' | 'user' | 'barren';
@@ -49,7 +50,7 @@ export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: numbe
         const roots = headsRoots(head);
         return {
             kind: 'barren',
-            why: `barren chain — legs ${draft.hop - 1} and ${draft.hop} both ended with no new commit in ${roots.length ? roots.join(', ') : draft.from.cwd} (HEAD still ${headsLabel(head)}); leg ${next} does not open.`
+            why: `barren chain — legs ${draft.hop - 1} and ${draft.hop} both ended with no new commit in ${roots.length ? roots.join(', ') : draft.from.cwd} (HEAD still ${headsLabel(head)}); leg ${next} does not open. ${BARREN_REPAIR}`
         };
     }
     return undefined;
