@@ -6,7 +6,7 @@
  */
 import * as path from 'path';
 import { featureMap } from './features';
-import type { RemotePort, Unsubscribe } from './port';
+import type { RemoteCaller, RemotePort, Unsubscribe } from './port';
 import { scopeGated } from './scopes';
 import { loadOrMakeCert } from './server/certStore';
 import { DeviceBook } from './server/devices';
@@ -35,14 +35,19 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt): Promise<R
     const cert = loadOrMakeCert(dir, `Agent Farm · ${farm.name}`);
     if (cert.made) { port.log(`remote: new host certificate ${cert.fingerprint.slice(0, 12)}… - paired phones scan a new QR`); }
     const devices = new DeviceBook(path.join(dir, 'devices.json'));
+    const views = port.views ? port.views() : null;
+    const res = port.resourceDir ? port.resourceDir() : null;
+    const page = (url: string, caller: RemoteCaller) => url.startsWith('/view/')
+        ? (views ? views.page(url, caller) : null)
+        : (res ? resourcePage(res, url) : null);
     const server = createRemoteServer({
         farm, cert, devices,
         events: new EventLog(path.join(dir, 'events.json')),
         calls: new CallMemory(),
         callOp: scopeGated((op, args, caller) => port.callOp(op, args, caller)),
         features: () => featureMap(f => port.can(f)),
-        views: null,
-        page: port.resourceDir ? (url: string) => resourcePage(port.resourceDir!(), url) : null,
+        views,
+        page,
         helloTimeoutMs: 10_000,
         log: line => port.log(line),
     });

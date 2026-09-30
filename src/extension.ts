@@ -466,7 +466,8 @@ import {
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
 import type { RemoteDevicesHost } from './panels/toolboxRemote';
-import { allOpen, createRemoteControl, farmIdentity, type RemotePort } from './remote';
+import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePort } from './remote';
+import { RemoteViews } from './panels/remoteViews';
 import {
     chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
     PendingSends, queueInbound, turnEnded
@@ -30468,6 +30469,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const e of events) { for (const l of remoteListeners) { l(e); } }
     };
     let remoteFarm: { id: string; name: string } | undefined;
+    // X-441 — the pages a phone may open, each on its own host per view. A page
+    // not listed here is answered "unavailable" on the phone.
+    const remoteViews = new RemoteViews({
+        media: vscode.Uri.joinPath(context.extensionUri, 'media'),
+        atLeast: scopeAtLeast,
+        pages: {
+            needs: {
+                open: 'read', act: 'answer', looks: ['refresh', 'afnav', 'openGuide', 'openAgent', 'afClipboard'],
+                make: host => NeedsPanel.openOn(host, needsDeps)
+            }
+        }
+    });
     const remotePort: RemotePort = {
         farm: () => (remoteFarm ??= farmIdentity(remoteDir, os.hostname())),
         callOp: async (op, args) => {
@@ -30478,6 +30491,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         can: allOpen,
         storageDir: () => remoteDir,
         resourceDir: () => path.join(context.extensionUri.fsPath, 'media'),
+        views: () => remoteViews,
         log: line => console.log('Agent Farm ' + line)
     };
     const remote = createRemoteControl(remotePort);

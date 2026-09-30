@@ -82,7 +82,7 @@ async function socket(port, fp) {
         farm, cert, devices, events: new EventLog(null), calls: new CallMemory(), views: null, helloTimeoutMs: 3000,
         features: () => ({}), log: l => logs.push(l),
         callOp: async (op, args, caller) => ({ ok: true, result: { op, device: caller.device } }),
-        page: (p, caller) => (p.startsWith('/view/now') ? { status: 200, type: 'text/html', body: `<p>${caller.device}</p>` } : null),
+        page: async (p, caller) => (p.startsWith('/view/now') ? { status: 200, type: 'text/html', body: `<p>${caller.device}</p>` } : null),
     });
     const port = await server.listen(0, '127.0.0.1');
     try {

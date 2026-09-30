@@ -158,7 +158,7 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afSupervisorStrip.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
-const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];
+const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];
 
 const read = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
 

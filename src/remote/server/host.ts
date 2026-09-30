@@ -7,19 +7,19 @@
 import * as https from 'https';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { CONTRACT_VERSION, checkPairRequest, pairingUri } from '../contract';
-import type { RemoteCaller } from '../port';
+import type { RemoteCaller, ServedPage } from '../port';
 import type { HostCert } from './cert';
 import { RemoteSession, type SessionDeps } from './session';
 import { acceptUpgrade } from './ws';
 
 const MAX_BODY = 16 * 1024;
 
-export interface Page { status: number; type: string; body: Buffer | string }
+export type Page = ServedPage;
 
 export interface HostDeps extends SessionDeps {
     cert: HostCert;
     /** GET /view/… and /res/… for a caller with a live session; null = not found. */
-    page: ((path: string, caller: RemoteCaller) => Page | null) | null;
+    page: ((path: string, caller: RemoteCaller) => Page | null | Promise<Page | null>) | null;
     log(line: string): void;
 }
 
@@ -75,7 +75,7 @@ export function createRemoteServer(d: HostDeps): RemoteServer {
         if (req.method === 'GET' && /^\/(view|res)\//.test(url)) {
             const caller = callerOf(req);
             if (!caller) { return json(res, 401, { error: 'session' }); }
-            const p = d.page?.(req.url || url, caller) ?? null;
+            const p = (await d.page?.(req.url || url, caller)) ?? null;
             if (!p) { return json(res, 404, { error: 'not found' }); }
             res.writeHead(p.status, { 'content-type': p.type, 'content-length': Buffer.byteLength(p.body), 'cache-control': 'no-store' });
             return void res.end(p.body);

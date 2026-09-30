@@ -43,7 +43,13 @@ export function scopeAllows(scope: string, op: string): boolean {
     return have >= 0 && have >= SCOPES.indexOf(requiredScope(op));
 }
 
-type CallOp = (op: string, args: Record<string, unknown>, caller: RemoteCaller) => Promise<OpResult>;
+/** Whether a device paired at `have` holds at least `needed`. Unknown scopes hold nothing. */
+export function scopeAtLeast(have: string, needed: string): boolean {
+    const h = SCOPES.indexOf(have), n = SCOPES.indexOf(needed);
+    return h >= 0 && n >= 0 && h >= n;
+}
+
+type CallOp =(op: string, args: Record<string, unknown>, caller: RemoteCaller) => Promise<OpResult>;
 
 /** `callOp` behind the scope check; a refusal names the scope the op needs. */
 export function scopeGated(callOp: CallOp): CallOp {

@@ -97,18 +97,25 @@ const tick = ms => new Promise(r => setTimeout(r, ms));
     ok('without views a page open is answered unavailable', x.last().kind === 'view.close' && x.last().view === 'v1' && x.last().reason === 'unavailable');
     const log = [];
     const views = {
-        open: (caller, view, page, args, post) => { log.push('open:' + view + ':' + page + ':' + caller.device); post({ hi: 1 }); },
-        message: (view, m) => log.push('msg:' + view + ':' + JSON.stringify(m)),
-        close: view => log.push('close:' + view),
+        open: (caller, view, page, args, post) => {
+            if (page === 'nope') { return false; }
+            log.push('open:' + view + ':' + page + ':' + caller.device); post({ hi: 1 }); return true;
+        },
+        message: (caller, view, m) => log.push('msg:' + view + ':' + JSON.stringify(m) + ':' + caller.device),
+        close: (caller, view) => log.push('close:' + view + ':' + caller.device),
     };
     const z = open({ views }); hello(z);
     z.s.onMessage(JSON.stringify({ kind: 'view.open', view: 'v2', page: 'now' }));
     ok('a page open reaches the views with the caller, and its posts reach the phone', log[0] === 'open:v2:now:' + dev.id && z.last().kind === 'view.post' && z.last().view === 'v2' && z.last().message.hi === 1);
     z.s.onMessage(JSON.stringify({ kind: 'view.msg', view: 'v2', message: { q: 1 } }));
     z.s.onMessage(JSON.stringify({ kind: 'view.msg', view: 'v9', message: {} }));
-    ok('page messages reach only views this socket opened', log[1] === 'msg:v2:{"q":1}' && log.length === 2);
+    ok('page messages reach only views this socket opened, with the caller', log[1] === 'msg:v2:{"q":1}:' + dev.id && log.length === 2);
+    z.s.onMessage(JSON.stringify({ kind: 'view.open', view: 'v3', page: 'nope' }));
+    ok('a page the views refuse is answered unavailable', z.last().kind === 'view.close' && z.last().view === 'v3' && z.last().reason === 'unavailable');
+    z.s.onMessage(JSON.stringify({ kind: 'view.msg', view: 'v3', message: { q: 2 } }));
+    ok('…and is not open: its messages go nowhere', log.length === 2);
     z.s.ended();
-    ok('a closed socket closes its pages', log[2] === 'close:v2');
+    ok('a closed socket closes its pages, as its caller', log[2] === 'close:v2:' + dev.id && log.length === 3);
 
     console.log(`remote session: ${pass} passed, ${fail} failed`);
     if (fail) { process.exit(1); }

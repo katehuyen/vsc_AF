@@ -30,6 +30,23 @@ export interface FarmEvent {
 
 export type Unsubscribe = () => void;
 
+/** One answer of the page and resource routes. */
+export interface ServedPage { status: number; type: string; body: Buffer | string }
+
+/**
+ * The farm's pages as a phone opens them (X-441): a view is opened over the
+ * socket, its HTML fetched from /view/<page>?view=<id>, and its messages go
+ * both ways as view.msg / view.post. Views belong to the device that opened them.
+ */
+export interface RemoteViewsPort {
+    /** False when this page does not exist for the phone or the device may not open it. */
+    open(caller: RemoteCaller, view: string, page: string, args: Record<string, unknown> | undefined, post: (message: unknown) => void): boolean;
+    message(caller: RemoteCaller, view: string, message: unknown): void;
+    close(caller: RemoteCaller, view: string): void;
+    /** GET /view/… for this caller; may wait briefly for a view whose open is still on its way. */
+    page(url: string, caller: RemoteCaller): Promise<ServedPage | null>;
+}
+
 export interface RemotePort {
     farm(): FarmIdentity;
     /** Runs a bridge op on behalf of a device; the handler is the same one agents call. */
@@ -40,5 +57,7 @@ export interface RemotePort {
     storageDir(): string;
     /** The folder a page's /res/ files are read from (the extension's media folder); absent = none served. */
     resourceDir?(): string;
+    /** The pages a phone may open; absent = none (a page open is answered unavailable). */
+    views?(): RemoteViewsPort;
     log(line: string): void;
 }

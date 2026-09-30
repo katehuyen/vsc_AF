@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { isClearable, NeedItem, needKey } from '../core/needs';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * G1 — "Needs You" panel: the single urgency-sorted queue of everything
@@ -31,33 +32,32 @@ export class NeedsPanel {
 
     static show(deps: NeedsDeps): void {
         if (NeedsPanel.current) {
-            NeedsPanel.current.panel.reveal();
+            NeedsPanel.current.host.reveal();
             NeedsPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.needs',
-            'Agent Farm — Needs You',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        NeedsPanel.current = new NeedsPanel(panel, deps);
+        NeedsPanel.current = new NeedsPanel(desktopHost({ viewType: 'agentfarm.needs', title: 'Agent Farm — Needs You' }), deps);
+    }
+
+    /** X-441 — the page on a phone: one instance per view, never the desktop's one tab. */
+    static openOn(host: PanelHost, deps: NeedsDeps): void {
+        new NeedsPanel(host, deps);
     }
 
     static refreshIfOpen(): void {
         NeedsPanel.current?.refresh();
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: NeedsDeps) {
-        this.panel.webview.html = htmlShell(
-            panel.webview,
+    private constructor(readonly host: PanelHost, private deps: NeedsDeps) {
+        host.webview.html = htmlShell(
+            host.webview,
             deps.extensionUri,
             'Needs You',
             this.data(),
             'needs.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         this.disposables.push(deps.onDidChange(() => this.refresh()));
     }
 
@@ -70,13 +70,16 @@ export class NeedsPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
     }
 
     private async onMessage(
         msg: { type: string; actionId?: string; item?: NeedItem; keys?: string[]; all?: boolean; agentId?: string }
     ): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
+        // Opening another page or the agent's card happens in VS Code; from a phone that
+        // would open it on the PC, so a remote view does not (the phone's own nav is X-443).
+        if (this.host.remote && (msg.type === 'afnav' || msg.type === 'openGuide' || msg.type === 'openAgent')) { return; }
         if (msg.type === 'afnav') { handleAfNav((msg as { to?: unknown }).to); return; }
         if (msg.type === 'openGuide') {
             void vscode.commands.executeCommand('agentfarm.openGuide', 'onay-kuyrugu');
@@ -106,7 +109,7 @@ export class NeedsPanel {
     }
 
     private dispose(): void {
-        NeedsPanel.current = undefined;
+        if (NeedsPanel.current === this) { NeedsPanel.current = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

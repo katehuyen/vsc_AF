@@ -7,7 +7,7 @@
 import * as crypto from 'crypto';
 import { CONTRACT_VERSION, checkFrame, signedText } from '../contract';
 import type { FeatureAnswer } from '../features';
-import type { FarmIdentity, OpResult, RemoteCaller } from '../port';
+import type { FarmIdentity, OpResult, RemoteCaller, RemoteViewsPort } from '../port';
 import type { DeviceBook } from './devices';
 import type { EventFrame, EventLog } from './eventLog';
 
@@ -16,12 +16,8 @@ export interface Wire {
     close(code?: number): void;
 }
 
-/** Page frames go here (X-441/X-443); without it a page open is answered "unavailable". */
-export interface ViewSink {
-    open(caller: RemoteCaller, view: string, page: string, args: Record<string, unknown> | undefined, post: (message: unknown) => void): void;
-    message(view: string, message: unknown): void;
-    close(view: string): void;
-}
+/** Page frames go here (X-441); without it, or when it refuses, a page open is answered "unavailable". */
+export type ViewSink = Omit<RemoteViewsPort, 'page'>;
 
 export interface SessionDeps {
     farm: FarmIdentity;
@@ -80,7 +76,7 @@ export class RemoteSession {
             case 'call': void this.call(f.id as string, f.op as string, (f.args as Record<string, unknown>) ?? {}); return;
             case 'ping': this.frame({ kind: 'pong', ts: f.ts }); return;
             case 'view.open': this.openView(f.view as string, f.page as string, f.args as Record<string, unknown> | undefined); return;
-            case 'view.msg': if (this.views.has(f.view as string)) { this.d.views?.message(f.view as string, f.message); } return;
+            case 'view.msg': if (this.views.has(f.view as string)) { this.d.views?.message(this.caller, f.view as string, f.message); } return;
             case 'view.close': this.closeView(f.view as string); return;
         }
     }
@@ -135,13 +131,14 @@ export class RemoteSession {
     }
 
     private openView(view: string, page: string, args: Record<string, unknown> | undefined): void {
-        if (!this.d.views) { return this.frame({ kind: 'view.close', view, reason: 'unavailable' }); }
+        const opened = !!this.d.views
+            && this.d.views.open(this.caller!, view, page, args, message => this.frame({ kind: 'view.post', view, message }));
+        if (!opened) { return this.frame({ kind: 'view.close', view, reason: 'unavailable' }); }
         this.views.add(view);
-        this.d.views.open(this.caller!, view, page, args, message => this.frame({ kind: 'view.post', view, message }));
     }
 
     private closeView(view: string): void {
-        if (this.views.delete(view)) { this.d.views?.close(view); }
+        if (this.views.delete(view) && this.caller) { this.d.views?.close(this.caller, view); }
     }
 
     private frame(f: Record<string, unknown> | EventFrame): void { this.wire.send(JSON.stringify(f)); }

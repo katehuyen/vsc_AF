@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { HostWebview } from './panelHost';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
@@ -66,7 +67,7 @@ function currentA2A(): { notes: number; tasks: number } {
  * panel is gone, and the entry is dropped. (A future non-retained panel would
  * simply fall back to the old build-time snapshot, never to a broken page.)
  */
-const livePages = new Set<vscode.Webview>();
+const livePages = new Set<HostWebview>();
 
 /** The counts exactly as the webview sees them (window.__AFUI__). */
 function headerCounts(): { notices: { unread: number }; queue: { blocked: number }; a2a: { notes: number; tasks: number } } {
@@ -107,8 +108,8 @@ function pushAfui(afui: object): void {
  * (the session viewer does, per session) must keep the key its rows already
  * carry, and two windows of the same page must never answer for each other.
  */
-const ctxPanels = new Map<string, vscode.Webview>();
-const ctxKeys = new WeakMap<vscode.Webview, string>();
+const ctxPanels = new Map<string, HostWebview>();
+const ctxKeys = new WeakMap<HostWebview, string>();
 let ctxSeq = 0;
 
 /**
@@ -128,7 +129,7 @@ let ctxSeq = 0;
  * mint-once path as the right-click key, so a page that rebuilds its HTML does
  * not stack a second listener.
  */
-function wireClipboard(webview: vscode.Webview): void {
+function wireClipboard(webview: HostWebview): void {
     webview.onDidReceiveMessage((msg: { type?: string; token?: unknown; text?: unknown }) => {
         if (!msg || msg.type !== 'afClipboard') { return; }
         const token = msg.token;
@@ -137,6 +138,8 @@ function wireClipboard(webview: vscode.Webview): void {
             void Promise.resolve(webview.postMessage({ type: 'afClipboardDone', token, ok, error }))
                 .then(undefined, () => { /* page gone — nothing to tell */ });
         if (!text) { answer(false, 'Nothing to copy — that row does not carry it.'); return; }
+        // A phone's copy belongs on the phone; this host's clipboard is the PC's.
+        if (webview.remote) { answer(false, 'Copying from the phone is not available yet.'); return; }
         void vscode.env.clipboard.writeText(text).then(
             () => answer(true),
             () => answer(false, 'The clipboard refused that.'));
@@ -144,7 +147,7 @@ function wireClipboard(webview: vscode.Webview): void {
 }
 
 /** The key for this webview, minted once and stable for its lifetime. */
-function ctxKeyFor(webview: vscode.Webview, scriptFile: string): string {
+function ctxKeyFor(webview: HostWebview, scriptFile: string): string {
     const had = ctxKeys.get(webview);
     if (had) { ctxPanels.set(had, webview); return had; }
     wireClipboard(webview);
@@ -336,7 +339,7 @@ export function handleAfNav(to: unknown): void {
  * injected data object, shared chart helpers + a page script from /media.
  */
 export function htmlShell(
-    webview: vscode.Webview,
+    webview: HostWebview,
     extensionUri: vscode.Uri,
     title: string,
     data: unknown,
@@ -514,6 +517,8 @@ export function htmlShell(
     // M-53 — role slots: the step card's Role box and the workflow form's Roles box
     const roles = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRoles.js'));
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
+    // A served page's acquireVsCodeApi (X-443); inside VS Code it does nothing. First, before anything asks for it.
+    const remoteApi = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRemote.js'));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
     // picked up on the next page render. See src/core/speaker.ts.
@@ -542,6 +547,7 @@ export function htmlShell(
 </head>
 <body>
 ${bodyHtml}
+<script nonce="${nonce}" src="${remoteApi}"></script>
 <script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)}; window.__AFUI__ = ${jsonForScript(afui)};</script>
 <script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${header}"></script>
