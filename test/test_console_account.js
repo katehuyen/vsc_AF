@@ -441,7 +441,7 @@ async function main() {
         ok('‼️ the composer resolves the rule through the host before it starts the card',
             startAt > 0 && hostStart > startAt
             && /host\.pickAccount\(engine, started\.account, agent\.id, started\.model\)/.test(panel.slice(startAt, hostStart))
-            && /if \(pick\.refusal\) \{\s*void vscode\.window\.showWarningMessage/.test(panel.slice(startAt, hostStart)));
+            && /if \(pick\.refusal\) \{\s*void this\.surface\.ask\.warn/.test(panel.slice(startAt, hostStart)));
         ok('…and starts it on the SLOT, not on what the box said',
             /account: pick\.id \|\| undefined,/.test(panel.slice(hostStart, hostStart + 1500)));
         const ctor = ext.slice(ext.indexOf('new ConsoleHost('), ext.indexOf('new ConsoleHost(') + 6000);

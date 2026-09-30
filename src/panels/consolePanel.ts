@@ -1953,7 +1953,7 @@ export class ConsolePanel {
         // leaves the user looking at an unchanged panel with no way to tell
         // "nothing was attached" from "attached, and the panel never shows it".
         if (paths.length) {
-            void vscode.window.showWarningMessage(
+            void this.surface.ask.warn(
                 'Agent Farm: nothing could be attached from that — the files were not readable at those paths. '
                 + 'Use 📎 to pick them instead.');
         }
@@ -1983,7 +1983,7 @@ export class ConsolePanel {
             await fs.promises.writeFile(target, Buffer.from(base64, 'base64'));
             return target;
         } catch {
-            void vscode.window.showWarningMessage('Agent Farm: that dropped file could not be staged for sending.');
+            void this.surface.ask.warn('Agent Farm: that dropped file could not be staged for sending.');
             return undefined;
         }
     }
@@ -2123,7 +2123,7 @@ export class ConsolePanel {
                 // changed by `setIntent`; Send carries the text and the files.
                 const agent = this.agentById(this.composerAgent);
                 if (!agent) {
-                    void vscode.window.showWarningMessage('Agent Farm: pick an agent first.');
+                    void this.surface.ask.warn('Agent Farm: pick an agent first.');
                     return;
                 }
                 const d = this.deps.launchDefaults();
@@ -2137,7 +2137,7 @@ export class ConsolePanel {
                 const engine = this.chosenEngine().toLowerCase();
                 const refused = engineRefusal(this.engineList(), engine);
                 if (refused) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
+                    void this.surface.ask.warn(`Agent Farm: ${refused}`);
                     return;
                 }
                 /**
@@ -2192,7 +2192,7 @@ export class ConsolePanel {
                     ? host.pickAccount(engine, started.account, agent.id, started.model)
                     : { id: started.account ?? '', note: '' };
                 if (pick.refusal) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${pick.refusal}`);
+                    void this.surface.ask.warn(`Agent Farm: ${pick.refusal}`);
                     return;
                 }
                 // ‼️ X-109 R2 — the manifest, written before the process starts and
@@ -2284,7 +2284,7 @@ export class ConsolePanel {
                 // — asked for explicitly, because it stops a real process.
                 const leftover = this.deps.leftoverOwner(sessionId);
                 if (leftover) {
-                    const go = await vscode.window.showWarningMessage(
+                    const go = await this.surface.ask.warn(
                         `"${row.title}" is still running from an earlier window of Agent Farm (pid ${leftover.pid}) — nothing is reading it.`,
                         {
                             modal: true,
@@ -2294,7 +2294,7 @@ export class ConsolePanel {
                         'End it and continue here');
                     if (go !== 'End it and continue here') { return; }
                     if (!await this.deps.endLeftover(sessionId, leftover.pid)) {
-                        void vscode.window.showWarningMessage(
+                        void this.surface.ask.warn(
                             `Agent Farm: pid ${leftover.pid} is still holding that session — nothing was resumed. Stop it by hand and try again.`);
                         return;
                     }
@@ -2307,7 +2307,7 @@ export class ConsolePanel {
                     const where = owner.entrypoint === 'sdk-cli'
                         ? 'a program (a Console session or a headless run)'
                         : 'a terminal';
-                    const choice = await vscode.window.showWarningMessage(
+                    const choice = await this.surface.ask.warn(
                         `That session is open right now in ${where} (pid ${owner.pid}).\n\n` +
                         'Claude Code cannot join a running session: resuming it here would start a SECOND process on the same transcript. ' +
                         'Both would write to it and neither would see the other\'s turns — it would look like one conversation that nobody actually had.',
@@ -2502,13 +2502,13 @@ export class ConsolePanel {
                 // saying it into the running turn (see acceptUserText).
                 const r = host.send(str('id'), str('text'), msg.hold === true, attachmentsOf(msg));
                 if (!r) {
-                    void vscode.window.showWarningMessage(
+                    void this.surface.ask.warn(
                         'Agent Farm: that session has ended — start a new one to keep talking.');
                 } else if (r.refused) {
                     // The composer cleared itself the moment you pressed Send.
                     // A refusal therefore has to GIVE THE MESSAGE BACK — text
                     // and files — or the refusal costs you what you wrote.
-                    void vscode.window.showWarningMessage(`Agent Farm: ${r.refused}`);
+                    void this.surface.ask.warn(`Agent Farm: ${r.refused}`);
                     void this.surface.webview.postMessage({
                         type: 'restore',
                         text: str('text'),
@@ -2518,7 +2518,7 @@ export class ConsolePanel {
                 break;
             }
             case 'attachTooMany':
-                void vscode.window.showWarningMessage(
+                void this.surface.ask.warn(
                     `Agent Farm: ${ATTACH_LIMITS.count} files is the limit for one message — send the rest in another.`);
                 break;
             // ---- attachments -------------------------------------------------
@@ -2534,7 +2534,7 @@ export class ConsolePanel {
                     // Files it is, with the filter row a file dialog is expected
                     // to have; a FOLDER is attached by dropping it on the page
                     // (the drop path takes folders exactly as it always did).
-                    const picked = await vscode.window.showOpenDialog({
+                    const picked = await this.surface.ask.open({
                         canSelectMany: true, canSelectFiles: true, canSelectFolders: false,
                         openLabel: 'Attach',
                         title: 'Attach files to the message',
@@ -2572,7 +2572,7 @@ export class ConsolePanel {
             }
             case 'attachNothing':
                 // The drop landed, and carried nothing this panel can open.
-                void vscode.window.showWarningMessage(
+                void this.surface.ask.warn(
                     'Agent Farm: that drop carried no file — drag from the Explorer or a file manager, '
                     + 'or use 📎 to pick one.');
                 break;
@@ -2600,7 +2600,7 @@ export class ConsolePanel {
                     // write throws, but a payload that arrived empty warned
                     // about nothing at all).
                     if (files.length) {
-                        void vscode.window.showWarningMessage(
+                        void this.surface.ask.warn(
                             'Agent Farm: nothing could be attached from that — the dropped data was empty. '
                             + 'Use 📎 to pick the file instead.');
                     }
@@ -2622,14 +2622,14 @@ export class ConsolePanel {
             case 'stopTask': {
                 // S-62 — one background command, by the CLI's own task id
                 const r = host.stopTask(str('id'), str('taskId'));
-                if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: ${r.note}`); }
+                if (!r.ok) { void this.surface.ask.warn(`Agent Farm: ${r.note}`); }
                 break;
             }
             case 'setModel': {
                 // mid-session model switch — the CLI's own `/model`
                 const sid = str('id');
                 if (!host.setModel(sid, str('model'))) {
-                    void vscode.window.showWarningMessage(
+                    void this.surface.ask.warn(
                         'Agent Farm: that session cannot take a model change right now.');
                     break;
                 }
@@ -2651,7 +2651,7 @@ export class ConsolePanel {
             case 'setEffort':
                 // mid-session effort switch — the CLI's own `/effort`
                 if (!host.setEffort(str('id'), str('effort'))) {
-                    void vscode.window.showWarningMessage(
+                    void this.surface.ask.warn(
                         'Agent Farm: that session cannot take an effort change right now.');
                 }
                 break;
@@ -2667,7 +2667,7 @@ export class ConsolePanel {
             case 'setLiveAccount': {
                 const done = host.setAccount(str('id'), str('account'));
                 if (!done.ok && done.note) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${done.note}`);
+                    void this.surface.ask.warn(`Agent Farm: ${done.note}`);
                 }
                 this.refresh();
                 break;
@@ -2698,7 +2698,7 @@ export class ConsolePanel {
                     // A stale click: the CLI already took the question back, or
                     // it was answered from somewhere else. Say so — silence here
                     // reads as a dead button on a session that looks stuck.
-                    void vscode.window.showInformationMessage(
+                    void this.surface.ask.info(
                         'Agent Farm: that question is no longer waiting for an answer.');
                 }
                 break;
@@ -2740,7 +2740,7 @@ export class ConsolePanel {
                 if (got.reason !== undefined) {
                     // an empty reason is "you are at the start" — a fact, not
                     // something to open a dialog about
-                    if (got.reason) { void vscode.window.showInformationMessage(`Agent Farm: ${got.reason}`); }
+                    if (got.reason) { void this.surface.ask.info(`Agent Farm: ${got.reason}`); }
                     break;
                 }
                 host.prependHistory(id, got.head, got.rows);
@@ -2784,7 +2784,7 @@ export class ConsolePanel {
                 const chain = str('chainId');
                 if (!chain) { break; }
                 const n = this.deps.batonStopChain(chain);
-                void vscode.window.showInformationMessage(n
+                void this.surface.ask.info(n
                     ? `Agent Farm: baton chain ${chain} stopped — ${n} baton${n === 1 ? '' : 's'} recorded as stopped, no further leg opens.`
                     : `Agent Farm: nothing in baton chain ${chain} was still waiting — it had already ended.`);
                 this.refresh();
@@ -2795,8 +2795,8 @@ export class ConsolePanel {
                 const s = host.get(str('id'));
                 if (!s?.sessionId || !this.deps.batonLastLeg) { break; }
                 const r = this.deps.batonLastLeg(s.sessionId, msg.on === true);
-                void (r.ok ? vscode.window.showInformationMessage(`Agent Farm: ${r.sentence}`)
-                    : vscode.window.showWarningMessage(`Agent Farm: ${r.why}`));
+                void (r.ok ? this.surface.ask.info(`Agent Farm: ${r.sentence}`)
+                    : this.surface.ask.warn(`Agent Farm: ${r.why}`));
                 this.refresh();
                 break;
             }
@@ -2812,8 +2812,8 @@ export class ConsolePanel {
                 const s = host.get(str('id'));
                 if (!s?.sessionId || !this.deps.batonAttach) { break; }
                 const r = await this.deps.batonAttach(s.sessionId, str('account'), msg.maxHops);
-                void (r.ok ? vscode.window.showInformationMessage(`Agent Farm: ${r.sentence}`)
-                    : vscode.window.showWarningMessage(`Agent Farm: ${r.why}`));
+                void (r.ok ? this.surface.ask.info(`Agent Farm: ${r.sentence}`)
+                    : this.surface.ask.warn(`Agent Farm: ${r.why}`));
                 this.refresh();
                 break;
             }
@@ -2824,7 +2824,7 @@ export class ConsolePanel {
                 if (!s || !text) { break; }
                 const r = host.send(s.id, text);
                 if (!r || r.refused) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${r?.refused || 'that session has ended — there is no run to pass from.'}`);
+                    void this.surface.ask.warn(`Agent Farm: ${r?.refused || 'that session has ended — there is no run to pass from.'}`);
                 }
                 break;
             }
@@ -2848,7 +2848,7 @@ export class ConsolePanel {
                 // right CLI.
                 const engine = row?.source
                     ?? this.deps.host.list().find(h => h.sessionId === sessionId)?.engine;
-                void vscode.window.showInformationMessage(`Agent Farm: ${noTranscriptNote(engine)}`);
+                void this.surface.ask.info(`Agent Farm: ${noTranscriptNote(engine)}`);
                 break;
             }
             case 'openGuide':

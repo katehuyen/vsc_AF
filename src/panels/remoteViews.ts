@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { HostWebview, PanelHost } from './panelHost';
+import { RemoteAsk, type PanelAsk } from './panelAsk';
 
 /**
  * X-441 — THE FARM'S PAGES ON A PHONE. Each view a phone opens is a panel
@@ -90,10 +91,14 @@ class RemoteView implements PanelHost {
     private readonly disposed = new vscode.EventEmitter<void>();
     readonly onDidDispose = this.disposed.event;
     readonly onDidChangeViewState: vscode.Event<unknown> = () => ({ dispose: () => undefined });
+    readonly asker: RemoteAsk;
+    readonly ask: PanelAsk;
     private closed = false;
 
     constructor(readonly page: string, readonly spec: RemotePage, media: vscode.Uri, post: (message: unknown) => void) {
         this.webview = new RemoteWebview(media, post);
+        this.asker = new RemoteAsk(m => { void this.webview.postMessage(m); });
+        this.ask = this.asker;
     }
 
     /** A phone shows one view at a time; there is nothing to bring forward. */
@@ -102,6 +107,7 @@ class RemoteView implements PanelHost {
     dispose(): void {
         if (this.closed) { return; }
         this.closed = true;
+        this.asker.end();
         this.webview.end();
         this.disposed.fire();
         this.disposed.dispose();
@@ -133,7 +139,13 @@ export class RemoteViews {
     message(caller: ViewCaller, view: string, message: unknown): void {
         const host = this.views.get(keyOf(caller, view));
         if (!host) { return; }
-        const need = messageScope(host.spec, String((message as { type?: unknown } | null)?.type ?? ''));
+        const type = String((message as { type?: unknown } | null)?.type ?? '');
+        // The answer to the host's own question (X-447): settled here, never the page's message.
+        if (type === 'afAskAnswer') {
+            if (this.d.atLeast(caller.scope, host.spec.open)) { host.asker.answer(message); }
+            return;
+        }
+        const need = messageScope(host.spec, type);
         if (need === null || !this.d.atLeast(caller.scope, need)) { return; }
         host.webview.receive(message);
     }

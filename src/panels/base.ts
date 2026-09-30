@@ -520,6 +520,8 @@ export function htmlShell(
     const roles = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRoles.js'));
     // U-176 — the phone layer: bottom tab bar and long-press sheets on a touch screen, nothing under a mouse.
     const mobile = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afMobile.js'));
+    // X-447 — a host's questions asked on the phone that is looking (sheets over afMobile.js).
+    const ask = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAsk.js'));
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // A served page's acquireVsCodeApi (X-443); inside VS Code it does nothing. First, before anything asks for it.
     const remoteApi = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRemote.js'));
@@ -610,6 +612,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${roles}"></script>
 <script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${mobile}"></script>
+<script nonce="${nonce}" src="${ask}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

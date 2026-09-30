@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { desktopAsk, type PanelAsk } from './panelAsk';
 
 /**
  * X-441 — THE SURFACE A PAGE IS DRAWN ON. A panel knows this, never
@@ -34,6 +35,8 @@ export interface PanelHost {
     readonly onDidDispose: vscode.Event<void>;
     /** A tab going behind another one or coming back; a phone's view never fires it. */
     readonly onDidChangeViewState: vscode.Event<unknown>;
+    /** Messages, confirmations, picks and typed answers — asked of whoever is looking (X-447). */
+    readonly ask: PanelAsk;
     dispose(): void;
 }
 
@@ -61,6 +64,7 @@ export function desktopHost(tab: DesktopTab): PanelHost {
         reveal: () => panel.reveal(),
         onDidDispose: (listener, thisArgs?, bag?) => panel.onDidDispose(listener, thisArgs, bag),
         onDidChangeViewState: (listener, thisArgs?, bag?) => panel.onDidChangeViewState(listener, thisArgs, bag),
+        ask: desktopAsk(),
         dispose: () => panel.dispose()
     };
 }

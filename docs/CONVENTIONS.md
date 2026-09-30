@@ -817,6 +817,16 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   row into a flex box by accident; a VS Code
   tab under a mouse is never in phone mode, however narrow —
   `test_mobile_layer.js` measures both.
+- **‼️ A PAGE ON THE PANEL HOST ASKS ITS HOST, NEVER `vscode.window` (X-447).**
+  A message, confirmation, pick, typed answer or file dialog a panel shows is
+  `this.surface.ask.warn / info / error / pick / input / open` — the same
+  signatures as `vscode.window.show…` (`src/panels/panelAsk.ts`). On a desktop
+  tab it IS `vscode.window`, argument for argument; on a phone's view it is a
+  sheet or a toast there (`media/afAsk.js`), the answer comes back as
+  `afAskAnswer` (settled by `RemoteViews`, never the page's message), a closed
+  view answers `undefined`, and a PC file dialog is refused aloud. Without it a
+  phone's tap opened a modal on the PC that waited for nobody.
+  `test_panel_ask.js` holds the hosted panels to it.
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes

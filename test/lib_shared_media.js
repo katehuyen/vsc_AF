@@ -157,7 +157,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).
     'afSupervisorStrip.js',
     // afMobile.js — the phone layer (U-176): bottom tab bar, Menu sheet, long-press AFTip sheet.
-    'afMobile.js'];
+    'afMobile.js',
+    // afAsk.js — a host's questions as phone sheets and toasts (X-447).
+    'afAsk.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];
