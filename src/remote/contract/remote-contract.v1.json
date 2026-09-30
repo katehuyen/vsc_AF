@@ -1,0 +1,137 @@
+{
+  "contract": "agentfarm.remote",
+  "version": 1,
+  "notation": "A field type is string | number | boolean | object | array | any; a trailing ? marks it optional.",
+  "transport": {
+    "health": "GET /health — no auth; answers { ok, farm: { id, name }, contract }",
+    "pair": "POST /pair — body is a pair.request, answer is a pair.response or { error }",
+    "socket": "GET /ws — WebSocket upgrade; every message is one JSON frame with a `kind`",
+    "tls": "The host serves its own certificate; the client pins the SHA-256 fingerprint it read from the pairing URI and never trusts any other.",
+    "signature": "ECDSA P-256 with SHA-256 (DER), over the UTF-8 text `agentfarm.remote/1|<farm id>|<device id>|<nonce>`; the device public key is X.509 SubjectPublicKeyInfo DER, base64."
+  },
+  "pairing": {
+    "uri": "agentfarm://pair?v=1&farm=<farm id>&name=<farm name>&code=<one-time code>&fp=<sha256 hex>&a=<host:port>[,<host:port>…]",
+    "uriFields": { "v": "number", "farm": "string", "name": "string", "code": "string", "fp": "string", "a": "string" },
+    "request": {
+      "fields": { "code": "string", "name": "string", "publicKey": "string", "platform": "string", "app": "string" },
+      "example": { "code": "7Q2M-9KXD", "name": "Pixel 8", "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE", "platform": "android 14", "app": "0.2.0-b12" }
+    },
+    "response": {
+      "fields": { "device": "string", "farm": "object", "scope": "string" },
+      "example": { "device": "dev_k3m9x2", "farm": { "id": "farm_7f3a", "name": "Masaüstü" }, "scope": "manage" }
+    }
+  },
+  "scopes": ["read", "answer", "manage", "admin"],
+  "features": ["remote.access", "remote.control", "remote.devices", "remote.voice", "remote.share", "remote.wake"],
+  "frames": {
+    "challenge": {
+      "from": "host",
+      "fields": { "nonce": "string", "farm": "object", "contract": "number" },
+      "example": { "kind": "challenge", "nonce": "b64:Zm9vYmFy", "farm": { "id": "farm_7f3a", "name": "Masaüstü" }, "contract": 1 }
+    },
+    "hello": {
+      "from": "client",
+      "fields": { "device": "string", "contract": "number", "signature": "string", "resumeAfter": "number?" },
+      "example": { "kind": "hello", "device": "dev_k3m9x2", "contract": 1, "signature": "MEUCIQ", "resumeAfter": 41 }
+    },
+    "welcome": {
+      "from": "host",
+      "fields": { "farm": "object", "device": "string", "scope": "string", "features": "object", "lastSeq": "number" },
+      "example": { "kind": "welcome", "farm": { "id": "farm_7f3a", "name": "Masaüstü" }, "device": "dev_k3m9x2", "scope": "manage", "features": { "remote.access": { "allowed": true } }, "lastSeq": 57 }
+    },
+    "refuse": {
+      "from": "host",
+      "fields": { "reason": "string", "detail": "string?", "minContract": "number?" },
+      "reasons": ["unknown-device", "revoked", "bad-signature", "contract", "not-allowed", "busy"],
+      "example": { "kind": "refuse", "reason": "contract", "detail": "this farm speaks contract 2", "minContract": 2 }
+    },
+    "event": {
+      "from": "host",
+      "fields": { "seq": "number", "type": "string", "ts": "number", "data": "object" },
+      "example": { "kind": "event", "seq": 58, "type": "ask.opened", "ts": 1790760000000, "data": { "session": "4f567a07", "agent": "developer", "askId": "q1", "question": "Hangisi?", "options": [{ "label": "A" }, { "label": "B" }] } }
+    },
+    "gap": {
+      "from": "host",
+      "fields": { "from": "number", "to": "number" },
+      "example": { "kind": "gap", "from": 12, "to": 40 }
+    },
+    "call": {
+      "from": "client",
+      "fields": { "id": "string", "op": "string", "args": "object?" },
+      "example": { "kind": "call", "id": "c_01J9Z8Q2", "op": "console.answer", "args": { "session": "4f567a07", "answer": "A" } }
+    },
+    "result": {
+      "from": "host",
+      "fields": { "id": "string", "ok": "boolean", "result": "any?", "error": "string?", "duplicate": "boolean?" },
+      "example": { "kind": "result", "id": "c_01J9Z8Q2", "ok": true, "result": { "answered": true } }
+    },
+    "view.open": {
+      "from": "client",
+      "fields": { "view": "string", "page": "string", "args": "object?" },
+      "example": { "kind": "view.open", "view": "v1", "page": "now" }
+    },
+    "view.post": {
+      "from": "host",
+      "fields": { "view": "string", "message": "any" },
+      "example": { "kind": "view.post", "view": "v1", "message": { "type": "state", "rows": [] } }
+    },
+    "view.msg": {
+      "from": "client",
+      "fields": { "view": "string", "message": "any" },
+      "example": { "kind": "view.msg", "view": "v1", "message": { "type": "refresh" } }
+    },
+    "view.close": {
+      "from": "either",
+      "fields": { "view": "string", "reason": "string?" },
+      "example": { "kind": "view.close", "view": "v1" }
+    },
+    "ping": {
+      "from": "either",
+      "fields": { "ts": "number" },
+      "example": { "kind": "ping", "ts": 1790760000000 }
+    },
+    "pong": {
+      "from": "either",
+      "fields": { "ts": "number" },
+      "example": { "kind": "pong", "ts": 1790760000000 }
+    }
+  },
+  "events": {
+    "needs.changed": {
+      "fields": { "count": "number", "top": "object?" },
+      "example": { "count": 2, "top": { "kind": "permission", "title": "developer: Bash" } }
+    },
+    "ask.opened": {
+      "fields": { "session": "string", "agent": "string", "askId": "string", "question": "string", "options": "array" },
+      "example": { "session": "4f567a07", "agent": "developer", "askId": "q1", "question": "Hangisi?", "options": [{ "label": "A" }, { "label": "B" }] }
+    },
+    "permission.opened": {
+      "fields": { "session": "string", "agent": "string", "permId": "string", "tool": "string", "summary": "string" },
+      "example": { "session": "4f567a07", "agent": "developer", "permId": "p1", "tool": "Bash", "summary": "git status" }
+    },
+    "turn.finished": {
+      "fields": { "session": "string", "agent": "string", "title": "string", "summary": "string" },
+      "example": { "session": "4f567a07", "agent": "developer", "title": "ANDROID", "summary": "Sözleşme yazıldı." }
+    },
+    "notice.posted": {
+      "fields": { "id": "string", "title": "string", "level": "number", "agent": "string" },
+      "example": { "id": "n_12", "title": "Rapor hazır", "level": 2, "agent": "developer" }
+    },
+    "quota.warn": {
+      "fields": { "engine": "string", "percent": "number", "window": "string" },
+      "example": { "engine": "claude", "percent": 91, "window": "5h" }
+    },
+    "session.ended": {
+      "fields": { "session": "string", "agent": "string" },
+      "example": { "session": "4f567a07", "agent": "developer" }
+    }
+  },
+  "rules": [
+    "The host speaks first on /ws with a challenge; the client answers hello; nothing else is accepted before welcome.",
+    "A client ignores an event type it does not know; a host refuses a frame kind it does not know with result ok:false (for call) or by dropping it (otherwise).",
+    "Every call carries an id the client generated. A host that has already answered that id answers again with the stored result and duplicate:true, and never runs the op twice.",
+    "Event seq numbers only grow. hello.resumeAfter asks for every event after that seq; when they are no longer kept the host sends one gap frame, then the rest.",
+    "A contract version the other side does not speak ends the socket with refuse reason contract, naming the version it needs.",
+    "Secrets never travel: no frame carries a secret value, only whether one exists."
+  ]
+}
