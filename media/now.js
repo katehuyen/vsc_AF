@@ -126,6 +126,7 @@
         document.getElementById('app').innerHTML = `
             <style>
                 #app { padding-bottom:84px; }
+                html.af-phone .nw-box { border-bottom:1px solid var(--vscode-panel-border); }
                 .nw-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px; margin-top:10px; }
                 .nw-card { border:1px solid var(--vscode-panel-border); border-radius:6px; padding:8px 10px; min-width:0; }
                 .nw-h { display:block; font-weight:600; margin-bottom:6px; text-decoration:none; color:inherit; }
@@ -155,7 +156,7 @@
                 .nw-qf.hot { background:var(--vscode-charts-red, #d33); }
                 .nw-qp { width:58px; text-align:right; }
                 .nw-empty { margin:4px 0; }
-                .nw-box { position:fixed; left:0; right:0; bottom:0; padding:8px 12px; background:var(--vscode-editor-background);
+                .nw-box { position:fixed; left:0; right:0; bottom:var(--af-bottom, 0px); padding:8px 12px; background:var(--vscode-editor-background);
                     border-top:1px solid var(--vscode-panel-border); }
                 .nw-boxrow { display:flex; gap:6px; align-items:flex-end; }
                 .nw-boxrow select { max-width:34%; min-height:32px; }

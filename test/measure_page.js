@@ -24,6 +24,7 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 const { headlessFlags, sweepAndReport } = require('./headless_chrome');
+const { FRAME, phoneSize, phoneWrap, windowSize } = require('./phone_frame');
 
 const ROOT = path.resolve(__dirname, '..');
 const RENDER = path.join(ROOT, 'dist', 'render');
@@ -50,7 +51,7 @@ function main() {
     const name = args[0];
     let expr = args[1];
     if (!name || !expr) {
-        console.log('usage: node test/measure_page.js <fixture> "<js expression>|@file.js" [--width N] [--light]');
+        console.log('usage: node test/measure_page.js <fixture> "<js expression>|@file.js" [--width N] [--light] [--phone [land]]');
         return;
     }
     // ‼️ THE SHELL EATS THE EXPRESSION BEFORE THIS FILE SEES IT. A measurement
@@ -80,18 +81,25 @@ function main() {
     // runs after the page's own, replaces the document with its answer, and the
     // dump is then just that answer.
     const MARK = 'AF-MEASURE';
+    const phone = phoneSize(args);
+    // ‼️ U-176 — on a phone the expression runs INSIDE the phone-sized frame
+    // (its window, its document, its innerWidth); the parent only carries the answer.
+    const evaluate = phone
+        ? 'document.getElementById("' + FRAME + '").contentWindow.eval(' + JSON.stringify('(' + expr + ')') + ')'
+        : '(' + expr + ')';
     const probe = '<script>window.addEventListener("load",function(){var out;'
-        + 'try{out=JSON.stringify((' + expr + '),null,1);}catch(e){out="ERROR: "+e.message;}'
+        + 'try{out=JSON.stringify(' + evaluate + ',null,1);}catch(e){out="ERROR: "+e.message;}'
         + 'document.documentElement.innerHTML="<pre id=\\"' + MARK + '\\"></pre>";'
         + 'document.getElementById("' + MARK + '").textContent=out;});</script>';
     const tmp = path.join(RENDER, `.measure-${name}.html`);
-    fs.writeFileSync(tmp, fs.readFileSync(html, 'utf8') + probe, 'utf8');
+    const page = fs.readFileSync(html, 'utf8');
+    fs.writeFileSync(tmp, phone ? phoneWrap(page, phone, probe, name) : page + probe, 'utf8');
 
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-measure-'));
     try {
         // ‼️ X-311 — the flags live in ONE file (test/headless_chrome.js).
         const dom = execFileSync(browser(), headlessFlags(profile).concat([
-            `--window-size=${width},2400`,
+            phone ? windowSize(phone) : `--window-size=${width},2400`,
             '--virtual-time-budget=4000',
             '--dump-dom',
             'file:///' + tmp.replace(/\\/g, '/')

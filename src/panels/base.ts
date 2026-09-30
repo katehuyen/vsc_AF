@@ -4,6 +4,7 @@ import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
 import { quotaStyleCss } from '../core/quotaStyle';
+import { ctxPageActions } from '../core/ctxmenu';
 import {
     parseChatId, telegramCard, TelegramCard, TelegramSnapshot
 } from '../core/telegramCockpit';
@@ -517,6 +518,8 @@ export function htmlShell(
     const brand = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afBrand.js'));
     // M-53 — role slots: the step card's Role box and the workflow form's Roles box
     const roles = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRoles.js'));
+    // U-176 — the phone layer: bottom tab bar and long-press sheets on a touch screen, nothing under a mouse.
+    const mobile = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afMobile.js'));
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // A served page's acquireVsCodeApi (X-443); inside VS Code it does nothing. First, before anything asks for it.
     const remoteApi = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRemote.js'));
@@ -531,7 +534,11 @@ export function htmlShell(
         // Where a right-click on this page's rows posts back to (media/afCtx.js).
         ctxPanel: ctxKeyFor(webview, scriptFile),
         // The running build, for the header's version stamp (U-147).
-        version: runningVersion
+        version: runningVersion,
+        // Drawn on a phone through the remote host (media/afMobile.js reads it).
+        remote: webview.remote === true,
+        // …and there a long press offers the row's page actions (a desktop tab has VS Code's menu).
+        ...(webview.remote === true ? { ctxMenu: ctxPageActions() } : {})
     };
     // This page is now live: it must receive count changes for as long as it exists.
     livePages.add(webview);
@@ -602,6 +609,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${brand}"></script>
 <script nonce="${nonce}" src="${roles}"></script>
 <script nonce="${nonce}" src="${svStrip}"></script>
+<script nonce="${nonce}" src="${mobile}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>

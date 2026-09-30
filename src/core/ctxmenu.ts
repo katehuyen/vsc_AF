@@ -1749,6 +1749,24 @@ export function ctxForSection(
         .sort((a, b) => a.group.localeCompare(b.group));
 }
 
+/**
+ * U-176 — what a phone's long press offers: the PAGE actions only, each with
+ * its when clause for the page to judge against the row. They run the page's
+ * own function (relayed as afctx on the phone itself), so whatever they then
+ * send is judged by the page's phone rule; a host command would run on the PC
+ * and stays there.
+ */
+export function ctxPageActions(): { title: string; act: string; when: string; group: string; menu?: string }[] {
+    const subLabel = new Map(CTX_SUBMENUS.map(s => [s.id, s.label]));
+    return CTX_ITEMS
+        .filter(i => i.id && i.act)
+        .map(i => ({
+            title: i.title || i.id || '', act: i.act || '', when: i.when, group: i.group,
+            ...(i.menu ? { menu: subLabel.get(i.menu) || i.menu } : {})
+        }))
+        .sort((a, b) => a.group.localeCompare(b.group));
+}
+
 /** Every page action, as the host needs to register it. */
 export function ctxRelays(): { command: string; act: string; title: string }[] {
     const seen = new Set<string>();

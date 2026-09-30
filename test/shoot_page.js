@@ -37,6 +37,8 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 const { headlessFlags, sweepAndReport } = require('./headless_chrome');
+const { phoneSize, phoneWrap, windowSize } = require('./phone_frame');
+const { crop } = require('./crop_png');
 
 const ROOT = path.resolve(__dirname, '..');
 const RENDER = path.join(ROOT, 'dist', 'render');
@@ -162,11 +164,34 @@ function run(bin, args) {
     return execFileSync(bin, args, { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+/**
+ * ‼️ X-311 — the flags live in ONE file; a fresh profile launched without
+ * them installs the machine's external extensions into %TEMP% on every run.
+ * `--scale N` shoots at N device pixels per CSS pixel, for test/crop_png.js
+ */
+function flagsFor(profile, scale) {
+    return headlessFlags(profile).map(f => (scale > 1 && f.startsWith('--force-device-scale-factor=')
+        ? '--force-device-scale-factor=' + scale : f));
+}
+
+/** U-176 — the phone's SCREEN (360×800, or 800×360 with `--phone land`), not the whole page. */
+function shootPhone(common, url, png, scene, scale, size) {
+    try {
+        run(browser(), common.concat([windowSize(size), '--virtual-time-budget=4000', `--screenshot=${png}`, url]));
+    } catch (e) {
+        if (!fs.existsSync(png)) { throw e; }
+    }
+    // the window is at least MIN_WINDOW wide; the frame is the phone
+    crop(png, [0, 0, size.w * scale, size.h * scale], png);
+    console.log(png);
+    console.log(`${size.w}×${size.h} ${size.tag}${scene > 0 ? ` · scene ${scene}` : ''} — the screen as the phone shows it; what is below is scrolled away`);
+}
+
 function main() {
     const args = process.argv.slice(2);
     const name = args[0];
     if (!name || name.startsWith('--')) {
-        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light] [--scene N] [--scenes] [--scale N]');
+        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light] [--scene N] [--scenes] [--scale N] [--phone [land]]');
         return;
     }
     const wIdx = args.indexOf('--width');
@@ -228,17 +253,16 @@ function main() {
         process.exitCode = 1;
         return;
     }
-    const png = html.replace(/\.html$/, `${scene > 0 ? `.s${scene}` : ''}.png`);
+    const phone = phoneSize(args);
+    const png = html.replace(/\.html$/, `${scene > 0 ? `.s${scene}` : ''}${phone ? '.' + phone.tag : ''}.png`);
     const tmp = path.join(RENDER, `.shoot-${name}${light ? '.light' : ''}.html`);
-    fs.writeFileSync(tmp, instrument(fs.readFileSync(html, 'utf8'), scene), 'utf8');
+    const page = instrument(fs.readFileSync(html, 'utf8'), scene);
+    fs.writeFileSync(tmp, phone ? phoneWrap(page, phone, '', name) : page, 'utf8');
     const url = 'file:///' + tmp.replace(/\\/g, '/');
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-shoot-'));
-    // ‼️ X-311 — the flags live in ONE file; a fresh profile launched without
-    // them installs the machine's external extensions into %TEMP% on every run.
-    // `--scale N` shoots at N device pixels per CSS pixel, for test/crop_png.js
-    const common = headlessFlags(profile).map(f => (scale > 1 && f.startsWith('--force-device-scale-factor=')
-        ? '--force-device-scale-factor=' + scale : f));
+    const common = flagsFor(profile, scale);
     try {
+        if (phone) { shootPhone(common, url, png, scene, scale, phone); return; }
         // PASS 1 — ask the laid-out page how tall it is and what its scenes are
         // called. Failing here is never silent: it falls back to the old fixed
         // height AND says that anything below it is not in the picture.

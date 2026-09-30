@@ -791,6 +791,32 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   answered from it. `--scale N` shoots at N device pixels per CSS pixel and
   `node test/crop_png.js <png> x,y,w,h` cuts the row out (box in the PNG's own
   pixels; no dependencies).
+- **‼️ A PHONE IS `--phone`, NEVER `--width 360` (U-176).** Headless Chrome will
+  not lay a page out below 500px: `--width 360` is widened without a word, and
+  the picture is a 500px layout cut down its right side — every narrow rule
+  untested in a picture that looks like a phone (measured on the Now page:
+  `innerWidth` 500). `--phone` draws the page in a 360×800 same-origin frame
+  (`--phone land` = 800×360), on both `shoot_page.js` (the SCREEN, cropped to
+  the frame) and `measure_page.js` (the expression runs inside the frame).
+  `test/phone_frame.js` is the one place the sizes live; `test_phone_frame.js`
+  measures 360 inside the frame and more than 360 outside it.
+- **THE PHONE LAYER is `media/afMobile.js` (U-176), shipped to every page.** A
+  page on a phone (the remote host's view — `__AFUI__.remote` — or a coarse
+  pointer) and narrower than 600px gets `html.af-phone`: the header's nav steps
+  aside for a bottom tab bar (Now · Console · Sessions · Tasks · Menu) and a
+  long press on an AFTip opens it whole in a bottom sheet; a long press on a row
+  with a right-click menu opens its PAGE actions (`ctxPageActions`, when clauses
+  judged against the row, a pick relayed as `afctx` — host commands stay on the
+  PC). A page adapts under `html.af-phone …` rules in its own stylesheet (a
+  row's buttons under its text, a fixed box above `var(--af-bottom)`); a dense
+  table becomes cards by MARKUP, not by its own CSS — `data-afcards` on the
+  table, `data-afcardhead` on the header row, `data-afcard` on a row,
+  `data-lead` on the cell that heads the card, `data-first` on its controls,
+  `data-label` on every figure (nothing is dropped; the sessions table is the
+  model) — so `test_table_row_display.js` still catches a class that turns a
+  row into a flex box by accident; a VS Code
+  tab under a mouse is never in phone mode, however narrow —
+  `test_mobile_layer.js` measures both.
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes

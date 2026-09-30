@@ -56,7 +56,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 // ---------- the host side: the manifest, once, into every page ----------
 {
     const base = read('src/panels/base.ts');
-    ok('the shell hands the running version to every page', /version: runningVersion\r?\n/.test(base));
+    ok('the shell hands the running version to every page', /version: runningVersion,?\r?\n/.test(base));
     const ext = read('src/extension.ts');
     ok('activate reads it from the extension\'s own manifest, not from a constant',
         /setRunningVersion\(String\(\(context\.extension\?\.packageJSON as \{ version\?: string \} \| undefined\)\?\.version \?\? ''\)\);/.test(ext));

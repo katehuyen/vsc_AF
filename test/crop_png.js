@@ -82,13 +82,19 @@ function main() {
         console.log('usage: node test/crop_png.js <in.png> x,y,w,h [out.png]');
         return;
     }
-    const img = decode(fs.readFileSync(input));
-    let [x, y, w, h] = box.split(',').map(Number);
-    x = Math.max(0, Math.min(x, img.w - 1)); y = Math.max(0, Math.min(y, img.h - 1));
-    w = Math.min(w, img.w - x); h = Math.min(h, img.h - y);
     const out = output || input.replace(/\.png$/i, '') + '.crop.png';
-    fs.writeFileSync(out, encode(img, x, y, w, h));
-    console.log(`${path.relative(process.cwd(), out)} · ${w}×${h} of ${img.w}×${img.h}`);
+    const r = crop(input, box.split(',').map(Number), out);
+    console.log(`${path.relative(process.cwd(), out)} · ${r.w}×${r.h} of ${r.of}`);
 }
 
-main();
+/** Cut [x, y, w, h] (the PNG's own pixels, clamped to it) out of `input` into `out`. */
+function crop(input, [x, y, w, h], out) {
+    const img = decode(fs.readFileSync(input));
+    x = Math.max(0, Math.min(x, img.w - 1)); y = Math.max(0, Math.min(y, img.h - 1));
+    w = Math.min(w, img.w - x); h = Math.min(h, img.h - y);
+    fs.writeFileSync(out, encode(img, x, y, w, h));
+    return { w, h, of: `${img.w}×${img.h}` };
+}
+
+if (require.main === module) { main(); }
+module.exports = { crop };

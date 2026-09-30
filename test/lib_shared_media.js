@@ -155,7 +155,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afRoles.js — role slots: the step card's Role box, the workflow form's Roles box (M-53).
     'afRoles.js',
     // afSupervisorStrip.js — one row per checkpoint visit: the Live Timeline strip, a run row's badge (U-153).
-    'afSupervisorStrip.js'];
+    'afSupervisorStrip.js',
+    // afMobile.js — the phone layer (U-176): bottom tab bar, Menu sheet, long-press AFTip sheet.
+    'afMobile.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];

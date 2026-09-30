@@ -355,7 +355,7 @@ const mkRow = (i, extra) => Object.assign({
     ok('a relay row draws ⑂ 2 and opens the chain in the rich panel',
         cells().length === 2 && /class="chaincell af-tipw"/.test(cells()[0]) && />⑂ 2</.test(cells()[0])
         && cells()[0].includes('Baton relay — leg 2') && cells()[0].includes('Predecessor: session aaaa1111'));
-    ok('…and a row no baton touched is a blank cell, no panel', cells()[1] === '<td class="chaincell"></td>');
+    ok('…and a row no baton touched is a blank cell, no panel', cells()[1] === '<td class="chaincell" data-col="chain"></td>');
 }
 
 // ---------- S-17: the TURN rows are where the detail actually lives ----------

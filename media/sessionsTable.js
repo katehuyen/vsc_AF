@@ -407,7 +407,16 @@
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         /* figures are never wrapped: the widths above already carry them */
         table.sesstable td.num, table.sesstable th.num { white-space:nowrap; }
+        /* U-176 — on a phone a row is a card (media/afMobile.js, table[data-afcards]) */
+        html.af-phone .turnmini { min-width:0; width:100%; }
     </style>`;
+
+    /** A cell carries its column (and, for a figure, the column's name) so a phone can draw the row as a card. */
+    const UNLABELLED = { title: 1, agent: 1, engine: 1, origin: 1, chain: 1, project: 1 };
+    function tagCell(html, col, head) {
+        const label = UNLABELLED[col] ? '' : String(head || '').replace(/<[^>]*>/g, '').replace(/&[#\w]+;/g, '').trim();
+        return String(html).replace(/^(\s*<td\b[^>]*)>/, `$1 data-col="${col}"${col === 'title' ? ' data-lead' : ''}${label ? ` data-label="${label.replace(/"/g, '')}"` : ''}>`);
+    }
 
     function relTime(ts) {
         if (!ts) return 'never';
@@ -1502,15 +1511,15 @@
                 const pin = r.pinned
                     ? ' pinned' + (shown[ri + 1] && shown[ri + 1].pinned ? '' : ' lastpin')
                     : '';
-                return `<tr class="click sessrow${pin}${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}"
+                return `<tr class="click sessrow${pin}${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}" data-afcard
                     ${window.AFSessionCtx.row(r, on ? bulkContext(chosen) : undefined)}
                     title="${tail}">
-                    <td class="selcell"><input type="checkbox" data-sel="${C.esc(r.file)}"${on ? ' checked' : ''}
+                    <td class="selcell" data-first><input type="checkbox" data-sel="${C.esc(r.file)}"${on ? ' checked' : ''}
                         title="Select this session — shift-click for a range, then right-click any selected row"></td>
-                    <td class="foldcell"><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
-                    <td class="pincell"><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
-                    ${cols.map(c => CELL[c](r)).join('')}
-                </tr>` + (o ? `<tr class="sessturns"><td colspan="3"></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
+                    <td class="foldcell" data-first><button class="fold" data-fold="${C.esc(r.file)}" title="${o ? 'Hide' : 'List'} this session's turns">${o ? '▾' : '▸'}</button></td>
+                    <td class="pincell" data-first><button class="pinbtn${r.pinned ? ' on' : ''}" data-pin="${C.esc(r.sessionId || '')}" data-pinned="${r.pinned ? '1' : '0'}" title="${r.pinned ? 'Pinned — click to take it off your shelf' : 'Pin this session to your shelf (always listed first)'}">${r.pinned ? '★' : '☆'}</button></td>
+                    ${cols.map(c => tagCell(CELL[c](r), c, HEAD[c])).join('')}
+                </tr>` + (o ? `<tr class="sessturns" data-afcardmore><td colspan="3" data-first></td><td colspan="${cols.length}">${turnPanelHtml(r)}</td></tr>` : '');
             }).join('');
             const allOn = shown.length > 0 && chosen.length === shown.length;
             return `${STYLE}
@@ -1536,9 +1545,9 @@
             </div>
             ${filterPanelHtml()}
             ${selBarHtml(chosen)}
-            <div class="tablewrap"><table class="sesstable">
+            <div class="tablewrap"><table class="sesstable" data-afcards>
                 ${colgroupHtml(cols)}
-                <tr>
+                <tr data-afcardhead>
                     <th class="selcell"><input type="checkbox" class="af-selall"${allOn ? ' checked' : ''}
                         title="${allOn ? 'Clear the selection' : 'Select every session listed here'}"></th>
                     <th></th>

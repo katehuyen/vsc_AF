@@ -336,6 +336,8 @@
      * }
      */
     function html(o) {
+        // U-176 — the phone's tab bar marks the page it is on
+        if (window.AFMobile) { window.AFMobile.page(o.page); }
         const cluster = [];
         for (const n of NAV) {
             if (n.id === o.page) { continue; }
@@ -586,5 +588,8 @@
             }));
     }
 
-    window.AFHeader = { html, wire, tabs, menu, wireMenu, counts, paintCounts };
+    /** Every destination, for the phone's Menu sheet (media/afMobile.js). */
+    function pages() { return NAV.map(n => ({ id: n.id, label: n.label, tip: n.tip })); }
+
+    window.AFHeader = { html, wire, tabs, menu, wireMenu, counts, paintCounts, pages };
 })();

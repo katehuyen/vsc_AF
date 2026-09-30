@@ -215,6 +215,12 @@
                 .nd-x { padding:2px 8px; }
                 .nd-bar { margin:10px 0 4px; display:flex; align-items:center; gap:8px; }
                 .nd-selall { display:flex; align-items:center; gap:4px; opacity:.8; font-size:12px; }
+                /* U-176 — on a phone the row's buttons go under its text: side by
+                   side they took the width and left the words one letter wide. */
+                html.af-phone .need-row { flex-wrap:wrap; gap:8px; }
+                html.af-phone .need-main { flex:1 1 0; min-width:0; }
+                html.af-phone .need-actions { flex:1 1 100%; display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+                html.af-phone .nd-bar { flex-wrap:wrap; }
                 .tag { font-size:10px; opacity:.7; border:1px solid var(--vscode-panel-border);
                     border-radius:3px; padding:1px 5px; margin-left:6px; vertical-align:middle; }
             </style>
