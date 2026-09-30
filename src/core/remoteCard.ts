@@ -23,7 +23,7 @@ export interface RemoteCardInput {
 
 export type RemoteCardState = 'off' | 'other-window' | 'not-listening' | 'local-only' | 'listening';
 
-export interface RemoteCardStatus { state: RemoteCardState; tone: 'ok' | 'warn' | 'bad' | 'off'; detail: string; phoneReachable: boolean }
+export interface RemoteCardStatus { state: RemoteCardState; tone: 'ok' | 'warn' | 'bad' | 'off'; detail: string; phoneReachable: boolean; hint?: string }
 
 /** Ends a sentence once: a reason that already ends in punctuation keeps its own. */
 const sentence = (t: string) => /[.!?]$/.test(t) ? t : t + '.';
@@ -45,11 +45,15 @@ export function remoteCardStatus(i: RemoteCardInput): RemoteCardStatus {
         return { state: 'local-only', tone: 'warn', phoneReachable: false,
             detail: 'Listening on 127.0.0.1 only — an emulator on this computer can reach it, a phone cannot.' };
     }
-    return { state: 'listening', tone: 'ok', phoneReachable: true,
+    return { state: 'listening', tone: 'ok', phoneReachable: true, hint: FIREWALL_HINT,
         detail: i.mode === 'tailscale'
             ? 'Listening on your Tailscale network — a paired phone reaches it from anywhere.'
             : 'Listening on this network — a paired phone on the same Wi-Fi reaches it.' };
 }
+
+/** The one block this machine cannot see from inside: loopback bypasses the firewall, a phone does not. */
+export const FIREWALL_HINT = 'Phone cannot connect? Windows Firewall must allow Visual Studio Code (Code.exe) '
+    + 'on private networks: Windows Security > Firewall & network protection > Allow an app through firewall.';
 
 /** The pairing block: only while listening where a phone can reach, only while the code is fresh. */
 function pairBlock(i: RemoteCardInput, st: RemoteCardStatus, now: number): Record<string, unknown> | undefined {

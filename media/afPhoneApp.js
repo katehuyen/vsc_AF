@@ -40,7 +40,8 @@
             + '\nOpen connections: ' + r.sockets
             + '\nFarm: ' + r.farm.name + ' (' + r.farm.id + ')'
             + (r.fingerprint ? '\nCertificate: ' + r.fingerprint.slice(0, 16) + '…' : '')
-            + '\n\nEvery connection is TLS with a certificate the phone pins when it pairs.',
+            + '\n\nEvery connection is TLS with a certificate the phone pins when it pairs.'
+            + (s.hint ? '\n\n' + s.hint : ''),
             'svc-tip');
     }
 
@@ -101,7 +102,8 @@
                 <span class="svc-sp"></span>
                 ${r.activeDevices ? '<button class="mini" data-remote="revoke-all">revoke all</button>' : ''}
             </div>
-            <div class="muted small svc-detail">${esc(r.status.detail)}</div>
+            <div class="muted small svc-detail">${esc(r.status.detail)}${r.status.hint && r.activeDevices && !r.sockets
+                ? ' <b>' + esc(r.status.hint) + '</b>' : ''}</div>
             ${msg ? `<div class="svc-msg ${msg.ok ? 'ok' : 'bad'}">${esc(msg.text)}</div>` : ''}
             <div class="svc-facts">
                 <span class="svc-fact">Listening <b class="${r.listening ? 'svc-y' : 'svc-n'}">${r.listening ? 'yes' : 'no'}</b></span>

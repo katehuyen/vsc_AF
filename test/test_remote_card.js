@@ -32,6 +32,9 @@ ok('a reason ending in a question mark is not given a second full stop', /runnin
     && /in use\.$/.test(nl.detail));
 ok('local: listening, but no phone can reach it', st({ mode: 'local' }).state === 'local-only' && !st({ mode: 'local' }).phoneReachable);
 ok('lan: reachable on this network', st().state === 'listening' && st().phoneReachable && /Wi-Fi/.test(st().detail));
+ok('listening where a phone can reach carries the firewall hint', /Windows Firewall/.test(st().hint) && st({ mode: 'tailscale' }).hint === C.FIREWALL_HINT);
+ok('no hint where a phone cannot reach anyway', st({ mode: 'local' }).hint === undefined && st({ mode: 'off' }).hint === undefined
+    && nl.hint === undefined && st({ runner: false }).hint === undefined);
 ok('tailscale: reachable from anywhere', /anywhere/.test(st({ mode: 'tailscale' }).detail));
 
 // ---------- the data ----------

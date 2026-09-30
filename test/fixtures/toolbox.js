@@ -265,8 +265,10 @@ const variants = () => ([
     },
     {
         id: 'toolbox-remote-one',
-        label: 'Toolbox — Services: listening on the Wi-Fi, one phone paired',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }), remote: remote() })
+        label: 'Toolbox — Services: listening on the Wi-Fi, one phone paired and none connected, so the firewall hint shows',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
+            remote: remote({ status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
+                addresses: ['192.168.1.40:7443'], fingerprint: '3fa4'.repeat(16), sockets: 0 } }) })
     },
     {
         id: 'toolbox-remote-pair',

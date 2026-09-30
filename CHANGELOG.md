@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.762.0 - The Agent Farm phone app can reach this farm (2026-09-30)
+
+- A new setting, `agentFarm.remote.listen`, lets the Agent Farm Android app
+  reach this farm: `off` (the default), `local` (this computer only, for an
+  emulator), `lan` (your Wi-Fi) or `tailscale` (your tailnet, from anywhere).
+  Port: `agentFarm.remote.port` (7443). Every connection is TLS with a
+  certificate the phone pins when it pairs, and every phone must be paired
+  with a one-time code. Only the window that runs the task queue listens.
+- Toolbox > Services has an **Agent Farm app** card: where the farm can be
+  reached, a pairing QR code (works once, for 10 minutes), the paired phones
+  and a revoke button for each (and for all). A revoked phone is disconnected
+  at once. When phones are paired but none connects, the card says how to let
+  VS Code through Windows Firewall.
+- The phone hears what the farm does: a finished turn, an open question or
+  permission, the Needs You count, a new notice and a five-hour quota crossing
+  90%.
+- Bridge: `remote.status`, `remote.listen`, `remote.pair`, `remote.devices`,
+  `remote.revoke`.
+
 ## 3.761.0 - A charter that lost a section says so, the Console shows each card's project, and the shell rule is held (2026-09-30)
 
 - A project charter's Code Architecture, Verification Gate and Project
