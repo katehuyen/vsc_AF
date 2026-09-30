@@ -108,8 +108,8 @@
       "example": { "session": "4f567a07", "agent": "developer", "askId": "q1", "question": "Hangisi?", "options": [{ "label": "A" }, { "label": "B" }] }
     },
     "permission.opened": {
-      "fields": { "session": "string", "agent": "string", "permId": "string", "tool": "string", "summary": "string" },
-      "example": { "session": "4f567a07", "agent": "developer", "permId": "p1", "tool": "Bash", "summary": "git status" }
+      "fields": { "session": "string", "agent": "string", "permId": "string", "tool": "string", "summary": "string", "key": "string" },
+      "example": { "session": "4f567a07", "agent": "developer", "permId": "p1", "tool": "Bash", "summary": "git status", "key": "permission|4f567a07-1c2d-4e5f-8a9b-0c1d2e3f4a5b" }
     },
     "turn.finished": {
       "fields": { "session": "string", "agent": "string", "title": "string", "summary": "string" },
@@ -135,6 +135,7 @@
     "Event seq numbers only grow. hello.resumeAfter asks for every event after that seq; when they are no longer kept the host sends one gap frame, then the rest.",
     "A contract version the other side does not speak ends the socket with refuse reason contract, naming the version it needs.",
     "Secrets never travel: no frame carries a secret value, only whether one exists.",
+    "permission.opened.key is the Needs You row key (needKey): a client answers with call needs.act { key, action: permission-allow | permission-deny } and never builds the key itself; console.answer answers questions only.",
     "welcome.session authorizes /view and /res for that device only while its socket is open; the host forgets it when the socket closes, and a client never stores it."
   ]
 }
