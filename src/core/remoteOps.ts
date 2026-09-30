@@ -9,7 +9,7 @@ import { isListenMode, type ListenMode } from './remoteListen';
 export interface RemoteOpsDeps {
     mode(): ListenMode;
     status(): object;
-    setListen(mode: ListenMode, port?: number): Promise<object>;
+    setRemoteListen(mode: ListenMode, port?: number): Promise<object>;
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     devices(): object[];
     revoke(id?: string): number;
@@ -34,7 +34,7 @@ export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
                 const raw = optStr(args, 'port');
                 const port = raw === '' ? undefined : Number(raw);
                 need(port === undefined || (Number.isInteger(port) && port >= 1024 && port <= 65535), 'port must be 1024-65535');
-                return d.setListen(mode as ListenMode, port);
+                return d.setRemoteListen(mode as ListenMode, port);
             }
         },
         {

@@ -17,7 +17,7 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
     const deps = {
         mode: () => 'lan',
         status: () => ({ listening, sockets: 0, mode: 'WRONG' }),
-        setListen: async (mode, port) => { calls.push(['listen', mode, port]); return { listening: mode !== 'off' }; },
+        setRemoteListen: async (mode, port) => { calls.push(['listen', mode, port]); return { listening: mode !== 'off' }; },
         pairingLink: () => listening ? { link: 'agentfarm://pair?c=1', addresses: ['1.2.3.4:7443'] } : { error: 'not listening (off)' },
         devices: () => [{ id: 'd1', name: 'Pixel', scope: 'read', pairedAt: 1, revoked: false }],
         revoke: id => { calls.push(['revoke', id]); return id === undefined ? 2 : 1; }
@@ -74,7 +74,7 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
 
     // ---------- wiring in extension.ts ----------
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-    ok('extension registers remoteOps over the host control', /bridge\.register\(remoteOps\(\{[\s\S]{0,400}setListen: setRemoteListen/.test(src));
+    ok('extension registers remoteOps over the host control', /bridge\.register\(remoteOps\(\{[\s\S]{0,400}setRemoteListen/.test(src));
     ok('only the task-runner window listens', /!taskRunner\s*\?\s*await remote\.apply\(null,/.test(src));
     ok('a lease flip re-applies the host', /leaseFlipped\.push\(\(\) => \{ void applyRemote\(false\); \}\)/.test(src)
         && (src.match(/leaseFlipped\.forEach\(f => f\(\)\)/g) || []).length === 2);

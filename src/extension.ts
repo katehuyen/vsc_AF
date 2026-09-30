@@ -465,6 +465,7 @@ import {
 } from './core/remoteEvents';
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
+import type { RemoteDevicesHost } from './panels/toolboxRemote';
 import { allOpen, createRemoteControl, farmIdentity, type RemotePort } from './remote';
 import {
     chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
@@ -24282,7 +24283,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             disableWebView: async () => { await disableWebView(); },
             setWebBind: async (bind: 'local' | 'lan') => { await setWebBind(bind); },
             newWebToken: async () => { await newWebToken(); }
-        }
+        },
+        // X-444 — lent once the phone host exists (further down activate)
+        remote: undefined as RemoteDevicesHost | undefined
     };
     /**
      * ‼️ X-251 — WHOSE PLAN A RECORDED SESSION RAN ON, ANSWERED IN ONE PLACE.
@@ -30536,6 +30539,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await cfg().update('remote.listen', mode, vscode.ConfigurationTarget.Global);
         return applyRemote(false);
     };
+    toolboxDeps.remote = {
+        snapshot: () => ({ mode: remoteCfg().mode, port: remoteCfg().port, status: remote.status(), devices: remote.devices(), runner: taskRunner }),
+        setRemoteListen: mode => setRemoteListen(mode),
+        pairingLink: () => remote.pairingLink(),
+        revoke: id => remote.revoke(id)
+    };
     void applyRemote();
     leaseFlipped.push(() => { void applyRemote(false); });
     context.subscriptions.push(
@@ -30547,7 +30556,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register(remoteOps({
         mode: () => remoteCfg().mode,
         status: () => remote.status(),
-        setListen: setRemoteListen,
+        setRemoteListen,
         pairingLink: () => remote.pairingLink(),
         devices: () => remote.devices(),
         revoke: id => remote.revoke(id)

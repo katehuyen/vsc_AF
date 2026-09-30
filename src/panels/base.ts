@@ -469,6 +469,7 @@ export function htmlShell(
     // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
     // page can see for itself, and the wrong answer is the green one.
     const webCard = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afWeb.js'));
+    const phoneAppCard = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afPhoneApp.js'));
     // N-6 — the A2A card grammar (coordinates, directive block, lease bar,
     // markdown), shared by the two A2A pages.
     const a2a = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afA2A.js'));
@@ -570,6 +571,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>
+<script nonce="${nonce}" src="${phoneAppCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>
 <script nonce="${nonce}" src="${bulk}"></script>
 <script nonce="${nonce}" src="${recipes}"></script>

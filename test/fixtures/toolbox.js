@@ -18,6 +18,21 @@ const { webStatus, webUrl } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'webCockpit.js'));
 const { qrEncode, qrSvg } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'qr.js'));
+const { remoteCardData } =
+    require(path.join(__dirname, '..', '..', 'out', 'core', 'remoteCard.js'));
+
+/** X-444 — the Agent Farm app card, composed by the same function the panel calls. */
+const RNOW = Date.parse('2026-08-30T09:00:00Z');
+const phone = (id, name, scope, daysAgo, revoked) =>
+    ({ id, name, scope, pairedAt: RNOW - daysAgo * 864e5, revoked: !!revoked });
+const remote = (o) => remoteCardData(Object.assign({
+    mode: 'lan', port: 7443, runner: true,
+    status: {
+        listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
+        addresses: ['192.168.1.40:7443'], fingerprint: '3fa4'.repeat(16), sockets: 1
+    },
+    devices: [phone('d1', 'Pixel 8', 'answer', 3)]
+}, o || {}), RNOW);
 
 /**
  * U-85 — one web block, built the way `webCardData()` builds it: the verdict,
@@ -237,6 +252,43 @@ const variants = () => ([
         id: 'toolbox-web-lan',
         label: 'Toolbox — Services: reachable from the network, with the code that opens it',
         data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web() })
+    },
+    // X-444 — the Agent Farm app card, smallest first: off with no phone, one phone
+    // listening, a fresh pairing code beside many phones, and a mode that could not listen
+    {
+        id: 'toolbox-remote-off',
+        label: 'Toolbox — Services: the Agent Farm app is off and no phone is paired',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
+            remote: remote({ mode: 'off', devices: [],
+                status: { listening: false, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, addresses: [], sockets: 0,
+                    reason: 'agentFarm.remote.listen is off' } }) })
+    },
+    {
+        id: 'toolbox-remote-one',
+        label: 'Toolbox — Services: listening on the Wi-Fi, one phone paired',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }), remote: remote() })
+    },
+    {
+        id: 'toolbox-remote-pair',
+        label: 'Toolbox — Services: a fresh pairing code beside four phones, one revoked',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
+            remote: remote({
+                mode: 'tailscale',
+                status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
+                    addresses: ['100.101.12.7:7443'], fingerprint: '3fa4'.repeat(16), sockets: 2 },
+                devices: [phone('d1', 'Pixel 8', 'answer', 3), phone('d2', 'Samsung Galaxy Tab S9 Ultra (salon)', 'manage', 40),
+                    phone('d3', 'Eski telefon', 'read', 120, true), phone('d4', 'İş telefonu', 'admin', 1)],
+                pair: { link: 'agentfarm://pair?v=1&farm=farm_7c1d9a&name=MURAT-PC&code=483920&fp=' + '3fa4'.repeat(16)
+                    + '&a=100.101.12.7:7443', addresses: ['100.101.12.7:7443'], until: RNOW + 9 * 60e3 }
+            }) })
+    },
+    {
+        id: 'toolbox-remote-failed',
+        label: 'Toolbox — Services: Tailscale chosen, but this machine has no tailnet address',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
+            remote: remote({ mode: 'tailscale',
+                status: { listening: false, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, addresses: [], sockets: 0,
+                    reason: 'no Tailscale address on this machine (100.64.0.0/10) - is Tailscale running?' } }) })
     },
     // U-155 — the Kapıcı tab: the three rules that ship (as kapici.rules answers them today), then a user
     // file replacing one, a rule of the user's own, and a file that failed to load — its row's panel open

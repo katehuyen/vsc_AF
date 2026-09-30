@@ -7872,6 +7872,42 @@
       ]
     },
     {
+      "capability": "toolboxRemote.ts#remote-listen",
+      "ui": [
+        "page:toolboxRemote.ts#remote-listen"
+      ],
+      "ops": [
+        "remote.listen"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-pair",
+      "ui": [
+        "page:toolboxRemote.ts#remote-pair"
+      ],
+      "ops": [
+        "remote.pair"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-revoke",
+      "ui": [
+        "page:toolboxRemote.ts#remote-revoke"
+      ],
+      "ops": [
+        "remote.revoke"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-revoke-all",
+      "ui": [
+        "page:toolboxRemote.ts#remote-revoke-all"
+      ],
+      "ops": [
+        "remote.revoke"
+      ]
+    },
+    {
       "capability": "triggerReport",
       "ui": [
         "cmd:agentfarm.triggerReport"

@@ -16,6 +16,7 @@ import { HookFile, hooksStatus, ListenerState, PortHolder } from '../core/hooksC
 import { TelegramSnapshot } from '../core/telegramCockpit';
 import { handleAfNav, htmlShell, telegramCardData, telegramCardMessage } from './base';
 import { webCardData, webCardMessage, WebViewHost } from './toolboxWeb';
+import { remoteCard, remoteCardMessage, type RemoteDevicesHost } from './toolboxRemote';
 
 /** ‼️ The snapshot's contract lives in the pure core now — Farm Settings draws
  *  the same card and would otherwise have to import it from a panel. Re-exported
@@ -82,6 +83,8 @@ export interface ToolboxPanelDeps {
      * the two hosts above are: a window that supplies nothing draws no card.
      */
     web?: WebViewHost;
+    /** the Agent Farm app card (X-444): where a phone reaches this farm, and the paired phones */
+    remote?: RemoteDevicesHost;
 }
 
 /**
@@ -112,7 +115,7 @@ export interface ToolCompose {
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 
-function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
+function buildData(deps: ToolboxPanelDeps, pair?: { link: string; addresses: string[]; until: number }): Record<string, unknown> {
     const agents = deps.getAgents();
     const inv = buildToolboxInventory(agents, deps.home);
 
@@ -140,7 +143,7 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
             userClaudeDir: userClaudeDir(deps.home),
             userConfigJson: userConfigJson(deps.home)
         },
-        services: buildServices(deps),
+        services: buildServices(deps, pair),
         kapici: deps.kapiciRules ? deps.kapiciRules() : null
     };
 }
@@ -158,15 +161,17 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
  * Settings draws the same card (U-84's other half), so `telegramCardData` reads
  * the settings and asks the core once, for both pages.
  */
-function buildServices(deps: ToolboxPanelDeps): Record<string, unknown> | undefined {
+function buildServices(deps: ToolboxPanelDeps, pair?: { link: string; addresses: string[]; until: number }): Record<string, unknown> | undefined {
     const telegram = telegramCardData(deps.telegram);
     const hooks = buildHooks(deps);
     const web = webCardData(deps.web);
-    return telegram || hooks || web
+    const remote = remoteCard(deps.remote, pair);
+    return telegram || hooks || web || remote
         ? {
             ...(telegram ? { telegram } : {}),
             ...(hooks ? { hooks } : {}),
-            ...(web ? { web } : {})
+            ...(web ? { web } : {}),
+            ...(remote ? { remote } : {})
         }
         : undefined;
 }
@@ -246,7 +251,7 @@ export class ToolboxPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.remotePair) });
     }
 
     private agentById(id: string): AgentInfo | undefined {
@@ -276,6 +281,11 @@ export class ToolboxPanel {
         if (await webCardMessage(msg, {
             ...(this.deps.web ? { host: this.deps.web } : {}),
             say: m => this.webMsg(m)
+        })) { return; }
+        if (await remoteCardMessage(msg, {
+            ...(this.deps.remote ? { host: this.deps.remote } : {}),
+            setPair: p => { this.remotePair = p; },
+            say: m => this.remoteMsg(m)
         })) { return; }
         switch (msg.type) {
             case 'refresh':
@@ -428,6 +438,15 @@ export class ToolboxPanel {
      *  the result of a write before the write has happened. */
     private hooksMsg(m: { ok: boolean; text: string } | undefined): void {
         if (m) { void this.panel.webview.postMessage({ type: 'hooks-said', ...m }); }
+        this.refresh();
+    }
+
+    /** The pairing code the Agent Farm app card shows while it is fresh. */
+    private remotePair: { link: string; addresses: string[]; until: number } | undefined;
+
+    /** The same contract for the Agent Farm app card (X-444). */
+    private remoteMsg(m: { ok: boolean; text: string } | undefined): void {
+        if (m) { void this.panel.webview.postMessage({ type: 'remote-said', ...m }); }
         this.refresh();
     }
 

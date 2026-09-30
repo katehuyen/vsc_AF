@@ -205,6 +205,11 @@
             render();
             return;
         }
+        if (m.type === 'remote-said') {
+            remoteMsg = { ok: m.ok, text: m.text };
+            render();
+            return;
+        }
         if (m.type === 'mcp-def' && toolForm && toolForm.name === m.name) {
             Object.assign(toolForm, m.def || {});
             render();
@@ -390,6 +395,7 @@
     let hooksMsg = null;
     // U-85 — the same contract for the web view card.
     let webMsg = null;
+    let remoteMsg = null;
 
     const KIND_LABEL = { skill: 'skill', subagent: 'subagent', command: 'command', mcp: 'MCP server' };
     const KIND_LEDE = {
@@ -831,7 +837,9 @@
             // reason the Telegram card is one, with one of its own: this file
             // is past its size budget, so a card written here is a card that
             // grows a monolith.
-            + window.AFWeb.card((DATA.services || {}).web, { msg: webMsg });
+            + window.AFWeb.card((DATA.services || {}).web, { msg: webMsg })
+            // X-444 — the Agent Farm app: where a phone reaches this farm, and the paired phones.
+            + ((DATA.services || {}).remote && window.AFPhoneApp ? window.AFPhoneApp.card(DATA.services.remote, { msg: remoteMsg }) : '');
     }
 
     function wireServices() {
@@ -849,6 +857,7 @@
             else if (act === 'clear-port') { post({ type: 'hooks-clear-port' }); }
         }));
         window.AFWeb.wire(post);
+        if (window.AFPhoneApp) { window.AFPhoneApp.wire(post); }
     }
 
     function settingsTab() {
@@ -918,6 +927,7 @@
                 .tb-card:hover { outline: 1px solid var(--vscode-charts-blue, #3794ff); }
                 ${window.AFTelegram.css()}
                 ${window.AFWeb.css()}
+                ${window.AFPhoneApp ? window.AFPhoneApp.css() : ''}
                 /* U-86 — the hook files, one row each. The mark, whose file it
                    is, and the path — in that order, because "is it in?" is the
                    question and the path is the evidence. */

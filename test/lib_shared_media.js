@@ -107,6 +107,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // draws is true or false on a detail no page can see for itself, and the
     // wrong answer is the green one.
     'afWeb.js',
+    // afPhoneApp.js — the Agent Farm app card (X-444): listen mode, pairing code, paired phones.
+    'afPhoneApp.js',
     // afA2A.js — the A2A card grammar (N-6): coordinates, the supervisor
     // directive block, the lease bar and a safe markdown, shared by the two
     // A2A pages so a note and a task are drawn in one voice.
