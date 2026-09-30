@@ -44,7 +44,28 @@ ok('a single question carries its options (labels only)',
 m = r.memo;
 ok('the same question twice is said once', R.consoleEvents(m, 's1', st({ lastTurn: { endedAt: 2000 }, pendingAsk: ASK }), ['s1']).events.length === 0);
 r = R.consoleEvents(m, 's1', st({ lastTurn: { endedAt: 2000 }, pendingAsk: TWO }), ['s1']);
-ok('a many-question ask carries no options: one tap cannot answer it', r.events[0].data.options.length === 0 && r.events[0].data.question === 'A?');
+const many = r.events.find(e => e.type === 'ask.opened');
+ok('a many-question ask carries no options: one tap cannot answer it', many && many.data.options.length === 0 && many.data.question === 'A?');
+// X-445 — a question answered anywhere (desk, Telegram, a phone) or withdrawn closes on every phone
+let am = R.consoleEvents(R.EMPTY_CONSOLE_MEMO, 's5', st({ id: 's5' }), ['s5']).memo;
+let ar = R.consoleEvents(am, 's5', st({ id: 's5', pendingAsk: ASK }), ['s5']);
+ok('(setup) the question opens', ar.events.some(e => e.type === 'ask.opened' && e.data.askId === 'r1'));
+ar = R.consoleEvents(ar.memo, 's5', st({ id: 's5' }), ['s5']);
+ok('an answered question is ask.closed with its session and id', ar.events.length === 1 && ar.events[0].type === 'ask.closed'
+    && ar.events[0].data.session === 's5' && ar.events[0].data.askId === 'r1');
+ok('…said once', R.consoleEvents(ar.memo, 's5', st({ id: 's5' }), ['s5']).events.length === 0);
+ar = R.consoleEvents(ar.memo, 's5', st({ id: 's5', pendingAsk: ASK }), ['s5']);
+ar = R.consoleEvents(ar.memo, 's5', st({ id: 's5', pendingAsk: TWO }), ['s5']);
+ok('a question replaced by another closes the old one first, then opens the new',
+    ar.events.map(e => e.type).join() === 'ask.closed,ask.opened' && ar.events[0].data.askId === 'r1' && ar.events[1].data.askId === 'r2');
+const gone = R.consoleEvents(ar.memo, 's5', undefined, []);
+ok('a card that goes away with a question open is session.ended only (that takes its alerts down)',
+    gone.events.map(e => e.type).join() === 'session.ended' && gone.memo.asks.s5 === undefined);
+const noQ = R.consoleEvents(R.consoleEvents(R.EMPTY_CONSOLE_MEMO, 's6', st({ id: 's6' }), ['s6']).memo, 's6',
+    st({ id: 's6', pendingAsk: { requestId: 'p', questions: [] } }), ['s6']);
+ok('a wait that was never announced as a question never closes as one',
+    !R.consoleEvents(noQ.memo, 's6', st({ id: 's6' }), ['s6']).events.some(e => e.type === 'ask.closed'));
+
 const empty = R.consoleEvents(R.EMPTY_CONSOLE_MEMO, 's9', st({ id: 's9', pendingAsk: { requestId: 'p', questions: [] } }), ['s9']);
 ok('an ask with no questions (a permission) is not ask.opened', !empty.events.some(e => e.type === 'ask.opened'));
 
@@ -71,8 +92,15 @@ ok('the same queue again says nothing', n.events.length === 0);
 n = R.needsEvents(n.memo, [perm('a', 'x'), perm('b', 'Edit: src/a.ts')]);
 ok('a second permission: only the new one opens', n.events.filter(e => e.type === 'permission.opened').length === 1
     && n.events.find(e => e.type === 'permission.opened').data.tool === 'Edit');
+n = R.needsEvents(n.memo, [perm('b', 'Edit: src/a.ts')]);
+ok('X-445: a permission answered anywhere is permission.closed with its key and session, once',
+    n.events.length === 2 && n.events[0].type === 'permission.closed' && n.events[0].data.permId === 'permission|a'
+    && n.events[0].data.session === 'a' && n.events[1].type === 'needs.changed');
+ok('…and not again', R.needsEvents(n.memo, [perm('b', 'Edit: src/a.ts')]).events.length === 0);
 n = R.needsEvents(n.memo, []);
-ok('the queue emptying is needs.changed 0', n.events.length === 1 && n.events[0].data.count === 0);
+ok('the queue emptying closes what was left and is needs.changed 0',
+    n.events.map(e => e.type).join() === 'permission.closed,needs.changed' && n.events[0].data.permId === 'permission|b'
+    && n.events[1].data.count === 0);
 n = R.needsEvents(n.memo, [perm('a', '')]);
 ok('a row seen before, gone, then back opens again; no detail falls back to the title',
     n.events.some(e => e.type === 'permission.opened' && e.data.summary === 'Permission' && e.data.tool === ''));

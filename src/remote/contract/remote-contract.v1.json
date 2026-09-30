@@ -126,6 +126,14 @@
     "session.ended": {
       "fields": { "session": "string", "agent": "string" },
       "example": { "session": "4f567a07", "agent": "developer" }
+    },
+    "ask.closed": {
+      "fields": { "session": "string", "askId": "string" },
+      "example": { "session": "4f567a07", "askId": "q1" }
+    },
+    "permission.closed": {
+      "fields": { "session": "string", "permId": "string" },
+      "example": { "session": "4f567a07", "permId": "permission|4f567a07-1c2d-4e5f-8a9b-0c1d2e3f4a5b" }
     }
   },
   "rules": [

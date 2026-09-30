@@ -7,6 +7,10 @@
  * Questions come from the Console (they are answered with console.answer);
  * permissions come from Needs You, because that queue holds every engine's
  * and every terminal's waits and is what needs.act answers by key.
+ *
+ * A wait that ends — answered at the desk, on Telegram or on the phone, or
+ * withdrawn — is said too (ask.closed / permission.closed), so its alert
+ * leaves every phone rather than only the one that answered it.
  */
 import type { ConsoleSessionState } from './consoleproto';
 import { blockingCount, needKey, type NeedItem } from './needs';
@@ -16,10 +20,11 @@ export interface RemoteEvent { type: string; data: Record<string, unknown> }
 
 const SUMMARY_MAX = 400;
 
-// ---- Console: turn.finished, ask.opened, session.ended ----------------------
+// ---- Console: turn.finished, ask.opened, ask.closed, session.ended ------------
 
-export interface ConsoleMemo { digest: DigestMemo; agent: Record<string, string> }
-export const EMPTY_CONSOLE_MEMO: ConsoleMemo = { digest: EMPTY_MEMO, agent: {} };
+/** `asks`: the question each card's phone alert is up for, by card id. */
+export interface ConsoleMemo { digest: DigestMemo; agent: Record<string, string>; asks: Record<string, string> }
+export const EMPTY_CONSOLE_MEMO: ConsoleMemo = { digest: EMPTY_MEMO, agent: {}, asks: {} };
 
 function summaryOf(state: ConsoleSessionState): string {
     const text = turnText(state).join('\n\n').trim();
@@ -33,11 +38,20 @@ export function consoleEvents(memo: ConsoleMemo, id: string, state: ConsoleSessi
         const agent = memo.agent[id];
         const rest = { ...memo.agent };
         delete rest[id];
-        const next = { digest: forgetMemo(memo.digest, liveIds), agent: rest };
+        // session.ended takes the card's alerts down on its own; its question needs no ask.closed
+        const asks = { ...memo.asks };
+        delete asks[id];
+        const next = { digest: forgetMemo(memo.digest, liveIds), agent: rest, asks };
         return { memo: next, events: agent === undefined ? [] : [{ type: 'session.ended', data: { session: id, agent } }] };
     }
     const r = digestEvents(memo.digest, state);
     const events: RemoteEvent[] = [];
+    const asks = { ...memo.asks };
+    const up = asks[id];
+    if (up !== undefined && state.pendingAsk?.requestId !== up) {
+        events.push({ type: 'ask.closed', data: { session: id, askId: up } });
+        delete asks[id];
+    }
     for (const e of r.events) {
         if (e === 'turn') {
             events.push({ type: 'turn.finished', data: {
@@ -52,15 +66,17 @@ export function consoleEvents(memo: ConsoleMemo, id: string, state: ConsoleSessi
                 // a many-question ask cannot be answered by one tap: the phone opens the app
                 options: ask.questions.length === 1 ? q.options.map(o => ({ label: o.label })) : []
             } });
+            asks[id] = ask.requestId;
         }
     }
-    return { memo: { digest: r.memo, agent: { ...memo.agent, [id]: state.agentName } }, events };
+    return { memo: { digest: r.memo, agent: { ...memo.agent, [id]: state.agentName }, asks }, events };
 }
 
-// ---- Needs You: needs.changed, permission.opened -----------------------------
+// ---- Needs You: needs.changed, permission.opened, permission.closed ----------
 
-export interface NeedsMemo { count: number; perms: string[] }
-export const EMPTY_NEEDS_MEMO: NeedsMemo = { count: -1, perms: [] };
+/** `perms`: the permission rows announced and still open, key → session. */
+export interface NeedsMemo { count: number; perms: Record<string, string> }
+export const EMPTY_NEEDS_MEMO: NeedsMemo = { count: -1, perms: {} };
 
 function permissionTool(detail: string): string {
     return /\bto use ([\w.:-]+)/i.exec(detail)?.[1] ?? /^([\w.-]+)[:(]/.exec(detail)?.[1] ?? '';
@@ -70,10 +86,14 @@ export function needsEvents(memo: NeedsMemo, items: NeedItem[]): { memo: NeedsMe
     const events: RemoteEvent[] = [];
     const count = blockingCount(items);
     const perms = items.filter(i => i.kind === 'permission');
-    const known = new Set(memo.perms);
+    const now: Record<string, string> = {};
+    for (const p of perms) { now[needKey(p)] = p.ref.sessionId ?? ''; }
+    for (const [key, session] of Object.entries(memo.perms)) {
+        if (!(key in now)) { events.push({ type: 'permission.closed', data: { session, permId: key } }); }
+    }
     for (const p of perms) {
         const key = needKey(p);
-        if (known.has(key)) { continue; }
+        if (key in memo.perms) { continue; }
         events.push({ type: 'permission.opened', data: {
             session: p.ref.sessionId ?? '', agent: p.agentName ?? '', permId: key,
             tool: permissionTool(p.detail ?? ''), summary: p.detail || p.title, key
@@ -85,7 +105,7 @@ export function needsEvents(memo: NeedsMemo, items: NeedItem[]): { memo: NeedsMe
             ? { count, top: { kind: top.kind, title: top.title } }
             : { count } });
     }
-    return { memo: { count, perms: perms.map(needKey) }, events };
+    return { memo: { count, perms: now }, events };
 }
 
 // ---- Usage: quota.warn --------------------------------------------------------
