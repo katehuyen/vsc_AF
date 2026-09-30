@@ -6,6 +6,8 @@
     "health": "GET /health — no auth; answers { ok, farm: { id, name }, contract }",
     "pair": "POST /pair — body is a pair.request, answer is a pair.response or { error }",
     "socket": "GET /ws — WebSocket upgrade; every message is one JSON frame with a `kind`",
+    "view": "GET /view/<page>?view=<view id> — the page's HTML as the remote host renders it, the same page code as in VS Code with afRemote.js in place of acquireVsCodeApi; header Authorization: AF <welcome.session>",
+    "res": "GET /res/<path> — the resources a page loads (media/*.js, common.css, fonts, images); header Authorization: AF <welcome.session>; anything outside the page resource folders is 404",
     "tls": "The host serves its own certificate; the client pins the SHA-256 fingerprint it read from the pairing URI and never trusts any other.",
     "signature": "ECDSA P-256 with SHA-256 (DER), over the UTF-8 text `agentfarm.remote/1|<farm id>|<device id>|<nonce>`; the device public key is X.509 SubjectPublicKeyInfo DER, base64."
   },
@@ -36,8 +38,8 @@
     },
     "welcome": {
       "from": "host",
-      "fields": { "farm": "object", "device": "string", "scope": "string", "features": "object", "lastSeq": "number" },
-      "example": { "kind": "welcome", "farm": { "id": "farm_7f3a", "name": "Masaüstü" }, "device": "dev_k3m9x2", "scope": "manage", "features": { "remote.access": { "allowed": true } }, "lastSeq": 57 }
+      "fields": { "farm": "object", "device": "string", "scope": "string", "features": "object", "lastSeq": "number", "session": "string?" },
+      "example": { "kind": "welcome", "farm": { "id": "farm_7f3a", "name": "Masaüstü" }, "device": "dev_k3m9x2", "scope": "manage", "features": { "remote.access": { "allowed": true } }, "lastSeq": 57, "session": "s_Q2x9mT4v" }
     },
     "refuse": {
       "from": "host",
@@ -132,6 +134,7 @@
     "Every call carries an id the client generated. A host that has already answered that id answers again with the stored result and duplicate:true, and never runs the op twice.",
     "Event seq numbers only grow. hello.resumeAfter asks for every event after that seq; when they are no longer kept the host sends one gap frame, then the rest.",
     "A contract version the other side does not speak ends the socket with refuse reason contract, naming the version it needs.",
-    "Secrets never travel: no frame carries a secret value, only whether one exists."
+    "Secrets never travel: no frame carries a secret value, only whether one exists.",
+    "welcome.session authorizes /view and /res for that device only while its socket is open; the host forgets it when the socket closes, and a client never stores it."
   ]
 }
