@@ -11,6 +11,7 @@ export type { RemotePort, RemoteCaller, FarmIdentity, FarmEvent, OpResult, Unsub
 export { allOpen, featureMap, isFeature } from './features';
 export type { FeatureAnswer, FeatureGate, FeatureId } from './features';
 export { startRemoteHost } from './serve';
+export { farmIdentity } from './server/farmId';
 export type { ListenAt, RunningRemote } from './serve';
 
 export interface RemoteHandle {

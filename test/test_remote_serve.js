@@ -68,6 +68,18 @@ const health = port => new Promise(resolve => {
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }
+    const { farmIdentity } = require(path.join(ROOT, 'out', 'remote', 'index.js'));
+    const idDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-farmid-'));
+    try {
+        const a = farmIdentity(idDir, 'Ev');
+        const b = farmIdentity(idDir, 'Ev (yeni ad)');
+        ok('a farm id is minted once per install', /^farm_[0-9a-f]{12}$/.test(a.id) && b.id === a.id);
+        ok('the name follows the caller, so a renamed machine keeps its phones', b.name === 'Ev (yeni ad)');
+        fs.writeFileSync(path.join(idDir, 'farm.json'), '{"id":"x"}');
+        ok('an id that is not one is minted again', farmIdentity(idDir, 'Ev').id !== 'x');
+    } finally {
+        fs.rmSync(idDir, { recursive: true, force: true });
+    }
     console.log(`remote serve: ${pass} passed, ${fail} failed`);
     if (fail) { process.exit(1); }
 })();
