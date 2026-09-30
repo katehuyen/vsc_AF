@@ -12,6 +12,8 @@ export { allOpen, featureMap, isFeature } from './features';
 export type { FeatureAnswer, FeatureGate, FeatureId } from './features';
 export { startRemoteHost } from './serve';
 export { farmIdentity } from './server/farmId';
+export { createRemoteControl } from './control';
+export type { DeviceRow, ListenTarget, RemoteControl, RemoteStatus } from './control';
 export type { ListenAt, RunningRemote } from './serve';
 
 export interface RemoteHandle {

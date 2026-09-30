@@ -363,6 +363,8 @@ export function staleReminderKeys(postedKeys: string[], waitingSessionIds: Itera
 
 export class NoticesStore {
     notices: Notice[] = [];
+    /** Told of every new notice, after it is saved (the remote host pushes it to phones). */
+    onAdd?: (n: Notice) => void;
 
     constructor(private file: string) { }
 
@@ -385,6 +387,7 @@ export class NoticesStore {
         const n = makeNotice(input);
         this.notices.unshift(n);
         this.save();
+        this.onAdd?.(n);
         return n;
     }
 
