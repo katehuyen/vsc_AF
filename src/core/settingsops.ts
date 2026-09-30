@@ -290,6 +290,7 @@ const CATEGORY_OF: Record<string, string> = {
     accounts: 'cli', activeAccounts: 'cli', accountPolicies: 'cli',
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
+    'remote.listen': 'access', 'remote.port': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',
     'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access', 'telegram.digest': 'access',
     'telegram.whenBusy': 'access',

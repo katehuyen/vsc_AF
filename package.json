@@ -8247,6 +8247,30 @@
           "default": "",
           "description": "Access token for the web view. Generated for you the first time you enable it; anyone with this token can READ the farm's dashboard, so treat it like a password. Empty = the server refuses to start."
         },
+        "agentFarm.remote.listen": {
+          "type": "string",
+          "enum": [
+            "off",
+            "local",
+            "lan",
+            "tailscale"
+          ],
+          "enumDescriptions": [
+            "No phone can reach this farm.",
+            "Only this machine (127.0.0.1) — for testing with an emulator.",
+            "Your home or office network: the pairing QR names this machine's private addresses.",
+            "Your Tailscale network: listens on this machine's 100.x address only."
+          ],
+          "default": "off",
+          "markdownDescription": "Where the **Agent Farm phone app** can reach this farm. Off by default. Every connection is TLS with a certificate the phone pins at pairing, and every phone must be paired (a one-time QR code) and can be revoked at any time. Only the window that runs the task queue listens."
+        },
+        "agentFarm.remote.port": {
+          "type": "number",
+          "default": 7443,
+          "minimum": 1024,
+          "maximum": 65535,
+          "description": "Port the phone app connects to (TLS). Must differ from the web view and live-hook ports."
+        },
         "agentFarm.telegram.enabled": {
           "type": "boolean",
           "default": false,

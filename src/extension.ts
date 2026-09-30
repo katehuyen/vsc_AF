@@ -460,6 +460,13 @@ import {
     DigestKeyboard, DigestMemo, digestEvents, digestText, EMPTY_MEMO, forgetMemo, keyboardFor, parseTap, tapAnswer
 } from './core/telegramDigest';
 import {
+    consoleEvents, EMPTY_CONSOLE_MEMO, EMPTY_NEEDS_MEMO, EMPTY_QUOTA_MEMO, needsEvents, noticeEvent, quotaEvents,
+    QUOTA_WARN_PCT, type RemoteEvent
+} from './core/remoteEvents';
+import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
+import { remoteOps } from './core/remoteOps';
+import { allOpen, createRemoteControl, farmIdentity, type RemotePort } from './remote';
+import {
     chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
     PendingSends, queueInbound, turnEnded
 } from './core/telegramExecution';
@@ -3154,6 +3161,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
     );
     let taskRunner = taskLease.tryClaim();
+    /** Whoever must follow the runner seat (the phone host) hears each flip. */
+    const leaseFlipped: (() => void)[] = [];
     let followerWarnedAt = 0;
 
     // (portableRoots is declared beside storedAccounts — the accounts store is
@@ -4213,12 +4222,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (held && !taskRunner) {
             taskRunner = true; // flip BEFORE becomeRunner so load() runs in runner mode
             taskManager.becomeRunner();
+            leaseFlipped.forEach(f => f());
             void vscode.window.showInformationMessage(
                 'Agent Farm: this window now runs the task queue (the previous runner window closed).');
         } else if (!held && taskRunner) {
             // Lost the lease (e.g. a long OS sleep let another window take over).
             taskRunner = false;
             taskManager.becomeFollower();
+            leaseFlipped.forEach(f => f());
         }
     }, 7_000);
     context.subscriptions.push({ dispose: () => { clearInterval(leaseTimer); taskLease.release(); } });
@@ -20755,6 +20766,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 60)));
     /** ‼️ X-241 — the switch every automatic account read obeys. */
     const accountsAutoRefresh = (): boolean => cfg().get<boolean>('accountsAutoRefresh', true);
+    const usageRead: ((u: SlotUsage[]) => void)[] = [];
     const accountUsage = new AccountUsageService({
         slots: () => storedAccounts(),
         // The same two intervals the single-account card is tuned to,
@@ -20787,6 +20799,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onRead: usage => {
             announceSlotHealth(usage); ConsolePanel.postAccountsIfOpen();
             planUsageBar.paint(); AccountsPanel.refreshIfOpen(); EnginesPanel.refreshIfOpen();
+            usageRead.forEach(f => f(usage));
         },
         readSessionTail: (slot, dir) => (String(slot.engine || '').toLowerCase() === 'codex'
             ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
@@ -30440,6 +30453,105 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const res = await updateSemanticIndex(maxSessions, report);
         return { provider: embeddingsCfg().provider, ...res, ...semIndex.stats() };
     };
+
+    // ---- X-442 — THE PHONE'S HOST. The RemotePort is the one surface src/remote
+    // touches: calls go to the bridge (the phone's scope is checked inside the
+    // host), events come from the Console, the Needs You queue, Notices and the
+    // usage readings, each turned into the contract's words by core/remoteEvents.
+    // Only the runner window listens, so two windows never race for the port.
+    const remoteDir = path.join(context.globalStorageUri.fsPath, 'remote');
+    const remoteListeners = new Set<(e: RemoteEvent) => void>();
+    const remoteEmit = (events: RemoteEvent[]) => {
+        for (const e of events) { for (const l of remoteListeners) { l(e); } }
+    };
+    let remoteFarm: { id: string; name: string } | undefined;
+    const remotePort: RemotePort = {
+        farm: () => (remoteFarm ??= farmIdentity(remoteDir, os.hostname())),
+        callOp: async (op, args) => {
+            const r = await bridge.dispatch(op, args);
+            return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error ?? `${op} failed` };
+        },
+        subscribe: l => { remoteListeners.add(l); return () => { remoteListeners.delete(l); }; },
+        can: allOpen,
+        storageDir: () => remoteDir,
+        log: line => console.log('Agent Farm ' + line)
+    };
+    const remote = createRemoteControl(remotePort);
+    let remoteLive = false;
+    let remoteConsoleMemo = EMPTY_CONSOLE_MEMO, remoteNeedsMemo = EMPTY_NEEDS_MEMO, remoteQuotaMemo = EMPTY_QUOTA_MEMO;
+    let remoteNeedsTimer: NodeJS.Timeout | undefined;
+    const remoteNeedsSoon = () => {
+        if (!remoteLive || remoteNeedsTimer) { return; }
+        remoteNeedsTimer = setTimeout(() => {
+            remoteNeedsTimer = undefined;
+            const r = needsEvents(remoteNeedsMemo, buildNeeds());
+            remoteNeedsMemo = r.memo;
+            remoteEmit(r.events);
+        }, 400);
+    };
+    context.subscriptions.push(consoleHost.onChange(id => {
+        if (!remoteLive) { return; }
+        const r = consoleEvents(remoteConsoleMemo, id, consoleHost.get(id), consoleHost.list().map(x => x.id));
+        remoteConsoleMemo = r.memo;
+        remoteEmit(r.events);
+        remoteNeedsSoon();
+    }));
+    context.subscriptions.push(needsEmitter.event(remoteNeedsSoon), live.onDidUpdate(remoteNeedsSoon));
+    noticesStore.onAdd = n => { if (remoteLive) { remoteEmit([noticeEvent(n)]); } };
+    usageRead.push(usage => {
+        if (!remoteLive) { return; }
+        for (const u of usage) {
+            const r = quotaEvents(remoteQuotaMemo,
+                { slotId: u.slotId, engine: u.engine, percent: fiveHourOf(u)?.percent, window: '5h' }, QUOTA_WARN_PCT);
+            remoteQuotaMemo = r.memo;
+            remoteEmit(r.events);
+        }
+    });
+    const remoteCfg = () => {
+        const mode = cfg().get<string>('remote.listen', 'off');
+        return {
+            mode: (isListenMode(mode) ? mode : 'off') as ListenMode,
+            port: cfg().get<number>('remote.port', DEFAULT_REMOTE_PORT)
+        };
+    };
+    /** Listen where the settings say — or stop — and warn when a chosen mode could not listen. */
+    const applyRemote = async (warn = true) => {
+        const c = remoteCfg();
+        const plan = listenPlan(c.mode, os.networkInterfaces());
+        const st = !taskRunner
+            ? await remote.apply(null, 'another window runs the task queue; it hosts the phone')
+            : plan.listen
+                ? await remote.apply({ host: plan.host, port: c.port, addresses: plan.addresses })
+                : await remote.apply(null, plan.reason);
+        remoteLive = st.listening;
+        if (remoteLive) { remoteNeedsSoon(); }
+        if (warn && taskRunner && c.mode !== 'off' && !st.listening) {
+            void vscode.window.showWarningMessage(`Agent Farm: the phone host is not listening — ${st.reason ?? 'unknown reason'}`);
+        }
+        return { mode: c.mode, ...st };
+    };
+    /** The one writer of the listen settings: the Devices card and remote.listen both call it. */
+    const setRemoteListen = async (mode: ListenMode, port?: number) => {
+        if (port !== undefined) { await cfg().update('remote.port', port, vscode.ConfigurationTarget.Global); }
+        await cfg().update('remote.listen', mode, vscode.ConfigurationTarget.Global);
+        return applyRemote(false);
+    };
+    void applyRemote();
+    leaseFlipped.push(() => { void applyRemote(false); });
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('agentFarm.remote')) { void applyRemote(); }
+        }),
+        { dispose: () => { if (remoteNeedsTimer) { clearTimeout(remoteNeedsTimer); } void remote.dispose(); } }
+    );
+    bridge.register(remoteOps({
+        mode: () => remoteCfg().mode,
+        status: () => remote.status(),
+        setListen: setRemoteListen,
+        pairingLink: () => remote.pairingLink(),
+        devices: () => remote.devices(),
+        revoke: id => remote.revoke(id)
+    }));
 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.web')) { applyWebServer(); }

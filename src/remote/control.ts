@@ -61,7 +61,7 @@ export function createRemoteControl(port: RemotePort): RemoteControl {
     });
 
     const doApply = async (next: ListenTarget | null, why?: string): Promise<RemoteStatus> => {
-        if (sameTarget(next, target) && (running || !next)) { reason = next ? undefined : why ?? reason; return status(); }
+        if (sameTarget(next, target)) { reason = next ? undefined : why ?? reason; return status(); }
         if (running) { const r = running; running = null; await r.stop(); port.log('remote: stopped'); }
         target = next;
         if (!next) { reason = why ?? 'stopped'; return status(); }

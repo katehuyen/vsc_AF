@@ -459,6 +459,14 @@
         setting('judge.unjudged', 'If no judge can look at it', 'tri', 'ask', 'agentFarm.judgeUnjudged',
             { states: { ask: 'ask', auto: 'pass', never: 'stop' } }),
         setting('judge.compare', 'Show an edit\'s judge its source', 'enum', 'auto', 'agentFarm.judgeCompare', { options: ['auto', 'never'] }),
+        setting('remote.listen', 'Phone app — where it can reach this farm', 'enum', 'off', 'agentFarm.remote.listen', {
+            options: ['off', 'local', 'lan', 'tailscale'],
+            levels: { settings: { surface: 'setting:agentFarm.remote.listen', bridge: 'remote.listen:mode' } }
+        }),
+        setting('remote.port', 'Phone app — port', 'number', 7443, 'agentFarm.remote.port', {
+            min: 1024, max: 65535,
+            levels: { settings: { surface: 'setting:agentFarm.remote.port', bridge: 'remote.listen:port' } }
+        }),
         setting('kapici.rulesDir', 'Kapıcı — your rule folder', 'text', '', 'agentFarm.kapici.rulesDir'),
         setting('kapici.timeoutMs', 'Kapıcı — wait for the classifier (ms)', 'number', 3000, 'agentFarm.kapici.timeoutMs', { min: 200, max: 30000 }),
         setting('kapici.providers', 'Kapıcı — who is asked, in order', 'list', ['heuristic', 'jev'], 'agentFarm.kapici.providers'),
