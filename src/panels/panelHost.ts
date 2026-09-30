@@ -26,8 +26,14 @@ export interface PanelHost {
     readonly webview: HostWebview;
     /** Drawn on a phone or browser through the remote host, not in a VS Code tab. */
     readonly remote: boolean;
+    /** The tab's caption; a phone's view keeps it for nobody to read. */
+    title: string;
+    /** Whether the page is on screen (a phone's view is while it is open). */
+    readonly visible: boolean;
     reveal(): void;
     readonly onDidDispose: vscode.Event<void>;
+    /** A tab going behind another one or coming back; a phone's view never fires it. */
+    readonly onDidChangeViewState: vscode.Event<unknown>;
     dispose(): void;
 }
 
@@ -49,8 +55,12 @@ export function desktopHost(tab: DesktopTab): PanelHost {
     return {
         webview: panel.webview,
         remote: false,
+        get title() { return panel.title; },
+        set title(t: string) { panel.title = t; },
+        get visible() { return panel.visible; },
         reveal: () => panel.reveal(),
-        onDidDispose: panel.onDidDispose,
+        onDidDispose: (listener, thisArgs?, bag?) => panel.onDidDispose(listener, thisArgs, bag),
+        onDidChangeViewState: (listener, thisArgs?, bag?) => panel.onDidChangeViewState(listener, thisArgs, bag),
         dispose: () => panel.dispose()
     };
 }

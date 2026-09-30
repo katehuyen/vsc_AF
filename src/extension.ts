@@ -468,6 +468,7 @@ import { remoteOps } from './core/remoteOps';
 import type { RemoteDevicesHost } from './panels/toolboxRemote';
 import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePort } from './remote';
 import { RemoteViews } from './panels/remoteViews';
+import { remotePages } from './panels/remotePages';
 import {
     chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
     PendingSends, queueInbound, turnEnded
@@ -30474,12 +30475,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const remoteViews = new RemoteViews({
         media: vscode.Uri.joinPath(context.extensionUri, 'media'),
         atLeast: scopeAtLeast,
-        pages: {
-            needs: {
-                open: 'read', act: 'answer', looks: ['refresh', 'afnav', 'openGuide', 'openAgent', 'afClipboard'],
-                make: host => NeedsPanel.openOn(host, needsDeps)
-            }
-        }
+        pages: remotePages({
+            needs: host => NeedsPanel.openOn(host, needsDeps),
+            console: host => ConsolePanel.openOn(host, consoleDeps)
+        })
     });
     const remotePort: RemotePort = {
         farm: () => (remoteFarm ??= farmIdentity(remoteDir, os.hostname())),

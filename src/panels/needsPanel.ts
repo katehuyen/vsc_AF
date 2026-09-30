@@ -77,9 +77,6 @@ export class NeedsPanel {
         msg: { type: string; actionId?: string; item?: NeedItem; keys?: string[]; all?: boolean; agentId?: string }
     ): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
-        // Opening another page or the agent's card happens in VS Code; from a phone that
-        // would open it on the PC, so a remote view does not (the phone's own nav is X-443).
-        if (this.host.remote && (msg.type === 'afnav' || msg.type === 'openGuide' || msg.type === 'openAgent')) { return; }
         if (msg.type === 'afnav') { handleAfNav((msg as { to?: unknown }).to); return; }
         if (msg.type === 'openGuide') {
             void vscode.commands.executeCommand('agentfarm.openGuide', 'onay-kuyrugu');

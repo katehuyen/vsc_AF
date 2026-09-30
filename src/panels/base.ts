@@ -620,7 +620,7 @@ ${bodyHtml}
  * anything it does not recognise straight over and stop caring.
  */
 export async function promptSnippetMessage(
-    webview: vscode.Webview,
+    webview: HostWebview,
     read: () => PromptSnippetsSnapshot,
     type: unknown
 ): Promise<boolean> {
@@ -760,7 +760,7 @@ function wikiSnapshot(sessionId: string): Record<string, unknown> {
  * Save. A guess is a guess in front of the reader, never behind them.
  */
 export function wikiMarkMessage(
-    webview: vscode.Webview,
+    webview: HostWebview,
     msg: { type: string; [k: string]: unknown }
 ): boolean {
     const str = (k: string): string => (typeof msg[k] === 'string' ? msg[k] as string : '');

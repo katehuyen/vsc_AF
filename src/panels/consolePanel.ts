@@ -36,6 +36,7 @@ import { SESSION_COLORS } from '../core/sessionmarks';
 import { getSlashCommands, reportToSources, SlashReport } from '../core/slashCommands';
 import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { afConfig } from '../core/settingsDoor';
 import { normalizeLegCeiling } from '../core/baton';
 
@@ -951,15 +952,12 @@ export class ConsolePanel {
             if (opts?.projectId !== undefined) { c.composerProject = opts.projectId; }
         };
         if (ConsolePanel.current) {
-            ConsolePanel.current.panel.reveal();
+            ConsolePanel.current.surface.reveal();
             apply(ConsolePanel.current);
             ConsolePanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.console', 'Console', vscode.ViewColumn.Active,
-            { enableScripts: true, retainContextWhenHidden: true });
-        const fresh = new ConsolePanel(panel, deps);
+        const fresh = new ConsolePanel(desktopHost({ viewType: 'agentfarm.console', title: 'Console', column: vscode.ViewColumn.Active }), deps);
         ConsolePanel.current = fresh;
         // ‼️ S-50 — APPLY, THEN LOAD. The order is the whole fix: what the door
         // came to say has to be in the page's first payload, because a push
@@ -1022,7 +1020,7 @@ export class ConsolePanel {
      */
     static isWatching(hostId: string): boolean {
         const c = ConsolePanel.current;
-        return !!c && c.panel.visible && c.selected === hostId;
+        return !!c && c.surface.visible && c.selected === hostId;
     }
 
     /**
@@ -1036,7 +1034,7 @@ export class ConsolePanel {
      */
     static watchedAccount(): { engine: string; account: string } | undefined {
         const c = ConsolePanel.current;
-        if (!c || !c.panel.visible || !c.selected) { return undefined; }
+        if (!c || !c.surface.visible || !c.selected) { return undefined; }
         const s = c.deps.host.list().find(x => x.id === c.selected);
         // `accountNext` is deliberately not read: it is what the NEXT message
         // will run as, and the figures on the bar are about the turn in front
@@ -1061,13 +1059,18 @@ export class ConsolePanel {
         ConsolePanel.watchChanged.fire();
     }
 
-    private constructor(private panel: vscode.WebviewPanel, private deps: ConsoleDeps) {
-        panel.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    /** X-441 — the Console on a phone: one instance per view, never the desktop's one tab. */
+    static openOn(surface: PanelHost, deps: ConsoleDeps): void {
+        new ConsolePanel(surface, deps).mount();
+    }
+
+    private constructor(private surface: PanelHost, private deps: ConsoleDeps) {
+        surface.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
+        surface.onDidDispose(() => this.dispose(), null, this.disposables);
         this.disposables.push(deps.host.onChange(() => this.refresh()));
         // X-243 — the panel going behind another tab is a change of subject for
         // the status bar just as much as selecting a different conversation is.
-        panel.onDidChangeViewState(() => ConsolePanel.announceWatch(), null, this.disposables);
+        surface.onDidChangeViewState(() => ConsolePanel.announceWatch(), null, this.disposables);
     }
 
     /**
@@ -1089,7 +1092,7 @@ export class ConsolePanel {
      */
     private mount(): void {
         this.mounted = true;
-        this.panel.webview.html = htmlShell(this.panel.webview, this.deps.extensionUri,
+        this.surface.webview.html = htmlShell(this.surface.webview, this.deps.extensionUri,
             'Console', this.data(), 'console.js');
     }
 
@@ -1899,8 +1902,8 @@ export class ConsolePanel {
         const waiting = (data.sessions as { status: string; turns: number; queued: string[] }[])
             .filter(s => s.status === 'idle' && s.turns > 0 && !s.queued.length).length;
         const title = waiting ? `Console (${waiting})` : 'Console';
-        if (this.panel.title !== title) { this.panel.title = title; }
-        void this.panel.webview.postMessage({ type: 'data', data });
+        if (this.surface.title !== title) { this.surface.title = title; }
+        void this.surface.webview.postMessage({ type: 'data', data });
     }
 
     /**
@@ -1922,7 +1925,7 @@ export class ConsolePanel {
                 policyRows: this.deps.accountAxis?.(sEng) ? (this.deps.policiesFor?.(sEng) ?? []) : []
             };
         });
-        void this.panel.webview.postMessage({
+        void this.surface.webview.postMessage({
             type: 'accounts',
             composerAccounts,
             composerPolicies,
@@ -1943,7 +1946,7 @@ export class ConsolePanel {
      */
     private postAttached(paths: string[]): void {
         const files = paths.map(describeAttachment).filter(Boolean);
-        if (files.length) { void this.panel.webview.postMessage({ type: 'attached', files }); return; }
+        if (files.length) { void this.surface.webview.postMessage({ type: 'attached', files }); return; }
         // ‼️ A GESTURE THAT PRODUCES NOTHING MUST SAY SO. Every path here failed
         // `statSync` — dropped from an archive, from a remote/virtual folder, or
         // a name the drag carried without a file behind it. Returning quietly
@@ -1995,11 +1998,11 @@ export class ConsolePanel {
         const idx = (k: string) => (typeof msg[k] === 'number' ? Math.floor(msg[k] as number) : -1);
         // The saved-prompt picker answers for itself, on every page that has one
         // (see promptSnippetMessage in ./base).
-        if (await promptSnippetMessage(this.panel.webview, () => this.deps.promptSnippets(), msg.type)) {
+        if (await promptSnippetMessage(this.surface.webview, () => this.deps.promptSnippets(), msg.type)) {
             return;
         }
         // The wiki tagger does the same on every surface that draws a badge (K-26).
-        if (wikiMarkMessage(this.panel.webview, msg)) { return; }
+        if (wikiMarkMessage(this.surface.webview, msg)) { return; }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'getAccounts': this.postAccounts(); break;
@@ -2060,7 +2063,7 @@ export class ConsolePanel {
                 let report = owner ? this.deps.slashReport?.(owner) : undefined;
                 if (report) { this.deps.learnSlash?.(engine, owner?.agentId, report); }
                 else { report = this.deps.recallSlash?.(engine, agent?.id); }
-                void this.panel.webview.postMessage({
+                void this.surface.webview.postMessage({
                     type: 'slashCommands',
                     engine, agent: agentRef, session: sessionRef,
                     sources: {
@@ -2506,7 +2509,7 @@ export class ConsolePanel {
                     // A refusal therefore has to GIVE THE MESSAGE BACK — text
                     // and files — or the refusal costs you what you wrote.
                     void vscode.window.showWarningMessage(`Agent Farm: ${r.refused}`);
-                    void this.panel.webview.postMessage({
+                    void this.surface.webview.postMessage({
                         type: 'restore',
                         text: str('text'),
                         files: attachmentsOf(msg)
@@ -2856,6 +2859,11 @@ export class ConsolePanel {
     }
 
     private dispose(): void {
+        if (ConsolePanel.current !== this) {
+            this.disposables.forEach(d => d.dispose());
+            this.surface.dispose();
+            return;
+        }
         ConsolePanel.current = undefined;
         // …and the bar goes back to the standing account in the same step, not
         // at the next minute's wake.
@@ -2863,6 +2871,6 @@ export class ConsolePanel {
         // The sessions deliberately OUTLIVE the panel: closing a tab must not
         // kill a conversation. They end with the window, or when you close them.
         this.disposables.forEach(d => d.dispose());
-        this.panel.dispose();
+        this.surface.dispose();
     }
 }

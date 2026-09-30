@@ -14,14 +14,30 @@ import type { HostWebview, PanelHost } from './panelHost';
 
 export interface ViewCaller { device: string; scope: string }
 
+/**
+ * A page a phone may open. A message from its view is judged in this order:
+ * `pcOnly` never runs from a phone (it would open a dialog, an editor or
+ * another tab on the PC), `looks` needs only `open`, `answers` needs
+ * answer, anything else needs `act`.
+ */
 export interface RemotePage {
-    /** The scope that may open the page. */
     open: string;
-    /** The scope that may act on it; a device below it sends only the `looks` messages. */
     act: string;
-    /** Message types that only look (a refresh, a navigation) — allowed at `open`. */
     looks: readonly string[];
+    answers: readonly string[];
+    pcOnly: readonly string[];
     make(host: PanelHost, args: Record<string, unknown> | undefined): void;
+}
+
+/** Messages every page's shell sends (htmlShell's shared helpers) that only look. */
+const SHELL_LOOKS = ['afClipboard'];
+
+/** The scope a message from a phone's view needs, or null when it never runs from one. */
+export function messageScope(spec: RemotePage, type: string): string | null {
+    if (spec.pcOnly.includes(type)) { return null; }
+    if (spec.looks.includes(type) || SHELL_LOOKS.includes(type)) { return spec.open; }
+    if (spec.answers.includes(type)) { return 'answer'; }
+    return spec.act;
 }
 
 export interface RemoteViewsDeps {
@@ -69,8 +85,11 @@ class RemoteWebview implements HostWebview {
 class RemoteView implements PanelHost {
     readonly remote = true;
     readonly webview: RemoteWebview;
+    title = '';
+    readonly visible = true;
     private readonly disposed = new vscode.EventEmitter<void>();
     readonly onDidDispose = this.disposed.event;
+    readonly onDidChangeViewState: vscode.Event<unknown> = () => ({ dispose: () => undefined });
     private closed = false;
 
     constructor(readonly page: string, readonly spec: RemotePage, media: vscode.Uri, post: (message: unknown) => void) {
@@ -114,8 +133,8 @@ export class RemoteViews {
     message(caller: ViewCaller, view: string, message: unknown): void {
         const host = this.views.get(keyOf(caller, view));
         if (!host) { return; }
-        const type = String((message as { type?: unknown } | null)?.type ?? '');
-        if (!this.d.atLeast(caller.scope, host.spec.act) && !host.spec.looks.includes(type)) { return; }
+        const need = messageScope(host.spec, String((message as { type?: unknown } | null)?.type ?? ''));
+        if (need === null || !this.d.atLeast(caller.scope, need)) { return; }
         host.webview.receive(message);
     }
 

@@ -18,7 +18,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 // off this list in the same commit; nothing is ever added to it.
 const LEGACY = [
     'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'agentDetail', 'airtablePanel', 'capabilities',
-    'consolePanel', 'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
+    'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'missionsPanel', 'noticesPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
     'secretsPanel', 'selectionPanel', 'sessionsPanel', 'sessionViewer', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'tasksPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
@@ -47,8 +47,10 @@ for (const rel of callers) {
 for (const rel of LEGACY) {
     ok(`${rel} no longer calls createWebviewPanel — take it off LEGACY in test_panel_host.js`, callers.includes(rel));
 }
-ok('the Needs panel is on the host', !callers.includes('src/panels/needsPanel.ts')
-    && /desktopHost\(/.test(fs.readFileSync(path.join(ROOT, 'src/panels/needsPanel.ts'), 'utf8')));
+for (const p of ['needsPanel', 'consolePanel']) {
+    ok(`the ${p} is on the host`, !callers.includes(`src/panels/${p}.ts`)
+        && /desktopHost\(/.test(fs.readFileSync(path.join(ROOT, `src/panels/${p}.ts`), 'utf8')));
+}
 
 // ---------- a vscode stand-in, just what these modules touch ----------
 class EventEmitter {
@@ -99,7 +101,8 @@ Module._load = function (request) {
     if (request === 'vscode') { return vscodeStub; }
     return origLoad.apply(this, arguments);
 };
-const { RemoteViews } = require(path.join(ROOT, 'out', 'panels', 'remoteViews.js'));
+const { RemoteViews, messageScope } = require(path.join(ROOT, 'out', 'panels', 'remoteViews.js'));
+const { remotePages } = require(path.join(ROOT, 'out', 'panels', 'remotePages.js'));
 const { NeedsPanel } = require(path.join(ROOT, 'out', 'panels', 'needsPanel.js'));
 Module._load = origLoad;
 const { scopeAtLeast } = require(path.join(ROOT, 'out', 'remote', 'index.js'));
@@ -118,7 +121,7 @@ const alive = setInterval(() => undefined, 1000);
         media, atLeast: scopeAtLeast, waitMs: 60,
         pages: {
             probe: {
-                open: 'read', act: 'answer', looks: ['refresh'],
+                open: 'read', act: 'answer', looks: ['refresh'], answers: [], pcOnly: ['afnav'],
                 make: (host, args) => {
                     const rec = { host, args, got: [], disposed: 0 };
                     host.webview.html = '<p>probe ' + made.length + '</p>';
@@ -147,6 +150,8 @@ const alive = setInterval(() => undefined, 1000);
     ok('a read device may only look: its refresh arrives, its clear does not', made[0].got.length === 1 && made[0].got[0].type === 'refresh');
     views.message(B, 'v1', { type: 'refresh' });
     ok('another device cannot talk to this view', made[0].got.length === 1);
+    views.message({ device: 'dev_a', scope: 'admin' }, 'v1', { type: 'afnav', to: 'x' });
+    ok('a pcOnly message never arrives, not even from an admin', made[0].got.length === 1);
     ok('the page posts to its phone', await made[0].host.webview.postMessage({ type: 'data' }) === true && postsA[0].type === 'data');
 
     ok('a media file is a relative /res/ address', String(made[0].host.webview.asWebviewUri(uri('/ext/media/common.css'))) === '/res/common.css'
@@ -171,6 +176,23 @@ const alive = setInterval(() => undefined, 1000);
     ok('closing twice is harmless', made[2].disposed === 1);
     ok('views are counted across devices', views.count() === 1);
 
+    // ---------- the real page list ----------
+    const real = remotePages({ needs: () => undefined, console: () => undefined });
+    ok('the phone has the Needs and the Console pages', Object.keys(real).sort().join() === 'console,needs');
+    ok('Needs: open to read, a refresh looks, a clear or an action needs answer',
+        real.needs.open === 'read' && messageScope(real.needs, 'refresh') === 'read'
+        && messageScope(real.needs, 'clear') === 'answer' && messageScope(real.needs, 'action') === 'answer');
+    ok('Console: reading the conversation looks, a question is answered at answer, a send or a start needs manage',
+        real.console.open === 'read' && messageScope(real.console, 'select') === 'read' && messageScope(real.console, 'loadOlder') === 'read'
+        && messageScope(real.console, 'askAnswer') === 'answer' && messageScope(real.console, 'send') === 'manage'
+        && messageScope(real.console, 'start') === 'manage' && messageScope(real.console, 'interrupt') === 'manage');
+    ok('…a type nobody listed needs the page\'s act scope (a new message is never readable by accident)',
+        messageScope(real.console, 'somethingNew') === 'manage' && messageScope(real.needs, 'somethingNew') === 'answer');
+    ok('what would open a dialog or a tab on the PC never runs from a phone',
+        ['attachPick', 'openFile', 'openTranscript', 'afnav'].every(t => messageScope(real.console, t) === null)
+        && ['afnav', 'openGuide', 'openAgent'].every(t => messageScope(real.needs, t) === null));
+    ok('the shell\'s copy request only looks, on every page', messageScope(real.needs, 'afClipboard') === 'read' && messageScope(real.console, 'afClipboard') === 'read');
+
     // ---------- (3) THE NEEDS PAGE ON A PHONE ----------
     const changed = new EventEmitter();
     const acted = [], cleared = [];
@@ -186,7 +208,7 @@ const alive = setInterval(() => undefined, 1000);
     };
     const phone = new RemoteViews({
         media: uri('/ext/media'), atLeast: scopeAtLeast, waitMs: 60,
-        pages: { needs: { open: 'read', act: 'answer', looks: ['refresh', 'afnav', 'openGuide', 'openAgent', 'afClipboard'], make: host => NeedsPanel.openOn(host, deps) } }
+        pages: remotePages({ needs: host => NeedsPanel.openOn(host, deps), console: () => undefined })
     });
     const reader = { device: 'dev_r', scope: 'read' }, answerer = { device: 'dev_w', scope: 'answer' };
     const postsR = [], postsW = [];
