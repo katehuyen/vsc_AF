@@ -7,6 +7,7 @@
 import * as path from 'path';
 import { featureMap } from './features';
 import type { RemotePort, Unsubscribe } from './port';
+import { scopeGated } from './scopes';
 import { loadOrMakeCert } from './server/certStore';
 import { DeviceBook } from './server/devices';
 import { EventLog } from './server/eventLog';
@@ -37,7 +38,7 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt): Promise<R
         farm, cert, devices,
         events: new EventLog(path.join(dir, 'events.json')),
         calls: new CallMemory(),
-        callOp: (op, args, caller) => port.callOp(op, args, caller),
+        callOp: scopeGated((op, args, caller) => port.callOp(op, args, caller)),
         features: () => featureMap(f => port.can(f)),
         views: null,
         page: null,
