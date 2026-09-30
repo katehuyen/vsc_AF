@@ -21,3 +21,6 @@ tools/**
 parity.manifest.json
 launch.matrix.json
 par.out
+
+# screenshots shared with the user never ship
+docs/Screenshots/**
