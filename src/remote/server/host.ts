@@ -102,6 +102,8 @@ export function createRemoteServer(d: HostDeps): RemoteServer {
         close: () => new Promise(resolve => {
             for (const s of live) { s.refuse('busy', 'the farm is stopping'); }
             server.close(() => resolve());
+            // A kept-alive HTTP connection would otherwise hold close() open and keep answering.
+            server.closeAllConnections();
         }),
         emit(type, data) {
             const ev = d.events.append(type, data);

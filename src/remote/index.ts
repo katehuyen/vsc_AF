@@ -1,8 +1,8 @@
 /**
- * The remote host's entry: the only symbol the rest of the extension imports.
+ * The remote host's entry: the only module the rest of the extension imports.
  *
- * It receives a RemotePort and returns a handle to stop it. The server itself
- * (X-442) starts here; until then activation only checks the port is usable.
+ * activateRemote() checks the port is usable; startRemoteHost() puts the host
+ * together from the same port and listens where it is told.
  */
 import { CONTRACT_NAME, CONTRACT_VERSION } from './contract';
 import type { RemotePort } from './port';
@@ -10,6 +10,8 @@ import type { RemotePort } from './port';
 export type { RemotePort, RemoteCaller, FarmIdentity, FarmEvent, OpResult, Unsubscribe } from './port';
 export { allOpen, featureMap, isFeature } from './features';
 export type { FeatureAnswer, FeatureGate, FeatureId } from './features';
+export { startRemoteHost } from './serve';
+export type { ListenAt, RunningRemote } from './serve';
 
 export interface RemoteHandle {
     readonly contract: string;
@@ -18,6 +20,6 @@ export interface RemoteHandle {
 
 export function activateRemote(port: RemotePort): RemoteHandle {
     const contract = `${CONTRACT_NAME}/${CONTRACT_VERSION}`;
-    port.log(`remote: ${contract} ready for farm ${port.farm().id} (no server yet)`);
+    port.log(`remote: ${contract} ready for farm ${port.farm().id} (not listening)`);
     return { contract, dispose: () => undefined };
 }
