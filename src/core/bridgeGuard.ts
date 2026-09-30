@@ -159,7 +159,7 @@ export function refusalFor(id: string, how: 'full' | 'known'): string {
  * stops the call — the CLI reads `permissionDecision` and never runs the tool,
  * printing `permissionDecisionReason` to the agent instead.
  */
-export function denyResponseBody(eventName: string | undefined, verdict: BridgeGuardVerdict | undefined): string | undefined {
+export function denyResponseBody(eventName: string | undefined, verdict: { reason: string } | undefined): string | undefined {
     if (!verdict || eventName !== 'PreToolUse') { return undefined; }
     return JSON.stringify({
         hookSpecificOutput: {

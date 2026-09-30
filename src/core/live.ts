@@ -253,7 +253,7 @@ export interface LiveConfig {
      */
     toolGuard?: (payload: {
         session_id?: string; hook_event_name?: string; tool_name?: string;
-        tool_input?: Record<string, unknown>; cwd?: string; engine?: string;
+        tool_input?: Record<string, unknown>; cwd?: string; engine?: string; transcript_path?: string;
     }) => string | undefined;
     /**
      * ‼️ S-43 — what the CLI's own session registry says about an id: `true` a

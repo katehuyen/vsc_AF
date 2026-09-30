@@ -177,7 +177,7 @@ const data = () => ({
             turnThinking: 2, turnCost: 0, turnModel: 'gpt-5.6-terra', turnEffort: 'low',
             model: 'gpt-5.6-terra', effort: 'low', permissionMode: 'acceptEdits',
             queued: ['bir de testleri koştur'],
-            projectId: 'prj_9ujsbtzr', projectName: 'Agent Farm', projectIcon: '🚜',
+            projectId: 'prj_9ujsbtzr', projectName: 'Agent Farm', projectIcon: '🚜', projectColor: '#3fa34d',
             // K-35 — the user's own colour on this session. Two of the three
             // cards carry one and the third cannot (no session id yet), which
             // is the whole of what the picture has to answer.
@@ -202,6 +202,8 @@ const data = () => ({
         // so the scene has to contain the case it exists for.
         session({
             id: 'cs4', agentName: 'developer', sessionId: '019fe860-11aa-4c02',
+            // P-18 - a project with no colour of its own: the hollow square
+            projectId: 'prj_nocolor1', projectName: 'TalkScribe',
             title: 'Kimi rotasinda tur', status: 'idle', turns: 1, tokens: 12800,
             wTokens: 9400, cost: 0.42, lastTs: NOW - 300000,
             identity: identity({

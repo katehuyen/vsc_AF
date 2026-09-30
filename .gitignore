@@ -27,3 +27,6 @@ dist/audit/
 # built packages never enter git - they stay local only
 dist/vsix/
 *.vsix
+
+# Screenshots shared with the user (_REF/ui-conventions.md): local only, timestamp-first names
+docs/Screenshots/

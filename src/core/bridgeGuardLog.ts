@@ -11,15 +11,18 @@ import { BridgeGuardCatch } from './bridgeGuard';
 /** Refusals are rare; this many is weeks of them and still a small file. */
 export const BRIDGE_GUARD_LOG_CAP = 500;
 
-export class BridgeGuardLog {
-    private catches: BridgeGuardCatch[] = [];
+/** What any guard keeps per refusal; the shell guard (X-439) keeps its own file of these. */
+export interface GuardCatch { id: string; ts: number; sessionId: string }
+
+export class BridgeGuardLog<T extends GuardCatch = BridgeGuardCatch> {
+    private catches: T[] = [];
     private saveTimer: NodeJS.Timeout | undefined;
 
     constructor(private readonly file?: string) {
         this.load();
     }
 
-    add(c: BridgeGuardCatch): void {
+    add(c: T): void {
         this.catches.push(c);
         if (this.catches.length > BRIDGE_GUARD_LOG_CAP) {
             this.catches.splice(0, this.catches.length - BRIDGE_GUARD_LOG_CAP);
@@ -30,11 +33,11 @@ export class BridgeGuardLog {
     get total(): number { return this.catches.length; }
 
     /** Newest first. */
-    all(limit = BRIDGE_GUARD_LOG_CAP): BridgeGuardCatch[] {
+    all(limit = BRIDGE_GUARD_LOG_CAP): T[] {
         return [...this.catches].reverse().slice(0, Math.max(0, limit));
     }
 
-    forSession(sessionId: string | undefined): BridgeGuardCatch[] {
+    forSession(sessionId: string | undefined): T[] {
         const id = String(sessionId ?? '').trim();
         if (!id) { return []; }
         return this.catches.filter(c => c.sessionId === id);
@@ -44,7 +47,7 @@ export class BridgeGuardLog {
         const f = this.file;
         if (!f || !fs.existsSync(f)) { return; }
         try {
-            const raw = JSON.parse(fs.readFileSync(f, 'utf8')) as { catches?: BridgeGuardCatch[] };
+            const raw = JSON.parse(fs.readFileSync(f, 'utf8')) as { catches?: T[] };
             this.catches = (raw.catches ?? [])
                 .filter(c => c && typeof c.id === 'string' && typeof c.ts === 'number')
                 .slice(-BRIDGE_GUARD_LOG_CAP);

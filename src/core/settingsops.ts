@@ -195,7 +195,7 @@ const CATEGORY_OF: Record<string, string> = {
     // U-119 — what Allow/Reject type into a blocked session's terminal. It sits
     // with the live monitor because that is what notices the block.
     permissionAnswerKeys: 'live',
-    maxTranscriptMessages: 'live', contextWindowTokens: 'live', bridgeGuard: 'live',
+    maxTranscriptMessages: 'live', contextWindowTokens: 'live', bridgeGuard: 'live', shellGuard: 'live',
     /**
      * ‼️ S-80 — THE HANDOVER RULE IS ITS OWN SECTION, and the words are the
      * argument. The four percentages lived under Live Monitoring because each

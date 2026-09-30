@@ -343,6 +343,7 @@ import {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, HandoverListing, HandoverSource, discoverHandover
 } from './core/handoverDiscovery';
 import { BRIDGE_GUARD_ESCAPE, bridgeGuardCoverage, bridgeGuardVerdict, bridgeGuardView, denyResponseBody } from './core/bridgeGuard';
+import { hookEngineOf, HEREDOC_MAX_LINES, LITERAL_MAX, SHELL_GUARD_ESCAPE, ShellGuardCatch, shellGuardRules, shellGuardVerdict } from './core/shellGuard';
 import { BridgeGuardLog } from './core/bridgeGuardLog';
 import { EngineRunner, ProviderAim, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
@@ -393,6 +394,7 @@ import {
     HANDOVER_NOTES_ANCHOR, mergeHandoverNotes
 } from './core/projectHandover';
 import { ProjectStore } from './core/projectStore';
+import { charterWarning } from './core/charterHealth';
 import { ProjectsPanel, ProjectsPanelDeps } from './panels/projectsPanel';
 import { AppliedReading, AppliedWindow, appliedInWindow } from './core/appliedTurn';
 import { ProjectsTreeProvider } from './views/projectsTree';
@@ -1667,6 +1669,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Every refusal, kept across reloads, so the rule's own health can be read (`sessions.bridgeGuard`). */
     const bridgeGuardLog = new BridgeGuardLog(path.join(context.globalStorageUri.fsPath, 'bridge-guard.json'));
     context.subscriptions.push({ dispose: () => bridgeGuardLog.flush() });
+    /** X-439 — the shell guard's refusals, its own file (`sessions.shellGuard`). */
+    const shellGuardLog = new BridgeGuardLog<ShellGuardCatch>(path.join(context.globalStorageUri.fsPath, 'shell-guard.json'));
+    context.subscriptions.push({ dispose: () => shellGuardLog.flush() });
     // S-75 — the session's OWN sign-in: its Console card's slot, else the slot
     // its sealed launch manifest names. No slot known = no line (a figure
     // from the wrong account is worse than none — 2026-09-06, home 95% vs own 23%).
@@ -1781,15 +1786,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ids are the SHORT forms the index holds, because an 8-character
             // hex string is also every abbreviated git hash there is.
             toolGuard: (p) => {
-                if (!cfg().get<boolean>('bridgeGuard', true)) { return undefined; }
                 if (p.hook_event_name !== 'PreToolUse') { return undefined; }
-                const v = bridgeGuardVerdict({
-                    tool: p.tool_name,
-                    input: p.tool_input,
-                    known: knownSessionIds()
+                if (cfg().get<boolean>('bridgeGuard', true)) {
+                    const v = bridgeGuardVerdict({
+                        tool: p.tool_name,
+                        input: p.tool_input,
+                        known: knownSessionIds()
+                    });
+                    if (v) {
+                        bridgeGuardLog.add({ ts: Date.now(), sessionId: String(p.session_id ?? ''), ...v });
+                        return denyResponseBody(p.hook_event_name, v);
+                    }
+                }
+                // X-439 — the shell rule: a payload never travels inside a command.
+                if (!cfg().get<boolean>('shellGuard', true)) { return undefined; }
+                const sv = shellGuardVerdict({
+                    tool: p.tool_name, input: p.tool_input, engine: hookEngineOf(p.transcript_path)
                 });
-                if (v) { bridgeGuardLog.add({ ts: Date.now(), sessionId: String(p.session_id ?? ''), ...v }); }
-                return denyResponseBody(p.hook_event_name, v);
+                if (sv) { shellGuardLog.add({ ...sv, id: sv.rule, ts: Date.now(), sessionId: String(p.session_id ?? '') }); }
+                return denyResponseBody(p.hook_event_name, sv);
             },
             stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
@@ -11362,6 +11377,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'sessions.shellGuard',
+            describe: '‼️ X-439 — THE SHELL RULE HELD BY CODE, and its own health. A shell command is parsed by the shell before the program sees it, silently: backtick spans vanish, non-ASCII letters are re-encoded, a quoted heredoc still loses a level of backslashes and expands ${...}. So a `PreToolUse` on the shell tool (Bash) is refused when the command carries a non-ASCII character, a backtick (Claude only — Codex\'s shell on Windows is PowerShell, where the backtick is the escape character), a heredoc whose body has a backslash or ${ or runs past ' + HEREDOC_MAX_LINES + ' lines, or one quoted literal over ' + LITERAL_MAX + ' characters; the agent is told to Write the payload to a file and name the file. A Windows path, a short ASCII heredoc and a one-line node -e pass. `' + SHELL_GUARD_ESCAPE + '` anywhere in the command always runs. `on` is the setting (agentFarm.shellGuard); `catches` is what it stopped, newest first, kept across reloads; `engines` says per engine whether the hook stands in front of its shell at all and which rules apply there. args: session? (one session id — only its refusals), limit? (default 50)',
+            handler: (args) => {
+                const limit = Math.max(1, Math.min(500, optNum(args, 'limit', 50)));
+                const session = optStr(args, 'session');
+                const mine = session ? shellGuardLog.forSession(session) : [];
+                return {
+                    on: cfg().get<boolean>('shellGuard', true),
+                    escape: SHELL_GUARD_ESCAPE,
+                    limits: { heredocLines: HEREDOC_MAX_LINES, literalChars: LITERAL_MAX },
+                    engines: ENGINE_IDS.map(e => ({ ...bridgeGuardCoverage(e), rules: shellGuardRules(e) })),
+                    ...(session
+                        ? { session, total: mine.length, catches: [...mine].reverse().slice(0, limit) }
+                        : { total: shellGuardLog.total, catches: shellGuardLog.all(limit) })
+                };
+            }
+        },
+        {
             op: 'sessions.recent',
             describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "baton" = legs of a baton relay a program opened — the tables\' ⑂ Baton category, and a row\'s own `origin` says it the same way; "auto" = every other automation run (schedule/trigger/task/mission, any `claude -p`); omit or "all" = all three), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), ' + RUN_SELECTION_ARGS + ', limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
@@ -13954,7 +13987,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.health',
-            describe: 'Everything currently wrong across all projects: folders that are not there, folders never chosen, budgets exceeded today, and projects marked active that nothing has touched for agentFarm.projectStaleDays. args: none',
+            describe: 'Everything currently wrong across all projects: folders that are not there, folders never chosen, budgets exceeded today, projects marked active that nothing has touched for agentFarm.projectStaleDays, and (X-438) an open project whose charter lacks Code Architecture / Verification Gate / Project Invariants or leaves one empty — the brief every session gets would carry none of it. args: none',
             handler: () => projectStore.all()
                 .map(p => ({ id: p.id, name: p.name, status: p.status, warnings: projectWarnings(p) }))
                 .filter(r => r.warnings.length)
@@ -31198,6 +31231,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const state = projectFolderState(p);
         if (state === 'unset') { out.push('no folder chosen yet'); }
         if (state === 'missing') { out.push(`folder not found: ${p.folder}`); }
+        if (state === 'ok' && p.folder && !CLOSED_PROJECT_STATUSES.includes(p.status)) {
+            const gap = charterWarning(p.folder);
+            if (gap) { out.push(gap); }
+        }
         const roll = projectRollup().find(r => r.name === p.name);
         if (p.budgetUSD && roll && roll.todayCost > p.budgetUSD) {
             out.push(`over today's budget (${fmtUSD(roll.todayCost)} of ${fmtUSD(p.budgetUSD)})`);

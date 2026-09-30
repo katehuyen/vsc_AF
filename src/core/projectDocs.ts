@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { writeAtomicSync } from './atomicFile';
+import { charterGaps } from './charterGaps';
 import { LINE_BREAKS } from './lineBreaks';
 import { folderNameFor, Project } from './projects';
 import { slugify } from './util';
@@ -1518,6 +1519,15 @@ function renderBrief(o: BriefInput, level: BriefLevel, source?: BriefSource): st
     }
     if (charter.invariants) {
         out.push('', '## Project Invariants', clipEntry(charter.invariants, clipVal));
+    }
+    // X-438 — a binding section that is gone is said, never silently skipped.
+    const gaps = charterGaps(charter);
+    if (gaps.length) {
+        out.push('', '## Charter gaps');
+        out.push(roles.charter
+            ? `- ${gaps.map(g => `${g.heading}: ${g.state}`).join(' · ')} — the charter does not carry it, so this session is not told it.`
+            : '- No charter file (af-role: charter) — this session is told no architecture, gate or invariants.');
+        out.push('- Do not guess them: ask the user, and write what they settle under that heading in the charter.');
     }
 
     /**

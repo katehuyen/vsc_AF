@@ -3504,6 +3504,16 @@
       }
     },
     {
+      "capability": "consolePanel.ts#openProject",
+      "ui": [
+        "page:consolePanel.ts#openProject"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "The project square on a Console card opens that project page; whatever is done there carries its own op."
+      }
+    },
+    {
       "capability": "noticesPanel.ts#openProject",
       "ui": [
         "page:noticesPanel.ts#openProject"

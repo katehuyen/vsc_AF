@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.761.0 - A charter that lost a section says so, the Console shows each card's project, and the shell rule is held (2026-09-30)
+
+- A project charter's Code Architecture, Verification Gate and Project
+  Invariants go into every session's brief. When one is deleted or left empty,
+  the brief now carries a "Charter gaps" section naming it (and telling the
+  session not to guess it), and the project's warning list says it too — the
+  project page, the sidebar and `projects.health`. The Doctor's new
+  `farm` section prints the same list per project.
+- Console: a card started under a project shows a small square in that
+  project's own colour, just left of the session's colour dot. Hover names the
+  project; a click opens its page. A project with no colour yet draws a hollow
+  square; a session under no project draws none.
+- A shell command an agent runs is stopped when it carries text the shell would
+  silently damage — a non-ASCII letter, a backtick (Claude only; on Codex it is
+  PowerShell's escape character), a heredoc with a backslash or `${…}` or past
+  20 lines, or one piece of inline text over 600 characters. The agent is told
+  to write the text to a file and have the command name the file;
+  `af:allow-shell` in the command lets it run. Setting `agentFarm.shellGuard`
+  (on by default); `sessions.shellGuard` lists what it stopped.
+
 ## 3.760.0 - Antigravity's quota is read only when Antigravity itself works (2026-09-29)
 
 - Antigravity's quota read (`agy -p /usage`, which flashes a terminal) was

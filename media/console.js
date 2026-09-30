@@ -424,6 +424,14 @@
            only true while you are already looking at it. */
         .cdotc.on { opacity:1; border-width:1px; }
         .cdotc.dead { cursor:default; opacity:.25; border-style:dashed; display:inline-block; }
+        /* P-18 — the project square, one step left of the colour dot. The
+           corner belongs to the AFTip wrapper (S-58), not to the button. */
+        .af-tipw.cprojw { position:absolute; right:22px; bottom:6px; line-height:0; }
+        .cproj { width:10px; height:10px; padding:0; border-radius:2px; cursor:pointer;
+            background:transparent; border:1px solid var(--vscode-descriptionForeground,#888);
+            opacity:.6; transition:opacity .12s, transform .12s; }
+        .cproj.on { opacity:1; }
+        .cproj:hover { opacity:1; transform:scale(1.15); }
         .cpal { position:absolute; right:0; bottom:16px; z-index:6; width:132px;
             padding:6px; border-radius:6px; line-height:normal;
             border:1px solid var(--vscode-widget-border,#4444);
@@ -2413,6 +2421,25 @@
     }
 
     /**
+     * P-18 — WHICH PROJECT, at a glance: a square beside the colour dot in the
+     * project's own colour (the sidebar's and the status bar's). A square, so
+     * it never reads as a second session colour. No project, no square; a
+     * project with no colour yet is a hollow one, because it still says "filed".
+     */
+    function projSquare(s) {
+        if (!s.projectId) { return ''; }
+        const hex = C.esc(s.projectColor || '');
+        const sq = `<button class="cproj${s.projectColor ? ' on' : ''}" data-cproj="${C.esc(s.projectId)}"${s.projectColor
+            ? ` style="background:${hex}; border-color:${hex}"` : ''} aria-label="Project: ${C.esc(s.projectName || s.projectId)}"></button>`;
+        return cardTip(sq, `Project · ${s.projectIcon ? s.projectIcon + ' ' : ''}${s.projectName || s.projectId}`,
+            window.AFTip.lines([
+                'Project: ' + (s.projectName || s.projectId),
+                'Colour: ' + (s.projectColor || 'none yet — set it on the project page'),
+                '\nStarted under this project: it was told about it, and the session is filed under it. Click opens the project page.'
+            ]), 'cprojw');
+    }
+
+    /**
      * One wiring for every card kind — the live list and the resume list are
      * two slots and repaint separately, and a dot wired in only one of them is
      * a dot that works on half the panel.
@@ -2465,6 +2492,11 @@
             }));
         root.querySelectorAll('[data-cpal]').forEach(p =>
             p.addEventListener('click', ev => ev.stopPropagation()));
+        root.querySelectorAll('[data-cproj]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                vscode.postMessage({ type: 'openProject', project: b.dataset.cproj });
+            }));
         root.querySelectorAll('[data-swatch]').forEach(b =>
             b.addEventListener('click', ev => {
                 ev.stopPropagation();
@@ -2556,7 +2588,7 @@
                         session: s.sessionId, whole: true, kept: s.wikiKept || []
                     }) : ''}</span>
                 </div>
-                ${colorDot(s.sessionId, s.color, 'live')}
+                ${projSquare(s)}${colorDot(s.sessionId, s.color, 'live')}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
                     tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>

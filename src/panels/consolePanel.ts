@@ -1311,6 +1311,9 @@ export class ConsolePanel {
                 // all point at the same thing in the same way
                 projectIcon: s.projectId
                     ? (this.deps.projects().find(p => p.id === s.projectId)?.icon ?? '') : '',
+                // P-18 — the square beside the colour dot carries the project's own colour
+                projectColor: s.projectId
+                    ? (this.deps.projects().find(p => p.id === s.projectId)?.color ?? '') : '',
                 // K-26 — which turns of this conversation are already in the
                 // candidate pool. Only for the card being read: the badge is
                 // drawn on its rows and nowhere else, and the other cards carry
@@ -2470,6 +2473,9 @@ export class ConsolePanel {
                 void Promise.resolve(this.deps.setColor?.(id, str('color'))).then(() => this.refresh());
                 break;
             }
+            case 'openProject':
+                if (str('project')) { void vscode.commands.executeCommand('agentfarm.openProject', { id: str('project') }); }
+                break;
             // The page owns the controls, the host owns the answer: it can see
             // every session, the page only what it was sent.
             case 'resumeQuery': {

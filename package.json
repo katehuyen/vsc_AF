@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.760.0",
+  "version": "3.761.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9000,6 +9000,11 @@
           "type": "boolean",
           "default": true,
           "description": "Stops an agent that searches the disk for a session's files by its id, and has it ask Agent Farm instead — Agent Farm knows where every session is, and the engines move their files. Only a real session id triggers it. Works on Claude and Codex; the other engines only have the rule written in their instructions. A Console card shows an orange dot when one of its searches was stopped. Turn off to let such searches run."
+        },
+        "agentFarm.shellGuard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stops an agent's shell command that carries text the shell would silently damage: a non-ASCII letter, a backtick, a heredoc with backslashes, or a long piece of inline text. The agent is told to write the text to a file and have the command name the file. Works on Claude and Codex; the other engines only have the rule written in their instructions. Turn off to let such commands run."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",
