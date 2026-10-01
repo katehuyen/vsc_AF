@@ -15,6 +15,7 @@ import { revealPath } from '../core/reveal';
 import { buildSessionMarkdown, SessionExportView } from '../core/sessionExport';
 import { chainIndexNow, chainPlace } from '../core/chainMembership';
 import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -841,7 +842,10 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
 }
 
 export class SessionViewerPanel {
+    /** The desktop's tabs, one per transcript. */
     private static open = new Map<string, SessionViewerPanel>();
+    /** X-456 — the views phones have open: one instance each, never in the desktop's map. */
+    private static phones = new Set<SessionViewerPanel>();
     private disposables: vscode.Disposable[] = [];
     private watcher?: fs.FSWatcher;
     private pushTimer?: NodeJS.Timeout;
@@ -867,35 +871,35 @@ export class SessionViewerPanel {
     ): void {
         const existing = SessionViewerPanel.open.get(file);
         if (existing) {
-            existing.panel.reveal();
+            existing.host.reveal();
             if (resetView) {
-                void existing.panel.webview.postMessage({ type: 'resetView' });
+                void existing.host.webview.postMessage({ type: 'resetView' });
             } else if (focusTs) {
-                void existing.panel.webview.postMessage({
+                void existing.host.webview.postMessage({
                     type: 'focus', ts: focusTs, ...(roles?.length ? { roles } : {})
                 });
             }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.session',
-            tabCaption(path.basename(file, '.jsonl')),
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
+        const host = desktopHost({ viewType: 'agentfarm.session', title: tabCaption(path.basename(file, '.jsonl')) });
         SessionViewerPanel.open.set(file,
-            new SessionViewerPanel(panel, file, deps, focusTs, roles, resetView));
+            new SessionViewerPanel(host, file, deps, focusTs, roles, resetView));
+    }
+
+    /** X-456 — a transcript on a phone's view; the caller has already checked the file is a known one. */
+    static openOn(host: PanelHost, file: string, deps: ViewerDeps, focusTs?: number, roles?: string[]): void {
+        SessionViewerPanel.phones.add(new SessionViewerPanel(host, file, deps, focusTs, roles));
     }
 
     /** A session renamed anywhere is renamed here too — tab caption included. */
     static refreshOpen(): void {
-        for (const p of SessionViewerPanel.open.values()) {
-            void p.panel.webview.postMessage({ type: 'data', data: p.viewData(), auto: true });
+        for (const p of [...SessionViewerPanel.open.values(), ...SessionViewerPanel.phones]) {
+            void p.host.webview.postMessage({ type: 'data', data: p.viewData(), auto: true });
         }
     }
 
     private constructor(
-        readonly panel: vscode.WebviewPanel,
+        readonly host: PanelHost,
         private file: string,
         private deps: ViewerDeps,
         focusTs?: number,
@@ -906,15 +910,15 @@ export class SessionViewerPanel {
         if (focusTs) { data.focusTs = focusTs; }
         if (roles?.length) { data.focusRoles = roles; }
         if (resetView) { data.resetView = true; }
-        panel.webview.html = htmlShell(
-            panel.webview,
+        host.webview.html = htmlShell(
+            host.webview,
             deps.extensionUri,
             'Session Viewer',
             data,
             'sessionViewer.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.watchFile();
         // Speaker-label config lives in the HTML shell (window.__AFUI__), so a
         // settings change needs a re-render, not just a data push.
@@ -922,8 +926,8 @@ export class SessionViewerPanel {
             if (e.affectsConfiguration('agentFarm.speakerLabelTemplate')
                 || e.affectsConfiguration('agentFarm.speakerLabelCase')
                 || e.affectsConfiguration('agentFarm.speakerLabelFallback')) {
-                this.panel.webview.html = htmlShell(
-                    this.panel.webview, this.deps.extensionUri, 'Session Viewer',
+                this.host.webview.html = htmlShell(
+                    this.host.webview, this.deps.extensionUri, 'Session Viewer',
                     this.viewData(), 'sessionViewer.js');
             }
         }, null, this.disposables);
@@ -948,7 +952,7 @@ export class SessionViewerPanel {
             this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
             void vscode.window.showTextDocument(uri);
         } catch (e) {
-            void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
+            void this.host.ask.error(`Agent Farm: export failed — ${String(e)}`);
         }
     }
 
@@ -971,7 +975,7 @@ export class SessionViewerPanel {
                 prev: place.prev ?? '', next: place.next ?? '', first: place.first, last: place.last, open: place.open
             };
         }
-        this.panel.title = tabCaption(String(data.sessionId ?? ''), String(data.title ?? ''));
+        this.host.title = tabCaption(String(data.sessionId ?? ''), String(data.title ?? ''));
         return data;
     }
 
@@ -982,14 +986,14 @@ export class SessionViewerPanel {
      */
     private goTo(file: string): void {
         const other = SessionViewerPanel.open.get(file);
-        if (other && other !== this) { other.panel.reveal(); return; }
+        if (other && other !== this) { other.host.reveal(); return; }
         SessionViewerPanel.open.delete(this.file);
         this.file = file;
         SessionViewerPanel.open.set(file, this);
         try { this.watcher?.close(); } catch { /* already closed */ }
         this.watchFile();
-        this.panel.webview.html = htmlShell(
-            this.panel.webview, this.deps.extensionUri, 'Session Viewer', this.viewData(), 'sessionViewer.js');
+        this.host.webview.html = htmlShell(
+            this.host.webview, this.deps.extensionUri, 'Session Viewer', this.viewData(), 'sessionViewer.js');
     }
 
     /** Live refresh: push fresh data (KPIs, context gauge, new messages) while the session is still running. */
@@ -1002,7 +1006,7 @@ export class SessionViewerPanel {
                 this.pushTimer = setTimeout(() => {
                     this.pushTimer = undefined;
                     if (!fs.existsSync(this.file)) { return; }
-                    void this.panel.webview.postMessage(
+                    void this.host.webview.postMessage(
                         { type: 'data', data: this.viewData(), auto: true });
                 }, 800);
             });
@@ -1041,7 +1045,7 @@ export class SessionViewerPanel {
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
         // The wiki tagger answers for itself, on every page that draws a badge
         // (K-26 — see wikiMarkMessage in ./base).
-        if (wikiMarkMessage(this.panel.webview, msg)) { return; }
+        if (wikiMarkMessage(this.host.webview, msg)) { return; }
         switch (msg.type) {
             case 'openRaw':
                 vscode.commands.executeCommand('vscode.open', vscode.Uri.file(this.file));
@@ -1055,8 +1059,8 @@ export class SessionViewerPanel {
                 const idx = typeof msg.idx === 'number' ? msg.idx : -1;
                 if (!text) { break; }
                 void vscode.env.clipboard.writeText(text).then(
-                    () => this.panel.webview.postMessage({ type: 'copied', idx, ok: true }),
-                    () => this.panel.webview.postMessage({ type: 'copied', idx, ok: false }));
+                    () => this.host.webview.postMessage({ type: 'copied', idx, ok: true }),
+                    () => this.host.webview.postMessage({ type: 'copied', idx, ok: false }));
                 break;
             }
             // ---- what the agent did to the code (B3) ----
@@ -1077,7 +1081,7 @@ export class SessionViewerPanel {
                         ? { text: lines.slice(0, CUT).join('\n'), clipped: true }
                         : { text: t, clipped: false };
                 };
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'sessionFileEdits', file: want,
                     records: (group?.records ?? []).map(r => {
                         const o = clip(r.oldText), n = clip(r.newText);
@@ -1100,14 +1104,15 @@ export class SessionViewerPanel {
                     cwd: String(data.cwd ?? ''),
                     agentName: data.agentName,
                     source: data.engine,
-                    models: data.models
+                    models: data.models,
+                    ask: this.host.ask
                 });
                 break;
             }
             case 'renameSession': {
                 const data = this.viewData();
                 void vscode.commands.executeCommand('agentfarm.renameSession', {
-                    sessionId: String(data.sessionId ?? ''), title: String(data.title ?? '')
+                    sessionId: String(data.sessionId ?? ''), title: String(data.title ?? ''), ask: this.host.ask
                 });
                 break;
             }
@@ -1141,7 +1146,7 @@ export class SessionViewerPanel {
             case 'ctxCapture': {
                 const data = this.viewData();
                 if (String(data.engine ?? 'claude') !== 'claude') {
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'ctxCapture', status: 'error',
                         error: 'this engine does not publish Claude /context category reports'
                     });
@@ -1151,7 +1156,7 @@ export class SessionViewerPanel {
                 if (this.looksLive()) {
                     // A second writer racing the live TUI on one transcript file is
                     // a risk we don't take — the live path is the terminal itself.
-                    void this.panel.webview.postMessage({ type: 'ctxCapture', status: 'live' });
+                    void this.host.webview.postMessage({ type: 'ctxCapture', status: 'live' });
                     break;
                 }
                 this.capturing = true;
@@ -1174,7 +1179,7 @@ export class SessionViewerPanel {
                     r => {
                         this.capturing = false;
                         this.lastCaptureAt = Date.now();
-                        void this.panel.webview.postMessage(r.ok
+                        void this.host.webview.postMessage(r.ok
                             ? { type: 'ctxCapture', status: 'ok', report: r.report }
                             : { type: 'ctxCapture', status: 'error', error: r.error });
                     },
@@ -1214,13 +1219,13 @@ export class SessionViewerPanel {
                 break;
             }
             case 'refresh':
-                this.panel.webview.postMessage({ type: 'data', data: this.viewData() });
+                this.host.webview.postMessage({ type: 'data', data: this.viewData() });
                 break;
             case 'chainGo': {
                 const sid = typeof msg.sessionId === 'string' ? msg.sessionId : '';
                 const file = sid ? this.deps.fileForSession?.(sid) : undefined;
                 if (file) { this.goTo(file); } else {
-                    void vscode.window.showInformationMessage(`Agent Farm: session ${sid.slice(0, 8)} has no transcript on this machine.`);
+                    void this.host.ask.info(`Agent Farm: session ${sid.slice(0, 8)} has no transcript on this machine.`);
                 }
                 break;
             }
@@ -1230,7 +1235,7 @@ export class SessionViewerPanel {
                 if (owner) {
                     void vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: owner.agentId });
                 } else {
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         'Agent Farm: this session does not belong to a known agent.');
                 }
                 break;
@@ -1278,7 +1283,9 @@ export class SessionViewerPanel {
     }
 
     private dispose(): void {
-        SessionViewerPanel.open.delete(this.file);
+        // A phone's view closing leaves the desktop's tab of the same transcript alone.
+        if (SessionViewerPanel.open.get(this.file) === this) { SessionViewerPanel.open.delete(this.file); }
+        SessionViewerPanel.phones.delete(this);
         try { this.watcher?.close(); } catch { /* already closed */ }
         if (this.pushTimer) { clearTimeout(this.pushTimer); }
         for (const d of this.disposables) { d.dispose(); }

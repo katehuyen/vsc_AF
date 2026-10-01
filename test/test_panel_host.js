@@ -20,7 +20,7 @@ const LEGACY = [
     'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'agentDetail', 'airtablePanel', 'capabilities',
     'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'missionsPanel', 'noticesPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
-    'secretsPanel', 'selectionPanel', 'sessionViewer', 'settingsPanel', 'studioPanel',
+    'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
 ].map(n => `src/panels/${n}.ts`);
 const HOST_FILE = 'src/panels/panelHost.ts';
@@ -177,8 +177,13 @@ const alive = setInterval(() => undefined, 1000);
     ok('views are counted across devices', views.count() === 1);
 
     // ---------- the real page list ----------
-    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined });
-    ok('the phone has the Needs, the Console, the Now, the Sessions and the Tasks pages', Object.keys(real).sort().join() === 'console,needs,now,sessions,tasks');
+    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true });
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks and a session\'s pages', Object.keys(real).sort().join() === 'console,needs,now,session,sessions,tasks');
+    ok('A session: reading looks, renaming, pinning, resuming and the wiki need manage, files, the terminal, the export and the PC clipboard stay on the PC',
+        real.session.open === 'read' && ['refresh', 'sessionFileEdits', 'wikiAsk'].every(t => messageScope(real.session, t) === 'read')
+        && ['renameSession', 'pinSession', 'resumeConsole', 'ctxCapture', 'wikiMark', 'wikiCategory'].every(t => messageScope(real.session, t) === 'manage')
+        && ['openRaw', 'copyStep', 'openEditedFile', 'revealFile', 'exportChoose', 'resume', 'focusTerminal', 'openAgent', 'chainGo', 'afnav']
+            .every(t => messageScope(real.session, t) === null));
     ok('Tasks: reading looks, a permission is answered, making and running work needs manage, files and other tabs stay on the PC',
         real.tasks.open === 'read' && ['refresh', 'promptSnippets', 'runs-archive', 'chooser-pick'].every(t => messageScope(real.tasks, t) === 'read')
         && messageScope(real.tasks, 'approve') === 'answer'

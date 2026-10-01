@@ -2,7 +2,19 @@
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
+    /** A step's ⧉ says how its copy went, once the clipboard has answered. */
+    function markCopied(b, ok) {
+        if (!b) { return; }
+        b.textContent = ok ? '✓' : '⚠';
+        b.classList.add('done');
+        setTimeout(() => { b.textContent = '⧉'; b.classList.remove('done'); }, 1400);
+    }
     const C = window.AFCharts;
+    // X-456 — on a phone: what opens a file, a terminal, an editor or a save dialog stays on the PC
+    // and is not drawn; a copy goes to the phone's clipboard through the shell (AFCtx.copy).
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
+    const PC_ONLY = ON_PHONE_HOST ? ' hidden' : '';
+    const ON_THE_PC = 'Files open on the PC — open them from Agent Farm there.';
     let DATA = window.__DATA__;
     let filter = '';
     let turnsOpen = false;
@@ -108,12 +120,7 @@
         // only after the host says the clipboard actually took it. No repaint: the
         // reader is looking at that row and moving it under them would be rude.
         if (ev.data.type === 'copied') {
-            const b = document.querySelector(`#msgs [data-copy="${ev.data.idx}"]`);
-            if (b) {
-                b.textContent = ev.data.ok === false ? '⚠' : '✓';
-                b.classList.add('done');
-                setTimeout(() => { b.textContent = '⧉'; b.classList.remove('done'); }, 1400);
-            }
+            markCopied(document.querySelector(`#msgs [data-copy="${ev.data.idx}"]`), ev.data.ok !== false);
             return;
         }
         if (ev.data.type === 'sessionFileEdits') {
@@ -703,8 +710,8 @@
                         <td class="num">${f.edits}</td>
                         <td class="num"><span class="plus">+${f.added}</span> <span class="minus">−${f.removed}</span></td>
                         <td class="muted small">${f.turns.map(t => '#' + t).join(' ')}</td>
-                        <td><button class="only" data-openfile="${C.esc(f.file)}" title="Open this file in the editor">open</button>
-                            <button class="only" data-difffile="${C.esc(f.file)}" title="Diff the file on disk against git HEAD — this is what is uncommitted NOW, by anyone, not only this session">vs HEAD</button></td>
+                        <td><button class="only" data-openfile="${C.esc(f.file)}"${PC_ONLY} title="Open this file in the editor">open</button>
+                            <button class="only" data-difffile="${C.esc(f.file)}"${PC_ONLY} title="Diff the file on disk against git HEAD — this is what is uncommitted NOW, by anyone, not only this session">vs HEAD</button></td>
                     </tr>` + (open ? `<tr><td></td><td colspan="5">${hunksHtml(f.file)}</td></tr>` : '');
                 }).join('')}</tbody>
             </table></div>
@@ -1036,6 +1043,9 @@
                     border:1px solid var(--vscode-widget-border, #4444);
                     color:var(--vscode-foreground); }
                 .turnhdr .tnav:hover { opacity:1; }
+                /* X-456 on a phone the band breaks after its title: the figures and the arrows take a second line. */
+                html.af-phone .turnhdr { flex-wrap:wrap; row-gap:4px; }
+                html.af-phone .turnhdr .turnlabel { flex:1 1 55%; min-width:0; }
                 /* Accordion: folded turns keep only their band; stack them tighter
                    so collapse-all reads as a compact turn list. */
                 .turnhdr .tcaret { flex:none; width:12px; text-align:center; font-size:10px; opacity:.75; }
@@ -1197,13 +1207,13 @@
                 actions: `${window.AFWiki ? window.AFWiki.badge({
         session: DATA.sessionId, whole: true, label: 'Wiki', cls: 'secondary',
         marks: DATA.wikiMarks || []
-    }) : ''}<button id="resume">⏵ Resume</button>
+    }) : ''}<button id="resume"${PC_ONLY}>⏵ Resume</button>
                     <button class="secondary" id="renamesess" title="Give this session your own name — the same rename as the side panel's">✎ Rename</button>
-                    <button class="secondary" id="focusterm" title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
+                    <button class="secondary" id="focusterm"${PC_ONLY} title="Jump to this session's terminal window (if one is open)">⌨ Terminal</button>
                     <button class="secondary" id="replaytoggle">${replay.active ? '✕ Exit replay' : '▶ Replay'}</button>
-                    <button class="secondary" id="exportmd" title="Export to Markdown — asks whether to save the current view (filters/folding applied) or everything${exportOff.size ? ` · ${includedTurnCount()}/${(DATA.turns || []).length} turns currently shown` : ''}">⬇ Export MD</button>
-                    <button class="secondary" id="raw">Open raw JSONL</button>${DATA.agentName ? `
-                    <button class="secondary" id="agentpage" title="This session belongs to ${C.esc(DATA.agentName)} — open the agent page">⌂ ${C.esc(DATA.agentName)}</button>` : ''}`,
+                    <button class="secondary" id="exportmd"${PC_ONLY} title="Export to Markdown — asks whether to save the current view (filters/folding applied) or everything${exportOff.size ? ` · ${includedTurnCount()}/${(DATA.turns || []).length} turns currently shown` : ''}">⬇ Export MD</button>
+                    <button class="secondary" id="raw"${PC_ONLY}>Open raw JSONL</button>${DATA.agentName ? `
+                    <button class="secondary" id="agentpage"${PC_ONLY} title="This session belongs to ${C.esc(DATA.agentName)} — open the agent page">⌂ ${C.esc(DATA.agentName)}</button>` : ''}`,
                 searchTitle: 'Search inside this session (tool traffic too)',
                 guide: 'oturum-goruntuleyici'
             })}
@@ -1340,6 +1350,7 @@
                 // a webview but is permission-gated, and a copy button that
                 // silently did nothing is worse than none — this way the ✓ is
                 // only drawn once the write actually happened.
+                if (ON_PHONE_HOST) { window.AFCtx.copy(text, (_said, bad) => markCopied(cp, !bad)); return; }
                 vscode.postMessage({ type: 'copyStep', idx: Number(cp.dataset.copy), text });
                 return;
             }
@@ -1507,9 +1518,14 @@
         const n = Number(ctx.turnN);
         const copyHost = (text) => {
             if (!text) { window.AFCtx.toast('There is nothing there to copy.', true); return; }
+            if (ON_PHONE_HOST) { window.AFCtx.copy(text); return; }
             vscode.postMessage({ type: 'copyStep', idx: -1, text: text });
         };
         const turnMsgs = () => (DATA.messages || []).filter(m => m.turn === n);
+        if (ON_PHONE_HOST && ['vsFile', 'vfOpen', 'vfDiff', 'vfReveal', 'dhOpen'].includes(verb)) {
+            window.AFCtx.toast(ON_THE_PC, true);
+            return;
+        }
 
         switch (verb) {
             // ---- a turn ----

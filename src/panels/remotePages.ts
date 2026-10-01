@@ -16,6 +16,29 @@ export interface RemotePageMakers {
     /** `args` narrows the page the way the openSessions command's argument does. */
     sessions(host: PanelHost, args?: Record<string, unknown>): void;
     tasks(host: PanelHost): void;
+    /** False when `args` names no transcript the farm knows: the phone is told "unavailable". */
+    session(host: PanelHost, args?: Record<string, unknown>): boolean;
+}
+
+/** X-456 — the transcript a phone asked to read and where to open it. */
+export interface SessionPageTarget { file: string; focusTs?: number; roles?: string[] }
+
+/**
+ * The transcript a phone's `afnav` names (media/afRemote.js): by session id or by path, and only
+ * one the index already knows — a phone never points the host at a file of its own choosing.
+ */
+export function sessionPageTarget(
+    args: Record<string, unknown> | undefined,
+    known: readonly { sessionId?: string; file?: string }[]
+): SessionPageTarget | undefined {
+    const sid = typeof args?.sessionId === 'string' ? args.sessionId : '';
+    const file = typeof args?.file === 'string' ? args.file : '';
+    const row = (sid ? known.find(s => s.sessionId === sid && !!s.file) : undefined)
+        ?? (file ? known.find(s => s.file === file) : undefined);
+    if (!row?.file) { return undefined; }
+    const ts = typeof args?.ts === 'number' && args.ts > 0 ? args.ts : 0;
+    const roles = Array.isArray(args?.roles) ? args.roles.filter((r): r is string => typeof r === 'string') : [];
+    return { file: row.file, ...(ts ? { focusTs: ts } : {}), ...(roles.length ? { roles } : {}) };
 }
 
 export function remotePages(make: RemotePageMakers): Record<string, RemotePage> {
@@ -61,6 +84,17 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
                 'open-history', 'export-md', 'command', 'openPromptSnippets', 'pickPromptSnippets',
                 'openGuide', 'afnav'],
             make: host => make.tasks(host)
+        },
+        // X-456 — reading a transcript. Renaming, pinning, resuming in the Console, capturing the
+        // context and keeping turns for the wiki are manage; files, the raw JSONL, the terminal, the
+        // export and the PC clipboard stay on the PC. The chain arrows reach the phone as afnav.
+        session: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'sessionFileEdits', 'wikiAsk'],
+            answers: [],
+            pcOnly: ['openRaw', 'copyStep', 'openEditedFile', 'revealFile', 'exportChoose', 'resume',
+                'focusTerminal', 'openAgent', 'openDashboard', 'openTimeline', 'chainGo', 'openGuide', 'afnav'],
+            make: (host, args) => make.session(host, args)
         }
     };
 }

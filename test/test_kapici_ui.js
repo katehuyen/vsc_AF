@@ -101,7 +101,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('the plan row carries it', /\.\.\.\(t\.lastKapici \? \{ kapici: t\.lastKapici \} : \{\}\)/.test(panel));
         ok('the run row carries a task\'s', /\.\.\.\(t\.kapici \? \{ kapici: t\.kapici \} : \{\}\)/.test(panel));
         const page = read('media/tasksPage.js');
-        ok('the guard cell and the run row draw it', /guardcell">\$\{guard\}\$\{p\.kapici && window\.AFKapici/.test(page) && /setupLines\(r\.setup\)\)\)\}\$\{[^\n]*\}\$\{r\.kapici && window\.AFKapici \? '<div>' \+ window\.AFKapici\.chip\(r\.kapici, C\)/.test(page));
+        ok('the guard cell and the run row draw it', /guardcell"[^>]*>\$\{guard\}\$\{p\.kapici && window\.AFKapici/.test(page) && /setupLines\(r\.setup\)\)\)\}\$\{[^\n]*\}\$\{r\.kapici && window\.AFKapici \? '<div>' \+ window\.AFKapici\.chip\(r\.kapici, C\)/.test(page));
         ok('…never inside the title\'s own panel (one subject per panel)', !/roundBadge\(r\)\}\$\{r\.kapici/.test(page));
     }
 

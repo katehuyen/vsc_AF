@@ -473,7 +473,7 @@ import { firewallGuard } from './core/firewallWin';
 import type { RemoteDevicesHost } from './panels/toolboxRemote';
 import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePort } from './remote';
 import { RemoteViews } from './panels/remoteViews';
-import { remotePages } from './panels/remotePages';
+import { remotePages, sessionPageTarget } from './panels/remotePages';
 import {
     chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
     PendingSends, queueInbound, turnEnded
@@ -30917,7 +30917,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             console: host => ConsolePanel.openOn(host, consoleDeps),
             now: host => NowPanel.openOn(host, nowDeps),
             sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args)),
-            tasks: host => TasksPanel.openOn(host, tasksDeps)
+            tasks: host => TasksPanel.openOn(host, tasksDeps),
+            session: (host, args) => {
+                const to = sessionPageTarget(args, index.allWithExternal());
+                if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
+                return !!to;
+            }
         })
     });
     const remotePort: RemotePort = {
@@ -38276,20 +38281,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * the row you are already pointing at, and it comes back to THIS card
          * rather than opening a second one (see ConsoleHost.start).
          */
-        vscode.commands.registerCommand('agentfarm.consoleResumeSession', (arg?: { hostId?: string }) => {
+        vscode.commands.registerCommand('agentfarm.consoleResumeSession', (arg?: { hostId?: string; ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
             const id = consoleRowId(arg);
             if (!id) { return; }
             const s = consoleHost.get(id);
             if (!s) { return; }
             if (s.status !== 'ended' && s.status !== 'error') {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: ${s.agentName}'s session is still running — it is already where you left it.`);
                 return;
             }
             // A session the engine never named cannot be resumed by anybody:
             // there is no thread id to hand back to the CLI.
             if (!s.sessionId) {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: that session ended before ${s.engine || 'the CLI'} gave it an id, so there is nothing to continue — start a new one.`);
                 return;
             }
@@ -38301,7 +38307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // whatever the setting held that day.
             const gate = resumeRouteFor(s.sessionId, (s.engine || 'claude'), s.agentId, {}, 'acp');
             if (gate.act === 'refuse') {
-                void vscode.window.showWarningMessage(`Agent Farm: ${describeResumeRoute(gate)}`);
+                void ask.warn(`Agent Farm: ${describeResumeRoute(gate)}`);
                 return;
             }
             const routeUsed = gatedRoute(gate);
@@ -38387,14 +38393,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Same ownership rule as everywhere else — a session a process already
         // owns cannot be joined, only jumped to.
         vscode.commands.registerCommand('agentfarm.resumeInConsole',
-            async (arg?: SessionRef | SessionInfo) => {
+            async (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const s = sessionFromArg(arg);
                 if (!s?.sessionId || !s.cwd) {
                     // A row WAS right-clicked but the session has no id or no
                     // folder yet (a Console session before its first turn, an
                     // imported transcript): silence would read as a dead item.
                     if (arg) {
-                        void vscode.window.showInformationMessage(s?.sessionId
+                        void ask.info(s?.sessionId
                             ? 'Agent Farm: that session has no working folder on record, so it cannot be resumed in the Console.'
                             : 'Agent Farm: this session has not reported its id yet — say something in it first.');
                     }
@@ -38406,7 +38413,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Claude's ownership refusal to their thread ids is false.
                 const left = engine === 'claude' ? leftoverOwner(s.sessionId) : undefined;
                 if (left) {
-                    const go = await vscode.window.showWarningMessage(
+                    const go = await ask.warn(
                         `"${s.title}" is still running from an earlier window of Agent Farm (pid ${left.pid}) — nothing is reading it.`,
                         {
                             modal: true,
@@ -38416,7 +38423,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         'End it and continue here');
                     if (go !== 'End it and continue here') { return; }
                     if (!await endLeftover(s.sessionId, left.pid)) {
-                        void vscode.window.showWarningMessage(
+                        void ask.warn(
                             `Agent Farm: pid ${left.pid} is still holding that session — nothing was resumed.`);
                         return;
                     }
@@ -38424,7 +38431,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const owner = engine === 'claude'
                     ? ownerOf(liveCliSessions(), s.sessionId) : undefined;
                 if (owner) {
-                    const go = await vscode.window.showWarningMessage(
+                    const go = await ask.warn(
                         `"${s.title}" is open right now in ${describeOwner(owner)}.\n\n` +
                         'Claude Code cannot join a running session — resuming it here would start a second process on the same transcript, and the two would never see each other\'s turns.',
                         { modal: true }, 'Jump to it instead');
@@ -38439,7 +38446,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Resume brings it: the card recorded the model, effort, mode and sign-in it ran with,
                 // which neither the transcript (silent on the mode) nor the fleet defaults know.
                 const card = consoleHost.list().find(x => x.sessionId === s.sessionId && (x.status === 'ended' || x.status === 'error'));
-                if (card) { await vscode.commands.executeCommand('agentfarm.consoleResumeSession', { hostId: card.id }); return; }
+                if (card) { await vscode.commands.executeCommand('agentfarm.consoleResumeSession', { hostId: card.id, ask }); return; }
                 const agent = agents.find(a => a.name === s.agentName);
                 const d = launchDefaults();
                 // ‼️ S-29 — "is there already a card for this session?" is the
@@ -38474,7 +38481,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const gate = consoleHolds(s.sessionId)
                     ? undefined : resumeRouteFor(s.sessionId, engine, agent?.id ?? '', {}, 'acp');
                 if (gate?.act === 'refuse') {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${describeResumeRoute(gate)}`);
+                    void ask.warn(`Agent Farm: ${describeResumeRoute(gate)}`);
                     return;
                 }
                 const routeUsed = gatedRoute(gate);
@@ -38695,19 +38702,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.renameSession',
-            async (arg?: SessionRef | SessionInfo) => {
+            async (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const s = sessionFromArg(arg);
                 if (!s?.sessionId) {
                     // A row WAS right-clicked but carries no id yet: that only
                     // happens to a brand-new Console session before its first
                     // turn. Say so — silence would read as a broken menu item.
                     if (arg) {
-                        void vscode.window.showInformationMessage(
+                        void ask.info(
                             'Agent Farm: this session has not reported its id yet — say something in it first, then rename it.');
                     }
                     return;
                 }
-                const value = await vscode.window.showInputBox({
+                const value = await ask.input({
                     prompt: 'Session name (leave empty to restore the automatic title)',
                     value: s.title, ignoreFocusOut: true
                 });

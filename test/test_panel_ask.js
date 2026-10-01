@@ -138,7 +138,7 @@ Module._load = origLoad;
 
     // ---------------------------------------------------------------- the gate: a page on the host asks its host
     {
-        const hosted = ['consolePanel.ts', 'needsPanel.ts', 'nowPanel.ts', 'sessionsPanel.ts', 'tasksPanel.ts'];
+        const hosted = ['consolePanel.ts', 'needsPanel.ts', 'nowPanel.ts', 'sessionsPanel.ts', 'tasksPanel.ts', 'sessionViewer.ts'];
         const direct = /vscode\.window\.(showInformationMessage|showWarningMessage|showErrorMessage|showQuickPick|showInputBox|showOpenDialog)\(/;
         for (const f of hosted) {
             const src = fs.readFileSync(path.join(ROOT, 'src', 'panels', f), 'utf8');

@@ -27,7 +27,8 @@ export interface RemotePage {
     looks: readonly string[];
     answers: readonly string[];
     pcOnly: readonly string[];
-    make(host: PanelHost, args: Record<string, unknown> | undefined): void;
+    /** False: there is nothing to show for these args, and the view is refused. */
+    make(host: PanelHost, args: Record<string, unknown> | undefined): boolean | void;
 }
 
 /** Messages every page's shell sends (htmlShell's shared helpers) that only look. */
@@ -130,10 +131,11 @@ export class RemoteViews {
         const host = new RemoteView(page, spec, this.d.media, post);
         this.views.set(key, host);
         host.onDidDispose(() => { if (this.views.get(key) === host) { this.views.delete(key); } });
-        spec.make(host, args);
+        const made = spec.make(host, args) !== false;
+        if (!made) { host.dispose(); }
         for (const wake of this.arrivals.get(key) ?? []) { wake(); }
         this.arrivals.delete(key);
-        return true;
+        return made;
     }
 
     message(caller: ViewCaller, view: string, message: unknown): void {

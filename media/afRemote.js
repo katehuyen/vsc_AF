@@ -6,16 +6,32 @@
 // farm as view.msg; the farm's view.post messages arrive as ordinary window
 // "message" events, which the shell dispatches. State lives per view in
 // sessionStorage, which the shell clears when the app locks.
+//
+// X-456 — a page opening a transcript (a Sessions row, a search hit, a task's
+// run, the viewer's chain arrows) would open a tab on the PC; on the phone the
+// same click opens the "session" page in the shell instead, and Back returns.
 (function () {
     'use strict';
     if (typeof window.acquireVsCodeApi === 'function') { return; }
     var key = 'afRemoteState:' + location.pathname + location.search;
     var api = null;
+    var READS = { openSession: true, 'open-transcript': true, chainGo: true };
+    function readOf(m) {
+        if (!m || READS[m.type] !== true) { return null; }
+        var args = {};
+        if (typeof m.sessionId === 'string' && m.sessionId) { args.sessionId = m.sessionId; }
+        if (typeof m.file === 'string' && m.file) { args.file = m.file; }
+        if (!args.sessionId && !args.file) { return null; }
+        if (typeof m.ts === 'number' && m.ts > 0) { args.ts = m.ts; }
+        if (Array.isArray(m.roles)) { args.roles = m.roles.filter(function (r) { return typeof r === 'string'; }); }
+        return { type: 'afnav', to: 'session', args: args };
+    }
     window.acquireVsCodeApi = function () {
         if (api) { return api; }
         api = {
             postMessage: function (m) {
-                if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(m)); }
+                var out = readOf(m) || m;
+                if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },
             getState: function () {
                 try {
