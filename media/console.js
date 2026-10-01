@@ -5922,6 +5922,8 @@
     // ‼️ ONCE, at module scope — this page repaints in slots, several times a
     // second while a turn runs.
     window.AFCtx.listen(ctxDo);
+    // U-180 — the session sound panel opens here from a card's right-click.
+    if (window.AFSoundPop) { window.AFSoundPop.attach(vscode); }
 
     /** Take a held message back into the box — it leaves the queue, so it can
      *  only be said again on purpose. */

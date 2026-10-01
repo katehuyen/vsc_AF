@@ -236,7 +236,30 @@
     }
 
 
+    /** U-179 — the header's 🔊: icon, state and MIRROR hover from the host's push (window.__AFUI__.sound). */
+    function navState(fallbackTip) {
+        const s = (window.__AFUI__ || {}).sound;
+        if (!s) { return { icon: '🔊', state: '', head: 'Sound', tip: fallbackTip || '' }; }
+        return { icon: s.icon, state: s.state, head: s.head, tip: (s.lines || []).join('\n') + '\n\nClick opens the Sound page.' };
+    }
+
+    /** Repaint every header 🔊 in place on a push — a re-render would cost scroll, menus and drafts. */
+    function paintNav() {
+        const s = navState();
+        document.querySelectorAll('[data-afsound]').forEach(b => {
+            b.textContent = s.icon;
+            b.setAttribute('aria-label', s.head);
+            b.setAttribute('data-afsound', s.state);
+            const wrap = b.parentElement;
+            const h = wrap && wrap.querySelector('.af-tiph');
+            const body = wrap && wrap.querySelector('.af-tipb');
+            if (h) { h.textContent = s.head; }
+            if (body) { body.textContent = s.tip; }
+        });
+    }
+
     window.AFSoundCard = Object.assign(window.AFSoundCard || {}, {
+        navState, paintNav,
         EVENT_TEXT: ALERT_EVENT_TEXT, ORIGIN_TEXT: ALERT_ORIGIN_TEXT,
         voiceName: alertVoiceName, toneGroups: alertToneGroups, voiceSelect: alertVoiceSelect,
         eventRow: alertEventRow, events: alertEvents, customRow: alertCustomRow, summary: alertsSummary

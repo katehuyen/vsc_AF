@@ -934,6 +934,33 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#alertSessionApply",
+      "ui": [
+        "page:alertMessages.ts#alertSessionApply"
+      ],
+      "ops": [
+        "alerts.session"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertSessionOpen",
+      "ui": [
+        "page:alertMessages.ts#alertSessionOpen"
+      ],
+      "ops": [
+        "alerts.session"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertSessionTest",
+      "ui": [
+        "page:alertMessages.ts#alertSessionTest"
+      ],
+      "ops": [
+        "live.alerts.test"
+      ]
+    },
+    {
       "capability": "alertMessages.ts#alertSpeak",
       "ui": [
         "page:alertMessages.ts#alertSpeak"

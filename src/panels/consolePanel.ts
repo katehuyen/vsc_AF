@@ -36,6 +36,7 @@ import { SESSION_COLORS } from '../core/sessionmarks';
 import { getSlashCommands, reportToSources, SlashReport } from '../core/slashCommands';
 import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
+import { AlertMessageDeps, handleAlertMessage, soundSurface } from './alertMessages';
 import { desktopHost, type PanelHost } from './panelHost';
 import { afConfig } from '../core/settingsDoor';
 import { normalizeLegCeiling } from '../core/baton';
@@ -172,6 +173,8 @@ export interface ConsoleRoute {
 
 export interface ConsoleDeps {
     extensionUri: vscode.Uri;
+    /** U-180 — the sound host acts; the session panel (afSoundPop) is answered through them */
+    sound?(): AlertMessageDeps;
     host: ConsoleHost;
     getAgents(): AgentInfo[];
     index: SessionIndex;
@@ -2026,6 +2029,9 @@ export class ConsolePanel {
         }
         // The wiki tagger does the same on every surface that draws a badge (K-26).
         if (wikiMarkMessage(this.surface.webview, msg)) { return; }
+        // U-180 — the session sound panel, answered by the handler the Sound page uses.
+        const sound = this.deps.sound?.();
+        if (sound && await handleAlertMessage(msg, sound, soundSurface(this.surface.webview))) { return; }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
             case 'getAccounts': this.postAccounts(); break;

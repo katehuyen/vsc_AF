@@ -52,6 +52,7 @@
            aimed at. Fixed width so the cluster's right edge does not move from
            page to page, and the whole name is one hover away (SHORTHAND). */
         .af-head-bar .af-ico { min-width:24px; padding:3px 0; text-align:center; }
+        .af-head-bar .af-ico[data-afsound="off"] { opacity:.55; }
         /* An AFTip wrapper is the flex child once a button is wrapped, so it
            has to sit in the row exactly as the bare button did. */
         .af-head-bar .af-tipw-nav, .af-head-more .af-tipw-nav { display:inline-flex; align-items:center; }
@@ -171,8 +172,18 @@
             id: 'evals', label: '🧪 Evals', icon: '🧪',
             tip: 'Scored runs against an agent\'s own cases — what still passes after a change to a '
                 + 'prompt, a model or an engine, and what it cost to find out.'
+        },
+        // U-179 — one icon that is also the state: 🔊 rings · 🔇 muted · 🌙 quiet hours · 🔈 nothing on.
+        {
+            id: 'sound', label: '🔊 Sound', icon: '🔊',
+            tip: 'What rings on which event, whether the agent\'s name is said, quiet hours and your own sounds.'
         }
     ];
+    // U-179 — the 🔊's state and its in-place repaint live with the other sound parts (afSoundCard.js).
+    const soundNav = () => window.AFSoundCard && window.AFSoundCard.navState
+        ? window.AFSoundCard.navState(NAV.find(n => n.id === 'sound').tip)
+        : { icon: '🔊', state: '', head: 'Sound', tip: NAV.find(n => n.id === 'sound').tip };
+    const paintSound = () => { if (window.AFSoundCard && window.AFSoundCard.paintNav) { window.AFSoundCard.paintNav(); } };
 
     /** The full name behind a label that carries an icon: '🔔 Notices' → 'Notices'.
      *  One rule, so a menu item, an aria-label and a hover panel can never
@@ -298,6 +309,7 @@
                 ? document.getElementById('afq-style') : null;
             if (qs) { qs.textContent = m.afui.quotaCss; }
             paintCounts();
+            if (m.afui.sound) { paintSound(); }
         });
     }
 
@@ -384,6 +396,14 @@
             }
             // `label` already carries the count badge where there is one, and it
             // is still the same element the live push repaints (see afCounts).
+            if (n.id === 'sound') {
+                const s = soundNav();
+                cluster.push(navBtn({
+                    label: label, name: s.head, icon: s.icon,
+                    attrs: `data-afnav="sound" data-afsound="${s.state}"`, tip: s.tip
+                }));
+                continue;
+            }
             cluster.push(navBtn({
                 label: label, name: plainName(n.label), icon: n.icon,
                 attrs: `data-afnav="${n.id}"`, tip: n.tip

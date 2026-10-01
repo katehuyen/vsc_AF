@@ -30,6 +30,8 @@ export interface MuteBarDeps {
     mutedSessions: () => number;
     /** The gate's own answer, so the bar and the alert cannot disagree. */
     silence: () => Silence;
+    /** U-179 — told on every repaint, so the page headers' 🔊 follows the bar. */
+    changed?: () => void;
 }
 
 export class MuteStatusBar implements vscode.Disposable {
@@ -50,6 +52,7 @@ export class MuteStatusBar implements vscode.Disposable {
     }
 
     update(): void {
+        this.deps.changed?.();
         const muted = this.deps.muted();
         const quiet = this.deps.quiet();
         const armed = this.deps.armedEvents();

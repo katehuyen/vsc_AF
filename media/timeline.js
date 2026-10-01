@@ -2,6 +2,8 @@
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
+    // U-180 — the session sound panel opens here from a lane's right-click.
+    if (window.AFSoundPop) { window.AFSoundPop.attach(vscode); }
     const C = window.AFCharts;
     let DATA = window.__DATA__;
     // ≤1440 renders event dots from live memory (the monitor keeps 24h);

@@ -4,6 +4,7 @@ import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
 import { quotaStyleCss } from '../core/quotaStyle';
+import type { SoundHeader } from '../core/soundHeader';
 import { ctxPageActions } from '../core/ctxmenu';
 import {
     parseChatId, telegramCard, TelegramCard, TelegramSnapshot
@@ -80,6 +81,25 @@ function headerCounts(): { notices: { unread: number }; queue: { blocked: number
  *  status-bar bell, so the two surfaces can never disagree. */
 export function pushHeaderCounts(): void {
     pushAfui(headerCounts());
+}
+
+/**
+ * U-179 — the header's 🔊: the sound state every page draws. Pushed from the
+ * same moment the status-bar 🔇 repaints, so the two cannot disagree — and only
+ * when it CHANGED, because that moment comes on every live event.
+ */
+let soundHeaderProvider: (() => SoundHeader) | undefined;
+let soundHeaderSent = '';
+export function setSoundHeaderProvider(fn: () => SoundHeader): void { soundHeaderProvider = fn; }
+function currentSoundHeader(): SoundHeader | null {
+    try { return soundHeaderProvider ? soundHeaderProvider() : null; } catch { return null; }
+}
+export function pushSoundHeader(): void {
+    const sound = currentSoundHeader();
+    const key = JSON.stringify(sound);
+    if (!sound || key === soundHeaderSent) { return; }
+    soundHeaderSent = key;
+    pushAfui({ sound });
 }
 
 /** U-154 — a quota figure's style edited in Farm Settings repaints every open page in place. */
@@ -474,6 +494,7 @@ export function htmlShell(
     const soundCard = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundCard.js'));
     const soundStrips = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundStrips.js'));
     const soundWire = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundWire.js'));
+    const soundPop = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundPop.js'));
     // The web view card (U-85) — the farm on a phone, and the QR that opens it.
     // Ships everywhere for the reason the card above does, sharpened: the fact
     // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
@@ -540,6 +561,8 @@ export function htmlShell(
         // 🔔 unread notices + 📥 queue items that need you. Only the STARTING
         // values — from here on they arrive by push (see pushHeaderCounts).
         ...headerCounts(),
+        // U-179 — the header's 🔊; later changes arrive by push (pushSoundHeader).
+        sound: currentSoundHeader(),
         // Where a right-click on this page's rows posts back to (media/afCtx.js).
         ctxPanel: ctxKeyFor(webview, scriptFile),
         // The running build, for the header's version stamp (U-147).
@@ -596,6 +619,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${soundCard}"></script>
 <script nonce="${nonce}" src="${soundStrips}"></script>
 <script nonce="${nonce}" src="${soundWire}"></script>
+<script nonce="${nonce}" src="${soundPop}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${phoneAppCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>

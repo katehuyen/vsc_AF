@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.770.0 - Sound in every header, one panel per session (2026-10-01)
+
+- Every page header has a 🔊 that also shows the state: 🔊 something rings, 🔇 all
+  muted, 🌙 inside quiet hours, a dim 🔈 when nothing is switched on yet. Its tooltip
+  lists what rings, the silent sessions and the quiet window; a click opens the Sound
+  page. It changes together with the status-bar mute icon.
+- Right-click a Console card or a Live Timeline lane and choose **Sound for This
+  Session…**: a small panel opens on the page with everything about that session's
+  sound in one place — **Sound** (Like all / Always / Silent), its tones, the voice
+  that says who, reading its answers aloud, Focus / Pop-up / Notification, and a test.
+  From the command palette and other pages the existing list still opens.
+- New bridge op `alerts.session` reads and writes one session's sound in one call.
+
 ## 3.769.0 - Sound has a page of its own (2026-10-01)
 
 - New **Sound** page (`Agent Farm: Sound: Open`): everything the farm can make a

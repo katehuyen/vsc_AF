@@ -12,6 +12,8 @@
  * formats play.
  */
 import { AlertsPage, NOTIFY_KEYS } from './soundModel';
+import { ALERT_EVENTS } from '../core/alertVoices';
+import { parseSessionPatch, SessionSoundPatch } from '../core/soundSession';
 
 /** The host acts the sound controls need — each one the function an op runs. */
 export interface AlertMessageDeps {
@@ -73,6 +75,11 @@ export interface AlertMessageDeps {
     /** U-178 — the Notification column: the VS Code notification for one event,
      *  written through the function `settings.set` writes with. */
     alertsSetNotify?(event: string, on: boolean): Promise<void>;
+    /** U-180 — one session's sound, read and written as `alerts.session` does. */
+    alertsSessionView?(sessionId: string): unknown;
+    alertsSessionApply?(sessionId: string, patch: SessionSoundPatch): Promise<unknown>;
+    /** the session's own branches, rehearsed — `live.alerts.test`'s function */
+    alertsSessionTest?(sessionId: string, event: string): Promise<void>;
 }
 
 /** Where a refusal lands on a page — the key its error line is drawn under. */
@@ -84,6 +91,19 @@ export interface AlertSurface {
     error(text: string): void;
     /** redraw the page from its data */
     refresh(): void;
+    /** U-180 — answer the session panel directly (pages that draw it) */
+    post?(msg: object): void;
+}
+
+/** U-180 — the surface of a page that draws only the session panel (Console,
+ *  Live Timeline): refusals and profiles go straight back to the panel. */
+export function soundSurface(webview: { postMessage(m: unknown): Thenable<boolean> | Promise<boolean> | boolean }): AlertSurface {
+    const post = (m: object) => { void Promise.resolve(webview.postMessage(m)).then(undefined, () => undefined); };
+    return {
+        error: error => post({ type: 'soundPopError', sessionId: '', error }),
+        refresh: () => undefined,
+        post
+    };
 }
 
 /**
@@ -105,6 +125,16 @@ export async function handleAlertMessage(
     const alertAct = async (run: () => Promise<void> | undefined): Promise<void> => {
         try { await run(); surface.refresh(); }
         catch (e) { alertError(String((e as Error).message)); }
+    };
+    // U-180 — the session panel is answered with the profile itself.
+    const sid = (): string => String(msg.sessionId ?? '');
+    const sessionFail = (e: unknown): void => {
+        const error = String((e as Error)?.message ?? e).slice(0, 300);
+        if (surface.post) { surface.post({ type: 'soundPopError', sessionId: sid(), error }); } else { alertError(error); }
+    };
+    const sessionAnswer = async (read: () => unknown): Promise<void> => {
+        try { surface.post?.({ type: 'soundPopData', profile: await read(), alerts: deps.alerts?.() ?? null }); }
+        catch (e) { sessionFail(e); }
     };
     switch (msg.type) {
         /**
@@ -242,6 +272,21 @@ export async function handleAlertMessage(
             await alertAct(() => deps.alertsSetNotify?.(event, msg.on !== false));
             return true;
         }
+        // U-180 — the session panel (media/afSoundPop.js): it is answered with
+        // the profile itself, so the panel repaints without the page doing so.
+        case 'alertSessionOpen':
+            await sessionAnswer(() => deps.alertsSessionView?.(sid()));
+            return true;
+        case 'alertSessionApply': {
+            const p = parseSessionPatch(msg.patch, ALERT_EVENTS);
+            if (!p.ok) { sessionFail(new Error(p.error)); return true; }
+            await sessionAnswer(() => deps.alertsSessionApply?.(sid(), p.patch));
+            return true;
+        }
+        case 'alertSessionTest':
+            try { await deps.alertsSessionTest?.(sid(), String(msg.event ?? 'turn-ready')); }
+            catch (e) { sessionFail(e); }
+            return true;
     }
     return false;
 }

@@ -164,7 +164,8 @@ const push = afui => onMessage({ data: { type: 'afui', afui } });
     ok('…and whose body says what that page is for',
         /<span class="af-tiph">Toolbox<\/span><span class="af-tipb">Everything that extends/.test(html));
 
-    const ICONS = [['Evals', '🧪'], ['Search', '⌕'], ['Engines', '🔌'], ['Settings', '⚙'],
+    // U-179 — 🔊 Sound joined as an icon on purpose: the icon is also its state.
+    const ICONS = [['Evals', '🧪'], ['Sound', '🔊'], ['Search', '⌕'], ['Engines', '🔌'], ['Settings', '⚙'],
     ['Refresh', '⟳'], ['Guide', '?']];
     for (const [name, icon] of ICONS) {
         ok(`${name} is its icon alone, at icon width, and still named for a screen reader`,

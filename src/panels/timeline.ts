@@ -9,9 +9,12 @@ import {
 } from '../core/turnAlerts';
 import { AlertEvent, ALERT_EVENTS, EVENT_LABEL, VoiceOrigin } from '../core/alertVoices';
 import { handleAfNav, htmlShell } from './base';
+import { AlertMessageDeps, handleAlertMessage, soundSurface } from './alertMessages';
 
 export interface TimelineDeps {
     extensionUri: vscode.Uri;
+    /** U-180 — the sound host acts; the session panel (afSoundPop) is answered through them */
+    sound?(): AlertMessageDeps;
     live: LiveMonitor;
     tasks: TaskManager;
     /** Transcripts on disk — the money/token/turn figures a hook event cannot carry. */
@@ -304,6 +307,12 @@ export class TimelinePanel {
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
+        // U-180 — the session sound panel, answered by the handler the Sound page uses.
+        const sound = this.deps.sound?.();
+        if (sound && /^alert/.test(msg.type)) {
+            void handleAlertMessage(msg, sound, soundSurface(this.panel.webview));
+            return;
+        }
         switch (msg.type) {
             case 'installHooks':
                 void vscode.commands.executeCommand('agentfarm.installHooks');

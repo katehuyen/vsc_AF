@@ -676,6 +676,7 @@ import {
 } from './core/terminalRender';
 import {
     postCtx, pushHeaderCounts, pushQuotaStyle, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setRunningVersion,
+    pushSoundHeader, setSoundHeaderProvider,
     setWikiMarkBridge, speakerSettings
 } from './panels/base';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
@@ -686,6 +687,8 @@ import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembershi
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
 import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
+import { soundHeader } from './core/soundHeader';
+import { parseSessionPatch, SESSION_ALSO, SessionSoundPatch, soundOf, soundPlan } from './core/soundSession';
 import { SoundPanel } from './panels/soundPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
@@ -1980,6 +1983,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const showTimeline = (): void => {
         TimelinePanel.show({
             extensionUri: context.extensionUri, live, tasks: taskManager, index,
+            // U-180 — declared later in activate(); reached only once the page is open.
+            sound: () => soundDeps,
             // ‼️ X-251 — THE SAME ONE READER THE SESSION PAGE ASKS. A card that
             // resolved the sign-in itself would be a second answer to a
             // question with one witness (the launch manifest), and the two
@@ -2761,6 +2766,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ).then(c => { if (c === 'Open Timeline') { showTimeline(); } });
         }
         return branches;
+    };
+    /**
+     * U-180 — ONE SESSION'S SOUND, as the shared panel and `alerts.session` show
+     * it: the three-state Sound (core/soundSession.ts), the tones it can ring on,
+     * the voice that says who, the reader and the other three branches.
+     */
+    const alertsSessionView = (s: LiveSession) => {
+        const id = s.sessionId;
+        const actions = turnAlerts.actionsFor(id);
+        const mine = turnAlerts.voicesFor(id);
+        return {
+            sessionId: id,
+            label: live.labelOf(s),
+            sound: soundOf(actions, turnAlerts.mutedFor(id)),
+            tones: SESSION_ALERT_EVENTS.map(event => {
+                const r = resolveAlertVoice(event, s);
+                return { event, chosen: mine[event] ?? '', voice: r.voice, origin: r.origin };
+            }),
+            speechVoice: turnAlerts.speechVoiceFor(id),
+            fleetSpeechVoice: speakCfg().voice,
+            read: turnAlerts.readAloudFor(id),
+            also: { focus: actions.includes('focus'), modal: actions.includes('modal'), toast: actions.includes('toast') }
+        };
+    };
+    /** Each field through the function its own op / the Timeline control uses. */
+    const alertsSessionApply = async (sessionId: string, patch: SessionSoundPatch) => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        if (!s) { throw new Error(`no live session ${sessionId || '(empty)'} is being watched`); }
+        const id = s.sessionId;
+        const must = (r: { ok: boolean; error?: string }) => { if (!r.ok) { throw new Error(r.error ?? 'refused'); } };
+        if (patch.sound) {
+            const plan = soundPlan(patch.sound, turnAlerts.actionsFor(id));
+            if (plan.muted !== turnAlerts.mutedFor(id)) { await alertsSetSessionMuted(id, plan.muted); }
+            if (plan.ring !== turnAlerts.actionsFor(id).includes('sound')) { must(setSessionAlertAction(id, 'sound', plan.ring)); }
+        }
+        for (const [event, voice] of Object.entries(patch.voices ?? {})) {
+            await alertsSetSessionVoice(id, event as AlertEvent, voice);
+        }
+        if (patch.speechVoice !== undefined) { await alertsSetSessionSpeechVoice(id, patch.speechVoice); }
+        if (patch.read !== undefined) { await alertsSetSessionReadAloud(id, patch.read); }
+        for (const a of SESSION_ALSO) {
+            if (patch[a] !== undefined) { must(setSessionAlertAction(id, a, patch[a] === true)); }
+        }
+        await turnAlerts.flush();
+        muteBar.update();
+        return alertsSessionView(s);
     };
     /** Toggle one action on one session — the gutter's message and the op. */
     const setSessionAlertAction = (
@@ -12396,6 +12447,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: () => ({ alerts: alertsPage(), notify: soundNotify() })
         },
         {
+            op: 'alerts.session',
+            describe: 'U-180 — ONE SESSION\'S SOUND, READ AND WRITTEN IN ONE CALL: what the shared session sound panel shows. Read: give only sessionId. Write any of: sound (like-all = whatever the fleet settings say · always = rings even when the fleet switch is off · silent = never a sound; it maps onto the session\'s own ♪ and its mute and changes nothing else), voices ({event: tone id} for THIS session, "" hands it back to the chain below; events '
+                + ALERT_EVENTS.join('|') + '), speechVoice (the voice that says who, "" = the fleet\'s), read (read its finished answers aloud), focus / modal / toast (the other three branches). Every field goes through the function its own op or the Timeline control uses, with the same refusals; the answer is the profile after the write. args: sessionId (required, full id or 8-char prefix of a live session), sound?, voices?, speechVoice?, read?, focus?, modal?, toast?',
+            handler: async (args) => {
+                const raw = argStr(args, 'sessionId').trim();
+                const s = live.sessions().find(x => x.sessionId === raw || x.sessionId.startsWith(raw));
+                if (!s) { throw new Error(`no live session matches "${raw}"`); }
+                const p = parseSessionPatch(args, ALERT_EVENTS);
+                if (!p.ok) { throw new Error(p.error); }
+                return Object.keys(p.patch).length ? alertsSessionApply(s.sessionId, p.patch) : alertsSessionView(s);
+            }
+        },
+        {
             op: 'alerts.voice.set',
             describe: '‼️ WHICH SOUND AN EVENT PLAYS — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. TWO WRITABLE STEPS: `settings` (everybody, `agentFarm.alerts.voices`) and — A-23 — `session`, the top of the chain, "just this conversation, in this tone", which needs a `sessionId` and takes only a session the live monitor is actually watching. The `agent` step between them has no surface yet and is refused by name rather than silently written to the wrong place. An empty `voice` CLEARS that step and the event falls back to the one below it — never to silence, because a session with no opinion is not a muted session (that is the ♪ control, a different question). A voice id nothing knows is refused, and so is one whose file this machine cannot play: accepting it would promise a sound that never arrives. args: event (required, '
                 + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings|session, default settings), sessionId? (required for scope session — full id or 8-char prefix)',
@@ -19922,8 +19986,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     context.subscriptions.push(statusBar);
 
+    // U-179 — the 🔊 in every page header, from the same reads as the bar below.
+    setSoundHeaderProvider(() => {
+        const quiet = alertQuiet();
+        const on = alertsOn();
+        return soundHeader({
+            muted: alertsMuted(),
+            quietInside: quiet.configured && quiet.inside,
+            quietConfigured: quiet.configured,
+            quietLine: quietLine(quiet),
+            armed: ALERT_EVENTS.filter(e => on[e] === true),
+            silentSessions: live.sessions().filter(s => turnAlerts.mutedFor(s.sessionId)).map(s => live.labelOf(s))
+        });
+    });
     // A-22 — 🔇 for the whole farm, one click, from wherever the eye already is.
     const muteBar = new MuteStatusBar({
+        changed: () => pushSoundHeader(),
         muted: () => alertsMuted(),
         quiet: () => alertQuiet(),
         armedEvents: () => {
@@ -27928,6 +28006,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const key = NOTIFY_KEYS[event];
             if (!key) { throw new Error(`${event} has no notification of its own`); }
             await writeUserSetting(key, on);
+        },
+        // U-180 — the session panel: the same two functions `alerts.session` runs,
+        // and the rehearsal `live.alerts.test` runs.
+        alertsSessionView: (sessionId) => {
+            const s = live.sessions().find(x => x.sessionId === sessionId);
+            if (!s) { throw new Error(`no live session ${sessionId || '(empty)'} is being watched`); }
+            return alertsSessionView(s);
+        },
+        alertsSessionApply: (sessionId, patch) => alertsSessionApply(sessionId, patch),
+        alertsSessionTest: async (sessionId, event) => {
+            const r = await testSessionAlert(sessionId, 3000,
+                (ALERT_EVENTS as readonly string[]).includes(event) ? event as AlertEvent : 'turn-ready');
+            if (!r.ok) { throw new Error(r.error === 'nothing selected' ? 'nothing to test — set Sound to Always or tick one of Also' : (r.error ?? 'refused')); }
         }
     };
     const soundNotify = () => notifyState(k => vscode.workspace.getConfiguration().get<boolean>(k) === true);
@@ -29462,6 +29553,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const consoleDeps = {
         extensionUri: context.extensionUri,
+        sound: () => soundDeps,
         host: consoleHost,
         getAgents: () => agents,
         index,
@@ -36881,6 +36973,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         + 'ring. Use Settings ▸ Alert sounds for the fleet-wide tone.');
                     return;
                 }
+                // ‼️ U-180 — FROM A CONSOLE CARD OR A TIMELINE LANE IT OPENS THE
+                // SESSION PANEL in that page (media/afSoundPop.js); the palette and
+                // every other page keep this list, which writes the same data.
+                const from = String((arg as { afPanel?: unknown } | undefined)?.afPanel ?? '');
+                if (/^(console|timeline)#/.test(from)
+                    && await postCtx(from, 'soundPop', { sessionId: s.sessionId })) { return; }
                 const who = live.labelOf(s);
                 const mine = turnAlerts.voicesFor(s.sessionId);
                 type EventItem = vscode.QuickPickItem & {
