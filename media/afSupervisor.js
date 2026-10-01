@@ -122,10 +122,10 @@
     }
 
     /** M-58 — Kapıcı judges with no model; offered while Kapıcı helps with retries, or kept visible when the policy already names it. */
-    const KAPICI = { id: 'kapici', label: 'Kapıcı — no model', ready: true,
-        next: 'Answers from your Kapıcı rule: no model, no cost, no limit. When it is not sure, "If it is not sure" decides.' };
-    const KAPICI_OFF = Object.assign({}, KAPICI, { label: 'Kapıcı — off for retries',
-        next: 'Kapıcı is off for retries in Farm Settings, so this policy goes straight to "If it is not sure".' });
+    const KAPICI = { id: 'kapici', label: 'Gatekeeper — no model', ready: true,
+        next: 'Answers from your Gatekeeper rule: no model, no cost, no limit. When it is not sure, "If it is not sure" decides.' };
+    const KAPICI_OFF = Object.assign({}, KAPICI, { label: 'Gatekeeper — off for retries',
+        next: 'Gatekeeper is off for retries in Farm Settings, so this policy goes straight to "If it is not sure".' });
 
     /**
      * The boxes. `engines` = [{ id, label, ready, next }]; `C` = the page's option/escape helper; `kapici` = Kapıcı helps with retries;

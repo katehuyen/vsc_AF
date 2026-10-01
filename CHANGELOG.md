@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.768.0 - Gatekeeper, project squares on every card, smarter stall alerts (2026-10-01)
+
+- The decision gate's name on every page, menu, setting, tooltip and bridge
+  description is now **Gatekeeper**. Setting keys (`agentFarm.kapici.*`), bridge op
+  names (`kapici.*`), rule folders and the MCP server id are unchanged, so existing
+  settings, rules and integrations keep working as they are.
+- The project square beside a session's colour dot now also appears on the Console's
+  **Resume** list and **Where you left off** rows, not only on live cards. Its tooltip
+  says the conversation is filed under that project; clicking it opens the project.
+- A session is no longer reported as **stalled** while it is waiting on its own work:
+  a wait the Console already shows in purple, or a command still inside the time limit
+  it was given (a long test run with a 10 minute timeout, for example). Silence past
+  that limit is still reported. When the real cause is a usage limit, the alert now
+  says "hit its usage limit" instead of "looks stalled".
+- The Live Timeline's swim lanes now show the same waits the Console card shows in
+  purple: a call that only waits for something already running, and the stretch after
+  a turn ended while a background command it started is still running. Both are drawn
+  in purple and named in the legend; their hover says nothing was waiting on you.
+- With two baton relays running at once, the relay item in the status bar now follows
+  the session open in the Console: it shows that session's chain, and clicking it
+  changes that chain's legs. With nothing of a chain open it shows the newest chain
+  and its hover says how to switch.
+
 ## 3.767.0 - A reopened session comes back as it closed (2026-10-01)
 
 - Whatever way a session is opened again, it now uses the model, effort, permission

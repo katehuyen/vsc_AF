@@ -7186,7 +7186,7 @@ export class TaskManager implements vscode.Disposable {
     private async runKapiciStep(w: FarmWorkflow, index: number, handoff: Handoff, runId: string): Promise<void> {
         const step = w.steps[index];
         const spec = step.kapici!;
-        const task = this.stepTask(w, index, runId, 'kapici', { prompt: `Kapıcı: ${spec.rule}`, status: 'running' }, handoff);
+        const task = this.stepTask(w, index, runId, 'kapici', { prompt: `Gatekeeper: ${spec.rule}`, status: 'running' }, handoff);
         fs.mkdirSync(this.outputsDir, { recursive: true });
         const outFile = path.join(this.outputsDir, `${task.id}.md`);
         task.outputFile = outFile;
@@ -7204,15 +7204,15 @@ export class TaskManager implements vscode.Disposable {
         }
         const why = o.why + yours;
         task.supervisorCall = supervisorCall({
-            trigger: `Kapıcı ${spec.rule}`, decision: { decision: o.route, why, ...(o.by === 'kapici' && o.verdict ? { confidence: o.verdict.confidence } : {}) },
+            trigger: `Gatekeeper ${spec.rule}`, decision: { decision: o.route, why, ...(o.by === 'kapici' && o.verdict ? { confidence: o.verdict.confidence } : {}) },
             ...(o.by === 'today' ? { mechanical: o.why } : {}), model: KAPICI_MODEL,
-            limitsOrigin: `Kapıcı rule ${spec.rule}`, supervisorOrigin: `Kapıcı for workflows: ${hook?.mode ?? 'off'}`, at: Date.now()
+            limitsOrigin: `Gatekeeper rule ${spec.rule}`, supervisorOrigin: `Gatekeeper for workflows: ${hook?.mode ?? 'off'}`, at: Date.now()
         });
         const text = `${route}: ${why}`;
         const rec = this.runRecords.get(runId);
         if (rec) { rec.board = boardWrite(rec.board, { id: stepKey(step, index), index, title: task.title, status: 'done', text, json: { route, rule: spec.rule, by: o.by }, at: Date.now() }); }
         try {
-            fs.writeFileSync(outFile, `# ${task.title}\n\n- Kapıcı step · rule ${spec.rule} · ${hook?.mode ?? 'off'}\n\n---\n\n**${text}**\n\n---\n`
+            fs.writeFileSync(outFile, `# ${task.title}\n\n- Gatekeeper step · rule ${spec.rule} · ${hook?.mode ?? 'off'}\n\n---\n\n**${text}**\n\n---\n`
                 + `Finished: ${new Date().toLocaleString()} · ${route === 'stop' ? 'STOPPED' : 'OK'}\n`, 'utf8');
         } catch { /* archive gone */ }
         task.status = 'done';
@@ -7223,8 +7223,8 @@ export class TaskManager implements vscode.Disposable {
         this.runCounts.delete(runId);
         this.handoffs.delete(runId);
         const last = index >= (this.runView(w.id, runId, w) as FarmWorkflow).steps.length - 1;
-        this.endWorkflowRun(runId, last ? 'done' : 'stopped', `Kapıcı ${last ? 'ended the run at its last step' : `stopped the run at step ${index + 1}`}: ${why}`, index);
-        void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" — Kapıcı stopped it at step ${index + 1}.`);
+        this.endWorkflowRun(runId, last ? 'done' : 'stopped', `Gatekeeper ${last ? 'ended the run at its last step' : `stopped the run at step ${index + 1}`}: ${why}`, index);
+        void vscode.window.showWarningMessage(`Agent Farm: workflow "${w.title}" — Gatekeeper stopped it at step ${index + 1}.`);
     }
 
     /** M-52 — the calendar's published notes measured through the connection (src/core/contentMetrics.ts). */

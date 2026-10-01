@@ -86,12 +86,12 @@ export async function triggerState(pre: Precondition, ctx: FiringContext, diff?:
 }
 
 const said = (rule: string, v: KapiciVerdict): string =>
-    `Kapıcı: ${rule} — ${v.passed ? 'work' : 'no work'} (${v.reason}; confidence ${v.confidence.toFixed(2)})`;
+    `Gatekeeper: ${rule} — ${v.passed ? 'work' : 'no work'} (${v.reason}; confidence ${v.confidence.toFixed(2)})`;
 
 /** Fire or skip, and why. Never throws: whatever goes wrong fires, as the trigger would without Kapıcı. */
 export async function kapiciFiring(pre: Precondition, ctx: FiringContext, k: TriggerKapici | undefined): Promise<KapiciFiring> {
     const rule = pre.rule || DEFAULT_TRIGGER_RULE;
-    if (!k || k.mode === 'off') { return { fire: true, detail: `Kapıcı is off for triggers — fired without asking ${rule}`, by: 'today' }; }
+    if (!k || k.mode === 'off') { return { fire: true, detail: `Gatekeeper is off for triggers — fired without asking ${rule}`, by: 'today' }; }
     try {
         const state = await triggerState(pre, ctx, k.diff);
         const g = await gate<boolean>({
@@ -99,13 +99,13 @@ export async function kapiciFiring(pre: Precondition, ctx: FiringContext, k: Tri
             ask: (m, actual) => k.evaluate(rule, state, m, actual),
             decisionOf: f => (f ? 'pass' : 'reject'), fromVerdict: v => v.passed, log: k.log
         });
-        if (g.shadow) { return { fire: true, detail: `Kapıcı watches ${rule} in shadow — fired as today`, by: 'today', shadow: g.shadow }; }
+        if (g.shadow) { return { fire: true, detail: `Gatekeeper watches ${rule} in shadow — fired as today`, by: 'today', shadow: g.shadow }; }
         const v = g.verdict;
         if (g.by === 'kapici' && v) { return { fire: g.value, detail: said(rule, v), by: 'kapici', verdict: v }; }
-        if (v?.fallback === 'closed') { return { fire: false, detail: `Kapıcı: ${rule} — ${v.reason}`, by: 'kapici', verdict: v }; }
-        return { fire: true, detail: v ? `Kapıcı: ${rule} could not decide — ${v.reason}; fired as without it` : 'fired as without Kapıcı', by: 'today', ...(v ? { verdict: v } : {}) };
+        if (v?.fallback === 'closed') { return { fire: false, detail: `Gatekeeper: ${rule} — ${v.reason}`, by: 'kapici', verdict: v }; }
+        return { fire: true, detail: v ? `Gatekeeper: ${rule} could not decide — ${v.reason}; fired as without it` : 'fired as without Gatekeeper', by: 'today', ...(v ? { verdict: v } : {}) };
     } catch (e) {
         k.log?.(`kapici trigger: ${(e as Error)?.message ?? e} — fired as without it`);
-        return { fire: true, detail: 'Kapıcı failed — fired as without it', by: 'today' };
+        return { fire: true, detail: 'Gatekeeper failed — fired as without it', by: 'today' };
     }
 }

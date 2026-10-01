@@ -354,7 +354,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['discipline', 'Handover Discipline'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
-    ['kapici', 'Kapıcı — the decision gate'],
+    ['kapici', 'Gatekeeper — the decision gate'],
     ['flow', 'Flow & Content — preferences and presets'],
     ['sentry', 'Sentry — unattended campaigns'],
     ['media', 'Media & Browser'],

@@ -874,11 +874,16 @@
         const timeRange = seg.unfinished
             ? `${fmtClock(seg.start)} → unfinished (no end event ever arrived)`
             : `${fmtClock(seg.start)} → ${seg.live
-                ? (seg.stale ? 'stalled? last ' + fmtClock(seg.end) : 'running')
+                ? (seg.stale ? 'stalled? last ' + fmtClock(seg.end) : seg.bg ? 'still waiting' : 'running')
                 : fmtClock(seg.end)}`;
         const head = `${seg.tool} · ${fmtDur(Math.max(1000, seg.end - seg.start))} (${timeRange})`;
 
         const bodyParts = [];
+        if (seg.wait) {
+            bodyParts.push(seg.bg
+                ? 'Waiting on its own work: the turn ended while a command it started still ran. It was not your turn; the CLI wakes the session when that command ends.'
+                : 'Waiting on its own work: this call only waits for something already running. Nothing is waiting on you.');
+        }
         if (seg.said) {
             bodyParts.push(seg.said);
         } else if (!seg.unfinished && !seg.result) {
@@ -1027,10 +1032,25 @@
             if (ls.resolved === false) { unresolved.add(ls.agentName); }
         }
 
+        // U-188 — a turn that ended with a background command still running:
+        // the session waits on its own work until its next event (the purple card).
+        const bgOpen = new Map();
+        const waitSeg = (s, o, end, extra) => s.segments.push(Object.assign({
+            start: Math.max(o.start, from), end, tool: 'Waiting on background', file: o.file,
+            sid: s.id, turn: o.turn, said: '', result: '', wait: true, bg: true
+        }, extra || {}));
         for (const e of events) {
             if (!e.agentName) { unresolved.add(e.sessionId.slice(0, 8)); }
             const s = sessOf(e.sessionId, e.agentName || e.sessionId.slice(0, 8), e.ts);
             if (e.transcriptPath) { s.file = e.transcriptPath; }
+            const bg = bgOpen.get(e.sessionId);
+            if (bg) {
+                bgOpen.delete(e.sessionId);
+                if (e.ts >= from) { waitSeg(s, bg, e.ts); }
+            }
+            if (e.kind === 'stop' && e.wait) {
+                bgOpen.set(e.sessionId, { start: e.ts, file: e.transcriptPath || '', turn: s.turn });
+            }
             const since = s.lastAny ? e.ts - s.lastAny : 0;
             s.lastAny = e.ts;
             if (e.kind === 'prompt') { s.turn++; s.turnStart = e.ts; s.turnTools = 0; }
@@ -1038,7 +1058,7 @@
                 s.turnTools++;
                 open.set(e.sessionId, {
                     start: e.ts, tool: e.tool || '?', file: e.transcriptPath || '',
-                    detail: e.detail || '', turn: s.turn
+                    detail: e.detail || '', turn: s.turn, wait: !!e.wait
                 });
             } else if (e.kind === 'toolEnd') {
                 const o = open.get(e.sessionId);
@@ -1050,7 +1070,7 @@
                             // What it was asked for and what it answered. The
                             // answer only exists on the closing event, which is
                             // the one event a bar is built out of two of.
-                            sid: s.id, turn: o.turn, said: o.detail, result: e.detail || ''
+                            sid: s.id, turn: o.turn, said: o.detail, result: e.detail || '', wait: o.wait
                         });
                     }
                 }
@@ -1085,9 +1105,20 @@
                 sid: s.id, turn: o.turn, said: o.detail, result: '',
                 live: busy,
                 stale: busy && ls.status === 'stalled',
-                unfinished: !busy
+                unfinished: !busy,
+                wait: o.wait
             });
             if (busy) { s.last = now; }
+        }
+        // A background wait still open: it runs to now while the session is
+        // still waiting, and stops where its last event landed otherwise.
+        for (const [sid, o] of bgOpen) {
+            const s = bySession.get(sid);
+            if (!s) { continue; }
+            const ls = LIVE_BY_ID.get(sid);
+            const still = !!ls && ls.status === 'waiting-task';
+            waitSeg(s, o, still ? now : Math.max(o.start, ls ? ls.lastEventTs : s.last), { live: still });
+            if (still) { s.last = now; }
         }
 
         // Group visible sessions per agent (keep first-seen agent order), then
@@ -1389,9 +1420,11 @@
                 const x1 = x(seg.start), x2 = Math.max(x(seg.end), x1 + 2);
                 // A tool whose end never arrived is drawn hollow and dashed —
                 // it must not look like work still being done.
+                // U-188 — waiting on its own work wears the card's purple, not a tool's green.
+                const hue = seg.wait ? 'var(--vscode-charts-purple, #b180d7)' : 'var(--vscode-charts-green, #4caf50)';
                 const style = seg.unfinished
-                    ? 'fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.7"'
-                    : `fill="var(--vscode-charts-green, #4caf50)" opacity="${seg.stale ? 0.6 : seg.live ? 0.95 : 0.55}"`;
+                    ? `fill="none" stroke="${hue}" stroke-width="1.2" stroke-dasharray="3 2" opacity="0.7"`
+                    : `fill="${hue}" opacity="${seg.stale ? 0.6 : seg.live ? 0.95 : 0.55}"${seg.wait ? ' class="segwait"' : ''}`;
                 out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 7}" width="${(x2 - x1).toFixed(1)}" height="14" rx="3" ${style}/>`;
                 // ‼️ U-67 — THE BAR IS DRAWN IN SVG AND ANSWERED IN HTML. The
                 // hover box is also the click and the right-click, so a bar
@@ -1725,7 +1758,8 @@
                 `<span><i style="${v.shape === 'ring'
                     ? `background:transparent;border:2px solid ${v.color};box-sizing:border-box;`
                     : `background:${v.color};`}${v.shape === 'diamond' ? 'transform:rotate(45deg);' : ''}"></i>${v.label}</span>`).join('') +
-              `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>`;
+              `<span><i style="background:var(--vscode-charts-green,#4caf50);width:16px;border-radius:3px"></i>tool run</span>` +
+              `<span><i style="background:var(--vscode-charts-purple,#b180d7);width:16px;border-radius:3px"></i>waiting on its own work</span>`;
 
         document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.html({

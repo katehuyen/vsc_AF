@@ -93,12 +93,19 @@ export function runningChains(list: readonly Baton[], alive: (sessionId: string)
 /**
  * ‼️ S-77 — THE ONE STATUS-BAR ITEM: the relay running right now, or nothing.
  * With several chains the newest speaks and `+N` counts the rest; each has its line.
+ * M-63 — unless the Console has a session of one of them open (`focus`): then that
+ * chain speaks, and a click opens ITS legs.
  */
 export function batonBarView(
-    list: readonly Baton[], maxLegs: number, alive: (sessionId: string) => boolean, fmt: (t: number) => string = hhmm
+    list: readonly Baton[], maxLegs: number, alive: (sessionId: string) => boolean, fmt: (t: number) => string = hhmm,
+    focus?: string
 ): BatonBarView | undefined {
-    const running = runningChains(list, alive);
-    if (!running.length) { return undefined; }
+    const byTime = runningChains(list, alive);
+    if (!byTime.length) { return undefined; }
+    const mine = focus ? list.find(b => b.toSessionId === focus || b.from.sessionId === focus)?.chainId : undefined;
+    const running = mine && byTime.some(b => b.chainId === mine)
+        ? [...byTime.filter(b => b.chainId === mine), ...byTime.filter(b => b.chainId !== mine)]
+        : byTime;
     const top = running[0];
     const cap = (b: Baton) => chainMaxLegs(list, b.chainId, maxLegs);
     const max = cap(top) > 0 ? `/${cap(top)}` : '';
@@ -109,6 +116,9 @@ export function batonBarView(
         text: `⑂ ${top.hop + 1}${top.state === 'started' && top.lastLeg ? LAST_LEG_MARK : ''}${max}${wake}${more}`,
         tooltip: [
             `Baton relay — ${running.length === 1 ? 'one chain' : running.length + ' chains'} running`,
+            ...(running.length > 1 ? [mine === top.chainId
+                ? 'Showing the chain of the session open in the Console.'
+                : 'Showing the newest chain; open a session of another chain in the Console to switch.'] : []),
             '',
             ...lines,
             '',

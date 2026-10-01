@@ -24,7 +24,7 @@
         const sure = !k.fallback;
         const ok = k.outcome ? !/skip|stop|reject/.test(k.outcome) : k.passed;
         const trig = `<span class="kpc-chip" style="${CHIP}${sure ? tint(ok) : 'background:rgba(128,128,128,.18)'}">🛡 ${C.esc(word(k))}${sure ? ' ' + pct(k.confidence) : ''}</span>`;
-        return T().wrap(trig, 'Kapıcı — ' + k.rule, T().lines([
+        return T().wrap(trig, 'Gatekeeper — ' + k.rule, T().lines([
             'Decision: ' + k.decision + (k.outcome && k.outcome !== k.decision ? ' → ' + k.outcome : ''),
             'Confidence: ' + (sure ? pct(k.confidence) : 'none — the rule\'s ' + k.fallback + ' path'),
             'Answered by: ' + k.provider + ' · ' + (k.latencyMs || 0) + ' ms',
@@ -61,7 +61,7 @@
                     const a = agree[id];
                     return l + ': ' + (a && a.compared ? a.agreed + ' of ' + a.compared + ' (' + pct(a.rate) + '), confidence ' + a.confidence.min + '–' + a.confidence.max : 'nothing compared');
                 }),
-                '\nIn shadow a consumer works exactly as before and Kapıcı answers beside it; this is how often the two agreed. Switch one on when its rate is high enough for you.'
+                '\nIn shadow a consumer works exactly as before and Gatekeeper answers beside it; this is how often the two agreed. Switch one on when its rate is high enough for you.'
             ]), 'tip-kpc-agree');
         return `<div class="kpc-head" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:4px 0 8px">${keyHtml}${rulesHtml}${agreeHtml}${mcp(K.mcp, C)}`
             + `<button id="kpc-secrets" title="Secret vault\n\nEnter the key there under ${C.esc(key.name)} and tick Farm only — Agent Farm reads it, no agent's environment gets it.">Secret vault…</button></div>`;
@@ -81,7 +81,7 @@
     }
 
     function rules(list, C) {
-        if (!list || !list.length) { return '<p class="muted small">No Kapıcı rules found.</p>'; }
+        if (!list || !list.length) { return '<p class="muted small">No Gatekeeper rules found.</p>'; }
         return `<div class="kpc-rules" style="display:grid;grid-template-columns:auto auto auto 1fr;gap:2px 12px;align-items:baseline">`
             + list.map(r => T().wrap(`<code>${C.esc(r.id)}</code>`, r.id + ' — v' + r.version, T().lines([
                 r.description,

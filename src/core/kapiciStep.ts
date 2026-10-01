@@ -18,7 +18,7 @@ export const ON_REJECT = ['stop', 'ask_user'] as const;
 export type OnReject = typeof ON_REJECT[number];
 export const DEFAULT_STEP_INPUT = '{prev_text}';
 /** Who answered, on the supervisor trail — a Kapıcı step is not a supervisor call. */
-export const KAPICI_MODEL = 'Kapıcı';
+export const KAPICI_MODEL = 'Gatekeeper';
 
 export interface KapiciStepSpec { rule: string; input?: string; onReject?: OnReject }
 
@@ -34,12 +34,12 @@ const isRoute = (x: unknown): x is KapiciRoute => (KAPICI_ROUTES as readonly unk
 
 /** The step's own shape, and where it may stand; '' = fine. */
 export function kapiciStepRefusal(spec: unknown, step: { parallel?: unknown; forEach?: unknown } = {}): string {
-    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) { return 'a Kapıcı step is {rule, input?, onReject?}'; }
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) { return 'a Gatekeeper step is {rule, input?, onReject?}'; }
     const s = spec as Record<string, unknown>;
-    if (typeof s.rule !== 'string' || !/^[\w.-]{1,80}$/.test(s.rule.trim())) { return 'a Kapıcı step names its rule — a rule id such as trigger.has-work (kapici.rules lists them)'; }
-    if (s.input !== undefined && (typeof s.input !== 'string' || s.input.length > 4000)) { return 'a Kapıcı step\'s input is a text template of at most 4000 characters'; }
+    if (typeof s.rule !== 'string' || !/^[\w.-]{1,80}$/.test(s.rule.trim())) { return 'a Gatekeeper step names its rule — a rule id such as trigger.has-work (kapici.rules lists them)'; }
+    if (s.input !== undefined && (typeof s.input !== 'string' || s.input.length > 4000)) { return 'a Gatekeeper step\'s input is a text template of at most 4000 characters'; }
     if (s.onReject !== undefined && !(ON_REJECT as readonly unknown[]).includes(s.onReject)) { return 'onReject is stop or ask_user'; }
-    if (step.parallel || step.forEach) { return 'a Kapıcı step decides where the chain goes, so it cannot run in parallel or once per item'; }
+    if (step.parallel || step.forEach) { return 'a Gatekeeper step decides where the chain goes, so it cannot run in parallel or once per item'; }
     return '';
 }
 
@@ -66,21 +66,21 @@ export function routeOfVerdict(v: KapiciVerdict, spec: KapiciStepSpec): KapiciRo
 /** Where the chain goes, and why. Never throws: whatever goes wrong carries on, as the chain would without the step. */
 export async function kapiciStepRoute(spec: KapiciStepSpec, state: KapiciState, hook: KapiciStepHook | undefined): Promise<KapiciStepOutcome> {
     const rule = spec.rule;
-    if (!hook || hook.mode === 'off') { return { route: 'proceed', why: `Kapıcı is off for workflows — carried on without asking ${rule}`, by: 'today' }; }
+    if (!hook || hook.mode === 'off') { return { route: 'proceed', why: `Gatekeeper is off for workflows — carried on without asking ${rule}`, by: 'today' }; }
     try {
         const g = await gate<KapiciRoute>({
             mode: hook.mode, today: async () => 'proceed',
             ask: (m, actual) => hook.evaluate(rule, state, m, actual),
             decisionOf: r => (r === 'proceed' ? 'pass' : r), fromVerdict: v => routeOfVerdict(v, spec), log: hook.log
         });
-        if (g.shadow) { return { route: 'proceed', why: `Kapıcı watches ${rule} in shadow — carried on as without it`, by: 'today', shadow: g.shadow }; }
+        if (g.shadow) { return { route: 'proceed', why: `Gatekeeper watches ${rule} in shadow — carried on as without it`, by: 'today', shadow: g.shadow }; }
         const v = g.verdict;
-        if (g.by === 'kapici' && v) { return { route: g.value, why: `Kapıcı: ${rule} — ${v.reason} (confidence ${v.confidence.toFixed(2)})`, by: 'kapici', verdict: v }; }
-        if (v?.fallback === 'closed') { return { route: 'stop', why: `Kapıcı: ${rule} — ${v.reason}`, by: 'kapici', verdict: v }; }
-        if (v?.fallback === 'ask') { return { route: 'ask_user', why: `Kapıcı: ${rule} is not sure — ${v.reason}`, by: 'kapici', verdict: v }; }
-        return { route: 'proceed', why: v ? `Kapıcı: ${rule} could not decide — ${v.reason}; carried on` : 'carried on without Kapıcı', by: 'today', ...(v ? { verdict: v } : {}) };
+        if (g.by === 'kapici' && v) { return { route: g.value, why: `Gatekeeper: ${rule} — ${v.reason} (confidence ${v.confidence.toFixed(2)})`, by: 'kapici', verdict: v }; }
+        if (v?.fallback === 'closed') { return { route: 'stop', why: `Gatekeeper: ${rule} — ${v.reason}`, by: 'kapici', verdict: v }; }
+        if (v?.fallback === 'ask') { return { route: 'ask_user', why: `Gatekeeper: ${rule} is not sure — ${v.reason}`, by: 'kapici', verdict: v }; }
+        return { route: 'proceed', why: v ? `Gatekeeper: ${rule} could not decide — ${v.reason}; carried on` : 'carried on without Gatekeeper', by: 'today', ...(v ? { verdict: v } : {}) };
     } catch (e) {
         hook.log?.(`kapici step: ${(e as Error)?.message ?? e} — carried on`);
-        return { route: 'proceed', why: 'Kapıcı failed — carried on', by: 'today' };
+        return { route: 'proceed', why: 'Gatekeeper failed — carried on', by: 'today' };
     }
 }

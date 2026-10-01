@@ -19,6 +19,8 @@ export interface HostedWait {
     tasks: number;
     /** a turn is running in the host right now */
     working: boolean;
+    /** X-452 — that turn is blocked in a call that only waits (the card is purple) */
+    waiting?: boolean;
 }
 
 /**

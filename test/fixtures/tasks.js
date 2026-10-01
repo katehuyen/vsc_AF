@@ -429,21 +429,21 @@ const { chipOf } = require('../../out/core/kapiciChip.js');
 const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence: 0.94, reason: 'work p=0.94', provider: 'jev', latencyMs: 180,
     ruleId: 'trigger.has-work', ruleVersion: 1, layer: 'builtin', answers: { work: { type: 'noul', p: 0.94, confidence: 0.94 } } }, o);
 const KAPICI_LOOK = {
-    fired: { title: 'Gelen kutusu izleyicisi', v: {}, note: 'Kapıcı: trigger.has-work — work p=0.94' },
-    skipped: { title: 'Rapor klasörü izleyicisi', v: { passed: false, decision: 'reject', confidence: 0.91, reason: 'work p=0.09', answers: { work: { type: 'noul', p: 0.09, confidence: 0.91 } } }, note: 'skipped — Kapıcı: trigger.has-work — work p=0.09' },
-    open: { title: 'Webhook: sipariş', v: { decision: 'open', fallback: 'open', confidence: 0, provider: 'rule', latencyMs: 0, reason: 'no key — the rule\'s open path', answers: {} }, note: 'Kapıcı: trigger.has-work — no key, open path' }
+    fired: { title: 'Gelen kutusu izleyicisi', v: {}, note: 'Gatekeeper: trigger.has-work — work p=0.94' },
+    skipped: { title: 'Rapor klasörü izleyicisi', v: { passed: false, decision: 'reject', confidence: 0.91, reason: 'work p=0.09', answers: { work: { type: 'noul', p: 0.09, confidence: 0.91 } } }, note: 'skipped — Gatekeeper: trigger.has-work — work p=0.09' },
+    open: { title: 'Webhook: sipariş', v: { decision: 'open', fallback: 'open', confidence: 0, provider: 'rule', latencyMs: 0, reason: 'no key — the rule\'s open path', answers: {} }, note: 'Gatekeeper: trigger.has-work — no key, open path' }
 };
 const kapiciRow = (id, look) => {
     const L = KAPICI_LOOK[look];
     return {
         id, kind: 'trigger', title: L.title,
         when: 'on change · …/00_GELEN', agentName: 'manager', model: '', engine: '',
-        guard: 'Kapıcı trigger.has-work', hasGuard: true, switchable: true, enabled: true,
+        guard: 'Gatekeeper trigger.has-work', hasGuard: true, switchable: true, enabled: true,
         cost7d: 12.4, runs7d: 6, skipped7d: look === 'skipped' ? 9 : 2, skipRate: look === 'skipped' ? 0.6 : 0.25,
         lastRunAt: min(14), lastNote: L.note, issues: [], overdue: '',
         kapici: chipOf(verdict(L.v), 'trigger', look === 'open' ? 'fired' : look, min(14)),
         detail: { prompt: 'gelen dosyayı işle', target: 'runs on manager', timing: 'debounce 60s · cooldown 300s · max 6/h', steps: [], missed: '',
-            setup: [{ label: 'Fires', value: 'on change · …/00_GELEN' }, { label: 'Only if', value: 'Kapıcı trigger.has-work' }] }
+            setup: [{ label: 'Fires', value: 'on change · …/00_GELEN' }, { label: 'Only if', value: 'Gatekeeper trigger.has-work' }] }
     };
 };
 
@@ -479,18 +479,18 @@ const variants = () => ([
             model: 'claude-haiku-4-5', limitsOrigin: 'allowed: the step · the rest: built-in', supervisorOrigin: 'model: the workflow · the rest: built-in', at: Date.now() - 240000 }
     }] }) },
     // M-60 — a Kapıcı step that stopped its run: the same strip a checkpoint draws, answered by Kapıcı
-    { id: 'tasks-run-kapici', label: 'Tasks → Runs — a Kapıcı step that stopped its run: its decision on the row (M-60)', data: Object.assign(data(), { runs: [{
+    { id: 'tasks-run-kapici', label: 'Tasks → Runs — a Gatekeeper step that stopped its run: its decision on the row (M-60)', data: Object.assign(data(), { runs: [{
         id: 'rkp', title: 'Klip hattı 2/4: Kapı', agentName: 'kapici', mode: 'headless', status: 'done',
-        source: 'Klip hattı', sourceKind: 'workflow', when: min(2), durMin: 0.1, detail: '', engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rkp.md', prompt: 'Kapıcı: metin.tek-satir',
-        supervisor: { taskId: 'rkp', step: 2, title: 'Klip hattı 2/4: Kapı', trigger: 'Kapıcı metin.tek-satir', badge: '■', decision: 'stop',
-            word: 'stop', why: 'Kapıcı: metin.tek-satir — line p=0.08 (confidence 0.92)', confidence: 0.92,
-            model: 'Kapıcı', limitsOrigin: 'Kapıcı rule metin.tek-satir', supervisorOrigin: 'Kapıcı for workflows: on', at: Date.now() - 120000 }
+        source: 'Klip hattı', sourceKind: 'workflow', when: min(2), durMin: 0.1, detail: '', engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rkp.md', prompt: 'Gatekeeper: metin.tek-satir',
+        supervisor: { taskId: 'rkp', step: 2, title: 'Klip hattı 2/4: Kapı', trigger: 'Gatekeeper metin.tek-satir', badge: '■', decision: 'stop',
+            word: 'stop', why: 'Gatekeeper: metin.tek-satir — line p=0.08 (confidence 0.92)', confidence: 0.92,
+            model: 'Gatekeeper', limitsOrigin: 'Gatekeeper rule metin.tek-satir', supervisorOrigin: 'Gatekeeper for workflows: on', at: Date.now() - 120000 }
     }] }) },
     // U-155 — the chip a verdict leaves: ONE Kapıcı trigger alone first, then every look beside the other kinds, then a routed run
-    { id: 'tasks-plan-kapici-one', label: 'Tasks → Plan — one trigger with a Kapıcı precondition: the last verdict under its guard (U-155)', data: Object.assign(planData(), { plan: [kapiciRow('t1', 'fired')] }) },
+    { id: 'tasks-plan-kapici-one', label: 'Tasks → Plan — one trigger with a Gatekeeper precondition: the last verdict under its guard (U-155)', data: Object.assign(planData(), { plan: [kapiciRow('t1', 'fired')] }) },
     { id: 'tasks-plan-kapici', tip: 'tip-kapici:3', label: 'Tasks → Plan — fired, skipped and a rule\'s open path beside the other kinds; the open path\'s panel open (U-155)',
         data: Object.assign(planData(), { plan: [kapiciRow('t1', 'fired'), kapiciRow('t2', 'skipped'), kapiciRow('t3', 'open')].concat(plan().filter(p => p.id !== 't1')) }) },
-    { id: 'tasks-run-kapici-route', tip: 'tip-kapici:1', label: 'Tasks → Runs — a task Kapıcı routed: who it chose, under what started it, its panel open (U-155)', data: Object.assign(data(), { runs: [{
+    { id: 'tasks-run-kapici-route', tip: 'tip-kapici:1', label: 'Tasks → Runs — a task Gatekeeper routed: who it chose, under what started it, its panel open (U-155)', data: Object.assign(data(), { runs: [{
         id: 'rkr', title: 'kaydet butonu bozuk', agentName: 'developer', mode: 'headless', status: 'done',
         source: 'Gelen iş', sourceKind: 'trigger', when: min(3), durMin: 1.4, detail: '', costUSD: 0.0921,
         engine: 'claude', reportsCost: true, hasOutput: true, outputFile: 'D:\\out\\rkr.md', prompt: 'kaydet butonu bozuk',
@@ -636,7 +636,7 @@ const variants = () => ([
     },
     // U-155 — a trigger's guard, Kapıcı: the rule and what it reads exist only under that guard, and only on a trigger
     {
-        id: 'tasks-trigger-kapici', label: 'Tasks → the New-trigger form, Kapıcı as its guard (U-155)',
+        id: 'tasks-trigger-kapici', label: 'Tasks → the New-trigger form, Gatekeeper as its guard (U-155)',
         data: Object.assign(data(), { kapiciRules: [{ id: 'dispatch.route', description: '' }, { id: 'retry.next-action', description: '' },
             { id: 'trigger.has-work', description: '' }, { id: 'metin.tek-satir', description: '' }] }),
         act: (r) => {
@@ -667,7 +667,7 @@ const variants = () => ([
     },
     // M-58 — Kapıcı helps with retries, so it is a supervisor engine that asks no model.
     {
-        id: 'tasks-retry-supervisor-kapici', label: 'Tasks → the New-task form, Kapıcı picked as the supervisor (M-58)',
+        id: 'tasks-retry-supervisor-kapici', label: 'Tasks → the New-task form, Gatekeeper picked as the supervisor (M-58)',
         data: (() => { const d = data(); d.launch.kapiciSupervisor = true; return d; })(),
         act: (r) => {
             r.query('#nt-open')[0].click();
@@ -967,7 +967,7 @@ const variants = () => ([
     // M-60 — a Kapıcı step: the rule that decides (the rules that can route a step listed), what it reads, what a reject does.
     {
         id: 'tasks-step-kapici',
-        label: 'Tasks → a workflow Kapıcı step: the rule that decides, what it reads, what a reject does (M-60)',
+        label: 'Tasks → a workflow Gatekeeper step: the rule that decides, what it reads, what a reject does (M-60)',
         data: (() => { const d = data(); d.kapiciRules = [{ id: 'trigger.has-work', description: 'Does this firing carry real work for the agent it would wake?' }, { id: 'metin.tek-satir', description: 'Is the text one short line?' }]; return d; })(),
         act: (r) => {
             r.query('#nt-open')[0].click();

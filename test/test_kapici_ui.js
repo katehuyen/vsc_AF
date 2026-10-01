@@ -50,7 +50,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         const fired = K.chip(chipOf(verdict({}), 'trigger', 'fired'), C);
         ok('fired: the word and how sure, on the chip', /🛡 fired 94%<\/span>/.test(fired));
         ok('its panel: who answered and how fast, each answer, what for, why', /Answered by: jev · 180 ms/.test(fired) && /Question work: p 0\.94/.test(fired)
-            && /For: a trigger precondition/.test(fired) && /Why: work p=0\.94/.test(fired) && /head="Kapıcı — trigger\.has-work"/.test(fired));
+            && /For: a trigger precondition/.test(fired) && /Why: work p=0\.94/.test(fired) && /head="Gatekeeper — trigger\.has-work"/.test(fired));
         const skipped = K.chip(chipOf(verdict({ passed: false, decision: 'reject' }), 'trigger', 'skipped'), C);
         ok('skipped reads as a stop, in red', /🛡 skipped 94%/.test(skipped) && /charts-red/.test(skipped));
         const open = K.chip(chipOf(verdict({ decision: 'open', fallback: 'open', confidence: 0, answers: {} }), 'trigger', 'fired'), C);
@@ -78,7 +78,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         const list = K.rules([{ id: 'trigger.has-work', version: 1, description: 'Real work?', layer: 'builtin', providers: ['jev', 'llm'], questions: { work: 'noul' }, minConfidence: 0.6, onLowConfidence: 'mechanical', onFailure: 'open', golden: 5 }], C);
         ok('a rule: its id, layer, questions, golden count, and its paths on hover', /<code>trigger\.has-work<\/code>/.test(list) && /noul · 5 golden/.test(list)
             && /Min confidence: 0\.6 · unsure: mechanical · failure: open/.test(list) && /File: shipped with Agent Farm/.test(list));
-        ok('no rules says so', /No Kapıcı rules found/.test(K.rules([], C)));
+        ok('no rules says so', /No Gatekeeper rules found/.test(K.rules([], C)));
     }
 
     console.log('\n== a trigger\'s verdict reaches its row ==');
@@ -105,7 +105,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('…never inside the title\'s own panel (one subject per panel)', !/roundBadge\(r\)\}\$\{r\.kapici/.test(page));
     }
 
-    console.log('\n== a dispatch Kapıcı decided carries its verdict ==');
+    console.log('\n== a dispatch Gatekeeper decided carries its verdict ==');
     {
         const cands = [{ name: 'developer', hint: 'code' }, { name: 'muhasebe', hint: 'money' }];
         const r = await dispatchText('.', '', 'kaydet butonu bozuk', [], cands, false,
@@ -114,22 +114,22 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('a dispatch trigger puts it on the task', /if \(result\.kapici\) \{ task\.kapici = result\.kapici; \}/.test(read('src/core/triggers.ts')));
     }
 
-    console.log('\n== Farm Settings has a Kapıcı section; the Toolbox a Kapıcı tab ==');
+    console.log('\n== Farm Settings has a Gatekeeper section; the Toolbox a Gatekeeper tab ==');
     {
         const ops = read('src/core/settingsops.ts');
         ok('every kapici setting is filed under it', !/'kapici\.[A-Za-z]+': 'tasks'/.test(ops) && (ops.match(/'kapici\.[A-Za-z]+': 'kapici'/g) || []).length === 9);
-        ok('…and it has a name', /\['kapici', 'Kapıcı — the decision gate'\]/.test(ops));
+        ok('…and it has a name', /\['kapici', 'Gatekeeper — the decision gate'\]/.test(ops));
         ok('the page heads it with the status, then its settings', /c\.id === 'kapici' && window\.AFKapici \? window\.AFKapici\.section\(DATA\.kapici, C\) \+ c\.items\.map\(itemHtml\)/.test(read('media/settings.js')));
         ok('the MCP button reaches the same function the op does', /case 'kapiciMcp':/.test(read('src/panels/settingsPanel.ts'))
             && /kapiciMcp: \(on: boolean\) => \{\s*try \{ setKapiciMcp\(context\.globalStorageUri\.fsPath, on\); \}/.test(read('src/extension.ts'))
             && /mcp: kapiciMcpState\(context\.globalStorageUri\.fsPath\)/.test(read('src/extension.ts')));
         ok('the vault button goes to the Secret vault', /case 'openSecrets':/.test(read('src/panels/settingsPanel.ts')) && /openSecrets: \(\) => \{ void vscode\.commands\.executeCommand\('agentfarm\.openSecrets'\); \}/.test(read('src/extension.ts')));
         const tb = read('media/toolbox.js');
-        ok('the Toolbox tab, counted as nothing', /\{ id: 'kapici', label: 'Kapıcı' \}/.test(tb) && /t\.id !== 'kapici'/.test(tb) && /state\.tab === 'kapici' \? kapiciTab\(\)/.test(tb));
+        ok('the Toolbox tab, counted as nothing', /\{ id: 'kapici', label: 'Gatekeeper' \}/.test(tb) && /t\.id !== 'kapici'/.test(tb) && /state\.tab === 'kapici' \? kapiciTab\(\)/.test(tb));
         ok('fed by the same list kapici.rules answers', /kapici: deps\.kapiciRules \? deps\.kapiciRules\(\) : null/.test(read('src/panels/toolboxPanel.ts')) && /return host\.ruleList\(project\(args\)\);/.test(read('src/core/kapiciBridge.ts')));
     }
 
-    console.log('\n== the trigger form offers Kapıcı as a guard, and only a trigger ==');
+    console.log('\n== the trigger form offers Gatekeeper as a guard, and only a trigger ==');
     {
         const page = read('media/tasksPage.js');
         ok('offered on a trigger only', /c\.kind === 'trigger' \? GUARDS\.concat\(\[KAPICI_GUARD\]\) : GUARDS/.test(page));
@@ -143,6 +143,29 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         eq('a diff and a rule of the user\'s own', A.parsePrecondition({ kind: 'kapici', rule: 'metin.tek-satir', input: 'diff' }, { kapici: true }),
             { kind: 'kapici', rule: 'metin.tek-satir', input: 'diff' });
         eq('never on a schedule', A.parsePrecondition({ kind: 'kapici', rule: '', input: '' }, { kapici: false }), undefined);
+    }
+
+    // U-190 — the product is English: the identifier is kapici, the word a user reads is Gatekeeper.
+    {
+        const word = /kapıcı/i;
+        const walk = (dir, ext, out = []) => {
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) { walk(p, ext, out); } else if (e.name.endsWith(ext)) { out.push(p); }
+            }
+            return out;
+        };
+        const files = [path.join(ROOT, 'package.json')].concat(walk(path.join(ROOT, 'src'), '.ts'), walk(path.join(ROOT, 'media'), '.js'));
+        const leaks = [];
+        for (const f of files) {
+            fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+                if (!word.test(line) || /^\s*(\/\/|\/\*|\*)/.test(line)) { return; }
+                const cut = line.search(/\s\/\/\s/);
+                if (word.test(cut >= 0 ? line.slice(0, cut) : line)) { leaks.push(`${path.relative(ROOT, f)}:${i + 1}`); }
+            });
+        }
+        eq('no Turkish name of the gate outside a comment', leaks, []);
+        ok('the settings section a user reads is the Gatekeeper', /Gatekeeper/.test(read('package.json')));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

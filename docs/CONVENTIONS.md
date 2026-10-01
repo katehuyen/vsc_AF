@@ -1025,6 +1025,17 @@ user string or a page string literal; its `ALLOW` list is for the user's own dat
 
 ---
 
+## ‼️ An identifier's language never becomes a word the user reads (U-190)
+
+Agent Farm is sold worldwide and speaks **English**. A module, op or setting key may
+keep the name it was built under (`kapici`, `agentFarm.kapici.*`) — renaming a key
+breaks every saved setting — but the word on a page, a menu, a setting title, a
+tooltip or an op's `describe` is the English one: the decision gate is the
+**Gatekeeper**. Translate at the label, never at the key. `test/test_kapici_ui.js`
+fails the build on the old name outside a comment.
+
+---
+
 ## Filtering
 
 ### A search box is a QUERY box

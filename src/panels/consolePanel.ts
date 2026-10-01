@@ -472,6 +472,8 @@ export interface ConsoleDeps {
      * back on top of the Console, one click from continuing.
      */
     lastWindow(): { sessionId: string; agentName: string; title: string; cwd: string; endedAt: number }[];
+    /** M-63 — the session of the card open in the Console changed (the relay status bar follows it) */
+    focusChanged(sessionId: string | undefined): void;
     /** take a row off that shelf (resumed, or not wanted) */
     forgetLastWindow(sessionId: string): void;
     /**
@@ -666,6 +668,7 @@ export class ConsolePanel {
      * One-shot, cleared on `start` like the project.
      */
     private composerRelay: { on: boolean; maxLegs?: number } = { on: false };
+    private focusSent?: string;
 
     /**
      * ‼️ X-133 — THE ENGINEERING DISCIPLINE THE NEXT SESSION WILL BE STARTED
@@ -1125,6 +1128,7 @@ export class ConsolePanel {
                 kindsBy[s.sessionId] = remembered[s.sessionId];
             }
         });
+        const projectList = this.deps.projects();
         return {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
@@ -1475,7 +1479,8 @@ export class ConsolePanel {
             // a colour that is on two of the three surfaces is a colour that
             // cannot be trusted anywhere.
             lastWindow: this.deps.lastWindow().map(r => ({
-                ...r, color: r.sessionId ? (this.deps.colorFor?.(r.sessionId) ?? '') : ''
+                ...r, color: r.sessionId ? (this.deps.colorFor?.(r.sessionId) ?? '') : '',
+                ...this.projectMark(r, projectList)
             }))
                 /**
                  * ‼️ S-55 — A SESSION THIS WINDOW IS SHOWING A CARD FOR IS NOT
@@ -1597,8 +1602,9 @@ export class ConsolePanel {
         // in the fleet, which is exactly when you go looking for an old session.
         const agents = [...new Set(pool.map(r => r.agentName).filter(Boolean))].sort();
         const hit = filterResumable(pool, this.resumeQuery, Date.now());
+        const projects = this.deps.projects();
         return {
-            resumable: hit.rows.map(r => this.resumeRow(r.s)),
+            resumable: hit.rows.map(r => this.resumeRow(r.s, projects)),
             resumeTotal: hit.total,
             resumeAgents: agents,
             resumeMax: RESUME_MAX,
@@ -1842,8 +1848,19 @@ export class ConsolePanel {
         };
     }
 
-    private resumeRow(s: SessionInfo): Record<string, unknown> {
+    /** P-18 — the project square's four fields, for a row whose project is resolved rather than stamped on a card. */
+    private projectMark(
+        s: { sessionId?: string; agentName?: string; cwd?: string },
+        projects: { id: string; name: string; icon?: string; color?: string }[]
+    ): { projectId: string; projectName: string; projectIcon: string; projectColor: string } {
+        const projectId = this.deps.sessionProject({ sessionId: s.sessionId, agentName: s.agentName, cwd: s.cwd });
+        const p = projectId ? projects.find(x => x.id === projectId) : undefined;
+        return { projectId: p ? projectId : '', projectName: p?.name ?? '', projectIcon: p?.icon ?? '', projectColor: p?.color ?? '' };
+    }
+
+    private resumeRow(s: SessionInfo, projects = this.deps.projects()): Record<string, unknown> {
         return {
+            ...this.projectMark(s, projects),
             sessionId: s.sessionId, title: s.title, agentName: s.agentName ?? '',
             // ‼️ K-17 — every row wears its engine, Claude included. An unbadged
             // row means "Claude" or it means "this surface never learned about
@@ -1900,6 +1917,8 @@ export class ConsolePanel {
         if (!this.mounted) { return; }
         ConsolePanel.announceWatch();
         const data = this.data();
+        const focus = this.selected ? this.deps.host.list().find(s => s.id === this.selected)?.sessionId : undefined;
+        if (focus !== this.focusSent) { this.focusSent = focus; this.deps.focusChanged?.(focus); }
         // The tab says how many conversations are waiting for you, so the nudge
         // reaches you with the Console in the background — the one place a
         // count is useful and can never be in the way.

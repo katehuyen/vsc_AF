@@ -376,7 +376,8 @@ const data = () => ({
     ],
     lastWindow: [{
         sessionId: '019fe4aa-1c2d-70f1', agentName: 'manager', title: 'kota raporu',
-        cwd: 'D:\\zone\\agent\\ajanlar\\manager', endedAt: NOW - 3 * 3600000, color: '#5fb85f'
+        cwd: 'D:\\zone\\agent\\ajanlar\\manager', endedAt: NOW - 3 * 3600000, color: '#5fb85f',
+        projectId: 'prj_9ujsbtzr', projectName: 'Agent Farm', projectIcon: '🚜', projectColor: '#3fa34d'
     }],
     projects: [{ id: 'prj_9ujsbtzr', name: 'Agent Farm', icon: '🚜', color: '' }],
     activeProjectId: 'prj_9ujsbtzr',
@@ -411,16 +412,20 @@ const resumeRow = (o) => Object.assign({
     contextSource: 'transcript-last-call',
     firstPrompt: 'devir notunu okuyup kaldığın yerden devam et', startedAt: NOW - 5 * 3600000,
     turns: 14, tools: 63, errors: 0, models: ['claude-opus-5'], tags: [],
-    identity: null
+    identity: null, projectId: '', projectName: '', projectIcon: '', projectColor: ''
 }, o, o && o.identity === undefined
     ? { identity: identity({ engine: (o && o.engine) || 'claude', providerId: '' }) } : {});
 
 const RESUME_ROWS = [
-    resumeRow({ sessionId: '019fe511-aa01-70f1-9c02-1a2b3c4d5e6f', title: 'kota raporu', turns: 3 }),
+    resumeRow({
+        sessionId: '019fe511-aa01-70f1-9c02-1a2b3c4d5e6f', title: 'kota raporu', turns: 3,
+        projectId: 'prj_9ujsbtzr', projectName: 'Agent Farm', projectIcon: '🚜', projectColor: '#3fa34d'
+    }),
     resumeRow({
         sessionId: '019fe512-bb02-70f1-9c02-1a2b3c4d5e6f',
         title: 'K-42 konsol sol panel oturum kartları sabit satır mimarisi ve rozet yerleşimi',
-        agentName: 'developer', engine: 'codex', color: '#3d8bfd'
+        agentName: 'developer', engine: 'codex', color: '#3d8bfd',
+        projectId: 'prj_nocolor1', projectName: 'Renksiz proje', projectIcon: '', projectColor: ''
     }),
     resumeRow({
         sessionId: '019fe513-cc03-70f1-9c02-1a2b3c4d5e6f',

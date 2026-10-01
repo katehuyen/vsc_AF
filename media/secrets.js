@@ -109,7 +109,7 @@
                     : 'Nothing ticked means EVERY agent — that is the vault\'s own default, not "no agent". Tick some and only their tasks receive it.')
                 + F.grid([F.check('farmOnly', 'Farm only — no agent receives it', !!form.farmOnly, {
                     redraw: true,
-                    tip: 'Farm only: ' + (form.farmOnly ? 'on' : 'off') + '\n\nFor a key Agent Farm uses itself (the Kapıcı decision gate, search embeddings). It is never put into any agent\'s task environment, whichever agents are ticked; Agent Farm still reads it. A workflow step that names it as {secret:NAME} still gets it — that is your own explicit reference.'
+                    tip: 'Farm only: ' + (form.farmOnly ? 'on' : 'off') + '\n\nFor a key Agent Farm uses itself (the Gatekeeper decision gate, search embeddings). It is never put into any agent\'s task environment, whichever agents are ticked; Agent Farm still reads it. A workflow step that names it as {secret:NAME} still gets it — that is your own explicit reference.'
                 })])
                 + (form.farmOnly ? '' : F.grid((DATA.agents || []).map(a =>
                     F.check('ag_' + a.id, a.name, !!form.scope['ag_' + a.id], {

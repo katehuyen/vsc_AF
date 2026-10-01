@@ -63,22 +63,22 @@ const SHADOW = {
 const variants = () => ([
     {
         id: 'kapicisettings',
-        label: 'Settings — Kapıcı: no key, nothing compared, every consumer off (U-155)',
+        label: 'Settings — Gatekeeper: no key, nothing compared, every consumer off (U-155)',
         data: data({}, status({}))
     },
     {
         id: 'kapicisettings-key', tip: 'tip-kpc-key:1',
-        label: 'Settings — Kapıcı: the missing key\'s panel, open (U-155)',
+        label: 'Settings — Gatekeeper: the missing key\'s panel, open (U-155)',
         data: data({}, status({}))
     },
     {
         id: 'kapicisettings-mcp', tip: 'tip-kpc-mcp:1',
-        label: 'Settings — Kapıcı: the MCP not given to agents yet, its panel open (B-28)',
+        label: 'Settings — Gatekeeper: the MCP not given to agents yet, its panel open (B-28)',
         data: data({}, status({}))
     },
     {
         id: 'kapicisettings-shadow', tip: 'tip-kpc-agree:1',
-        label: 'Settings — Kapıcı: a key, triggers and routing in shadow, one broken rule file, the MCP given; the agreement panel open (U-155)',
+        label: 'Settings — Gatekeeper: a key, triggers and routing in shadow, one broken rule file, the MCP given; the agreement panel open (U-155)',
         data: data({ 'agentFarm.kapici.trigger': 'shadow', 'agentFarm.kapici.dispatch': 'shadow' }, status(SHADOW))
     }
 ]);

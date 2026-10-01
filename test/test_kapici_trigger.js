@@ -61,7 +61,7 @@ const hostOf = (mode, v, calls) => ({
         eq('an unknown input is refused', A.parsePrecondition({ kind: 'kapici', input: 'tree' }, { kapici: true }), undefined);
         const v = A.evaluatePrecondition({ kind: 'kapici' });
         ok('the synchronous check passes it on and names the rule', v.ok && /trigger\.has-work/.test(v.detail));
-        eq('the table names it', A.describePrecondition({ kind: 'kapici', rule: 'my.rule', input: 'diff' }), 'Kapıcı my.rule (diff)');
+        eq('the table names it', A.describePrecondition({ kind: 'kapici', rule: 'my.rule', input: 'diff' }), 'Gatekeeper my.rule (diff)');
     }
 
     console.log('\n== the firing is the state ==');
@@ -91,16 +91,16 @@ const hostOf = (mode, v, calls) => ({
         let r = await K.kapiciFiring(pre, ctx, undefined);
         ok('no host (off): fires as if there were no precondition', r.fire && r.by === 'today' && /off/.test(r.detail));
         r = await K.kapiciFiring(pre, ctx, hostOf('off', verdict({ passed: false }), calls));
-        ok('off: fires, and Kapıcı is never called', r.fire && calls.length === 0);
+        ok('off: fires, and Gatekeeper is never called', r.fire && calls.length === 0);
         r = await K.kapiciFiring(pre, ctx, hostOf('shadow', verdict({ passed: false, decision: 'reject' }), calls));
-        ok('shadow: fires even when Kapıcı would not', r.fire && r.by === 'today');
+        ok('shadow: fires even when Gatekeeper would not', r.fire && r.by === 'today');
         await r.shadow;
-        ok('shadow: Kapıcı is asked beside it with today\'s decision', calls.length === 1 && calls[0].m === 'shadow' && calls[0].actual === 'pass');
+        ok('shadow: Gatekeeper is asked beside it with today\'s decision', calls.length === 1 && calls[0].m === 'shadow' && calls[0].actual === 'pass');
         calls = [];
         r = await K.kapiciFiring({ kind: 'kapici', rule: 'my.rule' }, ctx, hostOf('on', verdict({}), calls));
-        ok('on, work: fires by Kapıcı, asking the precondition\'s own rule', r.fire && r.by === 'kapici' && calls[0].rule === 'my.rule' && calls[0].m === 'on');
+        ok('on, work: fires by Gatekeeper, asking the precondition\'s own rule', r.fire && r.by === 'kapici' && calls[0].rule === 'my.rule' && calls[0].m === 'on');
         r = await K.kapiciFiring(pre, ctx, hostOf('on', verdict({ passed: false, decision: 'reject', reason: 'work p=0.10' }), calls));
-        ok('on, no work: skipped, and the reason names the rule', !r.fire && r.by === 'kapici' && /^Kapıcı: trigger\.has-work — no work \(work p=0\.10; confidence 0\.90\)$/.test(r.detail));
+        ok('on, no work: skipped, and the reason names the rule', !r.fire && r.by === 'kapici' && /^Gatekeeper: trigger\.has-work — no work \(work p=0\.10; confidence 0\.90\)$/.test(r.detail));
         r = await K.kapiciFiring(pre, ctx, hostOf('on', verdict({ passed: false, decision: 'closed', fallback: 'closed', confidence: 0, reason: 'jev failed (no-key)' }), calls));
         ok('on, a failure the rule closes: skipped', !r.fire && /no-key/.test(r.detail));
         r = await K.kapiciFiring(pre, ctx, hostOf('on', verdict({ passed: true, decision: 'open', fallback: 'open', confidence: 0 }), calls));
@@ -110,7 +110,7 @@ const hostOf = (mode, v, calls) => ({
         r = await K.kapiciFiring(pre, ctx, hostOf('on', verdict({ passed: false, decision: 'reject', fallback: 'mechanical', confidence: 0.3 }), calls));
         ok('on, not sure: fires, as without it', r.fire && /could not decide/.test(r.detail));
         r = await K.kapiciFiring(pre, ctx, hostOf('on', new Error('boom'), calls));
-        ok('on, Kapıcı throws: fires', r.fire && r.by === 'today');
+        ok('on, Gatekeeper throws: fires', r.fire && r.by === 'today');
     }
 
     console.log('\n== the brakes come first, and a pending question holds the next firing ==');
@@ -144,19 +144,19 @@ const hostOf = (mode, v, calls) => ({
         const settle = () => new Promise(r => setTimeout(r, 20));
 
         trig.lastFiredAt = Date.now();
-        ok('cooldown: refused before Kapıcı', tm.tryFire(trig, 'webhook') === false && calls.length === 0);
+        ok('cooldown: refused before Gatekeeper', tm.tryFire(trig, 'webhook') === false && calls.length === 0);
         trig.lastFiredAt = undefined;
         trig.recentFirings = [Date.now(), Date.now()];
-        ok('hourly cap: refused before Kapıcı', tm.tryFire(trig, 'webhook') === false && calls.length === 0 && warnings.length === 1);
+        ok('hourly cap: refused before Gatekeeper', tm.tryFire(trig, 'webhook') === false && calls.length === 0 && warnings.length === 1);
         trig.recentFirings = [];
         gateBlock = { kind: 'quiet', reason: 'quiet hours (23:30–04:30)' };
-        ok('the farm gate: skipped before Kapıcı, with its reason', tm.tryFire(trig, 'webhook') === false && calls.length === 0 && skips[0] === 'quiet hours (23:30–04:30)');
+        ok('the farm gate: skipped before Gatekeeper, with its reason', tm.tryFire(trig, 'webhook') === false && calls.length === 0 && skips[0] === 'quiet hours (23:30–04:30)');
         gateBlock = undefined;
 
-        ok('the brakes passed: accepted, Kapıcı asked', tm.tryFire(trig, 'webhook') === true);
+        ok('the brakes passed: accepted, Gatekeeper asked', tm.tryFire(trig, 'webhook') === true);
         await settle();
         ok('…once', calls.length === 1 && calls[0].m === 'on');
-        ok('a second firing while it is asked: skipped, and says why', tm.tryFire(trig, 'webhook') === false && skips[1] === 'Kapıcı is still deciding the previous firing');
+        ok('a second firing while it is asked: skipped, and says why', tm.tryFire(trig, 'webhook') === false && skips[1] === 'Gatekeeper is still deciding the previous firing');
         await settle();
         ok('…and never asks twice', calls.length === 1 && fired.length === 0);
         release(); await settle();
@@ -165,19 +165,19 @@ const hostOf = (mode, v, calls) => ({
         answer = verdict({ passed: false, decision: 'reject', reason: 'work p=0.05' });
         ok('the next firing is asked again', tm.tryFire(trig, 'webhook') === true);
         await settle(); release(); await settle();
-        ok('no work: skipped, never fired, the reason recorded', fired.length === 1 && /^Kapıcı: trigger\.has-work — no work/.test(skips[2]));
+        ok('no work: skipped, never fired, the reason recorded', fired.length === 1 && /^Gatekeeper: trigger\.has-work — no work/.test(skips[2]));
 
         answer = verdict({});
         tm.tryFire(trig, 'webhook'); await settle();
         trig.enabled = false; release(); await settle();
-        ok('a trigger switched off while Kapıcı was asked neither fires nor skips', fired.length === 1 && skips.length === 3);
+        ok('a trigger switched off while Gatekeeper was asked neither fires nor skips', fired.length === 1 && skips.length === 3);
         trig.enabled = true;
 
         calls = [];
-        ok('a trigger with no Kapıcı precondition fires at once, Kapıcı untouched', tm.tryFire(plain, 'webhook') === true && fired[1] === 't2:webhook' && calls.length === 0);
+        ok('a trigger with no Gatekeeper precondition fires at once, Gatekeeper untouched', tm.tryFire(plain, 'webhook') === true && fired[1] === 't2:webhook' && calls.length === 0);
         current = undefined;
         tm.tryFire(trig, 'webhook'); await settle();
-        ok('Kapıcı off: the precondition fires as if it were not there', fired[2] === 't1:webhook' && calls.length === 0);
+        ok('Gatekeeper off: the precondition fires as if it were not there', fired[2] === 't1:webhook' && calls.length === 0);
         tm.dispose();
     }
 

@@ -7,6 +7,7 @@ import { ContextSignal, hookResponseBody } from './contextGuard';
 import { truncate } from './util';
 import type { AlertEvent } from './alertVoices';
 import { HostedWait, settleWait } from './liveWait';
+import { CallLimit, callLimitOf, stallVerdict } from './stallJudge';
 
 export type LiveStatus =
     | 'working'            // processing a prompt
@@ -52,6 +53,10 @@ export interface LiveSession {
     compactions: number;
     subagentStops: number;
     notifiedStuck: boolean;
+    /** X-452 — the running call's own time limit, read when it started (stallJudge.ts) */
+    call?: CallLimit;
+    /** X-452 — the last thing it said, so a usage-limit wall is named as one */
+    lastSaid?: string;
     /**
      * ‼️ S-43 — HELD BACK: this looks like the daemon's pre-warmed spare worker
      * and it has never done a thing.
@@ -106,6 +111,9 @@ export interface LiveEvent {
     tool?: string;
     detail?: string;
     transcriptPath?: string;
+    /** U-188 — the session waits on its own work from here: a toolStart of a call that only
+     *  waits, or a stop with a background command still running behind it (the purple card). */
+    wait?: boolean;
     /**
      * ‼️ WHICH AGENT FARM BUILD SAW THIS EVENT.
      *
@@ -657,14 +665,19 @@ export class LiveMonitor implements vscode.Disposable {
             }
             switch (e.kind) {
                 case 'start': s.status = 'idle'; s.startedAt = e.ts; break;
+                case 'say': s.lastSaid = e.detail; break;
                 case 'prompt':
                     s.status = 'working';
+                    s.lastSaid = undefined;
                     s.prompts++;
                     if (!s.firstPrompt && e.detail?.trim()) { s.firstPrompt = e.detail.trim(); }
                     s.lastPrompt = e.detail ? truncate(e.detail, 90) : undefined;
                     s.lastPromptFull = e.detail ? truncate(e.detail.trim(), FIRST_PROMPT_MAX) : undefined;
                     break;
-                case 'toolStart': s.status = 'tool'; s.currentTool = e.tool; s.toolCalls++; break;
+                case 'toolStart':
+                    s.status = 'tool'; s.currentTool = e.tool; s.toolCalls++;
+                    s.call = callLimitOf(e.tool, { command: e.detail });
+                    break;
                 case 'toolEnd': s.status = 'working'; s.currentTool = undefined; break;
                 case 'permission': s.status = 'waiting-permission'; break;
                 case 'stop': s.status = 'waiting-input'; s.currentTool = undefined; break;
@@ -681,7 +694,8 @@ export class LiveMonitor implements vscode.Disposable {
             if (s.status === 'ended') { this.sessionsMap.delete(id); continue; }
             // Mid-work before the reload: either the next hook event refreshes it,
             // or it is long gone — mark it stalled without notifying.
-            if (stuckOn(cfg) && (s.status === 'working' || s.status === 'tool') && now - s.lastEventTs > cfg.stuckThresholdMs) {
+            if (stuckOn(cfg) && stallVerdict({ status: s.status, silentMs: now - s.lastEventTs, call: s.call },
+                cfg.stuckThresholdMs).stalled) {
                 s.status = 'stalled';
                 s.notifiedStuck = true;
             }
@@ -956,7 +970,7 @@ export class LiveMonitor implements vscode.Disposable {
         return s;
     }
 
-    private push(s: LiveSession, kind: LiveEventKind, tool?: string, detail?: string): void {
+    private push(s: LiveSession, kind: LiveEventKind, tool?: string, detail?: string, wait?: boolean): void {
         // The build doing the watching, on the event and on the session. A
         // session that spans an upgrade collects both, in the order they ran —
         // averaged together they would hide the very change being looked for.
@@ -974,6 +988,7 @@ export class LiveMonitor implements vscode.Disposable {
             tool,
             detail,
             transcriptPath: s.transcriptPath,
+            ...(wait ? { wait: true } : {}),
             ...(af ? { af } : {}),
             // …and which engine watched it, so a reload restores the badge.
             ...(s.source ? { engine: s.source } : {})
@@ -1055,6 +1070,7 @@ export class LiveMonitor implements vscode.Disposable {
                 // registry still says about it.
                 s.spare = false;
                 s.status = 'working';
+                s.lastSaid = undefined;
                 s.prompts++;
                 const rawPrompt = (payload.prompt ?? '').trim();
                 if (!s.firstPrompt && rawPrompt) {
@@ -1068,8 +1084,9 @@ export class LiveMonitor implements vscode.Disposable {
             case 'PreToolUse':
                 s.status = 'tool';
                 s.currentTool = payload.tool_name;
+                s.call = callLimitOf(payload.tool_name, payload.tool_input);
                 s.toolCalls++;
-                this.push(s, 'toolStart', payload.tool_name, toolDetail(payload.tool_input));
+                this.push(s, 'toolStart', payload.tool_name, toolDetail(payload.tool_input), s.call?.wait);
                 break;
             case 'PostToolUse':
                 s.status = 'working';
@@ -1100,7 +1117,7 @@ export class LiveMonitor implements vscode.Disposable {
             // than no point.
             case 'AssistantMessage': {
                 const said = truncate((payload.message ?? '').trim(), SAID);
-                if (said) { this.push(s, 'say', undefined, said); }
+                if (said) { s.lastSaid = said; this.push(s, 'say', undefined, said); }
                 // ‼️ A-18 — THE AGENT IS SPEAKING, SO IT IS NOT WAITING FOR YOU.
                 // A hosted turn parks on a question mid-turn and resumes when
                 // the answer lands; without this the lane stayed on the parked
@@ -1122,7 +1139,7 @@ export class LiveMonitor implements vscode.Disposable {
                 const ended = truncate((payload.message ?? '').trim(), SAID)
                     || (s.transcriptPath ? lastSaid(s.transcriptPath, this.readTail) : '');
                 lastWord = ended;
-                this.push(s, 'stop', undefined, ended || undefined);
+                this.push(s, 'stop', undefined, ended || undefined, this.waitOf(cfg, s) === 'waiting-task');
                 if (cfg.notifyTurnEnd) {
                     this.notify('info', `${this.labelOf(s)} finished its turn`, s.lastPrompt ?? '');
                 }
@@ -1192,6 +1209,11 @@ export class LiveMonitor implements vscode.Disposable {
      *  never a broken timeline. */
     private askPending(cfg: LiveConfig, s: LiveSession): boolean {
         try { return cfg.pendingAskOf?.(s.sessionId) === true; } catch { return false; }
+    }
+
+    /** X-452 — the Console's word that this turn is blocked in a wait; a host that throws says no. */
+    private hostWaiting(cfg: LiveConfig, s: LiveSession): boolean {
+        try { return cfg.backgroundOf?.(s.sessionId)?.waiting === true; } catch { return false; }
     }
 
     /** U-148 — the resting status its host's background list implies; a host
@@ -1311,23 +1333,31 @@ export class LiveMonitor implements vscode.Disposable {
         const now = Date.now();
         let changed = false;
         for (const s of this.sessionsMap.values()) {
-            if (stuckOn(cfg) && (s.status === 'working' || s.status === 'tool') &&
-                now - s.lastEventTs > cfg.stuckThresholdMs) {
+            // X-452 — silence past the threshold is a stall only when the session
+            // is not waiting on its own work (stallJudge.ts).
+            const verdict = stuckOn(cfg) && (s.status === 'working' || s.status === 'tool')
+                ? stallVerdict({
+                    status: s.status, silentMs: now - s.lastEventTs, call: s.call,
+                    hostWaiting: this.hostWaiting(cfg, s), lastSaid: s.lastSaid
+                }, cfg.stuckThresholdMs)
+                : undefined;
+            if (verdict?.stalled) {
                 s.status = 'stalled';
                 changed = true;
                 if (!s.notifiedStuck) {
                     s.notifiedStuck = true;
+                    const said = `${this.labelOf(s)} ${verdict.why || 'looks stalled'}`;
                     // ‼️ A-18 — the crossing INTO stalled, once. The status is
                     // rewritten on every sweep while it stays stuck, so the edge
                     // is this flag and not the assignment above.
                     this.emitAttention(cfg, s, 'stalled');
                     cfg.forward?.('stalled',
-                        `${this.labelOf(s)} looks stalled` +
+                        said +
                         (s.currentTool ? ` (last tool: ${s.currentTool})` : ''));
                     if (cfg.notifyStuck) {
                         this.notify(
                             'warn',
-                            `${this.labelOf(s)} looks stalled`,
+                            said,
                             `No hook events for ${Math.round((now - s.lastEventTs) / 60000)} min` +
                             (s.currentTool ? ` (last tool: ${s.currentTool})` : '')
                         );

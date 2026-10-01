@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.767.0",
+  "version": "3.768.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9050,7 +9050,7 @@
           "type": "number",
           "default": 240,
           "minimum": 0,
-          "description": "Stuck warning — WHEN: a working session with no hook events for this many seconds is marked STALLED (its card says so and Needs You gets a row, whether or not notifyStuck is on). Any value you like; 0 = never: no session is ever marked stalled, so notifyStuck has nothing to announce."
+          "description": "Stuck warning — WHEN: a working session with no hook events for this many seconds is marked STALLED (its card says so and Needs You gets a row, whether or not notifyStuck is on). A session waiting on its own work is not: a wait the Console shows in purple, or a command still inside the time limit it was given. Any value you like; 0 = never: no session is ever marked stalled, so notifyStuck has nothing to announce."
         },
         "agentFarm.quotaStyle.percent": {
           "type": "string",
@@ -9318,14 +9318,14 @@
         "agentFarm.kapici.rulesDir": {
           "type": "string",
           "default": "",
-          "description": "Folder of your own Kapıcı rules (one JSON file per rule). Empty = a _KAPICI folder inside every agent root. A project's .kapici folder is read too and wins over this one; the shipped rules come first."
+          "description": "Folder of your own Gatekeeper rules (one JSON file per rule). Empty = a _KAPICI folder inside every agent root. A project's .kapici folder is read too and wins over this one; the shipped rules come first."
         },
         "agentFarm.kapici.timeoutMs": {
           "type": "number",
           "default": 3000,
           "minimum": 200,
           "maximum": 30000,
-          "description": "How long Kapıcı waits for the classifier before handing the decision back to the usual path (milliseconds). A rule may set its own. The language-model judge, when used, waits at least a minute."
+          "description": "How long Gatekeeper waits for the classifier before handing the decision back to the usual path (milliseconds). A rule may set its own. The language-model judge, when used, waits at least a minute."
         },
         "agentFarm.kapici.providers": {
           "type": "array",
@@ -9341,7 +9341,7 @@
             "heuristic",
             "jev"
           ],
-          "description": "Who Kapıcı asks, in order, when a rule names no one: heuristic (local checks — numbers, dates, counts, patterns — never sent anywhere), jev (the small classifier; needs its key in the Secret vault), llm (the judge model — slower, costs a model call). A sensitive rule never goes to jev."
+          "description": "Who Gatekeeper asks, in order, when a rule names no one: heuristic (local checks — numbers, dates, counts, patterns — never sent anywhere), jev (the small classifier; needs its key in the Secret vault), llm (the judge model — slower, costs a model call). A sensitive rule never goes to jev."
         },
         "agentFarm.kapici.route": {
           "type": "string",
@@ -9358,7 +9358,7 @@
             "Through the Vercel AI Gateway (ai-gateway.vercel.sh), model typesafe-ai/jev — same questions, same answers. Vercel's free credit does not cover Jev.",
             "Through OpenRouter's decisions endpoint (openrouter.ai/api/alpha/decisions), model typesafe/jev-1.13 — same questions, same answers, billed from the OpenRouter credit."
           ],
-          "description": "Which road Kapıcı takes to the classifier."
+          "description": "Which road Gatekeeper takes to the classifier."
         },
         "agentFarm.kapici.keyName": {
           "type": "string",
@@ -9375,10 +9375,10 @@
           ],
           "enumDescriptions": [
             "Routing works exactly as it always has: your dispatch rules, then the classifier model if it is on.",
-            "Routing works exactly as it always has, and Kapıcı quietly makes its own pick beside it and records whether the two agreed (see how often in the Kapıcı audit). Nothing waits for it.",
-            "When no dispatch rule matches, Kapıcı picks the agent first; when it is not sure, or cannot answer, the classifier model decides as before."
+            "Routing works exactly as it always has, and Gatekeeper quietly makes its own pick beside it and records whether the two agreed (see how often in the Gatekeeper audit). Nothing waits for it.",
+            "When no dispatch rule matches, Gatekeeper picks the agent first; when it is not sure, or cannot answer, the classifier model decides as before."
           ],
-          "description": "Whether Kapıcı helps decide which agent takes incoming work. Try shadow for a week or two before switching it on."
+          "description": "Whether Gatekeeper helps decide which agent takes incoming work. Try shadow for a week or two before switching it on."
         },
         "agentFarm.kapici.retry": {
           "type": "string",
@@ -9390,10 +9390,10 @@
           ],
           "enumDescriptions": [
             "A held retry is decided exactly as it always has: the supervisor model your retry policy names, and its fallback when it cannot answer.",
-            "The supervisor model decides as it always has, and Kapıcı quietly makes its own pick beside it and records whether the two agreed (see how often in the Kapıcı audit). Nothing waits for it.",
-            "Kapıcı decides first whether to resume, wait or stop; when it is not sure, or cannot answer, the supervisor model decides as before. A retry policy may also name Kapıcı itself as its supervisor, which then asks no model at all."
+            "The supervisor model decides as it always has, and Gatekeeper quietly makes its own pick beside it and records whether the two agreed (see how often in the Gatekeeper audit). Nothing waits for it.",
+            "Gatekeeper decides first whether to resume, wait or stop; when it is not sure, or cannot answer, the supervisor model decides as before. A retry policy may also name Gatekeeper itself as its supervisor, which then asks no model at all."
           ],
-          "description": "Whether Kapıcı helps decide what happens to a task whose retry is held for a supervisor. Try shadow for a week or two before switching it on."
+          "description": "Whether Gatekeeper helps decide what happens to a task whose retry is held for a supervisor. Try shadow for a week or two before switching it on."
         },
         "agentFarm.kapici.trigger": {
           "type": "string",
@@ -9404,11 +9404,11 @@
             "on"
           ],
           "enumDescriptions": [
-            "A trigger with a Kapıcı precondition fires exactly as if it had none: its other brakes decide, as always.",
-            "Triggers fire as they always have, and Kapıcı quietly says beside each firing whether it saw real work in it, recorded in the Kapıcı audit. Nothing waits for it.",
-            "A trigger with a Kapıcı precondition asks it last, after its cheaper brakes, and does not wake the agent when Kapıcı is sure there is no work. When it is not sure, the trigger fires; when it cannot answer, the rule decides."
+            "A trigger with a Gatekeeper precondition fires exactly as if it had none: its other brakes decide, as always.",
+            "Triggers fire as they always have, and Gatekeeper quietly says beside each firing whether it saw real work in it, recorded in the Gatekeeper audit. Nothing waits for it.",
+            "A trigger with a Gatekeeper precondition asks it last, after its cheaper brakes, and does not wake the agent when Gatekeeper is sure there is no work. When it is not sure, the trigger fires; when it cannot answer, the rule decides."
           ],
-          "description": "Whether a trigger's Kapıcı precondition is asked before it wakes an agent — so a change that is only noise (an auto-save, a lock file, a formatting-only edit) costs no run. Try shadow for a week or two before switching it on."
+          "description": "Whether a trigger's Gatekeeper precondition is asked before it wakes an agent — so a change that is only noise (an auto-save, a lock file, a formatting-only edit) costs no run. Try shadow for a week or two before switching it on."
         },
         "agentFarm.kapici.workflow": {
           "type": "string",
@@ -9419,11 +9419,11 @@
             "on"
           ],
           "enumDescriptions": [
-            "A workflow's Kapıcı step carries on as if it were not there; nothing is asked.",
-            "A Kapıcı step carries on as always, and Kapıcı quietly records beside it where it would have sent the run (see the Kapıcı audit). Nothing waits for it.",
-            "A Kapıcı step asks its rule and routes the run: carry on, stop, or ask you. When it is not sure or cannot answer, the rule decides — most rules carry on."
+            "A workflow's Gatekeeper step carries on as if it were not there; nothing is asked.",
+            "A Gatekeeper step carries on as always, and Gatekeeper quietly records beside it where it would have sent the run (see the Gatekeeper audit). Nothing waits for it.",
+            "A Gatekeeper step asks its rule and routes the run: carry on, stop, or ask you. When it is not sure or cannot answer, the rule decides — most rules carry on."
           ],
-          "description": "Whether a workflow's Kapıcı steps are asked. A Kapıcı step reads what the run has made so far and decides, without a model, whether the chain goes on. Try shadow for a week or two before switching it on."
+          "description": "Whether a workflow's Gatekeeper steps are asked. A Gatekeeper step reads what the run has made so far and decides, without a model, whether the chain goes on. Try shadow for a week or two before switching it on."
         },
         "agentFarm.mediaUploadAuto": {
           "type": "string",

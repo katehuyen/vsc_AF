@@ -27,7 +27,7 @@ function gateway(): Gateway {
     for (const f of [path.join(__dirname, '..', '..', 'bridge', 'af.js'), path.join(__dirname, '..', '..', 'service', 'af.js')]) {
         if (fs.existsSync(f)) { gw = require(f) as Gateway; return gw; }
     }
-    throw new Error('Agent Farm\'s bridge helper (af.js) is not beside this server — reinstall Agent Farm, or register the MCP again from Farm Settings ▸ Kapıcı.');
+    throw new Error('Agent Farm\'s bridge helper (af.js) is not beside this server — reinstall Agent Farm, or register the MCP again from Farm Settings ▸ Gatekeeper.');
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -55,7 +55,7 @@ export async function viaBridge(op: string, args: Dict): Promise<unknown> {
     const d = (r.detail ?? {}) as Dict;
     if (d.state === 'unclaimed') {
         throw new Error('Agent Farm is not answering: VS Code is closed or the Agent Farm extension is not active. '
-            + 'Kapıcı answers only through Agent Farm (its key never leaves it) — open VS Code and ask again. Nothing ran.');
+            + 'Gatekeeper answers only through Agent Farm (its key never leaves it) — open VS Code and ask again. Nothing ran.');
     }
     if (d.state === 'running' && typeof d.response === 'string') { return answerOf(d.response, started + ANSWER_MS); }
     throw new Error(r.error || 'Agent Farm refused the request');
@@ -71,16 +71,16 @@ function withState(a: Dict): Dict {
 const pick = (a: Dict, keys: string[]): Dict => Object.fromEntries(keys.filter(k => a[k] !== undefined).map(k => [k, a[k]]));
 
 const STATE = {
-    state: { description: 'What Kapıcı reads: a text, or an object (it is pruned and masked before it is sent anywhere).' },
+    state: { description: 'What Gatekeeper reads: a text, or an object (it is pruned and masked before it is sent anywhere).' },
     statePath: { type: 'string', description: 'Instead of state: a file to read it from (a .json file is read as an object). A relative path is taken from this server\'s working folder.' }
 };
 
 export const TOOLS: { name: string; description: string; inputSchema: Dict; handler(a: Dict): Promise<unknown> }[] = [
     {
         name: 'kapici_eval',
-        description: 'Put a state to a Kapıcı rule and get its verdict: passed, decision, confidence, each answer, reason, who answered (provider) and how fast. '
+        description: 'Put a state to a Gatekeeper rule and get its verdict: passed, decision, confidence, each answer, reason, who answered (provider) and how fast. '
             + 'Never fails for a missing key or rule — the verdict then says fallback and why. Every call leaves one audit line in Agent Farm. '
-            + 'Kapıcı answers typed questions (yes/no, a choice, a score) without a model; kapici_rules lists the rules.',
+            + 'Gatekeeper answers typed questions (yes/no, a choice, a score) without a model; kapici_rules lists the rules.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -96,7 +96,7 @@ export const TOOLS: { name: string; description: string; inputSchema: Dict; hand
     },
     {
         name: 'kapici_ask',
-        description: 'Ask Kapıcı typed questions without writing a rule — a one-off. Each question: {type: noul | choice | score, instructions, criteria?, check?}. '
+        description: 'Ask Gatekeeper typed questions without writing a rule — a one-off. Each question: {type: noul | choice | score, instructions, criteria?, check?}. '
             + 'Answers every question with its confidence; a question with a local check is answered here and never sent.',
         inputSchema: {
             type: 'object',
@@ -112,7 +112,7 @@ export const TOOLS: { name: string; description: string; inputSchema: Dict; hand
     },
     {
         name: 'kapici_rules',
-        description: 'Every Kapıcı rule visible: id, version, description, the layer that won (builtin | system | project), its file, providers, questions, '
+        description: 'Every Gatekeeper rule visible: id, version, description, the layer that won (builtin | system | project), its file, providers, questions, '
             + 'thresholds and failure path, golden example count — and every rule file that failed to load, with the reason.',
         inputSchema: { type: 'object', properties: { project: { type: 'string', description: 'A project root, to include its .kapici/ rules.' } } },
         handler: a => viaBridge('kapici.rules', pick(a, ['project']))

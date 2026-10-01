@@ -31,7 +31,7 @@ const verdict = (o = {}) => Object.assign({ passed: true, decision: 'wait', conf
     ok('wait: notBefore is the reset, and it validates', c.ok && c.decision.notBefore === resetAt);
     for (const a of ['retryOriginal', 'stop', 'needsUser']) {
         c = check(KS.kapiciAnswerText(verdict({ decision: a }), ctx));
-        ok(a + ': validates with the synthesized reason and Jev\'s confidence', c.ok && /^Kapıcı: action=/.test(c.decision.reason) && c.decision.confidence === 0.86);
+        ok(a + ': validates with the synthesized reason and Jev\'s confidence', c.ok && /^Gatekeeper: action=/.test(c.decision.reason) && c.decision.confidence === 0.86);
     }
     ok('an action the incident cannot take gives no answer', KS.kapiciAnswerText(verdict({ decision: 'resume' }), { resumable: false, continuation: 'x' }) === undefined && KS.kapiciAnswerText(verdict({ decision: 'wait' }), { resumable: true, continuation: 'x' }) === undefined);
     ok('a fallback decision name gives no answer', KS.kapiciAnswerText(verdict({ decision: 'fallback' }), ctx) === undefined);
@@ -64,27 +64,27 @@ const verdict = (o = {}) => Object.assign({ passed: true, decision: 'wait', conf
         return h;
     };
     let h = await harness({}).run();
-    ok('off: today\'s supervisor decides, Kapıcı never asked', h.llmCalls === 1 && h.settled[0].o.decision.action === 'retryOriginal' && h.settled[0].meta.engine === 'codex');
+    ok('off: today\'s supervisor decides, Gatekeeper never asked', h.llmCalls === 1 && h.settled[0].o.decision.action === 'retryOriginal' && h.settled[0].meta.engine === 'codex');
     h = await harness({ engine: KAPICI_ENGINE }).run();
-    ok('engine kapici with Kapıcı off for retries: fallback, says why', h.settled[0].o.kind === 'fallback' && /agentFarm\.kapici\.retry/.test(h.settled[0].o.note) && h.llmCalls === 0);
+    ok('engine kapici with Gatekeeper off for retries: fallback, says why', h.settled[0].o.kind === 'fallback' && /agentFarm\.kapici\.retry/.test(h.settled[0].o.note) && h.llmCalls === 0);
     h = await harness({ engine: KAPICI_ENGINE, kapici: { mode: 'on' } }).run();
     ok('engine kapici: its decision, no model asked, engine recorded as kapici', h.llmCalls === 0 && h.settled[0].o.kind === 'decision' && h.settled[0].o.decision.action === 'wait' && h.settled[0].meta.engine === 'kapici');
     ok('engine kapici: the incident is the state, the doable actions the options', h.evals[0].bundle.failure.why === 'usage limit' && h.evals[0].options.join() === 'resume,retryOriginal,wait,stop,needsUser' && h.evals[0].m === 'on');
     h = await harness({ engine: KAPICI_ENGINE, kapici: { mode: 'on' }, rowO: { resumeSessionId: undefined, resetAt: undefined } }).run();
     ok('not resumable, no reset: neither offered', h.evals[0].options.join() === 'retryOriginal,stop,needsUser');
     h = await harness({ engine: KAPICI_ENGINE, kapici: { mode: 'on', v: () => verdict({ fallback: 'mechanical', confidence: 0.4 }) } }).run();
-    ok('engine kapici, low confidence: the policy\'s fallback', h.settled[0].o.kind === 'fallback' && /Kapıcı could not decide/.test(h.settled[0].o.note) && h.llmCalls === 0);
+    ok('engine kapici, low confidence: the policy\'s fallback', h.settled[0].o.kind === 'fallback' && /Gatekeeper could not decide/.test(h.settled[0].o.note) && h.llmCalls === 0);
     h = await harness({ engine: KAPICI_ENGINE, kapici: { mode: 'on', v: () => verdict({ decision: 'resume' }) } }).run();
     ok('resume through the runner carries the continuation', h.settled[0].o.decision.prompt === 'Carry on from the transcript.');
     h = await harness({ kapici: { mode: 'shadow' } }).run();
     ok('shadow: the LLM supervisor decides as today', h.llmCalls === 1 && h.settled[0].o.decision.action === 'retryOriginal' && h.settled[0].meta.engine === 'codex');
-    ok('shadow: Kapıcı asked beside it with the LLM\'s action', h.evals.length === 1 && h.evals[0].m === 'shadow' && h.evals[0].actual === 'retryOriginal');
+    ok('shadow: Gatekeeper asked beside it with the LLM\'s action', h.evals.length === 1 && h.evals[0].m === 'shadow' && h.evals[0].actual === 'retryOriginal');
     h = await harness({ kapici: { mode: 'on' } }).run();
-    ok('on: a confident Kapıcı decides first, the model is not asked', h.llmCalls === 0 && h.settled[0].o.decision.action === 'wait' && h.settled[0].meta.engine === 'kapici');
+    ok('on: a confident Gatekeeper decides first, the model is not asked', h.llmCalls === 0 && h.settled[0].o.decision.action === 'wait' && h.settled[0].meta.engine === 'kapici');
     h = await harness({ kapici: { mode: 'on', v: () => verdict({ fallback: 'mechanical', confidence: 0.3 }) } }).run();
     ok('on, low confidence: escalates to the LLM supervisor', h.llmCalls === 1 && h.settled[0].o.decision.action === 'retryOriginal');
     h = await harness({ kapici: { mode: 'on', v: () => { throw new Error('jev down'); } } }).run();
-    ok('on, Kapıcı throws: the LLM supervisor decides', h.llmCalls === 1 && h.settled[0].o.kind === 'decision');
+    ok('on, Gatekeeper throws: the LLM supervisor decides', h.llmCalls === 1 && h.settled[0].o.kind === 'decision');
     ok('the default continuation exists for a row with no policy text', typeof DEFAULT_CONTINUATION_PROMPT === 'string' && DEFAULT_CONTINUATION_PROMPT.length > 20);
 
     console.log(`test_kapici_supervisor: ${pass} passed, ${fail} failed`);

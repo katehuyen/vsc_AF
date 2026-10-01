@@ -2426,7 +2426,7 @@
      * it never reads as a second session colour. No project, no square; a
      * project with no colour yet is a hollow one, because it still says "filed".
      */
-    function projSquare(s) {
+    function projSquare(s, filed) {
         if (!s.projectId) { return ''; }
         const hex = C.esc(s.projectColor || '');
         const sq = `<button class="cproj${s.projectColor ? ' on' : ''}" data-cproj="${C.esc(s.projectId)}"${s.projectColor
@@ -2435,7 +2435,9 @@
             window.AFTip.lines([
                 'Project: ' + (s.projectName || s.projectId),
                 'Colour: ' + (s.projectColor || 'none yet — set it on the project page'),
-                '\nStarted under this project: it was told about it, and the session is filed under it. Click opens the project page.'
+                filed
+                    ? '\nThis conversation is filed under this project. Click opens the project page.'
+                    : '\nStarted under this project: it was told about it, and the session is filed under it. Click opens the project page.'
             ]), 'cprojw');
     }
 
@@ -2632,7 +2634,7 @@
                 ${cardTip(`<span class="t2">${C.esc(r.title || '(no name)')}</span>`,
                     r.title ? `${r.title.length.toLocaleString()} characters` : 'never named',
                     r.title || 'This session ended before the CLI named it.', 't2w')}
-                ${colorDot(r.sessionId, r.color, 'back')}
+                ${projSquare(r, true)}${colorDot(r.sessionId, r.color, 'back')}
                 <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
         return `${callout}
@@ -2833,7 +2835,7 @@
                         ]), 'nw')}
                     <span class="hb">${resumeEngineBadge(r)}</span>
                 </div>
-                ${colorDot(r.sessionId, r.color, 'resume')}
+                ${projSquare(r, true)}${colorDot(r.sessionId, r.color, 'resume')}
                 <div class="m wrap">${cardTip(who(r.agentName, r.sessionId),
                     `${r.agentName || 'session'}${r.sessionId ? ` · #${String(r.sessionId).slice(0, 8)}` : ''}`,
                     window.AFTip.lines([

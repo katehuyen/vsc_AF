@@ -1113,7 +1113,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         { id: 'queueHasWork', label: 'the work queue has items' }
     ];
     /** U-155 — a trigger's only: Kapıcı reads the firing and says whether it carries work. */
-    const KAPICI_GUARD = { id: 'kapici', label: 'Kapıcı says the firing carries work' };
+    const KAPICI_GUARD = { id: 'kapici', label: 'Gatekeeper says the firing carries work' };
     const HOOK_EVENTS = [
         { id: 'stop', label: 'stop — an agent finished its turn' },
         { id: 'end', label: 'end — a session ended' },
@@ -1144,7 +1144,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         { id: 'approval', icon: '✋', label: 'approval — the chain waits for you' },
         { id: 'select', icon: '🖼', label: 'select — you keep some of the assets' },
         { id: 'checkpoint', icon: '◆', label: 'checkpoint — the supervisor decides here' },
-        { id: 'kapici', icon: '🚪', label: 'Kapıcı — a rule decides: carry on, stop or ask you' },
+        { id: 'kapici', icon: '🚪', label: 'Gatekeeper — a rule decides: carry on, stop or ask you' },
         { id: 'tool', icon: '🛠', label: 'tool — a local ffmpeg recipe, no model' }
     ];
     const PREV = '{prev_output}';
@@ -2015,10 +2015,10 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 Without one, every wake-up is paid whether or not there was work.</span></div>
             <div class="ntgrid">
                 ${pickSel('guardKind', 'Guard', c.kind === 'trigger' ? GUARDS.concat([KAPICI_GUARD]) : GUARDS, c.guardKind, 'What has to be true for this to fire at all.')}
-                ${kp ? pickSel('guardRule', 'Rule', kpRules, c.guardRule, 'The Kapıcı rule asked. The Toolbox\'s Kapıcı tab lists every rule.')
+                ${kp ? pickSel('guardRule', 'Rule', kpRules, c.guardRule, 'The Gatekeeper rule asked. The Toolbox\'s Gatekeeper tab lists every rule.')
                 + pickSel('guardInput', 'Reads', [{ id: '', label: 'the event and the file' }, { id: 'diff', label: 'the file\'s git diff' }], c.guardInput,
-                    'What Kapıcı reads besides the event. A diff shows what changed; with no repository it falls back to the file.')
-                + '<span class="muted small" title="Farm Settings ▸ Kapıcı ▸ kapici.trigger">Asked only while Kapıcı for triggers is shadow or on — off, it fires as if this guard were not there.</span>' : ''}
+                    'What Gatekeeper reads besides the event. A diff shows what changed; with no repository it falls back to the file.')
+                + '<span class="muted small" title="Farm Settings ▸ Gatekeeper ▸ kapici.trigger">Asked only while Gatekeeper for triggers is shadow or on — off, it fires as if this guard were not there.</span>' : ''}
                 ${needsPath ? textF('guardPath', 'Path', c.guardPath, 'D:/…  — {today} and {yesterday} are expanded',
             'The folder or file the guard looks at. {today} / {yesterday} become YYYY-MM-DD.', true) : ''}
                 ${c.guardKind === 'folderHasFiles'
@@ -3287,7 +3287,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             return 'Pick the workflow this trigger runs.';
         }
         if (c.guardKind === 'kapici' && c.kind !== 'trigger') {
-            return 'Kapıcı decides for a trigger only — pick another guard for this one.';
+            return 'Gatekeeper decides for a trigger only — pick another guard for this one.';
         }
         if (c.guardKind && c.guardKind !== 'queueHasWork' && c.guardKind !== 'kapici' && !String(c.guardPath || '').trim()) {
             return 'That guard looks at a path — say which one, or take the guard off.';
@@ -3790,7 +3790,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             <td class="from">${tipw(r.sourceKind === 'manual' ? '<span class="muted">you</span>'
                 : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`,
                 r.sourceKind === 'manual' ? 'started by you' : `${r.sourceKind} · ${r.source}`,
-                window.AFTip.lines(setupLines(r.setup)))}${/* U-155 — who Kapıcı routed it to; beside the source's panel, never inside another one */''}${r.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(r.kapici, C) + '</div>' : ''}</td>
+                window.AFTip.lines(setupLines(r.setup)))}${/* U-155 — who Gatekeeper routed it to; beside the source's panel, never inside another one */''}${r.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(r.kapici, C) + '</div>' : ''}</td>
             <td class="eng">${window.AFEngine.badge(r.engine || 'claude',
                 'Engine: ' + engineLabel(r) + '\nPrice per run: '
                 + (r.reportsCost === false ? 'not reported — plan or account billing' : 'reported'))}${runProviderChip(r)}</td>

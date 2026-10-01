@@ -56,7 +56,7 @@ export function kapiciMcpState(storageDir: string, home = os.homedir()): KapiciM
 /** Give every Claude Code session on this machine the kapici_* tools, or take them back. */
 export function setKapiciMcp(storageDir: string, on: boolean, home = os.homedir()): KapiciMcpState {
     const index = kapiciMcpIndex(storageDir);
-    if (on && !fs.existsSync(index)) { throw new Error('The Kapıcı MCP server is not staged yet — reload the window once after installing Agent Farm, then ask again.'); }
+    if (on && !fs.existsSync(index)) { throw new Error('The Gatekeeper MCP server is not staged yet — reload the window once after installing Agent Farm, then ask again.'); }
     const done = on
         ? addUserMcpServer(KAPICI_MCP_NAME, { command: 'node', args: [tokenizeForClaude(index)], env: {} }, home)
         : removeUserMcpServer(KAPICI_MCP_NAME, home) || !readUserMcpServerRaw(KAPICI_MCP_NAME, home);
@@ -69,17 +69,17 @@ export function registerKapiciMcpOps(bridge: BridgeRegistry, storageDir: string,
     bridge.register([
         {
             op: 'kapici.mcp',
-            describe: `Whether the Kapıcı MCP server (tools kapici_eval, kapici_ask, kapici_rules — each carried to Agent Farm over the bridge, so the key never leaves it) is staged and registered for Claude Code: ${shape}.`,
+            describe: `Whether the Gatekeeper MCP server (tools kapici_eval, kapici_ask, kapici_rules — each carried to Agent Farm over the bridge, so the key never leaves it) is staged and registered for Claude Code: ${shape}.`,
             handler: async () => kapiciMcpState(storageDir, home)
         },
         {
             op: 'kapici.mcp.register',
-            describe: `Register the Kapıcı MCP server user-wide in ~/.claude.json so every Claude Code session gets the kapici_* tools (a session started after this). Answers ${shape}.`,
+            describe: `Register the Gatekeeper MCP server user-wide in ~/.claude.json so every Claude Code session gets the kapici_* tools (a session started after this). Answers ${shape}.`,
             handler: async () => setKapiciMcp(storageDir, true, home)
         },
         {
             op: 'kapici.mcp.unregister',
-            describe: `Take the Kapıcı MCP server out of ~/.claude.json. Answers ${shape}.`,
+            describe: `Take the Gatekeeper MCP server out of ~/.claude.json. Answers ${shape}.`,
             handler: async () => setKapiciMcp(storageDir, false, home)
         }
     ]);

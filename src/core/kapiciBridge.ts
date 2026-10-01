@@ -216,7 +216,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
     bridge.register([
         {
             op: 'kapici.eval',
-            describe: 'Put a state to a Kapıcı rule and get its verdict {passed, decision, confidence, answers, reason, provider, latencyMs, costUsd?, fallback?, ruleId, ruleVersion, layer, model?, cached?}. args: rule (id), state (text or object) or statePath (absolute file; .json is read as an object), criteria? (call-time options per question: a list or {key: text} — a "$call" question needs them, a fixed one may be narrowed), project? (a project root: its .kapici/ rules win), consumer? (the audit column, default "bridge"), noCache?. Never fails for a missing key or rule: the verdict says fallback and why. Every call leaves one audit line (kapici.audit).',
+            describe: 'Put a state to a Gatekeeper rule and get its verdict {passed, decision, confidence, answers, reason, provider, latencyMs, costUsd?, fallback?, ruleId, ruleVersion, layer, model?, cached?}. args: rule (id), state (text or object) or statePath (absolute file; .json is read as an object), criteria? (call-time options per question: a list or {key: text} — a "$call" question needs them, a fixed one may be narrowed), project? (a project root: its .kapici/ rules win), consumer? (the audit column, default "bridge"), noCache?. Never fails for a missing key or rule: the verdict says fallback and why. Every call leaves one audit line (kapici.audit).',
             handler: async (args) => host.get().evaluate(argStr(args, 'rule'), stateArg(args), {
                 consumer: optStr(args, 'consumer') || 'bridge', options: objArg<CallOptions>(args, 'criteria', 'options'),
                 projectRoot: project(args), noCache: optBool(args, 'noCache')
@@ -224,7 +224,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
         },
         {
             op: 'kapici.ask',
-            describe: 'Ask Kapıcı typed questions without writing a rule — one-off. args: state or statePath, questions {id: {type: noul|choice|score, instructions, criteria?, check?}}, providers? (list, in order; default the setting agentFarm.kapici.providers), consumer?. Answers every question with its confidence (a question with a check is answered locally and never sent).',
+            describe: 'Ask Gatekeeper typed questions without writing a rule — one-off. args: state or statePath, questions {id: {type: noul|choice|score, instructions, criteria?, check?}}, providers? (list, in order; default the setting agentFarm.kapici.providers), consumer?. Answers every question with its confidence (a question with a check is answered locally and never sent).',
             handler: async (args) => {
                 const questions = objArg<Record<string, KapiciQuestion>>(args, 'questions');
                 need(questions, 'questions is required: {id: {type, instructions, criteria?}}.');
@@ -235,14 +235,14 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
         },
         {
             op: 'kapici.rules',
-            describe: 'Every Kapıcı rule visible (from a project too, with project=<root>): id, version, description, the layer that won (builtin | system | project) and what it overrode, its file, providers, questions, golden example count; plus every rule file that failed, with the reason.',
+            describe: 'Every Gatekeeper rule visible (from a project too, with project=<root>): id, version, description, the layer that won (builtin | system | project) and what it overrode, its file, providers, questions, golden example count; plus every rule file that failed, with the reason.',
             handler: async (args) => {
                 return host.ruleList(project(args));
             }
         },
         {
             op: 'kapici.rule.check',
-            describe: 'Run a Kapıcı rule\'s golden examples through the real providers and say which pass. args: rule (id), project?. Each example is one real call (Jev input is billed per token; nothing is cached); answers {rule, version, layer, passed, total, cases:[{i, ok, expect, got, decision, provider, fallback?}]}.',
+            describe: 'Run a Gatekeeper rule\'s golden examples through the real providers and say which pass. args: rule (id), project?. Each example is one real call (Jev input is billed per token; nothing is cached); answers {rule, version, layer, passed, total, cases:[{i, ok, expect, got, decision, provider, fallback?}]}.',
             handler: async (args) => {
                 const id = argStr(args, 'rule');
                 const found = host.registry.find(id, project(args));
@@ -259,7 +259,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
         },
         {
             op: 'kapici.audit',
-            describe: 'Kapıcı\'s recent decisions, newest first, and per consumer how often its answer agreed with what today\'s mechanism did (shadow mode). args: consumer?, rule?, since? (ISO time or epoch ms), limit? (default 50). A line holds the hash and length of the input, never the input or a key.',
+            describe: 'Gatekeeper\'s recent decisions, newest first, and per consumer how often its answer agreed with what today\'s mechanism did (shadow mode). args: consumer?, rule?, since? (ISO time or epoch ms), limit? (default 50). A line holds the hash and length of the input, never the input or a key.',
             handler: async (args) => {
                 const sinceRaw = optStr(args, 'since');
                 const since = sinceRaw ? (/^\d+$/.test(sinceRaw) ? Number(sinceRaw) : Date.parse(sinceRaw)) : undefined;
@@ -270,7 +270,7 @@ export function registerKapiciOps(bridge: BridgeRegistry, host: KapiciHost): voi
         },
         {
             op: 'kapici.status',
-            describe: 'Kapıcı\'s state: which vault key it would use and whether it is PRESENT (never its value), the road (typesafe | vercel | openrouter) with its address and model, the provider order, whether an LLM judge is wired, the timeout, how many rules load and which files failed, the rule folders and the audit folder.',
+            describe: 'Gatekeeper\'s state: which vault key it would use and whether it is PRESENT (never its value), the road (typesafe | vercel | openrouter) with its address and model, the provider order, whether an LLM judge is wired, the timeout, how many rules load and which files failed, the rule folders and the audit folder.',
             handler: async () => host.status()
         }
     ]);

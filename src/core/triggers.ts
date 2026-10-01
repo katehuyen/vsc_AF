@@ -142,7 +142,7 @@ export class TriggerManager implements vscode.Disposable {
 
     /** Accepted now, decided when Kapıcı answers; the trigger is read again then, so a trigger disabled meanwhile does not fire. */
     private askKapici(trigger: FarmTrigger, reason: string, payload?: unknown, file?: string): boolean {
-        if (this.asking.has(trigger.id)) { return this.skip(trigger, 'Kapıcı is still deciding the previous firing'); }
+        if (this.asking.has(trigger.id)) { return this.skip(trigger, 'Gatekeeper is still deciding the previous firing'); }
         this.asking.add(trigger.id);
         void kapiciFiring(trigger.fireIf!, { title: trigger.title, reason, file, watch: trigger.watchPath, payload }, this.kapici?.())
             .then(v => {

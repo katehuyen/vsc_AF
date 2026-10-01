@@ -307,17 +307,17 @@ const variants = () => ([
     // file replacing one, a rule of the user's own, and a file that failed to load — its row's panel open
     {
         id: 'toolbox-kapici',
-        label: 'Toolbox — Kapıcı: the rules that ship with Agent Farm (U-155)',
+        label: 'Toolbox — Gatekeeper: the rules that ship with Agent Farm (U-155)',
         data: Object.assign(base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), { tab: 'kapici', kapici: { rules: KAPICI_RULES(), problems: [] } })
     },
     {
         id: 'toolbox-kapici-own',
-        label: 'Toolbox — Kapıcı: a file replacing a shipped rule, one of the user\'s own, one that broke (U-155)',
+        label: 'Toolbox — Gatekeeper: a file replacing a shipped rule, one of the user\'s own, one that broke (U-155)',
         data: kapiciOwn()
     },
     {
         id: 'toolbox-kapici-own-tip', tip: 'tip-kpc-rule:2',
-        label: 'Toolbox — Kapıcı: the replaced rule\'s panel, open (U-155)',
+        label: 'Toolbox — Gatekeeper: the replaced rule\'s panel, open (U-155)',
         data: kapiciOwn()
     }
 ]);

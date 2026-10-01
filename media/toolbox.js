@@ -25,7 +25,7 @@
         // lookup that would quietly draw "0".
         { id: 'service', label: 'Services' },
         // U-155 — Kapıcı's rules: like services, not an inventory of files, so it has no count either
-        { id: 'kapici', label: 'Kapıcı' }
+        { id: 'kapici', label: 'Gatekeeper' }
     ];
 
     /** The tabs that are an inventory of files. `service` is deliberately not
@@ -824,7 +824,7 @@
     function kapiciTab() {
         const K = DATA.kapici || { rules: [], problems: [] };
         const broken = (K.problems || []).map(p => `<li><code>${esc(p.file || p.layer || '?')}</code> — <span style="color:var(--vscode-charts-red,#f14c4c)">${esc(p.error)}</span></li>`).join('');
-        return `<p class="muted small">Kapıcı answers a yes/no, a choice or a score from a rule, without a model. A rule file in an agent root's _KAPICI folder (or the folder Farm Settings names) replaces a built-in one with the same id.</p>`
+        return `<p class="muted small">Gatekeeper answers a yes/no, a choice or a score from a rule, without a model. A rule file in an agent root's _KAPICI folder (or the folder Farm Settings names) replaces a built-in one with the same id.</p>`
             + (window.AFKapici ? window.AFKapici.rules(K.rules, C) : '')
             + (broken ? `<h3>Rule files that did not load</h3><ul class="small">${broken}</ul>` : '');
     }

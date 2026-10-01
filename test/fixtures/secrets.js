@@ -37,7 +37,7 @@ const FULL = [
         allAgents: false, agents: [{ id: 'a2', name: 'asistan' }], updatedAt: NOW - 20 * 60e3
     },
     {
-        name: 'TYPESAFE_API_KEY', description: 'Kapıcı decision gate — Agent Farm reads it itself.',
+        name: 'TYPESAFE_API_KEY', description: 'Gatekeeper decision gate — Agent Farm reads it itself.',
         allAgents: false, farmOnly: true, agents: [], updatedAt: NOW - 5 * 60e3
     }
 ];

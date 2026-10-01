@@ -70,12 +70,12 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         let o = await K.kapiciStepRoute(spec, 'metin', undefined);
         ok('no hook (off): carries on', o.route === 'proceed' && o.by === 'today' && /off/.test(o.why));
         o = await K.kapiciStepRoute(spec, 'metin', hook('off', verdict({ passed: false })));
-        ok('off: carries on, Kapıcı never called', o.route === 'proceed' && calls.length === 0);
+        ok('off: carries on, Gatekeeper never called', o.route === 'proceed' && calls.length === 0);
         o = await K.kapiciStepRoute(spec, 'metin', hook('shadow', verdict({ passed: false, decision: 'reject' })));
         await o.shadow;
-        ok('shadow: carries on, and Kapıcı is audited beside it', o.route === 'proceed' && calls.length === 1 && calls[0].m === 'shadow' && calls[0].actual === 'pass' && calls[0].state === 'metin');
+        ok('shadow: carries on, and Gatekeeper is audited beside it', o.route === 'proceed' && calls.length === 1 && calls[0].m === 'shadow' && calls[0].actual === 'pass' && calls[0].state === 'metin');
         o = await K.kapiciStepRoute(spec, 'metin', hook('on', verdict({ passed: false, decision: 'reject', reason: 'ok p=0.10' })));
-        ok('on, reject: stops, and says why', o.route === 'stop' && o.by === 'kapici' && /^Kapıcı: my\.rule — ok p=0\.10 \(confidence 0\.90\)$/.test(o.why));
+        ok('on, reject: stops, and says why', o.route === 'stop' && o.by === 'kapici' && /^Gatekeeper: my\.rule — ok p=0\.10 \(confidence 0\.90\)$/.test(o.why));
         o = await K.kapiciStepRoute(spec, 'metin', hook('on', verdict({ passed: false, decision: 'closed', fallback: 'closed', confidence: 0, reason: 'jev failed (no-key)' })));
         ok('on, a failure the rule closes: stops', o.route === 'stop' && /no-key/.test(o.why));
         o = await K.kapiciStepRoute(spec, 'metin', hook('on', verdict({ passed: false, decision: 'reject', fallback: 'ask', confidence: 0.3 })));
@@ -83,7 +83,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         o = await K.kapiciStepRoute(spec, 'metin', hook('on', verdict({ passed: true, decision: 'open', fallback: 'open', confidence: 0 })));
         ok('on, a failure the rule opens: carries on', o.route === 'proceed' && o.by === 'today');
         o = await K.kapiciStepRoute(spec, 'metin', hook('on', new Error('boom')));
-        ok('on, Kapıcı throws: carries on', o.route === 'proceed');
+        ok('on, Gatekeeper throws: carries on', o.route === 'proceed');
     }
 
     console.log('\n== the form draft becomes the step ==');
@@ -124,12 +124,12 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         let run = mgr.runWorkflow(w);
         complete(queued(w.id)[0], 'kısa metin');
         await tick();
-        ok('Kapıcı reads the previous step\'s output with the step\'s rule', asked[0] === 'my.rule|kısa metin');
+        ok('Gatekeeper reads the previous step\'s output with the step\'s rule', asked[0] === 'my.rule|kısa metin');
         eq('pass: the chain goes on, and the next step reads the output before the gate', queued(w.id).map(t => [t.stepIndex, t.prompt]), [[2, 'yayınla: kısa metin']]);
         let g = gateRow(w.id);
-        ok('the gate\'s row: a kapici step, done, its decision on the supervisor strip', g.agentName === 'kapici' && g.status === 'done' && g.supervisorCall.decision === 'proceed' && g.supervisorCall.model === 'Kapıcı' && g.supervisorCall.confidence === 0.9);
-        ok('the run board holds the route', /^proceed: Kapıcı: my\.rule/.test(mgr.runRecords.get(run).board.steps.k.text));
-        eq('a Kapıcı row is not counted as a supervisor call', supervisorTrail(run, mgr.tasks).calls, 0);
+        ok('the gate\'s row: a kapici step, done, its decision on the supervisor strip', g.agentName === 'kapici' && g.status === 'done' && g.supervisorCall.decision === 'proceed' && g.supervisorCall.model === 'Gatekeeper' && g.supervisorCall.confidence === 0.9);
+        ok('the run board holds the route', /^proceed: Gatekeeper: my\.rule/.test(mgr.runRecords.get(run).board.steps.k.text));
+        eq('a Gatekeeper row is not counted as a supervisor call', supervisorTrail(run, mgr.tasks).calls, 0);
 
         answer = verdict({ passed: false, decision: 'reject', reason: 'ok p=0.05' });
         w = chain('Durur', { rule: 'my.rule' });
@@ -138,7 +138,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         await tick();
         eq('reject: nothing after it starts', queued(w.id).length, 0);
         const ended = mgr.runRecords.get(run).ended;
-        ok('…and the run is stopped, saying it was Kapıcı at step 2', ended.status === 'stopped' && /^Kapıcı stopped the run at step 2: Kapıcı: my\.rule — ok p=0\.05/.test(ended.reason));
+        ok('…and the run is stopped, saying it was Gatekeeper at step 2', ended.status === 'stopped' && /^Gatekeeper stopped the run at step 2: Gatekeeper: my\.rule — ok p=0\.05/.test(ended.reason));
 
         asked.length = 0;
         approve = false;
@@ -146,7 +146,7 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         run = mgr.runWorkflow(w);
         complete(queued(w.id)[0], 'belki');
         await tick();
-        ok('ask_user: you are asked, with the reason', asked.length === 2 && /Kapıcı: my\.rule/.test(asked[1]));
+        ok('ask_user: you are asked, with the reason', asked.length === 2 && /Gatekeeper: my\.rule/.test(asked[1]));
         g = gateRow(w.id);
         ok('you said no: stopped, and the row says it was you', mgr.runRecords.get(run).ended.status === 'stopped' && g.supervisorCall.decision === 'ask_user' && /you stopped it$/.test(g.supervisorCall.why));
         approve = true;

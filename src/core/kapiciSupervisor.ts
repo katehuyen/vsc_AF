@@ -24,7 +24,7 @@ export function supervisorOptions(ctx: SupervisorContext): SupervisorAction[] {
 export function kapiciAnswerText(v: KapiciVerdict, ctx: SupervisorContext & { continuation: string }): string | undefined {
     const action = v.decision as SupervisorAction;
     if (!supervisorOptions(ctx).includes(action)) { return undefined; }
-    const d: Record<string, unknown> = { action, reason: `Kapıcı: ${v.reason}`, confidence: v.confidence };
+    const d: Record<string, unknown> = { action, reason: `Gatekeeper: ${v.reason}`, confidence: v.confidence };
     if (action === 'resume') { d.prompt = ctx.continuation; }
     if (action === 'wait') { d.notBefore = ctx.resetAt; }
     return JSON.stringify(d);

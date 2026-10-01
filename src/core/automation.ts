@@ -156,7 +156,7 @@ export function evaluatePrecondition(
                 : { ok: false, detail: `queue has ${n} item(s) (need ${need})` };
         }
         case 'kapici':
-            return { ok: true, detail: `Kapıcı asks ${pre.rule || DEFAULT_TRIGGER_RULE} when it fires` };
+            return { ok: true, detail: `Gatekeeper asks ${pre.rule || DEFAULT_TRIGGER_RULE} when it fires` };
         default:
             return { ok: true, detail: `unknown precondition "${String(pre.kind)}" — treated as pass` };
     }
@@ -179,7 +179,7 @@ export function describePrecondition(pre: Precondition | undefined): string {
         case 'queueHasWork':
             return `queue ≥ ${pre.minCount ?? 1}`;
         case 'kapici':
-            return `Kapıcı ${pre.rule || DEFAULT_TRIGGER_RULE}${pre.input === 'diff' ? ' (diff)' : ''}`;
+            return `Gatekeeper ${pre.rule || DEFAULT_TRIGGER_RULE}${pre.input === 'diff' ? ' (diff)' : ''}`;
         default:
             return String(pre.kind);
     }

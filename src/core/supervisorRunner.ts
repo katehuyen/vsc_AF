@@ -89,10 +89,10 @@ export class SupervisorRunner {
                 return text ? { text, ...(v.costUsd ? { costUsd: v.costUsd } : {}) } : undefined;
             };
             if (p.engine === KAPICI_ENGINE) {
-                if (!k) { fallback('the policy names Kapıcı as its supervisor, and Kapıcı is off for retries (agentFarm.kapici.retry)'); return; }
+                if (!k) { fallback('the policy names Gatekeeper as its supervisor, and Gatekeeper is off for retries (agentFarm.kapici.retry)'); return; }
                 const v = await k.evaluate(bundle, options, 'on');
                 const a = v.fallback === undefined ? fromVerdict(v) : undefined;
-                if (!a) { fallback(`Kapıcı could not decide — ${v.reason.slice(0, 160)}`); return; }
+                if (!a) { fallback(`Gatekeeper could not decide — ${v.reason.slice(0, 160)}`); return; }
                 answer = a;
             } else if (k) {
                 const g = await gate<SupervisorAnswer>({
@@ -123,6 +123,6 @@ export class SupervisorRunner {
         }
         this.deps.settle(row, { kind: 'decision', decision: checked.decision },
             { engine: by, originalPrompt: this.originalPrompt(row, failed), ...extra });
-        this.deps.log?.(`supervisor: ${row.id} → ${checked.decision.action}${by === KAPICI_ENGINE ? ' (Kapıcı)' : ''}`);
+        this.deps.log?.(`supervisor: ${row.id} → ${checked.decision.action}${by === KAPICI_ENGINE ? ' (Gatekeeper)' : ''}`);
     }
 }

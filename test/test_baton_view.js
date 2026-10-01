@@ -75,6 +75,23 @@ ok('two passes from one run: the newest speaks', twice.lines.some(l => /waits fo
     ok('several chains: the newest speaks, +N counts the rest, each has its line',
         many.text === '⑂ 5/6 · 14:37 +1' && many.chainId === 'chn_2' && /^Baton relay — 2 chains running/.test(many.tooltip)
         && many.tooltip.indexOf('Chain chn_2') < many.tooltip.indexOf('Chain chn_1'));
+    // ‼️ M-63 — two chains at once: the one whose session is open in the Console speaks
+    const two = [
+        b('b1', 'started', 1, 's1', { at: NOW - 9000, extra: { toSessionId: 's2' } }),
+        { ...b('c1', 'started', 1, 'x1', { at: NOW, extra: { toSessionId: 'x2' } }), chainId: 'chn_2' }
+    ];
+    const alive2 = sid => sid === 's2' || sid === 'x2';
+    const newest = V.batonBarView(two, 6, alive2, fmt);
+    ok('two chains, nothing open: the newest speaks and says how to switch',
+        newest.chainId === 'chn_2' && newest.sessionId === 'x2' && /open a session of another chain in the Console to switch/.test(newest.tooltip));
+    const focused = V.batonBarView(two, 6, alive2, fmt, 's2');
+    ok('‼️ the older chain\'s session open in the Console: ITS chain speaks, and a click opens its legs',
+        focused.chainId === 'chn_1' && focused.sessionId === 's2' && focused.text === '⑂ 2/6 +1'
+        && /Showing the chain of the session open in the Console/.test(focused.tooltip)
+        && focused.tooltip.indexOf('Chain chn_1') < focused.tooltip.indexOf('Chain chn_2'));
+    ok('…a passed leg of that chain counts as its session too', V.batonBarView(two, 6, alive2, fmt, 's1').chainId === 'chn_1');
+    ok('…a session of no running chain changes nothing', V.batonBarView(two, 6, alive2, fmt, 'zz').chainId === 'chn_2');
+    ok('one chain: no switching line', !/Showing/.test(V.batonBarView(two.slice(0, 1), 6, alive2, fmt, 's2').tooltip));
 }
 
 // …and the host draws that view, and only that view, on one item.
@@ -83,8 +100,14 @@ ok('two passes from one run: the newest speaks', twice.lines.some(l => /waits fo
     const block = ext.slice(ext.indexOf('const batonBar = '), ext.indexOf('const batonBootSweep'));
     ok('one status-bar item, drawn from batonBarView with the setting\'s own ceiling',
         (ext.match(/const batonBar = vscode\.window\.createStatusBarItem/g) || []).length === 1
-        && /batonBarView\(batonStore\.all\(\), normalizeMaxLegs\(cfg\(\)\.get<unknown>\('batonMaxHops'\)\), batonLegAlive\)/.test(block)
+        && /batonBarView\(batonStore\.all\(\), normalizeMaxLegs\(cfg\(\)\.get<unknown>\('batonMaxHops'\)\), batonLegAlive, undefined, batonFocus\)/.test(block)
         && /if \(!v\) \{ batonBar\.hide\(\); return; \}/.test(block));
+    ok('‼️ M-63 — the Console tells the bar which session is open, and the bar keeps it for every redraw',
+        /focusChanged: \(sessionId: string \| undefined\) => updateBatonBar\(sessionId\)/.test(ext)
+        && /const updateBatonBar = \(focus: string \| undefined = batonFocus\): void => \{\s*batonFocus = focus;/.test(block));
+    const panel = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('…from the card it has selected, sent only when it changes',
+        /const focus = this\.selected \? this\.deps\.host\.list\(\)\.find\(s => s\.id === this\.selected\)\?\.sessionId : undefined;\s*if \(focus !== this\.focusSent\) \{ this\.focusSent = focus; this\.deps\.focusChanged\?\.\(focus\); \}/.test(panel));
     ok('…redrawn on a store change, a leg starting or ending, and a new ceiling',
         /batonStore\.onDidChange\(\(\) => \{ updateBatonBar\(\); ConsolePanel\.refreshIfOpen\(\);/.test(block) && /e\.kind === 'start' \|\| e\.kind === 'end'/.test(block)
         && /affectsConfiguration\('agentFarm\.batonMaxHops'\)/.test(block));

@@ -215,7 +215,9 @@ const events = () => {
         push('407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60', 'developer', '', 'prompt', 90 - i * 10,
             { detail: 'turn ' + (i + 1) });
         push('407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60', 'developer', '', 'toolStart', 89 - i * 10,
-            { tool: i % 3 === 0 ? 'Edit' : i % 3 === 1 ? 'Bash' : 'Read', detail: 'src/core/live.ts' });
+            Object.assign({ tool: i % 3 === 0 ? 'Edit' : i % 3 === 1 ? 'Bash' : 'Read', detail: 'src/core/live.ts' },
+                // U-188 — one call that only waits, so the lane's purple is in the picture
+                i === 4 ? { detail: 'until grep -q passed suite.log; do sleep 5; done', wait: true } : {}));
         push('407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60', 'developer', '', 'toolEnd', 88 - i * 10,
             { tool: i % 3 === 0 ? 'Edit' : i % 3 === 1 ? 'Bash' : 'Read' });
     }
