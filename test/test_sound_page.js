@@ -314,7 +314,7 @@ const byAttr = (p, attr, key) =>
         /rootbadge warn">silent/.test(html));
     ok('…and every authority holding it is named, not just the first',
         /muted/.test(html) && /quiet hours 23:00/.test(html));
-    ok('…including the sessions muted on their own', /muted on their own/.test(html)
+    ok('…including the sessions Silent on their own', /Silent on their own/.test(html)
         && /developer · TalkScribe/.test(html));
     ok('the mute and the window are shown as SET (MIRROR)',
         byId(p, 'alertmute').checked === true && byId(p, 'alertquieton').checked === true);
@@ -353,7 +353,7 @@ const byAttr = (p, attr, key) =>
     // ‼️ THE HEAD SAYS SO. This is the one control on the card that produces a
     // sound nobody armed; a badge is cheap and the surprise is not.
     ok('…and the card head says the nudge is on, beside the armed count rather'
-        + ' than instead of it', /nudge 4m ×3 · 2 waiting/.test(html)
+        + ' than instead of it', /reminder 4m ×3 · 2 waiting/.test(html)
         && /Rings on 2 of 5 events/.test(html));
     ok('what is waiting RIGHT NOW is on the strip — the figure that turns a'
         + ' policy into something visibly working', /2 waiting/.test(html));

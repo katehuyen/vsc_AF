@@ -32,7 +32,7 @@
                 : '';
         const nudge = g.nudge || {};
         const nudgeBadge = nudge.on
-            ? `<span class="rootbadge">⏰ nudge ${C.esc(String(nudge.minutes))}m ×${C.esc(String(nudge.repeat))}${nudge.armed ? ` · ${C.esc(String(nudge.armed))} waiting` : ''}</span>`
+            ? `<span class="rootbadge">⏰ reminder ${C.esc(String(nudge.minutes))}m ×${C.esc(String(nudge.repeat))}${nudge.armed ? ` · ${C.esc(String(nudge.armed))} waiting` : ''}</span>`
             : '';
         const muted = (g.mutedSessions || []).length;
         // U-182 — while an answer is read aloud the status line always offers ■

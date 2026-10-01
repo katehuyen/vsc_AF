@@ -6746,6 +6746,15 @@
       ]
     },
     {
+      "capability": "stopReading",
+      "ui": [
+        "cmd:agentfarm.stopReading"
+      ],
+      "ops": [
+        "alerts.read"
+      ]
+    },
+    {
       "capability": "studioBrand.ts#brand:save",
       "ui": [
         "page:studioBrand.ts#brand:save"

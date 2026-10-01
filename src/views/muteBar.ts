@@ -74,8 +74,8 @@ export class MuteStatusBar implements vscode.Disposable {
         const md = new vscode.MarkdownString(undefined, true);
         md.supportThemeIcons = true;
         md.appendMarkdown(gate.silent
-            ? `**Alert sounds: silent** — ${gate.detail}\n\n`
-            : '**Alert sounds: on**\n\n');
+            ? `**Sound: silent** — ${gate.detail}\n\n`
+            : '**Sound: on**\n\n');
         if (quiet.error) {
             md.appendMarkdown(`⚠ Quiet hours: ${quiet.error}\n\n`);
         } else if (quiet.configured) {
@@ -84,17 +84,17 @@ export class MuteStatusBar implements vscode.Disposable {
                 : `Quiet hours ${quiet.from}–${quiet.to} — next in ${fmtGap(quiet.inMinutes)}.\n\n`);
         }
         md.appendMarkdown(armed.length
-            ? `Armed for every session: ${armed.join(' · ')}.\n\n`
-            : 'No event is armed fleet-wide.\n\n');
+            ? `Rings for every session on: ${armed.join(' · ')}.\n\n`
+            : 'No event rings fleet-wide.\n\n');
         if (armedSessions) {
-            md.appendMarkdown(`${armedSessions} live session${armedSessions === 1 ? '' : 's'} armed on their own.\n\n`);
+            md.appendMarkdown(`${armedSessions} live session${armedSessions === 1 ? '' : 's'} set to Always.\n\n`);
         }
         if (mutedSessions) {
-            md.appendMarkdown(`${mutedSessions} session${mutedSessions === 1 ? '' : 's'} muted on their own — those stay quiet whatever this button says.\n\n`);
+            md.appendMarkdown(`${mutedSessions} session${mutedSessions === 1 ? '' : 's'} set to Silent — those stay quiet whatever this button says.\n\n`);
         }
         md.appendMarkdown(muted
-            ? '**Click to unmute the farm.** Nothing else is changed — every event and tone is exactly where you left it.'
-            : '**Click to mute the whole farm.** Sounds only: the notifications, modals and focus jumps are a different switch and keep working.');
+            ? '**Click to turn Mute all off.** Nothing else is changed — every event and tone is exactly where you left it.'
+            : '**Click to Mute all.** Sounds only: the notifications, pop-ups and focus jumps are a different switch and keep working.');
         this.item.tooltip = md;
         this.item.show();
     }

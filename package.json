@@ -623,13 +623,13 @@
       },
       {
         "command": "agentfarm.setSessionAlertVoice",
-        "title": "Sound for This Session…",
+        "title": "Sound: This Session…",
         "category": "Agent Farm",
         "icon": "$(unmute)"
       },
       {
         "command": "agentfarm.toggleMute",
-        "title": "Mute / Unmute Alert Sounds",
+        "title": "Sound: Mute All / Unmute",
         "category": "Agent Farm",
         "icon": "$(mute)"
       },
@@ -1360,6 +1360,12 @@
         "icon": "$(unmute)"
       },
       {
+        "command": "agentfarm.stopReading",
+        "title": "Sound: Stop Reading",
+        "category": "Agent Farm",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "agentfarm.focusSessionTerminal",
         "title": "Focus Session Terminal",
         "category": "Agent Farm",
@@ -1617,7 +1623,7 @@
       },
       {
         "command": "agentfarm.speakDigest",
-        "title": "Speak Daily Briefing (TTS)",
+        "title": "Sound: Speak Daily Briefing",
         "category": "Agent Farm",
         "icon": "$(unmute)"
       },

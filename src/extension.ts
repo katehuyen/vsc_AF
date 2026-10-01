@@ -40448,6 +40448,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.openSound', () => {
             SoundPanel.show({ extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows });
         }),
+        // U-185 — "Sound: Stop Reading", the same stop as `alerts.read stop` and the ■
+        vscode.commands.registerCommand('agentfarm.stopReading', () => {
+            if (!alertsStopReading()) {
+                void vscode.window.setStatusBarMessage('Agent Farm: nothing is being read aloud', 3000);
+            }
+        }),
 
         vscode.commands.registerCommand('agentfarm.openFarmSettings',
             (arg?: { focus?: string }) => {

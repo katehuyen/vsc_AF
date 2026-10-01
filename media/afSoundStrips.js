@@ -76,7 +76,7 @@
             + 'it reminds you about.');
         const armed = Number(n.armed) || 0;
         const nudge = `<label class="alertgatelbl" title="${C.esc(nudgeTip)}">
-                <input type="checkbox" id="alertnudgeon" ${nOn ? 'checked' : ''}>⏰ Nudge</label>
+                <input type="checkbox" id="alertnudgeon" ${nOn ? 'checked' : ''}>⏰ Reminder</label>
             <span class="alertgatedash">after</span>
             <input class="alertqtime" type="number" id="alertnudgemin" min="1" max="240"
                 value="${C.esc(String(nMin))}" data-alertn="${C.esc(String(nMin))}"
@@ -104,7 +104,7 @@
             `<span class="alertmuteses">${C.esc(s.label || s.sessionId)}<button class="secondary small" data-alertunmute="${C.esc(s.sessionId)}" title="${C.esc('Let ' + (s.label || s.sessionId) + ' be heard again. Nothing it chose was cleared, so this puts back exactly what was there before.')}">✕</button></span>`).join('');
         return `<div class="alertgate">
             <label class="alertgatelbl" title="${C.esc(muteTip)}">
-                <input type="checkbox" id="alertmute" ${muted ? 'checked' : ''}>🔇 Mute the farm</label>
+                <input type="checkbox" id="alertmute" ${muted ? 'checked' : ''}>🔇 Mute all</label>
             <span class="alertgatebar"></span>
             <label class="alertgatelbl" title="${C.esc(quietTip)}">
                 <input type="checkbox" id="alertquieton" ${q.configured ? 'checked' : ''}>Quiet hours</label>
@@ -119,9 +119,9 @@
             ${nudge}
             ${state}
             ${ses ? `<span class="alertgatebar"></span><span class="alertmuteseswrap">${window.AFTip.wrap(
-                '<span class="alertmuteseslbl">muted on their own</span>',
-                `${(g.mutedSessions || []).length} session${(g.mutedSessions || []).length === 1 ? '' : 's'} muted individually`,
-                'These stay quiet whatever the two switches to the left say — a session\'s own mute '
+                '<span class="alertmuteseslbl">Silent on their own</span>',
+                `${(g.mutedSessions || []).length} session${(g.mutedSessions || []).length === 1 ? '' : 's'} set to Silent`,
+                'These stay quiet whatever the two switches to the left say — a session\'s own Silent '
                 + 'is the only authority that can subtract from what the fleet switch and the row\'s '
                 + '♪ box ADD UP to.\n\nNothing they chose was cleared; ✕ puts each one back exactly '
                 + 'as it was.')}${ses}</span>` : ''}
