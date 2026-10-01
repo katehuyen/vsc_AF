@@ -157,7 +157,7 @@
             .rm-fw { margin:4px 0 2px; }
             .rm-link { display:flex; flex-direction:column; align-items:center; gap:4px; max-width:190px; }
             .rm-pairlink { font-family:var(--vscode-editor-font-family); font-size:10px; word-break:break-all;
-                user-select:all; max-height:4.6em; overflow:auto; padding:2px 4px; border-radius:3px;
+                user-select:all; padding:2px 4px; border-radius:3px;
                 background:var(--vscode-textCodeBlock-background); }
         `;
     }

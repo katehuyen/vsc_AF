@@ -2,6 +2,11 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.766.0 - Pair a phone without scanning (2026-10-01)
+
+- The pairing card shows its link as text under the QR code, with a **copy link** button.
+  Paste it into the app's Pair screen when the camera cannot read the code.
+
 ## 3.765.0 - The pairing QR code scans (2026-10-01)
 
 - The QR codes Agent Farm draws (phone app pairing, the web view link) could not be read by any
