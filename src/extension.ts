@@ -687,6 +687,7 @@ import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembershi
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
 import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
+import { AgentSoundRow, agentSoundRows, AgentVoices, withAgentVoice } from './core/soundAgents';
 import { soundHeader } from './core/soundHeader';
 import { parseSessionPatch, SESSION_ALSO, SessionSoundPatch, soundOf, soundPlan } from './core/soundSession';
 import { ReadingNow, soundCardView } from './core/soundCard';
@@ -2084,6 +2085,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const ALERT_VOICES_KEY = 'agentfarm.alertVoices';
     const soundsDir = vscode.Uri.joinPath(context.extensionUri, 'media', 'sounds').fsPath;
+    const agentVoicesCfg = (): AgentVoices => cfg().get<AgentVoices>('alerts.agentVoices', {}) ?? {};
     const voiceDeps = (): ResolveDeps => ({
         soundsDir,
         exists: p => { try { return fs.existsSync(p); } catch { return false; } },
@@ -2100,9 +2102,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // a map of its own, because the rekey/TTL/forget a session preference
         // needs is already there and a second copy of it would drift.
         session: sessionId => turnAlerts.voicesFor(sessionId),
-        // The user's answer for everybody. The agent step between them arrives
-        // with the surface that sets it (design §2); until then the chain simply
-        // falls through it, which is what it is built to do.
+        // U-187 — the agent step: Sound › Sessions › Agents and `alerts.voice.set scope=agent`
+        agent: agentName => agentVoicesCfg()[agentName],
+        // The user's answer for everybody.
         settings: () => cfg().get<Record<string, string>>('alerts.voices', {})
     });
     const resolveAlertVoice = (event: AlertEvent, s?: LiveSession): ResolvedVoice =>
@@ -2495,7 +2497,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     /** Write the `settings` step of the chain. An empty voice CLEARS it — the
      *  event falls back to its built-in default, never to silence. */
-    const alertsSetVoice = async (event: AlertEvent, voice: string): Promise<void> => {
+    const usableVoice = (voice: string): string => {
         const want = String(voice || '').trim();
         if (want) {
             const hit = alertVoiceRows().find(v => v.id === want);
@@ -2503,9 +2505,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!hit.exists) { throw new Error(`${want} has no file at ${hit.file}`); }
             if (!hit.playable) { throw new Error(`nothing on this machine plays ${hit.file}`); }
         }
+        return want;
+    };
+    const alertsSetVoice = async (event: AlertEvent, voice: string): Promise<void> => {
+        const want = usableVoice(voice);
         const now = { ...(cfg().get<Record<string, string>>('alerts.voices', {}) ?? {}) };
         if (want) { now[event] = want; } else { delete now[event]; }
         await cfg().update('alerts.voices', now, vscode.ConfigurationTarget.Global);
+    };
+    /** U-187 — write the `agent` step, through the same refusals as the `settings` one. */
+    const alertsSetAgentVoice = async (agentName: string, event: string, voice: string): Promise<void> => {
+        const name = String(agentName || '').trim();
+        if (!name || (!agents.some(a => a.name === name) && !agentVoicesCfg()[name])) {
+            throw new Error(`there is no agent called "${name}" — ${agents.map(a => a.name).join(', ')}`);
+        }
+        if (!(ALERT_EVENTS as readonly string[]).includes(event)) {
+            throw new Error(`"${event}" is not an alert event — ${ALERT_EVENTS.join(' · ')}`);
+        }
+        const next = withAgentVoice(agentVoicesCfg(), name, event, usableVoice(voice));
+        await cfg().update('alerts.agentVoices', next, vscode.ConfigurationTarget.Global);
+    };
+    const soundAgentRows = (): AgentSoundRow[] => {
+        const deps = voiceDeps();
+        return agentSoundRows(agents.map(a => a.name), ALERT_EVENTS, agentVoicesCfg(),
+            (event, agentName) => resolveVoice(event as AlertEvent, deps, { agentName }));
     };
     /**
      * ‼️ A-23 — WRITE THE `session` STEP, THROUGH THE SAME REFUSALS AS THE
@@ -2763,10 +2786,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const branches = await runTurnAlerts(actions, {
             sound: () => alertSound(event, s, queueKey),
             focus: () => {
-                // Focus means what it always meant: bring the Timeline forward
-                // inside this window. VS Code offers no way to raise the WINDOW
-                // above other applications, and this does not pretend to.
-                showTimeline();
+                // ‼️ U-186 — a Console conversation comes forward as ITS CARD in
+                // the Console, where it is worked; every other session keeps the
+                // Timeline. VS Code offers no way to raise the WINDOW above other
+                // applications, and neither branch pretends to.
+                const card = consoleHost.list().find(c => c.sessionId === sessionId);
+                if (card) { ConsolePanel.show(consoleDeps, { sessionId: card.id }); } else { showTimeline(); }
                 return Promise.resolve(
                     vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup')
                 ).then(() => undefined);
@@ -12534,7 +12559,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'alerts.status',
             describe: 'U-178 — THE SOUND PAGE\'S WHOLE MODEL IN ONE CALL: what the 🔊 Sound page draws. `alerts`: the gate (fleet mute, quiet hours, the sessions muted on their own, the nudge), every event row with the tone it would ACTUALLY play and which step of the chain chose it, the announcement (voice it really reaches, template, which events are spoken), and the library (built-ins and your own sounds, with whether each can be played here). `notify`: each event\'s VS Code notification switch (turn-ready = notifyTurnEnd, question = notifyPermission, stalled = notifyStuck; ended and error have none). `sessions` (U-183): every live session\'s sound as the Sessions table shows it — Like all / Always / Silent, its own tones with whether each event would ring, its voice, Read aloud (and whether it is being read now), Focus / Pop-up / Notification, its engine. Reads only. args: none',
-            handler: () => ({ alerts: alertsPage(), notify: soundNotify(), sessions: soundSessionRows() })
+            handler: () => ({ alerts: alertsPage(), notify: soundNotify(), sessions: soundSessionRows(), agents: soundAgentRows() })
         },
         {
             op: 'alerts.session',
@@ -12551,8 +12576,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.voice.set',
-            describe: '‼️ WHICH SOUND AN EVENT PLAYS — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. TWO WRITABLE STEPS: `settings` (everybody, `agentFarm.alerts.voices`) and — A-23 — `session`, the top of the chain, "just this conversation, in this tone", which needs a `sessionId` and takes only a session the live monitor is actually watching. The `agent` step between them has no surface yet and is refused by name rather than silently written to the wrong place. An empty `voice` CLEARS that step and the event falls back to the one below it — never to silence, because a session with no opinion is not a muted session (that is the ♪ control, a different question). A voice id nothing knows is refused, and so is one whose file this machine cannot play: accepting it would promise a sound that never arrives. args: event (required, '
-                + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings|session, default settings), sessionId? (required for scope session — full id or 8-char prefix)',
+            describe: '‼️ WHICH SOUND AN EVENT PLAYS — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. THREE WRITABLE STEPS: `settings` (everybody, `agentFarm.alerts.voices`), — U-187 — `agent` (every session of one agent, `agentFarm.alerts.agentVoices`, needs `agent`) and — A-23 — `session`, the top of the chain, "just this conversation, in this tone", which needs a `sessionId` and takes only a session the live monitor is actually watching. An empty `voice` CLEARS that step and the event falls back to the one below it — never to silence, because a session with no opinion is not a muted session (that is the ♪ control, a different question). A voice id nothing knows is refused, and so is one whose file this machine cannot play: accepting it would promise a sound that never arrives. args: event (required, '
+                + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings|agent|session, default settings), agent? (required for scope agent — the agent\'s name; its sessions play it unless one chose its own), sessionId? (required for scope session — full id or 8-char prefix)',
             handler: async (args) => {
                 const event = wantEvent(args);
                 const scope = (optStr(args, 'scope')?.trim() || 'settings');
@@ -12569,8 +12594,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         resolved: r.resolved
                     };
                 }
+                if (scope === 'agent') {
+                    const agent = optStr(args, 'agent')?.trim() || '';
+                    await alertsSetAgentVoice(agent, event, voice);
+                    return {
+                        event, scope, voice: voice || null, agent,
+                        resolved: resolveVoice(event, voiceDeps(), { agentName: agent })
+                    };
+                }
                 if (scope !== 'settings') {
-                    throw new Error(`this op writes the "settings" or the "session" step of the `
+                    throw new Error(`this op writes the "settings", "agent" or "session" step of the `
                         + `chain; "${scope}" is not one of them`);
                 }
                 await alertsSetVoice(event, voice);
@@ -40446,7 +40479,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // U-178 — the Sound page: the same host acts the Settings summary is given.
         vscode.commands.registerCommand('agentfarm.openSound', () => {
-            SoundPanel.show({ extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows });
+            SoundPanel.show({
+                extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows,
+                agents: soundAgentRows, alertsSetAgentVoice
+            });
         }),
         // U-185 — "Sound: Stop Reading", the same stop as `alerts.read stop` and the ■
         vscode.commands.registerCommand('agentfarm.stopReading', () => {

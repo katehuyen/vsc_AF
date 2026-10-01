@@ -136,7 +136,7 @@
         window.AFHeader.wire(vscode);
         S().wire(vscode, () => DATA);
         S().wireVoice(vscode);
-        S().wireSessions(vscode);
+        S().wireSessions(vscode, render);
         S().wireWhy(vscode);
         const start = document.getElementById('sndstart');
         if (start) {

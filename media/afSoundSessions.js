@@ -11,6 +11,7 @@
     const S = () => window.AFSoundCard;
     let filter = '';
     let show = 'all';
+    let tab = 'sessions';   // U-187 — 'agents' draws the agent step of the tone chain
     let last = null;    // the page data the table was drawn from
     const SOUND = [['like-all', 'Like all'], ['always', 'Always'], ['silent', 'Silent']];
     const ALSO = [['focus', '◎', 'Focus', 'Bring this session to the front when its turn ends.'],
@@ -47,6 +48,7 @@
     }
 
     function table(d) {
+        if (tab === 'agents' && S().agentsTable) { return S().agentsTable(d, window.AFQuery.compile(filter), show); }
         const al = d.alerts || {};
         const all = d.sessions || [];
         if (!all.length) { return '<p class="muted">No live session is being watched.</p>'; }
@@ -63,21 +65,29 @@
 
     function sessions(d) {
         last = d;
-        const n = (d.sessions || []).length;
-        const odd = (d.sessions || []).filter(differs).length;
+        return `<div id="sssec">${section(d)}</div>`;
+    }
+
+    function section(d) {
+        const ag = tab === 'agents';
+        const n = ((ag ? d.agents : d.sessions) || []).length;
+        const odd = ag ? (d.agents || []).filter(S().agentDiffers).length : (d.sessions || []).filter(differs).length;
+        const tabBtn = (id, label, tip) => `<button class="secondary small sstab${tab === id ? ' on' : ''}" id="sstab-${id}" data-sstab="${id}" aria-pressed="${tab === id}" title="${C.esc(tip)}">${label}</button>`;
         return `<style id="ss-style">
             .sshead { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0 6px; }
             .sshead #ssfilter { flex:0 1 200px; min-width:120px; }
             .sstbl td, .sstbl th { padding:2px 8px 2px 0; white-space:nowrap; vertical-align:middle; }
             .sstbl select { min-width:0; padding:0 4px; height:22px; }
             .ssalsob { padding:0 5px; min-width:0; opacity:.45; }
-            .ssalsob.on { opacity:1; border-color:var(--vscode-focusBorder, #4448); }
+            .ssalsob.on, .sstab.on { opacity:1; border-color:var(--vscode-focusBorder, #4448); }
+            .sstab { opacity:.6; }
             .ssread input { margin:0; width:auto; }
         </style>
-        <div class="sshead"><span class="muted small">${n} live · ${odd} sound${odd === 1 ? 's' : ''} different</span>
-            <select id="ssshow" title="Which sessions the table lists">
-                ${C.option('all', 'All live', { selected: show === 'all' })}${C.option('differs', 'Only those that differ', { selected: show === 'differs' })}</select>
-            <input type="text" id="ssfilter" placeholder="filter…" value="${C.esc(filter)}" title="${C.esc(window.AFQuery.tip('Searched against the session name and its engine.'))}">
+        <div class="sshead">${tabBtn('sessions', 'Sessions', 'Every live session and how it sounds')}${tabBtn('agents', 'Agents', 'A tone for every session of one agent — above the fleet\'s choice, below a session\'s own')}
+            <span class="muted small">${ag ? `${n} agent${n === 1 ? '' : 's'} · ${odd} with a tone of their own` : `${n} live · ${odd} sound${odd === 1 ? 's' : ''} different`}</span>
+            <select id="ssshow" title="Which ${ag ? 'agents' : 'sessions'} the table lists">
+                ${C.option('all', ag ? 'All agents' : 'All live', { selected: show === 'all' })}${C.option('differs', 'Only those that differ', { selected: show === 'differs' })}</select>
+            <input type="text" id="ssfilter" placeholder="filter…" value="${C.esc(filter)}" title="${C.esc(window.AFQuery.tip(ag ? 'Searched against the agent name.' : 'Searched against the session name and its engine.'))}">
             <button class="secondary small" id="ssclear" title="Clear the filter">✕</button></div>
         <div id="sstable">${table(d)}</div>`;
     }
@@ -97,6 +107,7 @@
         }));
         document.querySelectorAll('[data-ssreadstop]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'alertReadStop' })));
+        if (tab === 'agents' && S().wireAgents) { S().wireAgents(vscode); }
     }
 
     function redrawTable(vscode) {
@@ -106,7 +117,8 @@
         wireRows(vscode);
     }
 
-    function wireSessions(vscode) {
+    /** `repaint` is the page's own render — a tab switch redraws the way new data does. */
+    function wireSessions(vscode, repaint) {
         wireRows(vscode);
         const f = document.getElementById('ssfilter');
         if (f) { f.addEventListener('input', () => { filter = f.value; redrawTable(vscode); }); }
@@ -114,6 +126,18 @@
         if (sh) { sh.addEventListener('change', () => { show = sh.value; redrawTable(vscode); }); }
         const cl = document.getElementById('ssclear');
         if (cl) { cl.addEventListener('click', () => { filter = ''; if (f) { f.value = ''; } redrawTable(vscode); }); }
+        ['sessions', 'agents'].forEach(id => {
+            const b = document.getElementById('sstab-' + id);
+            if (b) {
+                b.addEventListener('click', () => {
+                    if (!last || tab === id) { return; }
+                    tab = id;
+                    if (repaint) { repaint(); return; }
+                    const sec = document.getElementById('sssec');
+                    if (sec) { sec.innerHTML = section(last); wireSessions(vscode); }
+                });
+            }
+        });
     }
 
     window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { sessions, wireSessions, sessionDiffers: differs });

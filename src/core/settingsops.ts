@@ -187,7 +187,7 @@ const CATEGORY_OF: Record<string, string> = {
     // constantly confused: those open a VS Code notification, these play a
     // sound. Filed apart, "I turned the sound off and a notification still
     // arrives" reads as a bug rather than as the two settings it is.
-    'alerts.on': 'live', 'alerts.voices': 'live',
+    'alerts.on': 'live', 'alerts.voices': 'live', 'alerts.agentVoices': 'live',
     // A-22 — the gate. Filed beside the two boxes the same card replaces, so a
     // search for "mute" or "quiet" lands on the card rather than beneath it.
     'alerts.muted': 'live', 'alerts.quietHours': 'live', 'alerts.nudge': 'live',

@@ -3,6 +3,7 @@ import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 import { AlertMessageDeps, ALERT_ERROR_KEY, handleAlertMessage } from './alertMessages';
 import { NOTIFY_KEYS, SessionSoundRow, SoundPage } from './soundModel';
+import type { AgentSoundRow } from '../core/soundAgents';
 
 /**
  * U-178 — 🔊 SOUND, A PAGE OF ITS OWN.
@@ -22,6 +23,9 @@ export interface SoundDeps extends AlertMessageDeps {
     notify(): Record<string, boolean>;
     /** U-183 — every live session's sound, one row each */
     sessions?(): SessionSoundRow[];
+    /** U-187 — every agent's own tones, and the write `alerts.voice.set scope=agent` runs */
+    agents?(): AgentSoundRow[];
+    alertsSetAgentVoice?(agent: string, event: string, voice: string): Promise<void>;
 }
 
 export class SoundPanel {
@@ -53,7 +57,10 @@ export class SoundPanel {
     }
 
     private data(): SoundPage {
-        return { alerts: this.deps.alerts?.() ?? null, notify: this.deps.notify(), sessions: this.deps.sessions?.() ?? [] };
+        return {
+            alerts: this.deps.alerts?.() ?? null, notify: this.deps.notify(),
+            sessions: this.deps.sessions?.() ?? [], agents: this.deps.agents?.() ?? []
+        };
     }
 
     refresh(): void {
@@ -63,8 +70,15 @@ export class SoundPanel {
     private async onMessage(msg: { type: string;[k: string]: unknown }): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
         if (msg.type === 'afnav') { handleAfNav(msg.to); return; }
+        const error = (e: string): void => void this.host.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error: e });
+        if (msg.type === 'alertAgentVoice') {
+            // U-187 — the agent step; the page redraws from the setting change it causes
+            try { await this.deps.alertsSetAgentVoice?.(String(msg.agent ?? ''), String(msg.event ?? ''), String(msg.voice ?? '')); }
+            catch (e) { error((e as Error).message); this.refresh(); }
+            return;
+        }
         await handleAlertMessage(msg, this.deps, {
-            error: error => void this.host.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error }),
+            error,
             refresh: () => this.refresh(),
             // U-183 — the session panel opens on this page too (⋯, the right-click)
             post: m => void this.host.webview.postMessage(m)

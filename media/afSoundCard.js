@@ -154,13 +154,20 @@
             + '\n\nThe tone and the sentence are ONE queue ticket, in that order: no other lane\'s chime can land in the middle of this one\'s sentence.');
         // ‼️ U-178 — the VS Code notification for the same event: the notify*
         // setting itself, so the Settings row and this cell cannot disagree.
-        const has = notify && Object.prototype.hasOwnProperty.call(notify, row.event);
-        const pop = has
-            ? window.AFTip.wrap(
-                `<label class="alertonlbl"><input type="checkbox" data-alertnotify="${C.esc(row.event)}" ${notify[row.event] ? 'checked' : ''}></label>`,
-                `Notification: ${notify[row.event] ? 'on' : 'off'}`,
-                'A VS Code notification for this event — a different output from the tone, so either can be on without the other. The same switch as the matching notify setting in Settings.')
-            : '<span class="alertnone" title="This event has no VS Code notification of its own.">—</span>';
+        const own = id => notify && Object.prototype.hasOwnProperty.call(notify, id);
+        const box = (id, label, head, tip) => window.AFTip.wrap(
+            `<label class="alertonlbl"><input type="checkbox" data-alertnotify="${C.esc(id)}" ${notify[id] ? 'checked' : ''}>${label ? `<span class="alertnlbl">${label}</span>` : ''}</label>`,
+            `${head}: ${notify[id] ? 'on' : 'off'}`, tip);
+        const differs = ' A different output from the tone, so either can be on without the other.';
+        // U-186 — Turn finished has a second notification, the Console's own; both are shown, each its own setting.
+        const pop = !own(row.event)
+            ? '<span class="alertnone" title="This event has no VS Code notification of its own.">—</span>'
+            : own('console:' + row.event)
+                ? `<span class="alertnboth">${box(row.event, 'all', 'Notification, every session',
+                    'A VS Code notification every time any session finishes its turn — the notifyTurnEnd setting.' + differs)}${box('console:' + row.event, 'Console', 'Notification, Console',
+                    'A VS Code notification when a Console turn finishes and you are not watching that conversation — never the one on your screen, never a turn you interrupted. The notifyConsoleTurnEnd setting.' + differs)}</span>`
+                : box(row.event, '', 'Notification',
+                    'A VS Code notification for this event — the same switch as the matching notify setting in Settings.' + differs);
         return `<tr>
             <td>${name}</td>
             <td class="alertck">${ring}</td>
@@ -179,7 +186,7 @@
                 ${th('Ring', 'Play this event\'s tone on every session in the fleet.')}
                 ${th('Tone', 'Which sound. Leave it on Default and the built-in answer stands — Turn finished and Asking you deliberately differ, so the two can be told apart from another room. The hover says what would ACTUALLY play and which step chose it: this session > this agent > your choice here > the built-in default.')}
                 ${th('Say who', 'Also say WHICH AGENT, out loud, after the tone.')}
-                ${th('Notification', 'A VS Code notification for the same event — the notify settings, shown here too. Session ended and Error have none.')}
+                ${th('Notification', 'A VS Code notification for the same event — the notify settings, shown here too. Turn finished has two: every session, and a Console turn you are not watching. Session ended and Error have none.')}
             </tr></thead>
             <tbody>${(al.events || []).map(e => alertEventRow(al, e, notify)).join('')}</tbody>
         </table>`;

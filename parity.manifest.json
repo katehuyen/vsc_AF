@@ -6691,6 +6691,15 @@
       }
     },
     {
+      "capability": "soundPanel.ts#alertAgentVoice",
+      "ui": [
+        "page:soundPanel.ts#alertAgentVoice"
+      ],
+      "ops": [
+        "alerts.voice.set"
+      ]
+    },
+    {
       "capability": "soundPanel.ts#refresh",
       "ui": [
         "page:soundPanel.ts#refresh"

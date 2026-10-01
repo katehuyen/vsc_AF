@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.775.0 - A tone for each agent; Focus brings the Console card forward (2026-10-01)
+
+- **A tone for every session of one agent.** The Sound page's Sessions section
+  has an **Agents** tab: every agent, every event (Turn finished, Asking you,
+  Stalled, Session ended, Error), each with its own tone box. "all's" leaves the
+  fleet's choice in charge; a session's own choice still wins over its agent's.
+  Hover a box to see what plays and why. Stored in the new setting
+  `agentFarm.alerts.agentVoices`; `alerts.voice.set` takes `scope: agent` with
+  `agent`, and `alerts.status` lists the agents.
+- **Focus** on a Console session now selects its card in the Console instead of
+  opening the Live Timeline. Other sessions still bring the Timeline forward.
+- **Notification** on the Sound page: Turn finished shows both of its
+  notifications — **all** (every session's turn end) and **Console** (a Console
+  turn you are not watching, which is on by default). Before, the cell showed
+  only the first, so it could read "off" while Console notifications kept coming.
+
 ## 3.774.0 - One name for each sound thing, everywhere (2026-10-01)
 
 - The same words on every surface: **Sound** for the system, **Ring** for the

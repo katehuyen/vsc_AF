@@ -10,7 +10,7 @@
  */
 const A = require('./alertsettings.js');
 
-const NOTIFY = { 'turn-ready': false, question: true, stalled: true };
+const NOTIFY = { 'turn-ready': false, 'console:turn-ready': true, question: true, stalled: true };
 const of = (d, notify) => ({ alerts: d.alerts, notify: notify || NOTIFY });
 
 const empty = () => of(A.fresh());
@@ -49,17 +49,32 @@ const withWhy = (d) => d.sessions.map(r => Object.assign(r, {
     })]))
 }));
 const inUse = () => {
-    const d = of(A.inUse(), { 'turn-ready': true, question: true, stalled: false });
+    const d = of(A.inUse(), { 'turn-ready': true, 'console:turn-ready': false, question: true, stalled: false });
     d.alerts.speak = { ...d.alerts.speak, readers: READERS };
     d.sessions = JSON.parse(JSON.stringify(SESSIONS));
     withWhy(d);
+    d.agents = agentsOf(d);
     return d;
 };
+// U-187 — every agent's tones as soundAgentRows builds them: one with two of its own
+function agentsOf(d) {
+    const id = label => ((d.alerts.voices || []).find(v => v.label === label) || {}).id || '';
+    const own = { developer: { question: id('Zen bowl'), stalled: id('Marimba') }, 'sürüm-notları-yazarı': { 'turn-ready': id('Pop') } };
+    return ['asistan', 'developer', 'psikolog', 'sürüm-notları-yazarı'].map(name => ({
+        name,
+        tones: (d.alerts.events || []).map(e => {
+            const chosen = (own[name] || {})[e.event] || '';
+            return { event: e.event, chosen, voice: chosen || e.voice, origin: chosen ? 'agent' : e.origin };
+        })
+    }));
+}
 const gated = () => of(A.gated());
 const broken = () => of(A.broken());
 
 const variants = () => ([
     { id: 'sound', label: 'Sound — in use: two events ring, your own library', data: inUse() },
+    { id: 'sound-agents', label: 'Sound — Sessions › Agents pressed: two agents with tones of their own', data: inUse(),
+        act: r => r.query('#sstab-agents')[0].click() },
     { id: 'sound-empty', label: 'Sound — the first opening: nothing rings yet', data: empty() },
     { id: 'sound-gated', label: 'Sound — ‼️ armed, configured and silent: muted · quiet hours · two sessions', data: gated() },
     { id: 'sound-broken', label: 'Sound — ‼️ armed tones whose sound cannot be played', data: broken() }

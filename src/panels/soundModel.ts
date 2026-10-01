@@ -3,6 +3,7 @@
  * (`alertsPage` in extension.ts); the Sound page and `alerts.status` hand it
  * over as it is. Moved here from the Settings panel, which now draws one line.
  */
+import type { AgentSoundRow } from '../core/soundAgents';
 
 /** One event's row on the Alert sounds card: what is armed, what was chosen,
  *  and what would ACTUALLY play — the three are not the same thing. */
@@ -93,9 +94,15 @@ export interface AlertsPage {
  * events have a VS Code notification of their own; the Sound page shows it
  * beside the tone and the Settings rows keep theirs. One setting, two
  * surfaces, so the two cannot disagree. `ended` and `error` have none.
+ *
+ * ‼️ U-186 — Turn finished has TWO: every session's (notifyTurnEnd, off by
+ * default) and a Console turn you are not watching (notifyConsoleTurnEnd, on by
+ * default). A cell showing only the first read "off" while the second kept
+ * notifying, so the row carries both, each under its own id.
  */
 export const NOTIFY_KEYS: Record<string, string> = {
     'turn-ready': 'agentFarm.notifyTurnEnd',
+    'console:turn-ready': 'agentFarm.notifyConsoleTurnEnd',
     question: 'agentFarm.notifyPermission',
     stalled: 'agentFarm.notifyStuck'
 };
@@ -129,4 +136,6 @@ export interface SoundPage {
     alerts: AlertsPage | null;
     notify: Record<string, boolean>;
     sessions: SessionSoundRow[];
+    /** U-187 — every agent's own tones (core/soundAgents.ts) */
+    agents: AgentSoundRow[];
 }

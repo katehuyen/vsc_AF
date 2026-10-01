@@ -14,13 +14,13 @@
                 .alerttbl { max-width:760px; margin-top:6px; }
                 .alerttbl th:nth-child(1), .alerttbl td:nth-child(1) { width:150px; }
                 .alerttbl th:nth-child(2), .alerttbl th:nth-child(4) { width:56px; text-align:center; }
-                .alerttbl th:nth-child(5) { width:92px; text-align:center; }
+                .alerttbl th:nth-child(5) { width:132px; text-align:center; }
                 .alerttbl td { vertical-align:middle; } .alerttbl td.alertck { text-align:center; }
                 .alerttbl td.alertck .alertonlbl { justify-content:center; }
                 .alerttonebox { display:flex; gap:4px; align-items:center; }
                 .alerttonebox select { flex:1 1 auto; min-width:0; }
                 .alerttonebox button { flex:none; padding:0 6px; min-width:0; }
-                .alertnone { opacity:.45; }
+                .alertnone { opacity:.45; } .alertnlbl { opacity:.75; white-space:nowrap; } .alertnboth { display:flex; gap:10px; justify-content:center; }
                 .alertonlbl { display:flex; gap:6px; align-items:center; cursor:pointer;
                     overflow:hidden; }
                 /* ‼️ .settbl input is width:100% — right for a text cell and

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.774.0",
+  "version": "3.775.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9281,6 +9281,17 @@
               "type": "string",
               "default": "af_bell_urgent",
               "description": "Voice for a critical error. Default: af_bell_urgent — three strikes that accelerate and rise. The tempo carries the urgency, so it does not have to be a buzzer people learn to hate and then switch off."
+            }
+          }
+        },
+        "agentFarm.alerts.agentVoices": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Which sound each event plays for ONE agent's sessions — `{ \"developer\": { \"question\": \"af_zen_chime\" } }`. Above `alerts.voices` (everybody) and below a session's own choice. Easiest from the Sound page › Sessions › Agents.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
             }
           }
         },

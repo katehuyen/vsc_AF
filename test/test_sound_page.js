@@ -602,16 +602,37 @@ const byAttr = (p, attr, key) =>
     ok('a switch goes to the HOST as one event and its state',
         last(p).type === 'alertNotify' && last(p).event === 'stalled' && last(p).on === true);
 
+    // U-186 — Turn finished carries the Console's own notification beside it
+    const cons = byAttr(p, 'alertnotify', 'console:turn-ready');
+    ok('‼️ U-186 — Turn finished shows BOTH notifications, each as it stands',
+        cons && cons.checked === false && byAttr(p, 'alertnotify', 'turn-ready').checked === true
+        && /class="alertnboth"/.test(html) && /alertnlbl">all</.test(html) && /alertnlbl">Console</.test(html));
+    ok('…only on Turn finished — the other rows keep one unlabelled switch',
+        (html.match(/class="alertnboth"/g) || []).length === 1 && (html.match(/class="alertnlbl"/g) || []).length === 2);
+    cons.checked = true;
+    cons.dispatchEvent(new p.sandbox.Event('change'));
+    ok('…and the Console switch goes to the host under its own id',
+        last(p).type === 'alertNotify' && last(p).event === 'console:turn-ready' && last(p).on === true);
+    const legacy = open(Object.assign(fx.inUse(), { notify: { 'turn-ready': true, question: true, stalled: false } }));
+    ok('…a host that sends no Console key still draws the single switch',
+        !byAttr(legacy, 'alertnotify', 'console:turn-ready') && byAttr(legacy, 'alertnotify', 'turn-ready').checked === true
+        && !/class="alertnboth"/.test(legacy.html()));
+
     const model = require(path.join(ROOT, 'out', 'panels', 'soundModel.js'));
-    ok('‼️ the column IS the notify settings — one key per event, no copy',
+    ok('‼️ the column IS the notify settings — one key per switch, no copy',
         model.NOTIFY_KEYS['turn-ready'] === 'agentFarm.notifyTurnEnd'
+        && model.NOTIFY_KEYS['console:turn-ready'] === 'agentFarm.notifyConsoleTurnEnd'
         && model.NOTIFY_KEYS.question === 'agentFarm.notifyPermission'
         && model.NOTIFY_KEYS.stalled === 'agentFarm.notifyStuck'
-        && Object.keys(model.NOTIFY_KEYS).length === 3);
-    const read = { 'agentFarm.notifyTurnEnd': true, 'agentFarm.notifyPermission': false };
+        && Object.keys(model.NOTIFY_KEYS).length === 4);
+    const read = { 'agentFarm.notifyTurnEnd': true, 'agentFarm.notifyPermission': false, 'agentFarm.notifyConsoleTurnEnd': true };
     const st = model.notifyState(k => read[k] === true);
     ok('…and notifyState reads each one as it stands',
-        st['turn-ready'] === true && st.question === false && st.stalled === false);
+        st['turn-ready'] === true && st['console:turn-ready'] === true && st.question === false && st.stalled === false);
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const props = Object.assign({}, ...[].concat(pkg.contributes.configuration).map(c => c.properties || {}));
+    ok('‼️ every key the column writes is a real setting',
+        Object.values(model.NOTIFY_KEYS).every(k => props[k] && props[k].type === 'boolean'));
 
     const msgs = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'alertMessages.ts'), 'utf8');
     ok('alertMessages answers alertNotify through the host act, for the three events only',
@@ -619,6 +640,14 @@ const byAttr = (p, attr, key) =>
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('‼️ …and the host writes it through writeUserSetting — the function settings.set writes with',
         /alertsSetNotify: async \(event, on\) => \{[\s\S]{0,240}await writeUserSetting\(key, on\);/.test(ext));
+
+    // U-186 — the Focus branch of the one dispatcher every door goes through
+    const focus = (ext.match(/const dispatchAlerts = async[\s\S]*?focus: \(\) => \{([\s\S]*?)\n            \},/) || [])[1] || '';
+    ok('‼️ U-186 — Focus on a Console conversation selects ITS card in the Console',
+        /consoleHost\.list\(\)\.find\(c => c\.sessionId === sessionId\)/.test(focus)
+        && /ConsolePanel\.show\(consoleDeps, \{ sessionId: card\.id \}\)/.test(focus));
+    ok('…and every other session keeps the Timeline',
+        /if \(card\) \{ ConsolePanel\.show\([^\n]*\} else \{ showTimeline\(\); \}/.test(focus));
 }
 
 // ---------------------------------------------------------------------------
@@ -668,7 +697,7 @@ const byAttr = (p, attr, key) =>
     ok('agentfarm.openSound opens the page with the SAME host acts Settings is given',
         /registerCommand\('agentfarm\.openSound'[\s\S]{0,200}SoundPanel\.show\(\{[^}]*\.\.\.soundDeps/.test(ext)
         && /\.\.\.soundDeps,/.test(ext) && (ext.match(/const soundDeps: AlertMessageDeps = \{/g) || []).length === 1);
-    ok('alerts.status answers the page\'s own model', /op: 'alerts\.status'[\s\S]{0,2000}handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\) \}\)/.test(ext));
+    ok('alerts.status answers the page\'s own model', /op: 'alerts\.status'[\s\S]{0,2000}handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\), agents: soundAgentRows\(\) \}\)/.test(ext));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     ok('the command is contributed, titled from the vocabulary', pkg.contributes.commands
         .some(c => c.command === 'agentfarm.openSound' && c.title === 'Sound: Open'));
