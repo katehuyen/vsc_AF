@@ -63,6 +63,10 @@
             return `<div class="webqr">
                 ${r.pair.qr ? `<div class="webqr-img">${r.pair.qr}</div>` : ''}
                 <div class="webqr-cap muted small">Scan with the Agent Farm app — works once, ${esc(r.pair.minutes)} min left.</div>
+                <div class="rm-link">
+                    <code class="rm-pairlink" title="Or paste this link into the app's Pair screen">${esc(r.pair.link)}</code>
+                    <button class="mini" data-remote="copy-link">copy link</button>
+                </div>
             </div>`;
         }
         const why = r.status.phoneReachable
@@ -137,6 +141,10 @@
             else if (act === 'revoke') { post({ type: 'remote-revoke', device: b.dataset.device, name: b.dataset.name }); }
             else if (act === 'revoke-all') { post({ type: 'remote-revoke-all' }); }
             else if (act === 'firewall-allow') { post({ type: 'remote-firewall-allow' }); }
+            else if (act === 'copy-link') {
+                const el = document.querySelector('.rm-pairlink');
+                post({ type: 'remote-copy-link', link: el ? el.textContent : '' });
+            }
         }));
     }
 
@@ -147,6 +155,10 @@
             .rm-devices th { font-weight:normal; opacity:.7; }
             .rm-revoked td:first-child { text-decoration:line-through; opacity:.6; }
             .rm-fw { margin:4px 0 2px; }
+            .rm-link { display:flex; flex-direction:column; align-items:center; gap:4px; max-width:190px; }
+            .rm-pairlink { font-family:var(--vscode-editor-font-family); font-size:10px; word-break:break-all;
+                user-select:all; max-height:4.6em; overflow:auto; padding:2px 4px; border-radius:3px;
+                background:var(--vscode-textCodeBlock-background); }
         `;
     }
 

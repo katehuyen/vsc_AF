@@ -3,6 +3,7 @@
 'use strict';
 const Module = require('module');
 const path = require('path');
+const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..');
 let pass = 0, fail = 0;
@@ -67,11 +68,12 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
 // ---------- the four acts, through the real host module ----------
 (async () => {
     let answer;
-    const warns = [];
+    const warns = [], clip = [];
     const origLoad = Module._load;
     Module._load = function (request) {
         if (request === 'vscode') {
-            return { window: { showWarningMessage: m => { warns.push(m); return Promise.resolve(answer); } } };
+            return { window: { showWarningMessage: m => { warns.push(m); return Promise.resolve(answer); } },
+                env: { clipboard: { writeText: t => { clip.push(t); return Promise.resolve(); } } } };
         }
         return origLoad.apply(this, arguments);
     };
@@ -145,6 +147,21 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
     answer = 'Revoke all';
     await send({ type: 'remote-revoke-all' });
     ok('confirmed, every phone', calls.pop()[1] === undefined && /2 phone/.test(said.text));
+
+    await send({ type: 'remote-copy-link', link: LINK });
+    ok('copy link puts the pairing link on the clipboard and says it works once', clip.pop() === LINK && said.ok && /once/.test(said.text));
+    await send({ type: 'remote-copy-link', link: 'https://evil.example/' });
+    ok('copy link copies nothing that is not a pairing link', clip.length === 0 && said.ok === false);
+
+    // ---------- the page draws the link as text beside the QR, with its copy button ----------
+    const vm = require('vm');
+    const sandbox = { window: { AFTip: { wrap: h => h }, AFCharts: { esc: v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') } }, document: { querySelectorAll: () => [], getElementById: () => null } };
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'media', 'afPhoneApp.js'), 'utf8'), sandbox);
+    const PA = sandbox.window.AFPhoneApp;
+    const html = PA.card(C.remoteCardData(input({ pair: { link: LINK, addresses: [], until: NOW + 60e3 } }), NOW));
+    ok('a shown code carries its link as selectable text and a copy link button',
+        html.includes('class="rm-pairlink"') && html.includes(LINK.replace(/&/g, '&amp;')) && html.includes('data-remote="copy-link"'));
+    ok('no code, no link', !PA.card(C.remoteCardData(input(), NOW)).includes('rm-pairlink'));
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

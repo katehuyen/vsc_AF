@@ -7908,6 +7908,16 @@
       ]
     },
     {
+      "capability": "toolboxRemote.ts#remote-copy-link",
+      "ui": [
+        "page:toolboxRemote.ts#remote-copy-link"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Copies the pairing link to the clipboard — remote.pair already returns the same link to an agent, and nothing is changed."
+      }
+    },
+    {
       "capability": "toolboxRemote.ts#remote-revoke-all",
       "ui": [
         "page:toolboxRemote.ts#remote-revoke-all"

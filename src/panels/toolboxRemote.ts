@@ -76,6 +76,13 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
             ctx.say({ ok: true, text: 'Scan the code with the Agent Farm app. It works once, for 10 minutes.' });
             return true;
         }
+        case 'remote-copy-link': {
+            const link = String(msg.link ?? '');
+            if (link.indexOf('agentfarm://pair?') !== 0) { ctx.say({ ok: false, text: 'There is no pairing link to copy — press "pair a phone" first.' }); return true; }
+            await vscode.env.clipboard.writeText(link);
+            ctx.say({ ok: true, text: 'The link is on the clipboard. Send it to the phone and paste it into the app — it works once, for 10 minutes.' });
+            return true;
+        }
         case 'remote-revoke': {
             const id = String(msg.device ?? '');
             const name = String(msg.name ?? id);
