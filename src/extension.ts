@@ -37134,13 +37134,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const eventPick = await vscode.window.showQuickPick<EventItem>([
                     {
                         label: wasMuted
-                            ? '$(unmute) Let this session be heard again'
-                            : '$(mute) Mute this session',
+                            ? '$(unmute) Silent — let this session be heard again'
+                            : '$(mute) Make this session Silent',
                         description: wasMuted
-                            ? 'muted — nothing it does makes a sound'
+                            ? 'Silent — nothing it does makes a sound'
                             : 'silences THIS conversation, and nothing else',
                         detail: wasMuted
-                            ? 'Puts back exactly what was here before — muting cleared nothing.'
+                            ? 'Puts back exactly what was here before — Silent cleared nothing.'
                             : 'The only way one conversation can be quiet while the others ring: '
                             + 'the fleet-wide switch ADDS to a session\'s own selection, and a union '
                             + 'cannot subtract. Every box and tone it has stays where it is.',
@@ -37148,13 +37148,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     },
                     {
                         label: ownSpeech
-                            ? `$(megaphone) Announced as "${ownSpeech}"`
-                            : '$(megaphone) Announce this session in its own voice…',
+                            ? `$(megaphone) Say who — in "${ownSpeech}"`
+                            : '$(megaphone) Say who in a voice of its own…',
                         description: ownSpeech
                             ? 'this conversation only — it beats the fleet setting'
                             : fleetSpeech.on
-                                ? `the fleet says "${fleetSpeech.voice || 'system default'}"`
-                                : 'announcements are off for the fleet — this would still be its voice',
+                                ? `the fleet says who in "${fleetSpeech.voice || 'system default'}"`
+                                : 'Say who is off for the fleet — this would still be its voice',
                         detail: 'A tone says what KIND of news this is; with several lanes running, '
                             + 'the question from the next room is WHICH ONE, and no palette can '
                             + 'carry a name. The agent whose questions come in Turkish can be '
@@ -37165,8 +37165,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     },
                     {
                         label: wasReading
-                            ? '$(debug-stop) Stop reading this session aloud'
-                            : '$(unmute) Read this session aloud',
+                            ? '$(debug-stop) Read aloud — stop for this session'
+                            : '$(unmute) Read aloud — this session',
                         description: wasReading
                             ? 'every turn it finishes is read out loud'
                             : 'reads WHAT it answered, not just that it answered',
@@ -37196,7 +37196,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         };
                     })],
                     {
-                        title: `Sound for ${who}${wasMuted ? ' — MUTED' : ''} — which event?`,
+                        title: `Sound: ${who}${wasMuted ? ' — Silent' : ''} — which event?`,
                         placeHolder: 'What each one plays today, and which step chose it',
                         matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true
                     });
@@ -37206,7 +37206,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.window.setStatusBarMessage(
                         wasMuted
                             ? `Agent Farm: ${who} can be heard again`
-                            : `Agent Farm: ${who} is muted — its tones and boxes are untouched`,
+                            : `Agent Farm: ${who} is Silent — its tones and boxes are untouched`,
                         6000);
                     return;
                 }
@@ -37241,7 +37241,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 ? `falls back to the fleet's "${fleetSpeech.voice}"`
                                 : 'falls back to the fleet, which uses the system default',
                             detail: 'Clears this conversation\'s pick. NOT silence — to make a '
-                                + 'session quiet, use the mute above.',
+                                + 'session quiet, use Silent above.',
                             clear: true, picked: !ownSpeech
                         },
                         { label: 'Installed on this machine', kind: vscode.QuickPickItemKind.Separator },
@@ -37256,7 +37256,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         }))
                     ];
                     const pick = await vscode.window.showQuickPick(items, {
-                        title: `Announce ${who} in which voice?`,
+                        title: `Say who: ${who} in which voice?`,
                         placeHolder: 'A voice reading a language it does not know is unintelligible — the language is on every row',
                         matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true
                     });

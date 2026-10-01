@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.774.0 - One name for each sound thing, everywhere (2026-10-01)
+
+- The same words on every surface: **Sound** for the system, **Ring** for the
+  tone, **Say who** for the announcement, **Read aloud**, **Reminder**,
+  **Mute all** for the whole farm, **Silent** for one session, **Focus**,
+  **Pop-up** and **Notification**.
+- Command Palette: type "Sound" and all five appear — **Sound: Open**,
+  **Sound: This Session…**, **Sound: Mute All / Unmute**, **Sound: Stop
+  Reading** (new: stops whatever is being read aloud) and **Sound: Speak Daily
+  Briefing**. Command ids and shortcuts are unchanged.
+- Live Timeline: the four controls under each row are now Ring · Focus · Pop-up
+  · Notification, and their hover says they fire when the session has **Turn
+  finished** or is **Asking you**.
+- The right-click "Sound: This Session…" list says **Make this session
+  Silent**, **Say who in a voice of its own…** and **Read aloud**.
+- The status bar 🔇 and the Sound page's strips use the same words.
+
 ## 3.773.0 - "Why didn't I hear it?" (2026-10-01)
 
 - The Sound page answers it: pick a session and an event, and every check the

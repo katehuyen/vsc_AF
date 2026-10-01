@@ -275,9 +275,9 @@ ok('stderr is carried, not swallowed', /no audio device/.test(three.html));
 ok('‼️ and the page refuses to claim the sound was HEARD',
     /AUDIBLE is yours to confirm/.test(three.html));
 ok('every branch appears, skipped ones included',
-    /Focus \/ bring forward: ok/.test(three.html)
-    && /Modal alert box: skipped/.test(three.html)
-    && /Toast \(corner notification\): skipped/.test(three.html));
+    /Focus: ok/.test(three.html)
+    && /Pop-up: skipped/.test(three.html)
+    && /Notification: skipped/.test(three.html));
 ok('the long result is an AFTip, not a native title', /af-tip/.test(three.html));
 ok('the strip names the session by its short id', /#S1aaaaaa/.test(three.html));
 
@@ -319,15 +319,15 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
     ok('a step that was passed over is named WITH ITS REASON, not dropped',
         /Passed over on the way/.test(mine.html) && /the file is gone/.test(mine.html));
     ok('the panel points at the surface that changes it',
-        /Sound for this session…/.test(mine.html));
+        /Sound: This Session…/.test(mine.html));
     ok('‼️ the ♪ hover is an AFTip, and the box IS the control',
         /class="lane-hot mark af-toggle"[^>]*data-session="V1aaaaaa-1111"[^>]*data-action="sound"/.test(mine.html));
     ok('a press mutes the panel instead of sitting over what was clicked (U-74)',
         /data-action="sound" data-aftipact="1"/.test(mine.html));
     ok('‼️ and ♪ no longer carries a second, shorter answer in a native title',
-        !/data-action="sound"[^>]*>[\s\S]{0,400}?<title>Sound \(chime\)/.test(mine.html));
+        !/data-action="sound"[^>]*>[\s\S]{0,400}?<title>Ring/.test(mine.html));
     ok('the three booleans keep theirs — a native title is the right size for a boolean',
-        /<title>Focus \/ bring forward/.test(mine.html));
+        /<title>Focus/.test(mine.html));
     ok('nothing shutting the gate adds no warning to the panel',
         !/NOTHING PLAYS RIGHT NOW/.test(mine.html));
 
@@ -352,7 +352,7 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
     ok('…and names EVERY authority, because unmuting at 03:00 is still silence',
         /the farm is muted/.test(shut.html) && /quiet hours 23:00/.test(shut.html));
     ok('…and the session that silenced ITSELF is named on its own row only',
-        (shut.html.match(/this session is muted on its own/g) || []).length === 1);
+        (shut.html.match(/this session is Silent on its own/g) || []).length === 1);
     ok('…while the tone it WOULD play is still reported below it',
         /Turn finished: /.test(shut.html));
 
@@ -366,7 +366,7 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
     ok('a lane the host resolved no tone for draws no sound panel',
         !/Turn finished: /.test(cold.html));
     ok('…and falls back to the native title rather than losing its hover',
-        /<title>Sound \(chime\)/.test(cold.html));
+        /<title>Ring/.test(cold.html));
 
     // ---- the ⏱'s subject ----
     ok('every event is offered, the id never shown as a second name',

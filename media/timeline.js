@@ -22,10 +22,10 @@
     // was actually stored, so a panel left open behind another tab can never
     // write a stale world back over a change made somewhere else.
     const TURN_ACTIONS = [
-        { id: 'sound', glyph: '♪', label: 'Sound (chime)' },
-        { id: 'focus', glyph: '◎', label: 'Focus / bring forward' },
-        { id: 'modal', glyph: '▣', label: 'Modal alert box' },
-        { id: 'toast', glyph: '▭', label: 'Toast (corner notification)' }
+        { id: 'sound', glyph: '♪', label: 'Ring' },
+        { id: 'focus', glyph: '◎', label: 'Focus' },
+        { id: 'modal', glyph: '▣', label: 'Pop-up' },
+        { id: 'toast', glyph: '▭', label: 'Notification' }
     ];
     const ACTION_BY_ID = {};
     TURN_ACTIONS.forEach(a => { ACTION_BY_ID[a.id] = a; });
@@ -79,7 +79,7 @@
         const shut = [];
         if (g.muted) { shut.push('the farm is muted (the 🔇 in the status bar)'); }
         if ((g.mutedSessions || []).indexOf(sid) >= 0) {
-            shut.push('this session is muted on its own (right-click → Sound for this session…)');
+            shut.push('this session is Silent on its own (right-click → Sound: This Session…)');
         }
         if (g.quiet && g.quiet.inside) {
             shut.push('quiet hours ' + g.quiet.from + '–' + g.quiet.to + ', silent until ' + g.quiet.to);
@@ -90,8 +90,8 @@
             on
                 ? '\nThis row is armed: the tone above plays when this session reaches that edge.'
                 : '\nThe box is OFF, so nothing plays from here — the tone above is what it WOULD '
-                    + 'play. A fleet-wide switch (Settings ▸ Alert sounds) can still ring it.',
-            '\nRight-click this row → Sound for this session… to give this conversation a tone of '
+                    + 'play. A fleet-wide switch (the Sound page) can still ring it.',
+            '\nRight-click this row → Sound: This Session… to give this conversation a tone of '
                 + 'its own. Clearing that is not silence: it hands the answer back to your setting '
                 + 'for everybody, and then to the built-in default.',
             skipped.length ? '\nPassed over on the way:\n' + skipped.join('\n') : ''
@@ -1317,7 +1317,7 @@
                 const gx = 4 + ai * 18;
                 const on = selected.indexOf(a.id) !== -1;
                 const tip = armable
-                    ? `${a.label} — fires when THIS session (${sid.slice(0, 8)}) hits YOUR TURN.`
+                    ? `${a.label} — fires when THIS session (${sid.slice(0, 8)}) has Turn finished or is Asking you.`
                         + `\nCurrently: ${on ? 'ON' : 'off'}.`
                         + `\n\nEvery row on this page is one session and carries its own four choices; nothing here is shared with the agent's other sessions.`
                     : `${a.label} — unavailable.\n\n${why}`;
@@ -1798,7 +1798,7 @@
             ${emptyHint}
             ${density || !laneCount ? `<h2>${density ? 'Activity density' : 'Swim lanes'}</h2>`
                 : `<h2 class="lanes-h">Swim lanes<span class="lanes-ctl">⏱ tests as ${testEventSelect()}</span></h2>`}
-            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}; <b>⏱</b> tries them in 3 seconds. Each row is one session with its own choices, firing even while this panel is closed (history-only rows have them disabled). <b>Hover</b> a name for its figures, a dot or bar for that moment; click opens the transcript there, right-click for <b>Copy Corpus</b> and the session's actions.</div>`}
+            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> has <b>Turn finished</b> or is <b>Asking you</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label).join(' · ')}; <b>⏱</b> tries them in 3 seconds. Each row is one session with its own choices, firing even while this panel is closed (history-only rows have them disabled). <b>Hover</b> a name for its figures, a dot or bar for that moment; click opens the transcript there, right-click for <b>Copy Corpus</b> and the session's actions.</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}
