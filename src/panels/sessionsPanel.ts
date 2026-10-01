@@ -5,6 +5,7 @@ import { SessionIndex, SessionInfo } from '../core/sessions';
 import { chainIndexNow } from '../core/chainMembership';
 import { LaunchManifest } from '../core/launchManifest';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
 
@@ -137,17 +138,17 @@ export class SessionsPanel {
     static show(deps: SessionsPageDeps, scope?: SessionsPageScope): void {
         if (SessionsPanel.current) {
             SessionsPanel.current.scope = scope ?? SessionsPanel.current.scope;
-            SessionsPanel.current.panel.reveal();
+            SessionsPanel.current.host.reveal();
             SessionsPanel.current.render();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.sessions',
-            'Agent Farm — Sessions',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        SessionsPanel.current = new SessionsPanel(panel, deps, scope);
+        SessionsPanel.current = new SessionsPanel(
+            desktopHost({ viewType: 'agentfarm.sessions', title: 'Agent Farm — Sessions' }), deps, scope);
+    }
+
+    /** X-456 — the page on a phone: one instance per view, never the desktop's one tab. */
+    static openOn(host: PanelHost, deps: SessionsPageDeps, scope?: SessionsPageScope): void {
+        new SessionsPanel(host, deps, scope);
     }
 
     static refreshIfOpen(): void {
@@ -155,25 +156,25 @@ export class SessionsPanel {
     }
 
     private constructor(
-        readonly panel: vscode.WebviewPanel,
+        readonly host: PanelHost,
         private deps: SessionsPageDeps,
         scope?: SessionsPageScope
     ) {
         this.scope = scope;
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.deps.index.onDidUpdate(() => this.refresh(), null, this.disposables);
     }
 
     private render(): void {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview, this.deps.extensionUri, 'Agent Farm Sessions',
+        this.host.webview.html = htmlShell(
+            this.host.webview, this.deps.extensionUri, 'Agent Farm Sessions',
             buildData(this.deps, this.tableN, this.scope), 'sessionsPage.js');
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({
+        void this.host.webview.postMessage({
             type: 'data', data: buildData(this.deps, this.tableN, this.scope)
         });
     }
@@ -208,7 +209,7 @@ export class SessionsPanel {
                         contextLimitFor: () => 0
                     }).turns;
                 } catch { /* fail-soft: an unreadable file shows an empty turn list */ }
-                void this.panel.webview.postMessage({ type: 'sessionTurns', file, turns });
+                void this.host.webview.postMessage({ type: 'sessionTurns', file, turns });
                 break;
             }
             case 'focusTerminal':
@@ -243,7 +244,8 @@ export class SessionsPanel {
     }
 
     private dispose(): void {
-        SessionsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (SessionsPanel.current === this) { SessionsPanel.current = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

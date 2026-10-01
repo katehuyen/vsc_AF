@@ -652,7 +652,7 @@ import {
     Silence, silence
 } from './core/alertGate';
 import { buildTurnsMarkdown, TurnsDeps, TurnsPanel } from './panels/turnsPanel';
-import { SessionsPanel } from './panels/sessionsPanel';
+import { SessionsPanel, type SessionsPageDeps, type SessionsPageScope } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
 import { DashboardPanel, sessionRowPool, setBatonSource } from './panels/dashboard';
@@ -30875,6 +30875,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const e of events) { for (const l of remoteListeners) { l(e); } }
     };
     let remoteFarm: { id: string; name: string } | undefined;
+    // The Sessions page's sources: one object for the desktop tab and every phone view.
+    const sessionsPageDeps = (): SessionsPageDeps => ({
+        extensionUri: context.extensionUri,
+        getAgents: () => agents,
+        index,
+        getPricing: () => pricing,
+        agentProjects: () => agentProjectNames(
+            agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
+        projectStyle: (name: string) => projectStyleOf(name),
+        // X-102 - the requested half of every run on this page too.
+        launchManifests: () => launchManifests(),
+        // ‼️ X-251 (3/n) — …and the sign-in in words, not as a slot id, through
+        // the one resolver every surface uses.
+        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts())
+    });
+    // What the Sessions page opens narrowed to, from the command's argument or a phone's.
+    const sessionsScopeOf = (arg?: Record<string, unknown>): SessionsPageScope => {
+        const str = (k: string): string => (typeof arg?.[k] === 'string' ? arg[k] as string : '');
+        // ‼️ X-95 — the mission scope names itself here rather than at every call
+        // site: a run id is what a caller has, and the title is what the page has
+        // to print. One lookup, one truth.
+        const missionId = str('missionId');
+        return {
+            ...(str('project') ? { project: str('project') } : {}),
+            ...(str('agentName') ? { agentName: str('agentName') } : {}),
+            ...(missionId ? { missionId, missionTitle: missionTitleOf(missionId) } : {}),
+            ...(str('provider') ? { provider: str('provider') } : {}),
+            ...(str('chain') ? { chain: str('chain') } : {})
+        };
+    };
     // X-441 — the pages a phone may open, each on its own host per view. A page
     // not listed here is answered "unavailable" on the phone.
     const remoteViews = new RemoteViews({
@@ -30883,7 +30913,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pages: remotePages({
             needs: host => NeedsPanel.openOn(host, needsDeps),
             console: host => ConsolePanel.openOn(host, consoleDeps),
-            now: host => NowPanel.openOn(host, nowDeps)
+            now: host => NowPanel.openOn(host, nowDeps),
+            sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args))
         })
     });
     const remotePort: RemotePort = {
@@ -38776,31 +38807,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // dropping you in the fleet-wide list to find the filter yourself.
         vscode.commands.registerCommand('agentfarm.openSessions',
             (arg?: { project?: string; agentName?: string; missionId?: string; provider?: string; chain?: string }) => {
-                // ‼️ X-95 — the mission scope names itself here rather than at
-                // every call site: a run id is what a caller has, and the title
-                // is what the page has to print. One lookup, one truth.
-                const missionId = typeof arg?.missionId === 'string' && arg.missionId ? arg.missionId : '';
-                SessionsPanel.show({
-                    extensionUri: context.extensionUri,
-                    getAgents: () => agents,
-                    index,
-                    getPricing: () => pricing,
-                    agentProjects: () => agentProjectNames(
-                        agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
-                    projectStyle: (name: string) => projectStyleOf(name),
-                    // X-102 - the requested half of every run on this page too.
-                    launchManifests: () => launchManifests(),
-                    // ‼️ X-251 (3/n) — …and the sign-in in words, not as a
-                    // slot id, through the one resolver every surface uses.
-                    accountLabel: (stated: string) =>
-                        statedAccountLabel(stated, storedAccounts())
-                }, {
-                    ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
-                    ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {}),
-                    ...(missionId ? { missionId, missionTitle: missionTitleOf(missionId) } : {}),
-                    ...(typeof arg?.provider === 'string' && arg.provider ? { provider: arg.provider } : {}),
-                    ...(typeof arg?.chain === 'string' && arg.chain ? { chain: arg.chain } : {})
-                });
+                SessionsPanel.show(sessionsPageDeps(), sessionsScopeOf(arg));
             }),
 
         // xterm.js render glitches (ghost spaces, lost lines) have two known remedies:

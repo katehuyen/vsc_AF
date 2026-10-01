@@ -13,6 +13,8 @@ export interface RemotePageMakers {
     needs(host: PanelHost): void;
     console(host: PanelHost): void;
     now(host: PanelHost): void;
+    /** `args` narrows the page the way the openSessions command's argument does. */
+    sessions(host: PanelHost, args?: Record<string, unknown>): void;
 }
 
 export function remotePages(make: RemotePageMakers): Record<string, RemotePage> {
@@ -38,6 +40,15 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             pcOnly: ['attachPick', 'attachUris', 'attachDrop', 'attachTooMany', 'attachNothing',
                 'openFile', 'openTranscript', 'openProject', 'openGuide', 'afnav'],
             make: host => make.console(host)
+        },
+        // X-456 — opening a transcript, a terminal or the guide happens on the PC, so a phone never
+        // asks for them; pinning and stopping a session are the page's manage actions.
+        sessions: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'setTableN', 'sessionTurns'],
+            answers: [],
+            pcOnly: ['openSession', 'focusTerminal', 'openGuide', 'afnav'],
+            make: (host, args) => make.sessions(host, args)
         }
     };
 }

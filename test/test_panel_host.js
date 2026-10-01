@@ -20,7 +20,7 @@ const LEGACY = [
     'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'agentDetail', 'airtablePanel', 'capabilities',
     'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'missionsPanel', 'noticesPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
-    'secretsPanel', 'selectionPanel', 'sessionsPanel', 'sessionViewer', 'settingsPanel', 'studioPanel',
+    'secretsPanel', 'selectionPanel', 'sessionViewer', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'tasksPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
 ].map(n => `src/panels/${n}.ts`);
 const HOST_FILE = 'src/panels/panelHost.ts';
@@ -47,7 +47,7 @@ for (const rel of callers) {
 for (const rel of LEGACY) {
     ok(`${rel} no longer calls createWebviewPanel — take it off LEGACY in test_panel_host.js`, callers.includes(rel));
 }
-for (const p of ['needsPanel', 'consolePanel']) {
+for (const p of ['needsPanel', 'consolePanel', 'sessionsPanel']) {
     ok(`the ${p} is on the host`, !callers.includes(`src/panels/${p}.ts`)
         && /desktopHost\(/.test(fs.readFileSync(path.join(ROOT, `src/panels/${p}.ts`), 'utf8')));
 }
@@ -177,8 +177,12 @@ const alive = setInterval(() => undefined, 1000);
     ok('views are counted across devices', views.count() === 1);
 
     // ---------- the real page list ----------
-    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined });
-    ok('the phone has the Needs, the Console and the Now pages', Object.keys(real).sort().join() === 'console,needs,now');
+    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined });
+    ok('the phone has the Needs, the Console, the Now and the Sessions pages', Object.keys(real).sort().join() === 'console,needs,now,sessions');
+    ok('Sessions: reading and paging look, pinning and stopping need manage, a transcript or a terminal stays on the PC',
+        real.sessions.open === 'read' && ['refresh', 'setTableN', 'sessionTurns'].every(t => messageScope(real.sessions, t) === 'read')
+        && ['pinSession', 'interruptSession'].every(t => messageScope(real.sessions, t) === 'manage')
+        && ['openSession', 'focusTerminal', 'openGuide', 'afnav'].every(t => messageScope(real.sessions, t) === null));
     ok('Needs: open to read, a refresh looks, a clear or an action needs answer',
         real.needs.open === 'read' && messageScope(real.needs, 'refresh') === 'read'
         && messageScope(real.needs, 'clear') === 'answer' && messageScope(real.needs, 'action') === 'answer');
