@@ -19,7 +19,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const LEGACY = [
     'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'agentDetail', 'airtablePanel', 'capabilities',
     'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
-    'missionsPanel', 'noticesPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
+    'missionsPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
     'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
 ].map(n => `src/panels/${n}.ts`);
@@ -177,8 +177,15 @@ const alive = setInterval(() => undefined, 1000);
     ok('views are counted across devices', views.count() === 1);
 
     // ---------- the real page list ----------
-    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true });
-    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks and a session\'s pages', Object.keys(real).sort().join() === 'console,needs,now,session,sessions,tasks');
+    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined });
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s and the Notices pages', Object.keys(real).sort().join() === 'console,needs,notices,now,session,sessions,tasks');
+    ok('Notices: reading looks, a question is answered and what was read is marked at answer, the board is managed at manage, files, reports, links, terminals and other tabs stay on the PC',
+        real.notices.open === 'read' && messageScope(real.notices, 'refresh') === 'read'
+        && ['answer', 'decline', 'markRead', 'markReadMany', 'markAllRead'].every(t => messageScope(real.notices, t) === 'answer')
+        && ['pin', 'setStars', 'setProject', 'convertToQueue', 'dismiss', 'dismissMany', 'clearRead', 'undo', 'edit']
+            .every(t => messageScope(real.notices, t) === 'manage')
+        && ['exportChoose', 'exportOne', 'openReport', 'configureDocOpen', 'openExternal', 'handoffNotice', 'openQueueItem', 'openProject', 'afnav']
+            .every(t => messageScope(real.notices, t) === null));
     ok('A session: reading looks, renaming, pinning, resuming and the wiki need manage, files, the terminal, the export and the PC clipboard stay on the PC',
         real.session.open === 'read' && ['refresh', 'sessionFileEdits', 'wikiAsk'].every(t => messageScope(real.session, t) === 'read')
         && ['renameSession', 'pinSession', 'resumeConsole', 'ctxCapture', 'wikiMark', 'wikiCategory'].every(t => messageScope(real.session, t) === 'manage')

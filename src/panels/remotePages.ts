@@ -18,6 +18,7 @@ export interface RemotePageMakers {
     tasks(host: PanelHost): void;
     /** False when `args` names no transcript the farm knows: the phone is told "unavailable". */
     session(host: PanelHost, args?: Record<string, unknown>): boolean;
+    notices(host: PanelHost): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -95,6 +96,17 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             pcOnly: ['openRaw', 'copyStep', 'openEditedFile', 'revealFile', 'exportChoose', 'resume',
                 'focusTerminal', 'openAgent', 'openDashboard', 'openTimeline', 'chainGo', 'openGuide', 'afnav'],
             make: (host, args) => make.session(host, args)
+        },
+        // X-456 — the notice board. Answering or declining a question and marking what was read are
+        // answers; pinning, starring, filing, editing, queueing and deleting manage the board. An
+        // export, a report, a link, a terminal hand-off and another page's tab open on the PC.
+        notices: {
+            open: 'read', act: 'manage',
+            looks: ['refresh'],
+            answers: ['answer', 'decline', 'markRead', 'markReadMany', 'markAllRead'],
+            pcOnly: ['exportChoose', 'exportOne', 'openReport', 'configureDocOpen', 'openExternal',
+                'handoffNotice', 'openQueueItem', 'openProject', 'afnav'],
+            make: host => make.notices(host)
         }
     };
 }

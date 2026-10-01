@@ -664,7 +664,7 @@ import { desktopAsk, type PanelAsk } from './panels/panelAsk';
 import { NeedsPanel } from './panels/needsPanel';
 import { NowPanel, type NowDeps } from './panels/nowPanel';
 import { buildNow, NOW_LIMITS } from './core/nowPage';
-import { NoticesPanel } from './panels/noticesPanel';
+import { NoticesPanel, type NoticesDeps } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
 import { A2ANotesPanel } from './panels/a2aNotesPanel';
 import { A2ATasksPanel } from './panels/a2aTasksPanel';
@@ -18279,7 +18279,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         configureDocOpen: () => { void configureDocOpen(); }
     }, focusItem);
 
-    const showNoticesPanel = (focusNotice?: string): void => NoticesPanel.show({
+    // X-456 — one deps object for the desktop tab and the phone's view
+    const noticesPageDeps = (): NoticesDeps => ({
         extensionUri: context.extensionUri,
         store: noticesStore,
         agentNames: () => agents.map(a => a.name),
@@ -18296,7 +18297,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openDoc,
         docOpenConfig,
         configureDocOpen: () => { void configureDocOpen(); }
-    }, focusNotice);
+    });
+    const showNoticesPanel = (focusNotice?: string): void => NoticesPanel.show(noticesPageDeps(), focusNotice);
 
     // ---------- Airtable Engine module ----------
     // Single source of truth: the module's own store file in globalStorage —
@@ -30919,6 +30921,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             now: host => NowPanel.openOn(host, nowDeps),
             sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args)),
             tasks: host => TasksPanel.openOn(host, tasksDeps),
+            notices: host => NoticesPanel.openOn(host, noticesPageDeps()),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

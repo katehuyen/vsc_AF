@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { buildNoticesMarkdown, Notice, noticeMarkdown, NoticesStore } from '../core/notices';
 
 /**
@@ -95,28 +96,32 @@ export class NoticesPanel {
         if (NoticesPanel.current) {
             NoticesPanel.current.deps = deps;
             NoticesPanel.current.focusNotice = focusNotice;
-            NoticesPanel.current.panel.reveal();
+            NoticesPanel.current.host.reveal();
             NoticesPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.notices',
-            'Agent Farm — Notices',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        NoticesPanel.current = new NoticesPanel(panel, deps, focusNotice);
+        NoticesPanel.current = new NoticesPanel(desktopHost({ viewType: 'agentfarm.notices', title: 'Agent Farm — Notices' }), deps, focusNotice);
     }
 
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<NoticesPanel>();
+
+    /** X-456 — the board on a phone's view. */
+    static openOn(host: PanelHost, deps: NoticesDeps): void {
+        NoticesPanel.phones.add(new NoticesPanel(host, deps));
+    }
+
+    /** A notice posted or changed anywhere reaches the desktop tab and every phone. */
     static refreshIfOpen(): void {
         NoticesPanel.current?.refresh();
+        for (const p of NoticesPanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: NoticesDeps, focusNotice?: string) {
+    private constructor(readonly host: PanelHost, private deps: NoticesDeps, focusNotice?: string) {
         this.focusNotice = focusNotice;
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
     /** buildData + the panel-local undo count (kept out of the store). Focus is
@@ -128,8 +133,8 @@ export class NoticesPanel {
     }
 
     private render(): void {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             'Agent Farm Notices',
             this.data(),
@@ -138,11 +143,12 @@ export class NoticesPanel {
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: this.data() });
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
     }
 
+    /** Every open board shows the change — the desktop's tab and every phone's view. */
     private mutated(): void {
-        this.refresh();
+        NoticesPanel.refreshIfOpen();
         try { this.deps.onChange?.(); } catch { /* badge best-effort */ }
     }
 
@@ -279,7 +285,7 @@ export class NoticesPanel {
         const known = new Set(all.map(n => n.id));
         const shown = (Array.isArray(msg.shown) ? msg.shown : [])
             .filter((x): x is string => typeof x === 'string' && known.has(x));
-        if (!shown.length) { void vscode.window.showInformationMessage('Agent Farm: no notices to export.'); return; }
+        if (!shown.length) { void this.host.ask.info('Agent Farm: no notices to export.'); return; }
         const open = new Set((Array.isArray(msg.open) ? msg.open : []).filter((x): x is string => typeof x === 'string'));
         const someFolded = shown.some(id => !open.has(id));
         const opts = await askExportOptions('notices', someFolded);
@@ -319,12 +325,14 @@ export class NoticesPanel {
             this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
             void vscode.window.showTextDocument(uri);
         } catch (e) {
-            void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
+            void this.host.ask.error(`Agent Farm: export failed — ${String(e)}`);
         }
     }
 
     private dispose(): void {
-        NoticesPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (NoticesPanel.current === this) { NoticesPanel.current = undefined; }
+        NoticesPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }
