@@ -690,6 +690,7 @@ import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
 import { soundHeader } from './core/soundHeader';
 import { parseSessionPatch, SESSION_ALSO, SessionSoundPatch, soundOf, soundPlan } from './core/soundSession';
 import { ReadingNow, soundCardView } from './core/soundCard';
+import { soundWhy, WHY_BRANCH_NAME, WHY_EVENT_NAME, WhyInput } from './core/soundWhy';
 import { SoundPanel } from './panels/soundPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
@@ -2833,6 +2834,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** U-183 — every live session's sound, as the Sound page's Sessions table and
      *  `alerts.status` show it: the same profile, its engine, the reading, and
      *  whether each event would actually ring for it. */
+    /**
+     * U-184 — "why didn't I hear it?", from the engine's own pieces in the order
+     * fireAttention takes them: alertPlan (does it ring at all), alertSilence
+     * (is the gate open), resolveAlertVoice (which tone, and can it play).
+     */
+    const soundWhyFor = (s: LiveSession, event: AlertEvent): WhyInput => {
+        const id = s.sessionId;
+        const actions = turnAlerts.actionsFor(id);
+        const on = alertsOn();
+        const sil = alertSilence(id);
+        const voices = alertVoiceRows();
+        const name = (v: string) => voices.find(x => x.id === v)?.label ?? v;
+        const r = resolveAlertVoice(event, s);
+        const sp = speakCfg();
+        return {
+            eventName: WHY_EVENT_NAME[event] ?? event,
+            sessionEvent: SESSION_ALERT_EVENTS.includes(event),
+            fleetOn: on[event] === true,
+            sessionRings: actions.includes('sound'),
+            reasons: sil.reasons,
+            quietLine: quietLine(alertQuiet()),
+            tone: name(r.voice), origin: r.origin, playable: r.playable,
+            skipped: r.skipped.map(k => ({ origin: k.origin, voice: name(k.voice), why: k.why })),
+            sayWho: { on: sp.on, spoken: sp.events.includes(event), voice: turnAlerts.speechVoiceFor(id) || sp.voice },
+            also: alertPlan(event, actions, on).actions.filter(a => a !== 'sound').map(a => WHY_BRANCH_NAME[a] ?? a)
+        };
+    };
     const soundSessionRows = () => live.sessions().map(s => {
         const v = alertsSessionView(s);
         const id = s.sessionId;
@@ -2847,7 +2875,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             reading: readingNow.is(id),
             tones: v.tones.map(t => ({
                 ...t, rings: !muted && alertPlan(t.event as AlertEvent, actions, on).actions.includes('sound')
-            }))
+            })),
+            why: Object.fromEntries(ALERT_EVENTS.map(event => [event, soundWhy(soundWhyFor(s, event))]))
         };
     });
     /** Each field through the function its own op / the Timeline control uses. */
@@ -2889,7 +2918,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     /** Run a session's selected alerts on purpose, after a countdown. */
     const testSessionAlert = async (
-        sessionId: string, delayMs = 3000, event: AlertEvent = 'turn-ready'
+        sessionId: string, delayMs = 3000, event: AlertEvent = 'turn-ready', real = false
     ): Promise<{
         ok: boolean; error?: string; sessionId: string; label?: string;
         actions?: TurnAlertAction[]; at?: number; branches?: TurnAlertBranch[];
@@ -2897,7 +2926,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }> => {
         const s = live.sessions().find(x => x.sessionId === sessionId);
         if (!s) { return { ok: false, sessionId, error: `no live session ${sessionId || '(empty)'}` }; }
-        const actions = turnAlerts.actionsFor(sessionId);
+        // U-184 — `real` rehearses what the event would REALLY do: the fleet
+        // switch added to the session's own selection, exactly as fireAttention.
+        const actions = real ? alertPlan(event, turnAlerts.actionsFor(sessionId), alertsOn()).actions : turnAlerts.actionsFor(sessionId);
         if (!actions.length) {
             return { ok: false, sessionId, label: live.labelOf(s), actions: [], error: 'nothing selected' };
         }
@@ -12142,7 +12173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'live.alerts.test',
             describe: '‼️ RUN A SESSION\'S SELECTED ALERTS ON PURPOSE AND SAY WHAT EACH ONE DID — the same "test in 3 seconds" the swim lane offers. Every branch is reported separately as ok|failed|skipped, so a dead branch cannot hide behind a working one; the sound branch also carries its backend, exit code, stderr, duration and whether it was killed on the timeout. ‼️ `exit 0` means THE PLAYER ACCEPTED THE FILE — that a human heard it is not something any of this can claim, and the result says so. A session with nothing selected is refused rather than reported as a silent success. ‼️ `event` picks WHICH KIND of alert to rehearse and the result names the voice it resolved and where that choice came from (`voice.origin`), so "your turn" and "it is asking you something" can be told apart from the next room before either has really happened. args: sessionId (required, full id or 8-char prefix of a live session), delayMs? (0-30000, default 3000 — the countdown exists so you can switch windows and watch focus work), event? ('
-                + ALERT_EVENTS.join('|') + ', default turn-ready)',
+                + ALERT_EVENTS.join('|') + ', default turn-ready), real?: true rehearses what the event would REALLY do for this session — the fleet switch (alerts.on) added to its own selection, as a real event is — instead of the session\'s own selection alone',
             handler: async (args) => {
                 const raw = argStr(args, 'sessionId').trim();
                 const s = live.sessions().find(x =>
@@ -12150,7 +12181,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!s) { throw new Error(`no live session matches "${raw}"`); }
                 const delay = (args as { delayMs?: unknown }).delayMs;
                 const result = await testSessionAlert(s.sessionId,
-                    typeof delay === 'number' ? delay : 3000, wantEvent(args));
+                    typeof delay === 'number' ? delay : 3000, wantEvent(args), (args as { real?: unknown }).real === true);
                 if (!result.ok) { throw new Error(result.error ?? 'refused'); }
                 return result;
             }
@@ -28074,10 +28105,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return alertsSessionView(s);
         },
         alertsSessionApply: (sessionId, patch) => alertsSessionApply(sessionId, patch),
-        alertsSessionTest: async (sessionId, event) => {
+        alertsSessionTest: async (sessionId, event, real) => {
             const r = await testSessionAlert(sessionId, 3000,
-                (ALERT_EVENTS as readonly string[]).includes(event) ? event as AlertEvent : 'turn-ready');
-            if (!r.ok) { throw new Error(r.error === 'nothing selected' ? 'nothing to test — set Sound to Always or tick one of Also' : (r.error ?? 'refused')); }
+                (ALERT_EVENTS as readonly string[]).includes(event) ? event as AlertEvent : 'turn-ready', real === true);
+            if (!r.ok) {
+                throw new Error(r.error !== 'nothing selected' ? (r.error ?? 'refused')
+                    : real ? 'nothing rings or shows on this event for this session'
+                        : 'nothing to test — set Sound to Always or tick one of Also');
+            }
+            return r;
         },
         // U-181 — the Console's ■, the same function `alerts.read stop` runs
         alertsStopReading: async () => { alertsStopReading(); }

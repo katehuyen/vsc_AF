@@ -495,6 +495,7 @@ export function htmlShell(
     const soundStrips = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundStrips.js'));
     const soundVoice = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundVoice.js'));
     const soundSessions = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundSessions.js'));
+    const soundWhyJs = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundWhy.js'));
     const soundWire = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundWire.js'));
     const soundPop = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundPop.js'));
     // The web view card (U-85) — the farm on a phone, and the QR that opens it.
@@ -622,6 +623,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${soundStrips}"></script>
 <script nonce="${nonce}" src="${soundVoice}"></script>
 <script nonce="${nonce}" src="${soundSessions}"></script>
+<script nonce="${nonce}" src="${soundWhyJs}"></script>
 <script nonce="${nonce}" src="${soundWire}"></script>
 <script nonce="${nonce}" src="${soundPop}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>

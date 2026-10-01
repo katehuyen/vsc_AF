@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.773.0 - "Why didn't I hear it?" (2026-10-01)
+
+- The Sound page answers it: pick a session and an event, and every check the
+  farm makes before a sound is heard is listed in order, ✓ or ✗ — does this event
+  ring for this session at all (its fleet switch, or the session set to Always),
+  Mute all, the session's Silent, quiet hours, which tone answers and from where,
+  whether this machine can play it, and whether the name is said. The first line
+  says the result: "You would hear Crystal", or "Silent — this session is Silent".
+- **▶ Test now** rehearses what that event would really do for the session in 3
+  seconds — the fleet switch included — and writes each branch's result (Ring,
+  Focus, Pop-up, Notification) under the answer.
+- `live.alerts.test` takes `real: true` for the same rehearsal; `alerts.status`
+  carries the answer per session and event.
+
 ## 3.772.0 - Every live session's sound in one table (2026-10-01)
 
 - The Sound page has a **Sessions** section: every live session in one table —

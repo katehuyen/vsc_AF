@@ -107,6 +107,8 @@
             ${S().voice(al)}
             <h3 class="sndh">Sessions</h3>
             ${S().sessions(DATA)}
+            <h3 class="sndh">Why didn't I hear it?</h3>
+            ${S().why(DATA)}
             ${library(al)}`;
     }
 
@@ -135,6 +137,7 @@
         S().wire(vscode, () => DATA);
         S().wireVoice(vscode);
         S().wireSessions(vscode);
+        S().wireWhy(vscode);
         const start = document.getElementById('sndstart');
         if (start) {
             start.addEventListener('click', () => {
@@ -152,6 +155,9 @@
         if (ev.data.type === 'error') { error = String(ev.data.error || ''); render(); }
         // U-183 — a refused table write answers the session panel; when the
         // panel is not open the page shows it, rather than nobody
+        // U-184 — a rehearsal's answer (or refusal) belongs to the Why section
+        if (ev.data.type === 'soundTestResult') { S().whyResult(ev.data); return; }
+        if (ev.data.type === 'soundPopError' && S().whyResult(ev.data, true)) { return; }
         if (ev.data.type === 'soundPopError' && !(window.AFSoundPop && window.AFSoundPop.isOpen())) {
             error = String(ev.data.error || ''); render();
         }

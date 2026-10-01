@@ -79,7 +79,7 @@ export interface AlertMessageDeps {
     alertsSessionView?(sessionId: string): unknown;
     alertsSessionApply?(sessionId: string, patch: SessionSoundPatch): Promise<unknown>;
     /** the session's own branches, rehearsed — `live.alerts.test`'s function */
-    alertsSessionTest?(sessionId: string, event: string): Promise<void>;
+    alertsSessionTest?(sessionId: string, event: string, real?: boolean): Promise<unknown>;
     /** U-181 — cut the reading happening now short (`alerts.read stop`) */
     alertsStopReading?(): Promise<void>;
 }
@@ -285,10 +285,15 @@ export async function handleAlertMessage(
             await sessionAnswer(() => deps.alertsSessionApply?.(sid(), p.patch));
             return true;
         }
-        case 'alertSessionTest':
-            try { await deps.alertsSessionTest?.(sid(), String(msg.event ?? 'turn-ready')); }
-            catch (e) { sessionFail(e); }
+        // U-184 — the answer goes back with every branch, for a page that writes them
+        case 'alertSessionTest': {
+            const event = String(msg.event ?? 'turn-ready');
+            try {
+                const result = await deps.alertsSessionTest?.(sid(), event, msg.real === true);
+                surface.post?.({ type: 'soundTestResult', sessionId: sid(), event, result });
+            } catch (e) { sessionFail(e); }
             return true;
+        }
         // U-181 — the Console's ■ while an answer is being read aloud
         case 'alertReadStop':
             try { await deps.alertsStopReading?.(); }

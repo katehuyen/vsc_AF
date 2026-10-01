@@ -120,6 +120,8 @@ export interface SessionSoundRow {
     read: boolean;
     reading: boolean;
     also: { focus: boolean; modal: boolean; toast: boolean };
+    /** U-184 — "why didn't I hear it?" per event (core/soundWhy.ts) */
+    why: Record<string, { heard: boolean; lines: { ok: boolean | null; text: string }[] }>;
 }
 
 /** The Sound page's whole model — also what `alerts.status` answers. */

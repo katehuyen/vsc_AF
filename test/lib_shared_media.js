@@ -103,7 +103,7 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afRepaint.js',
     'afTelegram.js',
     // U-178 — the Sound card in three parts (Settings' summary, the Sound page)
-    'afSoundCard.js', 'afSoundStrips.js', 'afSoundVoice.js', 'afSoundSessions.js', 'afSoundWire.js', 'afSoundPop.js',
+    'afSoundCard.js', 'afSoundStrips.js', 'afSoundVoice.js', 'afSoundSessions.js', 'afSoundWhy.js', 'afSoundWire.js', 'afSoundPop.js',
     // afWeb.js — the web view card (U-85): the farm on a phone and the QR that
     // opens it. Shared for the reason the card above is, sharpened: the fact it
     // draws is true or false on a detail no page can see for itself, and the

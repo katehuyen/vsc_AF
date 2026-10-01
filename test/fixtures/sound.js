@@ -36,10 +36,23 @@ const SESSIONS = [
         tones: [tone('turn-ready', 'af_crystal_turn', '', 'default', true), tone('question', 'af_intercom_knock', '', 'default', true)],
         speechVoice: '', read: false, reading: false, also: { focus: false, modal: false, toast: false } }
 ];
+// U-184 — each row's "why" is the engine's own answer (core/soundWhy.ts), built
+// from the row and the page's fleet switches the way soundWhyFor builds it
+const W = require('../../out/core/soundWhy.js');
+const withWhy = (d) => d.sessions.map(r => Object.assign(r, {
+    why: Object.fromEntries((d.alerts.events || []).map(e => [e.event, W.soundWhy({
+        eventName: W.WHY_EVENT_NAME[e.event] || e.event,
+        sessionEvent: e.event === 'turn-ready' || e.event === 'question',
+        fleetOn: e.on, sessionRings: r.sound === 'always', reasons: r.sound === 'silent' ? ['session'] : [],
+        quietLine: '', tone: ((d.alerts.voices || []).find(v => v.id === e.voice) || {}).label || e.voice, origin: e.origin, playable: e.playable, skipped: [],
+        sayWho: { on: false, spoken: false, voice: '' }, also: r.also.toast ? ['Notification'] : []
+    })]))
+}));
 const inUse = () => {
     const d = of(A.inUse(), { 'turn-ready': true, question: true, stalled: false });
     d.alerts.speak = { ...d.alerts.speak, readers: READERS };
     d.sessions = JSON.parse(JSON.stringify(SESSIONS));
+    withWhy(d);
     return d;
 };
 const gated = () => of(A.gated());
