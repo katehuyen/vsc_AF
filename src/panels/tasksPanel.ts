@@ -49,6 +49,7 @@ import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
 import { buildTriggerStats, describeTriggerStat } from '../core/triggerstats';
 import { handleAfNav, htmlShell, promptSnippetMessage } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { full as afFull } from '../core/aftime';
 import { engineOf, engineTakesEffort } from '../core/consoleEngine';
 import { oneShotEngines } from '../core/oneShot';
@@ -1699,6 +1700,9 @@ function localInput(ts: number): string {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** Said on a phone for an act that only happens at the PC (its terminal, its Windows scheduler). */
+const ON_THE_PC = 'Agent Farm: this happens on the PC — do it from Agent Farm there.';
+
 export class TasksPanel {
     private static current: TasksPanel | undefined;
     private disposables: vscode.Disposable[] = [];
@@ -1718,18 +1722,18 @@ export class TasksPanel {
     static show(deps: TasksDeps, section?: TasksSection): void {
         const tab = TasksPanel.toTab(section);
         if (TasksPanel.current) {
-            TasksPanel.current.panel.reveal();
+            TasksPanel.current.host.reveal();
             TasksPanel.current.refresh();
-            if (tab) { void TasksPanel.current.panel.webview.postMessage({ type: 'focus', tab }); }
+            if (tab) { void TasksPanel.current.host.webview.postMessage({ type: 'focus', tab }); }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.tasks',
-            'Agent Farm — Tasks',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        TasksPanel.current = new TasksPanel(panel, deps, tab);
+        TasksPanel.current = new TasksPanel(
+            desktopHost({ viewType: 'agentfarm.tasks', title: 'Agent Farm — Tasks' }), deps, tab);
+    }
+
+    /** X-456 — the page on a phone: one instance per view, never the desktop's one tab. */
+    static openOn(host: PanelHost, deps: TasksDeps): void {
+        new TasksPanel(host, deps);
     }
 
     static refreshIfOpen(): void {
@@ -1748,7 +1752,7 @@ export class TasksPanel {
      */
     static focusTask(deps: TasksDeps, taskId: string): void {
         TasksPanel.show(deps, 'run');
-        void TasksPanel.current?.panel.webview.postMessage({ type: 'focus-task', id: taskId });
+        void TasksPanel.current?.host.webview.postMessage({ type: 'focus-task', id: taskId });
     }
 
     /** Open the page on the Run tab with the New-task form up. This is what the
@@ -1756,7 +1760,7 @@ export class TasksPanel {
      *  a task made from the page are the same task with the same fields. */
     static compose(deps: TasksDeps, seed?: Record<string, unknown>): void {
         TasksPanel.show(deps, 'run');
-        void TasksPanel.current?.panel.webview.postMessage({
+        void TasksPanel.current?.host.webview.postMessage({
             type: 'task-compose', ...(seed ? { seed } : {})
         });
     }
@@ -1783,7 +1787,7 @@ export class TasksPanel {
         TasksPanel.show(deps, 'run');
         const t = TasksPanel.current?.task(taskId);
         if (!t) { return; }
-        void TasksPanel.current?.panel.webview.postMessage({
+        void TasksPanel.current?.host.webview.postMessage({
             type: 'task-compose', seed: { ...taskSeed(t), mode2: 'retry', retryOf: t.id }
         });
     }
@@ -1792,14 +1796,14 @@ export class TasksPanel {
      *  run's prompt as a template" fills the template form from the run. */
     static composePlanSeed(deps: TasksDeps, kind: string, seed: Record<string, unknown>): void {
         TasksPanel.show(deps, 'plan');
-        void TasksPanel.current?.panel.webview.postMessage({ type: 'plan-compose', kind, seed });
+        void TasksPanel.current?.host.webview.postMessage({ type: 'plan-compose', kind, seed });
     }
 
     /** Open the Plan tab with a filter already set — the page's own list is the
      *  answer to "which one?", and it carries what a quickpick cannot. */
     static showPlan(deps: TasksDeps, view: Record<string, unknown>, note?: string): void {
         TasksPanel.show(deps, 'plan');
-        void TasksPanel.current?.panel.webview.postMessage({ type: 'plan-focus', view, note });
+        void TasksPanel.current?.host.webview.postMessage({ type: 'plan-focus', view, note });
     }
 
     /** The farm-wide gate, set on the strip that reports it — the palette's
@@ -1807,21 +1811,21 @@ export class TasksPanel {
      *  quickpick followed by two input boxes. */
     static showGate(deps: TasksDeps, which: 'quiet' | 'pause'): void {
         TasksPanel.show(deps, 'plan');
-        void TasksPanel.current?.panel.webview.postMessage({ type: 'gate-open', which });
+        void TasksPanel.current?.host.webview.postMessage({ type: 'gate-open', which });
     }
 
     /** A picker drawn as a list ON the page instead of a quickpick over it. */
     static showChooser(deps: TasksDeps, chooser: Record<string, unknown>): void {
         TasksPanel.show(deps, (chooser.tab as TasksTab) ?? 'run');
-        void TasksPanel.current?.panel.webview.postMessage({ type: 'chooser', chooser });
+        void TasksPanel.current?.host.webview.postMessage({ type: 'chooser', chooser });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: TasksDeps, tab?: TasksTab) {
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Agent Farm Tasks',
+    private constructor(readonly host: PanelHost, private deps: TasksDeps, tab?: TasksTab) {
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Agent Farm Tasks',
             buildData(deps, tab), 'tasksPage.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         this.disposables.push(
             deps.manager.onDidChange(() => this.refresh()),
             deps.onDidChangeNeeds(() => this.refresh())
@@ -1829,7 +1833,7 @@ export class TasksPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({
+        void this.host.webview.postMessage({
             // ‼️ M-8 — the undo offer is the PANEL's, not the store's: it is
             // about the gesture just made in this window, so it is added here
             // rather than being persisted where a reload would resurrect it.
@@ -1865,7 +1869,7 @@ export class TasksPanel {
     }
 
     private async confirm(text: string, button: string): Promise<boolean> {
-        return await vscode.window.showWarningMessage(text, { modal: true }, button) === button;
+        return await this.host.ask.warn(text, { modal: true }, button) === button;
     }
 
     /**
@@ -1891,12 +1895,12 @@ export class TasksPanel {
         const what = gone.length === 1
             ? `“${gone[0].title}”`
             : `${gone.length} plan item(s)`;
-        void vscode.window.showInformationMessage(`Agent Farm: deleted ${what}.`, 'Undo')
+        void this.host.ask.info(`Agent Farm: deleted ${what}.`, 'Undo')
             .then(pick => {
                 if (pick !== 'Undo') { return; }
                 const back = m.restorePlanRows(gone as DeletedPlanRow[]);
                 this.refresh();
-                void vscode.window.showInformationMessage(
+                void this.host.ask.info(
                     `Agent Farm: put ${back} plan item(s) back.`);
             });
     }
@@ -1904,7 +1908,7 @@ export class TasksPanel {
     /** A refusal the FORM shows, in the form. A modal would take the focus off
      *  the half-filled fields it is complaining about. */
     private say(text: string): void {
-        void this.panel.webview.postMessage({ type: 'task-error', text });
+        void this.host.webview.postMessage({ type: 'task-error', text });
     }
 
     /**
@@ -1918,7 +1922,7 @@ export class TasksPanel {
      */
     private compose(kind: string, id?: string, step?: number | 'new'): void {
         const send = (seed: Record<string, unknown>): void => {
-            void this.panel.webview.postMessage({ type: 'plan-compose', kind, seed });
+            void this.host.webview.postMessage({ type: 'plan-compose', kind, seed });
         };
         const node = id ? this.planNode(kind, id) : undefined;
         if (kind === 'schedule') {
@@ -2075,7 +2079,7 @@ export class TasksPanel {
             rounds: normalizeRounds(item.rounds).length ? normalizeRounds(item.rounds) : undefined
         });
         const done = (text: string): void => {
-            void this.panel.webview.postMessage({ type: 'plan-saved', text });
+            void this.host.webview.postMessage({ type: 'plan-saved', text });
             this.refresh();
         };
 
@@ -2298,7 +2302,7 @@ export class TasksPanel {
         // The saved-prompt picker answers for itself, the same way it does on
         // the Console (see promptSnippetMessage in ./base).
         if (this.deps.promptSnippets && await promptSnippetMessage(
-            this.panel.webview, () => this.deps.promptSnippets!(), msg.type)) {
+            this.host.webview, () => this.deps.promptSnippets!(), msg.type)) {
             return;
         }
         switch (msg.type) {
@@ -2308,8 +2312,8 @@ export class TasksPanel {
             case 'browserLogin': {
                 const m = msg as { recipe?: unknown; url?: unknown };
                 const r = this.deps.browserLogin?.(String(m.recipe ?? ''), m.url ? String(m.url) : undefined);
-                if (r && r.ok) { void vscode.window.showInformationMessage(`Agent Farm: ${r.note}`); }
-                else if (r) { void vscode.window.showErrorMessage(`Agent Farm: ${r.error}`); }
+                if (r && r.ok) { void this.host.ask.info(`Agent Farm: ${r.note}`); }
+                else if (r) { void this.host.ask.error(`Agent Farm: ${r.error}`); }
                 break;
             }
 
@@ -2345,7 +2349,8 @@ export class TasksPanel {
                     case 'workflow:run': {
                         const w = node.workflow;
                         const given = msg.inputs && typeof msg.inputs === 'object' ? msg.inputs as Record<string, unknown> : undefined;
-                        if (!w || !given) { run('agentfarm.runWorkflow', node); break; }
+                        // Its inputs, when none were sent, are asked by whoever is looking at the page.
+                        if (!w || !given) { run('agentfarm.runWorkflow', { ...node, ask: this.host.ask }); break; }
                         const refusal = this.deps.manager.workflowRunRefusal(w, given);
                         if (refusal) { this.say(refusal); break; }
                         const wk = wakeFromArg(msg.wake);
@@ -2380,10 +2385,14 @@ export class TasksPanel {
                     // "edit" could not do on a workflow was edit it.
                     case 'workflow:edit': this.compose('workflow', msg.id); break;
                     case 'template:edit': this.compose('template', msg.id); break;
-                    case 'template:run': run('agentfarm.runTemplate', node); break;
+                    case 'template:run': run('agentfarm.runTemplate', { ...node, ask: this.host.ask }); break;
                     // Reachable only from the row's right-click menu — there is
                     // no room on the row for a button nobody presses weekly.
-                    case 'schedule:export': run('agentfarm.exportSchtask', node); break;
+                    case 'schedule:export':
+                        // A Windows scheduled task is registered on the PC, through its clipboard.
+                        if (this.host.remote) { void this.host.ask.info(ON_THE_PC); break; }
+                        run('agentfarm.exportSchtask', node);
+                        break;
                 }
                 this.refresh();
                 break;
@@ -2402,7 +2411,7 @@ export class TasksPanel {
                     case 'edit': this.compose('workflow', msg.id, index); break;
                     case 'up': run('agentfarm.moveWorkflowStepUp', step); break;
                     case 'down': run('agentfarm.moveWorkflowStepDown', step); break;
-                    case 'delete': run('agentfarm.deleteWorkflowStep', step); break;
+                    case 'delete': run('agentfarm.deleteWorkflowStep', { ...step, ask: this.host.ask }); break;
                 }
                 this.refresh();
                 break;
@@ -2462,7 +2471,7 @@ export class TasksPanel {
                 // press used to end in silence, which reads as a broken button
                 // rather than as an answer.
                 if (!n) {
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         `Agent Farm: nothing to switch ${on ? 'on' : 'off'} — `
                         + 'a workflow or a template has no switch, it runs when it is launched.');
                     break;
@@ -2476,7 +2485,7 @@ export class TasksPanel {
                 for (const s of scheds) { s.enabled = on; }
                 for (const t of trigs) { t.enabled = on; }
                 m.persist();
-                void vscode.window.showInformationMessage(
+                void this.host.ask.info(
                     `Agent Farm: ${n} item(s) ${on ? 'enabled' : 'disabled'}.`);
                 this.refresh();
                 break;
@@ -2531,13 +2540,15 @@ export class TasksPanel {
                     try {
                         this.lastDeleted = [m.deleteTask(t)];
                     } catch (e) {
-                        void vscode.window.showErrorMessage(
+                        void this.host.ask.error(
                             `Agent Farm: the run was NOT deleted — ${String(e)}`);
                     }
                 }
                 else if (msg.act === 'rerun' && t.status !== 'queued' && t.status !== 'running') { m.retryTask(t); }
                 else if (msg.act === 'next' && t.status === 'queued') { m.runTaskNext(t); }
-                else if (msg.act === 'terminal') { m.revealTerminal(t); }
+                else if (msg.act === 'terminal') {
+                    if (this.host.remote) { void this.host.ask.info(ON_THE_PC); } else { m.revealTerminal(t); }
+                }
                 // B-4 — the release itself lives in the manager now, so the
                 // bridge's `tasks.unpark` and this button are one implementation.
                 else if (msg.act === 'unpark' && t.status === 'queued' && t.autoStart) {
@@ -2546,14 +2557,14 @@ export class TasksPanel {
                 // M-13 — the user's word on a supervised row; one implementation with tasks.supervision
                 else if (msg.act === 'supDeterministic' || msg.act === 'supRun') {
                     const r = m.answerSupervision(t, msg.act === 'supRun' ? 'run' : 'deterministic');
-                    if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: ${r.why}`); }
+                    if (!r.ok) { void this.host.ask.warn(`Agent Farm: ${r.why}`); }
                 }
                 else if (msg.act === 'supEdit' && t.status === 'queued') {
-                    void vscode.window.showInputBox({ title: `${t.title} — the prompt this retry will send`, value: t.prompt, ignoreFocusOut: true })
+                    void this.host.ask.input({ title: `${t.title} — the prompt this retry will send`, value: t.prompt, ignoreFocusOut: true })
                         .then(v => {
                             if (v === undefined) { return; }
                             const r = m.answerSupervision(t, 'edit', v);
-                            if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: ${r.why}`); }
+                            if (!r.ok) { void this.host.ask.warn(`Agent Farm: ${r.why}`); }
                         });
                 }
                 // The rest exist as commands on the sidebar tree and had no way
@@ -2567,7 +2578,7 @@ export class TasksPanel {
                 // a better model". Now it is the whole task, editable, and the
                 // host turns it back into a real retry of THIS run.
                 else if (msg.act === 'retryEdit' && t.status !== 'queued' && t.status !== 'running') {
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'task-compose', seed: { ...taskSeed(t), mode2: 'retry', retryOf: t.id }
                     });
                 }
@@ -2576,7 +2587,7 @@ export class TasksPanel {
                 // quickpick whose only question was bind-to-agent or not; every
                 // other thing a template carries was decided for you.
                 else if (msg.act === 'saveTemplate') {
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'plan-compose', kind: 'template',
                         seed: {
                             mode2: 'new', title: t.title, prompt: t.prompt,
@@ -2596,9 +2607,9 @@ export class TasksPanel {
                 else if (msg.act === 'clone') {
                     const c = cloneSeed(t, this.deps.manager, (this.deps.getAgents()[0]?.name) ?? '');
                     if (c.kind === 'task') {
-                        void this.panel.webview.postMessage({ type: 'task-compose', seed: c.seed });
+                        void this.host.webview.postMessage({ type: 'task-compose', seed: c.seed });
                     } else {
-                        void this.panel.webview.postMessage({
+                        void this.host.webview.postMessage({
                             type: 'plan-compose', kind: c.kind, seed: c.seed
                         });
                     }
@@ -2618,7 +2629,7 @@ export class TasksPanel {
                         m.restoreTasks(this.lastDeleted);
                         this.lastDeleted = undefined;
                     } catch (e) {
-                        void vscode.window.showErrorMessage(
+                        void this.host.ask.error(
                             `Agent Farm: the run was NOT restored — ${String(e)}`);
                     }
                 }
@@ -2669,7 +2680,7 @@ export class TasksPanel {
                 // The dedup guard the dialog had — kept, and asked in the page's
                 // own words rather than a modal that steals focus from the form.
                 if (t.force !== true && m.queuedDuplicate(agent.id, prompt)) {
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'task-dup',
                         text: `${agent.name} already has an identical task queued.`
                     });
@@ -2743,7 +2754,7 @@ export class TasksPanel {
                             ? (str('resumeSessionId') || undefined) : undefined
                     });
                     if (copy) {
-                        void this.panel.webview.postMessage({
+                        void this.host.webview.postMessage({
                             type: 'task-made', id: copy.id, title: copy.title, started: t.start === true
                         });
                     }
@@ -2845,7 +2856,7 @@ export class TasksPanel {
                     ...resumeExtra
                 });
                 if (t.start === true) { m.startTask(task); }
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'task-made', id: task.id, title: task.title,
                     started: t.start === true
                 });
@@ -2856,7 +2867,7 @@ export class TasksPanel {
             // here: the page opens its own form, prefilled. One form, one set of
             // fields, whatever you came in through.
             case 'task-add':
-                void this.panel.webview.postMessage({ type: 'task-compose' });
+                void this.host.webview.postMessage({ type: 'task-compose' });
                 break;
             case 'clear-finished': {
                 const n = m.tasks.filter(t => t.status !== 'queued' && t.status !== 'running').length;
@@ -2867,7 +2878,7 @@ export class TasksPanel {
                     // ‼️ M-8 — "archived first" is now literally true, so a
                     // failure means nothing was cleared. Said, not swallowed.
                     try { m.clearFinished(); } catch (e) {
-                        void vscode.window.showErrorMessage(
+                        void this.host.ask.error(
                             `Agent Farm: nothing was cleared — ${String(e)}`);
                     }
                 }
@@ -2904,10 +2915,10 @@ export class TasksPanel {
                         point: String(msg.point ?? ''), level: String(msg.level ?? ''), target: String(msg.target ?? ''), value: msg.value,
                         ...(msg.name ? { name: String(msg.name) } : {})
                     });
-                    void this.panel.webview.postMessage({ type: 'flexPromoted', point: msg.point, ...(msg.name ? { name: msg.name } : {}) });
+                    void this.host.webview.postMessage({ type: 'flexPromoted', point: msg.point, ...(msg.name ? { name: msg.name } : {}) });
                     this.refresh();
                 } catch (e) {
-                    void vscode.window.showErrorMessage(`Agent Farm: ${(e as Error).message}`);
+                    void this.host.ask.error(`Agent Farm: ${(e as Error).message}`);
                 }
                 break;
             case 'command':
@@ -2973,12 +2984,13 @@ export class TasksPanel {
             this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
             void vscode.window.showTextDocument(uri);
         } catch (e) {
-            void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
+            void this.host.ask.error(`Agent Farm: export failed — ${String(e)}`);
         }
     }
 
     private dispose(): void {
-        TasksPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (TasksPanel.current === this) { TasksPanel.current = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

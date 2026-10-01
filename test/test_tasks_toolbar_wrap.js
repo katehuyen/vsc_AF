@@ -102,6 +102,31 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "return {n:t.length,rows:t.filter(function(v,i){return t.indexOf(v)===i;}).length};})()";
     const line = json(node([path.join('test', 'measure_page.js'), 'tasks', aq])) || {};
     ok(`‼️ an airtable input's search line keeps its nine boxes on one row (${JSON.stringify(line)})`, line.n === 9 && line.rows === 1);
+
+    // X-456: on a phone (360px) the filters and the list actions were four rows over the table and
+    // the runs were an eleven-column table. Each block is one sideways-scrolled line now, the lede
+    // steps aside, a run is a card, and nothing pushes the page sideways.
+    // The first scene is the page as it opens (Runs); the montage's later scenes hold the forms.
+    const phone = "(function(){var doc=document.documentElement,out={cw:doc.clientWidth,phone:doc.classList.contains('af-phone')};"
+        + "var pg=document.querySelector('div.rndr-page')||document.body;"
+        + "var clip=function(e){for(var p=e.parentElement;p&&p!==pg;p=p.parentElement){var o=getComputedStyle(p).overflowX;if(o!=='visible'){return true;}}return false;};"
+        + "out.sw=Math.max.apply(null,[0].concat([].slice.call(pg.querySelectorAll('*')).filter(function(e){return e.getBoundingClientRect().width>0&&!clip(e);})"
+        + ".map(function(e){return Math.round(e.getBoundingClientRect().right);})));"
+        + "var rows=function(el){if(!el){return -1;}var t=[].slice.call(el.children).filter(function(k){return k.getBoundingClientRect().width>0;})"
+        + ".map(function(k){return Math.round(k.getBoundingClientRect().top);});"
+        + "return t.filter(function(v,i){return t.findIndex(function(x){return Math.abs(x-v)<6;})===i;}).length;};"
+        + "['#runq','#planq'].forEach(function(s){var q=document.querySelector(s);if(!q){return;}var bar=q.closest('.toolbar');"
+        + "out[s]={f:rows(bar.querySelector('.tbf')),a:rows(bar.querySelector('.tba'))};});"
+        + "var card=document.querySelector('table[data-afcards] tr[data-afcard]');out.card=card?getComputedStyle(card).display:'';"
+        + "out.cardRight=card?Math.round(card.getBoundingClientRect().right):-1;"
+        + "var lede=document.querySelector('.lede');out.lede=lede?getComputedStyle(lede).display:'';return out;})()";
+    const ph = json(node([path.join('test', 'measure_page.js'), 'tasks', phone, '--phone'])) || {};
+    const say = JSON.stringify(ph);
+    ok(`‼️ phone: the page is in phone mode and nothing pushes it sideways (${say})`, ph.phone === true && ph.sw <= ph.cw + 1);
+    ok('‼️ phone: each toolbar block is ONE line (filters, then actions), never four rows over the table',
+        ['#runq', '#planq'].every(s => ph[s] && ph[s].f <= 1 && ph[s].a <= 1));
+    ok('‼️ phone: a run is a card inside the screen, and the lede steps aside',
+        ph.card === 'flex' && ph.cardRight > 0 && ph.cardRight <= ph.cw + 1 && ph.lede === 'none');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

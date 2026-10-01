@@ -21,7 +21,7 @@ const LEGACY = [
     'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'missionsPanel', 'noticesPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
     'secretsPanel', 'selectionPanel', 'sessionViewer', 'settingsPanel', 'studioPanel',
-    'taskAnalyticsPanel', 'tasksPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
+    'taskAnalyticsPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
 ].map(n => `src/panels/${n}.ts`);
 const HOST_FILE = 'src/panels/panelHost.ts';
 
@@ -47,7 +47,7 @@ for (const rel of callers) {
 for (const rel of LEGACY) {
     ok(`${rel} no longer calls createWebviewPanel — take it off LEGACY in test_panel_host.js`, callers.includes(rel));
 }
-for (const p of ['needsPanel', 'consolePanel', 'sessionsPanel']) {
+for (const p of ['needsPanel', 'consolePanel', 'sessionsPanel', 'tasksPanel']) {
     ok(`the ${p} is on the host`, !callers.includes(`src/panels/${p}.ts`)
         && /desktopHost\(/.test(fs.readFileSync(path.join(ROOT, `src/panels/${p}.ts`), 'utf8')));
 }
@@ -177,8 +177,15 @@ const alive = setInterval(() => undefined, 1000);
     ok('views are counted across devices', views.count() === 1);
 
     // ---------- the real page list ----------
-    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined });
-    ok('the phone has the Needs, the Console, the Now and the Sessions pages', Object.keys(real).sort().join() === 'console,needs,now,sessions');
+    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined });
+    ok('the phone has the Needs, the Console, the Now, the Sessions and the Tasks pages', Object.keys(real).sort().join() === 'console,needs,now,sessions,tasks');
+    ok('Tasks: reading looks, a permission is answered, making and running work needs manage, files and other tabs stay on the PC',
+        real.tasks.open === 'read' && ['refresh', 'promptSnippets', 'runs-archive', 'chooser-pick'].every(t => messageScope(real.tasks, t) === 'read')
+        && messageScope(real.tasks, 'approve') === 'answer'
+        && ['plan', 'wfstep', 'plan-save', 'bulk', 'gate', 'task', 'task-new', 'task-undo', 'clear-finished', 'cancel-queued', 'flexPromote']
+            .every(t => messageScope(real.tasks, t) === 'manage')
+        && ['browserLogin', 'open-output', 'open-transcript', 'export-md', 'command', 'pickPromptSnippets', 'afnav']
+            .every(t => messageScope(real.tasks, t) === null));
     ok('Sessions: reading and paging look, pinning and stopping need manage, a transcript or a terminal stays on the PC',
         real.sessions.open === 'read' && ['refresh', 'setTableN', 'sessionTurns'].every(t => messageScope(real.sessions, t) === 'read')
         && ['pinSession', 'interruptSession'].every(t => messageScope(real.sessions, t) === 'manage')

@@ -660,6 +660,7 @@ import { StudioPanel } from './panels/studioPanel';
 import { GuidePanel } from './panels/guide';
 import { AirtablePanel } from './panels/airtablePanel';
 import { TasksPanel } from './panels/tasksPanel';
+import { desktopAsk, type PanelAsk } from './panels/panelAsk';
 import { NeedsPanel } from './panels/needsPanel';
 import { NowPanel, type NowDeps } from './panels/nowPanel';
 import { buildNow, NOW_LIMITS } from './core/nowPage';
@@ -8283,11 +8284,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the label its run is filed under, which is why one is not demanded.
      */
     /** M-38 — run a workflow by hand: each declared input is asked for, prefilled with the last run's value, else its default. */
-    const runWorkflowAsking = async (w: FarmWorkflow, given?: Record<string, unknown>): Promise<void> => {
+    // `ask` is whoever looks at the page that pressed Run — a phone's view answers on the phone.
+    const runWorkflowAsking = async (w: FarmWorkflow, given?: Record<string, unknown>, ask: PanelAsk = desktopAsk()): Promise<void> => {
         const values: Record<string, unknown> = { ...(given ?? {}) };
         if (!given) {
             for (const i of w.inputs ?? []) {
-                const v = await vscode.window.showInputBox({
+                const v = await ask.input({
                     title: `${w.title} — ${i.name}${i.required ? ' (required)' : ''}`,
                     prompt: i.description || `${i.type} — a step reads it as {input.${i.name}}`,
                     value: w.lastInputs?.[i.name] ?? i.default ?? '', ignoreFocusOut: true
@@ -8297,7 +8299,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
         const refusal = taskManager.workflowRunRefusal(w, values);
-        if (refusal) { void vscode.window.showWarningMessage(`Agent Farm: ${refusal}`); return; }
+        if (refusal) { void ask.warn(`Agent Farm: ${refusal}`); return; }
         taskManager.runWorkflow(w, Object.keys(values).length ? { inputs: values } : undefined);
     };
     const bridgeStep = (raw: Record<string, unknown>, i: number): WorkflowStep => {
@@ -26146,16 +26148,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * would turn a stale row into a menu, and the person's next keystroke into
      * a different agent's session.
      */
-    const resolveAgent = async (arg: AgentArg): Promise<AgentInfo | undefined> => {
+    const resolveAgent = async (arg: AgentArg, ask: PanelAsk = desktopAsk()): Promise<AgentInfo | undefined> => {
         const named = resolveAgentArg(arg, agents);
         if (named.agent) { return named.agent; }
         if (named.stale) {
-            void vscode.window.showWarningMessage(
+            void ask.warn(
                 `Agent Farm: "${named.stale}" is not in the fleet any more — the row this was started `
                 + 'from is out of date. Refresh the Agents view and try again.');
             return undefined;
         }
-        const pick = await vscode.window.showQuickPick(
+        const pick = await ask.pick(
             agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
             { placeHolder: 'Select an agent', ignoreFocusOut: true }
         );
@@ -30914,7 +30916,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             needs: host => NeedsPanel.openOn(host, needsDeps),
             console: host => ConsolePanel.openOn(host, consoleDeps),
             now: host => NowPanel.openOn(host, nowDeps),
-            sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args))
+            sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args)),
+            tasks: host => TasksPanel.openOn(host, tasksDeps)
         })
     });
     const remotePort: RemotePort = {
@@ -40117,7 +40120,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }),
 
-        vscode.commands.registerCommand('agentfarm.runTemplate', async (node?: TaskNode) => {
+        vscode.commands.registerCommand('agentfarm.runTemplate', async (node?: TaskNode & { ask?: PanelAsk }) => {
+            const ask = node?.ask ?? desktopAsk();
             const template = node?.kind === 'template' ? node.template : undefined;
             // ‼️ "WHICH TEMPLATE?" IS THE PLAN TAB, FILTERED TO TEMPLATES. The
             // quickpick listed titles and an agent name; the page's own rows
@@ -40132,9 +40136,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             const agent = template.agentId
                 ? agents.find(a => a.id === template.agentId)
-                : await resolveAgent(undefined);
+                : await resolveAgent(undefined, ask);
             if (!agent) {
-                void vscode.window.showWarningMessage('Agent Farm: agent not found for this template.');
+                void ask.warn('Agent Farm: agent not found for this template.');
                 return;
             }
             const task = taskManager.addTask(agent, template.title, template.prompt, template.mode);
@@ -40153,8 +40157,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             TasksPanel.composePlan(tasksDeps, 'workflow');
         }),
 
-        vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode) => {
-            if (node?.kind === 'workflow') { void runWorkflowAsking(node.workflow); }
+        vscode.commands.registerCommand('agentfarm.runWorkflow', (node?: TaskNode & { ask?: PanelAsk }) => {
+            if (node?.kind === 'workflow') { void runWorkflowAsking(node.workflow, undefined, node.ask); }
         }),
 
         vscode.commands.registerCommand('agentfarm.renameWorkflow', (node?: TaskNode) => {
@@ -40193,10 +40197,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.deleteWorkflowStep', async (node?: TaskNode) => {
+        vscode.commands.registerCommand('agentfarm.deleteWorkflowStep', async (node?: TaskNode & { ask?: PanelAsk }) => {
             if (node?.kind !== 'workflow-step') { return; }
             const step = node.workflow.steps[node.index];
-            const confirmed = await vscode.window.showWarningMessage(
+            const confirmed = await (node.ask ?? desktopAsk()).warn(
                 `Delete step ${node.index + 1} ("${step.title}") from "${node.workflow.title}"?`,
                 { modal: true }, 'Delete');
             if (confirmed === 'Delete') {

@@ -15,6 +15,7 @@ export interface RemotePageMakers {
     now(host: PanelHost): void;
     /** `args` narrows the page the way the openSessions command's argument does. */
     sessions(host: PanelHost, args?: Record<string, unknown>): void;
+    tasks(host: PanelHost): void;
 }
 
 export function remotePages(make: RemotePageMakers): Record<string, RemotePage> {
@@ -49,6 +50,17 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             answers: [],
             pcOnly: ['openSession', 'focusTerminal', 'openGuide', 'afnav'],
             make: (host, args) => make.sessions(host, args)
+        },
+        // X-456 — making, running and switching work is manage; a permission is answered. What opens
+        // a file, an editor, a browser, another tab or a save dialog on the PC stays there.
+        tasks: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'promptSnippets', 'runs-archive', 'chooser-pick'],
+            answers: ['approve'],
+            pcOnly: ['browserLogin', 'open-output', 'open-transcript', 'open-needs', 'open-analytics',
+                'open-history', 'export-md', 'command', 'openPromptSnippets', 'pickPromptSnippets',
+                'openGuide', 'afnav'],
+            make: host => make.tasks(host)
         }
     };
 }

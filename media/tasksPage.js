@@ -18,6 +18,9 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
+    // X-456 - drawn on a phone by the remote host: what opens a file, an editor, a save dialog or another
+    // tab on the PC is not drawn (the host refuses it from a phone anyway).
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
 
     const post = (m) => vscode.postMessage(m);
     const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
@@ -546,7 +549,7 @@
                   is reachable from either tab; `openComposer` already moves the
                   tab under it, so pressing it from Plan lands on the form. */''}
             <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder. It can be turned into a schedule or a trigger while you are still writing it.">+ New task</button>
-            <button class="secondary" data-open="open-analytics" title="30-day throughput, agent scorecards, task families and the forecast — reading, not managing">📊 Analytics</button>
+            <button class="secondary" data-open="open-analytics"${ON_PHONE_HOST ? ' hidden' : ''} title="30-day throughput, agent scorecards, task families and the forecast — reading, not managing">📊 Analytics</button>
         </div>`;
     }
 
@@ -674,8 +677,8 @@
     function launchCell(p) {
         if (!p.engine && !p.model) {
             return p.switchable || p.kind === 'template'
-                ? '<td><span class="muted">default</span></td>'
-                : '<td><span class="muted">—</span></td>';
+                ? '<td data-label="Launch"><span class="muted">default</span></td>'
+                : '<td data-label="Launch"><span class="muted">—</span></td>';
         }
         const bits = [];
         if (p.engine) { bits.push(`<span class="badge">${C.esc(p.engine)}</span>`); }
@@ -683,7 +686,7 @@
         // ‼️ M-25 — FIGURES, NOT A PARAGRAPH. What the column MEANS is on its
         // <th>; repeating it under every row was two lines of hover spent on a
         // sentence the reader had already read once per row above.
-        return `<td title="${C.esc([
+        return `<td data-label="Launch" title="${C.esc([
             'Engine: ' + (p.engine || 'the launcher\'s default'),
             'Model: ' + (p.model || 'the launcher\'s default'),
             'Effort: ' + (setupValue(p, 'Effort') || 'the launcher\'s default'),
@@ -760,7 +763,7 @@
                 + '\n\nPress to switch it ' + (p.enabled ? 'off' : 'on') + '.')}" aria-pressed="${p.enabled}"><span></span></button>`
             : `<span class="muted small" title="${C.esc('It has no switch: a ' + (KIND[p.kind] || { label: p.kind }).label
                 + ' runs when it is launched, never on its own.')}">manual</span>`;
-        return `<tr class="prow ${open ? 'open' : ''}" data-key="${key}"
+        return `<tr class="prow ${open ? 'open' : ''}" data-afcard data-key="${key}"
             ${planCtx(p)} title="${C.esc(window.AFCtx.hint(k.label + ' — ' + k.hint))}">
             ${/* ‼️ M-33 — EVERY ROW TICKS, NOT ONLY THE SWITCHABLE ONES. The
                   box used to exist only where the bulk bar had something to do
@@ -769,18 +772,18 @@
                   that DOES apply to all four (delete) had no way to reach them.
                   What a press does with a selection is the bar's problem; being
                   selectable is the row's. */''}
-            <td class="tick"><input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"
+            <td class="tick" data-first><input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"
                 data-sw="${p.switchable ? '1' : ''}"${selected.has(key) ? ' checked' : ''}
                 title="${C.esc('Pick this ' + k.label + ' for the bar above'
                 + (p.switchable ? '.' : ' — it has no switch, so only Delete acts on it.'))}"></td>
             ${/* ‼️ M-25 · MIRROR — the triangle says which way it is pointing and
                   what is behind it. "details" was one word about neither. */''}
-            <td class="expand" data-expand="${key}" role="button" tabindex="0"
+            <td class="expand" data-first data-expand="${key}" role="button" tabindex="0"
                 title="${C.esc((open ? 'Open — press to close it.' : 'Closed — press to open it.')
             + '\n\nBehind it: the whole setup ' + (p.detail && p.detail.setup ? '(' + p.detail.setup.length + ' field(s))' : '')
             + (p.detail && p.detail.steps && p.detail.steps.length ? ', its ' + p.detail.steps.length + ' step(s)' : '')
             + (p.detail && p.detail.prompt ? ', and the prompt it sends' : '') + '.')}">${open ? '▾' : '▸'}</td>
-            <td class="main">
+            <td class="main" data-lead>
                 ${window.AFTip.wrap(`<div class="rowtitle"><span title="${C.esc(k.hint)}">${k.icon}</span> <b>${C.esc(p.title)}</b> ${badges}</div>
                 <div class="muted small">${C.esc(p.when)}${p.nextAt ? ` · next ${C.esc(until(p.nextAt))}` : ''}</div>
                 ${/* ‼️ M-7 — SAID ON THE ROW, NOT ONLY IN A HOVER. "Its time came
@@ -811,12 +814,12 @@
             : `<span class="muted" title="${C.esc('This definition names no agent — the launcher asks for one, '
                 + 'or picks its default, at the moment it runs.')}">—</span>`}</td>
             ${launchCell(p)}
-            <td class="guardcell">${guard}${p.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(p.kapici, C) + '</div>' : ''}</td>
+            <td class="guardcell" data-label="Guard">${guard}${p.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(p.kapici, C) + '</div>' : ''}</td>
             ${/* ‼️ M-25 — WHAT IT COST, AND WHAT THAT DIVIDES INTO. A money
                   figure with a run count under it implies a rate the reader was
                   being left to work out; and a $0.00 with runs behind it is the
                   one reading that must not be left as "free". */''}
-            <td class="num">${tipw(`${fmtUSD(p.cost7d)}${p.runs7d ? `<div class="muted small">${p.runs7d} run(s)</div>` : ''}`,
+            <td class="num" data-label="Cost 7d">${tipw(`${fmtUSD(p.cost7d)}${p.runs7d ? `<div class="muted small">${p.runs7d} run(s)</div>` : ''}`,
             `${fmtUSD(p.cost7d)} over 7 days`,
             window.AFTip.lines([
                 'Total, 7 days: ' + fmtUSD(p.cost7d),
@@ -832,7 +835,7 @@
             ${/* ‼️ M-25 — the LAST RUN, whole: the exact moment (in both clocks,
                   media/afTime.js) and what happened that time. "3d ago" is the
                   shorthand; the panel carries the long form. */''}
-            <td class="lastrun">${p.lastRunAt
+            <td class="lastrun" data-label="Last run">${p.lastRunAt
             ? tipw(`${C.esc(rel(p.lastRunAt))}${p.lastNote ? `<div class="muted small">${C.esc(p.lastNote)}</div>` : ''}`,
                 'Last run — ' + rel(p.lastRunAt),
                 window.AFTip.lines([
@@ -844,7 +847,7 @@
                 + (p.overdue ? 'And its time has already come — see the ⚠ on the row.'
                     : p.nextAt ? 'First time due ' + until(p.nextAt) + '.'
                         : 'It runs when it is launched, so “never” only means nobody has launched it yet.'))}">never</span>`}</td>
-            <td class="state">${stateCell}</td>
+            <td class="state" data-label="On">${stateCell}</td>
             <td class="acts">
                 <button class="mini secondary" data-plan="run" data-kind="${p.kind}" data-id="${p.id}" title="run it now">run</button>
                 ${p.kind === 'workflow' ? `<button class="mini secondary" data-plan="runwith" data-kind="workflow" data-id="${p.id}" title="Run with…
@@ -856,7 +859,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 <button class="mini secondary" data-plan="edit" data-kind="${p.kind}" data-id="${p.id}" title="edit">edit</button>
                 <button class="mini secondary" data-plan="delete" data-kind="${p.kind}" data-id="${p.id}" title="delete">✕</button>
             </td>
-        </tr>${wiRun && wiRun.id === p.id && (wiRun.kind || 'workflow') === p.kind && window.AFRunWith ? `<tr class="detail"><td colspan="10"><div class="detailbox">
+        </tr>${wiRun && wiRun.id === p.id && (wiRun.kind || 'workflow') === p.kind && window.AFRunWith ? `<tr class="detail" data-afcardmore><td colspan="10"><div class="detailbox">
             ${p.kind === 'schedule' ? window.AFRunWith.scheduleCard(p, wiRun, C, (DATA.launch || {}).runPresets)
                 : window.AFRunWith.workflowCard(p, wiRun, C, runPromote(p), DATA.wakeDict, DATA.scenes, DATA.agents, (DATA.launch || {}).workflowPresets)}
         </div></td></tr>` : ''}${open ? planDetailHtml(p) : ''}`;
@@ -864,7 +867,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
 
     function planDetailHtml(p) {
         const d = p.detail;
-        return `<tr class="detail"><td colspan="10"><div class="detailbox">
+        return `<tr class="detail" data-afcardmore><td colspan="10"><div class="detailbox">
             ${p.overdue ? `<div class="overdue">⚠ ${C.esc(p.overdue)}</div>` : ''}
             ${/* ‼️ M-8 — THE WHOLE ANATOMY, not the word "schedule". At what time,
                   on which day, what happens to a missed occurrence, which engine
@@ -928,7 +931,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             time, ⚡ a <b>trigger</b> runs when something happens, 🔗 a <b>workflow</b> chains several agents and
             📋 a <b>template</b> is a saved prompt. The first two run on their own; the last two run when launched.
             Every one of them produces <b>tasks</b> — see the Runs tab.</p>`;
-        const head = `<tr>
+        const head = `<tr data-afcardhead>
             <th class="tick"><input type="checkbox" class="allsel" title="select every row shown"></th>
             <th class="expand"></th>
             ${/* ‼️ M-25 — EVERY COLUMN IS DEFINED, AND DEFINED HERE. A column's
@@ -1023,7 +1026,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 <button class="mini secondary danger" data-bulk="delete">delete</button>
                 <button class="mini secondary" data-bulk="clear">clear</button>
             </div>
-            <div class="tablewrap"><table class="grid">${head}${body}</table></div>`;
+            <div class="tablewrap"><table class="grid" data-afcards>${head}${body}</table></div>`;
     }
 
     // ------------------------------------------------- NEW TASK: the composer
@@ -3738,8 +3741,8 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             afFrom: r.sourceKind || 'manual'
         });
         const tokPerMin = r.durMin && r.tokens ? Math.round(r.tokens / r.durMin) : 0;
-        return `<tr class="prow ${open ? 'open' : ''}${r.archived ? ' arch' : ''}" ${ctx}>
-            <td class="expand" data-expand="${key}" role="button" tabindex="0"
+        return `<tr class="prow ${open ? 'open' : ''}${r.archived ? ' arch' : ''}" data-afcard ${ctx}>
+            <td class="expand" data-first data-expand="${key}" role="button" tabindex="0"
                 title="${open ? 'Fold this run away' : 'The whole anatomy of this run — how it was set up and what it produced'}">${open ? '▾' : '▸'}</td>
             ${/* ‼️ THE PROMPT, WHOLE. It was cut at 600 characters into a <pre>
                   behind the triangle; "what did I actually ask it to do" is the
@@ -3748,7 +3751,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ${/* The hold reason used to be appended here as well. One subject per
                   panel (docs/CONVENTIONS.md): the run's identity belongs to this
                   cell, the reason it is not moving belongs to its status. */''}
-            <td class="main">${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
+            <td class="main" data-lead>${tipw(`<div class="rowtitle" data-taskform="${r.id}" role="button" tabindex="0"><b>${C.esc(r.title)}</b></div>
                 <div class="muted small">${C.esc(r.agentName)} · ${C.esc(r.mode)}${roundBadge(r)}${r.supervisor && window.AFSupervisorStrip
                     ? ' · ' + window.AFSupervisorStrip.badge(r.supervisor) + ' ' + C.esc(r.supervisor.word) : ''}</div>`,
             `${C.esc(r.agentName)} · ${window.AFTip.sizeNote(r.prompt)} of prompt`,
@@ -3787,7 +3790,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                         : '',
                     runTimeline(r)
                 ]))}</td>
-            <td class="from">${tipw(r.sourceKind === 'manual' ? '<span class="muted">you</span>'
+            <td class="from" data-label="From">${tipw(r.sourceKind === 'manual' ? '<span class="muted">you</span>'
                 : `${C.esc(r.sourceKind)}<div class="muted small">${C.esc(r.source)}</div>`,
                 r.sourceKind === 'manual' ? 'started by you' : `${r.sourceKind} · ${r.source}`,
                 window.AFTip.lines(setupLines(r.setup)))}${/* U-155 — who Gatekeeper routed it to; beside the source's panel, never inside another one */''}${r.kapici && window.AFKapici ? '<div>' + window.AFKapici.chip(r.kapici, C) + '</div>' : ''}</td>
@@ -3797,7 +3800,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ${/* ‼️ M-8 — WHICH CONVERSATION. A run that ran opened a session and
                   the page KNEW which one (that is where the price comes from) —
                   it just never said. Click it and the transcript opens. */''}
-            <td class="sess">${r.sessionId
+            <td class="sess" data-label="Session">${r.sessionId
                 ? tipw(`<span class="slink" data-tr="${C.esc(r.sessionFile)}" role="button" tabindex="0">${C.esc(shortSid(r.sessionId))}</span>`,
                     `session ${C.esc(shortSid(r.sessionId))}`,
                     window.AFTip.lines([
@@ -3810,7 +3813,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 : `<span class="muted" title="${C.esc(live
                     ? 'The transcript is matched a few minutes after the run ends — a run still going has not been matched yet.'
                     : 'No transcript was matched to this run. An interactive run in a terminal, a non-claude CLI profile, or a run that died before it said anything all end up here.')}">—</span>`}</td>
-            <td class="num">${r.durMin !== undefined ? tipw(r.durMin + 'm',
+            <td class="num" data-label="Took">${r.durMin !== undefined ? tipw(r.durMin + 'm',
                 `${r.durMin} minutes`,
                 window.AFTip.lines([
                     // ‼️ M-25 — `'Started: ' + x || '—'` reads as
@@ -3825,7 +3828,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ${/* ‼️ M-21 — WHAT IT BURNED, in its own column. The rate came with
                   it out of the "Took" panel: how fast it spent is a fact about
                   the spending, and one fact belongs to one panel. */''}
-            <td class="num">${r.tokens
+            <td class="num" data-label="Tokens">${r.tokens
             ? tipw(C.fmtTok(r.tokens), `${r.tokens.toLocaleString()} tokens`,
                 window.AFTip.lines([
                     `${r.tokens.toLocaleString()} tokens in total — input, output, cache reads and cache writes together.`,
@@ -3837,8 +3840,8 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             : `<span class="muted" title="${C.esc(live
                 ? 'The transcript is matched a few minutes after a run ends, and the tokens come off it — a run still going has nothing to count yet.'
                 : 'No transcript was matched to this run, so nothing was counted. It does not mean the run spent nothing.')}">—</span>`}</td>
-            <td class="num">${runSpend(r)}</td>
-            <td class="when"><span title="${C.esc(window.AFTime.tip(r.when, 'This row\'s clock — when it ended, or when it started, or when it was made'))}">${C.esc(rel(r.when))}</span></td>
+            <td class="num" data-label="Cost">${runSpend(r)}</td>
+            <td class="when" data-label="When"><span title="${C.esc(window.AFTime.tip(r.when, 'This row\'s clock — when it ended, or when it started, or when it was made'))}">${C.esc(rel(r.when))}</span></td>
             <td class="acts">
                 ${r.archived ? '' : `${r.status === 'queued' ? `<button class="mini secondary" data-task="start" data-id="${r.id}">start</button>
                     <button class="mini secondary" data-task="next" data-id="${r.id}" title="move to the front">↑</button>` : ''}
@@ -3849,10 +3852,10 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 ${r.status === 'running' ? `<button class="mini secondary" data-task="terminal" data-id="${r.id}">terminal</button>` : ''}
                 ${live ? `<button class="mini secondary" data-task="cancel" data-id="${r.id}">cancel</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="rerun" data-id="${r.id}">re-run</button>` : ''}
-                ${r.hasOutput ? `<button class="mini secondary" data-out="${C.esc(r.outputFile)}">output</button>` : ''}
+                ${r.hasOutput && !ON_PHONE_HOST ? `<button class="mini secondary" data-out="${C.esc(r.outputFile)}">output</button>` : ''}
                 ${!live ? `<button class="mini secondary" data-task="delete" data-id="${r.id}" title="Take it off this list. It is filed in the task archive either way, and ↶ Undo puts it straight back.">✕</button>` : ''}`}
             </td>
-        </tr>${open ? `<tr class="detail"><td colspan="11"><div class="detailbox">
+        </tr>${open ? `<tr class="detail" data-afcardmore><td colspan="11"><div class="detailbox">
             ${/* ‼️ M-8 — THE TRIANGLE SAYS THE WHOLE SETUP. It used to say the
                   word "schedule" and stop, which is the one thing the row above
                   it already said. */''}
@@ -3959,7 +3962,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         const sorted = applySort(rows, v, RUN_SORT);
         // ‼️ A COLUMN IS DEFINED ONCE, ON ITS <th> (docs/CONVENTIONS.md). The
         // rows carry the figures; the heading carries what the figures mean.
-        const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Task',
+        const head = `<tr data-afcardhead><th class="expand"></th>${sortCell(v, 'title', 'Task',
             false, 'What the run was called, the agent it ran on and the mode. Hover a row for the whole prompt; click the title to see the form it was made with.')
             }<th class="state" title="Where the run is now. Hover it for everything that has happened to it, in time order.">Status</th>
             <th title="What put this run in the queue — a schedule, a trigger, a workflow step, or you. Hover it for that thing's whole setup.">Started by</th>
@@ -4030,7 +4033,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 ${archiveCtl(d)}
                 ${/* B-21 — the rows you can see, as a Markdown table. Built by
                       the host, by the same builder tasks.export uses. */''}
-                <button class="secondary" id="runs-export"${sorted.length ? '' : ' disabled'}
+                <button class="secondary" id="runs-export"${ON_PHONE_HOST ? ' hidden' : ''}${sorted.length ? '' : ' disabled'}
                     title="${sorted.length
             ? 'Export the ' + sorted.length + ' row(s) you can see — this search, these filters, this order — as a Markdown table.'
             : 'Nothing to export — no run is on the list you are looking at.'}">⬇ MD</button>
@@ -4039,11 +4042,11 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             ${chooser && chooser.tab === 'run' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'run' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, RUN_DEF, { agent: 'agent', status: 'status', source: 'from', engine: 'engine' }, rows.length, d.runs.length)}
-            <div class="cmdbar">
+            <div class="cmdbar"${ON_PHONE_HOST ? ' hidden' : ''}>
                 <input id="cmd" placeholder="Tell the farm what to do, in words — e.g. “run the filing batch on manager now”" value="${C.esc(cmdText)}">
                 <button id="cmdgo"${pendingCommand ? ' disabled' : ''}>${pendingCommand ? 'working…' : 'Go'}</button>
             </div>
-            <div class="tablewrap"><table class="grid">${head}${body}</table></div>`;
+            <div class="tablewrap"><table class="grid" data-afcards>${head}${body}</table></div>`;
     }
 
     // ---------------------------------------------------------------- render
@@ -4107,6 +4110,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .bulk[hidden] { display:none; }
                 .mini.danger:hover { border-color: var(--vscode-charts-red,#f14c4c); color: var(--vscode-charts-red,#f14c4c); }
                 .cmdbar { display:flex; gap:6px; margin:0 0 10px; }
+                .cmdbar[hidden], .tabs [hidden], .toolbar [hidden] { display:none !important; }
                 .cmdbar input { flex:1; }
                 /* NEW TASK. A card on the page, in the page's own language — the
                    same box the Automation strip is drawn in — rather than a
@@ -4303,6 +4307,15 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     max-height:190px; overflow:auto; font-size:11.5px; }
                 .empty { text-align:center; opacity:.6; padding:22px 8px; }
                 .lede { font-size:12px; opacity:.8; margin:0 0 9px; max-width:78ch; line-height:1.5; }
+                /* X-456 - on a phone the table is the page: the lede steps aside, and the filters and the
+                   list actions are one line each, scrolled sideways, instead of four rows over the table. */
+                html.af-phone .lede { display:none; }
+                html.af-phone .toolbar { flex-direction:column; align-items:stretch; gap:6px; }
+                html.af-phone .toolbar .tbf, html.af-phone .toolbar .tba { flex:0 0 auto; flex-wrap:nowrap; max-width:100%; margin-left:0;
+                    overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; }
+                html.af-phone .toolbar .tbf > *, html.af-phone .toolbar .tba > * { flex:0 0 auto; }
+                html.af-phone .toolbar .tbf .afms { flex:0 0 auto; min-width:0; }
+                html.af-phone .toolbar input[type=search] { flex:0 0 160px; width:160px; }
                 .badge { font-size:10px; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:0 5px; }
                 .badge.warn { color:var(--vscode-editorWarning-foreground,#cca700); border-color:currentColor; }
                 button.mini { font-size:10px; padding:1px 6px; }

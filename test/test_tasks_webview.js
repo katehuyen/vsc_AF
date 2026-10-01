@@ -788,14 +788,14 @@ ok('the natural-language command bar is here, not on the plan tab', html().inclu
     onMessage.forEach(fn => fn({ data: { type: 'data', data: runsData } }));
     /** Just the runs table, so an assertion cannot be satisfied by the summary
      *  strip or the composer above it. */
-    const table = () => (html().match(/<table class="grid">[\s\S]*?<\/table>/) || [''])[0];
+    const table = () => (html().match(/<table class="grid"[^>]*>[\s\S]*?<\/table>/) || [''])[0];
     ok('‼️ every run row carries the shared engine badge',
         (table().match(/class="af-eng /g) || []).length === 3);
     ok('…and the Engine column exists at all', table().includes('>Engine</th>'));
     // …in the CELL. The column's own heading explains why $0.00 is not written
     // there, so the string legitimately appears once, in a `title`.
     ok('‼️ a plan-billed run never shows a dollar, because $0.00 would be a lie',
-        !/<td class="num">[^<]*\$0\.00/.test(table()));
+        !/<td class="num"[^>]*>[^<]*\$0\.00/.test(table()));
     ok('…and a priced run still shows its dollar', table().includes('$0.22'));
     // ‼️ M-21 — AND THE TOKENS HAVE THEIR OWN COLUMN. The page could say a run
     // took four minutes and not what those four minutes burned — the figure
@@ -811,7 +811,7 @@ ok('the natural-language command bar is here, not on the plan tab', html().inclu
     // A run that has not been measured yet keeps the plain dash — the two must
     // stay distinguishable, which is the whole point of the tokens above.
     ok('…and an unmeasured run is still a bare dash',
-        (table().match(/<td class="num">—<\/td>/g) || []).length >= 1);
+        (table().match(/<td class="num"[^>]*>—<\/td>/g) || []).length >= 1);
     ok('…and the Engines filter is offered', table !== null && html().includes('Engines'));
     // …and it actually narrows the table, the same way every other pick does.
     setFilter('engine', 'Codex');
@@ -867,7 +867,7 @@ query('[data-expand="run:r3"]')[0].click();
 {
     /** Just the runs table, so nothing here can be satisfied by the summary
      *  strip, the toolbar or a composer above it. */
-    const table = () => (html().match(/<table class="grid">[\s\S]*?<\/table>/) || [''])[0];
+    const table = () => (html().match(/<table class="grid"[^>]*>[\s\S]*?<\/table>/) || [''])[0];
     /** The text of every hover panel currently rendered. */
     const tips = () => (html().match(/<span class="af-tipb">[\s\S]*?<\/span>/g) || []);
     const tipWith = (needle) => tips().find(t => t.includes(needle));
@@ -1175,7 +1175,7 @@ query('[data-expand="run:r3"]')[0].click();
 // ------------------------------------------ M-7: the row that went past its time
 clickData('tab', 'plan');
 {
-    const table = () => (html().match(/<table class="grid">[\s\S]*?<\/table>/) || [''])[0];
+    const table = () => (html().match(/<table class="grid"[^>]*>[\s\S]*?<\/table>/) || [''])[0];
     ok('‼️ M-7 — a schedule whose minute has passed with nothing run wears a badge for it',
         /<span class="badge warn"[^>]*>overdue<\/span>/.test(table()));
     ok('‼️ …and says WHY on the row itself — a fact you must hover for is the same failure one layer in',
