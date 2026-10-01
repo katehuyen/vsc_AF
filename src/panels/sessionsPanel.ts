@@ -226,6 +226,8 @@ export class SessionsPanel {
                 });
                 break;
             case 'interruptSession':
+                // With no id the command asks "which session?" on the PC — never for a phone.
+                if (this.host.remote && !(typeof msg.sessionId === 'string' && msg.sessionId)) { break; }
                 void vscode.commands.executeCommand('agentfarm.interruptSession', {
                     sessionId: typeof msg.sessionId === 'string' && msg.sessionId ? msg.sessionId : undefined,
                     agentName: typeof msg.agentName === 'string' ? msg.agentName : undefined

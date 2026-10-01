@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.776.0 - The Sessions page opens on the phone (2026-10-01)
+
+- **Sessions on the phone.** The Sessions tab of the Agent Farm phone app now
+  opens the real Sessions page: every session as a card, the same sorting,
+  filters and turn lists. A phone allowed to read can read and page the table;
+  a phone allowed to manage can also pin a session to the shelf and stop a
+  running turn (⎋). Opening a transcript, a terminal or the guide still
+  happens on the PC.
+- A stop sent without a session no longer asks "which session?" on the PC when
+  it comes from a phone.
+
 ## 3.775.0 - A tone for each agent; Focus brings the Console card forward (2026-10-01)
 
 - **A tone for every session of one agent.** The Sound page's Sessions section

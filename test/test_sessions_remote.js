@@ -117,6 +117,9 @@ const alive = setInterval(() => undefined, 1000);
     ok('a manage device can', pcSide.join() === 'command:agentfarm.pinSession,command:agentfarm.interruptSession');
 
     pcSide.length = 0;
+    views.message(manager, 's2', { type: 'interruptSession', sessionId: '' });
+    await settle();
+    ok('a stop without a session never asks "which one?" on the PC', pcSide.length === 0);
     for (const type of ['openSession', 'focusTerminal', 'openGuide', 'afnav']) {
         views.message({ device: 'dev_m', scope: 'admin' }, 's2', { type, file: 'C:/x.jsonl', sessionId: 'abc', to: 'dashboard', anchor: 'x' });
     }
