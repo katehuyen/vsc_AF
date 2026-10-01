@@ -5,6 +5,9 @@
 // the host, which runs the function the matching alerts.* op runs.
 (function () {
     const vscode = acquireVsCodeApi();
+    // U-183 — the session panel opens here too (⋯ and the right-click), attached
+    // before the page's own listener as on every page that draws it
+    if (window.AFSoundPop) { window.AFSoundPop.attach(vscode); }
     const C = window.AFCharts;
     const S = () => window.AFSoundCard;
     let DATA = window.__DATA__ || {};
@@ -102,6 +105,8 @@
             ${S().events(al, DATA.notify || {})}
             <h3 class="sndh">Voice</h3>
             ${S().voice(al)}
+            <h3 class="sndh">Sessions</h3>
+            ${S().sessions(DATA)}
             ${library(al)}`;
     }
 
@@ -129,6 +134,7 @@
         window.AFHeader.wire(vscode);
         S().wire(vscode, () => DATA);
         S().wireVoice(vscode);
+        S().wireSessions(vscode);
         const start = document.getElementById('sndstart');
         if (start) {
             start.addEventListener('click', () => {
@@ -144,6 +150,11 @@
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; error = ''; repaint(); return; }
         if (ev.data.type === 'error') { error = String(ev.data.error || ''); render(); }
+        // U-183 — a refused table write answers the session panel; when the
+        // panel is not open the page shows it, rather than nobody
+        if (ev.data.type === 'soundPopError' && !(window.AFSoundPop && window.AFSoundPop.isOpen())) {
+            error = String(ev.data.error || ''); render();
+        }
     });
 
     render();

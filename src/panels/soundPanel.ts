@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 import { AlertMessageDeps, ALERT_ERROR_KEY, handleAlertMessage } from './alertMessages';
-import { NOTIFY_KEYS, SoundPage } from './soundModel';
+import { NOTIFY_KEYS, SessionSoundRow, SoundPage } from './soundModel';
 
 /**
  * U-178 — 🔊 SOUND, A PAGE OF ITS OWN.
@@ -20,6 +20,8 @@ export interface SoundDeps extends AlertMessageDeps {
     extensionUri: vscode.Uri;
     /** each event's VS Code notification switch, read live */
     notify(): Record<string, boolean>;
+    /** U-183 — every live session's sound, one row each */
+    sessions?(): SessionSoundRow[];
 }
 
 export class SoundPanel {
@@ -51,7 +53,7 @@ export class SoundPanel {
     }
 
     private data(): SoundPage {
-        return { alerts: this.deps.alerts?.() ?? null, notify: this.deps.notify() };
+        return { alerts: this.deps.alerts?.() ?? null, notify: this.deps.notify(), sessions: this.deps.sessions?.() ?? [] };
     }
 
     refresh(): void {
@@ -63,7 +65,9 @@ export class SoundPanel {
         if (msg.type === 'afnav') { handleAfNav(msg.to); return; }
         await handleAlertMessage(msg, this.deps, {
             error: error => void this.host.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error }),
-            refresh: () => this.refresh()
+            refresh: () => this.refresh(),
+            // U-183 — the session panel opens on this page too (⋯, the right-click)
+            post: m => void this.host.webview.postMessage(m)
         });
     }
 

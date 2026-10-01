@@ -1961,6 +1961,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const dialogue = new DialogueSpeaker();
     const readingNow = new ReadingNow(soundRepaint);
+    // U-183 — the Sound page's Sessions table follows sessions coming, going and
+    // being renamed; a hook event that changes none of that redraws nothing.
+    let soundLiveKey = '';
+    context.subscriptions.push(live.onDidUpdate(() => {
+        const key = live.sessions().map(s => `${s.sessionId}:${live.labelOf(s)}`).join('|');
+        if (key !== soundLiveKey) { soundLiveKey = key; SoundPanel.refreshIfOpen(); }
+    }));
     // A lane that learns its real conversation id (or is cleared off the page)
     // takes its preference and its "already announced" record with it, in the
     // one step LiveMonitor makes the change — never on a timer afterwards.
@@ -2822,6 +2829,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ownTone: Object.values(turnAlerts.voicesFor(id)).some(v => !!v),
         read: turnAlerts.readAloudFor(id),
         reading: readingNow.is(id)
+    });
+    /** U-183 — every live session's sound, as the Sound page's Sessions table and
+     *  `alerts.status` show it: the same profile, its engine, the reading, and
+     *  whether each event would actually ring for it. */
+    const soundSessionRows = () => live.sessions().map(s => {
+        const v = alertsSessionView(s);
+        const id = s.sessionId;
+        const actions = turnAlerts.actionsFor(id);
+        const muted = turnAlerts.mutedFor(id);
+        const on = alertsOn();
+        const engineId = String(consoleHost.list().find(c => c.sessionId === id)?.engine ?? s.source ?? '').toLowerCase();
+        const e = engineOf(engineId);
+        return {
+            sessionId: id, label: v.label, sound: v.sound, speechVoice: v.speechVoice, read: v.read, also: v.also,
+            engine: engineId && e.id !== engineId ? engineId : e.label,
+            reading: readingNow.is(id),
+            tones: v.tones.map(t => ({
+                ...t, rings: !muted && alertPlan(t.event as AlertEvent, actions, on).actions.includes('sound')
+            }))
+        };
     });
     /** Each field through the function its own op / the Timeline control uses. */
     const alertsSessionApply = async (sessionId: string, patch: SessionSoundPatch) => {
@@ -12475,8 +12502,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.status',
-            describe: 'U-178 — THE SOUND PAGE\'S WHOLE MODEL IN ONE CALL: what the 🔊 Sound page draws. `alerts`: the gate (fleet mute, quiet hours, the sessions muted on their own, the nudge), every event row with the tone it would ACTUALLY play and which step of the chain chose it, the announcement (voice it really reaches, template, which events are spoken), and the library (built-ins and your own sounds, with whether each can be played here). `notify`: each event\'s VS Code notification switch (turn-ready = notifyTurnEnd, question = notifyPermission, stalled = notifyStuck; ended and error have none). Reads only. args: none',
-            handler: () => ({ alerts: alertsPage(), notify: soundNotify() })
+            describe: 'U-178 — THE SOUND PAGE\'S WHOLE MODEL IN ONE CALL: what the 🔊 Sound page draws. `alerts`: the gate (fleet mute, quiet hours, the sessions muted on their own, the nudge), every event row with the tone it would ACTUALLY play and which step of the chain chose it, the announcement (voice it really reaches, template, which events are spoken), and the library (built-ins and your own sounds, with whether each can be played here). `notify`: each event\'s VS Code notification switch (turn-ready = notifyTurnEnd, question = notifyPermission, stalled = notifyStuck; ended and error have none). `sessions` (U-183): every live session\'s sound as the Sessions table shows it — Like all / Always / Silent, its own tones with whether each event would ring, its voice, Read aloud (and whether it is being read now), Focus / Pop-up / Notification, its engine. Reads only. args: none',
+            handler: () => ({ alerts: alertsPage(), notify: soundNotify(), sessions: soundSessionRows() })
         },
         {
             op: 'alerts.session',
@@ -37029,7 +37056,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // SESSION PANEL in that page (media/afSoundPop.js); the palette and
                 // every other page keep this list, which writes the same data.
                 const from = String((arg as { afPanel?: unknown } | undefined)?.afPanel ?? '');
-                if (/^(console|timeline)#/.test(from)
+                if (/^(console|timeline|sound)#/.test(from)
                     && await postCtx(from, 'soundPop', { sessionId: s.sessionId })) { return; }
                 const who = live.labelOf(s);
                 const mine = turnAlerts.voicesFor(s.sessionId);
@@ -40383,7 +40410,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // U-178 — the Sound page: the same host acts the Settings summary is given.
         vscode.commands.registerCommand('agentfarm.openSound', () => {
-            SoundPanel.show({ extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify });
+            SoundPanel.show({ extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows });
         }),
 
         vscode.commands.registerCommand('agentfarm.openFarmSettings',

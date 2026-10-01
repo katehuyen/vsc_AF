@@ -42,8 +42,8 @@ ok('tones, voice and reader go through their own functions',
     /alertsSetSessionVoice\(id/.test(apply) && /alertsSetSessionSpeechVoice\(id/.test(apply) && /alertsSetSessionReadAloud\(id/.test(apply));
 ok('alerts.session reads with only a sessionId and writes through the same apply',
     /op: 'alerts\.session'[\s\S]{0,2200}parseSessionPatch\(args, ALERT_EVENTS\)[\s\S]{0,200}alertsSessionApply\(s\.sessionId, p\.patch\) : alertsSessionView\(s\)/.test(ext));
-ok('‼️ the right-click opens the panel in a Console or Timeline page and keeps the list everywhere else',
-    /\/\^\(console\|timeline\)#\/\.test\(from\)[\s\S]{0,120}postCtx\(from, 'soundPop', \{ sessionId: s\.sessionId \}\)/.test(ext));
+ok('‼️ the right-click opens the panel in a Console, Timeline or Sound page and keeps the list everywhere else',
+    /\/\^\(console\|timeline\|sound\)#\/\.test\(from\)[\s\S]{0,120}postCtx\(from, 'soundPop', \{ sessionId: s\.sessionId \}\)/.test(ext));
 const msgs = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'alertMessages.ts'), 'utf8');
 ok('the panel is answered with the profile itself', /case 'alertSessionApply':[\s\S]{0,300}deps\.alertsSessionApply/.test(msgs)
     && /type: 'soundPopData', profile: await read\(\)/.test(msgs));

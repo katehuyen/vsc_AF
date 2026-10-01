@@ -107,8 +107,24 @@ export function notifyState(get: (key: string) => boolean): Record<string, boole
     return out;
 }
 
+/** U-183 — one live session's sound, as the Sessions table draws it: the
+ *  `alerts.session` profile plus its engine, whether it is read now, and
+ *  whether each event would ring. */
+export interface SessionSoundRow {
+    sessionId: string;
+    label: string;
+    engine: string;
+    sound: 'like-all' | 'always' | 'silent';
+    tones: { event: string; chosen: string; voice: string; origin: string; rings: boolean }[];
+    speechVoice: string;
+    read: boolean;
+    reading: boolean;
+    also: { focus: boolean; modal: boolean; toast: boolean };
+}
+
 /** The Sound page's whole model — also what `alerts.status` answers. */
 export interface SoundPage {
     alerts: AlertsPage | null;
     notify: Record<string, boolean>;
+    sessions: SessionSoundRow[];
 }

@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.772.0 - Every live session's sound in one table (2026-10-01)
+
+- The Sound page has a **Sessions** section: every live session in one table —
+  Session, Engine, **Sound** (Like all / Always / Silent in one box), its own Tone,
+  the voice that says who, **Read aloud** (with ■ while it is being read), and
+  **Also** (◎ Focus · ▣ Pop-up · ▭ Notification, click to switch). Hover a session
+  to see which tone each event plays, where that choice comes from, and whether it
+  rings. ⋯ opens the session's full sound panel on the page (with its test);
+  right-click gives the usual session menu (Open Transcript, Resume in Console…).
+- Filter the table by name, or show only the sessions that sound different.
+- The table follows sessions as they start, end or get renamed.
+- `alerts.status` now also returns these rows (`sessions`).
+
 ## 3.771.0 - A session's sound on its Console card, a Voice section that reads (2026-10-01)
 
 - The Console's status line under the message box has a speaker for the session

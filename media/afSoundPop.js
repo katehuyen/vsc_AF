@@ -9,6 +9,9 @@
     let current = null;     // the profile on screen
     let alerts = null;      // the tone list and the machine's voices (alertsPage)
     let error = '';
+    // U-183 — the session asked for. A page whose own table writes a session's
+    // sound is answered with that profile too; it must not pop the panel open.
+    let asked = '';
     const C = () => window.AFCharts;
     const S = () => window.AFSoundCard;
     const esc = s => C().esc(String(s == null ? '' : s));
@@ -122,6 +125,7 @@
     function open(sessionId) {
         if (!vscode || !sessionId) { return; }
         error = '';
+        asked = String(sessionId);
         vscode.postMessage({ type: 'alertSessionOpen', sessionId: String(sessionId) });
     }
 
@@ -132,7 +136,12 @@
         window.addEventListener('message', ev => {
             const m = ev && ev.data;
             if (!m) { return; }
-            if (m.type === 'soundPopData' && m.profile) { current = m.profile; alerts = m.alerts || alerts; error = ''; render(); }
+            if (m.type === 'soundPopData' && m.profile) {
+                const id = m.profile.sessionId;
+                if (asked !== id && !(current && current.sessionId === id)) { return; }
+                asked = '';
+                current = m.profile; alerts = m.alerts || alerts; error = ''; render();
+            }
             if (m.type === 'soundPopError') { error = String(m.error || ''); if (current) { render(); } }
         });
         if (typeof document.addEventListener === 'function') {
@@ -140,5 +149,6 @@
         }
     }
 
-    window.AFSoundPop = { attach, open, close, html };
+    const isOpen = () => !!current;
+    window.AFSoundPop = { attach, open, close, html, isOpen };
 })();
