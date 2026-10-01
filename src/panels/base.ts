@@ -469,6 +469,10 @@ export function htmlShell(
     // reach the farm", and a card invented per page is a card that answers that
     // differently per page — in green, on the page that was not updated.
     const telegram = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTelegram.js'));
+    // U-178 — the Sound card, in three parts: Settings draws its summary, the Sound page all of it
+    const soundCard = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundCard.js'));
+    const soundStrips = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundStrips.js'));
+    const soundWire = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundWire.js'));
     // The web view card (U-85) — the farm on a phone, and the QR that opens it.
     // Ships everywhere for the reason the card above does, sharpened: the fact
     // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
@@ -588,6 +592,9 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
+<script nonce="${nonce}" src="${soundCard}"></script>
+<script nonce="${nonce}" src="${soundStrips}"></script>
+<script nonce="${nonce}" src="${soundWire}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${phoneAppCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>

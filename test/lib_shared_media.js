@@ -102,6 +102,8 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // which detaches whatever the caret was in.
     'afRepaint.js',
     'afTelegram.js',
+    // U-178 — the Sound card in three parts (Settings' summary, the Sound page)
+    'afSoundCard.js', 'afSoundStrips.js', 'afSoundWire.js',
     // afWeb.js — the web view card (U-85): the farm on a phone and the QR that
     // opens it. Shared for the reason the card above is, sharpened: the fact it
     // draws is true or false on a detail no page can see for itself, and the
