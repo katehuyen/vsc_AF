@@ -14,7 +14,16 @@ const NOTIFY = { 'turn-ready': false, question: true, stalled: true };
 const of = (d, notify) => ({ alerts: d.alerts, notify: notify || NOTIFY });
 
 const empty = () => of(A.fresh());
-const inUse = () => of(A.inUse(), { 'turn-ready': true, question: true, stalled: false });
+// U-182 — one conversation is being read aloud now, another reads its answers
+const READERS = [
+    { sessionId: 'aaaa1111-0000-0000-0000-000000000000', label: 'developer #3', reading: true },
+    { sessionId: 'bbbb2222-0000-0000-0000-000000000000', label: 'psikolog', reading: false }
+];
+const inUse = () => {
+    const d = of(A.inUse(), { 'turn-ready': true, question: true, stalled: false });
+    d.alerts.speak = { ...d.alerts.speak, readers: READERS };
+    return d;
+};
 const gated = () => of(A.gated());
 const broken = () => of(A.broken());
 

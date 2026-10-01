@@ -32,13 +32,19 @@
             ? `<span class="rootbadge">⏰ nudge ${C.esc(String(nudge.minutes))}m ×${C.esc(String(nudge.repeat))}${nudge.armed ? ` · ${C.esc(String(nudge.armed))} waiting` : ''}</span>`
             : '';
         const muted = (g.mutedSessions || []).length;
+        // U-182 — while an answer is read aloud the status line always offers ■
+        const reading = ((al.speak || {}).readers || []).find(r => r.reading);
         const parts = [
             on ? `Rings on ${on} of ${events.length} events` : 'Sound is off — no event rings yet',
             `Say who: ${(al.speak || {}).on ? 'on' : 'off'}`,
-            muted ? `${plural(muted, 'session')} silent` : ''
+            muted ? `${plural(muted, 'session')} silent` : '',
+            reading ? `reading: ${reading.label}` : ''
         ].filter(Boolean);
+        const stop = reading
+            ? '<button class="secondary small" data-sndreadstop title="Cut short the answer being read now. Read aloud stays on for its next answer.">■ Stop</button>'
+            : '';
         return `<div class="sndhead"><span class="sndicon">${icon}</span>
-            <span class="sndstate">${C.esc(parts.join(' · '))}</span> ${badge} ${nudgeBadge}</div>`;
+            <span class="sndstate">${C.esc(parts.join(' · '))}</span> ${stop} ${badge} ${nudgeBadge}</div>`;
     }
 
     /**
@@ -95,7 +101,7 @@
             <h3 class="sndh">When something happens</h3>
             ${S().events(al, DATA.notify || {})}
             <h3 class="sndh">Voice</h3>
-            ${S().speak(al)}
+            ${S().voice(al)}
             ${library(al)}`;
     }
 
@@ -122,6 +128,7 @@
             <div class="sndwrap">${al ? body(al) : '<p class="muted">The sound system is not available in this window.</p>'}</div>`;
         window.AFHeader.wire(vscode);
         S().wire(vscode, () => DATA);
+        S().wireVoice(vscode);
         const start = document.getElementById('sndstart');
         if (start) {
             start.addEventListener('click', () => {

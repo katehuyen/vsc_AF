@@ -80,6 +80,8 @@ export interface AlertMessageDeps {
     alertsSessionApply?(sessionId: string, patch: SessionSoundPatch): Promise<unknown>;
     /** the session's own branches, rehearsed — `live.alerts.test`'s function */
     alertsSessionTest?(sessionId: string, event: string): Promise<void>;
+    /** U-181 — cut the reading happening now short (`alerts.read stop`) */
+    alertsStopReading?(): Promise<void>;
 }
 
 /** Where a refusal lands on a page — the key its error line is drawn under. */
@@ -285,6 +287,11 @@ export async function handleAlertMessage(
         }
         case 'alertSessionTest':
             try { await deps.alertsSessionTest?.(sid(), String(msg.event ?? 'turn-ready')); }
+            catch (e) { sessionFail(e); }
+            return true;
+        // U-181 — the Console's ■ while an answer is being read aloud
+        case 'alertReadStop':
+            try { await deps.alertsStopReading?.(); }
             catch (e) { sessionFail(e); }
             return true;
     }

@@ -68,6 +68,8 @@ export interface AlertsSpeak {
      *  because `Tolga` is a legal setting and no option is called that */
     resolvedName: string;
     sessions: { sessionId: string; label: string; voice: string }[];
+    /** U-182 — the conversations whose answers are read aloud, and which one is being read now */
+    readers: { sessionId: string; label: string; reading: boolean }[];
 }
 
 export interface AlertsPage {

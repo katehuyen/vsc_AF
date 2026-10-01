@@ -41,8 +41,8 @@ const byAttr = (p, attr, key) =>
         /Rings on 2 of 5 events/.test(html) && /Say who: on/.test(html) && at('class="sndhead"') < at('class="alertgate"'));
     ok('…then B (the event table), C (Voice), E (Library) — in that order',
         at('class="alertgate"') < at('<table class="settbl alerttbl">')
-        && at('<table class="settbl alerttbl">') < at('alertgate alertspeak')
-        && at('alertgate alertspeak') < at('>Library'));
+        && at('<table class="settbl alerttbl">') < at('class="svwrap"')
+        && at('class="svwrap"') < at('>Library'));
     ok('the table is Event | Ring | Tone | Say who | Notification, and the Plays column is gone',
         /Event<\/th>[\s\S]*Ring<\/th>[\s\S]*Tone<\/th>[\s\S]*Say who<\/th>[\s\S]*Notification<\/th>/.test(html)
         && !/>Plays<\/th>/.test(html));
@@ -346,7 +346,7 @@ const byAttr = (p, attr, key) =>
         !!byId(p, 'alertnudgeon') && !!byId(p, 'alertnudgemin')
         && !!byId(p, 'alertnudgerep') && !!byId(p, 'alertnudgetone')
         && html.indexOf('id="alertnudgeon"') > html.indexOf('id="alertquietto"')
-        && html.indexOf('id="alertnudgeon"') < html.indexOf('alertgate alertspeak'));
+        && html.indexOf('id="alertnudgeon"') < html.indexOf('class="svwrap"'));
     ok('MIRROR — the boxes show what it is set to right now',
         byId(p, 'alertnudgeon').checked === true
         && byId(p, 'alertnudgemin').value === '4' && byId(p, 'alertnudgerep').value === '3');
@@ -449,8 +449,8 @@ const byAttr = (p, attr, key) =>
         !/data-set="agentFarm\.alerts\.speak"/.test(html));
     ok('U-178 — the Voice section follows the gate and the event table: is anything heard'
         + ' at all, what happens on which event, then what is said',
-        html.indexOf('alertgate alertspeak') > html.indexOf('id="alertmute"')
-        && html.indexOf('alertgate alertspeak') > html.indexOf('<table class="settbl alerttbl">'));
+        html.indexOf('class="svwrap"') > html.indexOf('id="alertmute"')
+        && html.indexOf('class="svwrap"') > html.indexOf('<table class="settbl alerttbl">'));
     ok('‼️ WHICH VOICE THE SETTING ACTUALLY REACHES is the selected row, not the'
         + ' fragment the user typed — "Tolga" is a legal setting and no voice is'
         + ' called that, so a box keyed on the raw value would read "System'
@@ -467,7 +467,7 @@ const byAttr = (p, attr, key) =>
         && byId(p, 'alertspeakvol').value === '100');
     ok('‼️ a conversation with a voice of ITS OWN is NAMED, not counted:'
         + ' "one session speaks Turkish" cannot be acted on without knowing which',
-        /their own voice/.test(html) && /Microsoft Zira Desktop/.test(html));
+        /Own voice/.test(html) && /Microsoft Zira Desktop/.test(html));
 
     // Every gesture goes to the host, through the same function `alerts.speak`
     // is. The page holds no rule of its own about clamping, or about what a

@@ -175,6 +175,8 @@ export interface ConsoleDeps {
     extensionUri: vscode.Uri;
     /** U-180 — the sound host acts; the session panel (afSoundPop) is answered through them */
     sound?(): AlertMessageDeps;
+    /** U-181 — the card's speaker and mark (core/soundCard.ts) */
+    soundCard?(sessionId: string): unknown;
     host: ConsoleHost;
     getAgents(): AgentInfo[];
     index: SessionIndex;
@@ -1020,6 +1022,23 @@ export class ConsolePanel {
         ConsolePanel.current?.refresh();
     }
 
+    /**
+     * U-181 — open one conversation's sound panel in the Console, when the
+     * Console is open and that conversation is one of its cards. False sends
+     * the caller to its own fallback (the list the palette always had).
+     */
+    static openSound(sessionId: string): boolean {
+        const c = ConsolePanel.current;
+        const s = sessionId ? c?.deps.host.list().find(x => x.sessionId === sessionId) : undefined;
+        if (!c || !s) { return false; }
+        c.selected = s.id;
+        c.refresh();
+        c.surface.reveal();
+        void Promise.resolve(c.surface.webview.postMessage({ type: 'afctx', act: 'soundPop', ctx: { sessionId } }))
+            .then(undefined, () => undefined);
+        return true;
+    }
+
 
     /**
      * Is the user looking at THIS conversation right now?
@@ -1343,6 +1362,9 @@ export class ConsolePanel {
                 // other mark. Empty until they pick one, and empty for a card
                 // whose session has not written its id yet.
                 color: s.sessionId ? (this.deps.colorFor?.(s.sessionId) ?? '') : '',
+                // U-181 — what this conversation sounds like: the composer's
+                // speaker, and the card's mark when it differs from the rest
+                soundView: s.sessionId ? (this.deps.soundCard?.(s.sessionId) ?? null) : null,
                 // S-64 / B-23 / S-77 — what the card's status line, its
                 // Continue-from-handover button and its ⑂ chip are drawn from
                 ...(s.sessionId ? this.deps.cardViews?.(s.sessionId) : undefined),

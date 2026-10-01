@@ -689,6 +689,7 @@ import { AlertMessageDeps } from './panels/alertMessages';
 import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
 import { soundHeader } from './core/soundHeader';
 import { parseSessionPatch, SESSION_ALSO, SessionSoundPatch, soundOf, soundPlan } from './core/soundSession';
+import { ReadingNow, soundCardView } from './core/soundCard';
 import { SoundPanel } from './panels/soundPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
@@ -1919,11 +1920,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const TURN_ALERTS_KEY = 'agentfarm.turnAlerts';
     const TURN_ALERTS_MIGRATED_KEY = 'agentfarm.turnAlertsMigrated';
     const LEGACY_TURN_ACTIONS_KEY = 'agentfarm.turnActions';
+    // U-181 / U-182 — a session's sound (and its reading) is drawn on its Console
+    // card and on the Sound page, so every write repaints both once, however many
+    // fields it changed. The Sound page's own refresh hears settings only.
+    let soundRepaintTimer: ReturnType<typeof setTimeout> | undefined;
+    const soundRepaint = (): void => {
+        if (soundRepaintTimer) { return; }
+        soundRepaintTimer = setTimeout(() => {
+            soundRepaintTimer = undefined;
+            ConsolePanel.refreshIfOpen(); SoundPanel.refreshIfOpen();
+        }, 50);
+    };
     const turnAlerts = new TurnAlertStore({
         read: () => context.globalState.get<Record<string, unknown>>(TURN_ALERTS_KEY, {}),
         // Awaited in order by the store — two clicks in one tick cannot land
         // out of order and leave storage disagreeing with the page.
         write: map => context.globalState.update(TURN_ALERTS_KEY, map),
+        changed: soundRepaint,
         readMigration: () => context.globalState.get<number>(TURN_ALERTS_MIGRATED_KEY, 0),
         writeMigration: v => context.globalState.update(TURN_ALERTS_MIGRATED_KEY, v)
     });
@@ -1947,6 +1960,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * session would give the room a crowd.
      */
     const dialogue = new DialogueSpeaker();
+    const readingNow = new ReadingNow(soundRepaint);
     // A lane that learns its real conversation id (or is cleared off the page)
     // takes its preference and its "already announced" record with it, in the
     // one step LiveMonitor makes the change — never on a timer afterwards.
@@ -2167,6 +2181,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * TOGGLES, exactly as `alertsSetMuted` does, so a button that only knows
      * "the user clicked me" does not have to read the state first and race it.
      */
+    /** Cut the reading happening now short — `alerts.read stop`, the Console's ■,
+     *  and turning a session's reading off. Answers whether anything was read. */
+    const alertsStopReading = (): boolean => {
+        const was = dialogue.stop();
+        readingNow.stop();
+        return was;
+    };
     const alertsSetSessionReadAloud = async (sessionId: string, on?: boolean) => {
         const next = on === undefined ? !turnAlerts.readAloudFor(sessionId) : on === true;
         const set = turnAlerts.setReadAloud(sessionId, next);
@@ -2174,7 +2195,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ TURNING IT OFF STOPS WHAT IS BEING READ RIGHT NOW. Without this,
         // "stop reading this" would leave a minute of speech still coming out
         // of the machine, which is the one thing the button exists to end.
-        if (!next) { dialogue.stop(); }
+        if (!next) { alertsStopReading(); }
         return { ...set, sessionId, readAloud: turnAlerts.readAloudFor(sessionId) };
     };
     /**
@@ -2673,7 +2694,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             sessionId: x.sessionId, label: live.labelOf(x),
                             voice: turnAlerts.speechVoiceFor(x.sessionId)
                         }))
-                        .filter(x => x.voice)
+                        .filter(x => x.voice),
+                    // U-182 — Read aloud is per session, so the page names each one
+                    // that reads, and the one being read now carries ■
+                    readers: live.sessions()
+                        .filter(x => turnAlerts.readAloudFor(x.sessionId) || readingNow.is(x.sessionId))
+                        .map(x => ({ sessionId: x.sessionId, label: live.labelOf(x), reading: readingNow.is(x.sessionId) }))
                 };
             })(),
             voices: alertVoiceRows().map(v => ({
@@ -2790,6 +2816,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             also: { focus: actions.includes('focus'), modal: actions.includes('modal'), toast: actions.includes('toast') }
         };
     };
+    /** U-181 — the same profile, as the Console's speaker and card mark draw it. */
+    const consoleSoundCard = (id: string) => soundCardView({
+        sound: soundOf(turnAlerts.actionsFor(id), turnAlerts.mutedFor(id)),
+        ownTone: Object.values(turnAlerts.voicesFor(id)).some(v => !!v),
+        read: turnAlerts.readAloudFor(id),
+        reading: readingNow.is(id)
+    });
     /** Each field through the function its own op / the Timeline control uses. */
     const alertsSessionApply = async (sessionId: string, patch: SessionSoundPatch) => {
         const s = live.sessions().find(x => x.sessionId === sessionId);
@@ -2938,7 +2971,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // was thrown on this conversation by hand.
         const fleet = speakCfg();
         const own = turnAlerts.speechVoiceFor(s.sessionId);
-        void dialogue.speak(text, own ? { ...fleet, voice: own } : fleet);
+        readingNow.start(s.sessionId, dialogue.speak(text, own ? { ...fleet, voice: own } : fleet));
     }
 
     // J2: tail relay feed files from other machines into the live monitor.
@@ -12229,8 +12262,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'CANLI DİYALOG OKUYUCU — read ONE conversation\'s answers out loud as each turn ends. A tone says news arrived and the announcement says whose; this says WHAT, so a user across the room hears the answer instead of walking back to read it. ‼️ PER SESSION AND ONLY PER SESSION: there is no fleet-wide "read everything", because eight agents reading over each other is a crowd, not a cockpit. `sessionId` with no `on` TOGGLES. ‼️ IT IS NOT PART OF `alerts.on` OR THE ♪ BOXES — a session with every box unticked still reads when you ask it to, and a muted fleet does not silence it: this switch was thrown on this conversation BY HAND, and the mute exists to stop noise nobody chose. It reads the `turn-ready` edge only — a turn parked on a question has not finished its answer, and a session ending would repeat the turn already read. Markdown, code fences and links are stripped first (`sanitizeForSpeech`), and the text is cut at the same 1200 characters the timeline quotes, with "There is more." spoken when it did not fit. The voice is this session\'s own (`alerts.speak { sessionId, voice }`) and falls through to the fleet\'s, never to silence. ‼️ ONE READER FOR THE WINDOW: a newer answer cuts short an older one still being read, on purpose. args: sessionId? (full id or 8-char prefix; required unless `stop`), on? (default: toggle), stop? (cut the reading happening RIGHT NOW short and change no setting — the panic button, and it needs no sessionId because there is only ever one reading)',
             handler: async (args) => {
                 if ((args as { stop?: unknown }).stop) {
-                    const was = dialogue.speaking;
-                    dialogue.stop();
+                    const was = alertsStopReading();
                     // Reported honestly: "nothing was being read" is a real
                     // answer and must not read as though something was cut.
                     return { stopped: was, reading: false };
@@ -28019,7 +28051,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const r = await testSessionAlert(sessionId, 3000,
                 (ALERT_EVENTS as readonly string[]).includes(event) ? event as AlertEvent : 'turn-ready');
             if (!r.ok) { throw new Error(r.error === 'nothing selected' ? 'nothing to test — set Sound to Always or tick one of Also' : (r.error ?? 'refused')); }
-        }
+        },
+        // U-181 — the Console's ■, the same function `alerts.read stop` runs
+        alertsStopReading: async () => { alertsStopReading(); }
     };
     const soundNotify = () => notifyState(k => vscode.workspace.getConfiguration().get<boolean>(k) === true);
 
@@ -29554,6 +29588,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const consoleDeps = {
         extensionUri: context.extensionUri,
         sound: () => soundDeps,
+        soundCard: (sessionId: string) => consoleSoundCard(sessionId),
         host: consoleHost,
         getAgents: () => agents,
         index,
@@ -36962,7 +36997,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.setSessionAlertVoice',
             async (arg?: SessionRef | SessionInfo) => {
                 const ref = sessionFromArg(arg);
-                const id = String(ref?.sessionId ?? '').trim();
+                let id = String(ref?.sessionId ?? '').trim();
+                // ‼️ U-181 — FROM THE PALETTE THERE IS NO ROW: the conversation is
+                // picked first, and one that is a Console card opens its panel in
+                // the Console; any other keeps the list below.
+                if (!arg) {
+                    const lives = live.sessions();
+                    if (!lives.length) {
+                        void vscode.window.showInformationMessage(
+                            'Agent Farm: no live session is being watched, so there is no session to set a sound for.');
+                        return;
+                    }
+                    const pick = await vscode.window.showQuickPick(
+                        lives.map(x => ({ label: live.labelOf(x), description: x.sessionId.slice(0, 8), sessionId: x.sessionId })),
+                        { placeHolder: 'Sound for which session?' });
+                    if (!pick) { return; }
+                    id = pick.sessionId;
+                    if (ConsolePanel.openSound(id)) { return; }
+                }
                 const s = id
                     ? live.sessions().find(x => x.sessionId === id)
                     : undefined;

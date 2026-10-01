@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.771.0 - A session's sound on its Console card, a Voice section that reads (2026-10-01)
+
+- The Console's status line under the message box has a speaker for the session
+  you are reading: 🔊 Like all, 🔔 Always, 🔇 Silent. A click opens that session's
+  sound panel. While its answer is being read aloud a ■ appears beside it and
+  stops the reading.
+- A card in the session list carries a small mark only when that session sounds
+  different from the rest: 🔇 Silent, 🔔 Always or a tone of its own, 🔊■ being
+  read now. Clicking it opens the session's sound panel; the card stays the same
+  height.
+- **Sound for This Session…** from the command palette now asks which session,
+  and opens the panel in the Console when that session is one of its cards.
+- The Sound page's **Voice** section is three rows: **Say who** (the voice, a
+  Speed slider and a Volume slider), **Sentence** (add `{agent}`, `{event}` and
+  `{session}` with a click, then ▶ Hear it), and **Read aloud** (every session
+  that reads its answers, ✕ to turn one off, ■ Stop on the one being read now).
+  The status line at the top shows what is being read, with its own ■ Stop.
+- The Console and the Sound page now update as soon as a session's sound changes,
+  from any place it is changed.
+
 ## 3.770.0 - Sound in every header, one panel per session (2026-10-01)
 
 - Every page header has a 🔊 that also shows the state: 🔊 something rings, 🔇 all

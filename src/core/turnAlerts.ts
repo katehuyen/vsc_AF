@@ -161,6 +161,8 @@ export interface TurnAlertStoreDeps {
     readMigration: () => number;
     writeMigration: (v: number) => Thenable<void> | Promise<void> | void;
     now?: () => number;
+    /** A preference changed — never the lastSeenAt touch `seen` makes on every refresh. */
+    changed?: () => void;
 }
 
 /** Bump this only when a NEW one-time copy has to happen. */
@@ -594,7 +596,7 @@ export class TurnAlertStore {
             const p = this.map.get(String(raw ?? '').trim());
             if (p) { p.lastSeenAt = t; touched = true; }
         }
-        if (touched) { this.persist(); }
+        if (touched) { this.persist(true); }
     }
 
     /**
@@ -683,13 +685,14 @@ export class TurnAlertStore {
         for (const p of byAge.slice(TURN_ALERT_MAX)) { this.map.delete(p.sessionId); }
     }
 
-    private persist(): void {
+    private persist(touchOnly = false): void {
         this.prune();
         const snapshot = this.all();
         this.queue = this.queue.then(() => this.deps.write(snapshot)).then(
             () => undefined,
             () => undefined   // a storage failure must not wedge the next write
         );
+        if (!touchOnly) { this.deps.changed?.(); }
     }
 }
 

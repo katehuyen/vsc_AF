@@ -934,6 +934,15 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#alertReadStop",
+      "ui": [
+        "page:alertMessages.ts#alertReadStop"
+      ],
+      "ops": [
+        "alerts.read"
+      ]
+    },
+    {
       "capability": "alertMessages.ts#alertSessionApply",
       "ui": [
         "page:alertMessages.ts#alertSessionApply"

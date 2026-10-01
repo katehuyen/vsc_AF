@@ -128,8 +128,25 @@ const identity = (v) => Object.assign({
     billing: billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v))
 }, v);
 
+/** U-181 — a card's sound as core/soundCard.ts soundCardView draws it. */
+const soundView = (o) => {
+    const v = Object.assign({ sound: 'like-all', ownTone: false, read: false, reading: false }, o);
+    const SOUND = { 'like-all': 'Like all', always: 'Always', silent: 'Silent' };
+    return Object.assign(v, {
+        icon: v.sound === 'silent' ? '🔇' : v.sound === 'always' ? '🔔' : '🔊',
+        badge: v.reading ? '🔊■' : v.sound === 'silent' ? '🔇' : v.sound === 'always' || v.ownTone ? '🔔' : '',
+        head: v.reading ? 'Reading its answer aloud now'
+            : v.sound === 'silent' ? 'Silent — this session never makes a sound'
+                : v.sound === 'always' ? 'Always — rings on its events even when the fleet switch is off'
+                    : v.ownTone ? 'Like all, in a tone of its own' : 'Like all — the Sound page decides',
+        lines: [`Sound: ${SOUND[v.sound]}`, `Tone: ${v.ownTone ? 'its own for at least one event' : 'the fleet\'s'}`,
+            `Read aloud: ${v.reading ? 'reading now' : v.read ? 'on — every finished answer' : 'off'}`]
+    });
+};
+
 /** A session shaped exactly as ConsolePanel.data() builds one. */
 const session = (o) => Object.assign({
+    soundView: soundView(),
     id: 'cs1', agentId: 'a-dev', agentName: 'developer', sessionId: '019fe7bc-545c-70d2',
     cwd: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm', title: 'note.txt okuma turu',
     status: 'idle', cost: 0, turns: 2, queued: [], tokens: 0, wTokens: 0,
@@ -182,6 +199,8 @@ const data = () => ({
             // cards carry one and the third cannot (no session id yet), which
             // is the whole of what the picture has to answer.
             color: '#3d8bfd',
+            // U-181 — its answer is being read aloud: the composer carries ■
+            soundView: soundView({ read: true, reading: true }),
             messages: msgs()
         }),
         session({
@@ -192,6 +211,7 @@ const data = () => ({
             // certifying the defect.
             contextWindowTokens: 1000000, contextWindowSource: 'model',
             color: '#e05252',
+            soundView: soundView({ sound: 'silent' }),
             lastTurn: {
                 outcome: 'done', ms: 41200, cost: 0.084, tokens: 51200, wTokens: 42100,
                 apiCalls: 6, steps: 19, thinking: 4, model: 'claude-opus-5-20260514', effort: 'high'
@@ -204,6 +224,7 @@ const data = () => ({
             id: 'cs4', agentName: 'developer', sessionId: '019fe860-11aa-4c02',
             // P-18 - a project with no colour of its own: the hollow square
             projectId: 'prj_nocolor1', projectName: 'TalkScribe',
+            soundView: soundView({ sound: 'always' }),
             title: 'Kimi rotasinda tur', status: 'idle', turns: 1, tokens: 12800,
             wTokens: 9400, cost: 0.42, lastTs: NOW - 300000,
             identity: identity({
@@ -244,7 +265,7 @@ const data = () => ({
             }
         }),
         session({
-            id: 'cs3', agentName: 'manager', sessionId: '', title: '',
+            id: 'cs3', agentName: 'manager', sessionId: '', title: '', soundView: null,
             engine: 'codex', engineLabel: 'Codex', turnShape: 'perTurn',
             steerable: false, reportsCost: false,
             status: 'idle', turns: 0, tokens: 0, lastTs: NOW - 400000

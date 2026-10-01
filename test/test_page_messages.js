@@ -72,13 +72,20 @@ function cases(src) {
     return out;
 }
 
+/** A panel that hands its messages to a shared handler answers that handler's cases too. */
+const DELEGATES = [['handleAlertMessage(', 'src/panels/alertMessages.ts']];
+
 for (const [pageRel, panelRel] of PAIRS) {
     if (!fs.existsSync(path.join(root, pageRel)) || !fs.existsSync(path.join(root, panelRel))) {
         ok(`${pageRel} ↔ ${panelRel} — both files are there`, false);
         continue;
     }
     const sent = posted(read(pageRel));
-    const handled = cases(read(panelRel));
+    const panelSrc = read(panelRel);
+    const handled = cases(panelSrc);
+    for (const [call, file] of DELEGATES) {
+        if (panelSrc.includes(call)) { for (const c of cases(read(file))) { handled.add(c); } }
+    }
     ok(`${pageRel} posts something at all`, sent.size > 0);
     const orphans = [...sent].filter(t => !handled.has(t) && !SHELL.has(t));
     ok(`${pageRel}: every message it posts is answered by ${path.basename(panelRel)}`

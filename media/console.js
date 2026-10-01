@@ -302,6 +302,7 @@
         .srow .h2 > .af-tipw.acw { flex:0 1 auto; min-width:0; display:block; overflow:hidden; }
         .srow .h2 > .af-tipw.bcw { flex:0 0 auto; }
         .srow .h2 .batonsig { font-size:10px; line-height:15px; white-space:nowrap; }
+        .srow .h2 .sbadge { font-size:10px; line-height:15px; white-space:nowrap; cursor:pointer; }
         /* …and on line 1 the ROUTE yields before the name does: the shelf may
            shrink, only the route pill inside it gives way (its panel opens with
            the whole value — MIRROR), and the engine pill never does.
@@ -2588,7 +2589,7 @@
                           starts at, which is all a badge needs and all a list of
                           cards can afford to carry. */''}${s.sessionId && window.AFWiki ? window.AFWiki.badge({
                         session: s.sessionId, whole: true, kept: s.wikiKept || []
-                    }) : ''}</span>
+                    }) : ''}${soundMarkHtml(s)}</span>
                 </div>
                 ${projSquare(s)}${colorDot(s.sessionId, s.color, 'live')}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
@@ -3290,6 +3291,7 @@
             ${lastLegBtnHtml(s, dead)}
             ${batonStopBtnHtml(s)}
             ${relayBtnHtml(s, dead)}
+            ${soundBtnHtml(s, dead)}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
     }
@@ -5165,6 +5167,13 @@
                 if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
             });
             wireColorDots('c-list');
+            // U-181 — the card's sound mark opens the session panel, never selects the card
+            document.querySelectorAll('[data-csound]').forEach(b =>
+                b.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    if (ev.preventDefault) { ev.preventDefault(); }
+                    if (window.AFSoundPop) { window.AFSoundPop.open(b.dataset.csound); }
+                }));
         }
         renderResume();
     }
@@ -5840,6 +5849,8 @@
             // 📎 lives in this row, so it is wired in this row — every rewrite
             // hands it a new element, and a listener from the last one is gone.
             byId('c-attach', 'click', () => vscode.postMessage({ type: 'attachPick' }));
+            byId('c-sound', 'click', () => { if (s && s.sessionId && window.AFSoundPop) { window.AFSoundPop.open(s.sessionId); } });
+            byId('c-readstop', 'click', () => vscode.postMessage({ type: 'alertReadStop' }));
             byId('c-goto-live', 'click', () => {
                 const live = (DATA.sessions || []).find(x => x.agentId === agentNow()
                     && x.status !== 'ended' && x.status !== 'error');
@@ -5981,6 +5992,31 @@
         // rather than a dead end at the dialog.
         return cardTip(`<button class="stchip" id="c-attach" aria-label="Attach files">📎${n ? ' ' + n : ''}</button>`,
             attachHead(n), attachBody(), 'tip-attach', 'Attach files');
+    }
+    /**
+     * U-181 — THIS CONVERSATION'S SOUND, ON ITS OWN STATUS LINE. The speaker
+     * says its state (🔊 Like all · 🔔 Always · 🔇 Silent) and opens the shared
+     * session panel; while its answer is being read aloud a ■ follows it.
+     */
+    function soundBtnHtml(s, dead) {
+        const v = s && s.soundView;
+        if (!v || dead || !s.sessionId) { return ''; }
+        const T = window.AFTip;
+        const speaker = cardTip(`<button class="stchip" id="c-sound" aria-label="This session's sound">${C.esc(v.icon)}</button>`,
+            v.head, T.lines(v.lines.concat([T.GAP, 'Click to open this session\'s sound: Like all · Always · Silent, its tones, the voice and Read aloud.'])),
+            'tip-sound', 'This session\'s sound');
+        if (!v.reading) { return speaker; }
+        return speaker + cardTip('<button class="stchip" id="c-readstop" aria-label="Stop reading">■</button>',
+            'Stop reading', T.lines(['Cuts short the answer being read aloud now.', 'Read aloud stays on for the next answer.']),
+            'tip-readstop', 'Stop reading');
+    }
+    /** …and on the card only when it sounds different from the rest. */
+    function soundMarkHtml(s) {
+        const v = s && s.soundView;
+        if (!v || !v.badge || !s.sessionId) { return ''; }
+        const T = window.AFTip;
+        return cardTip(`<span class="sbadge" data-csound="${C.esc(s.sessionId)}" role="button" aria-label="This session's sound">${C.esc(v.badge)}</span>`,
+            v.head, T.lines(v.lines.concat([T.GAP, 'Click to open this session\'s sound.'])), 'sbw');
     }
     function attachHead(n) {
         return n ? `${n} file${n === 1 ? '' : 's'} attached to the next message` : 'Nothing attached';
