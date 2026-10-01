@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.763.0 - The farm's pages work on a phone: a Now page, a phone layout, questions asked on the phone (2026-10-01)
+
+- A new **Now** page (desktop tab and the phone's home page): what waits for
+  you, what runs, today's spend and quotas, the latest notices, and a box that
+  speaks into a running session.
+- Pages opened from the phone are the same pages as on the desktop, drawn for
+  a phone: a bottom tab bar (Now, Console, Sessions, Tasks, Menu), a long
+  press reads a tip whole or opens a row's menu, dense tables become cards.
+- A confirmation, a choice or a typed answer a page needs is asked on the
+  device that is looking at it — from the phone, on the phone. (Resuming a
+  session from the phone used to open the confirmation on the PC.)
+- A question or permission answered anywhere closes on every phone; events
+  the phone missed are replayed when it reconnects.
+- In the Android app a focused text box gets a microphone: the phone's
+  speech recogniser writes the words at the caret.
+
 ## 3.762.0 - The Agent Farm phone app can reach this farm (2026-09-30)
 
 - A new setting, `agentFarm.remote.listen`, lets the Agent Farm Android app
