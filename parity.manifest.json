@@ -7899,6 +7899,15 @@
       ]
     },
     {
+      "capability": "toolboxRemote.ts#remote-firewall-allow",
+      "ui": [
+        "page:toolboxRemote.ts#remote-firewall-allow"
+      ],
+      "ops": [
+        "remote.firewall.allow"
+      ]
+    },
+    {
       "capability": "toolboxRemote.ts#remote-revoke-all",
       "ui": [
         "page:toolboxRemote.ts#remote-revoke-all"

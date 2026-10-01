@@ -20,6 +20,8 @@ const { qrEncode, qrSvg } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'qr.js'));
 const { remoteCardData } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'remoteCard.js'));
+const { firewallVerdict } =
+    require(path.join(__dirname, '..', '..', 'out', 'core', 'firewallVerdict.js'));
 
 /** X-444 — the Agent Farm app card, composed by the same function the panel calls. */
 const RNOW = Date.parse('2026-08-30T09:00:00Z');
@@ -269,6 +271,15 @@ const variants = () => ([
         data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
             remote: remote({ status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
                 addresses: ['192.168.1.40:7443'], fingerprint: '3fa4'.repeat(16), sockets: 0 } }) })
+    },
+    {
+        id: 'toolbox-remote-firewall',
+        label: 'Toolbox — Services: listening on a Public Wi-Fi where Windows Firewall stops phones, with the one-click fix',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
+            remote: remote({ status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
+                addresses: ['192.168.1.42:7443'], fingerprint: '3fa4'.repeat(16), sockets: 0 },
+                firewall: firewallVerdict({ active: ['Public'], enabled: ['Domain', 'Private', 'Public'], shields: [], allow: ['Private'],
+                    block: [], ourPorts: [], ourProfiles: [] }, 7443) }) })
     },
     {
         id: 'toolbox-remote-pair',

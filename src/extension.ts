@@ -465,6 +465,7 @@ import {
 } from './core/remoteEvents';
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
+import { firewallGuard } from './core/firewallWin';
 import type { RemoteDevicesHost } from './panels/toolboxRemote';
 import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePort } from './remote';
 import { RemoteViews } from './panels/remoteViews';
@@ -30569,6 +30570,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             port: cfg().get<number>('remote.port', DEFAULT_REMOTE_PORT)
         };
     };
+    /** X-453 — a phone is let through Windows Firewall by one click, never by a network setting. */
+    const firewall = firewallGuard({ exe: process.execPath, port: () => remoteCfg().port });
+    const phoneModes = (m: ListenMode) => m === 'lan' || m === 'tailscale';
+    let firewallAsked = false;
+    const allowFirewall = () => firewall.allow();
+    const offerFirewall = async (text: string) => {
+        const yes = 'Allow phones in';
+        if (await vscode.window.showWarningMessage('Agent Farm: ' + text, yes) !== yes) { return; }
+        const r = await allowFirewall();
+        void (r.ok
+            ? vscode.window.showInformationMessage('Agent Farm: phones are let in now. Pair one from Toolbox > Services > Agent Farm app.')
+            : vscode.window.showWarningMessage('Agent Farm: ' + (r.cancelled ? 'nothing changed — Windows asked for permission and the answer was No.' : r.error)));
+    };
     /** Listen where the settings say — or stop — and warn when a chosen mode could not listen. */
     const applyRemote = async (warn = true) => {
         const c = remoteCfg();
@@ -30580,6 +30594,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 : await remote.apply(null, plan.reason);
         remoteLive = st.listening;
         if (remoteLive) { remoteNeedsSoon(); }
+        if (remoteLive && phoneModes(c.mode)) {
+            const fw = await firewall.check();
+            if (warn && fw?.state === 'closed' && fw.canFix && !firewallAsked) { firewallAsked = true; void offerFirewall(fw.text); }
+        }
         if (warn && taskRunner && c.mode !== 'off' && !st.listening) {
             void vscode.window.showWarningMessage(`Agent Farm: the phone host is not listening — ${st.reason ?? 'unknown reason'}`);
         }
@@ -30592,10 +30610,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return applyRemote(false);
     };
     toolboxDeps.remote = {
-        snapshot: () => ({ mode: remoteCfg().mode, port: remoteCfg().port, status: remote.status(), devices: remote.devices(), runner: taskRunner }),
+        snapshot: () => ({
+            mode: remoteCfg().mode, port: remoteCfg().port, status: remote.status(), devices: remote.devices(), runner: taskRunner,
+            firewall: phoneModes(remoteCfg().mode) ? firewall.verdict() : undefined
+        }),
         setRemoteListen: mode => setRemoteListen(mode),
         pairingLink: () => remote.pairingLink(),
-        revoke: id => remote.revoke(id)
+        revoke: id => remote.revoke(id),
+        allowFirewall
     };
     void applyRemote();
     leaseFlipped.push(() => { void applyRemote(false); });
@@ -30611,7 +30633,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         setRemoteListen,
         pairingLink: () => remote.pairingLink(),
         devices: () => remote.devices(),
-        revoke: id => remote.revoke(id)
+        revoke: id => remote.revoke(id),
+        firewall: async () => (await firewall.check()) ?? { state: 'absent', note: 'only Windows has this firewall check' },
+        allowFirewall
     }));
 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {

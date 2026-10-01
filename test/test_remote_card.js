@@ -1,5 +1,5 @@
 // X-444 — THE AGENT FARM APP CARD in Toolbox: its data decided in core/remoteCard,
-// its four acts in panels/toolboxRemote, drawn by media/afPhoneApp.js.
+// its acts in panels/toolboxRemote, drawn by media/afPhoneApp.js.
 'use strict';
 const Module = require('module');
 const path = require('path');
@@ -32,10 +32,20 @@ ok('a reason ending in a question mark is not given a second full stop', /runnin
     && /in use\.$/.test(nl.detail));
 ok('local: listening, but no phone can reach it', st({ mode: 'local' }).state === 'local-only' && !st({ mode: 'local' }).phoneReachable);
 ok('lan: reachable on this network', st().state === 'listening' && st().phoneReachable && /Wi-Fi/.test(st().detail));
-ok('listening where a phone can reach carries the firewall hint', /Windows Firewall/.test(st().hint) && st({ mode: 'tailscale' }).hint === C.FIREWALL_HINT);
+ok('listening where a phone can reach, firewall not read, carries the firewall hint', /firewall/.test(st().hint) && st({ mode: 'tailscale' }).hint === C.FIREWALL_HINT);
 ok('no hint where a phone cannot reach anyway', st({ mode: 'local' }).hint === undefined && st({ mode: 'off' }).hint === undefined
     && nl.hint === undefined && st({ runner: false }).hint === undefined);
 ok('tailscale: reachable from anywhere', /anywhere/.test(st({ mode: 'tailscale' }).detail));
+const CLOSED = { state: 'closed', closed: ['Public'], cause: 'no-rule', canFix: true, text: 'Windows Firewall does not let a phone in.' };
+const fwc = st({ firewall: CLOSED });
+ok('a closed firewall turns the card red with its own sentence and the one-click fix', fwc.state === 'firewall' && fwc.tone === 'bad'
+    && fwc.detail === CLOSED.text && fwc.canAllow === true && fwc.phoneReachable);
+ok('a firewall no rule can fix offers no button', st({ firewall: { ...CLOSED, cause: 'shields', canFix: false } }).canAllow === false);
+ok('an open firewall: listening, no hint left to guess with', st({ firewall: { state: 'open', closed: [], canFix: false, text: '' } }).state === 'listening'
+    && st({ firewall: { state: 'open', closed: [], canFix: false, text: '' } }).hint === undefined);
+ok('an unread firewall keeps the hint', st({ firewall: { state: 'unknown', closed: [], canFix: false, text: '' } }).hint === C.FIREWALL_HINT);
+ok('the firewall never outranks a mode that cannot reach a phone', st({ mode: 'local', firewall: CLOSED }).state === 'local-only'
+    && st({ mode: 'off', firewall: CLOSED }).state === 'off');
 
 // ---------- the data ----------
 const d = C.remoteCardData(input(), NOW);
@@ -69,9 +79,10 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
     Module._load = origLoad;
 
     const calls = [];
-    let listening = true;
+    let listening = true, firewall, allowAnswer;
     const host = {
-        snapshot: () => ({ ...input(), status: { ...input().status, listening, reason: listening ? undefined : 'no Tailscale address' } }),
+        snapshot: () => ({ ...input(), firewall, status: { ...input().status, listening, reason: listening ? undefined : 'no Tailscale address' } }),
+        allowFirewall: async () => { calls.push(['allow']); return allowAnswer; },
         setRemoteListen: async m => { calls.push(['listen', m]); },
         pairingLink: () => listening ? { link: LINK, addresses: ['192.168.1.40:7443'] } : { error: 'not listening (off)' },
         revoke: id => { calls.push(['revoke', id]); return id === 'nope' ? 0 : id === undefined ? 2 : 1; }
@@ -92,6 +103,23 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
     ok('a mode that could not listen says why', said.ok === false && /no Tailscale address/.test(said.text));
     await send({ type: 'remote-listen', mode: 'off' });
     ok('off says so', said.ok && /off/.test(said.text));
+    listening = true; firewall = CLOSED;
+    await send({ type: 'remote-listen', mode: 'lan' });
+    ok('listening behind a closed firewall says so and names the button', said.ok === false && /allow phones in/.test(said.text));
+    await send({ type: 'remote-listen', mode: 'local' });
+    ok('local is not stopped by the firewall', said.ok === true);
+    firewall = undefined; listening = false;
+    calls.length = 0;
+
+    allowAnswer = { ok: true };
+    await send({ type: 'remote-firewall-allow' });
+    ok('allow phones in runs the host\'s one allow and says the phone can pair now', JSON.stringify(calls.pop()) === '["allow"]' && said.ok && /pair a phone/.test(said.text));
+    allowAnswer = { ok: false, cancelled: true };
+    await send({ type: 'remote-firewall-allow' });
+    ok('a No to Windows\' prompt changes nothing and says so', said.ok === false && /answer was No/.test(said.text));
+    allowAnswer = { ok: false, error: 'Group policy forbids it.' };
+    await send({ type: 'remote-firewall-allow' });
+    ok('a failure carries Windows\' reason', said.ok === false && said.text === 'Group policy forbids it.');
     calls.length = 0;
 
     await send({ type: 'remote-pair' });

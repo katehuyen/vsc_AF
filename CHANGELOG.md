@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.764.0 - A phone gets through Windows Firewall with one click (2026-10-01)
+
+- While the Agent Farm app can be reached (`lan` or `tailscale`), Agent Farm
+  checks whether Windows Firewall would let a phone in on the networks this
+  computer is on. If it would not, the Agent Farm app card turns red and says
+  why, and a notification offers the fix once.
+- **Allow phones in** fixes it with one click: Windows asks once for
+  permission, and Agent Farm adds a single rule ("Agent Farm - phone app"):
+  VS Code, the phone app's port, TCP, only from your local network and your
+  Tailscale network. No network setting changes. A rule that blocks VS Code
+  itself is switched off, since it would stop the phone anyway.
+- "Block all incoming connections" cannot be undone by a rule; the card says
+  where to untick it instead.
+- New bridge operations: `remote.firewall` (read the verdict) and
+  `remote.firewall.allow` (the button).
+
 ## 3.763.0 - The farm's pages work on a phone: a Now page, a phone layout, questions asked on the phone (2026-10-01)
 
 - A new **Now** page (desktop tab and the phone's home page): what waits for

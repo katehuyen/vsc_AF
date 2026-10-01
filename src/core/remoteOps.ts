@@ -1,5 +1,5 @@
 /**
- * The phone host on the bridge: remote.status / listen / pair / devices / revoke.
+ * The phone host on the bridge: remote.status / listen / pair / firewall / devices / revoke.
  * The handlers only check arguments and call what the extension hands in — the
  * same calls the Devices card makes — so they are dispatched in tests as they are.
  */
@@ -13,6 +13,8 @@ export interface RemoteOpsDeps {
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     devices(): object[];
     revoke(id?: string): number;
+    firewall(): Promise<object>;
+    allowFirewall(): Promise<object>;
 }
 
 export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
@@ -46,6 +48,21 @@ export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
                 if ('error' in p) { need(false, p.error); }
                 return p;
             }
+        },
+        {
+            op: 'remote.firewall',
+            describe: 'Will Windows Firewall let a phone in? Reads the rules afresh for every network this computer is on: '
+                + 'state (open|closed|unknown; absent off Windows), the closed network profiles, cause (no-rule|blocked-by-rule|shields), '
+                + 'canFix, and the sentence the Agent Farm app card shows. Changes nothing. args: none',
+            handler: () => d.firewall()
+        },
+        {
+            op: 'remote.firewall.allow',
+            describe: 'Let phones in through Windows Firewall — the card\'s "allow phones in": Windows shows its admin prompt '
+                + 'ON THIS COMPUTER\'S SCREEN and a person must answer Yes; then one rule is added (VS Code, the phone port, TCP, '
+                + 'local subnet + Tailscale only) and inbound block rules on VS Code are switched off. Returns ok, cancelled?, error?, '
+                + 'and the fresh verdict. args: none',
+            handler: () => d.allowFirewall()
         },
         {
             op: 'remote.devices',

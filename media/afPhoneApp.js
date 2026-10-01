@@ -13,7 +13,7 @@
     const TONE_DOT = { ok: '●', bad: '●', warn: '●', off: '○' };
     const WORDS = {
         off: 'off', 'other-window': 'in another window', 'not-listening': 'not listening',
-        'local-only': 'this computer only', listening: 'listening'
+        'local-only': 'this computer only', firewall: 'firewall stops phones', listening: 'listening'
     };
     const MODES = [
         ['off', 'off — no phone can reach it', 'Nothing listens. Paired phones stay paired and reconnect when it is on again.'],
@@ -104,6 +104,13 @@
             </div>
             <div class="muted small svc-detail">${esc(r.status.detail)}${r.status.hint && r.activeDevices && !r.sockets
                 ? ' <b>' + esc(r.status.hint) + '</b>' : ''}</div>
+            ${r.status.canAllow ? `<div class="rm-fw">${window.AFTip.wrap(
+            '<button class="mini" data-remote="firewall-allow">allow phones in</button>',
+            'Allow phones in',
+            'Windows shows its own permission prompt once (Yes needs an administrator). Agent Farm then adds one '
+            + 'Windows Firewall rule, "Agent Farm - phone app": VS Code, port ' + r.port + ', TCP, only from your local '
+            + 'network and your Tailscale network. No network setting changes. A rule that blocks VS Code itself is '
+            + 'switched off, since it would stop the phone anyway.', 'svc-tip')}</div>` : ''}
             ${msg ? `<div class="svc-msg ${msg.ok ? 'ok' : 'bad'}">${esc(msg.text)}</div>` : ''}
             <div class="svc-facts">
                 <span class="svc-fact">Listening <b class="${r.listening ? 'svc-y' : 'svc-n'}">${r.listening ? 'yes' : 'no'}</b></span>
@@ -129,6 +136,7 @@
             if (act === 'pair') { post({ type: 'remote-pair' }); }
             else if (act === 'revoke') { post({ type: 'remote-revoke', device: b.dataset.device, name: b.dataset.name }); }
             else if (act === 'revoke-all') { post({ type: 'remote-revoke-all' }); }
+            else if (act === 'firewall-allow') { post({ type: 'remote-firewall-allow' }); }
         }));
     }
 
@@ -138,6 +146,7 @@
             .rm-devices th, .rm-devices td { text-align:left; padding:2px 10px 2px 0; }
             .rm-devices th { font-weight:normal; opacity:.7; }
             .rm-revoked td:first-child { text-decoration:line-through; opacity:.6; }
+            .rm-fw { margin:4px 0 2px; }
         `;
     }
 

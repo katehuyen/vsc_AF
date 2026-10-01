@@ -4,6 +4,7 @@
  * is fresh. The QR is encoded here — one encoder, the one the tests render.
  */
 import { qrEncode, qrSvg } from './qr';
+import type { FirewallVerdict } from './firewallVerdict';
 
 export type RemoteCardMode = 'off' | 'local' | 'lan' | 'tailscale';
 
@@ -19,11 +20,17 @@ export interface RemoteCardInput {
     pair?: { link: string; addresses: string[]; until: number };
     /** false = another window runs the task queue and hosts the phone */
     runner: boolean;
+    /** Windows Firewall's answer for a phone; absent off Windows or before the first check */
+    firewall?: FirewallVerdict;
 }
 
-export type RemoteCardState = 'off' | 'other-window' | 'not-listening' | 'local-only' | 'listening';
+export type RemoteCardState = 'off' | 'other-window' | 'not-listening' | 'local-only' | 'firewall' | 'listening';
 
-export interface RemoteCardStatus { state: RemoteCardState; tone: 'ok' | 'warn' | 'bad' | 'off'; detail: string; phoneReachable: boolean; hint?: string }
+export interface RemoteCardStatus {
+    state: RemoteCardState; tone: 'ok' | 'warn' | 'bad' | 'off'; detail: string; phoneReachable: boolean; hint?: string;
+    /** the firewall stops phones and one click (behind Windows' admin prompt) lets them in */
+    canAllow?: boolean;
+}
 
 /** Ends a sentence once: a reason that already ends in punctuation keeps its own. */
 const sentence = (t: string) => /[.!?]$/.test(t) ? t : t + '.';
@@ -45,15 +52,19 @@ export function remoteCardStatus(i: RemoteCardInput): RemoteCardStatus {
         return { state: 'local-only', tone: 'warn', phoneReachable: false,
             detail: 'Listening on 127.0.0.1 only — an emulator on this computer can reach it, a phone cannot.' };
     }
-    return { state: 'listening', tone: 'ok', phoneReachable: true, hint: FIREWALL_HINT,
+    const fw = i.firewall;
+    if (fw && fw.state === 'closed') {
+        return { state: 'firewall', tone: 'bad', phoneReachable: true, canAllow: fw.canFix, detail: fw.text };
+    }
+    return { state: 'listening', tone: 'ok', phoneReachable: true, ...(fw && fw.state === 'open' ? {} : { hint: FIREWALL_HINT }),
         detail: i.mode === 'tailscale'
             ? 'Listening on your Tailscale network — a paired phone reaches it from anywhere.'
             : 'Listening on this network — a paired phone on the same Wi-Fi reaches it.' };
 }
 
 /** The one block this machine cannot see from inside: loopback bypasses the firewall, a phone does not. */
-export const FIREWALL_HINT = 'Phone cannot connect? Windows Firewall must allow Visual Studio Code (Code.exe) '
-    + 'on private networks: Windows Security > Firewall & network protection > Allow an app through firewall.';
+export const FIREWALL_HINT = 'Phone cannot connect? A firewall on this computer may be stopping it: '
+    + 'it must let VS Code accept connections on the phone app\'s port from your local network.';
 
 /** The pairing block: only while listening where a phone can reach, only while the code is fresh. */
 function pairBlock(i: RemoteCardInput, st: RemoteCardStatus, now: number): Record<string, unknown> | undefined {

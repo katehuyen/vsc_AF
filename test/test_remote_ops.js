@@ -1,4 +1,4 @@
-// X-442 — THE PHONE HOST ON THE BRIDGE: the five remote.* ops dispatched through
+// X-442 — THE PHONE HOST ON THE BRIDGE: the remote.* ops dispatched through
 // the real registry over stand-in deps, and wired in extension.ts to the host.
 'use strict';
 const fs = require('fs');
@@ -20,7 +20,9 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
         setRemoteListen: async (mode, port) => { calls.push(['listen', mode, port]); return { listening: mode !== 'off' }; },
         pairingLink: () => listening ? { link: 'agentfarm://pair?c=1', addresses: ['1.2.3.4:7443'] } : { error: 'not listening (off)' },
         devices: () => [{ id: 'd1', name: 'Pixel', scope: 'read', pairedAt: 1, revoked: false }],
-        revoke: id => { calls.push(['revoke', id]); return id === undefined ? 2 : 1; }
+        revoke: id => { calls.push(['revoke', id]); return id === undefined ? 2 : 1; },
+        firewall: async () => { calls.push(['firewall']); return { state: 'closed', canFix: true }; },
+        allowFirewall: async () => { calls.push(['allow']); return { ok: true, verdict: { state: 'open' } }; }
     };
     const reg = new BridgeRegistry();
     reg.register(remoteOps(deps));
@@ -28,8 +30,15 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
 
     const ops = await call('farm.ops');
     const names = JSON.stringify(ops.result);
-    ok('all five ops are in the catalog', ['remote.status', 'remote.listen', 'remote.pair', 'remote.devices', 'remote.revoke']
-        .every(o => names.includes(o)));
+    ok('all seven ops are in the catalog', ['remote.status', 'remote.listen', 'remote.pair', 'remote.devices', 'remote.revoke',
+        'remote.firewall', 'remote.firewall.allow'].every(o => names.includes(o)));
+
+    let f = await call('remote.firewall');
+    ok('firewall reads the verdict and changes nothing', f.ok && f.result.state === 'closed' && JSON.stringify(calls.pop()) === '["firewall"]');
+    f = await call('remote.firewall.allow');
+    ok('firewall.allow runs the card\'s act and hands back the fresh verdict', f.ok && f.result.ok && f.result.verdict.state === 'open'
+        && JSON.stringify(calls.pop()) === '["allow"]');
+    ok('firewall.allow warns that a person must answer the prompt', /a person must answer Yes/.test(names));
 
     let r = await call('remote.status');
     ok('status: the settings mode, over the host\'s status', r.ok && r.result.mode === 'lan' && r.result.listening === false);
@@ -81,6 +90,10 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
     ok('a change to agentFarm.remote re-applies', /affectsConfiguration\('agentFarm\.remote'\)\) \{ void applyRemote\(\); \}/.test(src));
     ok('usage readings reach the phone', /usageRead\.forEach\(f => f\(usage\)\)/.test(src));
     ok('notices reach the phone', /noticesStore\.onAdd = n =>/.test(src));
+    ok('the firewall guard watches the program that listens', /firewallGuard\(\{ exe: process\.execPath, port: \(\) => remoteCfg\(\)\.port \}\)/.test(src));
+    ok('listening where a phone reaches re-reads the firewall and offers the fix once', /if \(remoteLive && phoneModes\(c\.mode\)\) \{\s*const fw = await firewall\.check\(\);\s*if \(warn && fw\?\.state === 'closed' && fw\.canFix && !firewallAsked\)/.test(src));
+    ok('the card and the ops share one allow', /revoke: id => remote\.revoke\(id\),\s*allowFirewall\s*\};/.test(src)
+        && /firewall: async \(\) => [^\n]*\n\s*allowFirewall\s*\}\)\);/.test(src));
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

@@ -1,5 +1,5 @@
 /**
- * The Toolbox "Phone app" card's host side: the data it is handed and the four
+ * The Toolbox "Phone app" card's host side: the data it is handed and the
  * acts its controls perform. The acts are named after the host closures the
  * remote.* bridge ops call, so the card and the ops do the same thing.
  */
@@ -11,6 +11,8 @@ export interface RemoteDevicesHost {
     setRemoteListen(mode: RemoteCardMode): Promise<unknown>;
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     revoke(id?: string): number;
+    /** Windows' admin prompt, then the one firewall rule that lets phones in */
+    allowFirewall(): Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
 }
 
 /** How long a pairing code works — the host's own CODE_TTL_MS. */
@@ -48,12 +50,23 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
             if (!mode) { ctx.say({ ok: false, text: 'Unknown mode.' }); return true; }
             ctx.setPair(undefined);
             await host.setRemoteListen(mode);
-            const st = host.snapshot().status;
+            const snap = host.snapshot();
+            const st = snap.status;
+            const fwClosed = mode !== 'local' && snap.firewall?.state === 'closed';
             ctx.say(mode === 'off'
                 ? { ok: true, text: 'The phone app is off — no phone can reach this farm.' }
-                : st.listening
-                    ? { ok: true, text: 'Listening. Press "pair a phone" to add one.' }
-                    : { ok: false, text: 'Could not listen: ' + (st.reason ?? 'unknown reason') });
+                : !st.listening
+                    ? { ok: false, text: 'Could not listen: ' + (st.reason ?? 'unknown reason') }
+                    : fwClosed
+                        ? { ok: false, text: 'Listening, but Windows Firewall stops phones. Press "allow phones in" first.' }
+                        : { ok: true, text: 'Listening. Press "pair a phone" to add one.' });
+            return true;
+        }
+        case 'remote-firewall-allow': {
+            const r = await host.allowFirewall();
+            ctx.say(r.ok
+                ? { ok: true, text: 'Phones are let in now. Press "pair a phone" to add one.' }
+                : { ok: false, text: r.cancelled ? 'Nothing changed: Windows asked for permission and the answer was No.' : (r.error ?? 'The rule could not be added.') });
             return true;
         }
         case 'remote-pair': {
