@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.765.0 - The pairing QR code scans (2026-10-01)
+
+- The QR codes Agent Farm draws (phone app pairing, the web view link) could not be read by any
+  scanner: the format strip was written mirrored and the error-correction codewords were wrong.
+  Both are fixed; a code is now identical to one from a standard QR library and scans on a phone.
+
 ## 3.764.0 - A phone gets through Windows Firewall with one click (2026-10-01)
 
 - While the Agent Farm app can be reached (`lan` or `tailscale`), Agent Farm

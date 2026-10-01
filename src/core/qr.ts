@@ -199,17 +199,23 @@ export function versionBits(version: number): number {
     return (version << 12) | rem;
 }
 
+/**
+ * grid[row][col]. Bit 0 is the least significant: the first copy runs down column 8 (rows 0-5, 7, 8)
+ * then left along row 8 (cols 7, 5-0); the second runs right-to-left along row 8 (bits 0-7) and down
+ * column 8 (bits 8-14). Written as (x, y) in the spec's reference code — read as (row, col) it is the
+ * mirror image, which looks right on screen and scans as nothing.
+ */
 function writeFormat(grid: Grid, ec: QrEc, mask: number): void {
     const size = grid.length;
     const bits = formatBits(ec, mask);
     const at = (i: number): boolean => ((bits >> i) & 1) === 1;
-    for (let i = 0; i <= 5; i++) { grid[8][i] = at(i); }
-    grid[8][7] = at(6);
+    for (let i = 0; i <= 5; i++) { grid[i][8] = at(i); }
+    grid[7][8] = at(6);
     grid[8][8] = at(7);
-    grid[7][8] = at(8);
-    for (let i = 9; i <= 14; i++) { grid[14 - i][8] = at(i); }
-    for (let i = 0; i <= 7; i++) { grid[size - 1 - i][8] = at(i); }
-    for (let i = 8; i <= 14; i++) { grid[8][size - 15 + i] = at(i); }
+    grid[8][7] = at(8);
+    for (let i = 9; i <= 14; i++) { grid[8][14 - i] = at(i); }
+    for (let i = 0; i <= 7; i++) { grid[8][size - 1 - i] = at(i); }
+    for (let i = 8; i <= 14; i++) { grid[size - 15 + i][8] = at(i); }
     grid[size - 8][8] = true;
 }
 

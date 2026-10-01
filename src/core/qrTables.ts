@@ -110,9 +110,13 @@ export function rsGenerator(degree: number): number[] {
     return poly;
 }
 
-/** The error-correction codewords for one block. */
+/**
+ * The error-correction codewords for one block. rsGenerator is lowest degree first; the division
+ * below walks it highest first (gen[0] is the leading 1), so it is reversed here — in the other order
+ * the codewords are wrong and a self-made reader still agrees, while every real scanner gives up.
+ */
 export function rsEncode(data: number[], ecLen: number): number[] {
-    const gen = rsGenerator(ecLen);
+    const gen = rsGenerator(ecLen).reverse();
     const rem = new Array(ecLen).fill(0);
     for (const byte of data) {
         const factor = byte ^ rem[0];

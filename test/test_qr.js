@@ -20,6 +20,24 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'qrTables.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
+// ‼️ KNOWN ANSWERS, NOT A SELF-MADE READER. This file's own reader once shared the encoder's two
+// mistakes (a mirrored format strip, a reversed RS generator) and passed while no phone could scan
+// a single code. The vectors below come from outside this code: the published "HELLO WORLD" 1-M
+// block and the spec's format strip placement.
+ok('Reed-Solomon: the published HELLO WORLD 1-M block gets its published 10 EC codewords',
+    JSON.stringify(T.rsEncode([32, 91, 11, 120, 209, 114, 220, 77, 67, 64, 236, 17, 236, 17, 236, 17], 10))
+    === JSON.stringify([196, 35, 39, 119, 235, 215, 231, 226, 93, 23]));
+for (const [ec, mask] of [['M', 0], ['L', 3], ['Q', 5], ['H', 7]]) {
+    const m = Q.qrEncode('HELLO', { ec, mask });
+    const n = m.size;
+    const f = Q.formatBits(ec, mask);
+    // [row, col] of bit i, both copies, written out from ISO 18004 7.9 rather than from the encoder
+    const first = [[0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8], [7, 8], [8, 8], [8, 7], [8, 5], [8, 4], [8, 3], [8, 2], [8, 1], [8, 0]];
+    const second = [...Array(8).keys()].map(i => [8, n - 1 - i]).concat([...Array(7).keys()].map(i => [n - 7 + i, 8]));
+    const strip = cells => cells.every(([r, c], i) => m.modules[r][c] === (((f >> i) & 1) === 1));
+    ok(`format strip ${ec}/${mask}: all 15 bits of both copies where ISO 18004 puts them, not mirrored`, strip(first) && strip(second));
+}
+
 // ---------- the tables, against geometry ----------
 {
     let bad = '';
@@ -81,11 +99,12 @@ const MASKS = [
 function readFormat(m) {
     const size = m.size;
     let bits = 0;
-    for (let i = 0; i <= 5; i++) { bits |= (m.modules[8][i] ? 1 : 0) << i; }
-    bits |= (m.modules[8][7] ? 1 : 0) << 6;
+    // modules[row][col]: the first copy runs down column 8, then left along row 8 (ISO 18004 7.9).
+    for (let i = 0; i <= 5; i++) { bits |= (m.modules[i][8] ? 1 : 0) << i; }
+    bits |= (m.modules[7][8] ? 1 : 0) << 6;
     bits |= (m.modules[8][8] ? 1 : 0) << 7;
-    bits |= (m.modules[7][8] ? 1 : 0) << 8;
-    for (let i = 9; i <= 14; i++) { bits |= (m.modules[14 - i][8] ? 1 : 0) << i; }
+    bits |= (m.modules[8][7] ? 1 : 0) << 8;
+    for (let i = 9; i <= 14; i++) { bits |= (m.modules[8][14 - i] ? 1 : 0) << i; }
     const data = (bits ^ 0x5412) >> 10;
     const ec = { 1: 'L', 0: 'M', 3: 'Q', 2: 'H' }[(data >> 3) & 3];
     return { ec, mask: data & 7, bits };
