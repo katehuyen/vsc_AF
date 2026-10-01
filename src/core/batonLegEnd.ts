@@ -10,7 +10,7 @@
  * when this window opened is never judged — after a reload, the last leg of
  * every old chain would otherwise be "rescued" from a dirty folder.
  */
-import { BATON_DEFAULT_MAX_LEGS, Baton, moveBaton, newBatonId, passBaton } from './baton';
+import { BATON_DEFAULT_MAX_LEGS, Baton, EnginePassHow, moveBaton, newBatonId, passBaton } from './baton';
 import { batonBrake } from './batonBrake';
 import { closingRecord, failsafeVerdict, LegEndFacts, legOpener, rescueEvidence } from './batonFailsafe';
 import { markFolder } from './batonLegFacts';
@@ -23,6 +23,8 @@ export type NoticeLevel = 1 | 2 | 3 | 4;
 
 /** Said to a successor of a flagged leg: the refusal was the conversation's, not the job's. */
 export const FLAGGED_ADVICE = 'The engine flagged the predecessor\'s CONVERSATION, not the job: continue the work, and do not paste its last messages back word for word — read what you need and say it in your own words.';
+/** Said to a successor of a leg the plan limit walled: it was often mid-handover, so its last records may be half-written. */
+export const LIMIT_ADVICE = 'The predecessor\'s ACCOUNT hit its plan limit — often in the middle of its own handover: read its last turns, finish only the records it had not yet written (worklog, item tracks, Notices), then continue the work itself.';
 
 export interface LegEndDeps {
     store: BatonStore;
@@ -96,12 +98,13 @@ export class LegEndWatch {
     }
 
     /**
-     * X-427 — the engine flagged a running leg's conversation: its baton is
-     * written FOR it and left waiting for its end, which the ender gives (the
-     * card is closed at rest) — so the successor opens on the usual release,
-     * never beside a live session. Undefined = not a running leg, or already judged.
+     * X-427 — the engine flagged a running leg's conversation, or X-462 its
+     * account hit the plan limit: its baton is written FOR it and left waiting
+     * for its end, which the ender gives (the card is closed at rest) — so the
+     * successor opens on the usual release, never beside a live session.
+     * Undefined = not a running leg, or already judged.
      */
-    async enginePass(sessionId: string, why: string, model?: string): Promise<Baton | undefined> {
+    async enginePass(sessionId: string, why: string, how: EnginePassHow): Promise<Baton | undefined> {
         const sid = String(sessionId ?? '').trim();
         const all = this.deps.store.all();
         const opener = legOpener(all, sid);
@@ -110,12 +113,12 @@ export class LegEndWatch {
         try {
             const now = this.deps.now();
             const facts = await this.deps.legFacts(sid, now);
-            const draft = await this.draftRescue(opener, sid, { ...facts, sessionId: sid, endedAt: now }, [why], why, now, { model });
+            const draft = await this.draftRescue(opener, sid, { ...facts, sessionId: sid, endedAt: now }, [why], why, now, how);
             if (draft.state === 'stopped') { return draft; }
             this.deps.store.put(draft);
-            this.say(`Relay passed for a flagged leg — chain ${draft.chainId}`,
+            this.say(`Relay passed for ${how.fault === 'limit' ? 'a leg the plan limit stopped' : 'a flagged leg'} — chain ${draft.chainId}`,
                 `${why}.\n\nThe baton waits for the session's end; Agent Farm closes its card at rest and hop ${draft.hop} opens from what it left — `
-                + '✕ Stop chain on its card stops it.', `baton:${draft.id}:flagged`, 2, 'info');
+                + '✕ Stop chain on its card stops it.', `baton:${draft.id}:${how.fault}`, 2, 'info');
             return draft;
         } finally {
             this.judging.delete(sid);
@@ -134,10 +137,10 @@ export class LegEndWatch {
 
     /** The rescue baton, through the brakes: `stopped` (stored, said) when one holds, else the draft to store. */
     private async draftRescue(
-        opener: Baton, sid: string, facts: LegEndFacts, evidence: string[], why: string, now: number, flagged?: { model?: string }
+        opener: Baton, sid: string, facts: LegEndFacts, evidence: string[], why: string, now: number, engine?: EnginePassHow
     ): Promise<Baton> {
         let prompt = rescueEvidence(facts, evidence, isSeal(opener) ? undefined : opener.prompt);
-        if (flagged) { prompt += `\n\n${FLAGGED_ADVICE}`; }
+        if (engine) { prompt += `\n\n${engine.fault === 'limit' ? LIMIT_ADVICE : FLAGGED_ADVICE}`; }
         const launchId = this.deps.launchIdOf?.(sid);
         const manifest = launchId ? this.deps.manifestOf?.(launchId) : undefined;
         const passed = passBaton({ prompt, sessionId: sid, launchId, manifest, prior: this.deps.store.all(), now });
@@ -148,8 +151,8 @@ export class LegEndWatch {
             inherit: opener.inherit, want: opener.want,
             state: 'waiting-end', why: 'the session has ended', createdAt: now, updatedAt: now
         };
-        draft = flagged
-            ? { ...draft, rescue: why, note: `engine — ${why}`, fault: 'flagged', ...(flagged.model ? { inherit: { ...draft.inherit, model: flagged.model } } : {}) }
+        draft = engine
+            ? { ...draft, rescue: why, note: `engine — ${why}`, fault: engine.fault, ...(engine.model ? { inherit: { ...draft.inherit, model: engine.model } } : {}) }
             : { ...draft, rescue: why, note: `failsafe — ${why}` };
         draft = await markFolder(draft, this.deps.headOf, this.deps.dirtOf);
         const all = this.deps.store.all();
@@ -158,7 +161,7 @@ export class LegEndWatch {
             const m = moveBaton(draft, 'stopped', `braked — ${brake.why}`, now);
             const stopped = m.ok ? m.baton : draft;
             this.deps.store.put(stopped);
-            this.say(`Relay stopped — chain ${draft.chainId}`, `The ${flagged ? 'mechanical pass' : 'failsafe'} would have rescued leg ${opener.hop + 1} (${why}), but ${brake.why}`,
+            this.say(`Relay stopped — chain ${draft.chainId}`, `The ${engine ? 'mechanical pass' : 'failsafe'} would have rescued leg ${opener.hop + 1} (${why}), but ${brake.why}`,
                 `baton:${draft.id}:braked`, 2, 'warning');
             return stopped;
         }

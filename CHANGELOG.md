@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.777.0 - A relay survives the plan limit; Tasks and transcripts open on the phone (2026-10-02)
+
+- **A baton relay no longer stops at the plan limit.** When a leg's account
+  hits its 5-hour or weekly limit — often in the middle of its own handover,
+  so it can no longer pass — Agent Farm passes the baton for it. The next leg
+  opens on an account that still has room, or waits on the Tasks board until
+  the first reset and starts by itself then. It is told what the walled leg
+  committed and to finish only the records it had not written yet. Before,
+  the leg's card sat idle on the failed turn and the chain waited for ever.
+- A leg told to hand over that rests without passing is closed again even when
+  a background command finished after the order: the turn the CLI opens for
+  that result no longer counts as you speaking to the session.
+- **Tasks on the phone.** The Tasks tab of the Agent Farm phone app now opens
+  the real Tasks page: plans and runs as cards, each toolbar one line you
+  scroll sideways, and every question a task asks (a confirmation, a pick, a
+  typed answer) is asked on the phone, not on the PC. A phone allowed to read
+  can browse; a phone allowed to manage can make, run and change tasks and
+  workflows; a permission request is answered with answer rights. A terminal,
+  a Windows schedule export, output files and the analytics page stay on the PC.
+- **A session's transcript on the phone.** Tapping a session on the phone — a
+  Sessions row, a task's run, a search hit, a chain's ‹ › arrows — opens its
+  transcript right there (Agent Farm phone app 0.2.3 or newer); Back returns.
+  A phone allowed to read reads it; one allowed to manage can also rename it,
+  pin it, resume it in the Console and capture its context, every question
+  asked on the phone. Files, the raw JSONL, the terminal and Export MD stay on
+  the PC; a copy goes to the phone's clipboard.
+- On a phone each turn's band in a transcript breaks after its title instead
+  of pushing the page sideways.
+
 ## 3.776.0 - The Sessions page opens on the phone (2026-10-01)
 
 - **Sessions on the phone.** The Sessions tab of the Agent Farm phone app now

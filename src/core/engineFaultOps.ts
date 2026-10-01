@@ -28,7 +28,8 @@ export function registerFaultOps(bridge: BridgeRegistry, watch: EngineFaultWatch
     bridge.register([{
         op: 'baton.faults',
         describe: 'X-427 — RELAY LEGS WHOSE ENGINE FAILED A TURN, and what Agent Farm is doing about each. A flagged conversation gets the baton passed FOR it '
-            + '(state passed; held once agentFarm.batonFlaggedPasses flagged passes came in a row); an outage or a refused sign-in never opens a new leg — the same '
+            + '(state passed; held once agentFarm.batonFlaggedPasses flagged passes came in a row); so does a leg whose ACCOUNT hit its plan limit (kind limit, X-462 — '
+            + 'the pool opens the successor on an account with room, or parks it until the first reset); an outage or a refused sign-in never opens a new leg — the same '
             + 'session is asked to continue at growing intervals (state waiting, nudges, nextAt) until agentFarm.batonFaultWaitHours, then gave-up + a Needs You row. '
             + 'Answers { faults: [{ sessionId, cardId, chainId, leg, kind, state, said, since, nudges, nextAt, why }], settings } with where each setting came from. '
             + 'args: check? (true = run a pass now instead of waiting for the minute sweep)',

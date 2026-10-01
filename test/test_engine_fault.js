@@ -37,6 +37,11 @@ console.log('\n== the classifier ==');
     ok('ECONNRESET is an outage', k('fetch failed: read ECONNRESET') === 'outage');
     ok('401 is auth', k('API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}') === 'auth');
     ok('an expired OAuth token is auth', k('OAuth token has expired. Please run /login') === 'auth');
+    // X-462 — verbatim from leg 3 of chn_mupm9r6q0023s7, the chain that stalled on it
+    ok('‼️ X-462 — the plan limit is LIMIT (the leg moves to an account with room)', k('You\'ve hit your session limit · resets 3:20am (Asia/Bangkok)') === 'limit');
+    ok('…the weekly wall too, and the "You have" spelling', k('You\'ve hit your weekly limit · resets 7pm (Asia/Bangkok)') === 'limit' && k('You have hit your session limit. Try again later.') === 'limit');
+    ok('…and the older sentence, which used to read as an outage', k('Claude AI usage limit reached|1790870400') === 'limit' && k('Claude usage limit reached. You have hit your session limit · resets 6:50pm') === 'limit');
+    ok('…but a 429 is still the SERVICE\'s rate limit: an outage, the same account waits', k('API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}') === 'outage');
     ok('a failed turn that is not the engine is none', k('turn failed (error_max_turns)') === 'none');
     ok('nothing said is none', k('') === 'none' && k(undefined) === 'none');
 }
@@ -54,6 +59,9 @@ console.log('\n== faultText: only the engine\'s error words of the turn that end
     const t2 = E.faultText([{ role: 'user', text: 'x' }, { role: 'agent', text: FLAG }, { role: 'result', isError: true, text: 'turn failed (error)' }]);
     ok('an engine error printed as the reply is read too', E.classifyEngineFault(t2).kind === 'flagged');
     ok('a turn that went through leaves nothing to read', E.faultText([{ role: 'user', text: 'x' }, { role: 'result', isError: false, text: '' }]) === '');
+    const t3 = E.faultText([{ role: 'user', text: 'x' }, { role: 'agent', text: 'You\'ve hit your session limit · resets 3:20am (Asia/Bangkok)' }, { role: 'result', isError: true, text: 'turn failed (success)' }]);
+    ok('‼️ X-462 — the CLI\'s synthetic limit REPLY is read even when the closing line says nothing', E.classifyEngineFault(t3).kind === 'limit');
+    ok('…but an agent\'s prose that only mentions the limit is not', E.faultText([{ role: 'user', text: 'x' }, { role: 'agent', text: 'Leg 3 said you\'ve hit your session limit, so I passed.' }]) === '');
 }
 
 const NOW = 1790000000000;
@@ -106,6 +114,14 @@ console.log('\n== the decision ==');
     ok('…and a failed turn that is not the engine clears it too', order(card({ text: 'turn failed (error_max_turns)' }), [seal, opener], { episode: ep }).act === 'clear');
     ok('no episode and no fault: nothing', order(card({ lastTurn: { endedAt: NOW, outcome: 'done' } }), [seal, opener]).act === 'none');
     ok('leg 1 (the seal\'s own session) is watched too', order(card({ sessionId: 's-leg1' }), [seal]).act === 'pass');
+
+    const LIM = 'You\'ve hit your session limit · resets 3:20am (Asia/Bangkok)';
+    const l = order(card({ text: LIM }), [seal, opener]);
+    ok('‼️ X-462 — the PLAN LIMIT on a running leg: the baton is passed for it, on the chain\'s own model', l.act === 'pass' && l.fault.kind === 'limit' && !l.model && /plan limit stopped leg 2/.test(l.why));
+    ok('…even right after a flagged pass (the fallback model is the flagged answer, not this one)', !order(card({ text: LIM }), [seal, flaggedOpener], { opts: opts({ flaggedModel: 'sonnet', maxFlagged: 1 }) }).model
+        && order(card({ text: LIM }), [seal, flaggedOpener], { opts: opts({ maxFlagged: 1 }) }).act === 'pass');
+    ok('…an episode already passed is not passed twice', order(card({ text: LIM }), [seal, opener], { episode: { kind: 'limit', state: 'passed' } }).act === 'none');
+    ok('…and a limit on an interrupted turn is a person\'s stop, not a wall', order(card({ text: LIM, lastTurn: { endedAt: NOW, outcome: 'interrupted' } }), [seal, opener]).act === 'none');
 }
 
 (async () => {
@@ -126,7 +142,7 @@ console.log('\n== the decision ==');
         });
         const watch = new W.EngineFaultWatch(Object.assign({
             batons: () => store.all(), cards: () => cards, opts: () => opts(extra.opts || {}),
-            pass: (sid, why, model) => { const p = runner.enginePass(sid, why, model); passes.push(p); return p; },
+            pass: (sid, why, how) => { const p = runner.enginePass(sid, why, how); passes.push(p); return p; },
             nudge: (id, text) => { nudged.push({ id, text }); return true; },
             say: (title, body, key, level) => told.push({ title, body, key, level }),
             now: () => now
@@ -151,6 +167,22 @@ console.log('\n== the decision ==');
         ok('‼️ the card ends (the ender closes it) → the SAME release opens the successor', t.opened.length === 1 && t.opened[0].fault === 'flagged');
         const row = D.successorRow(t.opened[0], { agentName: 'developer' });
         ok('…whose first message is the emergency header with the evidence', /EMERGENCY HANDOVER/.test(row.prompt) && /flagged/.test(row.prompt));
+    }
+    {
+        const t = mk([seal, opener]);
+        t.setCards([card({ text: 'You\'ve hit your session limit · resets 3:20am (Asia/Bangkok)' })]);
+        t.watch.check();
+        await Promise.all(t.passes);
+        const b = t.store.all().find(x => x.from.sessionId === 's-leg2');
+        ok('‼️ X-462 — limit: a baton is written FROM the walled leg, marked limit, and it WAITS for the session\'s end', b && b.state === 'waiting-end' && b.fault === 'limit' && b.hop === 2 && /plan limit/.test(b.rescue));
+        ok('…on the chain\'s own model, with the limit advice (not the flagged one)', !!b && b.inherit.model === 'opus' && b.prompt.includes(LE.LIMIT_ADVICE) && !b.prompt.includes(LE.FLAGGED_ADVICE));
+        ok('…said once on Notices, by its own name', t.told.some(x => /plan limit stopped/.test(x.title)) && t.told.some(x => /:limit$/.test(x.key)));
+        ok('…nothing opens beside the live card, and nothing is nudged into a walled account', t.opened.length === 0 && t.nudged.length === 0);
+        t.runner.sessionEnded('s-leg2', 'card closed');
+        ok('‼️ the card ends → the SAME release opens the successor, through the door that places it', t.opened.length === 1 && t.opened[0].fault === 'limit');
+        ok('…whose first message is the emergency header', /EMERGENCY HANDOVER/.test(D.successorRow(t.opened[0], { agentName: 'developer' }).prompt));
+        const held = N.buildNeedsQueue({ liveSessions: [], approvals: [], insights: [], engineFaults: [{ sessionId: 's-x', cardId: 'con_9', chainId: 'chn_a', leg: 4, kind: 'limit', said: 'x', since: NOW, nudges: 0, state: 'held', why: 'the pass failed' }] });
+        ok('a limit pass that could not be written is a Needs You row that says so', held.length === 1 && /hit the plan limit/.test(held[0].title));
     }
     {
         const t = mk([seal, baton({ fault: 'flagged' })], { opts: { flaggedModel: 'sonnet' } });
@@ -229,7 +261,7 @@ console.log('\n== the decision ==');
     {
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
         ok('the watch runs on the relay\'s minute sweep', /batonEnder\.check\(\); engineFaults\.check\(\);/.test(ext));
-        ok('its pass is the runner\'s (the failsafe\'s rescue path)', /pass: \(sid, why, model\) => batonRunner\.enginePass\(sid, why, model\)/.test(ext));
+        ok('its pass is the runner\'s (the failsafe\'s rescue path)', /pass: \(sid, why, how\) => batonRunner\.enginePass\(sid, why, how\)/.test(ext));
         ok('its nudge is said into the same Console card', /nudge: \(id, text\) => !!consoleHost\.send\(id, text\)/.test(ext));
         ok('Needs You reads its episodes', /engineFaults: engineFaults\.list\(\)/.test(ext));
         ok('the bridge op is registered', /registerFaultOps\(bridge, engineFaults/.test(ext));

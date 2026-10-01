@@ -15,7 +15,7 @@
  * The decisions are pure functions at the top; the class only wires them to a
  * store and a clock, so every rule is testable without a window.
  */
-import { Baton, isLive, moveBaton } from './baton';
+import { Baton, EnginePassHow, isLive, moveBaton } from './baton';
 import { BatonBoard } from './batonBoard';
 import { FirstLeg, sealFirstLeg } from './batonSeal';
 import { LegEndFacts } from './batonFailsafe';
@@ -160,9 +160,9 @@ export class BatonRunner {
         });
     }
 
-    /** X-427 — the engine flagged a running leg: its baton is written for it (batonLegEnd.ts). */
-    enginePass(sessionId: string, why: string, model?: string): Promise<Baton | undefined> {
-        return this.legs ? this.legs.enginePass(sessionId, why, model) : Promise.resolve(undefined);
+    /** X-427 / X-462 — the engine flagged a running leg, or its account hit the plan limit: its baton is written for it (batonLegEnd.ts). */
+    enginePass(sessionId: string, why: string, how: EnginePassHow): Promise<Baton | undefined> {
+        return this.legs ? this.legs.enginePass(sessionId, why, how) : Promise.resolve(undefined);
     }
 
     /**

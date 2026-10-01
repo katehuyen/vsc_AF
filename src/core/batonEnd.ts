@@ -31,8 +31,17 @@ export interface PassedLegCard {
     asking: boolean;
     /** when its last turn ended */
     turnEndedAt?: number;
-    /** how long that turn ran — so its start can be told from a handover order */
-    turnMs?: number;
+    /** X-462 — when someone last SAID something into the card (its latest user row); a turn the CLI opened itself says nothing here */
+    userSaidAt?: number;
+}
+
+/** The moment of the card's latest user row — what a person (or a send) said, never a turn the CLI opened for a background result. */
+export function lastUserSaidAt(messages: readonly { role: string; ts?: number }[] | undefined): number | undefined {
+    const list = messages ?? [];
+    for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i].role === 'user') { return typeof list[i].ts === 'number' ? list[i].ts : undefined; }
+    }
+    return undefined;
 }
 
 /** What is known about the session that passed; each part optional. */
@@ -100,6 +109,9 @@ export function unpassedLegs(list: readonly Baton[], handoverOf: (sid: string) =
  * TOO, so the failsafe (S-83) can judge it: a Console card never ends by itself,
  * and a failsafe that waits for an end nobody gives rescues nothing. Only a card
  * — and never one the user spoke to after the order: that session is theirs.
+ * ‼️ X-462 — "spoke" is the card's own user row, never a turn's timing: a
+ * background command finishing makes the CLI open a turn nobody typed, and
+ * read off the clock that turn handed every walled leg to "the user".
  */
 export function unpassedLegOrder(leg: UnpassedLeg, f: PassedLegFacts, now: number, settleMs = BATON_UNPASSED_SETTLE_MS): EndOrder {
     const card = f.card;
@@ -109,7 +121,7 @@ export function unpassedLegOrder(leg: UnpassedLeg, f: PassedLegFacts, now: numbe
     if (card.asking) { return { act: 'wait', why: 'a question is open on its card' }; }
     if (card.queued > 0) { return { act: 'wait', why: 'a message is queued for it' }; }
     const ended = card.turnEndedAt ?? 0;
-    if (ended && ended - (card.turnMs ?? 0) > leg.handover.ts) {
+    if ((card.userSaidAt ?? 0) > leg.handover.ts) {
         return { act: 'wait', why: 'the user spoke to it after the handover order — the session is theirs now' };
     }
     const due = Math.max(leg.handover.ts, ended) + settleMs;

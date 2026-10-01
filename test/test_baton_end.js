@@ -116,14 +116,23 @@ console.log('\n== the ender: once, then the release is asked for ==');
             E.unpassedLegs([opener, baton({ id: 'btn_p', hop: 2, from: { ...opener.from, sessionId: 'leg-9' } })], handoverOf).length === 0);
         ok('…and not a leg no order reached', E.unpassedLegs([opener], () => undefined).length === 0);
         const leg = legs[0];
-        const rest = card({ turnEndedAt: NOW + 5000, turnMs: 60_000 });
+        const rest = card({ turnEndedAt: NOW + 5000, userSaidAt: NOW - 60_000 });
         ok('at rest, but not long enough yet → wait, with the time it is due',
             (o => o.act === 'wait' && o.at === NOW + 5000 + U)(E.unpassedLegOrder(leg, { card: rest }, NOW + 6000)));
         const due = E.unpassedLegOrder(leg, { card: rest }, NOW + 5000 + U);
         ok('‼️ settled → its card is closed, and the reason names the order and the failsafe',
             due.act === 'close-card' && due.cardId === rest.id && /CONTEXT HANDOVER 40%/.test(due.why) && /failsafe/.test(due.why));
         ok('‼️ a turn the USER started after the order leaves the session to them',
-            /theirs now/.test(E.unpassedLegOrder(leg, { card: card({ turnEndedAt: NOW + 90_000, turnMs: 10_000 }) }, NOW + 999_999).why));
+            /theirs now/.test(E.unpassedLegOrder(leg, { card: card({ turnEndedAt: NOW + 90_000, userSaidAt: NOW + 80_000 }) }, NOW + 999_999).why));
+        // X-462, measured on leg 3 of chn_mupm9r6q0023s7: the order reached it, then two
+        // background commands finished and the CLI opened a turn for each (ms 0, no user row)
+        const cliTurn = card({ turnEndedAt: NOW + 400_000, userSaidAt: NOW - 1000 });
+        ok('‼️ X-462 — a turn the CLI opened itself (a background result, no user row) is NOT the user: the card is closed',
+            E.unpassedLegOrder(leg, { card: cliTurn }, NOW + 400_000 + U).act === 'close-card'
+            && E.unpassedLegOrder(leg, { card: cliTurn }, NOW + 400_000 + U - 1).act === 'wait');
+        ok('lastUserSaidAt reads the latest user row, past the system rows after it; none = undefined',
+            E.lastUserSaidAt([{ role: 'user', ts: 1 }, { role: 'agent', ts: 2 }, { role: 'user', ts: 3 }, { role: 'system', ts: 4 }, { role: 'result', ts: 5 }]) === 3
+            && E.lastUserSaidAt([{ role: 'system', ts: 4 }]) === undefined && E.lastUserSaidAt(undefined) === undefined);
         ok('a running turn, an open question or a queued message → wait',
             E.unpassedLegOrder(leg, { card: card({ status: 'working' }) }, NOW + 999_999).act === 'wait'
             && E.unpassedLegOrder(leg, { card: card({ asking: true }) }, NOW + 999_999).act === 'wait'
@@ -142,7 +151,7 @@ console.log('\n== the ender: once, then the release is asked for ==');
         ender.dispose();
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
         ok('the host wires the facts by session id and the guard\'s handover order (quota first)',
-            /factsOf: batonLegFacts/.test(ext) && /QUOTA HANDOVER \$\{q\.pct\}%/.test(ext) && /turnMs: c\.lastTurn\?\.ms/.test(ext));
+            /factsOf: batonLegFacts/.test(ext) && /QUOTA HANDOVER \$\{q\.pct\}%/.test(ext) && /userSaidAt: lastUserSaidAt\(c\.messages\)/.test(ext));
     }
 
     console.log(`\ntest_baton_end: ${pass} passed, ${fail} failed`);

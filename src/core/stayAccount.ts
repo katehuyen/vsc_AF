@@ -32,6 +32,8 @@ export interface StayInput {
     resetsAt?: number;
     /** a QUOTA handover order reached the run */
     quotaHandover: boolean;
+    /** X-462 — the plan limit walled the run on this slot: its figure may still read under the line */
+    walled?: boolean;
     now: number;
 }
 
@@ -43,6 +45,7 @@ export function stayOnAccount(i: StayInput): StayVerdict {
     const slot = String(i.slotId ?? '').trim();
     if (!slot) { return { stay: false, why: 'the run was on the main sign-in — there is no account to stay on' }; }
     if (i.quotaHandover) { return { stay: false, why: `the handover was the quota's — the pool picks another account than ${slot}` }; }
+    if (i.walled) { return { stay: false, why: `the plan limit walled the run on ${slot} — the pool picks another account` }; }
     const fresh = !!i.resetsAt && i.resetsAt > 0 && i.resetsAt <= i.now;
     const pct = fresh ? 0 : Number(i.percent);
     if (!Number.isFinite(pct) || pct < 0) { return { stay: false, why: `${slot}'s five-hour window is not measured — the pool picks` }; }

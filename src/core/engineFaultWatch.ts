@@ -11,12 +11,16 @@
  *             successor opens on the usual release. A cap on flagged passes in
  *             a row holds the chain for a person instead of looping; from the
  *             second one on, the successor opens on the fallback model if set.
+ *   limit   — X-462: the leg's ACCOUNT hit its plan limit, often mid-handover:
+ *             passed for the same way, and the door places the successor on an
+ *             account with room — or parks it until the first reset (S-73). A
+ *             successor walled on arrival is stopped by the barren brake.
  *   outage / auth — never a new leg (it would fail the same way): the SAME
  *             session is asked to continue at growing intervals, up to a
  *             ceiling; past it, a person is asked (Needs You).
  * The decision is pure; the class keeps each episode and applies the order.
  */
-import { Baton, openerOf } from './baton';
+import { Baton, BatonFault, EnginePassHow, openerOf } from './baton';
 import { classifyEngineFault, EngineFault } from './engineFault';
 import { isSeal } from './batonSeal';
 import type { NeedItem } from './needs';
@@ -109,6 +113,10 @@ export function faultOrder(i: {
         const model = streak >= 1 && opts.flaggedModel ? opts.flaggedModel : undefined;
         return { act: 'pass', fault, ...(model ? { model } : {}), why: `the engine flagged leg ${leg}'s conversation and answers nothing more in it — Agent Farm passes the baton for it${model ? ` (the successor opens on ${model})` : ''}` };
     }
+    if (fault.kind === 'limit') {
+        if (ep?.kind === 'limit') { return { act: 'none', why: `already ${ep.state}` }; }
+        return { act: 'pass', fault, why: `the plan limit stopped leg ${leg} on its account — Agent Farm passes the baton for it, and the pool opens the successor on an account with room or parks it until the first reset` };
+    }
     const since = ep && ep.kind !== 'flagged' ? ep.since : card.lastTurn.endedAt;
     if (opts.waitMs > 0 && now - since >= opts.waitMs) {
         return ep?.state === 'gave-up' ? { act: 'none', why: 'already past the ceiling' }
@@ -132,7 +140,8 @@ export function nudgeText(f: EngineFault, attempt: number): string {
 export function faultNeedItems(list: readonly FaultEpisode[], urgency: number): NeedItem[] {
     return list.filter(e => e.kind === 'auth' || e.state === 'held' || e.state === 'gave-up').map(e => ({
         urgency, kind: 'engine-fault' as const, agentName: `chain ${e.chainId.slice(-6)}`,
-        title: e.state === 'held' ? `Leg ${e.leg} flagged again — the chain holds for you`
+        title: e.state === 'held'
+            ? (e.kind === 'limit' ? `Leg ${e.leg} hit the plan limit and could not be passed — the chain holds for you` : `Leg ${e.leg} flagged again — the chain holds for you`)
             : e.kind === 'auth' ? `Leg ${e.leg}: the engine refuses the sign-in` : `Leg ${e.leg}: the engine is still down`,
         // U-118 — the row is a line; the engine's own words are the opened body
         detail: e.why.length > 140 ? e.why.slice(0, 139) + '…' : e.why,
@@ -148,7 +157,7 @@ export interface FaultWatchDeps {
     cards: () => FaultCard[];
     opts: () => FaultOpts;
     /** the mechanical pass (LegEndWatch.enginePass); resolves to the baton it wrote */
-    pass: (sessionId: string, why: string, model?: string) => Promise<Baton | undefined>;
+    pass: (sessionId: string, why: string, how: EnginePassHow) => Promise<Baton | undefined>;
     /** say it into the same session; false = it could not be sent */
     nudge: (cardId: string, text: string) => boolean;
     say: (title: string, body: string, key: string, level: 1 | 2 | 3, type: 'info' | 'warning') => void;
@@ -217,9 +226,11 @@ export class EngineFaultWatch {
                 this.say(`Relay held — chain ${chain}`, `${why}.\n\n${o.fault.said}`, `fault:${sid}:nopass`, 2, 'warning');
                 try { this.deps.changed?.(); } catch { /* best effort */ }
             };
-            void this.deps.pass(sid, `${o.why} ("${o.fault.said}")`, o.model).then(b => {
-                if (b) { this.log(`${tag}: baton ${b.id} ${b.state}`); } else { failed(`the engine flagged leg ${base.leg}, but the mechanical pass wrote no baton`); }
-            }).catch(e => failed(`the engine flagged leg ${base.leg}, and the mechanical pass failed: ${String((e as Error)?.message ?? e)}`));
+            const fault = o.fault.kind as BatonFault;
+            const what = fault === 'limit' ? `the plan limit stopped leg ${base.leg}` : `the engine flagged leg ${base.leg}`;
+            void this.deps.pass(sid, `${o.why} ("${o.fault.said}")`, { fault, ...(o.model ? { model: o.model } : {}) }).then(b => {
+                if (b) { this.log(`${tag}: baton ${b.id} ${b.state}`); } else { failed(`${what}, but the mechanical pass wrote no baton`); }
+            }).catch(e => failed(`${what}, and the mechanical pass failed: ${String((e as Error)?.message ?? e)}`));
             return;
         }
         if (o.act === 'hold' || o.act === 'give-up') {

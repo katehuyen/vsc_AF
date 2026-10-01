@@ -363,7 +363,7 @@ import { BatonBoard } from './core/batonBoard';
 import { attachRelay, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, rowSessionId, successorRow } from './core/batonDoor';
-import { PassedLegCard, PassedLegEnder, PassedLegFacts } from './core/batonEnd';
+import { lastUserSaidAt, PassedLegCard, PassedLegEnder, PassedLegFacts } from './core/batonEnd';
 import { BatonRunner } from './core/batonRunner';
 import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
@@ -17503,13 +17503,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(supervisorSweep) });
     // ‼️ S-106 — a handover that is not the quota's stays on its account under agentFarm.contextHandoverStayAccountPct
-    const handoverStay = (sessionId: string | undefined, slotId: string | undefined): StayVerdict => {
+    const handoverStay = (sessionId: string | undefined, slotId: string | undefined, o: { walled?: boolean } = {}): StayVerdict => {
         const sid = String(sessionId ?? '');
         const u = slotId ? accountUsage.current().find(x => x.slotId === slotId) : undefined;
         const pct = stayPctOf(ownSetting).value;
         return stayOnAccount({
             stayPct: pct, slotId, percent: u?.percent, resetsAt: u?.resetsAt,
-            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), now: Date.now()
+            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), walled: !!o.walled, now: Date.now()
         });
     };
     const batonRunner = new BatonRunner({
@@ -17522,7 +17522,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 sessionId: opener.from.sessionId, engine: opener.from.engine || 'claude', agentName: agent.name
             })));
             const was = (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
-            const stay = handoverStay(b.from.sessionId, was);
+            // X-462 — a pass the plan limit forced never keeps the successor on the walled account
+            const stay = handoverStay(b.from.sessionId, was, { walled: b.fault === 'limit' });
             if (stay.stay) { console.log(`[Agent Farm] baton ${b.id}: ${stay.why}`); }
             // S-73 — every account full RIGHT NOW: the row is written with the
             // first reset + the safety buffer as its notBefore (a preview — the
@@ -17700,7 +17701,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     card = {
                         id: c.id, status: c.status, queued: c.queued?.length ?? 0,
                         asking: !!(c.pendingAsk || c.pendingPermission), turnEndedAt: c.lastTurn?.endedAt,
-                        turnMs: c.lastTurn?.ms
+                        userSaidAt: lastUserSaidAt(c.messages)
                     };
                 }
             } catch { /* the host is declared further down */ }
@@ -17730,7 +17731,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         log: l => console.log(`[Agent Farm] ${l}`)
     });
     context.subscriptions.push({ dispose: () => batonEnder.dispose() });
-    // ‼️ X-427 — a leg whose ENGINE failed a turn: flagged → passed for it, outage/auth → the same session asked again (engineFaultWatch.ts)
+    // ‼️ X-427 — a leg whose ENGINE failed a turn: flagged / plan limit (X-462) → passed for it, outage/auth → the same session asked again (engineFaultWatch.ts)
     const ownSetting = (k: string): unknown => { const i = vscode.workspace.getConfiguration().inspect<unknown>(`agentFarm.${k}`); return i ? (i.workspaceFolderValue ?? i.workspaceValue ?? i.globalValue) : undefined; };
     const engineFaults = new EngineFaultWatch({
         batons: () => batonStore.all(),
@@ -17743,7 +17744,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             } catch { return []; }
         },
         opts: () => faultOpts(ownSetting),
-        pass: (sid, why, model) => batonRunner.enginePass(sid, why, model),
+        pass: (sid, why, how) => batonRunner.enginePass(sid, why, how),
         nudge: (id, text) => !!consoleHost.send(id, text),
         say: (title, body, key, level, type) => { noticesStore.add({ agentName: 'agent-farm', title, body, type, level, sourceKey: key }); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
         changed: () => needsEmitter.fire(),
