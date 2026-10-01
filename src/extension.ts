@@ -684,6 +684,9 @@ import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchP
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
 import { FarmSettingsPanel } from './panels/settingsPanel';
+import { AlertMessageDeps } from './panels/alertMessages';
+import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
+import { SoundPanel } from './panels/soundPanel';
 import { SelectionPanel } from './panels/selectionPanel';
 import { selectionRefusal, SelectionWaits, urlsOfPicks } from './core/selectionWaits';
 import { planNeedAct } from './core/needsAct';
@@ -12386,6 +12389,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     nudge: { ...nudgeCfg(), armed: alertNudges.list().length }
                 };
             }
+        },
+        {
+            op: 'alerts.status',
+            describe: 'U-178 — THE SOUND PAGE\'S WHOLE MODEL IN ONE CALL: what the 🔊 Sound page draws. `alerts`: the gate (fleet mute, quiet hours, the sessions muted on their own, the nudge), every event row with the tone it would ACTUALLY play and which step of the chain chose it, the announcement (voice it really reaches, template, which events are spoken), and the library (built-ins and your own sounds, with whether each can be played here). `notify`: each event\'s VS Code notification switch (turn-ready = notifyTurnEnd, question = notifyPermission, stalled = notifyStuck; ended and error have none). Reads only. args: none',
+            handler: () => ({ alerts: alertsPage(), notify: soundNotify() })
         },
         {
             op: 'alerts.voice.set',
@@ -27851,6 +27859,79 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }));
 
+    // U-178 — the sound controls' host acts, ONE object: the Settings summary and
+    // the Sound page are both given it, so the two pages cannot drift apart.
+    const soundDeps: AlertMessageDeps = {
+        /**
+         * ‼️ A-21 — THE ALERT SOUNDS CARD, THROUGH THE SAME
+         * FUNCTIONS THE BRIDGE OPS USE. Not one rule about ids,
+         * limits or formats is restated here: the page asks for an
+         * act and the act is `alertsSetVoice` / `alertsVoiceAdd` /
+         * `alertsVoiceRemove`, exactly as `alerts.voice.set` /
+         * `.add` / `.remove` do.
+         */
+        alerts: () => alertsPage(),
+        alertsSetOn: (event, on) => alertsSetOn(event as AlertEvent, on),
+        alertsSetVoice: (event, voice) => alertsSetVoice(event as AlertEvent, voice),
+        // A-22 — same two functions as the status bar click and the
+        // `alerts.mute` / `alerts.quiet` ops. The page owns the
+        // gesture; the act is the host's, once.
+        alertsSetMuted: async (on) => { await alertsSetMuted(on); muteBar.update(); },
+        alertsSetQuiet: async (patch) => { await alertsSetQuiet(patch); muteBar.update(); },
+        // U-123 — the same function the `alerts.nudge` op goes
+        // through, so the strip and the bridge cannot disagree
+        // about what a tone nothing plays means.
+        alertsSetNudge: async (patch) => { await alertsSetNudge(patch); },
+        alertsUnmuteSession: async (sessionId) => {
+            await alertsSetSessionMuted(sessionId, false);
+            muteBar.update();
+        },
+        alertsPlayVoice: async (voice) => { await alertsPlayVoice(voice); },
+        // A-25 — the announcement strip. Same four host functions
+        // as the `alerts.speak` op and the ♪ right-click, so the
+        // card cannot drift from what the bridge does.
+        alertsSetSpeak: async (patch) => {
+            await alertsSetSpeak(patch as Partial<SpeakConfig>);
+        },
+        alertsSetSpeakEvent: async (event, on) => {
+            await alertsSetSpeakEvent(event as AlertEvent, on);
+        },
+        alertsSpeakTest: async (text) => {
+            const said = await alertsSpeakTest(text);
+            // ‼️ A REFUSED SENTENCE IS SAID OUT LOUD IN WORDS. The
+            // commonest failure here is a voice name nothing
+            // answers to (`exit 5`), and a ▶ that silently does
+            // nothing is indistinguishable from a broken speaker.
+            if (!said.ok) {
+                throw new Error(
+                    `nothing was said — ${said.error ?? said.skipped ?? 'the speech backend failed'}`);
+            }
+        },
+        alertsLoadSpeechVoices: async (force) => { await alertsSpeechVoices(force); },
+        alertsClearSessionSpeech: async (sessionId) => {
+            await alertsSetSessionSpeechVoice(sessionId, '');
+        },
+        alertsVoiceAdd: async () => { await alertsPickVoice(); },
+        alertsVoiceRename: async (id, label) => { await alertsVoiceRename(id, label); },
+        alertsVoiceRemove: (id) => alertsVoiceRemove(id),
+        /** Create it on the way — the folder is only a suggestion,
+         *  so it does not exist until somebody first asks for it. */
+        alertsOpenFolder: async () => {
+            const dir = alertSoundsFolder();
+            try { fs.mkdirSync(dir, { recursive: true }); }
+            catch (e) { throw new Error(`could not create ${dir}: ${(e as Error).message}`); }
+            await revealPath(dir);
+        },
+        // U-178 — the Sound page's Notification column is the notify* setting itself,
+        // written through the function `settings.set` writes with.
+        alertsSetNotify: async (event, on) => {
+            const key = NOTIFY_KEYS[event];
+            if (!key) { throw new Error(`${event} has no notification of its own`); }
+            await writeUserSetting(key, on);
+        }
+    };
+    const soundNotify = () => notifyState(k => vscode.workspace.getConfiguration().get<boolean>(k) === true);
+
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
     // streaming JSON channel. They deliberately outlive the panel tab (closing
@@ -40150,6 +40231,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
             }),
 
+        // U-178 — the Sound page: the same host acts the Settings summary is given.
+        vscode.commands.registerCommand('agentfarm.openSound', () => {
+            SoundPanel.show({ extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify });
+        }),
+
         vscode.commands.registerCommand('agentfarm.openFarmSettings',
             (arg?: { focus?: string }) => {
                 FarmSettingsPanel.show({
@@ -40243,66 +40329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             { ...store, [superpowersDefaultsKey(agent, store)]: on },
                             vscode.ConfigurationTarget.Global);
                     },
-                    /**
-                     * ‼️ A-21 — THE ALERT SOUNDS CARD, THROUGH THE SAME
-                     * FUNCTIONS THE BRIDGE OPS USE. Not one rule about ids,
-                     * limits or formats is restated here: the page asks for an
-                     * act and the act is `alertsSetVoice` / `alertsVoiceAdd` /
-                     * `alertsVoiceRemove`, exactly as `alerts.voice.set` /
-                     * `.add` / `.remove` do.
-                     */
-                    alerts: () => alertsPage(),
-                    alertsSetOn: (event, on) => alertsSetOn(event as AlertEvent, on),
-                    alertsSetVoice: (event, voice) => alertsSetVoice(event as AlertEvent, voice),
-                    // A-22 — same two functions as the status bar click and the
-                    // `alerts.mute` / `alerts.quiet` ops. The page owns the
-                    // gesture; the act is the host's, once.
-                    alertsSetMuted: async (on) => { await alertsSetMuted(on); muteBar.update(); },
-                    alertsSetQuiet: async (patch) => { await alertsSetQuiet(patch); muteBar.update(); },
-                    // U-123 — the same function the `alerts.nudge` op goes
-                    // through, so the strip and the bridge cannot disagree
-                    // about what a tone nothing plays means.
-                    alertsSetNudge: async (patch) => { await alertsSetNudge(patch); },
-                    alertsUnmuteSession: async (sessionId) => {
-                        await alertsSetSessionMuted(sessionId, false);
-                        muteBar.update();
-                    },
-                    alertsPlayVoice: async (voice) => { await alertsPlayVoice(voice); },
-                    // A-25 — the announcement strip. Same four host functions
-                    // as the `alerts.speak` op and the ♪ right-click, so the
-                    // card cannot drift from what the bridge does.
-                    alertsSetSpeak: async (patch) => {
-                        await alertsSetSpeak(patch as Partial<SpeakConfig>);
-                    },
-                    alertsSetSpeakEvent: async (event, on) => {
-                        await alertsSetSpeakEvent(event as AlertEvent, on);
-                    },
-                    alertsSpeakTest: async (text) => {
-                        const said = await alertsSpeakTest(text);
-                        // ‼️ A REFUSED SENTENCE IS SAID OUT LOUD IN WORDS. The
-                        // commonest failure here is a voice name nothing
-                        // answers to (`exit 5`), and a ▶ that silently does
-                        // nothing is indistinguishable from a broken speaker.
-                        if (!said.ok) {
-                            throw new Error(
-                                `nothing was said — ${said.error ?? said.skipped ?? 'the speech backend failed'}`);
-                        }
-                    },
-                    alertsLoadSpeechVoices: async (force) => { await alertsSpeechVoices(force); },
-                    alertsClearSessionSpeech: async (sessionId) => {
-                        await alertsSetSessionSpeechVoice(sessionId, '');
-                    },
-                    alertsVoiceAdd: async () => { await alertsPickVoice(); },
-                    alertsVoiceRename: async (id, label) => { await alertsVoiceRename(id, label); },
-                    alertsVoiceRemove: (id) => alertsVoiceRemove(id),
-                    /** Create it on the way — the folder is only a suggestion,
-                     *  so it does not exist until somebody first asks for it. */
-                    alertsOpenFolder: async () => {
-                        const dir = alertSoundsFolder();
-                        try { fs.mkdirSync(dir, { recursive: true }); }
-                        catch (e) { throw new Error(`could not create ${dir}: ${(e as Error).message}`); }
-                        await revealPath(dir);
-                    },
+                    ...soundDeps,
                     /**
                      * U-84 — THE SAME BRIDGE HOST THE TOOLBOX IS GIVEN, by
                      * reference rather than by a second literal. The snapshot

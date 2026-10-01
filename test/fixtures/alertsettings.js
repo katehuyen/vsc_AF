@@ -1,6 +1,7 @@
 /**
- * A-21 — Settings ▸ Live Monitoring & Alerts ▸ the Alert sounds card, in the
- * states the two JSON boxes it replaces could not tell apart:
+ * A-21 — the alert sounds model, in the states the two JSON boxes it replaced
+ * could not tell apart. Settings draws it as one line now (U-178); the Sound
+ * page's fixture (`sound.js`) draws the same rows as the full page:
  *
  *   1. FRESH   — nothing armed, nothing chosen. Every row still names the
  *                sound it WOULD play and where that answer came from, which is
@@ -337,16 +338,11 @@ const gated = () => base(
 const data = () => inUse();
 
 const variants = () => ([
-    { id: 'alertsettings', label: 'Settings ▸ Alert sounds — in use, with the user\'s own library', data: inUse() },
-    { id: 'alertsettings-fresh', label: 'Settings ▸ Alert sounds — nothing armed, nothing chosen', data: fresh() },
-    {
-        id: 'alertsettings-broken',
-        label: 'Settings ▸ Alert sounds — ‼️ armed events whose sound cannot be played',
-        data: broken()
-    },
+    { id: 'alertsettings', label: 'Settings ▸ the Sound line — in use (the controls are on the Sound page)', data: inUse() },
+    { id: 'alertsettings-fresh', label: 'Settings ▸ the Sound line — nothing rings yet', data: fresh() },
     {
         id: 'alertsettings-gated',
-        label: 'Settings ▸ Alert sounds — ‼️ armed, configured, and silent: muted · quiet hours · two sessions',
+        label: 'Settings ▸ the Sound line — ‼️ muted · quiet hours · two silent sessions',
         data: gated()
     }
 ]);

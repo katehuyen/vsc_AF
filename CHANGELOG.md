@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.769.0 - Sound has a page of its own (2026-10-01)
+
+- New **Sound** page (`Agent Farm: Sound: Open`): everything the farm can make a
+  noise about, in the order you would ask about it. At the top, whether you will hear
+  anything right now (Mute the farm, quiet hours, the reminder, and the sessions that
+  are silent on their own). Then one table of events: for each, whether it **rings**,
+  which **tone**, whether the agent's name is **said**, and whether a VS Code
+  **notification** comes too. Then the voice that says who, and your sound library
+  with every built-in sound playable from one row.
+- The Notification column is the same setting as the notification switches in
+  Settings: change it in either place and both show it.
+- When nothing rings yet, the page offers the two events most people want (Asking
+  you, Turn finished) with their tones and a single button to turn both on.
+- A tone that cannot be played now says so under its picker: in yellow when another
+  sound plays instead, in red when the event would be silent. What actually plays,
+  and which choice it came from, is the first line of the picker's tooltip.
+- Settings shows one line in place of the old Alert sounds card: whether sound is
+  on, how many events ring, quiet hours and silent sessions, with an **Open Sound**
+  button.
+- New bridge op `alerts.status` returns the Sound page's whole model in one call.
+
 ## 3.768.0 - Gatekeeper, project squares on every card, smarter stall alerts (2026-10-01)
 
 - The decision gate's name on every page, menu, setting, tooltip and bridge

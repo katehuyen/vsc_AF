@@ -26,6 +26,7 @@ import { SuperpowersHealth } from '../core/superpowers';
 import {
     handleAfNav, htmlShell, TelegramBridgeHost, telegramCardData, telegramCardMessage
 } from './base';
+import { AlertMessageDeps, ALERT_ERROR_KEY, handleAlertMessage } from './alertMessages';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
 export interface AgentFolderReport {
@@ -37,7 +38,7 @@ export interface AgentFolderReport {
     candidates: { dir: string; name: string; excluded: boolean; agentId: string; model: string }[];
 }
 
-export interface FarmSettingsDeps {
+export interface FarmSettingsDeps extends AlertMessageDeps {
     extensionUri: vscode.Uri;
     /** U-152 — the flex points and presets card; the same deps the flex.* / presets.* ops use */
     flex?: FlexDeps;
@@ -162,61 +163,6 @@ export interface FarmSettingsDeps {
      *  normalisation (onto the row already there) is shared with the bridge. */
     superpowersSet?(agent: string, on: boolean): Promise<void>;
     /**
-     * ‼️ A-21 — THE ALERT SOUNDS, RESOLVED RATHER THAN PRINTED.
-     *
-     * Third time for the lesson the wiki root and the Superpowers folder each
-     * cost a week: `agentFarm.alerts.voices` is an object that is EMPTY out of
-     * the box, so the two JSON boxes this card replaces showed `{}` for a
-     * feature that already plays five different sounds. What a person wants
-     * from this page is "which sound will I hear, and why that one" — which
-     * only the resolution chain can answer, so the host hands the answer over
-     * and the boxes are gone rather than merely decorated.
-     */
-    alerts?(): AlertsPage | null;
-    /** Every write and every ▶ goes back to the host, because each one is the
-     *  same act as an `alerts.*` bridge op and they share the function. */
-    alertsSetOn?(event: string, on: boolean): Promise<void>;
-    alertsSetVoice?(event: string, voice: string): Promise<void>;
-    /** A-22 — the gate. The same two functions the status bar and the
-     *  `alerts.mute` / `alerts.quiet` ops go through. */
-    alertsSetMuted?(on: boolean): Promise<void>;
-    alertsSetQuiet?(patch: { on?: boolean; from?: string; to?: string }): Promise<void>;
-    /** U-123 — the nudge's three fields, through the same host function
-     *  `alerts.nudge` uses. Only what changed is sent; the rest keeps its value. */
-    alertsSetNudge?(patch: { minutes?: number; repeat?: number; voice?: string }): Promise<void>;
-    /** Unmute ONE session from the card that listed it as muted — the row says
-     *  which conversation is quiet, so it has to be able to undo it. */
-    alertsUnmuteSession?(sessionId: string): Promise<void>;
-    /** Play one voice by id — "what does this one sound like". Named after the
-     *  host function it is wired to, so the parity gate can SEE that the ▶ and
-     *  `alerts.play` are the same act rather than two implementations. */
-    alertsPlayVoice?(voice: string): Promise<void>;
-    /** Add / rename / drop one of the user's own sounds. `add` opens the file
-     *  picker itself: the host owns the dialog, the page owns the gesture. */
-    alertsVoiceAdd?(): Promise<void>;
-    alertsVoiceRename?(id: string, label: string): Promise<void>;
-    alertsVoiceRemove?(id: string): Promise<void>;
-    /** Open (creating if need be) the folder the card suggests sounds go in. */
-    alertsOpenFolder?(): Promise<void>;
-    /**
-     * ‼️ A-25 — THE ANNOUNCEMENT'S OWN CONTROLS, through the same host
-     * functions `alerts.speak` uses. `agentFarm.alerts.speak` is a seven-field
-     * object and was a raw JSON box: one of those fields is a voice NAME that
-     * has to exist on THIS machine, and a box cannot know whether it does.
-     */
-    alertsSetSpeak?(patch: Record<string, unknown>): Promise<void>;
-    alertsSetSpeakEvent?(event: string, on: boolean): Promise<void>;
-    /** Speak something RIGHT NOW, gate and queue bypassed — "does this machine
-     *  talk at all" is not the same question as "is the feature on". */
-    alertsSpeakTest?(text?: string): Promise<void>;
-    /** Ask the machine which voices it has. Costs a shell, so the page asks
-     *  once and the host keeps the answer; `force` is the reader who has just
-     *  installed a language pack and wants it in the list now. */
-    alertsLoadSpeechVoices?(force?: boolean): Promise<void>;
-    /** Clear ONE conversation's own announcement voice, from the strip that
-     *  listed it — the same act as `alerts.speak { sessionId, voice: '' }`. */
-    alertsClearSessionSpeech?(sessionId: string): Promise<void>;
-    /**
      * ‼️ U-84 — THE TELEGRAM BRIDGE, WHICH FOUR SETTINGS ROWS CANNOT REPORT ON.
      *
      * Reaching the farm from a phone is configured here — the switch, the
@@ -234,87 +180,6 @@ export interface FarmSettingsDeps {
     agentNames?(): string[];
 }
 
-/** One event's row on the Alert sounds card: what is armed, what was chosen,
- *  and what would ACTUALLY play — the three are not the same thing. */
-export interface AlertEventRow {
-    event: string;
-    on: boolean;
-    /** what the user picked for everybody; '' when nobody has picked */
-    chosen: string;
-    /** the built-in answer behind that blank */
-    fallback: string;
-    voice: string;
-    origin: string;
-    file: string;
-    playable: boolean;
-    skipped: { origin: string; voice: string; why: string }[];
-}
-
-/** A-22 — who is holding the gate shut, drawn on the same card that says which
- *  tone would play. The two questions are asked together and answering only the
- *  second is how "I set it up and heard nothing" happens. */
-export interface AlertsGate {
-    muted: boolean;
-    quiet: {
-        configured: boolean; inside: boolean; from: string; to: string;
-        nextChangeAt: number; inMinutes: number; error?: string; line: string;
-    };
-    silence: { silent: boolean; reason?: string; reasons: string[]; detail?: string };
-    mutedSessions: { sessionId: string; label: string }[];
-    /** U-123 — the second tap on the shoulder. `on` is the resolved answer
-     *  (either number at zero switches it off), `armed` is how many questions
-     *  are waiting for one right now — the figure that makes a policy visible. */
-    nudge: {
-        minutes: number; repeat: number; voice: string;
-        on: boolean; armed: number;
-        defaults: { minutes: number; repeat: number; voice: string };
-    };
-}
-
-/**
- * A-25 — the announcement, resolved rather than printed. `voice` is a loose
- * fragment (`Tolga` finds `Microsoft Tolga - Turkish (Turkey)`), so the setting
- * alone does not say what will be heard; `resolved` is what it actually reaches
- * on this machine and empty means NOTHING does — which fails the announcement
- * rather than reading it out in the wrong language.
- */
-export interface AlertsSpeak {
-    on: boolean;
-    events: string[];
-    template: string;
-    rate: number;
-    volume: number;
-    voice: string;
-    defaults: { on: boolean; events: string[]; template: string; rate: number; volume: number; voice: string };
-    max: number;
-    preview: string;
-    voices: { id: string; name: string; culture: string; engine: string; label: string }[];
-    /** ‼️ false is "not asked yet", NOT "this machine has no voices". */
-    voicesLoaded: boolean;
-    voicesError: string;
-    voicesNote: string;
-    resolved: string;
-    /** the matched voice's full name — what the picker's option is keyed on,
-     *  because `Tolga` is a legal setting and no option is called that */
-    resolvedName: string;
-    sessions: { sessionId: string; label: string; voice: string }[];
-}
-
-export interface AlertsPage {
-    gate: AlertsGate;
-    speak: AlertsSpeak;
-    folder: string;
-    limit: number;
-    /** extensions any player on THIS machine can open */
-    formats: string[];
-    /** the events a Timeline row's own ♪ can arm without this page */
-    sessionEvents: string[];
-    voices: {
-        id: string; label: string; file: string; builtin: boolean;
-        exists: boolean; playable: boolean; backend: string | null;
-    }[];
-    events: AlertEventRow[];
-}
 
 /** What the Superpowers section draws: the folder's own health, plus who
  *  starts with the switch on and whether anybody said so explicitly. */
@@ -618,23 +483,6 @@ export class FarmSettingsPanel {
         void this.panel.webview.postMessage({ type: 'data', data: this.buildData() });
     }
 
-    /** ‼️ A-21 — A REFUSED SOUND IS SHOWN, NOT SWALLOWED. Every rule the host
-     *  enforces (a built-in id, the limit of ten, a format no player here
-     *  opens) comes back as a sentence the user can act on; silence would be
-     *  indistinguishable from the alert simply being off. */
-    private alertError(error: string): void {
-        void this.panel.webview.postMessage({
-            type: 'error', key: 'agentFarm.alerts.voices', error: error.slice(0, 300)
-        });
-    }
-
-    /** Run one of the card's gestures and redraw — the row's resolved sound
-     *  changes with every write, so the card is never left showing the state
-     *  before the click. */
-    private async alertAct(run: () => Promise<void> | undefined): Promise<void> {
-        try { await run(); this.refresh(); }
-        catch (e) { this.alertError(String((e as Error).message)); }
-    }
 
     private async setValue(key: string, value: unknown): Promise<string> {
         const spec = this.deps.schema()[key];
@@ -658,6 +506,11 @@ export class FarmSettingsPanel {
             ...(this.deps.telegram ? { host: this.deps.telegram } : {}),
             webview: this.panel.webview,
             warn: t => void vscode.window.showWarningMessage('Agent Farm: ' + t),
+            refresh: () => this.refresh()
+        })) { return; }
+        // U-178 — the sound controls are the Sound page's too; one handler answers both pages.
+        if (await handleAlertMessage(msg, this.deps, {
+            error: error => void this.panel.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error }),
             refresh: () => this.refresh()
         })) { return; }
         // U-152 — a written value refreshes through onDidChangeConfiguration, like `set`.
@@ -1026,135 +879,6 @@ export class FarmSettingsPanel {
                 if (root) { void revealPath(root); }
                 break;
             }
-            /**
-             * ‼️ A-21 — THE ALERT SOUNDS CARD. Every one of these is the same
-             * act as an `alerts.*` bridge op and goes through the same host
-             * function; the page holds no rule of its own about reserved ids,
-             * the limit of ten, or which formats play.
-             *
-             * Every refusal is SHOWN, on the card, against the control that
-             * caused it — a sound feature that fails silently is
-             * indistinguishable from one that is merely switched off, which is
-             * the whole failure mode A-18 was opened for.
-             */
-            case 'alertOn':
-                await this.alertAct(() =>
-                    this.deps.alertsSetOn?.(String(msg.event ?? ''), msg.on !== false));
-                break;
-            case 'alertVoice':
-                await this.alertAct(() =>
-                    this.deps.alertsSetVoice?.(String(msg.event ?? ''), String(msg.voice ?? '')));
-                break;
-            // A-22 — the gate. A refused quiet window (a time that is not
-            // HH:MM) comes back through the same `alertError` channel and is
-            // shown against the card, because a schedule that reads as
-            // configured and silences nothing is the worst of the outcomes.
-            case 'alertMute':
-                await this.alertAct(() => this.deps.alertsSetMuted?.(msg.on !== false));
-                break;
-            case 'alertQuiet':
-                await this.alertAct(() => this.deps.alertsSetQuiet?.({
-                    ...(msg.on === undefined ? {} : { on: msg.on !== false }),
-                    ...(msg.from === undefined ? {} : { from: String(msg.from) }),
-                    ...(msg.to === undefined ? {} : { to: String(msg.to) })
-                }));
-                break;
-            /**
-             * ‼️ U-123 — THE NUDGE'S THREE FIELDS, one message, exactly like the
-             * quiet hours above it. The page sends only what it changed; the
-             * host keeps the rest and clamps what it is given, so a number a
-             * box should never have produced is never stored.
-             *
-             * `on: false` is `minutes: 0` — the setting's own way of saying off,
-             * rather than a fourth field that could disagree with the other
-             * three. Switching it back on with the numbers still at zero would
-             * arm nothing, so the defaults answer for whichever half is empty.
-             */
-            case 'alertNudge': {
-                const patch: { minutes?: number; repeat?: number; voice?: string } = {};
-                if (msg.on !== undefined) {
-                    if (msg.on === false) {
-                        patch.minutes = 0;
-                    } else {
-                        patch.minutes = Number(msg.minutes) || 0;
-                        patch.repeat = Number(msg.repeat) || 0;
-                    }
-                }
-                if (msg.minutes !== undefined && msg.on === undefined) {
-                    patch.minutes = Number(msg.minutes);
-                }
-                if (msg.repeat !== undefined && msg.on === undefined) {
-                    patch.repeat = Number(msg.repeat);
-                }
-                if (msg.voice !== undefined) { patch.voice = String(msg.voice); }
-                await this.alertAct(() => this.deps.alertsSetNudge?.(patch));
-                break;
-            }
-            case 'alertUnmuteSession':
-                await this.alertAct(() =>
-                    this.deps.alertsUnmuteSession?.(String(msg.sessionId ?? '')));
-                break;
-            // ▶ — plays and changes nothing, so the page is NOT redrawn: a
-            // redraw under the hand would close the picker the reader just
-            // opened to compare two tones.
-            case 'alertPlay':
-                try { await this.deps.alertsPlayVoice?.(String(msg.voice ?? '')); }
-                catch (e) { this.alertError(String((e as Error).message)); }
-                break;
-            case 'alertVoiceAdd':
-                await this.alertAct(() => this.deps.alertsVoiceAdd?.());
-                break;
-            case 'alertVoiceRename': {
-                const id = String(msg.id ?? '').trim();
-                const label = String(msg.label ?? '').trim();
-                if (!id || !label) { break; }
-                await this.alertAct(() => this.deps.alertsVoiceRename?.(id, label));
-                break;
-            }
-            case 'alertVoiceRemove': {
-                const id = String(msg.id ?? '').trim();
-                if (!id) { break; }
-                await this.alertAct(() => this.deps.alertsVoiceRemove?.(id));
-                break;
-            }
-            /**
-             * ‼️ A-25 — EVERY FLEET-WIDE WRITE ON THE ANNOUNCEMENT STRIP, one
-             * message. The page sends only the fields it changed and the host
-             * merges them through `speakConfig`, so a rate the box should never
-             * have produced is clamped rather than stored.
-             */
-            case 'alertSpeak': {
-                const patch: Record<string, unknown> = {};
-                for (const k of ['on', 'template', 'rate', 'volume', 'voice']) {
-                    if (msg[k] !== undefined) { patch[k] = msg[k]; }
-                }
-                if (msg.event !== undefined) {
-                    await this.alertAct(() =>
-                        this.deps.alertsSetSpeakEvent?.(String(msg.event), msg.on !== false));
-                    break;
-                }
-                await this.alertAct(() => this.deps.alertsSetSpeak?.(patch));
-                break;
-            }
-            case 'alertSpeakTest':
-                // Not through `alertAct`: speaking changes no setting, so the
-                // redraw it would trigger is a page that flickers for nothing.
-                try {
-                    await this.deps.alertsSpeakTest?.(
-                        msg.text === undefined ? undefined : String(msg.text));
-                } catch (e) { this.alertError(String((e as Error).message)); }
-                break;
-            case 'alertSpeakVoices':
-                await this.alertAct(() =>
-                    this.deps.alertsLoadSpeechVoices?.(msg.force === true));
-                break;
-            case 'alertSpeakSession':
-                await this.alertAct(() =>
-                    this.deps.alertsClearSessionSpeech?.(String(msg.sessionId ?? '')));
-                break;
-            case 'alertFolder':
-                await this.alertAct(() => this.deps.alertsOpenFolder?.());
-                break;
             case 'rootCleanDupes': {
                 const cfg = vscode.workspace.getConfiguration();
                 const roots = cfg.get<string[]>('agentFarm.agentRoots', []);

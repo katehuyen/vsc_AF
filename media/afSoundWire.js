@@ -7,26 +7,20 @@
     /** The card's own look, once per page. */
     function style() {
         return `<style>
-                /* A-21 — the alert table. Four columns and only one of them is
-                   free-width: what would actually play, which is the sentence
-                   the reader came for. The ▶ column carries one button and must
-                   not take an equal share of a fixed layout. */
-                .alerttbl { max-width:900px; margin-top:6px; }
-                .alerttbl th:nth-child(1), .alerttbl td:nth-child(1) { width:170px; }
-                /* A-25 — one tick wide and no wider. It is the same question as
-                   the column to its left asked about a different output, so it
-                   sits beside it rather than at the far end of the row. */
-                .alerttbl th:nth-child(2), .alerttbl td.alertsay { width:30px; text-align:center; }
-                .alerttbl td.alertsay .alertonlbl { justify-content:center; }
-                /* audit B-05 — 210px cut its own picker: a sound named by the
-                   user and suffixed with its state ("Studio take — not playable
-                   here") measured 185px against 170px of room, while the Plays
-                   column beside it drew 456px for content needing 155. The
-                   ceiling stays (one long name may not eat the row); it moved
-                   to where a real name fits, out of the column that had slack. */
-                .alerttbl th:nth-child(3), .alerttbl td:nth-child(3) { width:250px; }
-                .alerttbl th.setthx, .alerttbl td.alertbtn { width:34px; padding-right:0; }
-                .alerttbl td.alertbtn button { width:100%; padding:0 4px; }
+                /* U-178 — Event | Ring | Tone | Say who | Notification. The
+                   three switches are one tick wide; the Tone cell is the free
+                   one, because a sound named by the user and suffixed with its
+                   state must fit beside its ▶ (audit B-05). */
+                .alerttbl { max-width:760px; margin-top:6px; }
+                .alerttbl th:nth-child(1), .alerttbl td:nth-child(1) { width:150px; }
+                .alerttbl th:nth-child(2), .alerttbl th:nth-child(4) { width:56px; text-align:center; }
+                .alerttbl th:nth-child(5) { width:92px; text-align:center; }
+                .alerttbl td { vertical-align:middle; } .alerttbl td.alertck { text-align:center; }
+                .alerttbl td.alertck .alertonlbl { justify-content:center; }
+                .alerttonebox { display:flex; gap:4px; align-items:center; }
+                .alerttonebox select { flex:1 1 auto; min-width:0; }
+                .alerttonebox button { flex:none; padding:0 6px; min-width:0; }
+                .alertnone { opacity:.45; }
                 .alertonlbl { display:flex; gap:6px; align-items:center; cursor:pointer;
                     overflow:hidden; }
                 /* ‼️ .settbl input is width:100% — right for a text cell and
@@ -38,12 +32,10 @@
                    across. */
                 .alertev { white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
                     border-bottom:1px dotted var(--vscode-widget-border, #4444); }
-                .alertplays { font-family:var(--vscode-editor-font-family); }
+                /* audit B-05 — a fallback is a warning (something still rings);
+                   an armed event nothing can play is SILENCE, found first. */
+                .alertplays { font-size:11px; margin-top:2px; }
                 .alertplays.bad { color:var(--vscode-charts-yellow, #d7ba7d); }
-                /* audit B-05 — the row the badge is counting. A fallback is a
-                   warning (something still rings); an armed event nothing can
-                   play is SILENCE, and silence is the one the eye has to find
-                   first. */
                 .alertplays.silent { color:var(--vscode-errorForeground); }
                 .alertorigin { font-family:var(--vscode-font-family); opacity:.55; font-size:10px; }
                 /* A-22 — the gate strip. ONE LINE above the table: three
@@ -91,7 +83,7 @@
                    ("Microsoft David - English (United States) · en-US · onecore"
                    is 333px against 306px of room) with 830px unused to its
                    right. */
-                .alertspeak #alertspeakvoice { flex:1 1 260px; min-width:180px; max-width:380px; }
+                .alertspeak #alertspeakvoice { flex:1 0 340px; min-width:180px; max-width:420px; }
                 .alertspeak .alertqtime { width:56px; }
                 .alertspeak .alertspeaktpl { flex:1 1 200px; min-width:120px; max-width:280px;
                     font-family:var(--vscode-editor-font-family); }
@@ -114,6 +106,11 @@
         document.querySelectorAll('[data-alerton]').forEach(el =>
             el.addEventListener('change', () => vscode.postMessage({
                 type: 'alertOn', event: el.dataset.alerton, on: el.checked
+            })));
+        // U-178 — the Notification column: the notify* setting, one event at a time.
+        document.querySelectorAll('[data-alertnotify]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'alertNotify', event: el.dataset.alertnotify, on: el.checked
             })));
         document.querySelectorAll('[data-alertvoice]').forEach(el =>
             el.addEventListener('change', () => vscode.postMessage({

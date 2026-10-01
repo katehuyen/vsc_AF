@@ -870,6 +870,151 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#alertFolder",
+      "ui": [
+        "page:alertMessages.ts#alertFolder"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the folder the card SUGGESTS sounds go in, in the file manager (creating it on the way, because it is only a suggestion and does not exist until somebody first asks for it). It reveals a path and changes no setting, no sound and no choice."
+      }
+    },
+    {
+      "capability": "alertMessages.ts#alertMute",
+      "ui": [
+        "page:alertMessages.ts#alertMute"
+      ],
+      "ops": [
+        "alerts.mute"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertNotify",
+      "ui": [
+        "page:alertMessages.ts#alertNotify"
+      ],
+      "ops": [
+        "settings.set"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertNudge",
+      "ui": [
+        "page:alertMessages.ts#alertNudge"
+      ],
+      "ops": [
+        "alerts.nudge"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertOn",
+      "ui": [
+        "page:alertMessages.ts#alertOn"
+      ],
+      "ops": [
+        "alerts.on"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertPlay",
+      "ui": [
+        "page:alertMessages.ts#alertPlay"
+      ],
+      "ops": [
+        "alerts.play"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertQuiet",
+      "ui": [
+        "page:alertMessages.ts#alertQuiet"
+      ],
+      "ops": [
+        "alerts.quiet"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertSpeak",
+      "ui": [
+        "page:alertMessages.ts#alertSpeak"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertSpeakSession",
+      "ui": [
+        "page:alertMessages.ts#alertSpeakSession"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertSpeakTest",
+      "ui": [
+        "page:alertMessages.ts#alertSpeakTest"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertSpeakVoices",
+      "ui": [
+        "page:alertMessages.ts#alertSpeakVoices"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertUnmuteSession",
+      "ui": [
+        "page:alertMessages.ts#alertUnmuteSession"
+      ],
+      "ops": [
+        "alerts.mute"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertVoice",
+      "ui": [
+        "page:alertMessages.ts#alertVoice"
+      ],
+      "ops": [
+        "alerts.voice.set"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertVoiceAdd",
+      "ui": [
+        "page:alertMessages.ts#alertVoiceAdd"
+      ],
+      "ops": [
+        "alerts.voice.add"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertVoiceRemove",
+      "ui": [
+        "page:alertMessages.ts#alertVoiceRemove"
+      ],
+      "ops": [
+        "alerts.voice.remove"
+      ]
+    },
+    {
+      "capability": "alertMessages.ts#alertVoiceRename",
+      "ui": [
+        "page:alertMessages.ts#alertVoiceRename"
+      ],
+      "ops": [
+        "alerts.voice.rename"
+      ]
+    },
+    {
       "capability": "applyMergedMemory",
       "ui": [
         "cmd:agentfarm.applyMergedMemory"
@@ -1523,6 +1668,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "consolePanel.ts#openProject",
+      "ui": [
+        "page:consolePanel.ts#openProject"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "The project square on a Console card opens that project page; whatever is done there carries its own op."
       }
     },
     {
@@ -3504,16 +3659,6 @@
       }
     },
     {
-      "capability": "consolePanel.ts#openProject",
-      "ui": [
-        "page:consolePanel.ts#openProject"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "The project square on a Console card opens that project page; whatever is done there carries its own op."
-      }
-    },
-    {
       "capability": "noticesPanel.ts#openProject",
       "ui": [
         "page:noticesPanel.ts#openProject"
@@ -3588,6 +3733,34 @@
       ],
       "ops": [
         "notices.undo"
+      ]
+    },
+    {
+      "capability": "nowPanel.ts#afnav",
+      "ui": [
+        "page:nowPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "nowPanel.ts#refresh",
+      "ui": [
+        "page:nowPanel.ts#refresh"
+      ],
+      "ops": [
+        "now.get"
+      ]
+    },
+    {
+      "capability": "nowPanel.ts#send",
+      "ui": [
+        "page:nowPanel.ts#send"
+      ],
+      "ops": [
+        "console.send"
       ]
     },
     {
@@ -3923,6 +4096,16 @@
       }
     },
     {
+      "capability": "openNow",
+      "ui": [
+        "cmd:agentfarm.openNow"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "openPortfolio",
       "ui": [
         "cmd:agentfarm.openPortfolio"
@@ -4011,6 +4194,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openSound",
+      "ui": [
+        "cmd:agentfarm.openSound"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
       }
     },
     {
@@ -6014,142 +6207,6 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#alertFolder",
-      "ui": [
-        "page:settingsPanel.ts#alertFolder"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens the folder the card SUGGESTS sounds go in, in the file manager (creating it on the way, because it is only a suggestion and does not exist until somebody first asks for it). It reveals a path and changes no setting, no sound and no choice."
-      }
-    },
-    {
-      "capability": "settingsPanel.ts#alertMute",
-      "ui": [
-        "page:settingsPanel.ts#alertMute"
-      ],
-      "ops": [
-        "alerts.mute"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertNudge",
-      "ui": [
-        "page:settingsPanel.ts#alertNudge"
-      ],
-      "ops": [
-        "alerts.nudge"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertOn",
-      "ui": [
-        "page:settingsPanel.ts#alertOn"
-      ],
-      "ops": [
-        "alerts.on"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertPlay",
-      "ui": [
-        "page:settingsPanel.ts#alertPlay"
-      ],
-      "ops": [
-        "alerts.play"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertQuiet",
-      "ui": [
-        "page:settingsPanel.ts#alertQuiet"
-      ],
-      "ops": [
-        "alerts.quiet"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertSpeak",
-      "ui": [
-        "page:settingsPanel.ts#alertSpeak"
-      ],
-      "ops": [
-        "alerts.speak"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertSpeakSession",
-      "ui": [
-        "page:settingsPanel.ts#alertSpeakSession"
-      ],
-      "ops": [
-        "alerts.speak"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertSpeakTest",
-      "ui": [
-        "page:settingsPanel.ts#alertSpeakTest"
-      ],
-      "ops": [
-        "alerts.speak"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertSpeakVoices",
-      "ui": [
-        "page:settingsPanel.ts#alertSpeakVoices"
-      ],
-      "ops": [
-        "alerts.speak"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertUnmuteSession",
-      "ui": [
-        "page:settingsPanel.ts#alertUnmuteSession"
-      ],
-      "ops": [
-        "alerts.mute"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertVoice",
-      "ui": [
-        "page:settingsPanel.ts#alertVoice"
-      ],
-      "ops": [
-        "alerts.voice.set"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertVoiceAdd",
-      "ui": [
-        "page:settingsPanel.ts#alertVoiceAdd"
-      ],
-      "ops": [
-        "alerts.voice.add"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertVoiceRemove",
-      "ui": [
-        "page:settingsPanel.ts#alertVoiceRemove"
-      ],
-      "ops": [
-        "alerts.voice.remove"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertVoiceRename",
-      "ui": [
-        "page:settingsPanel.ts#alertVoiceRename"
-      ],
-      "ops": [
-        "alerts.voice.rename"
-      ]
-    },
-    {
       "capability": "settingsPanel.ts#applyProfile",
       "ui": [
         "page:settingsPanel.ts#applyProfile"
@@ -6288,16 +6345,6 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#openAccounts",
-      "ui": [
-        "page:settingsPanel.ts#openAccounts"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
       "capability": "settingsPanel.ts#kapiciMcp",
       "ui": [
         "page:settingsPanel.ts#kapiciMcp"
@@ -6308,9 +6355,9 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#openSecrets",
+      "capability": "settingsPanel.ts#openAccounts",
       "ui": [
-        "page:settingsPanel.ts#openSecrets"
+        "page:settingsPanel.ts#openAccounts"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6345,6 +6392,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#openSecrets",
+      "ui": [
+        "page:settingsPanel.ts#openSecrets"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
     },
     {
@@ -6586,6 +6643,26 @@
       "ops": [
         "sessions.page"
       ]
+    },
+    {
+      "capability": "soundPanel.ts#afnav",
+      "ui": [
+        "page:soundPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the eye to another page through the shared nav map; changes nothing."
+      }
+    },
+    {
+      "capability": "soundPanel.ts#refresh",
+      "ui": [
+        "page:soundPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads the sound model and repaints; alerts.status returns the same model."
+      }
     },
     {
       "capability": "speakDigest",
@@ -7826,6 +7903,61 @@
       ]
     },
     {
+      "capability": "toolboxRemote.ts#remote-copy-link",
+      "ui": [
+        "page:toolboxRemote.ts#remote-copy-link"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Copies the pairing link to the clipboard — remote.pair already returns the same link to an agent, and nothing is changed."
+      }
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-firewall-allow",
+      "ui": [
+        "page:toolboxRemote.ts#remote-firewall-allow"
+      ],
+      "ops": [
+        "remote.firewall.allow"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-listen",
+      "ui": [
+        "page:toolboxRemote.ts#remote-listen"
+      ],
+      "ops": [
+        "remote.listen"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-pair",
+      "ui": [
+        "page:toolboxRemote.ts#remote-pair"
+      ],
+      "ops": [
+        "remote.pair"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-revoke",
+      "ui": [
+        "page:toolboxRemote.ts#remote-revoke"
+      ],
+      "ops": [
+        "remote.revoke"
+      ]
+    },
+    {
+      "capability": "toolboxRemote.ts#remote-revoke-all",
+      "ui": [
+        "page:toolboxRemote.ts#remote-revoke-all"
+      ],
+      "ops": [
+        "remote.revoke"
+      ]
+    },
+    {
       "capability": "toolboxWeb.ts#web-bind",
       "ui": [
         "page:toolboxWeb.ts#web-bind"
@@ -7869,61 +8001,6 @@
       ],
       "ops": [
         "web.token.new"
-      ]
-    },
-    {
-      "capability": "toolboxRemote.ts#remote-listen",
-      "ui": [
-        "page:toolboxRemote.ts#remote-listen"
-      ],
-      "ops": [
-        "remote.listen"
-      ]
-    },
-    {
-      "capability": "toolboxRemote.ts#remote-pair",
-      "ui": [
-        "page:toolboxRemote.ts#remote-pair"
-      ],
-      "ops": [
-        "remote.pair"
-      ]
-    },
-    {
-      "capability": "toolboxRemote.ts#remote-revoke",
-      "ui": [
-        "page:toolboxRemote.ts#remote-revoke"
-      ],
-      "ops": [
-        "remote.revoke"
-      ]
-    },
-    {
-      "capability": "toolboxRemote.ts#remote-firewall-allow",
-      "ui": [
-        "page:toolboxRemote.ts#remote-firewall-allow"
-      ],
-      "ops": [
-        "remote.firewall.allow"
-      ]
-    },
-    {
-      "capability": "toolboxRemote.ts#remote-copy-link",
-      "ui": [
-        "page:toolboxRemote.ts#remote-copy-link"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Copies the pairing link to the clipboard — remote.pair already returns the same link to an agent, and nothing is changed."
-      }
-    },
-    {
-      "capability": "toolboxRemote.ts#remote-revoke-all",
-      "ui": [
-        "page:toolboxRemote.ts#remote-revoke-all"
-      ],
-      "ops": [
-        "remote.revoke"
       ]
     },
     {
@@ -8165,44 +8242,6 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
-    },
-    {
-      "capability": "openNow",
-      "ui": [
-        "cmd:agentfarm.openNow"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "nowPanel.ts#afnav",
-      "ui": [
-        "page:nowPanel.ts#afnav"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "nowPanel.ts#refresh",
-      "ui": [
-        "page:nowPanel.ts#refresh"
-      ],
-      "ops": [
-        "now.get"
-      ]
-    },
-    {
-      "capability": "nowPanel.ts#send",
-      "ui": [
-        "page:nowPanel.ts#send"
-      ],
-      "ops": [
-        "console.send"
-      ]
     }
   ]
 }

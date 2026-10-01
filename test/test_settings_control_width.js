@@ -96,15 +96,15 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     };
     report('engines', boxes);
 
-    // ‼️ audit B-05 — THE SAME PAGE, ITS OTHER HALF. `media/settings.js` draws
-    // the Alert Sounds section too, and the sweep found two boxes cut there
+    // ‼️ audit B-05 — THE ALERT CONTROLS, now on the Sound page — U-178; they
+    // were Settings ▸ Alert sounds when the sweep found two boxes cut there
     // that no test looked at: the per-event sound picker (a user-named sound
     // plus its state, 185px in 170px) and the announcement voice (every real
     // voice on this machine, 333px in 306px, with 830px free beside it).
-    const alerts = measure('alertsettings');
+    const alerts = measure('sound');
     ok(`the alert surface answered with controls to measure (${alerts.length})`,
         alerts.length > 0);
-    report('alertsettings', alerts);
+    report('sound', alerts);
     ok('the alert fixture still carries a sound name long enough to test the box',
         alerts.some(b => /Studio take/.test(b.t))
         && alerts.some(b => /Microsoft \w+ - English/.test(b.t)));
@@ -139,7 +139,7 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "var b=s.getBoundingClientRect();if(b.width<=0||b.height<=0){return;}"
         + "for(var i=0;i<s.options.length;i++){if(String(s.options[i].text).trim()===''){"
         + "o.push((s.id||String(s.className))+'['+i+']');}}});return Array.from(new Set(o));})()";
-    for (const fixture of ['engines', 'alertsettings', 'wikisettings', 'tasks']) {
+    for (const fixture of ['engines', 'alertsettings', 'sound', 'wikisettings', 'tasks']) {
         node([path.join('test', 'render_page.js'), fixture]);
         let blanks = [];
         try {

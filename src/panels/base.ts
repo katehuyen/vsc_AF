@@ -316,6 +316,7 @@ export function handleAfNav(to: unknown): void {
         engines: 'agentfarm.openEngines',
         accounts: 'agentfarm.openAccounts',
         settings: 'agentfarm.openFarmSettings',
+        sound: 'agentfarm.openSound',
         capabilities: 'agentfarm.openCapabilities',
         toolbox: 'agentfarm.openToolbox',
         evals: 'agentfarm.openEvals',

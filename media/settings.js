@@ -2186,9 +2186,9 @@
         }) + boxes;
     }
 
-    /** The Live category, with the two alert-sound boxes replaced by the card
-     *  IN THEIR OWN PLACE — beside the notification switches, where the reader
-     *  who confused the two will be looking. */
+    /** The Live category, with every alert-sound box replaced by ONE summary line
+     *  pointing at the Sound page (U-178), in their own place — beside the
+     *  notification switches, where the reader who confused the two will look. */
     // U-158 — the stuck warning is one question (after how long, and whether it sounds), so it is one group
     const STUCK_KEYS = ['agentFarm.stuckThresholdSeconds', 'agentFarm.notifyStuck'];
 
@@ -2232,7 +2232,7 @@
             }
             if (drawn) { return ''; }
             drawn = true;
-            return window.AFSoundCard.card(al, { error: errors['agentFarm.alerts.voices'] });
+            return window.AFSoundCard.summary(al);
         }).join('') + stuck;
     }
 
@@ -2264,7 +2264,7 @@
         const claudeHtml = claudeSection();
         const enginesHtml = enginesSection();
 
-        document.getElementById('app').innerHTML = `${window.AFSoundCard.style()}
+        document.getElementById('app').innerHTML = `
             <style>
                 .profbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0;
                     padding:8px 10px; border:1px solid var(--vscode-panel-border); border-radius:6px; }
@@ -2590,7 +2590,6 @@
             el.addEventListener('change', () => vscode.postMessage({
                 type: 'spDefault', agent: el.dataset.spagent, on: el.checked
             })));
-        window.AFSoundCard.wire(vscode, () => DATA);
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
             // the box is a QUERY, not a substring — media/afQuery.js. Kept as
