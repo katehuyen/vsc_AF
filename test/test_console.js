@@ -748,7 +748,8 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('a resume uses the transcript engine instead of forcing Claude',
         /const engine = \(s\.source/.test(ext2)
         && /engine,\s*\n\s*model: want\.model/.test(ext2)
-        && /const inherit = lastRunDimensions\(s\)/.test(ext2)
+        // S-109 — the row's own answers now come through the one reopen answer
+        && /const want = reopenFor\(\{ sessionId: s\.sessionId, engine/.test(ext2)
         && !/every row this command can reach is a Claude session/.test(ext2));
     ok('Console-hosted Antigravity dialogue is persisted in a readable transcript',
         /farmConsoleTranscript\(s\)/.test(ext2)

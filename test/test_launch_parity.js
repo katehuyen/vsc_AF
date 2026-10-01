@@ -779,8 +779,10 @@ const launchTs = read('src', 'core', 'launch.ts');
     const at = panelTs.indexOf("case 'resume': {");
     const door = at < 0 ? '' : panelTs.slice(at, panelTs.indexOf("case 'forgetLastWindow'", at));
     ok('the shelf\'s resume door was found in the source', door.length > 500);
-    ok('‼️ …and it STATES the account the session ran under',
-        /account: this\.deps\.sessionAccount\?\.\(sessionId\)/.test(door));
+    // S-109 — the account it CLOSED with, from the one reopen answer (the card's
+    // record after an account move, else the launch's), the reader as fallback
+    ok('‼️ …and it STATES the account the session closed under',
+        /account: reopened \? reopened\.account : this\.deps\.sessionAccount\?\.\(sessionId\)/.test(door));
     ok('…through the one reader every other surface asks, not a second resolver',
         /sessionAccount\?\(sessionId: string\)/.test(panelTs)
         && /sessionAccount: \(sessionId: string\) => sessionAccountOf\(sessionId\)\?\.id/.test(extTs));
@@ -794,7 +796,8 @@ const launchTs = read('src', 'core', 'launch.ts');
     // not that conversation, so it takes the composer's choice rather than a
     // slot read off somebody else's run.
     ok('‼️ …while "new session in the same folder" does NOT inherit it — it is not that session',
-        (door.match(/account: this\.deps\.sessionAccount/g) || []).length === 1);
+        (door.match(/account: reopened \?/g) || []).length === 1
+        && !/account: this\.deps\.sessionAccount/.test(door));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

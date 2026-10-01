@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.767.0 - A reopened session comes back as it closed (2026-10-01)
+
+- Whatever way a session is opened again, it now uses the model, effort, permission
+  mode and account it **closed** with, not the ones it was started with. This covers
+  Resume in the Console, in a terminal and from the session page, Continue,
+  `console.start` / `sessions.start` with `resume=`, a task that continues its
+  conversation, and every baton relay leg.
+- A relay leg gets the model, effort and permission mode its predecessor ended on. Raising
+  a chain's first session from medium to xhigh on its card now carries xhigh to every leg.
+  The leg's account is still chosen by the "stay on the same account" rule.
+- What a Console card was last set to is kept on disk for each session, so it survives the
+  card closing, a window reload and a crash. A model or effort changed inside the CLI
+  is read from the transcript, and whichever change came last wins.
+- Resume after moving a session to another account now uses the account it was moved to.
+- The session page's Resume goes through the terminal Resume door. It no longer runs a
+  bare `claude --resume` on the machine's own sign-in.
+- Continue now reopens the latest conversation on its own account, not the account
+  currently selected. If that account is gone, the current selection is used.
+- A task that continues its conversation takes the model, effort and permission mode the
+  conversation closed with. If someone changed the queued row by hand, the change is kept.
+  The task's event list shows "setup from its conversation".
+
 ## 3.766.0 - Pair a phone without scanning (2026-10-01)
 
 - The pairing card shows its link as text under the QR code, with a **copy link** button.

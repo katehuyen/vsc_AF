@@ -164,8 +164,10 @@ function host(o = {}) {
         /sendToTerminalWhenReady\(terminal, command\);/.test(ext));
     ok('the task terminal, with its exit line kept in order',
         /sendToTerminalWhenReady\(terminal,\s*\n\s*\.\.\.\(close === 'auto-close' \? \[command, 'exit'\] : \[command\]\)\)/.test(tasks));
-    ok('the session viewer\'s own fallback, which literally sends --resume',
-        /sendToTerminalWhenReady\(terminal, command\);/.test(viewer));
+    // S-109 — the viewer no longer opens a terminal of its own: its Resume is
+    // the terminal Resume door's, which resolves what the session closed with.
+    ok('the session viewer hands Resume to the terminal Resume door and opens no terminal itself',
+        /executeCommand\('agentfarm\.resumeSession'/.test(viewer) && !/createTerminal\(/.test(viewer));
 
     const blind = (src) => (src.match(/terminal\.sendText\([^,]+, true\)/g) || [])
         .concat(src.match(/term\.sendText\([^,]+, true\)/g) || []);

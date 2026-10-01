@@ -3680,7 +3680,9 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         'route-drift': 'route moved under it',
         // X-109 - a resumed run's route was decided by the gate, not copied
         // off the task; the note says which of pinned/switch/unbound it was.
-        route: 'route decided'
+        route: 'route decided',
+        // S-109 - a resumed run took what its conversation closed with
+        setup: 'setup from its conversation'
     };
 
     /**

@@ -368,6 +368,9 @@ import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { StayVerdict, stayOnAccount, stayPctOf } from './core/stayAccount';
+import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
+import { ReopenSetup } from './core/closingSetup';
+import { ReopenDeps, ReopenQuery, batonOnClosing, reopenSetupFor, sessionOwnOf } from './launch/reopen';
 import { legFactsFrom } from './core/batonLegFacts';
 import { legGitReaders } from './core/legRoots';
 import { BatonStore } from './core/batonStore';
@@ -3771,6 +3774,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (n) { void vscode.window.showInformationMessage(`Agent Farm — Airtable: ${n} waiting record(s) written to ${instance}.`); }
         }, () => undefined);
     };
+    // ‼️ S-109 — the one reopen answer is built far below (it needs the index,
+    // the manifests and the agents); a task starting before it exists asks
+    // nothing and runs on its row, exactly as before.
+    let reopenLate: ((q: ReopenQuery) => ReopenSetup) | undefined;
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -3999,6 +4006,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             resumeRoute: (agentId, engine, sessionId, route) => resumeRouteFor(
                 sessionId, engine, agentId,
                 { providerId: route?.providerId, tier: route?.tier }, 'run'),
+            reopenSetup: (sessionId, engine, agentName) => {
+                const r = reopenLate?.({ sessionId, engine, agentName });
+                if (!r) { return {}; }
+                const own = sessionOwnOf(r);
+                const closed = (d: 'model' | 'effort' | 'permissionMode') =>
+                    r.from[d] === 'card' || r.from[d] === 'transcript' ? own[d] : undefined;
+                return {
+                    model: closed('model'), effort: closed('effort'), permissionMode: closed('permissionMode'),
+                    launch: sessionRequestedOf(sessionId, engine)
+                };
+            },
             // ‼️ X-169 — and which sign-in it runs as, from the same side and for
             // the same reason (see TaskRunnerOpts.accountLayer).
             accountLayer: (engine, account, agentId) => launchAccountEnv({ engine, account, agentId }),
@@ -11571,14 +11589,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const resumed = optStr(args, 'resume')
                     ? sessionFromArg(optStr(args, 'resume'))
                     : undefined;
-                const inherit = resumed ? lastRunDimensions(resumed) : {};
-                // S-102 — what its own launch asked for fills what the transcript is silent on
-                const asked = resumed ? sessionRequestedOf(resumed.sessionId, String(resumed.source || 'claude')) : {};
-                if (!o.model && (inherit.model || asked.model)) { o.model = inherit.model || asked.model; }
-                if (!o.effort && (inherit.effort || asked.effort)) { o.effort = inherit.effort || asked.effort; }
-                if (!o.permissionMode && (inherit.permissionMode || asked.permissionMode)) {
-                    o.permissionMode = inherit.permissionMode || asked.permissionMode;
-                }
+                // ‼️ S-109 — what the session itself closed with (card record →
+                // transcript → its own launch), from the one reopen answer; the
+                // agent and fleet layers stay where they were, in the merge below.
+                const own = resumed ? sessionOwnOf(reopenFor({
+                    sessionId: resumed.sessionId, engine: String(resumed.source || 'claude'), agentName: resumed.agentName
+                })) : {};
+                if (!o.model && own.model) { o.model = own.model; }
+                if (!o.effort && own.effort) { o.effort = own.effort; }
+                if (!o.permissionMode && own.permissionMode) { o.permissionMode = own.permissionMode; }
+                // …and the sign-in it ran on, unless that slot is gone (then the
+                // standing rule decides, as console.start resume= does — S-102).
+                if (!o.account && own.account && !launchAccountRefusal({
+                    engine: String(resumed?.source || 'claude'), account: own.account, agentId: agent.id, model: o.model || ''
+                })) { o.account = own.account; }
                 /**
                  * ‼️ X-109 — AND THE ROUTE IS THE GATE'S, on the same S-45
                  * order: `provider=` typed here is a DELIBERATE ask and is
@@ -12602,7 +12626,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ran on, as every Console door does; a slot since forgotten is
                 // not a reason to refuse the resume, so it falls to the rule below.
                 const askedAccount = optStr(args, 'account');
-                const ownAccount = !askedAccount && resume ? sessionAccountOf(resume)?.id ?? '' : '';
+                const ownAccount = !askedAccount && resume
+                    ? reopenFor({ sessionId: resume, engine, agentName: agent.name }).account ?? '' : '';
                 const wantAccount = askedAccount || (ownAccount && !launchAccountRefusal({
                     engine, account: ownAccount, agentId: agent.id, model: optStr(args, 'model') || ''
                 }) ? ownAccount : '');
@@ -12657,15 +12682,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ‼️ S-102 — a resume= that names no model, effort or mode continues as it ran, in
                 // sessions.start's order: the caller's word, the transcript, its own launch manifest,
                 // then the fleet — the pair narrowed for the engine it runs on now (X-30).
-                const inherit = lastRunDimensions(past);
-                const asked = resume ? sessionRequestedOf(resume, engine) : {};
-                const pair = resume
-                    ? narrowLaunch(engineModelMatrix()[engine as EngineId],
-                        inherit.model || asked.model || d.model, inherit.effort || asked.effort || d.effort)
-                    : { model: d.model, effort: d.effort };
+                // ‼️ S-109 — that order now lives in ONE place (reopenFor), with the
+                // card's durable record as its newest layer.
+                const back = resume ? reopenFor({ sessionId: resume, engine, agentName: past?.agentName ?? agent.name }) : undefined;
+                const pair = back ? { model: back.model, effort: back.effort } : { model: d.model, effort: d.effort };
                 const runModel = optStr(args, 'model') || pair.model;
                 const runEffort = optStr(args, 'effort') || pair.effort;
-                const runMode = optStr(args, 'permissionMode') || inherit.permissionMode || asked.permissionMode || d.permissionMode;
+                const runMode = optStr(args, 'permissionMode') || back?.permissionMode || d.permissionMode;
                 // X-109 R2 — a FRESH card gets its manifest here; a resume keeps the
                 // one its conversation was started with (the gate reads that).
                 const launchId = resume ? undefined : recordConsoleCard({
@@ -17291,8 +17314,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,
-        door: b => {
-            const agent = findAgent(b.from.agentId);
+        door: opener => {
+            const agent = findAgent(opener.from.agentId);
+            // ‼️ S-109 — the successor runs on what its predecessor CLOSED with
+            const b = batonOnClosing(opener, sessionOwnOf(reopenFor({
+                sessionId: opener.from.sessionId, engine: opener.from.engine || 'claude', agentName: agent.name
+            })));
             const was = (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
             const stay = handoverStay(b.from.sessionId, was);
             if (stay.stay) { console.log(`[Agent Farm] baton ${b.id}: ${stay.why}`); }
@@ -24347,6 +24374,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!m || (m.engine || 'claude') !== engine) { return {}; }
         return { ...m.requested, ...(m.superpowers === undefined ? {} : { superpowers: m.superpowers }) };
     };
+    // ‼️ S-109 — what each session closed with (fed by the card listener below)
+    // and the ONE answer every reopen door takes from it (src/launch/reopen.ts).
+    const closingSetups = new ClosingSetupStore(path.join(context.globalStorageUri.fsPath, 'closing-setup'));
+    const sessionRowOf = (sessionId: string): SessionInfo | undefined =>
+        index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
+    const reopenDeps: ReopenDeps = {
+        closing: sessionId => closingSetups.read(sessionId),
+        transcript: (sessionId, engine) => engine === 'claude' ? transcriptSetupOf(sessionRowOf(sessionId)?.file) : {},
+        indexed: sessionId => lastRunDimensions(sessionRowOf(sessionId)),
+        requested: (sessionId, engine) => sessionRequestedOf(sessionId, engine),
+        sessionAccount: sessionId => sessionAccountOf(sessionId)?.id,
+        agentDefaults: (agentName, engine) => {
+            const a = agents.find(x => x.name === agentName);
+            if (!a) { return {}; }
+            const own = withAgentEngineDefaults(a, { engine: engine as EngineId });
+            return { model: own.model, effort: own.effort };
+        },
+        fleet: () => launchDefaults(),
+        narrow: (engine, model, effort) => narrowLaunch(engineModelMatrix()[engine as EngineId], model, effort)
+    };
+    const reopenFor = (q: ReopenQuery) => reopenSetupFor(reopenDeps, q);
+    reopenLate = reopenFor;
     const viewerDeps = {
         extensionUri: context.extensionUri,
         accountFor: sessionAccountOf,
@@ -24370,8 +24419,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         tagsFor: (sessionId: string) => tagsOf(sessionMarks(), sessionId),
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
-        launchTerminal: (name: string, cwd: string | undefined, command: string, sessionId?: string) =>
-            launchClaudeTerminal(name, cwd, command, undefined, sessionId),
         // Owner agent for the viewer's "⌂ <agent>" button: the index's assignment
         // is authoritative; the cwd fallback covers sessions the index hasn't
         // scanned yet (same resolver the live monitor uses).
@@ -28254,6 +28301,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }));
     context.subscriptions.push({ dispose: () => { if (sweepTimer) { clearTimeout(sweepTimer); } } });
 
+    // ‼️ S-109 — the card's four answers, kept past the card: a listener BESIDE
+    // it, writing only when model/effort/permission/account actually changed.
+    context.subscriptions.push(consoleHost.onChange(id => {
+        const s = consoleHost.get(id);
+        if (s?.sessionId) { closingSetups.observe(s); }
+    }));
+
     // S-82 — a card started with ⑂ Relay is sealed as leg 1 the moment its session id is known
     context.subscriptions.push(consoleHost.onChange(id => {
         const s = consoleHost.get(id);
@@ -29410,6 +29464,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // activation and only ever runs after a click.
         sessionAccount: (sessionId: string) => sessionAccountOf(sessionId)?.id,
         sessionRequested: (sessionId: string, engine: string) => sessionRequestedOf(sessionId, engine),
+        reopenSetup: (q: ReopenQuery) => reopenFor(q),
         lastLaunch: (agentId: string) => lastLaunchOf(agentId),
         rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
             void rememberLaunch(agentId, o, surface),
@@ -36398,17 +36453,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * back from a transcript can never grant more than starting a
                  * fresh session in that folder would.
                  */
-                const inherit = lastRunDimensions(s);
-                // S-102 — what its own launch asked for fills what the transcript is silent on
-                const asked = sessionRequestedOf(s.sessionId, engine);
-                const want = narrowLaunch(engineModelMatrix()[engine],
-                    inherit.model || asked.model || defaulted.model,
-                    inherit.effort || asked.effort || defaulted.effort);
+                // ‼️ S-109 — the one reopen answer (card record → transcript →
+                // own launch → agent → fleet, narrowed): src/launch/reopen.ts.
+                const want = reopenFor({ sessionId: s.sessionId, engine, agentName: ownerAgent?.name ?? s.agentName });
                 const merged: LaunchOptions = {
                     ...defaulted,
                     model: want.model,
                     effort: want.effort,
-                    permissionMode: inherit.permissionMode || asked.permissionMode || defaulted.permissionMode
+                    permissionMode: want.permissionMode || defaulted.permissionMode
                 };
                 // ‼️ …and it carries the project context too — the flag does not
                 // survive `--resume` (measured), so a resumed session that is
@@ -36429,7 +36481,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * pickResumeAccount.
                  */
                 const account = await pickResumeAccount(engine, s.title || s.sessionId.slice(0, 8),
-                    sessionAccountOf(s.sessionId)?.id);
+                    want.account);
                 if (account === undefined) { return; }
                 // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN. This door
                 // passed none, so the terminal resolved the agent's standing
@@ -38021,7 +38073,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (card) { await vscode.commands.executeCommand('agentfarm.consoleResumeSession', { hostId: card.id }); return; }
                 const agent = agents.find(a => a.name === s.agentName);
                 const d = launchDefaults();
-                const defaultEngine = (d.engine || 'claude') as EngineId;
                 // ‼️ S-29 — "is there already a card for this session?" is the
                 // HOST's question now, for both answers: a live card is handed
                 // back untouched, and a card that has ended is the seat the
@@ -38041,16 +38092,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * a fact about the catalogue as it stood then, and an effort the
                  * model no longer offers must not become a flag now.
                  */
-                const inherit = lastRunDimensions(s);
-                // …then what its own launch asked for, where the transcript says nothing
+                // ‼️ S-109 — that order (transcript → own launch → agent → fleet,
+                // narrowed) now lives in ONE place, with the card's durable
+                // record as its newest layer: src/launch/reopen.ts.
+                const want = reopenFor({ sessionId: s.sessionId, engine, agentName: s.agentName });
                 const asked = sessionRequestedOf(s.sessionId, engine);
-                const sameEngine = defaultEngine === engine;
-                // ‼️ S-102 — the agent's own defaults for this engine sit between the
-                // transcript and the fleet, as on the Console's own resume.
-                const own: LaunchOptions = agent ? withAgentEngineDefaults(agent, { engine }) : {};
-                const want = narrowLaunch(engineModelMatrix()[engine],
-                    inherit.model || asked.model || own.model || (sameEngine ? d.model : undefined),
-                    inherit.effort || asked.effort || own.effort || (sameEngine ? d.effort : undefined));
                 // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN, read off its
                 // launch record through the gate; nothing on this door names
                 // one, so nothing is asked and the standing route is never
@@ -38080,16 +38126,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // reaches the process is still resolved against the
                     // folder's own layers (K-22), so this cannot grant more
                     // than a fresh session there would.
-                    permissionMode: inherit.permissionMode || asked.permissionMode || d.permissionMode,
+                    permissionMode: want.permissionMode || d.permissionMode,
                     // ‼️ …and the project it is TOLD about is its OWN, never the
                     // window's active one — see sessionOwnProject. The context
                     // does not survive `--resume` (measured), so this is the
                     // spawn that has to re-tell it.
                     projectId: sessionOwnProject(s),
-                    // ‼️ S-102 — the sign-in it ran as, and the discipline a fresh
-                    // card would have: this door fell to the machine's account
-                    // while the Console's own resume carried both.
-                    account: sessionAccountOf(s.sessionId)?.id,
+                    // ‼️ S-102 / S-109 — the sign-in it last ran as: the card's
+                    // record after an account move, else its launch's.
+                    account: want.account,
                     ...(consoleHost.list().some(x => x.sessionId === s.sessionId)
                         ? {} : { superpowers: asked.superpowers ?? superpowersOnFor(s.agentName ?? '') }),
                     // resume means CONTINUE: the earlier conversation comes with
@@ -38828,17 +38873,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // thing this whole family exists to make possible — a
                     // continue pinned to the plan it started on would be the
                     // rotation stopping at exactly the point it is needed.
+                    // ‼️ S-109 — A CONTINUE IS A REOPEN: the conversation comes
+                    // back on what it CLOSED with — model, effort, mode and the
+                    // account (the user's rule of 2026-10-01, which replaces
+                    // X-169's "the standing account" here); a slot since gone
+                    // falls to the standing rule rather than refusing.
+                    const back = latest ? reopenFor({ sessionId: latest.sessionId, engine: engine.id, agentName: agent.name }) : undefined;
+                    const backAccount = back?.account && !launchAccountRefusal({
+                        engine: engine.id, account: back.account, agentId: agent.id, model: back.model || ''
+                    }) ? back.account : undefined;
                     startClaudeSession(agent, paletteDoor.collect({
                         agentId: agent.id, engine: engine.id, seed: seedLastLaunch,
                         accountFor: launchAccountFor,
                         picked: {
                             engine: engine.id,
-                            // On an engine that resumes by id, say WHICH — "the
-                            // latest in this folder" is the CLI's own idea of
-                            // latest and it does not know about the other three.
-                            ...(latest && engine.id !== 'claude'
-                                ? { resume: latest.sessionId }
-                                : { continueLast: true })
+                            ...(back?.model ? { model: back.model } : {}),
+                            ...(back?.effort ? { effort: back.effort } : {}),
+                            ...(back?.permissionMode ? { permissionMode: back.permissionMode } : {}),
+                            ...(backAccount ? { account: backAccount } : {}),
+                            // Said by id on every engine: "the latest in this
+                            // folder" is the CLI's own idea of latest, and the
+                            // setup above is the setup of THIS row.
+                            ...(latest ? { resume: latest.sessionId } : { continueLast: true })
                         }
                     }) as LaunchOptions);
                     return;

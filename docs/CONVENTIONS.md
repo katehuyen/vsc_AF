@@ -380,6 +380,38 @@ proves that somebody once wrote the code correctly, not that the rule holds.**
 When a fourth list appears, copy the shape of those tests: find the anchor text,
 cut the object literal by brace balance, look for each field name inside it.
 
+## A REOPEN asks one answer: what the session CLOSED with (S-109)
+
+**Every door that opens a session again — itself (Resume, revive, an account
+move, a task continuing it) or its successor (a baton leg) — takes model,
+effort, permission mode and account from `reopenFor` (`src/launch/reopen.ts`),
+and never orders the layers itself.** The order lives once, in
+`resolveReopen` (`src/core/closingSetup.ts`): the door's explicit answer → the
+newer of the card's durable record and the transcript → the launch manifest →
+the agent → the fleet; the account: explicit → the card's record → the launch.
+A door that keeps its own lower layers takes `sessionOwnOf(...)`. A baton leg's
+account stays S-106's (`stayOnAccount`), and a task's stays its own policy.
+
+- **The record:** `ClosingSetupStore` (`globalStorage/closing-setup/<sid>.json`)
+  is written by a listener BESIDE the card (`consoleHost.onChange`) only when
+  one of the four answers changed. It never changes what the card does.
+- **The transcript** is read from its tail with each line's time
+  (`transcriptSetupOf`), including the `permissionMode` on user prompt lines,
+  which the index does not read. The index itself is untouched.
+- **The register:** `src/launch/reopenDoors.ts` lists every reopen door, what
+  is not a reopen (a `/context` measurement), and how each launch dimension
+  comes back. `test/test_reopen_parity.js` fails the build in four cases: a
+  Console spawn resumes outside a listed door; a listed door calls
+  `lastRunDimensions` or `sessionAccountOf` itself; `--resume` is written
+  outside the engines' argv builders; or a dimension in `afDimensions.js` has
+  no reopen answer. **A new reopen door is added to the register in the same
+  commit.**
+
+Measured before this: nine items had fixed a subset of the doors. The baton
+still copied the launch manifest, so a chain whose first session was raised
+from medium to xhigh on its card ran every leg at medium. Each door's
+hand-written `a || b || c` was right on the day it was written.
+
 ## A preference is a FLEX POINT, declared once (X-367 / X-368)
 
 Anything a user can choose — a model, a cap, a threshold, "ask / auto / never" —

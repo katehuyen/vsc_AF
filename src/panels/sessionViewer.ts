@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { sendToTerminalWhenReady } from '../core/shellReady';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
 import { conversationTitle, SessionOrigin, sessionOrigin, sessionHeadless } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
@@ -75,8 +74,6 @@ export interface ViewerDeps {
     /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
-    /** Resume honors agentFarm.externalTerminal when provided by the extension host. */
-    launchTerminal?(name: string, cwd: string | undefined, command: string, sessionId?: string): void;
     /** Owner agent of a session (index lookup, cwd fallback) — powers the header's
      *  "⌂ <agent>" button. undefined = the session lives outside the agent roots. */
     agentForSession?(file: string, cwd?: string): { agentId: string; agentName: string } | undefined;
@@ -1202,20 +1199,18 @@ export class SessionViewerPanel {
                     });
                     break;
                 }
+                // ‼️ S-109 — THE TERMINAL RESUME DOOR, never a bare
+                // `claude --resume <id>`: that ran on whatever the CLI and the
+                // machine's sign-in said, not on what this session closed with.
+                // The door resolves model, effort, mode and account in one
+                // place (src/launch/reopen.ts), with the route gate and the
+                // session's own project.
                 const cwd = typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd)
-                    ? msg.cwd : undefined;
-                const name = `claude: ${sessionId.slice(0, 8)}`;
-                const command = `claude --resume ${sessionId}`;
-                if (this.deps.launchTerminal) {
-                    // sessionId known up front (--resume) — the ⌨ button binds instantly
-                    this.deps.launchTerminal(name, cwd, command, sessionId);
-                    break;
-                }
-                const terminal = vscode.window.createTerminal({ name, cwd });
-                terminal.show();
-                // K-33 — the fallback path takes the same gate as the dep does:
-                // this is the one that literally sends `claude --resume <id>`.
-                sendToTerminalWhenReady(terminal, command);
+                    ? msg.cwd : data.cwd;
+                void vscode.commands.executeCommand('agentfarm.resumeSession', {
+                    sessionId, source: engine, title: data.title,
+                    cwd, agentName: data.agentName, models: data.models
+                });
                 break;
             }
             case 'refresh':

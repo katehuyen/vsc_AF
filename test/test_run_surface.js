@@ -274,7 +274,7 @@ const base = read('src/panels/base.ts');
     // `claude --continue` picks the latest session itself; a hosted session
     // resumes by id, so "latest" is resolved here
     const i = ext.indexOf("registerCommand('agentfarm.continueSession'");
-    const cont = ext.slice(i, i + 5200);
+    const cont = ext.slice(i, i + 7000);
     ok('Continue latest resolves "latest" for the Console',
         /sort\(\(a, b\) => \(b\.lastTs \|\| b\.mtime\) - \(a\.lastTs \|\| a\.mtime\)\)\[0\]/.test(cont));
     ok('…scoped to that agent\'s own folder',

@@ -30,7 +30,7 @@ import { catalog as launchCatalog, narrow as narrowIntent } from '../core/aflaun
 import { contextWindowOf, totalTokens, Usage } from '../core/pricing';
 import { RunIdentity } from '../core/turnRuntime';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
+import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
 import { SESSION_COLORS } from '../core/sessionmarks';
 // K-30 — the same two functions the bridge's toolbox.slashCommands op uses.
 import { getSlashCommands, reportToSources, SlashReport } from '../core/slashCommands';
@@ -39,6 +39,8 @@ import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMess
 import { desktopHost, type PanelHost } from './panelHost';
 import { afConfig } from '../core/settingsDoor';
 import { normalizeLegCeiling } from '../core/baton';
+import { ReopenSetup } from '../core/closingSetup';
+import { ReopenQuery } from '../launch/reopen';
 
 /**
  * ‼️ X-113 - WHAT A LIVE CARD'S CONTEXT READING IS A FRACTION OF.
@@ -392,6 +394,8 @@ export interface ConsoleDeps {
     sessionAccount?(sessionId: string): string | undefined;
     /** S-102 — what the session's own launch asked for (its manifest), for what its transcript is silent on */
     sessionRequested?(sessionId: string, engine: string): { model?: string; effort?: string; permissionMode?: string; superpowers?: boolean };
+    /** ‼️ S-109 — the one reopen answer: what this session CLOSED with (src/launch/reopen.ts) */
+    reopenSetup?(q: ReopenQuery): ReopenSetup;
     /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
@@ -2372,24 +2376,25 @@ export class ConsolePanel {
                 // line against the folder's own layers (K-22), so a bypass
                 // carried back from a transcript can never grant more than
                 // starting a fresh session in that folder would.
-                const inherit = lastRunDimensions(row);
-                // S-102 — …then what its own launch asked for, where the transcript says nothing
+                // ‼️ S-109 — that order now lives in ONE place (reopenSetup), with
+                // the card's durable record as its newest layer; the boxes ride
+                // as the door's SOFT layer, under the session and over the agent.
+                const reopened = this.deps.reopenSetup?.({
+                    sessionId, engine, agentName: row.agentName,
+                    soft: { model: box.model, effort: box.effort, permissionMode: box.permissionMode }
+                });
+                const back = reopened
+                    ? { model: reopened.model, effort: reopened.effort }
+                    : narrowLaunch(this.engineModelsFor(engine), box.model || d.model, box.effort || d.effort);
+                // S-102 — its own launch's ask, for the one switch the transcript does not record
                 const asked = this.deps.sessionRequested?.(sessionId, engine) ?? {};
-                // …with this agent's own Settings row between the box and the
-                // fleet, exactly as the composer resolves it.
-                const ownBack = agent
-                    ? this.deps.agentEngineDefaults?.(agent.dir, engine) ?? {}
-                    : {};
-                const back = narrowLaunch(this.engineModelsFor(engine),
-                    inherit.model || asked.model || box.model || ownBack.model || d.model,
-                    inherit.effort || asked.effort || box.effort || ownBack.effort || d.effort);
                 this.selected = host.start({
                     agentId: agent?.id ?? '', agentName: row.agentName ?? 'session',
                     cwd: row.cwd, resume: sessionId, engine,
                     model: back.model,
                     effort: back.effort,
                     // S-45 — the mode the transcript last stated (see above).
-                    permissionMode: inherit.permissionMode || asked.permissionMode || box.permissionMode || d.permissionMode,
+                    permissionMode: reopened?.permissionMode || box.permissionMode || d.permissionMode,
                     // ‼️ …and the project it comes back UNDER is its OWN. Left
                     // out, ConsoleHost.start falls back to the window's active
                     // project — which is not this session's answer and is
@@ -2408,7 +2413,7 @@ export class ConsolePanel {
                     // junction onto one shared root), so a session with no
                     // manifest states nothing and takes the standing choice —
                     // which is the truth rather than a slot invented for it.
-                    account: this.deps.sessionAccount?.(sessionId),
+                    account: reopened ? reopened.account : this.deps.sessionAccount?.(sessionId),
                     // ‼️ X-133 — …AND THE DISCIPLINE COMES BACK TOO, on the same
                     // flag and for the same measured reason: the appended system
                     // prompt does not survive `--resume`, so a conversation that

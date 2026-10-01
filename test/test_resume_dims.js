@@ -208,116 +208,99 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     eq('a model the catalogue no longer knows is dropped', gone.model, '');
 }
 
-// ================================================ 7. both doors, in order
+// ================================================ 7. every door, one order
 //
-// The two call sites are inside a webview message handler and a command
-// closure; the source is the only handle a test has on them.
+// ‼️ S-109 — THE ORDER NOW LIVES IN ONE PLACE. S-45 pinned it door by door in
+// the source (`inherit.x || asked.x || box.x || d.x`), and that is exactly how
+// it kept breaking: each door was right on the day it was written and the
+// baton never had it at all. The doors now ask `reopenFor`
+// (src/launch/reopen.ts); test_reopen_parity.js holds every door to it, and
+// the ORDER is measured here by running it — the claims are S-45's own.
 {
-    const cp = read('src', 'panels', 'consolePanel.ts');
-    ok('the Console resume reads the row it already looked up',
-        /const\s+inherit\s*=\s*lastRunDimensions\(row\)/.test(cp));
-    // ‼️ X-152 — the box is the host's own record of it (`box = this.composerIntent`).
-    // ‼️ …AND THE AGENT'S OWN SETTINGS ROW MAY SIT BETWEEN THE BOX AND THE
-    // FLEET (`ownBack`), which is the order the composer resolves in. The
-    // claim here is the ORDER OF THE ENDS — the transcript first, the fleet
-    // last — so the middle is written as optional rather than pinned: a rung
-    // added between them is not a violation of it, and a test that failed on
-    // one would be pinning the line rather than the rule.
-    ok('…and the transcript comes FIRST in the model chain',
-        /inherit\.model\s*\|\|\s*asked\.model\s*\|\|\s*box\.model\s*\|\|\s*(?:\w+\.model\s*\|\|\s*)?d\.model/.test(cp));
-    ok('…and in the effort chain',
-        /inherit\.effort\s*\|\|\s*asked\.effort\s*\|\|\s*box\.effort\s*\|\|\s*(?:\w+\.effort\s*\|\|\s*)?d\.effort/.test(cp));
-    // …and the fleet default is still the LAST word on both, never skipped.
-    ok('‼️ the fleet default still closes both chains',
-        /box\.model[^;]*d\.model/.test(cp) && /box\.effort[^;]*d\.effort/.test(cp));
-    ok('…and in the permission chain',
-        /inherit\.permissionMode\s*\|\|\s*asked\.permissionMode\s*\|\|\s*box\.permissionMode\s*\|\|\s*d\.permissionMode/.test(cp));
-    ok('…and the pair still goes through narrowLaunch',
-        /narrowLaunch\(this\.engineModelsFor\(engine\),\s*\n\s*inherit\.model/.test(cp));
+    const R = require(path.join(ROOT, 'out', 'launch', 'reopen.js'));
+    const depsWith = (o) => ({
+        closing: () => undefined,
+        transcript: () => ({}),
+        indexed: () => o.inherit || {},
+        requested: () => o.asked || {},
+        sessionAccount: () => o.account,
+        agentDefaults: () => o.own || {},
+        fleet: () => o.d || { engine: 'claude', model: 'fleetM', effort: 'fleetE', permissionMode: 'default' },
+        narrow: o.narrow || ((_e, m, e) => ({ model: m, effort: e }))
+    });
+    const box = { model: 'boxM', effort: 'boxE', permissionMode: 'acceptEdits' };
+    const q = { sessionId: 's', engine: 'claude', soft: box };
+    const all = R.reopenSetupFor(depsWith({
+        inherit: { model: 'tM', effort: 'tE', permissionMode: 'plan' },
+        asked: { model: 'aM', effort: 'aE', permissionMode: 'bypassPermissions' },
+        own: { model: 'oM', effort: 'oE' }
+    }), q);
+    eq('the transcript comes FIRST in the model, effort and permission chains',
+        [all.model, all.effort, all.permissionMode], ['tM', 'tE', 'plan']);
+    const noT = R.reopenSetupFor(depsWith({ asked: { model: 'aM', effort: 'aE', permissionMode: 'bypassPermissions' }, own: { model: 'oM' } }), q);
+    eq('…then the session\'s own launch manifest (S-102)', [noT.model, noT.effort, noT.permissionMode], ['aM', 'aE', 'bypassPermissions']);
+    const boxed = R.reopenSetupFor(depsWith({ own: { model: 'oM', effort: 'oE' } }), q);
+    eq('…then the composer box, which sits over the agent\'s own row', [boxed.model, boxed.effort, boxed.permissionMode], ['boxM', 'boxE', 'acceptEdits']);
+    const own = R.reopenSetupFor(depsWith({ own: { model: 'oM', effort: 'oE' } }), { sessionId: 's', engine: 'claude' });
+    eq('…then the agent\'s own row', [own.model, own.effort], ['oM', 'oE']);
+    const fleet = R.reopenSetupFor(depsWith({}), { sessionId: 's', engine: 'claude' });
+    eq('‼️ the fleet default still closes every chain', [fleet.model, fleet.effort, fleet.permissionMode], ['fleetM', 'fleetE', 'default']);
+    const cross = R.reopenSetupFor(depsWith({ d: { engine: 'codex', model: 'opus', effort: 'max', permissionMode: 'default' } }), { sessionId: 's', engine: 'claude' });
+    eq('…but a fleet model set for another engine is never handed to this one', [cross.model, cross.effort], [undefined, undefined]);
+    const narrowed = R.reopenSetupFor(depsWith({
+        inherit: { model: 'claude-opus-3-retired', effort: 'high' },
+        narrow: (_e, m, e) => narrowLaunch({ models: [{ id: 'claude-opus-5' }], efforts: {}, defaultEffort: {} }, m, e)
+    }), { sessionId: 's', engine: 'claude' });
+    eq('…and the pair still goes through narrowLaunch', narrowed.model, undefined);
 
     const ex = read('src', 'extension.ts');
-    ok('the terminal resume reads the session it was handed',
-        /const\s+inherit\s*=\s*lastRunDimensions\(s\)/.test(ex));
-    ok('…and narrows the inherited pair for that engine',
-        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*asked\.model\s*\|\|\s*defaulted\.model/.test(ex));
-    ok('…and the inherited mode beats the fleet/agent default',
-        /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*asked\.permissionMode\s*\|\|\s*defaulted\.permissionMode/.test(ex));
+    const cp = read('src', 'panels', 'consolePanel.ts');
     // ‼️ K-22 — inheriting a mode must not be a way AROUND the folder's policy.
-    ok('…and the resolved permission is still what reaches the command line',
+    ok('the resolved permission is still what reaches the command line',
         /permission:\s*resolveLaunchPermission\(merged\.permissionMode/.test(ex));
-
-    // ‼️ THERE ARE FOUR DOORS, NOT TWO. The item named two and the codebase had
-    // four; `_REF/agentfarm-dev.md` calls doing one and forgetting the rest a
-    // structural failure, and this is the measurement of it. `resumeInConsole`
-    // is the one that made the case: it ALREADY reached for the model and
-    // reached wrong, through `models[models.length - 1]`.
-    ok('resumeInConsole inherits all three rather than guessing at one',
-        /const\s+inherit\s*=\s*lastRunDimensions\(s\);[\s\S]{0,160}const\s+asked\s*=\s*sessionRequestedOf\(s\.sessionId, engine\);\s*\n\s*const\s+sameEngine/.test(ex));
-    ok('…and no longer reads the model off the first-seen set',
+    ok('no door reads the model off the first-seen set',
         !/models\[s\.models\.length - 1\]/.test(ex) && !/s\.models\[s\.models\.length - 1\]/.test(ex));
-    ok('…and narrows the inherited pair for the row\'s engine',
-        /narrowLaunch\(engineModelMatrix\(\)\[engine\],\s*\n\s*inherit\.model\s*\|\|\s*asked\.model\s*\|\|\s*own\.model\s*\|\|\s*\(sameEngine/.test(ex));
-    ok('…and its inherited mode beats the fleet default',
-        /permissionMode:\s*inherit\.permissionMode\s*\|\|\s*asked\.permissionMode\s*\|\|\s*d\.permissionMode/.test(ex));
-
-    // ‼️ S-102 — THE DOOR DOES NOT DECIDE WHAT A RESUME RUNS AS. The Console's
-    // own resume carried the session's sign-in, the agent's defaults and the
-    // Superpowers default; the Sessions page / palette door (resumeInConsole)
-    // and the ended card's menu carried none of the sign-in, so the same
-    // conversation came back on the machine's account from two of three doors.
-    ok('S-102: the Console panel resume still carries the session\'s own sign-in',
-        /account:\s*this\.deps\.sessionAccount\?\.\(sessionId\)/.test(cp));
+    ok('the Console list door hands its boxes in as the SOFT layer, under the session',
+        /soft: \{ model: box\.model, effort: box\.effort, permissionMode: box\.permissionMode \}/.test(cp));
     const ric = ex.slice(ex.indexOf("registerCommand('agentfarm.resumeInConsole'"));
     const ricBody = ric.slice(0, ric.indexOf('ConsolePanel.show(consoleDeps'));
-    ok('S-102: resumeInConsole carries the sign-in the session ran on',
-        /account:\s*sessionAccountOf\(s\.sessionId\)\?\.id/.test(ricBody));
-    ok('…the agent\'s own defaults between the transcript and the fleet, as the panel does',
-        /const own: LaunchOptions = agent \? withAgentEngineDefaults\(agent, \{ engine \}\) : \{\}/.test(ricBody));
+    ok('resumeInConsole carries the account the session closed on',
+        /account:\s*want\.account/.test(ricBody));
     ok('…and a fresh card\'s Superpowers default, the seat\'s own when a card exists',
         /consoleHost\.list\(\)\.some\(x => x\.sessionId === s\.sessionId\)\s*\n?\s*\?\s*\{\}\s*:\s*\{ superpowers: asked\.superpowers \?\? superpowersOnFor\(/.test(ricBody));
     const crs = ex.slice(ex.indexOf("registerCommand('agentfarm.consoleResumeSession'"));
     ok('S-102: the ended card\'s own Resume carries its sign-in too',
         /account:\s*s\.account \|\| sessionAccountOf\(s\.sessionId\)\?\.id/.test(crs.slice(0, crs.indexOf('ConsolePanel.show('))));
-    ok('S-102: the terminal resume\'s account picker leads with the one this conversation ran on',
-        /pickResumeAccount\(engine, s\.title \|\| s\.sessionId\.slice\(0, 8\),\s*\n\s*sessionAccountOf\(s\.sessionId\)\?\.id\)/.test(ex)
+    ok('the terminal resume\'s account picker leads with the one this conversation closed on',
+        /pickResumeAccount\(engine, s\.title \|\| s\.sessionId\.slice\(0, 8\),\s*\n\s*want\.account\)/.test(ex)
         && /const lead = own \|\| standing;/.test(ex) && /this conversation ran on it/.test(ex));
-    ok('S-102: the bridge\'s console.start resume= with no account continues on the one it ran on',
-        /const ownAccount = !askedAccount && resume \? sessionAccountOf\(resume\)\?\.id \?\? '' : '';/.test(ex)
+    const cstAt = ex.indexOf("op: 'console.start'");
+    const cst = ex.slice(cstAt, ex.indexOf('firstPrompt: optStr(args, \'prompt\')', cstAt));
+    ok('console.start resume= with no account continues on the one it closed on',
+        /const ownAccount = !askedAccount && resume\s*\n\s*\? reopenFor\(\{ sessionId: resume, engine, agentName: agent\.name \}\)\.account \?\? '' : '';/.test(cst)
         && /Omit on a resume= and the sign-in that conversation ran on continues it/.test(ex));
     ok('…and a slot since forgotten falls to the rule instead of refusing the resume',
         /askedAccount \|\| \(ownAccount && !launchAccountRefusal\(/.test(ex));
-    // ‼️ S-102 (measured 2026-09-29) — console.start resume= came back on the sign-in it ran on
-    // but at the FLEET's effort: its manifest said xhigh, the card said nothing.
-    const cstAt = ex.indexOf("op: 'console.start'");
-    const cst = ex.slice(cstAt, ex.indexOf('firstPrompt: optStr(args, \'prompt\')', cstAt));
-    ok('S-102: console.start resume= reads the transcript and its own launch manifest',
-        /const inherit = lastRunDimensions\(past\);\s*\n\s*const asked = resume \? sessionRequestedOf\(resume, engine\) : \{\};/.test(cst));
-    ok('…narrows the inherited pair for the engine, the fleet closing both chains',
-        /narrowLaunch\(engineModelMatrix\(\)\[engine as EngineId\],\s*\n\s*inherit\.model \|\| asked\.model \|\| d\.model, inherit\.effort \|\| asked\.effort \|\| d\.effort\)/.test(cst));
     ok('…a caller\'s own argument still wins on all three',
         /const runModel = optStr\(args, 'model'\) \|\| pair\.model;/.test(cst)
         && /const runEffort = optStr\(args, 'effort'\) \|\| pair\.effort;/.test(cst)
-        && /const runMode = optStr\(args, 'permissionMode'\) \|\| inherit\.permissionMode \|\| asked\.permissionMode \|\| d\.permissionMode;/.test(cst));
+        && /const runMode = optStr\(args, 'permissionMode'\) \|\| back\?\.permissionMode \|\| d\.permissionMode;/.test(cst));
     ok('…and the card is started with them, not with the fleet defaults',
         /model: gate\?\.model \|\| runModel,\s*\n\s*effort: runEffort,\s*\n\s*permissionMode: runMode,/.test(cst)
         && !/effort: optStr\(args, 'effort'\) \|\| d\.effort/.test(cst));
-
     // The bridge door — and the ONE place the order is deliberately the other
     // way round: an argument a caller wrote is a real choice, unlike a composer
     // box that was seeded from the defaults, so it wins over the transcript.
     ok('sessions.start looks the resumed transcript up',
         /const\s+resumed\s*=\s*optStr\(args, 'resume'\)\s*\n\s*\?\s*sessionFromArg\(optStr\(args, 'resume'\)\)/.test(ex));
-    ok('…and fills only what the caller left out',
-        /if \(!o\.model && \(inherit\.model \|\| asked\.model\)\)/.test(ex)
-        && /if \(!o\.effort && \(inherit\.effort \|\| asked\.effort\)\)/.test(ex)
-        && /if \(!o\.permissionMode && \(inherit\.permissionMode \|\| asked\.permissionMode\)\)/.test(ex));
-    // ‼️ S-102 (reopened) — the ended card's own Resume was the one door that worked: it replays what the
-    // card recorded. Every other door now hands a conversation that HAS an ended card to that Resume, and a
-    // conversation without one fills what its transcript is silent on (the mode) from its launch manifest.
+    ok('…and fills only what the caller left out, from what the session itself closed with',
+        /if \(!o\.model && own\.model\)/.test(ex) && /if \(!o\.effort && own\.effort\)/.test(ex)
+        && /if \(!o\.permissionMode && own\.permissionMode\)/.test(ex) && /if \(!o\.account && own\.account && !launchAccountRefusal\(/.test(ex));
+    // ‼️ S-102 (reopened) — a conversation that HAS an ended card goes to that card's own Resume.
     ok('‼️ S-102: resumeInConsole hands a conversation with an ended card to that card\'s own Resume',
-        /const card = consoleHost\.list\(\)\.find\(x => x\.sessionId === s\.sessionId && \(x\.status === 'ended' \|\| x\.status === 'error'\)\);\s*\n\s*if \(card\) \{ await vscode\.commands\.executeCommand\('agentfarm\.consoleResumeSession', \{ hostId: card\.id \}\); return; \}/.test(ricBody));
+        /const card = consoleHost\.list\(\)\.find\(x => x\.sessionId === s\.sessionId && \(x\.status === 'ended' \|\| x\.status === 'error'\)\);\s*\n\s*if \(card\) \{ await vscode\.commands\.executeCommand\('agentfarm\.consoleResumeSession'/.test(ex));
     ok('‼️ S-102: …and so does the Console panel\'s list row',
-        /const card = host\.list\(\)\.find\(x => x\.sessionId === sessionId && \(x\.status === 'ended' \|\| x\.status === 'error'\)\);\s*\n\s*if \(card\) \{ void vscode\.commands\.executeCommand\('agentfarm\.consoleResumeSession', \{ hostId: card\.id \}\); break; \}/.test(cp));
+        /const card = host\.list\(\)\.find\(x => x\.sessionId === sessionId && \(x\.status === 'ended' \|\| x\.status === 'error'\)\);\s*\n\s*if \(card\) \{ void vscode\.commands\.executeCommand\('agentfarm\.consoleResumeSession'/.test(cp));
     ok('‼️ S-102: the manifest\'s ask is read for the row\'s own engine only',
         /const m = manifestOf\(launchManifests\(\), index\.byId\(sessionId\)\);\s*\n\s*if \(!m \|\| \(m\.engine \|\| 'claude'\) !== engine\) \{ return \{\}; \}/.test(ex));
     ok('…and says so in its describe, because that is all an agent reads',

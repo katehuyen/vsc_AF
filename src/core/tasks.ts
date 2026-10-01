@@ -10,6 +10,7 @@ import { AgentInfo } from './agents';
 import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
 import { normalizeLegCeiling } from './baton';
+import { ClosingAnswer, closingOverRow } from './closingSetup';
 import { execOneShot } from './oneShot';
 import { judgeJson, judgeLean, judgeReply, judgeWant, normalizeUnjudged, StepJudge, unjudgedOutcome, visionJudgeWant, visionRoute } from './judgeEngines';
 import { fillInputs, resolveInputs, WorkflowInput } from './workflowInputs';
@@ -729,7 +730,10 @@ export type TaskEventKind =
     // allows it, unbound where nothing was recorded). Its own kind because
     // it is the one line that says the run's route was DECIDED rather than
     // copied from the task, and a refusal is on `finished` beside it.
-    | 'route';
+    | 'route'
+    // ‼️ S-109 — A RESUMED RUN TOOK WHAT ITS CONVERSATION CLOSED WITH (model,
+    // effort, mode) instead of the task's launch copy, and the note says which.
+    | 'setup';
 
 /** The most a task keeps. A run that ping-pongs against a ceiling for a day
  *  would otherwise grow without bound; the newest are the ones being read. */
@@ -1933,6 +1937,15 @@ export interface TaskManagerOptions {
         agentId: string, engine: string, sessionId: string,
         route: { providerId?: string; tier?: string } | undefined
     ) => ResumeRoute;
+    /**
+     * ‼️ S-109 — WHAT THE CONVERSATION A TASK CONTINUES CLOSED WITH (model,
+     * effort, permission mode), from the one reopen answer. Not the account:
+     * a task's sign-in follows its own policy, whose limit retries move it on
+     * purpose. `launch` is what that conversation was STARTED with: a row
+     * still holding exactly that (or nothing) merely copied it, so the closing
+     * value replaces it; a row that differs was edited on purpose and wins.
+     */
+    reopenSetup?: (sessionId: string, engine: string, agentName: string) => ClosingAnswer;
     /**
      * ‼️ X-116 — WHY THIS ROUTE CANNOT BE RUN ON NOW, or nothing when it can:
      * the same rule that refuses writing it onto a task, asked again at the
@@ -3991,6 +4004,15 @@ export class TaskManager implements vscode.Disposable {
                 task.tier = gate.tier || undefined;
                 task.routePinned = gate.pinned;
                 noteTaskEvent(task, 'route', `${gate.act}: ${gate.why}`);
+            }
+        }
+        if (task.resumeSessionId && this.opts.reopenSetup) {
+            const back = this.opts.reopenSetup(task.resumeSessionId, engineOf(task.engine).id, agent.name);
+            const moved = closingOverRow(task, back);
+            if (moved.length) {
+                noteTaskEvent(task, 'setup', 'as its conversation closed: '
+                    + moved.map(d => `${d} ${task[d] || '(default)'} → ${back[d]}`).join(', '));
+                for (const d of moved) { task[d] = back[d]; }
             }
         }
         /**
