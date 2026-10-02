@@ -79,8 +79,8 @@
     </style>`;
 
     // Order is meaning, not arrival: the board you start from, the place you
-    // talk, the three vital signs, what is happening right now, then who does
-    // the work and what the work is. New pages take their place in that
+    // talk and what is happening right now beside it, the three vital signs,
+    // then who does the work and what the work is. New pages take their place in that
     // sequence — they do not pile up on the left.
     //
     // ‼️ U-68 — `tip` IS PART OF THE ENTRY, NOT A DECORATION. This row is the
@@ -106,6 +106,11 @@
             id: 'console', label: '💬 Console',
             tip: 'Talk to any engine in a panel inside VS Code — a hosted conversation rather than a '
                 + 'terminal, so its turns, cost and transcript are recorded like every other session.'
+        },
+        {
+            id: 'now', label: '◉ Now',
+            tip: 'One screen of what waits for you, what is running, today\'s spend and quotas and the '
+                + 'latest notices, with a box that speaks into a running session. The phone opens it first.'
         },
         {
             id: 'living', label: '💓 Living',
@@ -136,11 +141,6 @@
             id: 'tasks', label: 'Tasks',
             tip: 'Plan what runs and see what ran: schedules, triggers and one-off runs, with their '
                 + 'output, their cost and why a run did not happen.'
-        },
-        {
-            id: 'now', label: '◉ Now',
-            tip: 'One screen of what waits for you, what is running, today\'s spend and quotas and the '
-                + 'latest notices, with a box that speaks into a running session. The phone opens it first.'
         },
         {
             id: 'missions', label: 'Missions',

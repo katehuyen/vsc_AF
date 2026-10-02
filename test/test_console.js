@@ -1519,9 +1519,11 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // hangs under, so it comes before the places that work happens.
     ok('Projects is the umbrella, so it comes next', order[1] === 'projects');
     ok('Console follows it', order[2] === 'console');
-    ok('the vital signs come next', order.slice(3, 6).join(',') === 'living,notices,queue');
-    ok('then what is happening right now', order[6] === 'timeline');
-    ok('then who does the work, then the work', order.slice(7, 9).join(',') === 'portfolio,tasks');
+    // U-195 (the user's order): Now sits beside Console — the place you talk and what is happening right now
+    ok('Now sits beside Console', order[3] === 'now');
+    ok('the vital signs come next', order.slice(4, 7).join(',') === 'living,notices,queue');
+    ok('then the clock of every turn', order[7] === 'timeline');
+    ok('then who does the work, then the work', order.slice(8, 10).join(',') === 'portfolio,tasks');
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
     const title = pkg.contributes.menus['view/title']
         .filter(m => m.when === 'view == agentfarm.agents')

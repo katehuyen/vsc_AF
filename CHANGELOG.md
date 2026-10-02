@@ -17,6 +17,9 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 - **The quota brake reads the week apart.** A queued run on an account whose
   week is at the weekly handover line waits and says "weekly window"; a busy
   week is no longer reported as a full five-hour window.
+- **Now sits beside Console.** In the row of pages at the top, Now moved next
+  to Console, before Living: the place you talk and what is happening right
+  now are side by side.
 
 ## 3.787.0 - The weekly quota is a handover trigger too (2026-10-02)
 

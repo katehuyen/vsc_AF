@@ -29,12 +29,14 @@ const KEYS = [
     'agentFarm.contextHandoverPct',
     'agentFarm.quotaConvergePct',
     'agentFarm.quotaHandoverPct',
+    'agentFarm.quotaWeeklyHandoverPct',
     'agentFarm.disciplineOrders',
     'agentFarm.batonMaxHops',
     'agentFarm.batonInjectedDirective',
     'agentFarm.batonHandoverTemplate',
     'agentFarm.batonEmergencyTemplate',
     'agentFarm.defaultAccountCeiling',
+    'agentFarm.defaultAccountWeeklyCeiling',
     'agentFarm.contextHandoverStayAccountPct'
 ];
 
