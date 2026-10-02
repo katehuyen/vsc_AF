@@ -121,7 +121,7 @@ import {
     CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
 } from './core/claudesettings';
 import {
-    buildSettingsModel, profileApplyPlan, SettingsCategory, SettingsProfile
+    buildSettingsModel, profileApplyPlan, SettingsCategory, SettingsProfile, SettingRowNotes
 } from './core/settingsops';
 import {
     afConfig, cfgRefusal, cfgValue, cfgValueRaw, installSettingsDoor, patchUserSetting
@@ -333,7 +333,7 @@ import {
 } from './core/accountUsage';
 import {
     AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, PolicyPool, PolicyResolution,
-    PolicyWorld, effectiveCeiling, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
+    PolicyWorld, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
 } from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -368,7 +368,8 @@ import { BatonRunner } from './core/batonRunner';
 import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
-import { StayVerdict, stayOnAccount, stayPctOf } from './core/stayAccount';
+import { StayVerdict, stayInForceNote, stayOnAccount, stayPctOf } from './core/stayAccount';
+import { StartWall, startWall } from './core/startRoom';
 import { starvedWhy } from './core/batonRoom';
 import { fiveHourNow, percentNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
@@ -17517,7 +17518,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return stayOnAccount({
             // X-462 — the figure in force: a floor a failed read or a wall left counts, a turned-over window is fresh
             stayPct: pct, slotId, percent: u ? percentNow(u) : undefined, resetsAt: u?.resetsAt,
-            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), walled: !!o.walled, now: Date.now()
+            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), walled: !!o.walled, now: Date.now(),
+            // X-470 — a stay is a start: it obeys the wall every start obeys (startWall)
+            wall: accountCeiling()
         });
     };
     /** The slot a leg ran on: its Console card's, else the one its launch was sealed with. */
@@ -17528,7 +17531,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const slot = legSlotOf(b);
         const u = slot ? accountUsage.current().find(x => x.slotId === slot) : undefined;
         const sl = slot ? findSlot(storedAccounts(), slot) : undefined;
-        return starvedWhy({ fault: b.fault, slot: sl ? slotLabel(sl) : slot, percent: fiveHourNow(u), handoverPct: cfg().get<number>('quotaHandoverPct', 90) });
+        return starvedWhy({ fault: b.fault, slot: sl ? slotLabel(sl) : slot, percent: fiveHourNow(u), handoverPct: handoverLine() });
     };
     /**
      * ‼️ X-462 — A PARKED RELAY LEG'S ROW AT ITS WAKE. The door parked it on its
@@ -22563,12 +22566,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the user's own rules. One assembly, so a policy cannot mean one thing to
      * the launcher and another to the spawn.
      */
-    // ‼️ S-105 — the policies' ceiling: defaultAccountCeiling, never above the quota handover line (a slot past it hands over at once)
-    const accountCeiling = (): { value: number; why: string } => {
-        const own = ownSetting('defaultAccountCeiling');
-        const set = resolveFlex('accounts.defaultCeiling', own === undefined || own === null || own === '' ? {} : { settings: own }).value;
-        return effectiveCeiling(set, cfg().get<number>('quotaHandoverPct', 90));
-    };
+    // ‼️ X-469 — THE wall every unattended start obeys (startRoom.ts startWall): defaultAccountCeiling, or a wall the
+    // caller names for itself, never above the quota handover line. A declaration, hoisted: the baton door's stay asks it too.
+    function accountCeiling(own?: { value: unknown; why: string }): StartWall {
+        const mine = ownSetting('defaultAccountCeiling');
+        const set = resolveFlex('accounts.defaultCeiling', mine === undefined || mine === null || mine === '' ? {} : { settings: mine }).value;
+        return startWall({ setting: set, handoverPct: handoverLine(), ...(own ? { own: own.value, ownWhy: own.why } : {}) });
+    }
+    /** agentFarm.quotaHandoverPct — its default is the context guard's, never a number written here. */
+    function handoverLine(): number {
+        return cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
+    }
     const policyWorldFor = (
         engine: string | undefined, agentId?: string, model?: string
     ): PolicyWorld => {
@@ -27948,8 +27956,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (Array.isArray(conf)) { return Object.assign({}, ...conf.map(c => c.properties ?? {})); }
         return conf?.properties ?? {};
     };
+    /**
+     * X-470 — the notes every settings row carries, ONE object for the page and the bridge: a value
+     * the settings file holds but the manifest refuses, and what a bounded box acts at right now (the
+     * stay line set above the Account ceiling acts at the ceiling — a stay is a start).
+     */
+    const settingRowNotes: SettingRowNotes = {
+        refusalOf: cfgRefusal,
+        inForceOf: key => {
+            return key === 'agentFarm.contextHandoverStayAccountPct' ? stayInForceNote(stayPctOf(ownSetting).value, accountCeiling()) : undefined;
+        }
+    };
     const settingsCategories = (): SettingsCategory[] => buildSettingsModel(
-        settingsSchema(), cfgValueRaw, cfgRefusal);
+        settingsSchema(), cfgValueRaw, settingRowNotes);
     const readClaudeSettings = (): { json: Record<string, unknown>; parseError?: string } => {
         const file = userSettingsPath(claudeDir());
         if (!fs.existsSync(file)) { return { json: {} }; }
@@ -40560,6 +40579,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 FarmSettingsPanel.show({
                     extensionUri: context.extensionUri,
                     flex: flexDeps,
+                    categories: settingsCategories,
                     schema: () => {
                         // live schema from our own manifest — a new setting shows
                         // up on this page with zero extra code

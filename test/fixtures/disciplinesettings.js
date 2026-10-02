@@ -20,6 +20,8 @@
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const S = require(path.join(ROOT, 'out', 'core', 'settingsops.js'));
+const STAY = require(path.join(ROOT, 'out', 'core', 'stayAccount.js'));
+const WALL = require(path.join(ROOT, 'out', 'core', 'startRoom.js'));
 const PROPS = require(path.join(ROOT, 'package.json')).contributes.configuration.properties;
 
 const KEYS = [
@@ -31,13 +33,20 @@ const KEYS = [
     'agentFarm.batonMaxHops',
     'agentFarm.batonInjectedDirective',
     'agentFarm.batonHandoverTemplate',
-    'agentFarm.batonEmergencyTemplate'
+    'agentFarm.batonEmergencyTemplate',
+    'agentFarm.defaultAccountCeiling',
+    'agentFarm.contextHandoverStayAccountPct'
 ];
 
 const categories = (values) => {
     const props = {};
     for (const k of KEYS) { props[k] = PROPS[k]; }
-    return S.buildSettingsModel(props, (k) => (k in values ? values[k] : props[k].default));
+    const valueOf = (k) => (k in values ? values[k] : props[k].default);
+    // X-470 — the row note the host writes, from the same core functions it calls
+    const inForceOf = (k) => (k === 'agentFarm.contextHandoverStayAccountPct'
+        ? STAY.stayInForceNote(valueOf(k), WALL.startWall({ setting: valueOf('agentFarm.defaultAccountCeiling'), handoverPct: valueOf('agentFarm.quotaHandoverPct') }))
+        : undefined);
+    return S.buildSettingsModel(props, valueOf, { inForceOf });
 };
 
 const base = (values) => ({
@@ -82,6 +91,12 @@ const variants = () => ([
             'agentFarm.batonEmergencyTemplate': '=== RESCUE {chain} · leg {hop}/{maxHops} ===\n'
                 + 'Session {fromSessionId} stopped without passing: {why}.\n---\n{evidence}'
         })
+    },
+    {
+        id: 'disciplinesettings-staywall',
+        label: 'Settings ▸ Handover Discipline — ‼️ X-470, the user\'s own settings on 2026-10-02: stay line 90 over an '
+            + 'Account ceiling of 70 — the stay row says it acts at 70',
+        data: base({ 'agentFarm.contextHandoverStayAccountPct': 90, 'agentFarm.defaultAccountCeiling': 70 })
     }
 ]);
 

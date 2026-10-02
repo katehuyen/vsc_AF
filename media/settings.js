@@ -1126,6 +1126,7 @@
             it.browse && !it.shape ? pathLine(it.key, it.value) : ''}
             ${err ? `<div class="seterr">⚠ ${C.esc(err)}</div>` : ''}
             ${!err && it.refusal ? `<div class="seterr">⚠ An entry for this key in your settings file is being ignored — ${C.esc(it.refusal)}</div>` : ''}
+            ${it.inForce ? `<div class="setinforce">${C.esc(it.inForce)}</div>` : ''}
         </div>`;
     }
 
@@ -1877,7 +1878,7 @@
         },
         {
             title: 'Which account the next run opens on',
-            why: 'A run that hands over because its context filled up — not because its account ran out — leaves that account\'s five-hour window half used. Under this line the successor stays on the same account (a relay\'s next leg, the sentry\'s next round); at or above it, or when the handover was the quota\'s, the pool picks as before. The relay\'s pool is kept for every later leg. 0 = off.',
+            why: 'A run that hands over because its context filled up — not because its account ran out — leaves that account\'s five-hour window half used. Under this line the successor stays on the same account (a relay\'s next leg, the sentry\'s next round); at or above it, or when the handover was the quota\'s, the pool picks as before. A stay is a start, so this line never stands above the Account ceiling every start obeys: set higher, it acts at the ceiling and the row says so. The relay\'s pool is kept for every later leg. 0 = off.',
             keys: ['contextHandoverStayAccountPct']
         },
         {
@@ -2390,6 +2391,7 @@
                     color:var(--vscode-descriptionForeground);
                 }
                 .seterr { font-size:11px; color:var(--vscode-errorForeground); margin-top:4px; }
+                .setinforce { font-size:11px; color:var(--vscode-editorWarning-foreground); margin-top:4px; }
                 .setitem.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 .rootbadge { font-size:10px; padding:1px 8px; border-radius:8px; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }

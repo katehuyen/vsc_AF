@@ -149,6 +149,15 @@ export interface SettingItem extends SettingSpec {
      *  not being the shape the manifest declares. The page says so on the row:
      *  a refusal nobody can see is a second opinion held in private. */
     refusal?: string;
+    /** X-470 — what the box ACTS at right now when another setting bounds it (the stay line above the
+     *  Account ceiling acts at the ceiling). Said on the row, so the value written is never mistaken for the one in force. */
+    inForce?: string;
+}
+
+/** The host's per-row notes, by name: the same notes reach the page and the bridge. */
+export interface SettingRowNotes {
+    refusalOf?: (key: string) => string | undefined;
+    inForceOf?: (key: string) => string | undefined;
 }
 
 export interface SettingsCategory {
@@ -416,8 +425,9 @@ export function sameValue(a: unknown, b: unknown): boolean {
 export function buildSettingsModel(
     properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown; editPresentation?: unknown }>,
     valueOf: (key: string) => unknown,
-    refusalOf?: (key: string) => string | undefined
+    notes: SettingRowNotes = {}
 ): SettingsCategory[] {
+    const { refusalOf, inForceOf } = notes;
     const byCat = new Map<string, SettingItem[]>();
     for (const [key, p] of Object.entries(properties)) {
         const short = key.replace(/^agentFarm\./, '');
@@ -444,7 +454,8 @@ export function buildSettingsModel(
             ...(() => { const s = shapeOf(p); return s ? { shape: s } : {}; })(),
             value,
             modified: !sameValue(value, p.default),
-            ...(refusalOf?.(key) ? { refusal: refusalOf(key) } : {})
+            ...(refusalOf?.(key) ? { refusal: refusalOf(key) } : {}),
+            ...(inForceOf?.(key) ? { inForce: inForceOf(key) } : {})
         };
         (byCat.get(cat) ?? byCat.set(cat, []).get(cat)!).push(item);
     }

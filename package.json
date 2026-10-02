@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.780.0",
+  "version": "3.781.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9036,7 +9036,7 @@
           "default": 70,
           "minimum": 0,
           "maximum": 100,
-          "description": "Handover discipline: when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off. Default 70."
+          "description": "Handover discipline: when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. A stay is a start, so it never stands above the wall every start obeys (defaultAccountCeiling, itself never above quotaHandoverPct): a line set higher acts at that wall. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off. Default 70."
         },
         "agentFarm.bridgeGuard": {
           "type": "boolean",

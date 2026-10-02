@@ -578,8 +578,11 @@ const { charts } = require('./lib_charts_stub.js');
 
     ok('‼️ the budget door reads through the fallback, not the registry alone',
         /cfgValue<boolean>\('agentFarm\.budgetsUnlimited', false\)/.test(ext));
+    const panelSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsPanel.ts'), 'utf8');
     ok('…and every value the settings page draws comes through the same door',
-        /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw, cfgRefusal\)/.test(ext));
+        /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw, settingRowNotes\)/.test(ext) && /refusalOf: cfgRefusal,/.test(ext)
+        // X-470 — the page draws the host's ONE model; it once built its own through cfg.get and never saw a refusal
+        && /categories: settingsCategories,/.test(ext) && /return this\.deps\.categories\(\);/.test(panelSrc) && !/buildSettingsModel\(/.test(panelSrc));
     // M-28: the refusal used to end in a line for the user to paste. The write
     // side now has the same fallback the read side has (test_jsonc_patch.js).
     ok('a refusal is answered by writing the file, not by handing the user a line',
@@ -680,7 +683,7 @@ const { charts } = require('./lib_charts_stub.js');
     const model = SO.buildSettingsModel(
         { 'agentFarm.budgetsUnlimited': props['agentFarm.budgetsUnlimited'] },
         () => undefined,
-        k => (k === 'agentFarm.budgetsUnlimited' ? 'settings.json: expected boolean, got string' : undefined));
+        { refusalOf: k => (k === 'agentFarm.budgetsUnlimited' ? 'settings.json: expected boolean, got string' : undefined) });
     ok('a refused value reaches the page as a refusal on that row',
         /expected boolean/.test(model[0].items[0].refusal || ''));
     ok('…and a key with nothing to refuse carries no note',

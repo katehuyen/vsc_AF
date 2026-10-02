@@ -7,6 +7,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'out', 'core');
 const S = require(path.join(OUT, 'stayAccount.js'));
+const W = require(path.join(OUT, 'startRoom.js'));
 const D = require(path.join(OUT, 'batonDoor.js'));
 const B = require(path.join(OUT, 'baton.js'));
 const { sentryStep } = require(path.join(OUT, 'sentryDriver.js'));
@@ -30,6 +31,25 @@ console.log('\n== the verdict ==');
     ok('the main sign-in: nothing to stay on', v({ slotId: '' }).stay === false);
     ok('an unmeasured window never stays', v({ percent: -1 }).stay === false && v({ percent: undefined }).stay === false);
     ok('a window that has already reset counts as fresh (0%)', v({ percent: 97, resetsAt: NOW - MIN }).stay === true && /reset/.test(v({ percent: 97, resetsAt: NOW - MIN }).why));
+}
+
+console.log('\n== X-470 — a stay is a START: it obeys the wall every start obeys ==');
+{
+    // the user's own settings on 2026-10-02: Account ceiling 70, quota handover 90, stay line 90
+    const wall = W.startWall({ setting: 70, handoverPct: 90 });
+    const v = o => S.stayOnAccount(Object.assign({ stayPct: 90, slotId: 'claude-wmmuratvural', percent: 40, resetsAt: NOW + 90 * MIN, quotaHandover: false, wall, now: NOW }, o));
+    // chn_muqifjzc001n2b hop 2: c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out
+    const hop2 = v({ percent: 89 });
+    ok('‼️ chn_muqifjzc001n2b hop 2 replayed: Agent Farm at 89%, no quota order, stay line 90, wall 70 — the pool picks', hop2.stay === false && /89%/.test(hop2.why) && /70% wall every start obeys/.test(hop2.why) && /stay line 90% stands above it/.test(hop2.why));
+    // chn_muptzpk5002246 leg 1: passed at 86% on murvietnam; the deleted c43a8493 replay, restored on the real wall
+    const leg1 = v({ slotId: 'claude-murvietnam', percent: 86 });
+    ok('‼️ chn_muptzpk5002246 leg 1 replayed: murvietnam at 86% under a 90% stay line, wall 70 — it no longer keeps the leg there', leg1.stay === false && /claude-murvietnam is at 86%/.test(leg1.why));
+    ok('…at the wall itself the pool picks too', v({ percent: 70 }).stay === false);
+    ok('…under the wall it still stays, and says the wall it stood under', v({ percent: 69 }).stay === true && /under the 70% wall/.test(v({ percent: 69 }).why));
+    ok('a stricter stay line (60) under the wall (70) is the line in force', v({ stayPct: 60, percent: 59 }).stay === true && v({ stayPct: 60, percent: 60 }).stay === false && /under the 60% line/.test(v({ stayPct: 60, percent: 59 }).why));
+    ok('the wall itself never stands above the quota handover line', W.startWall({ setting: 95, handoverPct: 90 }).value === 90
+        && v({ stayPct: 95, percent: 90, wall: W.startWall({ setting: 95, handoverPct: 90 }) }).stay === false);
+    ok('stayLineOf names the box that acts', S.stayLineOf(90, wall).atWall === true && S.stayLineOf(60, wall).atWall === false && S.stayLineOf(90, wall).value === 70);
 }
 
 console.log('\n== the line, on the flex chain ==');
@@ -84,6 +104,11 @@ console.log('\n== the wiring ==');
     ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : b\.want\.account/.test(ext) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
     ok('the quota reason is the guard\'s quota handover', /quotaHandover: !!\(sid && contextGuard\.record\(sid\)\?\.quota\?\.handover\), walled: !!o\.walled/.test(ext));
     ok('the sentry step gets the finished round\'s stay', /stay: handoverStay\(successorSessionOf\(finishedTask\), finishedTask\.account\)/.test(ext));
+    const src = ext.replace(/\r\n/g, '\n');
+    const from = src.indexOf('const handoverStay = ('), to = src.indexOf('\n    };', from);
+    ok('‼️ the stay is judged under the start wall (accountCeiling → startWall)', from > 0 && to > from && src.slice(from, to).includes('wall: accountCeiling()'));
+    ok('…and accountCeiling is a hoisted declaration answering startWall, so the door can ask it at any time',
+        /\n    function accountCeiling\(own\?: \{ value: unknown; why: string \}\): StartWall \{/.test(src) && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(src));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
     ok('the setting is contributed, 0–100, default 70', props['agentFarm.contextHandoverStayAccountPct'] && props['agentFarm.contextHandoverStayAccountPct'].default === 70);

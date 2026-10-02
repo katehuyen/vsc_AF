@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
-    buildSettingsModel, sanitizeValue, snapshotProfile, profileApplyPlan,
+    sanitizeValue, snapshotProfile, profileApplyPlan,
     parseImportedProfiles, pathPreviews, SettingsProfile, SettingsCategory
 } from '../core/settingsops';
 import { PreviewedPath } from '../core/pathVars';
@@ -49,6 +49,9 @@ export interface FarmSettingsDeps extends AlertMessageDeps {
         type?: unknown; enum?: unknown; default?: unknown;
         description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
     }>;
+    /** X-470 — THE settings model, assembled once by the host (values through cfgValueRaw, a value refused in
+     *  the settings file, what a bounded box acts at): required, so the page draws exactly what the bridge reads. */
+    categories(): SettingsCategory[];
     /**
      * ‼️ X-193 — THE PATH VARIABLES, AND WHAT EACH IS ON THIS MACHINE.
      *
@@ -376,8 +379,7 @@ export class FarmSettingsPanel {
     }
 
     private categories(): SettingsCategory[] {
-        const cfg = vscode.workspace.getConfiguration();
-        return buildSettingsModel(this.deps.schema(), key => cfg.get(key));
+        return this.deps.categories();
     }
 
     /** Read Claude Code's settings.json — missing file is a valid empty state. */

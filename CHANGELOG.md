@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.781.0 - A relay successor never stays on an account with no room (2026-10-02)
+
+- **One wall for every start.** Whether a session may start on an account is
+  now answered in one place: your Account ceiling (Settings ▸ Handover
+  Discipline), never above the quota handover line. A relay successor that
+  would stay on its predecessor's account obeys it too, so a leg that hands
+  over at 89–90% no longer opens its successor on the same, nearly full
+  account — the successor goes to an account with room.
+- **The account's figure decides.** Staying on the account no longer depends
+  on whether a quota order reached the agent before it passed; the measured
+  figure of the account is judged against the wall.
+- **Two boxes, the ceiling on top.** "Stay on the account under (%)" keeps its
+  own box and may be stricter than the Account ceiling. Set above it, it acts
+  at the ceiling, and its row in Settings now says "In force: …" with the
+  reason.
+- **Guards that cannot vanish.** The tests written for real relay incidents are
+  now pinned: deleting, renaming or loosening one stops the commit.
+
 ## 3.780.0 - The Dashboard opens on the phone (2026-10-02)
 
 - **The Dashboard on the phone.** The paired phone opens the Dashboard from

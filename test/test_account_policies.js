@@ -235,7 +235,8 @@ ok('‼️ X-305 R2 — the default wall is 70: a policy chooses where to START,
     const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('the host walks every policy with the wall in force, and the pages and policies.list show it with its why',
         /ceiling: accountCeiling\(\)\.value,\s*standing/.test(ext) && (ext.match(/ceilingWhy: accountCeiling\(\)\.why/g) || []).length === 2
-        && /effectiveCeiling\(set, cfg\(\)\.get<number>\('quotaHandoverPct', 90\)\)/.test(ext));
+        && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(ext)
+        && /return cfg\(\)\.get<number>\('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS\.quotaHandoverPct\);/.test(ext));
 }
 
 console.log(`test_account_policies.js: ${pass} passed, ${fail} failed`);

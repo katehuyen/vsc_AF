@@ -1,0 +1,30 @@
+{
+  "about": "X-469 — every unattended start obeys ONE wall (src/core/startRoom.ts startWall: the user's Account ceiling, or a wall a rule, campaign, task or caller names for itself, never above the quota handover line). test/test_start_wall.js reads src/ and fails on a wall written as a number, a wall constant, or a room check that states no wall at all, unless it is listed here. 'exempt' = not a start decision, with why. 'pending' = a known door still on its own line, owned by the named item; pendingBudget may only shrink, and an entry that no longer matches anything fails as stale.",
+  "pendingBudget": 12,
+  "exempt": [
+    { "file": "src/core/accountPolicy.ts", "match": "roomOrder(recorded, 100, now)", "why": "a rule's listed steps were each walled by their own step wall above (accountOf … wallOf); this only orders the survivors by room" },
+    { "file": "src/core/sentryWatch.ts", "match": "slotIsUsable(u, 100)", "why": "asks whether ANY sign-in is usable at all (not rejected, not at the plan's own 100%) — a health fact, not where to start" },
+    { "file": "src/core/accountUsage.ts", "match": "ceiling = 100, now = Date.now()", "why": "the primitives' own parameter default; every CALL must state its wall, which this gate checks separately" },
+    { "file": "src/core/accountUsage.ts", "match": "opts.ceiling : 100", "why": "accountOrder's own option default; every call states its wall" },
+    { "file": "src/core/accountUsage.ts", "match": "i.ceiling : 100", "why": "carryOnAccount's own input default; every call states its wall" },
+    { "file": "src/core/accountUsage.ts", "match": "accountOrder(list, opts)", "why": "pickAccount hands its caller's options through unchanged" },
+    { "file": "src/core/accountUsage.ts", "match": "export const ACCOUNT_WALL_CEILING = 100", "why": "the plan's own wall (100%): what 'at the wall' means on a usage bar, never where a session starts" },
+    { "file": "src/extension.ts", "match": "ACCOUNT_WALL_CEILING, AccountUsageService", "why": "the import the 'at the wall' readout uses" },
+    { "file": "src/extension.ts", "match": "at: u.percent >= ACCOUNT_WALL_CEILING", "why": "a usage bar marked 'at the wall' = the plan itself is full (100%), not a start decision" },
+    { "file": "src/extension.ts", "match": "optNum(args, 'ceiling', 0)", "why": "0 = the caller named no wall of its own for the rule it saves; nothing is decided with it" }
+  ],
+  "pending": [
+    { "file": "src/core/sentryRun.ts", "match": "export const SENTRY_DEFAULT_CEILING = 95", "item": "X-471", "why": "the sentry's own constant 95, above the quota handover line 90" },
+    { "file": "src/core/sentryRun.ts", "match": "c.ceiling : SENTRY_DEFAULT_CEILING", "item": "X-471", "why": "planSentry falls back to 95 instead of startWall" },
+    { "file": "src/core/sentryDriver.ts", "match": "import { planSentry, SENTRY_DEFAULT_CEILING", "item": "X-471", "why": "the sentry step imports the constant" },
+    { "file": "src/core/sentryDriver.ts", "match": "c.ceiling : SENTRY_DEFAULT_CEILING", "item": "X-471", "why": "the sentry's stay check falls back to 95" },
+    { "file": "src/core/tasks.ts", "match": "import { SENTRY_DEFAULT_CEILING }", "item": "X-471", "why": "the task runner imports the sentry's constant" },
+    { "file": "src/core/tasks.ts", "match": "ceiling: SENTRY_DEFAULT_CEILING", "item": "X-471", "why": "a task carried to another account after a limit walks 95" },
+    { "file": "src/extension.ts", "match": "import { SENTRY_DEFAULT_CEILING, leaderAccountFor }", "item": "X-471", "why": "the host imports the sentry's constant" },
+    { "file": "src/extension.ts", "match": "rec.ceiling : SENTRY_DEFAULT_CEILING", "item": "X-471", "why": "the campaign readout and the leader turn fall back to 95" },
+    { "file": "src/extension.ts", "match": "ceiling: SENTRY_DEFAULT_CEILING,", "item": "X-471", "why": "a sentry surface states 95" },
+    { "file": "src/extension.ts", "match": "optNum(args, 'ceiling', 95)", "item": "X-471", "why": "accounts.best defaults to 95" },
+    { "file": "src/extension.ts", "match": "String(SENTRY_DEFAULT_CEILING)", "item": "X-471", "why": "an op's describe tells agents the default is 95" },
+    { "file": "src/extension.ts", "match": "ceiling: ACCOUNT_WALL_CEILING", "item": "X-471", "why": "the Accounts card draws the rotation line under 100 while the policies walk the Account ceiling — the card names a turn the rotation will never give" }
+  ]
+}

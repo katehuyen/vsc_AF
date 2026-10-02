@@ -2,6 +2,7 @@ import {
     SlotUsage, accountOrder, nextResetAt, roomOrder, slotIsUsable
 } from './accountUsage';
 import { backAt, floorPhrase, percentNow } from './usageFloor';
+import { flexPoint } from './flexPoints';
 
 /**
  * X-305 — AN ACCOUNT CHOSEN AT LAUNCH TIME BY A RULE, NOT BY A NAME.
@@ -28,13 +29,14 @@ import { backAt, floorPhrase, percentNow } from './usageFloor';
  * pool that is walled end to end answers with a sentence naming the first
  * reset, and the door that asked decides whether to wait or to say so.
  *
- * ‼️ A WALL IS 90 HERE, NOT 100. The runner's own ceiling is where a session
- * IS refused; a policy is choosing where to START one, and 90% of the
- * five-hour window is the line at which the fleet's own agents hand over — a
- * session started above it spends its first turn writing a handover note, or
- * hits the wall mid-turn (measured 2026-09-18: @round-robin started a card on
- * a slot at 91% and the turn died on the limit). A rule, a step or a pool may
- * say its own number.
+ * ‼️ A WALL IS THE USER'S ACCOUNT CEILING HERE, NOT 100. The runner's own
+ * ceiling is where a session IS refused; a policy is choosing where to START
+ * one, and a session started at or past the quota handover line spends its
+ * first turn handing over, or hits the wall mid-turn (measured 2026-09-18:
+ * @round-robin started a card on a slot at 91% and the turn died on the
+ * limit). The wall in force is `startWall` (startRoom.ts): the Account
+ * ceiling, never above the handover line. A rule, a step or a pool may say its
+ * own number.
  *
  * ‼️ THE RULES ARE NOT REIMPLEMENTED HERE. "Most room, measured beats unread,
  * walled is out" is `roomOrder`; "walk the pool in the user's order, tiered or
@@ -50,8 +52,12 @@ export const ROUND_ROBIN = '@round-robin';
 /** X-211's "the machine's own sign-in, stated outright" — starts with the mark and is NOT a policy. */
 export const MACHINE_ACCOUNT_ID = '@machine';
 
-/** Where a policy starts refusing a slot, unless the rule, step or pool says otherwise. */
-export const POLICY_DEFAULT_CEILING = 70;
+/**
+ * Where a policy starts refusing a slot, unless the rule, step or pool says otherwise: the factory
+ * default of the user's Account ceiling box, read from its flex point (X-469) — the number lives in
+ * media/afFlex.js and package.json (test_flex_points holds them equal), never a third time here.
+ */
+export const POLICY_DEFAULT_CEILING: number = Number(flexPoint('accounts.defaultCeiling')?.default);
 
 /** How deep a rule may point at another rule before it is a loop. */
 const MAX_CHAIN_DEPTH = 4;
