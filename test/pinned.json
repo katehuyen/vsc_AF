@@ -168,6 +168,20 @@
       "hash": "26f9acef942d",
       "incident": "X-474 (2026-10-02): session 2190d4d4 was born at 92% on the account its pass placed it on; the system only marked it starved when it passed, and the user caught the misplacement",
       "why": "a misplacement is said by the system, never left for the user to find"
+    },
+    {
+      "file": "test_live_mirror_cursor.js",
+      "title": "‼️ the identity cursor reports nothing — a revive replays no reply (X-481)",
+      "hash": "b2296db6f486",
+      "incident": "X-481 (2026-10-02): every revive of session 52af8a2d replayed 23 and 25 old replies onto the Live Timeline as new events, ~300 ms each, and the extension host was unresponsive for their run",
+      "why": "the past read back from a transcript is never a live event"
+    },
+    {
+      "file": "test_live_mirror_cursor.js",
+      "title": "‼️ its rows come from freshRows(s.messages, seen.cursor)",
+      "hash": "9726410b0bf8",
+      "incident": "X-481 (2026-10-02): every revive of session 52af8a2d replayed 23 and 25 old replies onto the Live Timeline as new events, ~300 ms each, and the extension host was unresponsive for their run",
+      "why": "the mirror cannot fall back to a count cursor unnoticed"
     }
   ]
 }

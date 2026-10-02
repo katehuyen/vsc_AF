@@ -162,6 +162,7 @@ import {
     isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, reviveIntent, RevivePlan,
     ReviveRow, ReviveSkip, reviveSpeech
 } from './core/consoleRevive';
+import { cursorAt, freshRows, MirrorCursor } from './core/mirrorCursor';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
     ArmedRestart, armedReady, liveBlockers, pendingBuild, planRestart, RESTART_COMMANDS,
@@ -28472,7 +28473,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return grown;
     };
     const liveMirror = new Map<string, {
-        status: string; msgs: number; openTool?: string; said?: string; ask?: string;
+        status: string; cursor: MirrorCursor; openTool?: string; said?: string; ask?: string;
         /** ‼️ X-297 — what this session's engine reports for itself (wireReading) */
         wire: Set<string>;
         /** has the lane been opened — asked here rather than inferred from the
@@ -28523,7 +28524,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // them would stamp an old conversation onto the live timeline at
                 // today's clock. A session that is genuinely new holds at most the
                 // prompt that started it, which IS this lane's first event.
-                msgs: s.resumed ? s.messages.length : 0,
+                // ‼️ X-481 — and "already is" is held by identity, because the
+                // revive's scrollback and "load earlier" land IN FRONT of it.
+                cursor: s.resumed ? cursorAt(s.messages) : { count: 0 },
                 // Read once: what the wire DECLARES cannot change under a
                 // session already running, and this touches the disk.
                 wire: wireDeclares(engine)
@@ -28561,7 +28564,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             emit({ ...base, hook_event_name: 'PostToolUse', tool_name: seen!.openTool });
             seen!.openTool = undefined;
         };
-        for (const m of s.messages.slice(seen.msgs)) {
+        for (const m of freshRows(s.messages, seen.cursor)) {
             if (m.role === 'user' && !m.steer) {
                 closeTool();
                 emit({ ...base, hook_event_name: 'UserPromptSubmit', prompt: m.text ?? '' });
@@ -28591,7 +28594,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 closeTool();
             }
         }
-        seen.msgs = s.messages.length;
+        seen.cursor = cursorAt(s.messages);
         // ‼️ A-18 — A PARKED QUESTION IS AN EVENT, and until now it was the one
         // thing a hosted lane never reported: the card showed the question, the
         // timeline showed a turn still working, and a user in another room was
