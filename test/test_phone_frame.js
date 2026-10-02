@@ -13,6 +13,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 ok('--phone is portrait 360x800', phoneSize(['x', '--phone']) === PHONE.portrait && PHONE.portrait.w === 360 && PHONE.portrait.h === 800);
 ok('--phone land is landscape 800x360', phoneSize(['--phone', 'land']) === PHONE.landscape);
+ok('--phone long is the phone\'s width, long enough to read a whole page', phoneSize(['--phone', 'long']) === PHONE.long && PHONE.long.w === 360 && PHONE.long.h > 800);
 ok('--phone followed by another flag stays portrait', phoneSize(['--phone', '--light']) === PHONE.portrait);
 ok('no --phone, no phone', phoneSize(['x', '--width', '360']) === null);
 ok('the window holds the frame at the browser\'s floor', windowSize(PHONE.portrait) === `--window-size=${MIN_WINDOW},800`);

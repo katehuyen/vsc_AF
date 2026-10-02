@@ -3,6 +3,11 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    // X-456 — on a phone: an agent's page, a new session or agent, the guide, settings and the Farm
+    // Status doors open on the PC and are not drawn; the usage card's engine tab switches here only,
+    // never the PC's status bar (phoneEngine).
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
+    let phoneEngine = '';
     let DATA = window.__DATA__;
     // 1–7 individually, then the longer spans, then 'custom' = two dates
     let range = 14;
@@ -497,7 +502,7 @@
                 >${C.esc(e.label.split(' ')[0])} <b>${C.esc(puFigure(e))}</b></span>`).join('') + `</div>`;
     }
 
-    const puEngineId = () => (DATA.planUsageEngine || 'claude');
+    const puEngineId = () => ((ON_PHONE_HOST && phoneEngine) || DATA.planUsageEngine || 'claude');
     const puEngineRow = () => (DATA.planUsageEngines || []).find(e => e.id === puEngineId());
 
     /**
@@ -750,7 +755,7 @@
             + ` title="${C.esc(window.AFCtx.hint(label))}"`;
 
         const kpis = `
-        <div class="row">
+        <div class="row kpis">
             <div class="card" ${tile('Active now', 'timeline', activeCount + '/' + agents.length + ' agents')}><div class="label">Active now</div><div class="kpi">${activeCount}<span class="muted" style="font-size:13px">/${agents.length} agents</span></div><div class="sub">threshold-based on transcript activity</div></div>
             <div class="card" ${tile('Cost today', 'analytics', C.fmtUSD(todayCost))}><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div>
                 ${DATA.fleetBudget > 0
@@ -839,10 +844,10 @@
                     <div><div class="label">${range === 'custom' ? days.length + 'd' : rangeLabel()}</div><strong>${C.fmtUSD(sum(a, days, 'cost'))}</strong></div>
                     <div>${C.sparkline(spark)}</div>
                 </div>
-                <div class="btnrow">
+                ${ON_PHONE_HOST ? '' : `<div class="btnrow">
                     <button class="secondary" data-detail="${C.esc(a.id)}">Detail</button>
                     <button data-start="${C.esc(a.id)}">Start session</button>
-                </div>
+                </div>`}
             </div>`;
         }).join('');
 
@@ -861,11 +866,11 @@
                 <summary><strong>Farm status</strong> — ${stCounts.active} live · ${stCounts.ready} ready · ${stCounts.dormant} dormant${stCounts.dormant ? ' <span class="muted small">(unused capability — one click each)</span>' : ''}</summary>
                 <div style="margin-top:8px">
                 ${st.map(r => `
-                    <div style="display:flex;align-items:center;gap:10px;padding:3px 0">
+                    <div class="st-row" style="display:flex;align-items:center;gap:10px;padding:3px 0">
                         <i style="width:9px;height:9px;border-radius:50%;flex:none;background:${stDot[r.state]}" title="${r.state}"></i>
-                        <strong style="width:140px;flex:none;font-size:12px">${C.esc(r.label)}</strong>
-                        <span class="muted small" style="flex:1">${C.esc(r.detail)}</span>
-                        ${r.action ? `<button class="secondary" style="flex:none" data-status-kind="${r.action.kind}" data-status-value="${C.esc(r.action.value)}">${C.esc(r.action.label)}</button>` : ''}
+                        <strong class="st-label" style="width:140px;flex:none;font-size:12px">${C.esc(r.label)}</strong>
+                        <span class="muted small st-detail" style="flex:1">${C.esc(r.detail)}</span>
+                        ${r.action && !ON_PHONE_HOST ? `<button class="secondary" style="flex:none" data-status-kind="${r.action.kind}" data-status-value="${C.esc(r.action.value)}">${C.esc(r.action.label)}</button>` : ''}
                     </div>`).join('')}
                 </div>
             </details>` : '';
@@ -967,8 +972,8 @@
             ${charts}
             <div class="secthead">
                 <h2>Agents</h2>
-                <button class="secondary" data-dnewagent="1"
-                    title="New Agent — create an agent folder in one of your agent roots, with its CLAUDE.md, memory and duties. The same command the palette runs; it moved here from the Agents view's title bar, whose slot now opens the Accounts page.">+ New Agent</button>
+                ${ON_PHONE_HOST ? '' : `<button class="secondary" data-dnewagent="1"
+                    title="New Agent — create an agent folder in one of your agent roots, with its CLAUDE.md, memory and duties. The same command the palette runs; it moved here from the Agents view's title bar, whose slot now opens the Accounts page.">+ New Agent</button>`}
             </div>
             <div class="grid">${cards}</div>
             ${cmpSection()}
@@ -986,6 +991,14 @@
                    above or below it. */
                 .secthead { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
                 .secthead h2 { margin-right:2px; }
+                /* X-456 on a phone: the guide, settings and project links open on the PC and step aside; a
+                   Farm Status row puts its words under its name; the comparison's controls wrap. */
+                html.af-phone [data-guide], html.af-phone [data-manage-projects], html.af-phone a[data-status-kind] { display:none; }
+                html.af-phone .kpis > .card { flex-basis:130px; min-width:0; overflow-wrap:anywhere; }
+                html.af-phone .st-row { flex-wrap:wrap; row-gap:0 !important; }
+                html.af-phone .st-label { width:auto !important; flex:1 1 auto !important; }
+                html.af-phone .st-detail { flex:1 1 100% !important; padding-left:19px; }
+                html.af-phone .cmpctl { flex-wrap:wrap; }
             </style>
             <div class="secthead">
                 <h2>Sessions</h2>
@@ -1042,10 +1055,13 @@
             b.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'startSession', agentId: b.dataset.start }); }));
         document.querySelectorAll('[data-dnewagent]').forEach(b =>
             b.addEventListener('click', () => vscode.postMessage({ type: 'newAgent' })));
-        document.querySelectorAll('.agent-card').forEach(card =>
-            card.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: card.dataset.agent })));
-        document.querySelectorAll('[data-agent-row]').forEach(row =>
-            row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
+        // An agent's page opens on the PC; on a phone a card or a comparison row is read where it is.
+        if (!ON_PHONE_HOST) {
+            document.querySelectorAll('.agent-card').forEach(card =>
+                card.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: card.dataset.agent })));
+            document.querySelectorAll('[data-agent-row]').forEach(row =>
+                row.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: row.dataset.agentRow })));
+        }
         document.querySelectorAll('[data-guide]').forEach(a =>
             a.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openGuide', anchor: a.dataset.guide }); }));
         document.querySelectorAll('[data-manage-projects]').forEach(a =>
@@ -1086,6 +1102,7 @@
             b.addEventListener('click', () => {
                 const want = b.dataset.puengine;
                 if (!want || want === puEngineId()) { return; }
+                if (ON_PHONE_HOST) { phoneEngine = want; render(); return; }
                 DATA.planUsageEngine = want;
                 render();
                 vscode.postMessage({ type: 'setUsageEngine', id: want });

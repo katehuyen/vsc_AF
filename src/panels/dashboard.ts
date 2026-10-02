@@ -10,6 +10,7 @@ import { PlanUsageSnapshot } from '../core/planusage';
 import { ProjectCostRow as ProjectRollup } from '../core/projects';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
@@ -693,29 +694,37 @@ export class DashboardPanel {
      */
     static show(deps: DashboardDeps, opts?: { scrollTo?: 'top'; projectFilter?: string }): void {
         if (DashboardPanel.current) {
-            DashboardPanel.current.panel.reveal();
+            DashboardPanel.current.host.reveal();
             DashboardPanel.current.refresh();
             if (opts?.projectFilter !== undefined) {
-                void DashboardPanel.current.panel.webview.postMessage({
+                void DashboardPanel.current.host.webview.postMessage({
                     type: 'projectFilter', name: opts.projectFilter
                 });
             }
             if (opts?.scrollTo === 'top') {
-                void DashboardPanel.current.panel.webview.postMessage({ type: 'scrollTo', target: 'top' });
+                void DashboardPanel.current.host.webview.postMessage({ type: 'scrollTo', target: 'top' });
             }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.dashboard',
-            'Agent Farm — Dashboard',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        DashboardPanel.current = new DashboardPanel(panel, deps, opts?.projectFilter);
+        DashboardPanel.current = new DashboardPanel(
+            desktopHost({ viewType: 'agentfarm.dashboard', title: 'Agent Farm — Dashboard' }), deps, opts?.projectFilter);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<DashboardPanel>();
+
+    /** X-456 — the board on a phone's view. */
+    static openOn(host: PanelHost, deps: DashboardDeps): void {
+        DashboardPanel.phones.add(new DashboardPanel(host, deps));
+    }
+
+    /** The desktop's tab and every phone's view. */
+    private static open(): DashboardPanel[] {
+        return [...(DashboardPanel.current ? [DashboardPanel.current] : []), ...DashboardPanel.phones];
     }
 
     static refreshIfOpen(): void {
-        DashboardPanel.current?.refresh();
+        for (const p of DashboardPanel.open()) { p.refresh(); }
     }
 
     /**
@@ -737,22 +746,22 @@ export class DashboardPanel {
         engine?: string,
         account?: string
     ): void {
-        const panel = DashboardPanel.current;
-        if (!panel) { return; }
-        void panel.panel.webview.postMessage({
-            type: 'planUsage', usage, beat, engines, engine, account, push: true,
-            // X-244 — read here rather than taken as a sixth argument: the list
-            // is a fact about the machine, not about this beat, and a caller
-            // that forgot to pass it would silently empty the picker.
-            accounts: panel.deps.planUsageAccounts?.() ?? []
-        });
+        for (const panel of DashboardPanel.open()) {
+            void panel.host.webview.postMessage({
+                type: 'planUsage', usage, beat, engines, engine, account, push: true,
+                // X-244 — read here rather than taken as a sixth argument: the list
+                // is a fact about the machine, not about this beat, and a caller
+                // that forgot to pass it would silently empty the picker.
+                accounts: panel.deps.planUsageAccounts?.() ?? []
+            });
+        }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: DashboardDeps, projectFilter?: string) {
+    private constructor(readonly host: PanelHost, private deps: DashboardDeps, projectFilter?: string) {
         this.pendingProjectFilter = projectFilter;
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.deps.index.onDidUpdate(() => this.refresh(), null, this.disposables);
     }
 
@@ -764,8 +773,8 @@ export class DashboardPanel {
             data.projectFilter = this.pendingProjectFilter;
             this.pendingProjectFilter = undefined;
         }
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             'Agent Farm Dashboard',
             data,
@@ -774,7 +783,7 @@ export class DashboardPanel {
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.tableN) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.tableN) });
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -857,7 +866,7 @@ export class DashboardPanel {
                     const usage = await this.deps.refreshPlanUsage?.(msg.force === true);
                     // the beat rides along: it changes with the fleet, not with
                     // a setting, so the card re-arms itself from every answer
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'planUsage', usage, beat: this.deps.planUsageBeat?.(),
                         // X-212 — the owner rides with the figures, so a card
                         // refreshed by its own ⟳ cannot fall behind the heading
@@ -901,7 +910,7 @@ export class DashboardPanel {
                         contextLimitFor: () => 0
                     }).turns;
                 } catch { /* fail-soft: an unreadable file shows an empty turn list */ }
-                void this.panel.webview.postMessage({ type: 'sessionTurns', file, turns });
+                void this.host.webview.postMessage({ type: 'sessionTurns', file, turns });
                 break;
             }
             case 'compareWindow': {
@@ -914,7 +923,7 @@ export class DashboardPanel {
                     name: a.name,
                     ...agentWindowTotals(this.deps.index.forAgent(a.id), from, to)
                 }));
-                void this.panel.webview.postMessage({ type: 'compareWindow', from, to, rows });
+                void this.host.webview.postMessage({ type: 'compareWindow', from, to, rows });
                 break;
             }
             case 'statusAction': {
@@ -948,7 +957,7 @@ export class DashboardPanel {
                     // exactly the defect above; if this ever fires, the reader
                     // needs to know it was refused rather than that the button
                     // is broken.
-                    void vscode.window.showWarningMessage(
+                    void this.host.ask.warn(
                         `Agent Farm: that button asked for "${String(msg.value)}", which the Farm Status `
                         + 'card is not currently offering, so it was refused rather than run.');
                 } else if (msg.kind === 'guide' && typeof msg.value === 'string') {
@@ -962,7 +971,9 @@ export class DashboardPanel {
     }
 
     private dispose(): void {
-        DashboardPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (DashboardPanel.current === this) { DashboardPanel.current = undefined; }
+        DashboardPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

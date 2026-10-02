@@ -18,7 +18,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 // off this list in the same commit; nothing is ever added to it.
 const LEGACY = [
     'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'agentDetail', 'airtablePanel', 'capabilities',
-    'dashboard', 'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
+    'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'missionsPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
     'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
@@ -177,8 +177,13 @@ const alive = setInterval(() => undefined, 1000);
     ok('views are counted across devices', views.count() === 1);
 
     // ---------- the real page list ----------
-    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined });
-    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s and the Notices pages', Object.keys(real).sort().join() === 'console,needs,notices,now,session,sessions,tasks');
+    const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined, dashboard: () => undefined });
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices and the Dashboard pages', Object.keys(real).sort().join() === 'console,dashboard,needs,notices,now,session,sessions,tasks');
+    ok('Dashboard: the board, its table, a turn breakdown, the comparison and the plan usage are looks, pinning and stopping a session need manage, an agent\'s page, a new session or agent, the guide, settings, the Farm Status doors, a terminal and the status bar\'s engine stay on the PC',
+        real.dashboard.open === 'read' && ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'].every(t => messageScope(real.dashboard, t) === 'read')
+        && ['pinSession', 'interruptSession'].every(t => messageScope(real.dashboard, t) === 'manage')
+        && ['openAgent', 'headerAction', 'openSession', 'startSession', 'newAgent', 'openGuide', 'openTimeline', 'openSearch',
+            'openFarmSettings', 'afnav', 'focusTerminal', 'manageProjects', 'setUsageEngine', 'statusAction'].every(t => messageScope(real.dashboard, t) === null));
     ok('Notices: reading looks, a question is answered and what was read is marked at answer, the board is managed at manage, files, reports, links, terminals and other tabs stay on the PC',
         real.notices.open === 'read' && messageScope(real.notices, 'refresh') === 'read'
         && ['answer', 'decline', 'markRead', 'markReadMany', 'markAllRead'].every(t => messageScope(real.notices, t) === 'answer')

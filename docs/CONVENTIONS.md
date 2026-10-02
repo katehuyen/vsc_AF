@@ -828,7 +828,8 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   the picture is a 500px layout cut down its right side — every narrow rule
   untested in a picture that looks like a phone (measured on the Now page:
   `innerWidth` 500). `--phone` draws the page in a 360×800 same-origin frame
-  (`--phone land` = 800×360), on both `shoot_page.js` (the SCREEN, cropped to
+  (`--phone land` = 800×360; `--phone long` = 360×4800, a long page read top to
+  bottom at the phone's width — cut it with `test/crop_png.js` to look at it), on both `shoot_page.js` (the SCREEN, cropped to
   the frame) and `measure_page.js` (the expression runs inside the frame).
   `test/phone_frame.js` is the one place the sizes live; `test_phone_frame.js`
   measures 360 inside the frame and more than 360 outside it.

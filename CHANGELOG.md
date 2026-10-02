@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.780.0 - The Dashboard opens on the phone (2026-10-02)
+
+- **The Dashboard on the phone.** The paired phone opens the Dashboard from
+  its Menu: the date ranges, the figure tiles, Farm status, plan usage, the
+  charts, the agents, the agent comparison and the sessions table. A device
+  allowed to manage pins and stops sessions from the table. New sessions and
+  the status bar's plan-usage reading reach the phone as they arrive.
+- **Built for a 360px screen.** The figure tiles stand two a row instead of
+  eight in a column, each Farm status line puts its words under its name, and
+  the comparison's controls wrap instead of running off the screen.
+- **What only the PC can do stays on the PC.** An agent's page, Start session,
+  New Agent, the Farm status buttons, the guide and settings links are not
+  drawn on the phone. The plan-usage card's engine tabs switch the card on the
+  phone only; the PC's status bar keeps its own choice.
+
 ## 3.779.0 - The Notices page opens on the phone (2026-10-02)
 
 - **Notices on the phone.** The paired phone opens the Notices board from its

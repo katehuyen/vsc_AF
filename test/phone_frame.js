@@ -15,7 +15,9 @@ const path = require('path');
 
 const PHONE = {
     portrait: { w: 360, h: 800, tag: 'phone' },
-    landscape: { w: 800, h: 360, tag: 'phone-land' }
+    landscape: { w: 800, h: 360, tag: 'phone-land' },
+    // A long page read top to bottom at the phone's width: the screen only ever shows its first 800px.
+    long: { w: 360, h: 4800, tag: 'phone-long' }
 };
 const MIN_WINDOW = 500;
 const FRAME = 'af-phone';
@@ -24,7 +26,8 @@ const FRAME = 'af-phone';
 function phoneSize(args) {
     const i = args.indexOf('--phone');
     if (i < 0) { return null; }
-    return /^land/.test(String(args[i + 1] || '')) ? PHONE.landscape : PHONE.portrait;
+    const next = String(args[i + 1] || '');
+    return /^land/.test(next) ? PHONE.landscape : /^long/.test(next) ? PHONE.long : PHONE.portrait;
 }
 
 function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }

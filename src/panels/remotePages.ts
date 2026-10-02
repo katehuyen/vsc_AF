@@ -19,6 +19,7 @@ export interface RemotePageMakers {
     /** False when `args` names no transcript the farm knows: the phone is told "unavailable". */
     session(host: PanelHost, args?: Record<string, unknown>): boolean;
     notices(host: PanelHost): void;
+    dashboard(host: PanelHost): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -107,6 +108,19 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             pcOnly: ['exportChoose', 'exportOne', 'openReport', 'configureDocOpen', 'openExternal',
                 'handoffNotice', 'openQueueItem', 'openProject', 'afnav'],
             make: host => make.notices(host)
+        },
+        // X-456 — the farm's board. Ranges, the table's size, a turn breakdown, the agent comparison
+        // and the plan usage are looks; pinning and stopping a session are manage. An agent's page, a
+        // new session or agent, the guide, settings, the Farm Status doors, a terminal and the status
+        // bar's engine choice belong to the PC (the phone switches its usage tab on its own).
+        dashboard: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'],
+            answers: [],
+            pcOnly: ['openAgent', 'headerAction', 'openSession', 'startSession', 'newAgent', 'openGuide',
+                'openTimeline', 'openSearch', 'openFarmSettings', 'afnav', 'focusTerminal', 'manageProjects',
+                'setUsageEngine', 'statusAction'],
+            make: host => make.dashboard(host)
         }
     };
 }

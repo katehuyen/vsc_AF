@@ -173,7 +173,7 @@ const alive = setInterval(() => undefined, 1000);
         { type: 'openReport', id: news.id }, { type: 'openReport', id: news.id, mode: 'external' }, { type: 'configureDocOpen' },
         { type: 'openExternal', url: 'https://example.com/run' }, { type: 'handoffNotice', id: news.id },
         { type: 'openQueueItem', id: 'q_1' }, { type: 'openProject', project: 'prj_a' }, { type: 'afnav', to: 'needs' }]) {
-        views.message({ device: 'dev_x', scope: 'admin' }, 's3', m);
+        views.message({ device: 'dev_m', scope: 'admin' }, 's3', m);
     }
     await settle();
     ok('‼️ nothing a phone sends opens a save dialog, a report, a browser, a terminal or a tab on the PC', pcSide.length === 0);
