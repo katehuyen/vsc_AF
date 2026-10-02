@@ -181,7 +181,7 @@ const CATEGORY_OF: Record<string, string> = {
     projectDigestDay: 'core', projectDigestHour: 'core',
     // display & labels
     speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
-    consoleDropZone: 'display',
+    consoleDropZone: 'display', language: 'display',
     // saved prompts — a section of its own, because the setting is one path and
     // the thing the user needs to see is what came OUT of that path
     promptSnippetsFile: 'prompts',

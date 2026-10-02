@@ -57,7 +57,8 @@ if (!bin) {
     process.exit(0);
 }
 
-const header = fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
+const header = fs.readFileSync(path.join(__dirname, '..', 'media', 'afI18n.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(__dirname, '..', 'media', 'pageHeader.js'), 'utf8');
 const PAGE = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
     + '<div class="af-head"><div class="af-head-nav"><button>Dashboard</button></div></div>'
     + '<span class="af-tipw" id="tw"><b>row</b><span class="af-tip"><span class="af-tiph">developer · PERMISSION</span>'

@@ -8285,6 +8285,21 @@
           "default": "en",
           "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose Türkçe for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
         },
+        "agentFarm.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "en",
+            "tr"
+          ],
+          "enumDescriptions": [
+            "Follow VS Code's display language (English where there is no translation); dates and numbers keep your system's formats",
+            "English",
+            "Türkçe"
+          ],
+          "default": "auto",
+          "description": "Language of the Agent Farm pages. Translations are added one surface at a time; anything not translated yet is shown in English. Choosing a language also formats dates and times in it. Pages pick up a change the next time they are drawn (Refresh or reopen)."
+        },
         "agentFarm.agentRoots": {
           "type": "array",
           "items": {

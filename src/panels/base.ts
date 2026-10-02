@@ -3,6 +3,7 @@ import type { HostWebview } from './panelHost';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
+import { currentUiLanguage } from './uiLanguage';
 import { quotaStyleCss } from '../core/quotaStyle';
 import type { SoundHeader } from '../core/soundHeader';
 import { ctxPageActions } from '../core/ctxmenu';
@@ -561,6 +562,11 @@ export function htmlShell(
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // A served page's acquireVsCodeApi (X-443); inside VS Code it does nothing. First, before anything asks for it.
     const remoteApi = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRemote.js'));
+    // U-189 — the interface language, and its catalog when it is not English; both before the header.
+    const ui = currentUiLanguage();
+    const i18n = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afI18n.js'));
+    const catalog = ui.lang === 'en' ? ''
+        : `<script nonce="${nonce}" src="${webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', `afI18n.${ui.lang}.js`))}"></script>\n`;
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
     // picked up on the next page render. See src/core/speaker.ts.
@@ -575,6 +581,9 @@ export function htmlShell(
         ctxPanel: ctxKeyFor(webview, scriptFile),
         // The running build, for the header's version stamp (U-147).
         version: runningVersion,
+        // U-189 — read by media/afI18n.js as it loads.
+        lang: ui.lang,
+        locale: ui.locale,
         // Drawn on a phone through the remote host (media/afMobile.js reads it).
         remote: webview.remote === true,
         // …and there a long press offers the row's page actions (a desktop tab has VS Code's menu).
@@ -583,7 +592,7 @@ export function htmlShell(
     // This page is now live: it must receive count changes for as long as it exists.
     livePages.add(webview);
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${ui.lang}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
@@ -597,7 +606,8 @@ export function htmlShell(
 ${bodyHtml}
 <script nonce="${nonce}" src="${remoteApi}"></script>
 <script nonce="${nonce}">window.__DATA__ = ${jsonForScript(data)}; window.__AFUI__ = ${jsonForScript(afui)};</script>
-<script nonce="${nonce}" src="${charts}"></script>
+<script nonce="${nonce}" src="${i18n}"></script>
+${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${header}"></script>
 <script nonce="${nonce}" src="${filters}"></script>
 <script nonce="${nonce}" src="${ctx}"></script>

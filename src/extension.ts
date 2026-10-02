@@ -61,6 +61,7 @@ import {
 } from './core/automation';
 import { LivingCheck, LivingInput, wireDuties } from './core/living';
 import { LivingPanel } from './panels/livingPanel';
+import { installUiLanguage } from './panels/uiLanguage';
 import { TaskAnalyticsPanel } from './panels/taskAnalyticsPanel';
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
@@ -942,6 +943,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // the same id twice throws: two doors under one id would be two places
     // answering for one surface, which is the defect the folder exists to end.
     registerLaunchDoors();
+    // U-189 — the interface language, before anything draws.
+    installUiLanguage(context);
     /**
      * ‼️ THE TWO ACCOUNT READERS ARE DECLARED FIRST — before any surface is built.
      *

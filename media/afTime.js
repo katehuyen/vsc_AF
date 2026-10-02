@@ -47,6 +47,13 @@
 
     const p2 = (n) => (n < 10 ? '0' : '') + n;
 
+    /** U-189 — the locale of the interface language (media/afI18n.js; in Node the same file). */
+    function loc() {
+        const i18n = typeof window !== 'undefined' ? window.AFI18n
+            : (typeof require === 'function' ? require('./afI18n.js') : null);
+        return (i18n && i18n.locale()) || undefined;
+    }
+
     /** `UTC+03:00` — this machine's offset at THAT moment, not today's. The
      *  distinction is the point: a session from before a DST change was not
      *  recorded in the offset we are in now. */
@@ -73,8 +80,8 @@
         const d = at(ts);
         if (!d) { return ''; }
         return opts && opts.seconds
-            ? d.toLocaleTimeString()
-            : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+            ? d.toLocaleTimeString(loc())
+            : d.toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit' });
     }
 
     /** `17:14 UTC` — the parenthesised half, without the parentheses. */
@@ -93,7 +100,7 @@
     function stamp(ts, opts) {
         const d = at(ts);
         if (!d) { return ''; }
-        return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+        return d.toLocaleDateString(loc(), { day: 'numeric', month: 'short', year: 'numeric' })
             + ', ' + clock(ts, opts);
     }
 

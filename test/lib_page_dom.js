@@ -46,7 +46,10 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
     // adding them there would double-load). Here they belong: a page that
     // embeds the sessions table dies at load without it.
     const media = (f) => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
-    const code = media('charts.js') + '\n' + shared.sharedMedia()
+    // U-189 — a page handed a language gets its catalog, as the shell loads it (src/panels/base.ts).
+    const ui = (extraWindow && extraWindow.__AFUI__) || {};
+    const catalog = ui.lang && ui.lang !== 'en' ? media(`afI18n.${ui.lang}.js`) + '\n' : '';
+    const code = media('charts.js') + '\n' + shared.sharedMedia() + catalog
         + media('sessionsTable.js') + '\n' + media(scriptFile);
 
     const posted = [];

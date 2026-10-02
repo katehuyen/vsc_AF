@@ -37,7 +37,9 @@ function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;
  * so the phone layer is run here, on the laid-out page, as it runs on a phone.
  */
 function withPhoneLayer(html, page) {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'afMobile.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
+    // afI18n.js first, as the shell loads it: the phone layer draws its words through it (U-189).
+    const js = ['afI18n.js', 'afMobile.js'].map(f => fs.readFileSync(path.join(__dirname, '..', 'media', f), 'utf8'))
+        .join('\n').replace(/<\/script/gi, '<\\/script');
     const run = `<script>${js}</script><script>window.AFMobile&&window.AFMobile.page(${JSON.stringify(page || '')});</script>`;
     const marked = String(html).replace(/<html\b/i, '<html data-af-phone="1"');
     return /<\/body>/i.test(marked) ? marked.replace(/<\/body>(?![\s\S]*<\/body>)/i, run + '</body>') : marked + run;

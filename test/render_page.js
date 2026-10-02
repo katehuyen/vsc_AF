@@ -255,7 +255,7 @@ function main() {
     const args = process.argv.slice(2);
     if (!args.length || args.indexOf('--list') >= 0) {
         console.log('fixtures: ' + (listFixtures().join(' ') || '(none)'));
-        console.log('usage: node test/render_page.js <fixture> [--light]');
+        console.log('usage: node test/render_page.js <fixture> [--light] [--lang <id>]');
         return;
     }
     const name = args[0];
@@ -306,8 +306,13 @@ function main() {
     // U-154 — the shell's quota-figure rules, right after common.css as htmlShell puts them
     const quotaCss = require(path.join(ROOT, 'out', 'core', 'quotaStyle.js'))
         .quotaStyleCss(k => (fixture.quotaStyle || {})[k]);
+    // U-189 — `--lang tr` draws the page in that interface language, exactly as the shell would hand it over.
+    const lIdx = args.indexOf('--lang');
+    const lang = lIdx >= 0 ? String(args[lIdx + 1] || '') : '';
+    const win = Object.assign({}, fixture.window || {});
+    if (lang) { win.__AFUI__ = Object.assign({}, win.__AFUI__ || {}, { lang, locale: lang }); }
     const sections = variants.map(v => {
-        const r = runPage(fixture.script, v.data, fixture.window || {}, v.state);
+        const r = runPage(fixture.script, v.data, win, v.state);
         // A view that is reached by pressing something is reached by pressing
         // it here too — the shim binds the same handlers the webview does, so a
         // variant never has to reach into the page's private state.

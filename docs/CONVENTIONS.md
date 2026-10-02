@@ -1060,6 +1060,34 @@ tooltip or an op's `describe` is the English one: the decision gate is the
 **Gatekeeper**. Translate at the label, never at the key. `test/test_kapici_ui.js`
 fails the build on the old name outside a comment.
 
+## The interface language — English is the source and the key (U-189)
+
+`agentFarm.language` (`auto` · `en` · `tr`) is resolved by the host
+(`src/core/i18n.ts`, `src/panels/uiLanguage.ts`): `auto` draws the pages in VS
+Code's display language when a catalog exists for it, else English, and leaves
+dates and numbers in the system's own formats; a chosen language sets both. The
+shell hands `lang` and `locale` to every page in `window.__AFUI__`, sets
+`<html lang>`, and loads `media/afI18n.js` plus the language's catalog
+(`media/afI18n.<id>.js`) before the header; the extension host loads the same
+files, and `media/afTime.js` formats with `AFI18n.locale()`.
+
+- A string is written in English and drawn through `t('…')` — the English text
+  IS the key, `{name}` is filled from the second argument. A string a catalog
+  does not carry stays English, so a language is translated one surface at a
+  time and never shows a blank.
+- A label that leads with a mark (`🔔 Notices`, `◧ Projects`) goes through
+  `label()`: the mark stays, the words are translated, a count badge's markup
+  passes through.
+- Translate where the text is DRAWN, not where it is declared: the header's
+  `NAV` stays English and `navBtn` translates — one point for every button.
+- A new language is a catalog file and an entry in `LANGS`; `test/test_i18n.js`
+  holds the setting's enum, its flex point and the catalog files to that list,
+  and fails a header destination missing from a catalog.
+- Look at it: `node test/render_page.js <fixture> --lang tr`.
+- Not this setting: menus and command titles in `package.json` can only follow
+  VS Code's own display language (a `package.nls.<id>.json`), and the guide has
+  its own `agentFarm.guideLanguage`.
+
 ---
 
 ## Filtering

@@ -25,6 +25,7 @@ const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
     sandbox.window.window = sandbox.window;
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
+    vm.runInContext(read('media/afI18n.js'), sandbox);
     vm.runInContext(read('media/pageHeader.js'), sandbox);
     const H = sandbox.window.AFHeader;
     const draw = (o, afui) => { sandbox.window.__AFUI__ = afui; return H.html(Object.assign({ page: 'dashboard', title: 'Agent Farm' }, o)); };

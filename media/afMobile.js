@@ -36,6 +36,8 @@
         return String(s === undefined || s === null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
+    /** U-189 — the interface language (media/afI18n.js). */
+    function tr(s) { return window.AFI18n.t(s); }
 
     function go(to) {
         closeSheet();
@@ -90,8 +92,9 @@
     function barHtml() {
         return TABS.map(function (t) {
             return '<button data-aftab="' + t.id + '"' + (t.id === current ? ' class="on" aria-current="page"' : '')
-                + ' aria-label="' + esc(t.label) + '"><span class="af-tabi">' + t.icon + '</span>' + esc(t.label) + '</button>';
-        }).join('') + '<button data-aftab="menu" aria-label="Menu: every page"><span class="af-tabi">⋯</span>Menu</button>';
+                + ' aria-label="' + esc(tr(t.label)) + '"><span class="af-tabi">' + t.icon + '</span>' + esc(tr(t.label)) + '</button>';
+        }).join('') + '<button data-aftab="menu" aria-label="' + esc(tr('Menu: every page')) + '"><span class="af-tabi">⋯</span>'
+            + esc(tr('Menu')) + '</button>';
     }
 
     function drawBar() {
@@ -132,7 +135,7 @@
         box.id = 'af-sheet';
         box.setAttribute('role', 'dialog');
         box.innerHTML = '<div class="af-sheet-h"><span>' + esc(title) + '</span>'
-            + '<button class="af-sheet-x" data-afsheetx aria-label="Close">✕</button></div>' + body;
+            + '<button class="af-sheet-x" data-afsheetx aria-label="' + esc(tr('Close')) + '">✕</button></div>' + body;
         box.addEventListener('click', function (ev) {
             var t = ev.target && ev.target.closest ? ev.target : null;
             if (!t) { return; }
@@ -153,7 +156,7 @@
             return '<button class="af-sheet-go' + (p.id === current ? ' on' : '') + '" data-afsheetgo="' + esc(p.id) + '">'
                 + esc(p.label) + (p.tip ? '<small>' + esc(p.tip) + '</small>' : '') + '</button>';
         }).join('');
-        openSheet('Every page', rows);
+        openSheet(tr('Every page'), rows);
     }
 
     /** The whole of an AFTip, readable: what a hover says, for a finger. */

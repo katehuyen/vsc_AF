@@ -12,6 +12,9 @@
 // their own header rows.
 (function () {
     'use strict';
+    // U-189 — every word this row draws goes through the interface language (media/afI18n.js).
+    const t = (s, v) => window.AFI18n.t(s, v);
+    const tl = s => window.AFI18n.label(s);
 
     const STYLE = `<style>
         .af-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px 24px; flex-wrap:wrap; margin:0 0 10px; }
@@ -189,7 +192,8 @@
      *  One rule, so a menu item, an aria-label and a hover panel can never
      *  disagree about what a destination is called. */
     function plainName(label) {
-        return String(label || '').replace(/^[^\w]+\s*/, '');
+        // Letters in any script: `[^\w]` also stripped the Ç of a Turkish "Çalışma".
+        return String(label || '').replace(/^[^\p{L}\p{N}]+/u, '');
     }
 
     /**
@@ -208,13 +212,14 @@
      * about.
      */
     function navBtn(o) {
-        const name = o.name || plainName(o.label);
-        const inner = o.icon || o.label;
+        const label = tl(o.label || '');
+        const name = o.name ? t(o.name) : plainName(label);
+        const inner = o.icon || label;
         const cls = 'secondary' + (o.icon ? ' af-ico' : '') + (o.cls ? ' ' + o.cls : '');
         // Icon-only means the name is not on screen at all, so it has to be in
         // the accessibility tree instead of only in a hover.
         const aria = o.icon ? ` aria-label="${name}"` : '';
-        const tip = String(o.tip || '').trim();
+        const tip = t(String(o.tip || '').trim());
         const btn = `<button class="${cls}" ${o.attrs || ''}${aria}`
             + `${tip ? '' : ` title="${name}"`}>${inner}${o.after || ''}</button>`;
         return window.AFTip ? window.AFTip.wrap(btn, name, tip, 'af-tipw-nav', o.wrapAttrs || '') : btn;
@@ -272,7 +277,7 @@
         ];
         return `${TAB_STYLE}<div class="af-tabs">` + T.map(t => t.sep
             ? '<span class="af-tab-sep" aria-hidden="true"></span>'
-            : `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${badge(t.id, t.cls)}</button>`
+            : `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${tl(t.label)}${badge(t.id, t.cls)}</button>`
         ).join('') + `</div>`;
     }
 
@@ -383,13 +388,14 @@
                     wrapAttrs: 'data-aftip-mute=".af-claim.af-claim-open"',
                     after: ' ▾',
                     tip: (claim.title ? claim.title + '\n\n' : '')
-                        + `A menu: “${claim.label}”, or ${plain} itself.\n\n${n.tip || ''}`
+                        + t('A menu: “{claim}”, or {page} itself.', { claim: claim.label, page: t(plain) })
+                        + `\n\n${t(n.tip || '')}`
                 });
                 cluster.push(`<span class="af-claim">
                     ${trigger}
                     <div class="af-claim-menu" data-afclaimmenu="${n.id}" hidden>
                         <button data-afclaimgo="${n.id}">${claim.label}</button>
-                        <button data-afnav="${n.id}">Open ${plain}</button>
+                        <button data-afnav="${n.id}">${t('Open {page}', { page: t(plain) })}</button>
                     </div>
                 </span>`);
                 continue;
@@ -491,7 +497,7 @@
         // the host said nothing.
         const ver = o.version ? String((window.__AFUI__ || {}).version || '').replace(/[^0-9A-Za-z.+-]/g, '') : '';
         const title = ver
-            ? `<div class="af-head-title"><h1>${o.title}</h1><span class="af-head-ver" title="Agent Farm ${ver} — the build running in this window">v${ver}</span></div>`
+            ? `<div class="af-head-title"><h1>${o.title}</h1><span class="af-head-ver" title="${t('Agent Farm {version} — the build running in this window', { version: ver })}">v${ver}</span></div>`
             : `<h1>${o.title}</h1>`;
         return `${STYLE}
             <div class="af-head">
@@ -609,7 +615,7 @@
     }
 
     /** Every destination, for the phone's Menu sheet (media/afMobile.js). */
-    function pages() { return NAV.map(n => ({ id: n.id, label: n.label, tip: n.tip })); }
+    function pages() { return NAV.map(n => ({ id: n.id, label: tl(n.label), tip: t(n.tip) })); }
 
     window.AFHeader = { html, wire, tabs, menu, wireMenu, counts, paintCounts, pages };
 })();

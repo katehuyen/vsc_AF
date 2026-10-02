@@ -19,7 +19,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
+const SHARED = [
+    // afI18n.js — the interface language (U-189). First: the header translates as it loads.
+    'afI18n.js',
+    'pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afTextTools.js',
     // afChainNav.js — a relay chain on a session's page: its id, the legs
     // before and after, first/last (U-167).

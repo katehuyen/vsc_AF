@@ -197,6 +197,8 @@
         supervisor('minConfidence', 'Supervisor min confidence', 'number', 0.6, 'conf', { min: 0, max: 1 }),
         supervisor('lowConfidence', 'If the supervisor is not sure', 'tri', 'smart', 'fallback',
             { states: { ask: 'park', auto: 'smart', never: 'stop' } }),
+        // U-189 — the interface language; `auto` follows VS Code's display language
+        setting('ui.language', 'Interface language', 'enum', 'auto', 'agentFarm.language', { options: ['auto', 'en', 'tr'] }),
         // K-45 — which questions the Console's timer leaves for a person: the user's, never built in
         setting('console.autoAnswer.filter', 'Question timer filter', 'enum', 'recommended', 'agentFarm.console.autoAnswer.filter',
             { options: ['off', 'recommended', 'all', 'strict'] }),

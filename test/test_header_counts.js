@@ -52,6 +52,7 @@ vm.createContext(sandbox);
 // without it, which is exactly the state that must not pass unnoticed.
 vm.runInContext(read('media/afTipEdge.js'), sandbox);
 vm.runInContext(read('media/afTip.js'), sandbox);
+vm.runInContext(read('media/afI18n.js'), sandbox);
 vm.runInContext(read('media/pageHeader.js'), sandbox);
 const AFHeader = sandbox.window.AFHeader;
 
