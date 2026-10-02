@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.792.0 - What you change on a running session is what the agent opens on next (2026-10-02)
+
+- **A change on the card is remembered.** Agent Farm remembered each agent's
+  model, effort and permission mode only from the moment a session started,
+  so a session you started at medium and raised to xhigh on its card left
+  "medium" behind, and the next new session for that agent opened on the
+  value you had already replaced. Now a model, effort or permission mode you
+  change on a running Console card (on the desktop, on the phone, or through
+  the bridge) becomes that agent's remembered setup for that engine as soon
+  as the engine accepts it. A change the engine refuses is not remembered,
+  and the agent's other engines keep their own setups.
+- Reopening the same session already came back with what it closed with;
+  this is the same promise for the agent's next session. The account is
+  still not remembered, because how much of a plan is left changes on its own.
+
 ## 3.791.0 - Project documents no longer lose text (2026-10-02)
 
 - **Archiving takes the whole item.** A closed backlog item with indented notes

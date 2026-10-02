@@ -53,6 +53,7 @@ import {
     BYPASS, EffectivePermission, permissionLayerPaths, resolveEffectivePermission
 } from './permissionmode';
 import { isPolicyId, MACHINE_ACCOUNT_ID } from './accountPolicy';
+import { SetupChoice, confirmedChoice } from './liveChoice';
 
 /**
  * What a path IS, as far as attaching goes.
@@ -480,6 +481,8 @@ export class ConsoleHost {
     private sessions = new Map<string, Hosted>();
     private seq = 0;
     private listeners: ((id: string) => void)[] = [];
+    /** S-102 — a model/effort/mode somebody asked for on a live card and the engine took. */
+    private choiceListeners: ((id: string, choice: SetupChoice) => void)[] = [];
     /** X-349 — the revive settles that are still watching for their process. */
     private settleTimers = new Set<NodeJS.Timeout>();
 
@@ -749,6 +752,18 @@ export class ConsoleHost {
     private fire(id: string): void {
         this.autoAnswers.sync(id);
         for (const fn of this.listeners) { fn(id); }
+    }
+
+    onChosen(fn: (id: string, choice: SetupChoice) => void): { dispose(): void } {
+        this.choiceListeners.push(fn);
+        return { dispose: () => { this.choiceListeners = this.choiceListeners.filter(f => f !== fn); } };
+    }
+
+    private chose(id: string, choice: SetupChoice | null): void {
+        if (!choice) { return; }
+        for (const fn of this.choiceListeners) {
+            try { fn(id, choice); } catch { /* a memory write never breaks a card */ }
+        }
     }
 
     list(): ConsoleSessionState[] {
@@ -1691,6 +1706,7 @@ export class ConsoleHost {
             try {
                 const options = await rt.setConfig(sessionId, configId, v);
                 this.withOpencode(id, c => ({ ...c, options }));
+                if (configId === 'model' && !quiet) { this.chose(id, { model: v }); }
                 if (configId === 'model') {
                     this.mutate(id, s => ({
                         ...s, model: v, pendingModel: undefined,
@@ -2143,8 +2159,10 @@ export class ConsoleHost {
                 continue;
             }
             const wanted = h.state.pendingPermissionMode?.mode;
+            const before = h.state;
             const r = reduceEvent(h.state, parsed, now);
             h.state = r.state;
+            this.chose(id, confirmedChoice(before, h.state));
             changed = changed || r.changed;
             // ‼️ X-267 — the `init` line is where the conversation gets its id,
             // and therefore where its context can finally be filed under it.
@@ -2608,6 +2626,7 @@ export class ConsoleHost {
         // never come.
         if (!h.engine.liveControls) {
             this.mutate(id, s => ({ ...s, model: model.trim() }));
+            this.chose(id, { model: model.trim() });
             return true;
         }
         const requestId = `model-${++h.reqSeq}`;
@@ -2633,6 +2652,7 @@ export class ConsoleHost {
         // see setModel — the next turn's flags are the control
         if (!h.engine.liveControls) {
             this.mutate(id, s => ({ ...s, effort: want }));
+            this.chose(id, { effort: want });
             return true;
         }
         const requestId = `effort-${++h.reqSeq}`;
@@ -2912,6 +2932,7 @@ export class ConsoleHost {
                 enforcedPermissionMode: mode,
                 permissionWhy: this.opencodePermissionWhy(mode)
             }));
+            this.chose(id, { permissionMode: mode });
             if (h.opencode?.running) {
                 h.opencode = { ...h.opencode, pending: { ...h.opencode.pending, mode: want } };
                 return true;
@@ -2926,6 +2947,7 @@ export class ConsoleHost {
         // would simply fail again. The change is recorded; nothing is said.
         if (!h.engine.liveControls) {
             this.mutate(id, s => ({ ...s, permissionMode: mode }));
+            this.chose(id, { permissionMode: mode });
             return true;
         }
         const requestId = `mode-${++h.reqSeq}`;

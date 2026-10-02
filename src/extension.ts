@@ -379,6 +379,7 @@ import { accountPlacement, roundRobinKey } from './launch/accountPlacement';
 import { splitNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
 import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
+import { SetupChoice, withLiveChoice } from './core/liveChoice';
 import { ReopenSetup } from './core/closingSetup';
 import { ReopenDeps, ReopenQuery, batonOnClosing, reopenSetupFor, sessionOwnOf } from './launch/reopen';
 import { legFactsFrom } from './core/batonLegFacts';
@@ -11928,7 +11929,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.lastLaunch',
-            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on, PLUS `byEngine`: the same model/effort/permissionMode kept separately for every engine that agent has been started on. ‼️ X-145 — those three are the ENGINE\'s answer and are read out of `byEngine[<engine>]` first; the flat fields are the last launch whatever engine it was on, and only answer for an engine that has no row of its own (and then only if they do not name a different engine). That is why a `manual` chosen for OpenCode no longer arrives at Claude as a flag overriding its settings file. `superpowers` and `surface` are the agent\'s own answer and stay flat. ‼️ S-34 — the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page seed from this record, and every launch that actually happens (including sessions.start) writes it back. ‼️ THE ▶ ON AN AGENT\'S ROW DELIBERATELY DOES NOT: it knows the agent and its dialog settles the engine, so it resolves model/effort/permission from Farm Settings instead (agentFarm.agentEngineDefaults for that agent+engine → agentFarm.launchDefaults → the engine\'s own settings file). It still reads the record for the two answers its dialog draws as rows — which engine and which surface to open on. Read this to answer "how does this agent normally run" without guessing. An agent that has never been started answers null; a field left at "default" when it ran is stored empty and still falls through. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
+            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on, PLUS `byEngine`: the same model/effort/permissionMode kept separately for every engine that agent has been started on. ‼️ X-145 — those three are the ENGINE\'s answer and are read out of `byEngine[<engine>]` first; the flat fields are the last launch whatever engine it was on, and only answer for an engine that has no row of its own (and then only if they do not name a different engine). That is why a `manual` chosen for OpenCode no longer arrives at Claude as a flag overriding its settings file. `superpowers` and `surface` are the agent\'s own answer and stay flat. ‼️ S-34 — the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page seed from this record, and every launch that actually happens (including sessions.start) writes it back. ‼️ S-102 — so does a model, effort or permission mode changed on a LIVE Console card (desktop, phone or console.setModel/setEffort/permissionMode) once the engine accepts it: it rewrites that engine\'s row, so the agent\'s next session opens on it. The account is never remembered. ‼️ THE ▶ ON AN AGENT\'S ROW DELIBERATELY DOES NOT: it knows the agent and its dialog settles the engine, so it resolves model/effort/permission from Farm Settings instead (agentFarm.agentEngineDefaults for that agent+engine → agentFarm.launchDefaults → the engine\'s own settings file). It still reads the record for the two answers its dialog draws as rows — which engine and which surface to open on. Read this to answer "how does this agent normally run" without guessing. An agent that has never been started answers null; a field left at "default" when it ran is stored empty and still falls through. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
             handler: (args) => {
                 const who = optStr(args, 'agent');
                 if (who) {
@@ -26475,6 +26476,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
     };
 
+    /** S-102 — a choice taken on a live card rewrites that engine's row (core/liveChoice.ts). */
+    const rememberChoice = async (agentId: string, engine: string, choice: SetupChoice): Promise<void> => {
+        await context.globalState.update(LAST_LAUNCH_KEY, {
+            ...lastLaunch(),
+            [agentId]: withLiveChoice(lastLaunchOf(agentId), engine, choice)
+        });
+    };
+
     /** Sub-picker for one dimension. Cancelling keeps the current value;
      *  "Other…" accepts anything the installed CLI might know that we don't. */
     const pickChoice = async (
@@ -28653,6 +28662,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(consoleHost.onChange(id => {
         const s = consoleHost.get(id);
         if (s?.sessionId) { closingSetups.observe(s); }
+    }));
+    // S-102 — …and the AGENT's next session opens on what was chosen on the card.
+    context.subscriptions.push(consoleHost.onChosen((id, choice) => {
+        const s = consoleHost.get(id);
+        if (s?.agentId) { void rememberChoice(s.agentId, s.engine || 'claude', choice); }
     }));
 
     // S-82 — a card started with ⑂ Relay is sealed as leg 1 the moment its session id is known
