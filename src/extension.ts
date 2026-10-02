@@ -507,7 +507,7 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeCaller, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage,
+    argSessionIds, argStr, argStrOrEmpty, BridgeCaller, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage,
     bridgeRunDimensions,
     BATON_NOTE, DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
     needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli,
@@ -12653,7 +12653,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: async (args) => {
                 const event = wantEvent(args);
                 const scope = (optStr(args, 'scope')?.trim() || 'settings');
-                const voice = argStr(args, 'voice').trim();
+                const voice = argStrOrEmpty(args, 'voice').trim();
                 if (scope === 'session') {
                     const raw = argStr(args, 'sessionId').trim();
                     const s = live.sessions().find(x =>

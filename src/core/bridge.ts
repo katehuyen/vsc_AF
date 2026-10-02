@@ -306,6 +306,12 @@ export function argStr(args: Record<string, unknown>, key: string): string {
     return v;
 }
 
+/** A required string arg whose EMPTY value means something ("" = clear): the key must be there, '' is accepted. */
+export function argStrOrEmpty(args: Record<string, unknown>, key: string): string {
+    need(args[key] !== undefined && args[key] !== null, `Missing required string arg "${key}" ("" is accepted).`);
+    return strOf(args[key]);
+}
+
 /** An optional string arg ('' when absent). */
 export function optStr(args: Record<string, unknown>, key: string): string {
     return strOf(args[key]);

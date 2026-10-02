@@ -6418,6 +6418,7 @@ const { opencodeStatus, syncToOpencode } =
         const files = ['src/extension.ts', ...fs.readdirSync(path.join(root, 'src', 'core'))
             .filter(f => /\.ts$/.test(f)).map(f => 'src/core/' + f)];
         const bad = [];
+        const emptyBad = [];
         const seen = new Set();
         let scanned = 0;
         for (const f of files) {
@@ -6444,6 +6445,12 @@ const { opencodeStatus, syncToOpencode } =
                     const key = `${starts[i].op}:${name}`;
                     if (conditional.has(key)) { seen.add(key); } else { bad.push(key); }
                 }
+                // X-455 — an arg whose own parenthesis accepts "" (to clear, = none) meets argStr, which refuses ""
+                const are = /\b([a-zA-Z_][a-zA-Z0-9_]*)\??\s*\(((?:[^()]|\([^()]*\))*)\)/g;
+                let a;
+                while ((a = are.exec(describe.slice(argsAt)))) {
+                    if (a[2].includes('""') && new RegExp(`argStr\\(args, '${a[1]}'\\)`).test(handler)) { emptyBad.push(`${starts[i].op}:${a[1]}`); }
+                }
             }
         }
         ok(`‼️ every optional arg is read with optStr — ${scanned} ops scanned` + (bad.length ? ` — ${bad.join(', ')}` : ''),
@@ -6452,6 +6459,20 @@ const { opencodeStatus, syncToOpencode } =
             [...conditional].every(k => seen.has(k)));
         ok('…telegram.inbox and console.answer read their optional args as optional now',
             !bad.includes('telegram.inbox:id') && !bad.includes('console.answer:response'));
+        ok('‼️ X-455 — an arg whose describe accepts "" is never read with argStr, which refuses ""'
+            + (emptyBad.length ? ` — ${emptyBad.join(', ')}` : ''), emptyBad.length === 0);
+        const { argStrOrEmpty } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
+        const regE = new BridgeRegistry();
+        regE.register({ op: 't.clear', describe: 'args: voice (an id, or "" to clear)', handler: a => ({ voice: argStrOrEmpty(a, 'voice') }) });
+        const cleared = await regE.dispatch('t.clear', { voice: '' });
+        const named = await regE.dispatch('t.clear', { voice: ' chime ' });
+        const absent = await regE.dispatch('t.clear', {});
+        ok('…argStrOrEmpty: "" is a value, a name is trimmed, a missing key is still refused',
+            cleared.ok && cleared.result.voice === '' && named.ok && named.result.voice === 'chime'
+            && !absent.ok && /Missing required string arg "voice"/.test(absent.error || ''));
+        ok('…and alerts.voice.set reads voice with it, so "" reaches all three scopes and clears the step',
+            /const voice = argStrOrEmpty\(args, 'voice'\)\.trim\(\);[\s\S]{0,700}alertsSetSessionVoice\(s\.sessionId, event, voice\)[\s\S]{0,500}alertsSetAgentVoice\(agent, event, voice\)[\s\S]{0,700}alertsSetVoice\(event, voice\)/
+                .test(fs.readFileSync(path.join(root, 'src', 'extension.ts'), 'utf8')));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);
