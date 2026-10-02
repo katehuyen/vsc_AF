@@ -2,7 +2,8 @@ import { BridgeRegistry, need, optNum, optStr } from './bridge';
 import { deliverDocument, exportStamp } from './exportDoc';
 import { ENGINE_ENUM } from './consoleEngine';
 import { CtxWindowSource, contextWindowOf } from './pricing';
-import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
+import { SessionInfo, SessionOrigin, sessionHeadless, sessionMission, sessionOrigin } from './sessions';
+import { ChainIndex, RunCategory, chainIndexNow, runCategory } from './chainMembership';
 import { RunIdentity } from './turnRuntime';
 import { matchesAny, profileOf, providersOf, RUN_SELECTION_ARGS, runSelectionArgs } from './runFilter';
 
@@ -85,6 +86,12 @@ export interface TurnRow {
     sidechain: boolean;
     /** Who started the session this turn belongs to — 'user' dialog or 'auto' run. */
     origin: SessionOrigin;
+    /** U-191 — the Sessions table's category, its relay chain and leg, its mission, and whether it ran with no terminal. */
+    category: RunCategory;
+    chainId: string;
+    chainLeg: number;
+    mission: { id: string; title: string } | null;
+    headless: boolean;
     active: boolean;
     /**
      * ‼️ WHICH ENGINE RAN THE TURN (X-35). Named exactly as the sessions tables
@@ -97,8 +104,14 @@ export interface TurnRow {
 }
 
 /** All turn rows of one session, newest data included. */
-export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity): TurnRow[] {
+export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity, chains?: ChainIndex): TurnRow[] {
     const origin = sessionOrigin(s);
+    const mission = sessionMission(s) ?? null;
+    const at = chains?.bySession.get(s.sessionId);
+    const run = {
+        category: runCategory(origin, mission?.id, !!at), chainId: at?.chainId ?? '',
+        chainLeg: at?.leg ?? 0, mission, headless: sessionHeadless(s)
+    };
     const profile = profileOf(identity);
     return s.turns.map((t, i) => {
         const next = s.turns[i + 1];
@@ -139,6 +152,7 @@ export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identit
             routeLabel: identity?.providerLabel ?? '',
             sidechain: s.isSidechain,
             origin,
+            ...run,
             active,
             engine: s.source ?? 'claude'
         };
@@ -154,11 +168,13 @@ export function buildTurnRows(
     forced = 0,
     /** X-111 — the session's identity, as the Sessions table states it
      *  (`sessionIdentity`). Absent, every turn is on no route. */
-    identityOf?: (s: SessionInfo) => RunIdentity | undefined
+    identityOf?: (s: SessionInfo) => RunIdentity | undefined,
+    /** U-191 — the relay chains, so a leg's turns read ⑂ Baton. */
+    chains?: ChainIndex
 ): TurnRow[] {
     const rows: TurnRow[] = [];
     for (const s of sessions) {
-        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s)));
+        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s), chains));
     }
     return rows.sort((a, b) => b.ts - a.ts);
 }
@@ -201,18 +217,22 @@ export function registerTurnsOps(
         const agent = optStr(args, 'agent').toLowerCase();
         const engine = optStr(args, 'engine').toLowerCase();
         const origin = optStr(args, 'origin').toLowerCase();
+        const cats = optStr(args, 'category').toLowerCase().split(',').map(c => c.trim()).filter(Boolean);
+        const hl = args.headless === undefined ? undefined : String(args.headless) === 'true';
         const sel = runSelectionArgs(args);
         // ‼️ B-25 — `optNum`, not a `typeof === 'number'` test. The CLI's
         // `limit=50` shorthand and a hand-written arg both arrive as TEXT,
         // and a type test drops them for the default without saying so —
         // the same silence that queued four items at the bottom.
         const limit = Math.max(1, Math.floor(optNum(args, 'limit', limitDefault)) || limitDefault);
-        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf)
+        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf, chainIndexNow())
             .filter(r => !agent || r.agentName.toLowerCase() === agent)
             // ‼️ The same axis the page filters on — an agent calling this op
             // to ask "what has Codex been doing" had no way to say so.
             .filter(r => !engine || engine === 'all' || r.engine.toLowerCase() === engine)
             .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
+            .filter(r => !cats.length || cats.includes(r.category))
+            .filter(r => hl === undefined || r.headless === hl)
             // X-111 — the three axes the page filters on, by the same rule;
             // `providers` is already the resolved value, so no turn report.
             .filter(r => matchesAny(r.providers, sel.providers)
@@ -223,7 +243,7 @@ export function registerTurnsOps(
 
     bridge.register({
         op: 'turns.export',
-        describe: 'B-21 — THE TURNS TABLE AS A DOCUMENT. The page\'s Export MD without the page: the same header line per turn (agent, turn n/of, the prompt label, session, models, who served it, steps, duration, tokens, context, cost, tools, errors) and each turn\'s full content — user text, assistant text, tool calls and tool results — assembled by the very function the page uses, so the two can never describe a turn differently. Selects exactly like turns.list. ‼️ TURN CONTENT IS HEAVY, so the default is 50 turns rather than the whole farm, and the answer always names how many MATCHED: a caller that got 50 of 900 is told so rather than handed a file that stops. args: every turns.list filter (agent?, engine?, origin?, provider/profile/model selection, limit? — default 50) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
+        describe: 'B-21 — THE TURNS TABLE AS A DOCUMENT. The page\'s Export MD without the page: the same header line per turn (agent, turn n/of, the prompt label, session, models, who served it, steps, duration, tokens, context, cost, tools, errors) and each turn\'s full content — user text, assistant text, tool calls and tool results — assembled by the very function the page uses, so the two can never describe a turn differently. Selects exactly like turns.list. ‼️ TURN CONTENT IS HEAVY, so the default is 50 turns rather than the whole farm, and the answer always names how many MATCHED: a caller that got 50 of 900 is told so rather than handed a file that stops. args: every turns.list filter (agent?, engine?, origin?, category?, headless?, provider/profile/model selection, limit? — default 50) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
         handler: (args) => {
             need(deps.exportMarkdown, 'Turn export is not wired on this host.');
             const limit = Math.max(1, Math.floor(optNum(args, 'limit', 50)) || 50);
@@ -243,13 +263,15 @@ export function registerTurnsOps(
 
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), ' + RUN_SELECTION_ARGS + ', limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one), ctxWindowSource (forced | engine | model | ""), providerIds (what the engine itself named for the turn — empty on Claude for ever) and providers (what served it: the turn\'s own, else its session\'s route — the value the filter matches).',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), category? (user | baton | auto | mission, comma-separated: the Sessions table\'s four categories and the page\'s You/Baton/Auto/Mission switches; a mission stamp wins, then a relay leg a program started, then who started it), headless? (true = only runs with no terminal behind them, false = none of them), ' + RUN_SELECTION_ARGS + ', limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one), ctxWindowSource (forced | engine | model | ""), providerIds (what the engine itself named for the turn — empty on Claude for ever) and providers (what served it: the turn\'s own, else its session\'s route — the value the filter matches).',
         handler: (args) => {
             return select(args, 20)
                 .map(r => ({
                     agent: r.agentName, engine: r.engine,
                     session: r.session, turn: `${r.n}/${r.of}`,
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
+                    category: r.category, chain: r.chainId ? `${r.chainId} leg ${r.chainLeg}` : null,
+                    mission: r.mission?.title ?? null, headless: r.headless,
                     // ‼️ X-113 — the context reading AND its ceiling, because
                     // the figure alone cannot be read: an agent asking how
                     // full a turn left the window was previously given the

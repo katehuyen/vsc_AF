@@ -136,6 +136,18 @@ export function isBatonRun(ix: ChainIndex, sessionId: string, origin: string): b
     return origin === 'auto' && ix.bySession.has(String(sessionId ?? '').trim());
 }
 
+/**
+ * U-191 — the Sessions table's four categories as one host verdict, in its
+ * order (media/sessionsTable.js `categoryOf`): a mission stamp first, then a
+ * relay leg, then who started it.
+ */
+export type RunCategory = 'user' | 'baton' | 'auto' | 'mission';
+export function runCategory(origin: string, missionId: string | undefined, batonLeg: boolean): RunCategory {
+    if (missionId) { return 'mission'; }
+    if (batonLeg && origin === 'auto') { return 'baton'; }
+    return origin === 'auto' ? 'auto' : 'user';
+}
+
 /** The sessions of every chain whose id contains `q` (case-blind), or none. */
 export function chainSessionsMatching(ix: ChainIndex, q: string): Set<string> {
     const needle = String(q ?? '').trim().toLowerCase();

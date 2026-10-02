@@ -1933,5 +1933,6 @@
         return { setRows, onMessage, setProjectFilter, setMissionFilter, setProviderFilter, setChainFilter };
     }
 
-    window.AFSessionsTable = { SORTS, create };
+    // U-191 — the Turns page draws the same four categories from this one list.
+    window.AFSessionsTable = { SORTS, create, CATEGORIES, HLESS_GLYPH };
 })();

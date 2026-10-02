@@ -163,7 +163,10 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afAsk.js — a host's questions as phone sheets and toasts (X-447).
     'afAsk.js',
     // afVoice.js — dictation into a focused text box, in the Android shell only (S-1).
-    'afVoice.js'];
+    'afVoice.js',
+    // afRunCategory.js — the four run categories as a bar (U-191). It reads
+    // sessionsTable.js's list when it DRAWS, so a page using it loads that too.
+    'afRunCategory.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];

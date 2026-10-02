@@ -446,6 +446,8 @@ export function htmlShell(
     // whole item exists to end.
     const dims = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afDimensions.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
+    // U-191 — the four run categories as a bar, for any page listing runs.
+    const runCategory = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunCategory.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
     // every surface. Ships everywhere for the reason U-26 was filed: a badge
     // invented per page is a badge that disagrees per page.
@@ -657,6 +659,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${ask}"></script>
 <script nonce="${nonce}" src="${voice}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
+<script nonce="${nonce}" src="${runCategory}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
 </html>`;

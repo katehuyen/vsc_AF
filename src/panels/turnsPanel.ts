@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { PricingEngine } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
+import { chainIndexNow } from '../core/chainMembership';
 import { LaunchManifest } from '../core/launchManifest';
 import { RunIdentity, sessionIdentity } from '../core/turnRuntime';
 import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
@@ -58,7 +59,7 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
         rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps)),
+            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps), chainIndexNow()),
         tableN: TURNS_TABLE_N
     };
 }

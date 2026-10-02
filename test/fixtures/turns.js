@@ -105,6 +105,44 @@ const rows = () => ([
         tokens: 88_120, wTokens: 31_400, cost: 0.14,
         tools: 4, errors: 0, models: ['claude-haiku-4-5'],
         sidechain: false, origin: 'auto', active: false,
+        // U-191 — a headless schedule run: 🤖 with the 🌙 on it
+        category: 'auto', chainId: '', chainLeg: 0, mission: null, headless: true,
+        engine: 'claude'
+    },
+    {
+        // U-191 — a relay leg a baton pass opened: ⑂, its chain and leg in the hover
+        file: 'C:\\Users\\x\\.claude\\projects\\ajanlar\\4f0e1a22.jsonl',
+        sessionId: '4f0e1a22-3b5c-4d7e-8f90-a1b2c3d4e5f6',
+        cwd: 'D:\\zone\\agent\\ajanlar\\developer',
+        agent: 'developer', agentName: 'developer',
+        session: 'X-461 relay — leg 6',
+        n: 3, of: 9,
+        label: 'Turns page: bring it level with the Sessions table',
+        ts: min(55), durationMs: 14 * 60000, ms: 12 * 60000,
+        apiCalls: 31, steps: 58, thinking: 9, endCtx: 118_400,
+        ctxWindow: 200_000, ctxWindowSource: 'model',
+        tokens: 2_412_000, wTokens: 402_100, cost: 3.18,
+        tools: 26, errors: 1, models: ['claude-opus-5-5'],
+        sidechain: false, origin: 'auto', active: false,
+        category: 'baton', chainId: 'chn_muqmf6q7001io2', chainLeg: 6, mission: null, headless: false,
+        engine: 'claude'
+    },
+    {
+        // U-191 — a mission's delegation: 🎯 fully lit, its title in the hover
+        file: 'C:\\Users\\x\\.claude\\projects\\ajanlar\\7d1c9e03.jsonl',
+        sessionId: '7d1c9e03-5a6b-4c7d-9e0f-112233445566',
+        cwd: 'D:\\zone\\agent\\ajanlar\\explorer',
+        agent: 'explorer', agentName: 'explorer',
+        session: 'Release check: Sürüm notlarını doğrula',
+        n: 1, of: 2,
+        label: 'Read the changelog and list what the guide still lacks',
+        ts: min(130), durationMs: 6 * 60000, ms: 5 * 60000,
+        apiCalls: 9, steps: 17, thinking: 2, endCtx: 36_900,
+        ctxWindow: 200_000, ctxWindowSource: 'model',
+        tokens: 301_200, wTokens: 61_800, cost: 0.41,
+        tools: 7, errors: 0, models: ['claude-sonnet-5'],
+        sidechain: false, origin: 'auto', active: false,
+        category: 'mission', chainId: '', chainLeg: 0, mission: { id: 'm-12', title: 'Release 3.792 check' }, headless: true,
         engine: 'claude'
     },
     {
@@ -180,6 +218,19 @@ const variants = () => ([
         label: 'Turns — filter panel open: Providers (Kimi · OpenCode · Anthropic · OpenAI · no route) and Profiles beside Engines and Models',
         data: base(),
         act: r => { const b = r.query('.af-filter')[0]; if (b) { b.click(); } }
+    },
+    {
+        // U-191 — all four categories on: 🧑 · ⑂ · 🤖🌙 · 🎯 side by side in the By column
+        id: 'turns-categories',
+        label: 'Turns — all four categories switched on from the toolbar: You, Baton, Auto (headless moon), Mission',
+        data: base(),
+        act: r => ['.af-cat-auto', '.af-cat-mission'].forEach(s => { const b = r.query(s)[0]; if (b) { b.click(); } })
+    },
+    {
+        id: 'turns-baton-tip',
+        label: 'Turns — the ⑂ cell of a relay leg: its category, chain and leg in the panel',
+        tip: 'origcell:8',
+        data: base()
     },
     {
         id: 'turns-ctx-unknown',

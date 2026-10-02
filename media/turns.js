@@ -30,16 +30,9 @@
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 },
         { id: 'turnno', label: 'Turn #', get: r => r.n || 0 }
     ];
-    // Origin scope of the turn's session — the Sessions tables' scope, same
-    // glyphs, same default (🧑 your own dialogs): a farm with standing duties
-    // produces far more automation turns than you ever type yourself.
-    const ORIGINS = [
-        { id: '', label: 'All', glyph: '🧑🤖', tip: 'Turns of both your own sessions and automation runs' },
-        { id: 'user', label: 'User', glyph: '🧑', tip: 'Only turns of sessions you started yourself' },
-        { id: 'auto', label: 'Auto', glyph: '🤖', tip: 'Only turns of automation runs — schedule / trigger / task / mission' }
-    ];
-    const originOf = r => (r.origin === 'auto' ? 'auto' : 'user');
-    const originMeta = id => ORIGINS.find(o => o.id === id) || ORIGINS[0];
+    // ‼️ U-191 — THE SESSIONS TABLE'S FOUR CATEGORIES, not a scope of its own
+    // (media/afRunCategory.js): same switches, same defaults, host's verdict.
+    const RC = window.AFRunCategory;
 
     // agents / engines / models: null = all (no filter, so one appearing later
     // is in by itself); an array = exactly that subset, [] = none. `engines` has
@@ -53,7 +46,8 @@
     // own report when it made one, else its session's route — which is how
     // "only Kimi" finds the Claude-via-Kimi turns that never name Kimi.
     const FDEF = () => ({
-        text: '', session: '', agents: null, engines: null, models: null, origin: 'user',
+        text: '', session: '', agents: null, engines: null, models: null,
+        showUser: true, showBaton: true, showAuto: false, showMission: false, headless: true,
         providers: null, profiles: null,
         activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
@@ -162,6 +156,12 @@
         .origcell { width:20px; text-align:center; font-size:11px; line-height:1;
             opacity:.85; cursor:default; }
         .origcell.auto { opacity:.6; }
+        /* U-191 — 🤖🌙 needs ~23px; the column is 30, so its side padding gives way */
+        td.origcell { padding-left:2px; padding-right:2px; }
+        table.turnstable td.origcell > .tcut { overflow:visible; text-overflow:clip; }
+        .origcell.hless { opacity:.85; }
+        .origcell .hgl { font-size:9px; margin-left:-1px; }
+        .origcell.mission { opacity:1; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
             background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
             color:var(--vscode-foreground); }
@@ -226,7 +226,14 @@
     const DEFAULT_N = DATA.tableN || 200;
     let sort = SORTS.some(s => s.id === saved.sort) ? saved.sort : 'recent';
     let single = saved.single !== undefined ? !!saved.single : true;
-    let filters = Object.assign(FDEF(), saved.filters || {});
+    // U-191 — a page saved with the old `origin` scope ('' all · 'auto') reopens on the same rows.
+    const was = Object.assign({}, saved.filters || {});
+    const scope = was.origin;
+    delete was.origin;
+    if ((scope === '' || scope === 'auto') && was.showUser === undefined) {
+        Object.assign(was, { showUser: scope === '', showAuto: true, showMission: true });
+    }
+    let filters = Object.assign(FDEF(), was);
     let filtersOpen = !!saved.filtersOpen;
     // A remembered row count is honored only while the built-in default is
     // unchanged — when a release moves the default, a stale saved value must
@@ -272,10 +279,11 @@
         }
     });
 
-    // The origin scope has its own always-visible switch chip, so it is not
-    // counted here (a permanent "(1)" on the Filters chip says nothing).
+    // The four categories have their own always-visible switches, so they are
+    // not counted here; 🌙 lives only in the panel, so hiding it IS counted.
     function activeFilterCount() {
         let n = (filters.text ? 1 : 0) + (filters.session ? 1 : 0) + (filters.agents ? 1 : 0)
+            + (filters.headless ? 0 : 1)
             + (filters.engines ? 1 : 0) + (filters.providers ? 1 : 0) + (filters.profiles ? 1 : 0)
             + (filters.models ? 1 : 0) + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0)
             + (filters.mainOnly ? 1 : 0) + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
@@ -295,7 +303,7 @@
             if (!sess.empty && !sess.test(r.session || '')) { return false; }
             if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
             if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
-            if (filters.origin && originOf(r) !== filters.origin) { return false; }
+            if (!RC.passes(filters, r)) { return false; }
             // X-111 — the three route axes, by the one rule (AND with the rest).
             if (!RF.matchesAny(r.providers, filters.providers)) { return false; }
             if (!RF.matchesAny([r.profile].filter(Boolean), filters.profiles)) { return false; }
@@ -361,12 +369,8 @@
                 <input type="number" class="af-fr-${k.id}-min" placeholder="min" value="${rg.min !== undefined ? rg.min : ''}">–<input type="number" class="af-fr-${k.id}-max" placeholder="max" value="${rg.max !== undefined ? rg.max : ''}">
             </label>`;
         }).join('');
-        const origins = ORIGINS.map(o =>
-            `<button class="chip af-forig-${o.id || 'all'}${filters.origin === o.id ? ' on' : ''}" title="${o.tip}">${o.glyph} ${o.label}</button>`).join('');
         return `<div class="af-fpanel">
-            <div class="af-frow">
-                <span class="muted small" title="Who started the session the turn belongs to">Started by:</span>${origins}
-            </div>
+            <div class="af-frow">${RC.showRow(filters, DATA.rows || [], 'turns')}</div>
             <div class="af-frow">
                 <input type="text" class="af-ftext af-fturn" placeholder="turn contains…" value="${C.esc(filters.text)}"
                     title="${C.esc(window.AFQuery.tip("Searched against the turn's opening prompt."))}">
@@ -488,8 +492,8 @@
     const th = (cls, label, name, def) =>
         `<th${cls ? ` class="${cls}"` : ''}>${window.AFTip.wrap(C.esc(label), name, def, 'tip-block')}</th>`;
     const HEAD = {
-        origin: th('origcell', 'By', 'Started by', 'Who started the session this turn belongs to: '
-            + '🧑 you · 🤖 automation.'),
+        origin: th('origcell', 'By', 'Category', 'What opened the session this turn belongs to — the Sessions table\'s categories: '
+            + '🧑 you · ⑂ a baton relay leg · 🤖 automation · 🎯 a mission. 🌙 on the glyph: no terminal behind it.'),
         agent: th('', 'Agent', 'Agent', 'The agent whose folder the session ran in.'),
         engine: th('', 'Engine', 'Engine · Route', 'Which engine ran this turn — ' + window.AFEngine.names(', ', 'or')
             + '. A Claude transcript states no engine; the absence IS Claude.'
@@ -545,9 +549,14 @@
     const replies = r => (r.steps || 0) - (r.thinking || 0) - (r.tools || 0);
     const CELL = {
         origin: r => {
-            const o = originMeta(originOf(r));
-            return cell(`origcell ${o.id}`, o.glyph,
-                o.id === 'auto' ? '🤖 Automation' : '🧑 You', [
+            const o = RC.meta(RC.of(r));
+            // S-35 — the moon rides on the glyph: one fact about one run
+            const moon = RC.isHeadless(r) && o.id !== 'mission' ? `<span class="hgl">${RC.glyph()}</span>` : '';
+            return cell(`origcell ${o.id}${moon ? ' hless' : ''}`, o.glyph + moon,
+                `${o.glyph} ${o.label}`, [
+                r.mission ? line('Mission', r.mission.title) : '',
+                r.chainId ? line('Chain', `${r.chainId} · leg ${r.chainLeg}`) : '',
+                RC.isHeadless(r) ? line('Terminal', 'none (headless)') : '',
                 line('Agent', r.agent),
                 line('Session', r.session),
                 line('Turn', `${r.n} of ${r.of}`)
@@ -704,7 +713,6 @@
         const pool = filterRows(rows);
         const nf = activeFilterCount();
         const hidden = rows.length - pool.length;
-        const scope = originMeta(filters.origin);
         shown = pool.slice().sort((a, b) => def.key(b) - def.key(a));
         if (tableN > 0) { shown = shown.slice(0, tableN); }
         shown.forEach(r => { if (open.has(key(r))) { ensureDetail(r); } });
@@ -739,8 +747,8 @@
             <button class="chip af-expand" title="Unfold every listed turn (reads each transcript once)">Expand all</button>
             <button class="chip af-collapse" title="Fold all turns closed">Collapse all</button>
             <button class="chip af-single${single ? ' on' : ''}" title="Only one turn open at a time: unfolding a turn folds the previous one">Single-open</button>
-            <button class="chip af-oswitch${filters.origin ? ' on' : ''}" title="Scope: ${scope.tip} · click to ${filters.origin ? 'show everything' : 'go back to your own sessions'}">${scope.glyph}</button>
-            <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by origin, prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
+            ${RC.chips(filters, rows, false, 'turns')}
+            <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by category, prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
             <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} turns · ` : `${rows.length} turns · `}${window.AFSessionCtx.HINT} · hover any cell for its full value and what it implies · ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now</span>
         </div>
         ${contentChipsHtml()}
@@ -833,12 +841,8 @@
                 saveState();
                 render();
             }));
-        // Origin scope: one click flips User ↔ All without opening the panel.
-        root.querySelector('.af-oswitch').addEventListener('click', () => {
-            filters.origin = filters.origin ? '' : 'user';
-            saveState();
-            render();
-        });
+        // U-191 — the bar's and the panel's switches are one switch each
+        RC.wire(root, filters, () => { saveState(); render(); });
         root.querySelector('.af-filter').addEventListener('click', () => {
             filtersOpen = !filtersOpen;
             saveState();
@@ -857,8 +861,6 @@
         };
         if (filtersOpen) {
             const facets = filterFacets();
-            ORIGINS.forEach(o =>
-                wireEl(`.af-forig-${o.id || 'all'}`, 'click', () => { filters.origin = o.id; apply(); }));
             liveEl('.af-fturn', el => { filters.text = el.value || ''; apply(); });
             liveEl('.af-fsess', el => { filters.session = el.value || ''; apply(); });
             // the ✕ that empties them — the shared control (common.css .af-clr)

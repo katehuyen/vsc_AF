@@ -113,6 +113,20 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     const autoInfo = Object.assign({}, info, { entrypoint: 'sdk-cli' });
     ok('an sdk-cli session marks its turns as automation',
         buildTurnRows([autoInfo], () => false).every(r => r.origin === 'auto'));
+    // U-191 — the Sessions table's four categories, decided on the host per turn
+    const chains = { bySession: new Map([[info.sessionId, { chainId: 'chn_test', leg: 3 }]]), byChain: new Map() };
+    const leg = buildTurnRows([autoInfo], () => false, 0, undefined, chains);
+    ok('U-191: an automation run that is a relay leg is ⑂ baton, with its chain and leg',
+        leg.every(r => r.category === 'baton' && r.chainId === 'chn_test' && r.chainLeg === 3));
+    ok('…a person\'s own session in a chain stays 🧑 user',
+        buildTurnRows([info], () => false, 0, undefined, chains).every(r => r.category === 'user'));
+    ok('…an automation run in no chain is 🤖 auto',
+        buildTurnRows([autoInfo], () => false).every(r => r.category === 'auto' && r.chainId === '' && r.mission === null));
+    const mis = Object.assign({}, autoInfo, { launchedBy: { kind: 'mission', missionId: 'm-1', missionTitle: 'Ship it' } });
+    const misRows = buildTurnRows([mis], () => false, 0, undefined, chains);
+    ok('…and a mission stamp wins over a chain, carrying its title',
+        misRows.every(r => r.category === 'mission' && r.mission && r.mission.title === 'Ship it'));
+    ok('…every row says whether it ran with no terminal', leg.every(r => typeof r.headless === 'boolean'));
 }
 
 // ---------- 4) turns.js page contract (source-level regression guards) ----------
@@ -124,8 +138,15 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     ok('COLUMNS list present', !!cols);
     const order = cols ? cols[1].split(',').map(s => s.trim().replace(/'/g, '')) : [];
     ok('the origin glyph column leads the row', order[0] === 'origin');
-    ok('the page opens scoped to your own sessions and can flip in one click',
-        /origin: 'user'/.test(js) && /af-oswitch/.test(js) && /af-forig-/.test(js));
+    // U-191 — the Sessions table's four switches, its defaults, one bar module
+    ok('the page opens on the Sessions table\'s categories: You and Baton on, Auto and Mission off, headless in',
+        /showUser: true, showBaton: true, showAuto: false, showMission: false, headless: true/.test(js));
+    ok('…drawn and wired by the shared category bar on the toolbar and in the panel',
+        /RC\.chips\(filters, rows, false, 'turns'\)/.test(js) && /RC\.showRow\(filters/.test(js)
+        && /RC\.wire\(root, filters/.test(js) && /RC\.passes\(filters, r\)/.test(js));
+    ok('…and the old single scope is gone', !/af-oswitch/.test(js) && !/af-forig-/.test(js) && !/ORIGINS/.test(js));
+    ok('…while a page saved with the old scope reopens on the same rows',
+        /scope === '' \|\| scope === 'auto'/.test(js));
     ok('the AI side of the Show chips is "Agent", never "Assistant"',
         /🤖 Agent/.test(js) && !/'Assistant'/.test(js));
     // Steps → Tokens → Ctx: what the turn did, what it cost, where it left the
@@ -266,6 +287,16 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
         userOnly.ok && userOnly.result.length === 2 && autoOnly.ok && autoOnly.result.length === 0);
     const anyScope = await reg.dispatch('turns.list', { origin: 'all' });
     ok('an unrecognized origin means "both", not "nothing"', anyScope.ok && anyScope.result.length === 2);
+    // U-191 — the page's four switches and 🌙, as op arguments
+    ok('U-191: every op row carries its category', all.result.every(r => r.category === 'user' && r.chain === null && r.mission === null));
+    const catUser = await reg.dispatch('turns.list', { category: 'baton,user' });
+    const catAuto = await reg.dispatch('turns.list', { category: 'auto' });
+    ok('…category= takes a comma list and filters by it',
+        catUser.ok && catUser.result.length === 2 && catAuto.ok && catAuto.result.length === 0);
+    const hlOnly = await reg.dispatch('turns.list', { headless: 'true' });
+    const hlNone = await reg.dispatch('turns.list', { headless: false });
+    ok('…headless= keeps only, or drops, the runs with no terminal',
+        hlOnly.ok && hlOnly.result.length === 0 && hlNone.ok && hlNone.result.length === 2);
 
     // ---------- 7) X-111 — the route a Claude turn inherits, and the three filters ----------
     ok('with no identity dep, every turn is on no route',
