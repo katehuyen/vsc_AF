@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.791.0 - Project documents no longer lose text (2026-10-02)
+
+- **Archiving takes the whole item.** A closed backlog item with indented notes
+  under it used to move to the archive alone, leaving its notes behind under
+  whatever item came before. The notes now travel with it; an open item
+  nested under a closed one still stays where it is.
+- **Large files are read whole.** A backlog, Backloglog, handover or plan that
+  grew past half a megabyte was read only up to that size: items past it read
+  as missing, and the Backloglog, rewritten from that head, dropped the lines
+  written by hand further down. Every read that is parsed or written back now
+  reads the whole file, and refuses to write if even that is cut.
+- **Every change keeps the version before it.** Before Agent Farm writes a
+  project document it copies the file as it stood into its own storage (not
+  into your vault); the newest 20 copies of each document are kept, and
+  `projects.doc.backups` lists them.
+
 ## 3.790.0 - The agents' scratch folder is a setting the system holds (2026-10-02)
 
 - **One work area, set by you.** Agents need somewhere for drafts, test

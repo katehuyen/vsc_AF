@@ -345,6 +345,7 @@ import {
 import { BRIDGE_GUARD_ESCAPE, bridgeGuardCoverage, bridgeGuardVerdict, bridgeGuardView, denyResponseBody } from './core/bridgeGuard';
 import { hookEngineOf, HEREDOC_MAX_LINES, LITERAL_MAX, SHELL_GUARD_ESCAPE, ShellGuardCatch, shellGuardRules, shellGuardVerdict } from './core/shellGuard';
 import { BridgeGuardLog } from './core/bridgeGuardLog';
+import { configureDocBackups, DOC_BACKUP_KEEP, listDocBackups } from './core/docBackup';
 import {
     forgetWorkArea, nextWorkAreaState, resolveWorkArea, retireWorkArea, RetiredWorkArea, startContextBody,
     WORK_AREA_DEFAULT, WORK_AREA_ENV, WORK_AREA_ESCAPE, WORK_AREA_SETTING, WorkAreaCatch, workAreaInForceNote,
@@ -1710,6 +1711,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** X-439 — the shell guard's refusals, its own file (`sessions.shellGuard`). */
     const shellGuardLog = new BridgeGuardLog<ShellGuardCatch>(path.join(context.globalStorageUri.fsPath, 'shell-guard.json'));
     context.subscriptions.push({ dispose: () => shellGuardLog.flush() });
+    // X-460 — every project document write keeps the version it replaces, here and not in the vault (core/docBackup.ts)
+    configureDocBackups(path.join(context.globalStorageUri.fsPath, 'doc-backups'));
     /** B-30 — the scratch folder in force and the folders it moved away from; filled by `refreshWorkArea` once `pathCtx` exists. */
     let workArea: WorkAreaResolution & { retired: RetiredWorkArea[] } = {
         path: '', template: WORK_AREA_DEFAULT, source: 'default', why: '', retired: []
@@ -14210,7 +14213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         }
                     }
                     if (args.backlogItems === true && roles.backlog) {
-                        const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+                        const read = readProjectDoc(folder, relDoc(folder, roles.backlog), DOC_EDIT_CAP);
                         if (read.ok) {
                             const items: TemplateBacklogItem[] = nextBacklog(read.text ?? '',
                                 { limit: 20, maxEffort: 'XL' }).items.map(i => ({
@@ -14372,6 +14375,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     project: project.name, path: rel,
                     text: res.text ?? '', mtimeMs: res.mtimeMs ?? 0,
                     size: res.size ?? 0, truncated: !!res.truncated
+                };
+            }
+        },
+        {
+            op: 'projects.doc.backups',
+            describe: 'X-460 — the earlier versions of one project document. Every write Agent Farm makes to a project document first copies the file as it stood into the extension\'s own storage (never into the vault), and the newest ' + DOC_BACKUP_KEEP + ' copies of each document are kept. Returns them newest first: `path` (a plain file — read it, or copy it back over the document to restore), `at` (when the write that replaced that version ran), `size`. args: project (id or name), path (relative to the project folder)',
+            handler: (args) => {
+                const { project, folder } = projectDocsFor(argStr(args, 'project'));
+                const rel = argStr(args, 'path');
+                const file = resolveInFolder(folder, rel);
+                need(file, 'that path is not inside the project folder');
+                const versions = listDocBackups(file as string);
+                return {
+                    project: project.name, path: rel, keep: DOC_BACKUP_KEEP,
+                    versions: versions.map(v => ({ path: v.path, at: new Date(v.at).toISOString(), size: v.size }))
                 };
             }
         },
@@ -32488,7 +32506,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         let noBacklog = true;
         if (hasFolder && roles.backlog) {
             noBacklog = false;
-            const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+            const read = readProjectDoc(folder, relDoc(folder, roles.backlog), DOC_EDIT_CAP);
             if (read.ok) {
                 const text = read.text ?? '';
                 for (const i of nextBacklog(text, { limit: 5, maxEffort: 'XL' }).items) {
@@ -32626,7 +32644,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         let noBacklog = true;
         if (hasFolder && roles.backlog) {
             noBacklog = false;
-            const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+            const read = readProjectDoc(folder, relDoc(folder, roles.backlog), DOC_EDIT_CAP);
             if (read.ok) {
                 const text = read.text ?? '';
                 for (const i of nextBacklog(text, { limit: 6, maxEffort: 'XL' }).items) {
@@ -32798,7 +32816,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const held = scanRoles(folder).handover;
         const rel = held ? relDoc(folder, held) : 'Handover.md';
-        const existing = held ? readProjectDoc(folder, rel) : undefined;
+        const existing = held ? readProjectDoc(folder, rel, DOC_EDIT_CAP) : undefined;
+        if (existing?.truncated) { return { error: 'the handover note is too large to merge safely — nothing was written' }; }
         const merged = mergeHandoverNotes(existing?.ok ? existing.text : undefined, input);
         if (merged.error) { return { error: merged.error }; }
         const body = `---\naf-role: handover\n---\n\n${merged.text ?? ''}`;
@@ -32829,8 +32848,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (doc.file) {
                 const rel = relDoc(folder, doc.file);
                 for (const item of t.plan) {
-                    const read = readProjectDoc(folder, rel);
-                    if (!read.ok) { out.errors.push(read.error ?? 'the plan could not be read'); break; }
+                    const read = readProjectDoc(folder, rel, DOC_EDIT_CAP);
+                    if (!read.ok || read.truncated) { out.errors.push(read.error ?? 'the plan could not be read whole'); break; }
                     const edit = addPlanItem(read.text ?? '', item.text,
                         item.section ? { section: item.section } : {});
                     if (!edit.ok) { out.errors.push(edit.error ?? 'plan item refused'); continue; }
@@ -32844,8 +32863,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (doc.file) {
                 const rel = relDoc(folder, doc.file);
                 for (const item of t.backlog) {
-                    const read = readProjectDoc(folder, rel);
-                    if (!read.ok) { out.errors.push(read.error ?? 'the backlog could not be read'); break; }
+                    const read = readProjectDoc(folder, rel, DOC_EDIT_CAP);
+                    if (!read.ok || read.truncated) { out.errors.push(read.error ?? 'the backlog could not be read whole'); break; }
                     const edit = addBacklogItem(read.text ?? '', {
                         text: item.text,
                         ...(item.area ? { area: item.area } : {}),
@@ -33230,8 +33249,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         need(file,
             `"${project.name}" has no backlog document — a file with \`af-role: backlog\` in its frontmatter is one`);
-        const read = readProjectDoc(folder, relDoc(folder, file as string));
+        // X-460 — PARSED, NOT PAINTED: the display cap cut a 1.2 MB backlog to its head and every
+        // item past it answered "no such item" or a false stale queue entry, silently
+        const read = readProjectDoc(folder, relDoc(folder, file as string), DOC_EDIT_CAP);
         need(read.ok, read.error ?? 'could not read the backlog');
+        need(!read.truncated, `the backlog is larger than ${Math.round(DOC_EDIT_CAP / 1048576)} MB — only its head could be read, so its answers would be wrong; archive or split it in your editor`);
         return { project, folder, file: file as string, text: read.text ?? '' };
     };
 
@@ -34480,7 +34502,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!project || !folder || !dirExists(folder)) { return { error: 'the project has no folder on disk' }; }
         const backlogFile = scanRoles(folder).backlog;
         if (!backlogFile) { return { error: 'the project has no backlog document' }; }
-        const backlog = readProjectDoc(folder, relDoc(folder, backlogFile));
+        const backlog = readProjectDoc(folder, relDoc(folder, backlogFile), DOC_EDIT_CAP);
         if (!backlog.ok) { return { error: backlog.error ?? 'the backlog could not be read' }; }
 
         const items = parseBacklog(backlog.text ?? '').items;
@@ -34511,7 +34533,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const made = ensureRoleDoc(folder, project, 'backloglog', projectSkeleton());
         if (made.error || !made.file) { return { error: made.error ?? 'the backloglog could not be created' }; }
         const rel = relDoc(folder, made.file);
-        const current = readProjectDoc(folder, rel);
+        const current = readProjectDoc(folder, rel, DOC_EDIT_CAP);
+        // X-460 — a head merged and written back deletes the tail's hand-written lines
+        if (current.truncated) { return { error: 'the backloglog is too large to rewrite safely — nothing was written' }; }
         const text = renderBacklogLog({
             project: project.name, items, records,
             existing: current.text ?? '',
@@ -34593,7 +34617,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             try {
                 const file = scanRoles(folder).backlog;
                 if (!file) { continue; }
-                const doc = readProjectDoc(folder, relDoc(folder, file));
+                const doc = readProjectDoc(folder, relDoc(folder, file), DOC_EDIT_CAP);
                 if (!doc.ok) { continue; }
                 outsideSeen.set(folder, snapshotBacklog(parseBacklog(doc.text ?? '').items));
                 backlogEcho.mark(folder, doc.text ?? '');
@@ -34666,7 +34690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         try {
             const file = scanRoles(folder).backlog;
             if (!file) { return ''; }
-            const doc = readProjectDoc(folder, relDoc(folder, file));
+            const doc = readProjectDoc(folder, relDoc(folder, file), DOC_EDIT_CAP);
             if (!doc.ok) { return ''; }
             const up = code.toUpperCase();
             return parseBacklog(doc.text ?? '').items.find(i => i.code === up)?.text ?? '';
@@ -34831,7 +34855,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!project || !folder || !dirExists(folder)) { return { error: 'the project has no folder on disk' }; }
         const roles = scanRoles(folder);
         if (!roles.backlog) { return { error: `"${project.name}" has no backlog document` }; }
-        const read = readProjectDoc(folder, relDoc(folder, roles.backlog));
+        const read = readProjectDoc(folder, relDoc(folder, roles.backlog), DOC_EDIT_CAP);
         if (!read.ok) { return { error: read.error ?? 'the backlog could not be read' }; }
         const only = o.code?.toUpperCase();
         const items = parseBacklog(read.text ?? '').items
@@ -34900,7 +34924,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const codeAtTarget = (folder: string, target: BacklogTarget): string | undefined => {
         const file = scanRoles(folder).backlog;
         if (!file) { return undefined; }
-        const read = readProjectDoc(folder, relDoc(folder, file));
+        const read = readProjectDoc(folder, relDoc(folder, file), DOC_EDIT_CAP);
         if (!read.ok) { return undefined; }
         return findBacklogItem(read.text ?? '', target).item?.code;
     };
@@ -34970,10 +34994,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const projectBacklogView = (id: string) => {
         const doc = projectRoleDocView(id, 'backlog');
         if (doc.state !== 'ok') { return doc; }
-        const read = readProjectDoc(doc.folder, doc.path);
+        // X-460 — the rows are parsed, not painted, so the whole file is read (see backlogDoc)
+        const read = readProjectDoc(doc.folder, doc.path, DOC_EDIT_CAP);
         if (!read.ok) { return { state: 'unreadable' as const, path: doc.path, error: read.error }; }
         const text = read.text ?? '';
         const sum = parseBacklog(text);
+        const truncated = read.truncated ? { truncated: true, size: read.size } : {};
         // ‼️ FOURTEEN, not five, and the page marks where five would have
         // stopped. Five is the DEFAULT of the op, not the length of the queue: a
         // strip showing four items answers "what is next" and not "what is the
@@ -35030,7 +35056,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             blocked: up.blocked.map(b => ({ code: b.item.code ?? null, waitingOn: b.waitingOn })),
             // U-60 — parked by hand. The rows carry `onHold` themselves; this is
             // the same fact as a LIST, so the page can say how many are out.
-            held: up.held.map(i => i.code ?? null).filter(Boolean)
+            held: up.held.map(i => i.code ?? null).filter(Boolean),
+            ...truncated
         };
     };
 
@@ -35075,7 +35102,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!dirExists(folder)) { return { state: 'folder-missing' as const, role: 'backloglog' as const, folder }; }
         const roles = scanRoles(folder);
         const backlogText = roles.backlog
-            ? (readProjectDoc(folder, relDoc(folder, roles.backlog)).text ?? '') : '';
+            ? (readProjectDoc(folder, relDoc(folder, roles.backlog), DOC_EDIT_CAP).text ?? '') : '';
         const parsed = parseBacklog(backlogText);
         const items = parsed.items;
         const byCode = new Map(items.filter(i => i.code).map(i => [i.code as string, i]));
@@ -35091,7 +35118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The human's own closing notes, read straight back out of the document
         // they were written in. This tab shows them; it never writes them.
         const notes = new Map((roles.backloglog
-            ? parseBacklogLog(readProjectDoc(folder, relDoc(folder, roles.backloglog)).text ?? '').blocks
+            ? parseBacklogLog(readProjectDoc(folder, relDoc(folder, roles.backloglog), DOC_EDIT_CAP).text ?? '').blocks
             : []).map(b => [b.code, b.kept.map(l => l.replace(/^\s*[>-]\s?/, '').trim()).join(' ')]));
 
         const seen = new Set<string>();

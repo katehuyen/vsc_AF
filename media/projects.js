@@ -3981,6 +3981,7 @@
             <span class="muted small pj-bl-count${ordered.length < all.length ? ' narrowed' : ''}">${ordered.length} of ${all.length}</span>
         </div>
 
+        ${d.truncated ? `<p class="muted small">⚠️ This backlog is too large to read whole (${Math.round((d.size || 0) / 1048576)} MB): only its head is listed, and an item past it may read as missing. Archive or split <code>${C.esc(d.path)}</code> in your editor.</p>` : ''}
         ${nextQueueHtml(nextList, all, d.nextDefault || 5, d.queue || [], d.staleQueue || [])}
 
         ${rows || '<p class="muted small">Nothing matches. The file is <code>' + C.esc(d.path) + '</code> — edit it in Obsidian any time; this page reads whatever is there.</p>'}`;

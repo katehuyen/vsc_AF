@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { writeAtomicSync } from './atomicFile';
 import { charterGaps } from './charterGaps';
+import { backupBeforeWrite } from './docBackup';
 import { LINE_BREAKS } from './lineBreaks';
 import { folderNameFor, Project } from './projects';
 import { slugify } from './util';
@@ -700,6 +701,8 @@ export interface WriteResult {
     /** the file's mtime after a successful write — hand it back on the next
      *  guarded write to prove nothing changed in between */
     mtimeMs?: number;
+    /** X-460 — where the version this write replaced was kept */
+    backup?: string;
 }
 
 export function docMtime(file: string): number {
@@ -733,8 +736,10 @@ export function safeWriteDoc(file: string, content: string, expectedMtimeMs?: nu
     // guarantee that makes retrying safe. Without it the caller cannot tell a
     // refusal from a half-done batch, and that is how `projects.backlog.add`
     // wrote six items twice.
+    // X-460 — the version this write replaces, kept (core/docBackup.ts); `_AF/` is ours and rewritten every spawn
+    const backup = path.basename(path.dirname(file)) === AF_DIR ? undefined : backupBeforeWrite(file);
     const r = writeAtomicSync(file, content);
-    return r.ok ? { ok: true, mtimeMs: docMtime(file) } : { ok: false, error: r.error };
+    return r.ok ? { ok: true, mtimeMs: docMtime(file), ...(backup ? { backup } : {}) } : { ok: false, error: r.error };
 }
 
 /**

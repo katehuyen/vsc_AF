@@ -509,9 +509,10 @@ const {
         whole.ok && whole.truncated === false && whole.text.length === big.length);
     ok('…and the edit ceiling is far above anything a person writes by hand, without being unlimited',
         DOC_EDIT_CAP > DOC_READ_CAP && Number.isFinite(DOC_EDIT_CAP));
+    // X-460 — six now: doc.write, editProjectDoc, the handover merge, the two template seeds, the Backloglog render
     ok('‼️ the rewrite paths ask for the EDIT ceiling — the trap was one shared number',
         (fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8')
-            .match(/readProjectDoc\(folder, rel, DOC_EDIT_CAP\)/g) || []).length === 2);
+            .match(/readProjectDoc\(folder, rel, DOC_EDIT_CAP\)/g) || []).length === 6);
 }
 
 // ---------- the brief inlines the charter's constitution, not the queues ----------

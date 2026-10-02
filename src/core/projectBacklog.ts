@@ -1,6 +1,7 @@
 import { eolOf, lineStartOffset, TASK_LINE } from './projectPlan';
 import { sanitizeBacklogMarkdown, sanitizeBacklogTags } from './backlogSanitize';
 import { LINE_BREAKS } from './lineBreaks';
+import { itemBlockEnd } from './backlogBlock';
 
 /**
  * The backlog — a project's standing pile of work, in the user's own markdown.
@@ -2585,16 +2586,20 @@ export function archiveBacklogDone(text: string, opts: ArchiveOptions = {}): Arc
 
     const lines = src.split(/\r?\n/);
     const eol = eolOf(src);
-    const taken = new Set(wanted.map(i => i.line));
+    // X-460 — an item moves with the indented lines under it (core/backlogBlock.ts)
+    const itemLines = new Set(parsed.items.map(i => i.line));
+    const ends = wanted.map(i => itemBlockEnd(lines, i.line, itemLines));
+    const taken = new Set<number>();
+    wanted.forEach((i, k) => { for (let n = i.line; n <= ends[k]; n++) { taken.add(n); } });
     const kept = lines.filter((_, n) => !taken.has(n));
     // Verbatim: every parsed item already has its bullet (`-`, `*`, `+`, `1.`).
-    const body = wanted.map(i => i.raw);
+    const body = wanted.flatMap((i, k) => [i.raw, ...lines.slice(i.line + 1, ends[k] + 1)]);
 
     let out: string[];
     if (parsed.archiveLine !== undefined) {
         // Insert under the existing heading, which may have moved up as lines
         // above it were taken out.
-        const shift = wanted.filter(i => i.line < (parsed.archiveLine as number)).length;
+        const shift = [...taken].filter(n => n < (parsed.archiveLine as number)).length;
         const at = (parsed.archiveLine as number) - shift + 1;
         out = [...kept.slice(0, at), ...body, ...kept.slice(at)];
     } else {
