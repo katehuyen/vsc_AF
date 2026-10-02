@@ -44,3 +44,24 @@ export function weekSignalText(lead: string, pct: number, account: string, order
     const who = account ? ` (${account})` : '';
     return `${lead} ${pct}% — your account's weekly window${who} is ${pct}% used (weekly handover line reached). ${order}`;
 }
+
+export interface WeekView {
+    state: 'delivered' | 'undelivered' | 'quiet';
+    chip: string;
+    lines: string[];
+}
+
+/** The weekly line's own words for the session's guard panel; quotaView.ts joins them to the five-hour ones. */
+export function weekView(w: WeekRecord, line: number, lead: string, channelLabel: (c: ContextChannel) => string, ago?: (ts: number) => string): WeekView {
+    const when = (ts: number): string => (ago ? ` — ${ago(ts)}` : '');
+    const reading = `Weekly window: ${w.lastPct}% used — line ${line > 0 ? `${line}%` : 'off'} (agentFarm.quotaWeeklyHandoverPct).`;
+    if (w.handover) {
+        const h = w.handover;
+        return { state: 'delivered', chip: `week ${h.pct}% HANDOVER`, lines: [`Weekly signal: ${lead} ${h.pct}% delivered${when(h.ts)}, through the ${channelLabel(h.channel)}${h.via ? ` (${h.via})` : ''}.`, reading] };
+    }
+    if (w.undelivered) {
+        const u = w.undelivered;
+        return { state: 'undelivered', chip: `week ${u.pct}% HANDOVER ✕`, lines: [`Weekly signal: ${lead} ${u.pct}% — ‼️ NEVER REACHED THIS RUN${when(u.ts)}.`, u.why, reading] };
+    }
+    return { state: 'quiet', chip: '', lines: [reading] };
+}

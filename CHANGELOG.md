@@ -14,6 +14,10 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
 - **Said where you look.** The misplaced alarm also fires when a leg's very
   first reading already has a spent week; `sessions.contextGuard.set` sets the
   weekly line like the others.
+- **On the session's quota panel.** The panel now shows the weekly reading
+  beside the five-hour one; when the weekly order has gone out (or could not
+  reach the run), it leads the panel unless the five-hour line has already
+  ordered a handover.
 
 ## 3.786.0 - The retry supervisor obeys your Account ceiling too (2026-10-02)
 

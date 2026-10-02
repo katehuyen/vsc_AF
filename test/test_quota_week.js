@@ -75,6 +75,29 @@ console.log('\n== the pass, the figure, the alarm ==');
     ok('a leg whose FIRST reading had a spent week was misplaced, and the record says it was the week', m && m.window === 'week' && m.pct === 99 && m.line === 98 && /weekly window/.test(m.why));
 }
 
+console.log('\n== the panel ==');
+{
+    const t = { convergePct: 35, handoverPct: 40, quotaConvergePct: 80, quotaHandoverPct: 90, quotaWeeklyHandoverPct: 98 };
+    const hw = { ts: 1, pct: 98, channel: 'claude-hook', account: 'kate' };
+    const quiet = G.quotaSignalView({ account: 'kate', lastPct: 42, lastTs: 1, week: { lastPct: 61 } }, t);
+    ok('a quiet week: the panel stays quiet and ends on the weekly reading, its line named by the setting',
+        quiet.state === 'quiet' && quiet.chip === '' && quiet.lines[quiet.lines.length - 1] === 'Weekly window: 61% used — line 98% (agentFarm.quotaWeeklyHandoverPct).');
+    const led = G.quotaSignalView({ account: 'kate', lastPct: 30, week: { lastPct: 98, handover: hw } }, t);
+    ok('‼️ the week delivered on a quiet five-hour panel leads it: week N% HANDOVER',
+        led.state === 'delivered' && led.level === 'handover' && led.chip === 'week 98% HANDOVER' && /^Weekly signal: QUOTA HANDOVER 98% delivered, through the Claude live hook\./.test(led.lines[0])
+        && /^5-hour window \(kate\): 30% used/.test(led.head) && !led.lines.some(l => /nothing sent/.test(l)));
+    const conv = G.quotaSignalView({ account: 'kate', lastPct: 85, converge: { ts: 1, pct: 85, channel: 'claude-hook' }, week: { lastPct: 99, handover: hw } }, t);
+    ok('…over a five-hour CONVERGE too, which stays on the panel', conv.chip === 'week 98% HANDOVER' && conv.level === 'handover' && conv.lines.some(l => /^Quota signal: QUOTA CONVERGE 85%/.test(l)));
+    const both = G.quotaSignalView({ account: 'kate', lastPct: 92, handover: { ts: 1, pct: 92, channel: 'claude-hook' }, week: { lastPct: 99, handover: hw } }, t);
+    ok('a five-hour HANDOVER keeps the lead; the week follows it', both.chip === '5h 92% HANDOVER' && /^Weekly signal:/.test(both.lines[both.lines.length - 2]));
+    const lost = G.quotaSignalView({ account: 'kate', lastPct: 10, week: { lastPct: 100, undelivered: { ts: 1, pct: 100, why: 'no hooks' } } }, t);
+    ok('a week that never reached the run says so on the chip', lost.state === 'undelivered' && lost.chip === 'week 100% HANDOVER ✕' && lost.lines.includes('no hooks'));
+    const plain = G.quotaSignalView({ account: 'kate', lastPct: 42 }, t);
+    ok('no week read: nothing about it', !plain.lines.some(l => /Weekly/.test(l)));
+    const cyc = require('child_process').spawnSync(process.execPath, ['-e', `const V=require(${JSON.stringify(path.join(ROOT, 'out', 'core', 'quotaView.js'))});process.stdout.write(V.quotaSignalView({lastPct:1,week:{lastPct:2}},{}).lines.pop())`], { encoding: 'utf8' });
+    ok('the view module loads on its own (the import cycle with contextGuard is call-time only)', cyc.status === 0 && /^Weekly window: 2% used/.test(cyc.stdout));
+}
+
 console.log('\n== the host wiring ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
