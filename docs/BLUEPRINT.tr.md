@@ -3487,28 +3487,28 @@ Ajanı şablonlaştırıp başka makineye taşımak veya paylaşmak için tek do
 
 Ajanların Claude için optimize; ama istersen aynı ajan Google Antigravity (Gemini) ve OpenAI Codex altında da çalışır. `memory/` dosyaları düz markdown olduğundan **iki taraf da olduğu gibi kullanır — dönüşüm gerekmez**.
 
-**Üç motor, iki talimat dosyası — çünkü farklı yerlere bakıyorlar.** Bu bir tercih değil, motorların ölçülmüş davranışı:
+**Üç motor, klasör başına tek talimat dosyası — çünkü üçü de yukarı yürüyerek okuyor.** Bu bir tercih değil, motorların ölçülmüş davranışı:
 
 | | Okuduğu | Üst klasöre çıkar mı? |
 |---|---|---|
 | **Codex** | her klasörden bir `AGENTS.md`, **git kökünden cwd'ye kadar** birleştirilerek (32 KiB tavanı) | **Evet** — bir üstteki ortak dosya kendiliğinden ulaşır |
-| **Antigravity** | `<workspace kökü>/.agents/AGENTS.md` + global `~/.gemini/config/AGENTS.md` | **Hayır** — açık workspace'in üstündeki hiçbir şey yüklenmez |
+| **Antigravity** | çalıştığı klasörden **depo köküne kadar** her `AGENTS.md` / `GEMINI.md`, artı global `~/.gemini/GEMINI.md`; tekrarı içeriğe göre değil **dosya yoluna göre** eler, 24.000 baytı aşan dosyayı keser, kural bütçesini aşan dosyayı yalnız yoluyla bırakır | **Evet** — depo köküne kadar |
 | **OpenCode** | **aynı** `AGENTS.md` — cwd'den **git worktree'sine** kadar bulunan hepsi. `AGENTS.md`, `CLAUDE.md`'yi tamamen gölgeler (ilk eşleşen *ad* kazanır) | **Evet, ama git worktree'sinde durur** |
 
-Bu yüzden senkron ikisini birden yazar: ajan klasöründe `AGENTS.md` (Codex'in araçlar-arası dosyası — OpenCode da onu okur) **ve** `.agents/AGENTS.md` (Antigravity'nin kural dosyası — workspace customization root'u). Aynı kaynak, farklı muhataplar; üçüncü motor için üçüncü bir kopya yok.
+Bu yüzden senkron ajan klasörüne tek bir `AGENTS.md` yazar ve üç motor da onu okur. Aynı kuralların ikinci bir kopyası (Agent Farm eskiden `.agents/AGENTS.md`'ye yazıyordu) Antigravity'de **iki kez** yüklenir; bu yüzden yalnız Antigravity'nin yürüyüşü ortak anayasaya ulaşamıyorsa yazılır — aşağıya bak.
 
 **Kur:** ajana sağ tık → **Sync Agent with the Other Engines…**
 
 - `CLAUDE.md` → `AGENTS.md` üretilir (öz-referanslar uyarlanır; dosya başında senkron işareti).
-- `CLAUDE.md` (+ aşağıdaki ortak anayasa) → `.agents/AGENTS.md`, Antigravity'nin gerçekten okuduğu dosya.
+- Sonuç (ve `agents.sync` bridge op'u) Antigravity'nin bu klasörden neyi yükleyeceğini söyler: dosyalar, boyutları, iki kez gelen metin, 24.000 bayt sınırını aşan dosya.
 - Aktif nöbet görevleri → `.agents/workflows/` (Antigravity'de `/nobet-adi`) **ve** `.opencode/command/` (OpenCode'da `/nobet-adi`).
 - `.mcp.json` varsa → `.agents/mcp_config.suggested.json` (global gemini dosyasına elle birleştirirsin — Agent Farm `~/.gemini`'ye asla yazmaz), Codex için `.agents/codex/mcp.suggested.toml`, OpenCode için `.opencode/mcp.suggested.json`. Üçü de **öneri**; hiçbirinin canlı yapılandırması bizim tarafımızdan düzenlenmez.
 - Beceriler **kopyalanmaz**: OpenCode `~/.claude/skills/<ad>/SKILL.md` dosyalarını kendiliğinden yükler — gerçek bir skill çağrısıyla ölçüldü.
 
 **Ortak anayasa.** Ajanlar bir *nest* içindeyse — ajan klasörlerini tutan ve kendi `CLAUDE.md`'si olan kök klasör — o dosya her ajanın yüklediği anayasadır. Claude Code üst klasördeki talimat dosyasını bedavaya yükler; diğer motorlar yüklemez, her biri kendi yolundan:
 
-- **Codex** için nest klasörünün kendi `AGENTS.md`'si yeterli: **Dashboard'daki ⚖ Sync constitution düğmesi** (3.40.0 — komut paleti ve `constitution.sync` bridge op'u da aynı komutu çağırır) anayasayı oraya aynalar, Codex de hangi ajan klasöründe çalışıyorsa oraya inen yürüyüşünde onu birleştirir. Tek kopya, tekrar yok — ajanın kendi `AGENTS.md`'si bu yüzden anayasayı bilerek **tekrarlamaz**.
-- **Antigravity**'ye bu yoldan ulaşılamaz; bu yüzden her ajanın `.agents/AGENTS.md` dosyası anayasayı **içine gömülü** taşır: `agent-farm:shared-constitution` bloğu içinde, ajanın kendi talimatından önce.
+- **Codex, OpenCode ve Antigravity** için nest klasörünün kendi `AGENTS.md`'si yeterli: **Toolbox'taki ⚖ Sync Constitution düğmesi** (komut paleti ve `constitution.sync` bridge op'u da aynı komutu çağırır) anayasayı oraya aynalar, her motor da hangi ajan klasöründe çalışıyorsa oradan yürüyerek onu bulur. Tek kopya, tekrar yok — ajanın kendi `AGENTS.md`'si bu yüzden anayasayı bilerek **tekrarlamaz**.
+- **Yalnız bu yürüyüşün nest'e ulaşamadığı yerde** — kendi git deposu olan bir ajan klasörü ya da hiç depo olmayan bir nest — ajanın `.agents/AGENTS.md` dosyası anayasayı `agent-farm:shared-constitution` bloğu içinde taşır. Başka her yerde senkron oraya daha önce yazdığı kopyayı siler; elle düzenlediğin bir kopya Insights'ta bildirilir ve sana bırakılır.
 - **OpenCode** aynı nest aynasını yürüyüşünde bulur — **ama yürüyüşü git worktree'sinde durur.** Ajan klasörünün kendisi bir git deposuysa anayasa görünmez olur: bütün dosyalar yerinde, senkron “in sync” der ve kural sadece prompt'ta yoktur. Senkron bunu tespit edip o ajanın `opencode.json`'ına tek satır ekler (`"instructions": ["../AGENTS.md"]`, göreli — dosya repo ile yolculuk eder); dosya yorum taşıyorsa yeniden yazılmaz, bizim başlattığımız süreçlere `OPENCODE_CONFIG_CONTENT` ile verilir ve kalan boşluk adıyla söylenir. `agents.sync` cevabındaki `opencode.reachesConstitution` bunu ajan ajan söyler.
 - OpenCode ayrıca **kimsenin ayarlamadığı bir global dosya** da yükler: `~/.config/opencode/AGENTS.md` yoksa kullanıcının kişisel `~/.claude/CLAUDE.md`'si. Agent Farm oraya yazmaz, ama `globalInstruction` ile bildirir.
 - Anayasa **okunur, asla yazılmaz**: ters senkron, ajanın `CLAUDE.md`'sine bir şey yazmadan önce bu bloğu söker; hiçbir komut nest `CLAUDE.md`'sini yazmaz. Anayasa değiştiğinde Insights hangi ajanların hâlâ eski metni taşıdığını söyler.

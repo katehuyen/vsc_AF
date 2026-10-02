@@ -6,6 +6,7 @@ import { claudeOnlyScopeNote } from './engines';
 import { agentMcpConfigFiles, mcpUsage, readAgentMcpServers } from './mcp';
 import { readMemoryFrontmatter } from './memusage';
 import { opencodeStatus } from './opencodesync';
+import { ANTIGRAVITY_FILE_CAP_BYTES, antigravityRuleLoad } from './ruleWalk';
 import { readAgentSkills, skillUsage } from './skills';
 import { lintPermissions } from './permlint';
 import { looksLikePlaintextSecret } from './secrets';
@@ -330,7 +331,7 @@ export function buildInsights(
                     category: 'antigravity',
                     message: ag.state === 'claude-ahead'
                         ? (ag.constitutionChanged
-                            ? 'The shared constitution changed — this agent\'s .agents/AGENTS.md still carries the old text (Antigravity reads no file above the workspace). Run "Sync Agent with the Other Engines…".'
+                            ? 'The shared constitution changed — this agent\'s .agents/AGENTS.md still carries the old text (Antigravity\'s walk does not reach the shared AGENTS.md from this folder, so the text is embedded here). Run "Sync Agent with the Other Engines…".'
                             : 'CLAUDE.md changed since the last cross-engine sync — run "Sync Agent with the Other Engines…" to update AGENTS.md.')
                         : 'AGENTS.md was edited (Antigravity/Codex side) — run "Sync Agent with the Other Engines…" to carry the changes back to CLAUDE.md.',
                     filePath: agent.claudeMdPath,
@@ -343,9 +344,25 @@ export function buildInsights(
                     agentId: agent.id,
                     agentName: agent.name,
                     category: 'antigravity',
-                    message: '.agents/AGENTS.md (the file Antigravity reads) was edited by hand — it is generated from CLAUDE.md plus the shared constitution, so the next sync skips it and a forced one overwrites it. Carry the gain into CLAUDE.md to keep it.',
+                    message: '.agents/AGENTS.md (the constitution Antigravity cannot reach from this folder) was edited by hand — it is generated from the shared constitution, so the next sync skips it and a forced one overwrites it. Carry the gain into the source to keep it.',
                     filePath: agent.claudeMdPath,
                     guideAnchor: 'antigravity-uyumlulugu'
+                });
+            }
+            // X-476 — Antigravity de-duplicates by PATH: a copy beside a reachable mirror is loaded twice
+            if (ag.rulesStray) {
+                insights.push({
+                    severity: 'info', agentId: agent.id, agentName: agent.name, category: 'antigravity',
+                    message: 'Antigravity loads .agents/AGENTS.md ON TOP of AGENTS.md here — its walk already reaches the shared constitution, so the same rules arrive twice and crowd its rules budget. Run "Sync Agent with the Other Engines…": a copy Agent Farm wrote is removed, one edited by hand is left for you to fold into CLAUDE.md and delete.',
+                    filePath: agent.claudeMdPath, guideAnchor: 'antigravity-uyumlulugu'
+                });
+            }
+            const capped = ag.state === 'none' ? [] : antigravityRuleLoad(agent.dir).overFileCap;
+            if (capped.length) {
+                insights.push({
+                    severity: 'warning', agentId: agent.id, agentName: agent.name, category: 'antigravity',
+                    message: `Antigravity cuts a rules file past ${ANTIGRAVITY_FILE_CAP_BYTES} bytes, and ${capped.join(', ')} ${capped.length === 1 ? 'is' : 'are'} longer — the end of it never reaches the model. Shorten it.`,
+                    filePath: agent.claudeMdPath, guideAnchor: 'antigravity-uyumlulugu'
                 });
             }
         }

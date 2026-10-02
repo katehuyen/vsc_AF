@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Duty } from './duties';
+import { antigravityReachesConstitution } from './ruleWalk';
 import { hashString, safeReadFile, slugify } from './util';
 
 /**
@@ -11,22 +12,24 @@ import { hashString, safeReadFile, slugify } from './util';
  * Memory files are plain markdown read on demand — shared as-is, no
  * conversion needed.
  *
- * TWO INSTRUCTION FILES, because the two engines look in different places —
- * verified against the installed Antigravity build's own runtime prompt
- * ("Workspace Customizations Root: `.agents` (relative to the workspace root)")
- * and OpenAI's Codex docs ("Starting at the project root (typically the Git
- * root), Codex walks down to your current working directory"):
+ * ONE INSTRUCTION FILE PER FOLDER, because every engine that is not Claude
+ * walks up for it — OpenAI's Codex docs ("Starting at the project root
+ * (typically the Git root), Codex walks down to your current working
+ * directory") and the installed Antigravity CLI's own rules doc ("walks up from
+ * the current working directory to the repository root"):
  *
- *   • `<dir>/AGENTS.md`          — the cross-tool file **Codex** reads. Codex
- *     merges one AGENTS.md per directory from the git root down to the cwd, so
- *     a shared constitution living one level up (the nest root's CLAUDE.md,
- *     mirrored to that folder's AGENTS.md) reaches Codex on its own — it must
- *     NOT be copied in here as well, or every Codex run pays for it twice and
- *     the merge drifts toward the 32 KiB `project_doc_max_bytes` ceiling.
- *   • `<dir>/.agents/AGENTS.md`  — the rules file **Antigravity** reads. It has
- *     no hierarchy at all: only the opened workspace's `.agents/` root and the
- *     global `~/.gemini/config`. Nothing above the workspace is ever loaded, so
- *     the shared constitution is *embedded* in this file, inside a marked block.
+ *   • `<dir>/AGENTS.md`          — the cross-tool file every walking engine
+ *     reads, so a shared constitution living one level up (the nest root's
+ *     CLAUDE.md, mirrored to that folder's AGENTS.md) reaches them on its own —
+ *     it must NOT be copied in here as well, or every run pays for it twice and
+ *     Codex's merge drifts toward its 32 KiB `project_doc_max_bytes` ceiling.
+ *   • `<dir>/.agents/AGENTS.md`  — ‼️ X-476: written ONLY where Antigravity's
+ *     walk does NOT reach that mirror (the folder is its own repository, or
+ *     there is none), and then it carries the constitution alone. Antigravity
+ *     de-duplicates by PATH, not content, so a copy beside a reachable mirror
+ *     is loaded twice — measured: three copies of the constitution in one
+ *     `developer` session, past its rules budget, the overflow reduced to a
+ *     bare path. Where the walk reaches, our own unedited copy is deleted.
  *
  * The Claude side is never a party to this: CLAUDE.md is read, never written,
  * except by the explicit reverse sync — which strips the embedded constitution
@@ -40,13 +43,15 @@ import { hashString, safeReadFile, slugify } from './util';
 
 export const AGENTS_MD_NAME = 'AGENTS.md';
 
-/** Antigravity's workspace customization root is `.agents/`; its rules file. */
+/** The Antigravity rules file under its customization root — only where its walk falls short (X-476). */
 export const ANTIGRAVITY_RULES_REL = path.join('.agents', AGENTS_MD_NAME);
 
+/** Every version of the opening fence starts with this, so an older one is still found and stripped. */
+const CONSTITUTION_MARK = '<!-- agent-farm:shared-constitution —';
 /** Fences the shared constitution embedded in the Antigravity rules file. */
-export const CONSTITUTION_BEGIN =
-    '<!-- agent-farm:shared-constitution — generated from the shared CLAUDE.md one level up. ' +
-    'Antigravity reads no file above the workspace, so it is carried here. Edit the source, not this block. -->';
+export const CONSTITUTION_BEGIN = CONSTITUTION_MARK +
+    ' generated from the shared CLAUDE.md one level up. Antigravity\'s walk does not reach it from this ' +
+    'folder, so it is carried here. Edit the source, not this block. -->';
 export const CONSTITUTION_END = '<!-- /agent-farm:shared-constitution -->';
 export const SYNC_MARKER =
     '<!-- agent-farm:antigravity-sync — generated from CLAUDE.md. ' +
@@ -90,20 +95,21 @@ export function buildAgentsMd(claudeBody: string): string {
 }
 
 /**
- * The Antigravity rules file: the agent's own instructions, preceded by the
- * shared constitution when there is one. Antigravity loads nothing above the
- * workspace root, so what is not in this file does not exist for it.
+ * The Antigravity rules file, for a folder its walk cannot carry the shared
+ * constitution into: the constitution ALONE, fenced. The agent's own text is
+ * not repeated — `<dir>/AGENTS.md` sits where the walk starts and is always read.
  */
-export function buildAntigravityRules(claudeBody: string, constitution?: string): string {
-    const parts = [SYNC_MARKER];
-    if (constitution && constitution.trim()) {
-        parts.push(
-            CONSTITUTION_BEGIN + '\n\n' +
-            transformClaudeToAgents(constitution).trim() + '\n\n' +
-            CONSTITUTION_END);
-    }
-    parts.push(transformClaudeToAgents(claudeBody).trim());
-    return parts.join('\n\n') + '\n';
+export function buildAntigravityRules(constitution: string): string {
+    return [SYNC_MARKER,
+        CONSTITUTION_BEGIN + '\n\n' + transformClaudeToAgents(constitution).trim() + '\n\n' + CONSTITUTION_END
+    ].join('\n\n') + '\n';
+}
+
+/** The constitution Antigravity needs embedded in this folder, or undefined where its walk reaches the mirror. */
+function embeddedConstitution(agentDir: string, constitutionPath: string | undefined): string | undefined {
+    if (!constitutionPath || antigravityReachesConstitution(agentDir, constitutionPath)) { return undefined; }
+    const text = safeReadFile(constitutionPath);
+    return text && text.trim() ? text : undefined;
 }
 
 /** AGENTS.md content → body without our marker header. */
@@ -120,7 +126,7 @@ export function stripMarker(content: string): string {
  * never be duplicated into an agent's own instructions.
  */
 export function stripConstitution(content: string): string {
-    const start = content.indexOf(CONSTITUTION_BEGIN);
+    const start = content.indexOf(CONSTITUTION_MARK);
     if (start < 0) { return content; }
     const end = content.indexOf(CONSTITUTION_END, start);
     if (end < 0) { return content; }
@@ -191,11 +197,20 @@ export function antigravityStatus(
      *  cross-tool file), so this is reported on its own rather than silently
      *  reconciled — the edit would be lost on the next forced sync. */
     rulesDiverged: boolean;
+    /** X-476 — a `.agents/AGENTS.md` where the walk already reaches the mirror:
+     *  Antigravity loads it ON TOP of AGENTS.md (it de-duplicates by path). */
+    rulesStray: boolean;
 } {
     const agentsContent = safeReadFile(path.join(agentDir, AGENTS_MD_NAME));
     const sidecar = readSidecar(agentDir);
+    // Where the folder needs the constitution embedded (X-476), the Antigravity
+    // lane is stale when the constitution moved under it or its rules file is
+    // missing. Where the walk reaches the mirror, neither is this folder's business.
+    const embed = embeddedConstitution(agentDir, constitutionPath);
+    const rulesContent = safeReadFile(path.join(agentDir, ANTIGRAVITY_RULES_REL));
+    const rulesStray = embed === undefined && rulesContent !== undefined;
     if (agentsContent === undefined) {
-        return { state: 'none', claudeChanged: false, agentsChanged: false, constitutionChanged: false, rulesDiverged: false };
+        return { state: 'none', claudeChanged: false, agentsChanged: false, constitutionChanged: false, rulesDiverged: false, rulesStray };
     }
     if (!sidecar) {
         return {
@@ -203,17 +218,15 @@ export function antigravityStatus(
             claudeChanged: true,
             agentsChanged: false,
             constitutionChanged: false,
-            rulesDiverged: false
+            rulesDiverged: false,
+            rulesStray
         };
     }
     const claude = safeReadFile(path.join(agentDir, 'CLAUDE.md')) ?? '';
-    // The Antigravity lane is stale when the constitution moved under it, or
-    // when its rules file was never written (a sidecar from before that lane).
-    const constHash = constitutionPath ? hashString(safeReadFile(constitutionPath) ?? '') : undefined;
+    const constHash = embed !== undefined ? hashString(embed) : undefined;
     const constitutionChanged = constHash !== undefined && constHash !== sidecar.constHash;
-    const rulesContent = safeReadFile(path.join(agentDir, ANTIGRAVITY_RULES_REL));
-    const rulesMissing = rulesContent === undefined;
-    const rulesDiverged = rulesContent !== undefined && sidecar.rulesHash !== undefined &&
+    const rulesMissing = embed !== undefined && rulesContent === undefined;
+    const rulesDiverged = embed !== undefined && rulesContent !== undefined && sidecar.rulesHash !== undefined &&
         hashString(rulesContent) !== sidecar.rulesHash;
     const claudeChanged =
         hashString(claude) !== sidecar.srcHash || constitutionChanged || rulesMissing;
@@ -223,7 +236,7 @@ export function antigravityStatus(
             : claudeChanged ? 'claude-ahead'
                 : agentsChanged ? 'antigravity-ahead'
                     : 'in-sync';
-    return { state, claudeChanged, agentsChanged, constitutionChanged, rulesDiverged };
+    return { state, claudeChanged, agentsChanged, constitutionChanged, rulesDiverged, rulesStray };
 }
 
 function backupFile(file: string): string | undefined {
@@ -239,36 +252,51 @@ export interface SyncResult {
     skipped: string[];
     backups: string[];
     notes: string[];
+    /** X-476 — generated files this sync deleted because no engine needs them any more */
+    removed?: string[];
 }
 
 /**
- * Write the Antigravity lane's rules file (`.agents/AGENTS.md`) — the agent's
- * instructions with the shared constitution embedded, since Antigravity reads
- * nothing above the workspace root. Generated-only: a file we did not produce,
- * or one edited by hand since we last wrote it, is left alone unless forced.
- * Returns the hash to record in the sidecar, or undefined when nothing was
- * written.
+ * The Antigravity lane's rules file (`.agents/AGENTS.md`). With a constitution
+ * to embed (its walk does not reach the mirror) it is written; without one it
+ * must not exist, so our own unedited copy is DELETED — a hand-edited or
+ * foreign one is reported and kept, force or not (the user's rule, X-476).
+ * Returns the hash to fingerprint, `null` when no rules file of ours exists
+ * any more, or undefined when a file was left alone (keep the old fingerprints).
  */
 function writeAntigravityRules(
     agentDir: string,
-    claudeBody: string,
     constitution: string | undefined,
     previous: SyncSidecar | undefined,
     result: SyncResult,
     force: boolean
-): number | undefined {
+): number | null | undefined {
     const rel = ANTIGRAVITY_RULES_REL;
     const full = path.join(agentDir, rel);
     const existing = safeReadFile(full);
     const ours = existing === undefined || existing.startsWith(SYNC_MARKER);
+    const edited = ours && existing !== undefined && previous?.rulesHash !== undefined &&
+        hashString(existing) !== previous.rulesHash;
 
+    if (constitution === undefined) {
+        if (existing === undefined) { return null; }
+        if (!ours || edited) {
+            result.skipped.push(rel);
+            result.notes.push(`${rel}: Antigravity already reaches the shared AGENTS.md from this folder, so it loads this file ON TOP of it — `
+                + `left in place because ${ours ? 'it was edited by hand' : 'Agent Farm did not generate it'}. Move what it adds into CLAUDE.md and delete it.`);
+            return undefined;
+        }
+        fs.unlinkSync(full);
+        (result.removed ??= []).push(rel);
+        result.notes.push(`Antigravity: ${rel} removed — its walk reaches the shared AGENTS.md from this folder, and a second copy is loaded twice.`);
+        return null;
+    }
     if (!ours && !force) {
         result.skipped.push(rel);
         result.notes.push(`${rel}: an Antigravity rules file already exists that Agent Farm did not generate — left untouched (re-run with overwrite confirmation).`);
         return undefined;
     }
-    if (ours && existing !== undefined && previous?.rulesHash !== undefined &&
-        hashString(existing) !== previous.rulesHash && !force) {
+    if (edited && !force) {
         result.skipped.push(rel);
         result.notes.push(`${rel}: edited on the Antigravity side since the last sync — left untouched.`);
         return undefined;
@@ -278,24 +306,22 @@ function writeAntigravityRules(
         if (b) { result.backups.push(b); }
     }
 
-    const content = buildAntigravityRules(claudeBody, constitution);
+    const content = buildAntigravityRules(constitution);
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, content, 'utf8');
     result.written.push(rel);
-    result.notes.push(constitution
-        ? `Antigravity: ${rel} carries the shared constitution inline — it reads no file above the workspace root.`
-        : `Antigravity: ${rel} is its rules file (the workspace customization root is .agents/, not the folder root).`);
+    result.notes.push(`Antigravity: ${rel} carries the shared constitution — its walk does not reach the shared AGENTS.md from this folder (its own repository, or none).`);
     return hashString(content);
 }
 
 /**
- * Forward sync: CLAUDE.md → AGENTS.md (Codex lane) + `.agents/AGENTS.md`
- * (Antigravity lane, constitution embedded) + duty workflows + MCP suggestion.
- * Duty workflow files are only overwritten if untouched since we wrote them.
+ * Forward sync: CLAUDE.md → AGENTS.md (every walking engine) + duty workflows
+ * + MCP suggestion, and the Antigravity rules file where its walk misses the
+ * mirror (removed where it does not). Duty workflow files are only overwritten
+ * if untouched since we wrote them.
  *
- * `opts.constitutionPath` is the shared CLAUDE.md one level up. It is embedded
- * in the Antigravity lane only: Codex finds the nest's own AGENTS.md mirror by
- * walking down from the git root, and must not be handed a second copy.
+ * `opts.constitutionPath` is the shared CLAUDE.md one level up. It is never
+ * copied into AGENTS.md: the engines find the nest's own mirror by walking.
  */
 export function syncToAntigravity(
     agentDir: string,
@@ -355,16 +381,15 @@ export function syncToAntigravity(
         sidecar.workflows[wf.file.replace(/\\/g, '/')] = hashString(wf.content);
     }
 
-    // The Antigravity lane: its own rules file, with the constitution inline.
-    const constitution = opts.constitutionPath ? safeReadFile(opts.constitutionPath) : undefined;
-    if (opts.constitutionPath && constitution === undefined) {
-        result.notes.push('Shared constitution not readable at the given path — the Antigravity rules file was written without it.');
+    // The Antigravity lane: a rules file only where its walk misses the mirror (X-476).
+    if (opts.constitutionPath && safeReadFile(opts.constitutionPath) === undefined) {
+        result.notes.push('Shared constitution not readable at the given path — nothing could be embedded for Antigravity.');
     }
-    const rulesHash = writeAntigravityRules(
-        agentDir, claude, constitution, previous, result, opts.force === true);
+    const constitution = embeddedConstitution(agentDir, opts.constitutionPath);
+    const rulesHash = writeAntigravityRules(agentDir, constitution, previous, result, opts.force === true);
     if (rulesHash !== undefined) {
-        sidecar.rulesHash = rulesHash;
-        sidecar.constHash = constitution !== undefined ? hashString(constitution) : undefined;
+        sidecar.rulesHash = rulesHash ?? undefined;
+        sidecar.constHash = rulesHash !== null && constitution !== undefined ? hashString(constitution) : undefined;
     } else {
         // Nothing written (foreign or hand-edited): keep the old fingerprints so
         // the drift keeps being reported instead of being silently accepted.
@@ -428,19 +453,17 @@ export function syncToClaude(agentDir: string, constitutionPath?: string): SyncR
     result.written.push(AGENTS_MD_NAME);
 
     const previous = readSidecar(agentDir);
-    // The Antigravity lane is regenerated from the new CLAUDE.md, so the engine
-    // that was behind gets the gain too instead of quietly drifting.
-    const constitution = constitutionPath ? safeReadFile(constitutionPath) : undefined;
-    const rulesHash = writeAntigravityRules(agentDir, newClaude, constitution, previous, result, false);
+    // The Antigravity lane follows the same rule as the forward sync (X-476).
+    const constitution = embeddedConstitution(agentDir, constitutionPath);
+    const rulesHash = writeAntigravityRules(agentDir, constitution, previous, result, false);
     writeSidecar(agentDir, {
         srcHash: hashString(newClaude),
         genHash: hashString(stripMarker(restamped)),
         ts: Date.now(),
         workflows: previous?.workflows ?? {},
-        rulesHash: rulesHash ?? previous?.rulesHash,
-        constHash: rulesHash !== undefined
-            ? (constitution !== undefined ? hashString(constitution) : undefined)
-            : previous?.constHash
+        rulesHash: rulesHash === undefined ? previous?.rulesHash : (rulesHash ?? undefined),
+        constHash: rulesHash === undefined ? previous?.constHash
+            : (rulesHash !== null && constitution !== undefined ? hashString(constitution) : undefined)
     });
     return result;
 }

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { Duty } from './duties';
 import { hashString, safeReadFile } from './util';
 import { AGENTS_MD_NAME, SyncResult, dutySlug } from './antigravity';
+import { gitRootOf, isWithin } from './ruleWalk';
 
 /**
  * OpenCode compatibility layer — the third instruction lane, and the only one
@@ -115,26 +116,7 @@ export function opencodeGlobalInstruction(
  * value OpenCode reports, and it makes the walk run to the drive root.
  */
 export function opencodeWorktree(dir: string, exists: (p: string) => boolean = fs.existsSync): string {
-    let cur = path.resolve(dir);
-    for (; ;) {
-        if (exists(path.join(cur, '.git'))) { return cur; }
-        const parent = path.dirname(cur);
-        if (parent === cur) { return '/'; }
-        cur = parent;
-    }
-}
-
-/** Case-insensitive on Windows, where the same folder has two spellings. */
-function samePath(a: string, b: string): boolean {
-    const n = (p: string) => path.resolve(p).replace(/[\\/]+$/, '').toLowerCase();
-    return n(a) === n(b);
-}
-
-/** Is `inner` at or below `outer`? */
-function isWithin(outer: string, inner: string): boolean {
-    if (samePath(outer, inner)) { return true; }
-    const rel = path.relative(path.resolve(outer), path.resolve(inner));
-    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+    return gitRootOf(dir, exists) || '/';
 }
 
 /**

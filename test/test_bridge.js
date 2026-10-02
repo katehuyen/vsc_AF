@@ -502,7 +502,7 @@ const { opencodeStatus, syncToOpencode } =
         fs.writeFileSync(path.join(nest, 'dev', 'CLAUDE.md'), '# Dev\n');
         reg.register({
             op: 'constitution.sync',
-            describe: 'Mirror the shared constitution to AGENTS.md (Codex) + .agents/AGENTS.md (Antigravity). args: root?, force?',
+            describe: 'Mirror the shared constitution to the AGENTS.md every walking engine reads. args: root?, force?',
             handler: (a) => {
                 const st = antigravityStatus(nest);
                 if ((st.state === 'conflict' || st.state === 'foreign' || st.state === 'antigravity-ahead')
@@ -517,9 +517,10 @@ const { opencodeStatus, syncToOpencode } =
         ok('constitution.sync appears in the catalog', reg.catalog().some(c => c.op === 'constitution.sync'));
 
         const first = await reg.dispatch('constitution.sync', {});
-        ok('constitution.sync mirrors both engine lanes', first.ok && first.result.synced === true &&
+        // X-476 — one mirror every walking engine reads; a second copy beside it would be loaded twice
+        ok('constitution.sync writes the one mirror and no .agents/AGENTS.md', first.ok && first.result.synced === true &&
             fs.existsSync(path.join(nest, 'AGENTS.md')) &&
-            fs.existsSync(path.join(nest, '.agents', 'AGENTS.md')));
+            !fs.existsSync(path.join(nest, '.agents', 'AGENTS.md')));
         ok('constitution.sync never writes CLAUDE.md',
             fs.readFileSync(path.join(nest, 'CLAUDE.md'), 'utf8') === '# Anayasa\n\nOrtak kurallar.\n');
 

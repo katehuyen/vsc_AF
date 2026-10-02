@@ -1,12 +1,13 @@
 // Cross-engine lanes and the shared constitution.
 //
-// The two engines read different files, so the sync writes two:
-//   <dir>/AGENTS.md         → Codex (merges one file per directory from the git
-//                             root down to its cwd, so a constitution one level
-//                             up reaches it on its own — never duplicated here)
-//   <dir>/.agents/AGENTS.md → Antigravity (its workspace customization root; it
-//                             reads NOTHING above the workspace, so the shared
-//                             constitution is embedded in this file)
+//   <dir>/AGENTS.md         → every walking engine (Codex, OpenCode, Antigravity):
+//                             a constitution one level up reaches them on its
+//                             own — never duplicated here
+//   <dir>/.agents/AGENTS.md → X-476: ONLY where Antigravity's walk (cwd → repo
+//                             root) does not reach the mirror, and then the
+//                             constitution alone. These fixtures live in the
+//                             temp dir with no repository above, which is that
+//                             case; test_rule_walk.js covers the one-repository case.
 // And the invariant that guards the Claude side: no generated text, above all
 // no constitution block, is ever written into an agent's own CLAUDE.md.
 'use strict';
@@ -28,32 +29,23 @@ const check = (n, c) => { if (c) { pass++; } else { fail++; console.log('FAIL  '
 const CONST_BODY = '# Agent Constitution\n\nShared rules. See CLAUDE.md of each agent.\n';
 const AGENT_BODY = '# Developer Agent\n\nMission text. Also mentions CLAUDE.md.\n';
 
-// --- 1) buildAntigravityRules: marker, fenced constitution, agent body ---
+// --- 1) buildAntigravityRules: marker and the fenced constitution, nothing else ---
 {
-    const withConst = buildAntigravityRules(AGENT_BODY, CONST_BODY);
+    const withConst = buildAntigravityRules(CONST_BODY);
     check('rules file starts with the sync marker', withConst.startsWith(SYNC_MARKER));
     check('constitution is fenced by both markers',
         withConst.includes(CONSTITUTION_BEGIN) && withConst.includes(CONSTITUTION_END));
     check('constitution body is inside the fence',
         withConst.indexOf('Shared rules') > withConst.indexOf(CONSTITUTION_BEGIN) &&
         withConst.indexOf('Shared rules') < withConst.indexOf(CONSTITUTION_END));
-    check('agent body comes after the constitution',
-        withConst.indexOf('Mission text') > withConst.indexOf(CONSTITUTION_END));
     // Self-references follow the file they live in (the generated-from note in
     // the fence comment deliberately still names the Claude-side source).
-    check('self-references transformed for the other engine',
-        withConst.includes('Also mentions AGENTS.md') &&
-        withConst.includes('See AGENTS.md of each agent'));
-
-    const without = buildAntigravityRules(AGENT_BODY);
-    check('no constitution → no fence at all',
-        !without.includes(CONSTITUTION_BEGIN) && without.includes('Mission text'));
-    check('empty constitution behaves like none', !buildAntigravityRules(AGENT_BODY, '  \n ').includes(CONSTITUTION_BEGIN));
+    check('self-references transformed for the other engine', withConst.includes('See AGENTS.md of each agent'));
 }
 
 // --- 2) stripConstitution: the guard on every write back to Claude ---
 {
-    const withConst = buildAntigravityRules(AGENT_BODY, CONST_BODY);
+    const withConst = buildAntigravityRules(CONST_BODY) + '\n' + AGENT_BODY;
     const stripped = stripConstitution(stripMarker(withConst));
     check('strip removes the whole block', !stripped.includes('Shared rules') &&
         !stripped.includes(CONSTITUTION_BEGIN) && !stripped.includes(CONSTITUTION_END));
@@ -61,6 +53,11 @@ const AGENT_BODY = '# Developer Agent\n\nMission text. Also mentions CLAUDE.md.\
     check('strip is a no-op without a block', stripConstitution('# Plain\n') === '# Plain\n');
     check('unterminated block is left alone (never half-eaten)',
         stripConstitution(CONSTITUTION_BEGIN + '\nx\n').includes('x'));
+    // X-476 reworded the fence; a file written under the old wording is still a fence
+    const oldFence = '<!-- agent-farm:shared-constitution — generated from the shared CLAUDE.md one level up. '
+        + 'Antigravity reads no file above the workspace, so it is carried here. Edit the source, not this block. -->';
+    check('an older fence wording is still found and stripped',
+        stripConstitution(oldFence + '\n\nShared rules\n\n' + CONSTITUTION_END + '\n# Body\n').trim() === '# Body');
 }
 
 // --- 3) a nest on disk: root CLAUDE.md + one agent folder ---
@@ -91,7 +88,7 @@ const codexPath = path.join(agentDir, 'AGENTS.md');
     const codex = fs.readFileSync(codexPath, 'utf8');
     const rules = fs.readFileSync(rulesPath, 'utf8');
     check('Antigravity lane carries the constitution', rules.includes('Shared rules'));
-    check('Antigravity lane carries the agent body too', rules.includes('Mission text'));
+    check('‼️ …and NOT the agent body — AGENTS.md beside it is always read (X-476)', !rules.includes('Mission text'));
     check('Codex lane does NOT duplicate the constitution (it walks parents itself)',
         !codex.includes('Shared rules') && codex.includes('Mission text'));
     check('a note explains why the constitution is inline',
@@ -165,7 +162,7 @@ const codexPath = path.join(agentDir, 'AGENTS.md');
 
     // Simulate an engine that pasted the constitution into the cross-tool file.
     fs.writeFileSync(path.join(revDir, 'AGENTS.md'),
-        buildAntigravityRules(AGENT_BODY + '\nAntigravity katkısı.\n', CONST_BODY));
+        buildAntigravityRules(CONST_BODY) + '\n' + AGENT_BODY + '\nAntigravity katkısı.\n');
 
     const r = syncToClaude(revDir, constitutionPath);
     const claude = fs.readFileSync(path.join(revDir, 'CLAUDE.md'), 'utf8');
@@ -175,21 +172,27 @@ const codexPath = path.join(agentDir, 'AGENTS.md');
     check('the drop is reported, not silent', r.notes.some(n => /shared-constitution/.test(n)));
     check('shared CLAUDE.md still untouched by a reverse sync',
         fs.readFileSync(constitutionPath, 'utf8').includes('Rule 5: new.'));
-    check('the Antigravity lane is regenerated from the new CLAUDE.md',
-        fs.readFileSync(path.join(revDir, ANTIGRAVITY_RULES_REL), 'utf8').includes('Antigravity katkısı.'));
+    const lane = fs.readFileSync(path.join(revDir, ANTIGRAVITY_RULES_REL), 'utf8');
+    check('the Antigravity lane still carries the constitution alone after a reverse sync',
+        lane.includes('Shared rules') && !lane.includes('Antigravity katkısı.'));
 }
 
-// --- 8) the nest itself: mirror for Codex + rules file for Antigravity ---
+// --- 8) the nest itself: the one mirror, and no rules file beside it (X-476) ---
 {
     const before = fs.readFileSync(constitutionPath, 'utf8');
+    // a copy an earlier build generated there, nobody edited
+    fs.mkdirSync(path.join(nest, '.agents'), { recursive: true });
+    fs.writeFileSync(path.join(nest, ANTIGRAVITY_RULES_REL), SYNC_MARKER + '\n\n' + CONST_BODY);
     const r = syncToAntigravity(nest, []);
     check('nest AGENTS.md mirror written', r.written.includes('AGENTS.md') &&
         fs.readFileSync(path.join(nest, 'AGENTS.md'), 'utf8').includes('Shared rules'));
-    check('nest .agents/AGENTS.md written for a workspace opened here',
-        fs.readFileSync(path.join(nest, ANTIGRAVITY_RULES_REL), 'utf8').includes('Shared rules'));
-    check('nest rules file has no duplicate constitution fence',
-        !fs.readFileSync(path.join(nest, ANTIGRAVITY_RULES_REL), 'utf8').includes(CONSTITUTION_BEGIN));
+    check('‼️ no .agents/AGENTS.md at the nest — the same text would be loaded twice',
+        !fs.existsSync(path.join(nest, ANTIGRAVITY_RULES_REL)) && (r.removed || []).includes(ANTIGRAVITY_RULES_REL));
     check('the constitution file itself is never written', fs.readFileSync(constitutionPath, 'utf8') === before);
+    fs.writeFileSync(path.join(nest, ANTIGRAVITY_RULES_REL), '# Kendi notlarım\n');
+    check('…while one Agent Farm did not write is kept and reported',
+        syncToAntigravity(nest, [], { force: true }).skipped.includes(ANTIGRAVITY_RULES_REL)
+        && fs.existsSync(path.join(nest, ANTIGRAVITY_RULES_REL)));
 }
 
 try { fs.rmSync(nest, { recursive: true, force: true }); } catch { }
