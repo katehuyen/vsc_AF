@@ -29,6 +29,8 @@ export interface TurnsDeps {
     getPricing(): PricingEngine;
     /** X-111 — the launch manifests, so a turn can say which route its session ran on. */
     launchManifests?(): readonly LaunchManifest[];
+    /** U-191 — the session's project, by the Sessions table's own resolver. */
+    projectOf?(s: SessionInfo): string | undefined;
     /** Export MD remembers the last folder saved to (shared with the viewer). */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
@@ -59,7 +61,7 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
         rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps), chainIndexNow()),
+            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps), chainIndexNow(), deps.projectOf),
         tableN: TURNS_TABLE_N
     };
 }

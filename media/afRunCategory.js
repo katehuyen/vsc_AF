@@ -12,9 +12,44 @@
     // S-35 — 🌙 marks an automation run with no terminal; never a 🧑 row.
     const isHeadless = r => r.headless === true && of(r) !== 'user';
 
-    /** Whether a row passes the four switches and the 🌙 narrowing. */
+    // ⑂ Chains / 🎯 Missions narrow their own category; null (or a page saved before them) = every one
+    const subId = { chains: r => of(r) === 'baton' && r.chainId, missions: r => of(r) === 'mission' && r.mission && r.mission.id };
+
+    /** Whether a row passes the four switches, the 🌙 narrowing and the ⑂ / 🎯 pickers. */
     function passes(f, r) {
-        return !!f[meta(of(r)).key] && (f.headless !== false || !isHeadless(r));
+        const sub = Object.keys(subId).every(k => !Array.isArray(f[k]) || !subId[k](r) || f[k].indexOf(subId[k](r)) >= 0);
+        return !!f[meta(of(r)).key] && (f.headless !== false || !isHeadless(r)) && sub;
+    }
+
+    /** One picker option per chain / mission among the rows, newest first, with what it holds. */
+    function subOptions(rows, kind) {
+        const seen = Object.create(null), out = [];
+        rows.forEach(r => {
+            const id = subId[kind](r);
+            if (!id) { return; }
+            const s = seen[id] || (seen[id] = out[out.push({ v: id, name: kind === 'missions' ? r.mission.title : id, legs: {}, n: 0, ts: 0 }) - 1]);
+            s.n++; s.legs[r.chainLeg] = 1; s.ts = Math.max(s.ts, r.ts || 0);
+        });
+        return out.sort((a, b) => b.ts - a.ts).map(x => ({ v: x.v, t: `${x.name} · `
+            + (kind === 'chains' ? `${Object.keys(x.legs).length} leg(s) · ` : '') + `${x.n} turn(s)` }));
+    }
+
+    /** The panel's ⑂ Chains and 🎯 Missions row — each narrows its category, never switches it. */
+    function subRow(f, rows, noun, prefix) {
+        const part = (kind, cat, every) => {
+            const opts = subOptions(rows, kind);
+            if (!opts.length) { return ''; }
+            const o = meta(cat), sel = Array.isArray(f[kind]) ? f[kind] : null;
+            const state = !sel ? every : !sel.length ? 'none selected' : `${sel.length} of ${opts.length}`;
+            const label = kind[0].toUpperCase() + kind.slice(1);
+            return window.AFTip.wrap(`<span class="muted small">${o.glyph} ${label}:</span>`, `${o.glyph} ${label} — ${state}`,
+                `This picker narrows the ${o.label} category; it never turns another category on or off.\n\n`
+                + `${opts.length} ${kind} among these ${noun}. Tick the ones eligible when the ${o.glyph} ${o.label} switch is on.`)
+                + window.AFFilter.multi({ id: `${prefix}-${kind}`, label, options: opts, selected: sel, allLabel: every,
+                    title: `Which ${kind} are eligible when ${o.glyph} ${o.label} is on — newest first` });
+        };
+        const both = part('chains', 'baton', 'every chain') + part('missions', 'mission', 'every mission');
+        return both ? `<div class="af-frow">${both}</div>` : '';
     }
 
     /** The four switches — glyph only on a bar, glyph + name in a panel. */
@@ -50,5 +85,13 @@
             el.addEventListener('click', () => { f.headless = f.headless === false; done(); }));
     }
 
-    window.AFRunCategory = { of, meta, isHeadless, passes, chips, showRow, wire, glyph };
+    /** The bar's Engines picker: the Filters box's own selection, usable with the panel shut. */
+    function engineBar(id, names, selected, noun) {
+        return names.length > 1 ? window.AFFilter.multi({
+            id, label: 'Engines', options: names, selected,
+            title: `Which engines' ${noun} to list — the same selection as the Engines box in Filters, here so it works with the panel shut`
+        }) : '';
+    }
+
+    window.AFRunCategory = { of, meta, isHeadless, passes, subOptions, subRow, chips, showRow, wire, glyph, engineBar };
 })();

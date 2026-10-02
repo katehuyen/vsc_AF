@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.793.0 - The Turns page sorts runs the way the Sessions table does (2026-10-03)
+
+- **Four categories on Turns.** The Turns page sorted turns only into
+  "yours" and "automation", so a relay leg, a mission run and a scheduled
+  job all looked alike. It now has the Sessions table's four switches on its
+  toolbar (🧑 You, ⑂ Baton, 🤖 Auto, 🎯 Mission) with the same defaults, plus
+  🌙 Headless in the Filters panel. Each turn's By cell shows its category,
+  and hovering it shows the chain and leg, the mission, the project, and
+  whether it ran without a terminal. A page saved with the old two-way choice
+  reopens showing the same turns.
+- **The same pickers as Sessions.** The Engines picker now sits on the
+  toolbar as well as in Filters, so you can choose engines with the panel
+  closed; both boxes share one selection. In Filters, ⑂ Chains and 🎯
+  Missions narrow their own category without switching it, and Projects
+  lists the turns of the projects you pick.
+- **The bridge has the same filters.** `turns.list` and `turns.export` take
+  `category=`, `headless=`, `chain=`, `mission=` and `project=`, and each
+  row reports its category, chain, mission and project.
+
 ## 3.792.0 - What you change on a running session is what the agent opens on next (2026-10-02)
 
 - **A change on the card is remembered.** Agent Farm remembered each agent's

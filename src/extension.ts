@@ -16936,6 +16936,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         index,
         getPricing: () => pricing,
         launchManifests: () => launchManifests(),
+        projectOf: sessionProjectName,
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
     });
@@ -16946,6 +16947,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-111 — the same identity the Sessions table states, so `providers=kimi`
         // finds the Claude-via-Kimi turns here as it does on the page.
         identityOf: s => sessionIdentity(s, launchManifests()),
+        projectOf: sessionProjectName,
         // B-21 — the page's own builder, so the op cannot describe a turn
         // differently from the row it came from.
         exportMarkdown: (shown, openKeys, roles, opts) =>

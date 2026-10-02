@@ -144,6 +144,9 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     ok('…drawn and wired by the shared category bar on the toolbar and in the panel',
         /RC\.chips\(filters, rows, false, 'turns'\)/.test(js) && /RC\.showRow\(filters/.test(js)
         && /RC\.wire\(root, filters/.test(js) && /RC\.passes\(filters, r\)/.test(js));
+    ok('…with the Sessions table\'s toolbar Engines picker beside them — one selection with the panel\'s Engines box',
+        /RC\.engineBar\('turns-engines-bar', filterFacets\(\)\.engines, filters\.engines, 'turns'\)/.test(js)
+        && /'engines-bar': 'engines'/.test(js) && /engines: 'engines'/.test(js));
     ok('…and the old single scope is gone', !/af-oswitch/.test(js) && !/af-forig-/.test(js) && !/ORIGINS/.test(js));
     ok('…while a page saved with the old scope reopens on the same rows',
         /scope === '' \|\| scope === 'auto'/.test(js));
@@ -297,6 +300,19 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     const hlNone = await reg.dispatch('turns.list', { headless: false });
     ok('…headless= keeps only, or drops, the runs with no terminal',
         hlOnly.ok && hlOnly.result.length === 0 && hlNone.ok && hlNone.result.length === 2);
+    // U-191 — the page's Projects / Chains / Missions pickers, as op arguments
+    const reg4 = new BridgeRegistry();
+    registerTurnsOps(reg4, { sessions: () => [info], isActive: () => false, projectOf: () => 'Agent Farm' });
+    const inProj = await reg4.dispatch('turns.list', { project: 'agent farm,TalkScribe' });
+    const outProj = await reg4.dispatch('turns.list', { project: 'TalkScribe' });
+    ok('…project= matches the session\'s project by name, case aside, and each row says it',
+        inProj.ok && inProj.result.length === 2 && inProj.result.every(r => r.project === 'Agent Farm')
+        && outProj.ok && outProj.result.length === 0);
+    const onChain = await reg4.dispatch('turns.list', { chain: 'chn_x' });
+    const onMission = await reg4.dispatch('turns.list', { mission: 'm-1' });
+    ok('…chain= / mission= name a relay or a mission: a turn on neither matches no value',
+        onChain.ok && onChain.result.length === 0 && onMission.ok && onMission.result.length === 0);
+    ok('…and a host with no project resolver says null', all.result.every(r => r.project === null));
 
     // ---------- 7) X-111 — the route a Claude turn inherits, and the three filters ----------
     ok('with no identity dep, every turn is on no route',
@@ -374,6 +390,35 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
             saved.ok && path.dirname(saved.result.file) === exportDir
             && saved.result.chosenForYou === true && fs.existsSync(saved.result.file));
         fs.rmSync(exportDir, { recursive: true, force: true });
+    }
+
+    // U-191 — the toolbar Engines picker driven by hand, with the Filters panel shut
+    {
+        const pg = require('./lib_page_dom').runPage('turns.js', require('./fixtures/turns').data());
+        const listed = () => (pg.html().match(/(\d+\/)?\d+ turns · /) || [''])[0];
+        const codexRows = () => (pg.html().match(/<tr class="[^"]*turnrow[^"]*"[^>]*>(?:(?!<\/tr>)[\s\S])*?>Codex</g) || []).length;
+        const before = listed();
+        ok('U-191: the panel is shut and the toolbar carries the Engines picker, a Codex turn listed',
+            !/data-afms="turns-engines"/.test(pg.html()) && /data-afms="turns-engines-bar"/.test(pg.html()) && codexRows() > 0);
+        pg.ms.toggle('turns-engines-bar', 'Codex', false);
+        ok(`…unticking Codex there drops its turns from the list (${before}→ ${listed()})`,
+            listed() !== before && codexRows() === 0);
+        const sel = pg.state().afTurns.filters.engines;
+        ok('…and it is the Filters panel\'s own Engines selection', Array.isArray(sel) && sel.indexOf('Codex') < 0 && sel.indexOf('Claude') >= 0);
+
+        // ⑂ Chains / 🎯 Missions narrow their category; Projects narrows by the session's project
+        const p2 = require('./lib_page_dom').runPage('turns.js', require('./fixtures/turns').data());
+        ['.af-cat-auto', '.af-cat-mission', '.af-filter'].forEach(s => p2.query(s)[0].click());
+        const has = s => p2.html().indexOf(s) >= 0;
+        const nRows = () => (p2.html().match(/class="click turnrow/g) || []).length;
+        ok('U-191: the panel carries the ⑂ Chains, 🎯 Missions and Projects pickers, every turn listed',
+            ['chains', 'missions', 'projects'].every(k => has(`data-afms="turns-${k}"`)) && nRows() === 9);
+        p2.ms.toggle('turns-chains', 'chn_muqmf6q7001io2', false);
+        ok('…unticking the one chain drops its relay turn and nothing else',
+            nRows() === 8 && !has('Turns page: bring it level') && has('Read the changelog'));
+        p2.ms.clickName('turns-projects', 'TalkScribe');
+        ok('…and Projects lists only that project\'s turns', nRows() === 1 && has('motor filtresi'));
+        ok('…both counted on the Filters button', /Filters \(2\)/.test(p2.html()));
     }
 
     fs.rmSync(dir, { recursive: true, force: true });

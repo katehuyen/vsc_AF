@@ -48,10 +48,11 @@
     const FDEF = () => ({
         text: '', session: '', agents: null, engines: null, models: null,
         showUser: true, showBaton: true, showAuto: false, showMission: false, headless: true,
-        providers: null, profiles: null,
+        providers: null, profiles: null, chains: null, missions: null, projects: null,
         activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
     });
+    const UNASSIGNED = 'Unassigned'; // the host's and the Sessions table's word for "no project"
 
     // Which engine ran the row, said the way the badge says it. A row with no
     // `engine` is a Claude transcript — the field is an ABSENCE there, which is
@@ -286,7 +287,8 @@
             + (filters.headless ? 0 : 1)
             + (filters.engines ? 1 : 0) + (filters.providers ? 1 : 0) + (filters.profiles ? 1 : 0)
             + (filters.models ? 1 : 0) + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0)
-            + (filters.mainOnly ? 1 : 0) + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
+            + (filters.mainOnly ? 1 : 0) + (filters.from ? 1 : 0) + (filters.to ? 1 : 0)
+            + ['chains', 'missions', 'projects'].filter(k => Array.isArray(filters[k])).length;
         FRANGES.forEach(k => {
             const rg = filters.ranges[k.id];
             if (rg) { n += (rg.min !== undefined ? 1 : 0) + (rg.max !== undefined ? 1 : 0); }
@@ -303,6 +305,7 @@
             if (!sess.empty && !sess.test(r.session || '')) { return false; }
             if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
             if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
+            if (filters.projects && filters.projects.indexOf(r.project || UNASSIGNED) < 0) { return false; }
             if (!RC.passes(filters, r)) { return false; }
             // X-111 — the three route axes, by the one rule (AND with the rest).
             if (!RF.matchesAny(r.providers, filters.providers)) { return false; }
@@ -353,7 +356,10 @@
             // X-111 — off the rows, like the rest: a route that appears
             // tomorrow is filterable without a list being told.
             providers: RF.options(rows.map(r => r.providers), v => window.AFProvider.label(v), 'no route'),
-            profiles: RF.options(rows.map(r => [r.profile].filter(Boolean)), null, 'no profile')
+            profiles: RF.options(rows.map(r => [r.profile].filter(Boolean)), null, 'no profile'),
+            // named projects first, Unassigned last — the Sessions table's order
+            projects: [...new Set(rows.map(r => r.project || UNASSIGNED))]
+                .sort((a, b) => a === UNASSIGNED ? 1 : b === UNASSIGNED ? -1 : a.localeCompare(b))
         };
     }
 
@@ -371,6 +377,7 @@
         }).join('');
         return `<div class="af-fpanel">
             <div class="af-frow">${RC.showRow(filters, DATA.rows || [], 'turns')}</div>
+            ${RC.subRow(filters, DATA.rows || [], 'turns', 'turns')}
             <div class="af-frow">
                 <input type="text" class="af-ftext af-fturn" placeholder="turn contains…" value="${C.esc(filters.text)}"
                     title="${C.esc(window.AFQuery.tip("Searched against the turn's opening prompt."))}">
@@ -394,6 +401,10 @@
                             values: facets.engines.filter(e => e !== window.AFEngine.label('claude')),
                             title: 'Everything that did not run on the default engine.'
                         }] : []
+                }) : ''}
+                ${facets.projects.length > 1 ? window.AFFilter.multi({
+                    id: 'turns-projects', label: 'Projects', options: facets.projects, selected: filters.projects,
+                    title: 'Which projects\' turns to list — a turn belongs to its session\'s project; manage them on the ◧ Projects page'
                 }) : ''}
                 ${facets.providers.length > 1 ? window.AFFilter.multi({
                     id: 'turns-providers', label: 'Providers', options: facets.providers, selected: filters.providers,
@@ -559,6 +570,7 @@
                 RC.isHeadless(r) ? line('Terminal', 'none (headless)') : '',
                 line('Agent', r.agent),
                 line('Session', r.session),
+                r.project ? line('Project', r.project) : '',
                 line('Turn', `${r.n} of ${r.of}`)
             ]);
         },
@@ -748,6 +760,7 @@
             <button class="chip af-collapse" title="Fold all turns closed">Collapse all</button>
             <button class="chip af-single${single ? ' on' : ''}" title="Only one turn open at a time: unfolding a turn folds the previous one">Single-open</button>
             ${RC.chips(filters, rows, false, 'turns')}
+            ${RC.engineBar('turns-engines-bar', filterFacets().engines, filters.engines, 'turns')}
             <button class="chip af-filter${nf ? ' on' : ''}" title="Filter the turns by category, prompt text, session, agent, model, flags, ranges and dates">Filters${nf ? ` (${nf})` : ''}</button>
             <span class="muted small">${hidden > 0 ? `${pool.length}/${rows.length} turns · ` : `${rows.length} turns · `}${window.AFSessionCtx.HINT} · hover any cell for its full value and what it implies · ▸ shows a turn's content · row click opens the transcript at that turn · ● = active now</span>
         </div>
@@ -859,33 +872,17 @@
             const el = root.querySelector(sel);
             if (el) { window.AFFilter.live(el, fn, delay); }
         };
+        // picker id → filter key; the bar's Engines picker IS the panel's Engines box
+        const MULTI = { agents: 'agents', engines: 'engines', 'engines-bar': 'engines', providers: 'providers', profiles: 'profiles', models: 'models',
+            chains: 'chains', missions: 'missions', projects: 'projects' };
+        Object.keys(MULTI).forEach(id => window.AFFilter.wireMulti({
+            root, id: 'turns-' + id, onChange: sel => { filters[MULTI[id]] = sel; apply(); } }));
         if (filtersOpen) {
-            const facets = filterFacets();
             liveEl('.af-fturn', el => { filters.text = el.value || ''; apply(); });
             liveEl('.af-fsess', el => { filters.session = el.value || ''; apply(); });
             // the ✕ that empties them — the shared control (common.css .af-clr)
             window.AFFilter.clearableAll(root, '.af-fturn', el => { filters.text = ''; el.value = ''; apply(); });
             window.AFFilter.clearableAll(root, '.af-fsess', el => { filters.session = ''; el.value = ''; apply(); });
-            window.AFFilter.wireMulti({
-                root, id: 'turns-agents',
-                onChange: sel => { filters.agents = sel; apply(); }
-            });
-            window.AFFilter.wireMulti({
-                root, id: 'turns-engines',
-                onChange: sel => { filters.engines = sel; apply(); }
-            });
-            window.AFFilter.wireMulti({
-                root, id: 'turns-providers',
-                onChange: sel => { filters.providers = sel; apply(); }
-            });
-            window.AFFilter.wireMulti({
-                root, id: 'turns-profiles',
-                onChange: sel => { filters.profiles = sel; apply(); }
-            });
-            window.AFFilter.wireMulti({
-                root, id: 'turns-models',
-                onChange: sel => { filters.models = sel; apply(); }
-            });
             wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
             wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
             wireEl('.af-fmain', 'click', () => { filters.mainOnly = !filters.mainOnly; apply(); });

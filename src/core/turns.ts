@@ -5,7 +5,7 @@ import { CtxWindowSource, contextWindowOf } from './pricing';
 import { SessionInfo, SessionOrigin, sessionHeadless, sessionMission, sessionOrigin } from './sessions';
 import { ChainIndex, RunCategory, chainIndexNow, runCategory } from './chainMembership';
 import { RunIdentity } from './turnRuntime';
-import { matchesAny, profileOf, providersOf, RUN_SELECTION_ARGS, runSelectionArgs } from './runFilter';
+import { matchesAny, profileOf, providersOf, RUN_SELECTION_ARGS, runSelectionArgs, selectionArg } from './runFilter';
 
 /**
  * Turns page data: every session unrolled into one row per user turn. Turn
@@ -91,6 +91,8 @@ export interface TurnRow {
     chainId: string;
     chainLeg: number;
     mission: { id: string; title: string } | null;
+    /** The project the session's work belongs to, as the Sessions table names it ('' = no resolver). */
+    project: string;
     headless: boolean;
     active: boolean;
     /**
@@ -104,13 +106,13 @@ export interface TurnRow {
 }
 
 /** All turn rows of one session, newest data included. */
-export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity, chains?: ChainIndex): TurnRow[] {
+export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity, chains?: ChainIndex, project = ''): TurnRow[] {
     const origin = sessionOrigin(s);
     const mission = sessionMission(s) ?? null;
     const at = chains?.bySession.get(s.sessionId);
     const run = {
         category: runCategory(origin, mission?.id, !!at), chainId: at?.chainId ?? '',
-        chainLeg: at?.leg ?? 0, mission, headless: sessionHeadless(s)
+        chainLeg: at?.leg ?? 0, mission, project, headless: sessionHeadless(s)
     };
     const profile = profileOf(identity);
     return s.turns.map((t, i) => {
@@ -170,11 +172,13 @@ export function buildTurnRows(
      *  (`sessionIdentity`). Absent, every turn is on no route. */
     identityOf?: (s: SessionInfo) => RunIdentity | undefined,
     /** U-191 — the relay chains, so a leg's turns read ⑂ Baton. */
-    chains?: ChainIndex
+    chains?: ChainIndex,
+    /** U-191 — the session's project, by the Sessions table's own resolver. */
+    projectOf?: (s: SessionInfo) => string | undefined
 ): TurnRow[] {
     const rows: TurnRow[] = [];
     for (const s of sessions) {
-        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s), chains));
+        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s), chains, projectOf?.(s) ?? ''));
     }
     return rows.sort((a, b) => b.ts - a.ts);
 }
@@ -191,6 +195,8 @@ export function registerTurnsOps(
         /** X-111 — the session's identity, so the op's provider filter finds
          *  what the page's does. */
         identityOf?(s: SessionInfo): RunIdentity | undefined;
+        /** U-191 — the session's project, so `project=` finds what the page's picker does. */
+        projectOf?(s: SessionInfo): string | undefined;
         /**
          * B-21 — the Turns page's own Markdown builder (`buildTurnsMarkdown`),
          * injected because it reads the reader's settings and this module is
@@ -220,12 +226,17 @@ export function registerTurnsOps(
         const cats = optStr(args, 'category').toLowerCase().split(',').map(c => c.trim()).filter(Boolean);
         const hl = args.headless === undefined ? undefined : String(args.headless) === 'true';
         const sel = runSelectionArgs(args);
+        // U-191 — the page's Chains / Missions / Projects pickers; any named value matches, case aside
+        const pick = (k: string) => (selectionArg(args[k]) ?? []).map(v => v.toLowerCase());
+        const chainSel = pick('chain'), missionSel = pick('mission'), projectSel = pick('project');
+        const named = (want: string[], ...have: (string | undefined)[]) =>
+            !want.length || have.some(v => !!v && want.includes(v.toLowerCase()));
         // ‼️ B-25 — `optNum`, not a `typeof === 'number'` test. The CLI's
         // `limit=50` shorthand and a hand-written arg both arrive as TEXT,
         // and a type test drops them for the default without saying so —
         // the same silence that queued four items at the bottom.
         const limit = Math.max(1, Math.floor(optNum(args, 'limit', limitDefault)) || limitDefault);
-        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf, chainIndexNow())
+        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf, chainIndexNow(), deps.projectOf)
             .filter(r => !agent || r.agentName.toLowerCase() === agent)
             // ‼️ The same axis the page filters on — an agent calling this op
             // to ask "what has Codex been doing" had no way to say so.
@@ -233,6 +244,8 @@ export function registerTurnsOps(
             .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
             .filter(r => !cats.length || cats.includes(r.category))
             .filter(r => hl === undefined || r.headless === hl)
+            .filter(r => named(chainSel, r.chainId) && named(missionSel, r.mission?.id, r.mission?.title)
+                && named(projectSel, r.project))
             // X-111 — the three axes the page filters on, by the same rule;
             // `providers` is already the resolved value, so no turn report.
             .filter(r => matchesAny(r.providers, sel.providers)
@@ -243,7 +256,7 @@ export function registerTurnsOps(
 
     bridge.register({
         op: 'turns.export',
-        describe: 'B-21 — THE TURNS TABLE AS A DOCUMENT. The page\'s Export MD without the page: the same header line per turn (agent, turn n/of, the prompt label, session, models, who served it, steps, duration, tokens, context, cost, tools, errors) and each turn\'s full content — user text, assistant text, tool calls and tool results — assembled by the very function the page uses, so the two can never describe a turn differently. Selects exactly like turns.list. ‼️ TURN CONTENT IS HEAVY, so the default is 50 turns rather than the whole farm, and the answer always names how many MATCHED: a caller that got 50 of 900 is told so rather than handed a file that stops. args: every turns.list filter (agent?, engine?, origin?, category?, headless?, provider/profile/model selection, limit? — default 50) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
+        describe: 'B-21 — THE TURNS TABLE AS A DOCUMENT. The page\'s Export MD without the page: the same header line per turn (agent, turn n/of, the prompt label, session, models, who served it, steps, duration, tokens, context, cost, tools, errors) and each turn\'s full content — user text, assistant text, tool calls and tool results — assembled by the very function the page uses, so the two can never describe a turn differently. Selects exactly like turns.list. ‼️ TURN CONTENT IS HEAVY, so the default is 50 turns rather than the whole farm, and the answer always names how many MATCHED: a caller that got 50 of 900 is told so rather than handed a file that stops. args: every turns.list filter (agent?, engine?, origin?, category?, headless?, chain?, mission?, project?, provider/profile/model selection, limit? — default 50) · file? (write there, atomically) · save? (let it land in the report folder). Returns the content when neither is given.',
         handler: (args) => {
             need(deps.exportMarkdown, 'Turn export is not wired on this host.');
             const limit = Math.max(1, Math.floor(optNum(args, 'limit', 50)) || 50);
@@ -263,7 +276,7 @@ export function registerTurnsOps(
 
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), category? (user | baton | auto | mission, comma-separated: the Sessions table\'s four categories and the page\'s You/Baton/Auto/Mission switches; a mission stamp wins, then a relay leg a program started, then who started it), headless? (true = only runs with no terminal behind them, false = none of them), ' + RUN_SELECTION_ARGS + ', limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one), ctxWindowSource (forced | engine | model | ""), providerIds (what the engine itself named for the turn — empty on Claude for ever) and providers (what served it: the turn\'s own, else its session\'s route — the value the filter matches).',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), category? (user | baton | auto | mission, comma-separated: the Sessions table\'s four categories and the page\'s You/Baton/Auto/Mission switches; a mission stamp wins, then a relay leg a program started, then who started it), headless? (true = only runs with no terminal behind them, false = none of them), chain? / mission? / project? (the page\'s Chains, Missions and Projects pickers: a relay chain id, a mission id or title, a project name — several comma-separated, case aside; a turn on none matches no value), ' + RUN_SELECTION_ARGS + ', limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one), ctxWindowSource (forced | engine | model | ""), providerIds (what the engine itself named for the turn — empty on Claude for ever) and providers (what served it: the turn\'s own, else its session\'s route — the value the filter matches).',
         handler: (args) => {
             return select(args, 20)
                 .map(r => ({
@@ -271,7 +284,7 @@ export function registerTurnsOps(
                     session: r.session, turn: `${r.n}/${r.of}`,
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
                     category: r.category, chain: r.chainId ? `${r.chainId} leg ${r.chainLeg}` : null,
-                    mission: r.mission?.title ?? null, headless: r.headless,
+                    mission: r.mission?.title ?? null, project: r.project || null, headless: r.headless,
                     // ‼️ X-113 — the context reading AND its ceiling, because
                     // the figure alone cannot be read: an agent asking how
                     // full a turn left the window was previously given the

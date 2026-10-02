@@ -23,7 +23,7 @@ const rows = () => ([
         file: 'C:\\Users\\x\\.claude\\projects\\vsc_AgentFarm\\407c78cb.jsonl',
         sessionId: '407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60',
         cwd: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm',
-        agent: 'developer', agentName: 'developer',
+        agent: 'developer', agentName: 'developer', project: 'TalkScribe',
         session: 'X-35 multi motor adaptasyonu artık tam olsun',
         n: 14, of: 14,
         label: 'Live Timeline\'a motor filtresi ekle ve lane satırlarına rozet koy',
@@ -106,7 +106,7 @@ const rows = () => ([
         tools: 4, errors: 0, models: ['claude-haiku-4-5'],
         sidechain: false, origin: 'auto', active: false,
         // U-191 — a headless schedule run: 🤖 with the 🌙 on it
-        category: 'auto', chainId: '', chainLeg: 0, mission: null, headless: true,
+        category: 'auto', chainId: '', chainLeg: 0, mission: null, project: 'Unassigned', headless: true,
         engine: 'claude'
     },
     {
@@ -124,7 +124,7 @@ const rows = () => ([
         tokens: 2_412_000, wTokens: 402_100, cost: 3.18,
         tools: 26, errors: 1, models: ['claude-opus-5-5'],
         sidechain: false, origin: 'auto', active: false,
-        category: 'baton', chainId: 'chn_muqmf6q7001io2', chainLeg: 6, mission: null, headless: false,
+        category: 'baton', chainId: 'chn_muqmf6q7001io2', chainLeg: 6, mission: null, project: 'Agent Farm', headless: false,
         engine: 'claude'
     },
     {
@@ -142,7 +142,7 @@ const rows = () => ([
         tokens: 301_200, wTokens: 61_800, cost: 0.41,
         tools: 7, errors: 0, models: ['claude-sonnet-5'],
         sidechain: false, origin: 'auto', active: false,
-        category: 'mission', chainId: '', chainLeg: 0, mission: { id: 'm-12', title: 'Release 3.792 check' }, headless: true,
+        category: 'mission', chainId: '', chainLeg: 0, mission: { id: 'm-12', title: 'Release 3.792 check' }, project: 'Agent Farm', headless: true,
         engine: 'claude'
     },
     {
@@ -225,6 +225,13 @@ const variants = () => ([
         label: 'Turns — all four categories switched on from the toolbar: You, Baton, Auto (headless moon), Mission',
         data: base(),
         act: r => ['.af-cat-auto', '.af-cat-mission'].forEach(s => { const b = r.query(s)[0]; if (b) { b.click(); } })
+    },
+    {
+        // U-191 — the Sessions table's sub-pickers: ⑂ Chains and 🎯 Missions narrow their category; Projects beside Engines
+        id: 'turns-subpickers',
+        label: 'Turns — filter panel open: ⑂ Chains and 🎯 Missions under the switches, Projects beside Engines',
+        data: base(),
+        act: r => ['.af-cat-auto', '.af-cat-mission', '.af-filter'].forEach(s => { const b = r.query(s)[0]; if (b) { b.click(); } })
     },
     {
         id: 'turns-baton-tip',
