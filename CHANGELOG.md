@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.795.0 - The Sessions table stays readable when it is narrow (2026-10-03)
+
+- **No more figures drawn over each other.** On a narrow Sessions table (a
+  phone held sideways, a slim VS Code column) the column widths shrank with
+  the table until the headers ran together ("DurationTurnsToolsFiles"), the
+  figures overlapped and the cost was cut off at the edge. Every column now
+  keeps at least the width its header and its figures need, and the title
+  gives up room first. When even that is wider than the panel, the table
+  scrolls sideways instead of squeezing, so every figure stays whole. On a
+  wide screen the table looks exactly as before. This applies wherever the
+  table appears: Sessions, the Dashboard, an agent's page and a project's
+  page.
+
 ## 3.794.0 - Clearing a sound step from the bridge works, and the Tasks forms fit a phone (2026-10-03)
 
 - **Clearing a sound step from the bridge.** `alerts.voice.set` with an
