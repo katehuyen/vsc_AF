@@ -182,6 +182,27 @@
       "hash": "9726410b0bf8",
       "incident": "X-481 (2026-10-02): every revive of session 52af8a2d replayed 23 and 25 old replies onto the Live Timeline as new events, ~300 ms each, and the extension host was unresponsive for their run",
       "why": "the mirror cannot fall back to a count cursor unnoticed"
+    },
+    {
+      "file": "test_stop_provenance.js",
+      "title": "‼️ a turn the engine ended as interrupted, with no stop asked, says nothing in Agent Farm asked",
+      "hash": "18f989a26a96",
+      "incident": "X-480 (2026-10-02 20:00:05 UTC): a revived relay leg's nudge turn ended 'interrupted' two seconds in, the leg sat idle, and no record could say whether a surface had asked for the stop or the engine ended it itself",
+      "why": "a stop nobody here asked for is said, not left to be guessed"
+    },
+    {
+      "file": "test_stop_provenance.js",
+      "title": "‼️ a stop asked of a running turn is recorded with its surface",
+      "hash": "a6746e114bdf",
+      "incident": "X-480 (2026-10-02 20:00:05 UTC): a revived relay leg's nudge turn ended 'interrupted' two seconds in, the leg sat idle, and no record could say whether a surface had asked for the stop or the engine ended it itself",
+      "why": "the source of a stop survives on the card"
+    },
+    {
+      "file": "test_stop_provenance.js",
+      "title": "‼️ every call to ConsoleHost.interrupt passes the surface that asked",
+      "hash": "f4444f5ca241",
+      "incident": "X-480 (2026-10-02 20:00:05 UTC): a revived relay leg's nudge turn ended 'interrupted' two seconds in, the leg sat idle, and no record could say whether a surface had asked for the stop or the engine ended it itself",
+      "why": "a new door to the stop cannot arrive unnamed"
     }
   ]
 }

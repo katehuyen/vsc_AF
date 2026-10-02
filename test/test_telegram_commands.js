@@ -151,7 +151,7 @@ ok('the bridge shows the SAME screen the phone gets, not a second copy of it',
     && /status: chatStatusText\(st, live, focused, bound\)/.test(ext)
     && /agents: chatAgentsText\(bound\)/.test(ext));
 ok('/cancel <n> really interrupts the turn',
-    /cancelTarget\(cmd\.arg\) === 'session'/.test(ext) && /consoleHost\.interrupt\(pick\.session\.id\)/.test(ext));
+    /cancelTarget\(cmd\.arg\) === 'session'/.test(ext) && /consoleHost\.interrupt\(pick\.session\.id, 'telegram'\)/.test(ext));
 ok('…and an ambiguous name is asked about rather than guessed',
     /if \(pick\.kind === 'ambiguous'\) \{ await chatSend\(msg\.chatId, askWhich\(pick\.candidates\)\); return; \}/.test(ext));
 ok('/sessions ships its keyboard', /sessionsKeyboard\(live, focused\)/.test(ext));

@@ -54,6 +54,7 @@ import {
 } from './permissionmode';
 import { isPolicyId, MACHINE_ACCOUNT_ID } from './accountPolicy';
 import { SetupChoice, confirmedChoice } from './liveChoice';
+import { StopFrom, stopWords } from './stopSource';
 
 /**
  * What a path IS, as far as attaching goes.
@@ -2453,8 +2454,12 @@ export class ConsoleHost {
      * `can_use_tool` the CLI is still waiting on belongs to the tool, not the
      * turn: leaving it unanswered parks the process on a request nobody will
      * ever send a response for, and Esc would look like it hung the session.
+     *
+     * ‼️ X-480 — `from` is the surface that asked; the turn's closing row names
+     * it, so a stopped turn can always be told apart from one the engine ended
+     * by itself (see stopSource).
      */
-    interrupt(id: string): boolean {
+    interrupt(id: string, from: StopFrom): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
         if (h.state.pendingAsk) {
@@ -2469,7 +2474,7 @@ export class ConsoleHost {
             if (!h.child) { return false; }
             killTree(h.child);
             h.child = undefined;
-            this.endTurn(id, 'turn interrupted', 'interrupted');
+            this.endTurn(id, `turn interrupted · ${stopWords(from)}`, 'interrupted');
             return true;
         }
         /**
@@ -2508,7 +2513,7 @@ export class ConsoleHost {
                     this.runtime()?.restart();
                 }, OPENCODE_CANCEL_GRACE_MS)
             };
-            this.mutate(id, s => ({ ...s, lastTs: Date.now() }));
+            this.mutate(id, s => ({ ...s, lastTs: Date.now(), stopAsked: { from, ts: Date.now() } }));
             return true;
         }
         /**
@@ -2554,7 +2559,12 @@ export class ConsoleHost {
         for (const t of h.state.backgroundTasks ?? []) { this.stopTask(id, t.id); }
         const rid = `int-${++h.reqSeq}`;
         const canCancel = (h.state.capabilities ?? []).includes('interrupt_cancel_queued_v1');
-        h.state = { ...h.state, pendingInterrupt: { requestId: rid } };
+        h.state = {
+            ...h.state, pendingInterrupt: { requestId: rid },
+            // A stop asked of an idle seat stops nothing, so it is not recorded:
+            // it would otherwise be read as the cause of the next turn's end.
+            ...(h.state.status === 'working' ? { stopAsked: { from, ts: Date.now() } } : {})
+        };
         return this.write(id, controlLine(rid, 'interrupt', canCancel ? { cancel_queued: true } : {}));
     }
 

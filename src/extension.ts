@@ -12133,7 +12133,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // The Console owns the child and stops it per engine.
                 const hosted = consoleHost.list().find(h => h.sessionId === sessionId);
                 if (hosted) {
-                    const stopped = consoleHost.interrupt(hosted.id);
+                    const stopped = consoleHost.interrupt(hosted.id, 'bridge');
                     return {
                         sessionId, interrupted: stopped,
                         how: stopped
@@ -13311,7 +13311,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const id = argStr(args, 'id');
                 const row = consoleHost.list().find(s => s.id === id);
                 const shape = engineOf(row?.engine).shape;
-                const ok = consoleHost.interrupt(id);
+                const ok = consoleHost.interrupt(id, 'bridge');
                 need(ok, 'no such live console session');
                 ConsolePanel.refreshIfOpen();
                 return {
@@ -31531,7 +31531,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await chatSay(msg.chatId, tap.id, 'Continue.', 'button');
                 return;
             case 'cancel': {
-                const ok = consoleHost.interrupt(tap.id);
+                const ok = consoleHost.interrupt(tap.id, 'telegram');
                 await ack(ok ? 'Interrupting.' : 'Nothing was running.');
                 if (ok) { ConsolePanel.refreshIfOpen(); }
                 await chatSend(msg.chatId, ok ? `⏹ ${label} — interrupted.` : `${label} — nothing was running.`, tap.id);
@@ -31718,7 +31718,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     await chatSend(msg.chatId, `Nothing here matches "${cmd.arg}".\n\n` + sessionList(live, focused));
                     return;
                 }
-                const ok = consoleHost.interrupt(pick.session.id);
+                const ok = consoleHost.interrupt(pick.session.id, 'telegram');
                 if (ok) { ConsolePanel.refreshIfOpen(); }
                 await chatSend(msg.chatId,
                     ok ? `⏹ ${sessionLabel(pick.session)} — interrupted.`
@@ -36157,7 +36157,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : undefined;
         if (hosted) {
             const who = agentName ?? hosted.agentName ?? sessionId?.slice(0, 8) ?? 'the session';
-            if (consoleHost.interrupt(hosted.id)) {
+            if (consoleHost.interrupt(hosted.id, 'command')) {
                 void vscode.window.showInformationMessage(
                     `Agent Farm: ${who}'s running turn was stopped in the Console — the conversation stays open.`);
             } else {
@@ -38325,7 +38325,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     `Agent Farm: ${s?.agentName ?? 'that session'} is not in the middle of a turn.`);
                 return;
             }
-            consoleHost.interrupt(id);
+            // the card's right-click carries its row; anything else reached the command bare
+            consoleHost.interrupt(id, arg?.hostId ? 'card-menu' : 'command');
             ConsolePanel.refreshIfOpen();
         }),
 

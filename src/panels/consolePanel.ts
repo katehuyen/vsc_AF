@@ -2668,9 +2668,14 @@ export class ConsolePanel {
             case 'queueSend':
                 host.releaseQueued(str('id'), idx('index'));
                 break;
-            case 'interrupt':
-                host.interrupt(str('id'));
+            case 'interrupt': {
+                // X-480 — the stop names where it came from: this page on the PC or on a phone, by Esc or by ⎋.
+                const esc = str('how') === 'esc';
+                host.interrupt(str('id'), this.surface.remote
+                    ? (esc ? 'phone-esc' : 'phone-button')
+                    : (esc ? 'console-esc' : 'console-button'));
                 break;
+            }
             case 'stopTask': {
                 // S-62 — one background command, by the CLI's own task id
                 const r = host.stopTask(str('id'), str('taskId'));

@@ -64,7 +64,7 @@ const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8')
         /if \(!ask \|\| ask\.requestId\.slice\(0, 8\) !== tap\.rid\) \{ await ack\('That request is no longer open\.'\); return; \}/.test(chat));
     ok('Continue is a routed message with its own why (button)', /chatSay\(msg\.chatId, tap\.id, 'Continue\.', 'button'\)/.test(chat)
         && /'only-one' \| 'button'/.test(read('src', 'core', 'telegramRouting.ts')));
-    ok('Cancel is consoleHost.interrupt, the same act as console.interrupt', /case 'cancel': \{\s*\n\s*const ok = consoleHost\.interrupt\(tap\.id\);/.test(chat));
+    ok('Cancel is consoleHost.interrupt, the same act as console.interrupt', /case 'cancel': \{\s*\n\s*const ok = consoleHost\.interrupt\(tap\.id, 'telegram'\);/.test(chat));
     ok('Diff is the working-tree summary of the session\'s own cwd', /changesText\(label, await changesSummary\(s\.cwd\)\)/.test(chat));
     ok('the card is sent with its keyboard through chatSend, remembered against the session',
         /const chatSend = async \(chatId: number, text: string, forSession\?: string, keyboard\?: DigestKeyboard\)/.test(ext)

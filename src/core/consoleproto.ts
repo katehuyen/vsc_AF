@@ -70,6 +70,7 @@ import { addUsage, contextAfter, emptyUsage, RawUsage, toUsage, totalTokens, Usa
 import { isQuotableContextPath, quoteContextPath } from './projectContext';
 import { mergeReported } from './slashCommands';
 import { StepKind, stepKindForTool } from './stepkind';
+import { NO_STOP_ASKED, StopFrom, stopWords } from './stopSource';
 
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
 
@@ -785,6 +786,8 @@ export interface ConsoleSessionState {
     steered?: { uuid: string; text: string }[];
     /** ‼️ S-54 — the interrupt we sent and have not heard back about. */
     pendingInterrupt?: { requestId: string };
+    /** ‼️ X-480 — a stop asked of the running turn, and from which surface; its closing row names it (see stopSource). */
+    stopAsked?: { from: StopFrom; ts: number };
     /**
      * ‼️ S-62 — THE COMMANDS THIS SESSION IS STILL RUNNING BEHIND THE TURN.
      *
@@ -1639,10 +1642,17 @@ export function reduceEvent(
         const said = [o.error, o.result]
             .map(v => (typeof v === 'string' ? v.trim() : ''))
             .find(v => v.length > 0) ?? '';
+        // ‼️ X-480 — WHO STOPPED IT, or that nobody here did. Only a turn the
+        // engine closed in silence is said to have no stop behind it: Claude's
+        // `error_during_execution` with words in it is a failure (X-26), and
+        // those words are never re-labelled by guesswork.
+        const stop = !isError ? ''
+            : state.stopAsked ? stopWords(state.stopAsked.from)
+            : interrupted && !said ? NO_STOP_ASKED : '';
         const next = push({
             role: 'result',
             text: isError
-                ? (said || (interrupted ? 'turn interrupted' : `turn failed (${sub})`))
+                ? [said || (interrupted ? 'turn interrupted' : `turn failed (${sub})`), stop].filter(Boolean).join(' · ')
                 : warning,
             isError,
             cost,
@@ -1669,6 +1679,7 @@ export function reduceEvent(
                 // S-54 — the turn is over, so nothing is "said into it" any more
                 steered: undefined,
                 pendingInterrupt: undefined,
+                stopAsked: undefined,
                 // …and it is kept, so the strip above the composer still says
                 // what the turn that just ended cost — and what it thought with,
                 // which a switch made in the meantime must not rewrite
@@ -2209,6 +2220,8 @@ export function acceptUserText(
             // invariant the strip relies on: lastTurn exists exactly while the
             // ball is yours and a turn has already run (see lastTurn).
             lastTurn: undefined,
+            // X-480 — a new turn starts with no stop asked of it
+            stopAsked: undefined,
             messages: [...state.messages, {
                 id: nextId(), ts: now, role: 'user', text: t,
                 ...(attach.length ? { attach } : {})

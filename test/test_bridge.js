@@ -3938,7 +3938,7 @@ const { opencodeStatus, syncToOpencode } =
         // there is no terminal, and between turns there is no process either.
         ok('‼️ …and stops a hosted conversation through the Console, on any engine',
             /consoleHost\.list\(\)\.find\(h => h\.sessionId === sessionId\)/.test(intBlock)
-            && /consoleHost\.interrupt\(hosted\.id\)/.test(intBlock));
+            && /consoleHost\.interrupt\(hosted\.id, 'bridge'\)/.test(intBlock));
     }
 
     // ---------- live sessions: read, end, clear ----------

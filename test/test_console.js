@@ -301,11 +301,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         ok('…and the outcome is still the one the subtype states',
             refused.lastTurn.outcome === 'interrupted');
         // The fixed words stay as the FALLBACK — for the engines and the cases
-        // that genuinely say nothing, a bare row would be worse.
+        // that genuinely say nothing, a bare row would be worse. ‼️ X-480 — and
+        // with no stop on record the row says nobody here asked for one.
         ok('an engine that says nothing still gets the honest fallback',
-            reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
-                type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0
-            }, NOW + 900).messages.slice(-1)[0].text === 'turn interrupted');
+            /^turn interrupted · nothing in Agent Farm asked it to stop/.test(
+                reduce({ ...fresh(), status: 'working', turnStartedAt: NOW }, {
+                    type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0
+                }, NOW + 900).messages.slice(-1)[0].text));
         // your next prompt is what retires it — the strip is about the PREVIOUS
         // turn only while the ball is yours
         ok('the next prompt clears the finished turn',

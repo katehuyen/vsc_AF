@@ -4917,7 +4917,7 @@
                     const cur = sel();
                     if (cur && cur.status === 'working') {
                         ev.preventDefault();
-                        vscode.postMessage({ type: 'interrupt', id: cur.id });
+                        vscode.postMessage({ type: 'interrupt', id: cur.id, how: 'esc' });
                     }
                 }
             });
@@ -5370,7 +5370,7 @@
         // the message, so it is drawn wherever the message is (see paintChips).
         paintChips();
         if (slot('c-live', liveBitsHtml(s))) {
-            byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected }));
+            byId('c-int', 'click', () => vscode.postMessage({ type: 'interrupt', id: DATA.selected, how: 'button' }));
             byId('c-hold', 'click', () => send(true));
             wireSnipMenu('c-hold');
             byId('c-clearq', 'click', () => vscode.postMessage({ type: 'clearQueue', id: DATA.selected }));
