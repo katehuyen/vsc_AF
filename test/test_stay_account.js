@@ -103,15 +103,19 @@ console.log('\n== the sentry\'s next round ==');
 console.log('\n== the wiring ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('the door asks the stay for the predecessor\'s account, with the measured cause (X-472)', /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*const stay = handoverStay\(was, cause\);/.test(ext));
-    ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : b\.want\.account/.test(ext) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
-    ok('‼️ X-472 — the quota reason is the measured cause, never whether an order reached the run', /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(ext) && !/contextGuard\.record\(sid\)\?\.quota\?\.handover/.test(ext));
+    // X-475 — the door's account, the stay and the wall live in the placement surface
+    const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8').replace(/\r\n/g, '\n');
+    ok('the door asks the stay for the predecessor\'s account, with the measured cause (X-472)', /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*const stay = handoverStay\(was, cause\);/.test(place)
+        && /const \{ stay, park \} = successorPlacement\(b, agent\.id\);/.test(ext));
+    ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : b\.want\.account/.test(place) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
+    ok('‼️ X-472 — the quota reason is the measured cause, never whether an order reached the run', /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(place) && !/(contextGuard\.record\(sid\)|d\.guard\(sid\))\?\.quota\?\.handover/.test(ext + place));
     ok('the sentry step gets the finished round\'s stay, on the same verdict', /stay: handoverStay\(finishedTask\.account, passCauseOf\(\{ sessionId: successorSessionOf\(finishedTask\), slot: finishedTask\.account \}\)\)/.test(ext));
     const src = ext.replace(/\r\n/g, '\n');
-    const from = src.indexOf('const handoverStay = ('), to = src.indexOf('\n    };', from);
-    ok('‼️ the stay is judged under the start wall (accountCeiling → startWall)', from > 0 && to > from && src.slice(from, to).includes('wall: accountCeiling()'));
-    ok('…and accountCeiling is a hoisted declaration answering startWall, so the door can ask it at any time',
-        /\n    function accountCeiling\(own\?: \{ value: unknown; why: string \}\): StartWall \{/.test(src) && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(src));
+    const from = place.indexOf('const handoverStay = ('), to = place.indexOf('\n    };', from);
+    ok('‼️ the stay is judged under the start wall (accountCeiling → startWall)', from > 0 && to > from && place.slice(from, to).includes('wall: accountCeiling()'));
+    ok('…and accountCeiling answers startWall, from a surface the host builds before the queue, so the door can ask it at any time',
+        /\n    function accountCeiling\(own\?: \{ value: unknown; why: string \}\): StartWall \{/.test(place) && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(place)
+        && src.indexOf('} = accountPlacement({') > 0 && src.indexOf('} = accountPlacement({') < src.indexOf('const taskManager = new TaskManager('));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
     ok('the setting is contributed, 0–100, default 70', props['agentFarm.contextHandoverStayAccountPct'] && props['agentFarm.contextHandoverStayAccountPct'].default === 70);

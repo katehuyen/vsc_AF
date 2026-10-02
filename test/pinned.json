@@ -74,7 +74,7 @@
     {
       "file": "test_relay_room.js",
       "title": "‼️ no second wall: no leg start line, no cap on the policies",
-      "hash": "2af13282b191",
+      "hash": "06b1d0afa28e",
       "incident": "X-462 round 2 (2026-10-02, 7b5d9f86): a second wall (batonMinRoomPct) was built on top of the user's own Account ceiling box; the user ordered it gone — one box, the user's",
       "why": "the user's order: no second wall in the source"
     },
@@ -151,7 +151,7 @@
     {
       "file": "test_pass_cause.js",
       "title": "‼️ the stay reads the verdict, not the order flag (contextGuard …quota.handover is gone from it)",
-      "hash": "7f00155ed265",
+      "hash": "4b43659e6e8b",
       "incident": "X-472 (2026-10-02, chn_muqifjzc001n2b hop 2): the agent read 90, Agent Farm 89, no quota order went out, and the pass was counted \"not the quota's\" — the successor stayed on the full account",
       "why": "the second derivation stays gone"
     },

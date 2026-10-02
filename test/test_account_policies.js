@@ -233,11 +233,14 @@ ok('‼️ X-305 R2 — the default wall is 70: a policy chooses where to START,
     const own = { name: 'own', ceiling: 85, chain: [{ policy: '@emptiest' }] };
     ok('a rule that names its own wall keeps it', P.resolvePolicy('@own', world({ usage: loop, ceiling: 70, policies: [own] })).id === 'm');
     const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    // X-475 — the world, the wall and the handover line live in the placement surface; the host hands it cfg().get
+    const place = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'launch', 'accountPlacement.ts'), 'utf8');
     ok('the host walks every policy with the wall in force, and the pages and policies.list show it with its why',
         // X-471 — the world also carries the handover line (a rule's own wall is capped at it); the sentry form's empty Ceiling box is the third why
-        /ceiling: accountCeiling\(\)\.value,\s*handoverPct: handoverLine\(\),\s*standing/.test(ext) && (ext.match(/ceilingWhy: accountCeiling\(\)\.why/g) || []).length === 3
-        && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(ext)
-        && /return cfg\(\)\.get<number>\('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS\.quotaHandoverPct\);/.test(ext));
+        /ceiling: accountCeiling\(\)\.value,\s*handoverPct: handoverLine\(\),\s*standing/.test(place) && (ext.match(/ceilingWhy: accountCeiling\(\)\.why/g) || []).length === 3
+        && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(place)
+        && /return d\.setting<number>\('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS\.quotaHandoverPct\);/.test(place)
+        && /setting: <T,>\(k: string, f: T\): T => cfg\(\)\.get<T>\(k, f\) as T,/.test(ext));
 }
 
 console.log(`test_account_policies.js: ${pass} passed, ${fail} failed`);

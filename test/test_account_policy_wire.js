@@ -38,6 +38,8 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
 
 const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
 const core = fs.readFileSync(path.join(ROOT, 'src', 'core', 'accountPolicy.ts'), 'utf8');
+// X-475 — the resolver, its world and the account doors live in the placement surface; the host wires its deps
+const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8');
 
 /** The text between the bracket that opens at `open` and its match. */
 function span(src, open) {
@@ -60,20 +62,22 @@ const block = (src, from) => span(src, src.indexOf('{', from));
  * it reads a function whose body is an array literal rather than a block.
  */
 const fnBlock = (name) => {
-    const at = ext.indexOf('const ' + name + ' = (');
+    const src = ext.includes('const ' + name + ' = (') ? ext : place;
+    const at = src.indexOf('const ' + name + ' = (');
     if (at < 0) { return ''; }
-    const arrow = ext.indexOf('=>', at);
+    const arrow = src.indexOf('=>', at);
     if (arrow < 0) { return ''; }
-    const open = ext.slice(arrow + 2).search(/\S/) + arrow + 2;
-    return span(ext, open);
+    const open = src.slice(arrow + 2).search(/\S/) + arrow + 2;
+    return span(src, open);
 };
 
 // ------------------------------------------------- 1. one resolver, one truth
 {
-    ok('launchAccountPick exists — the one resolver',
-        /const launchAccountPick = \(/.test(ext));
+    ok('launchAccountPick exists — the one resolver, and the host takes it from the placement surface',
+        /const launchAccountPick = \(/.test(place) && !/const launchAccountPick = \(/.test(ext)
+        && /policyWorldFor, launchAccountPick, launchAccountFor, launchAccountSlot,[\s\S]{0,120}?\} = accountPlacement\(\{/.test(ext));
     ok('launchAccountPick asks the core',
-        /const launchAccountPick[\s\S]{0,900}?resolvePolicy\(stated, policyWorldFor\(/.test(ext));
+        /const launchAccountPick[\s\S]{0,900}?resolvePolicy\(stated, policyWorldFor\(/.test(place));
 
     const forBlk = fnBlock('launchAccountFor');
     ok('launchAccountFor resolves through launchAccountPick', /launchAccountPick\(/.test(forBlk));
@@ -143,11 +147,12 @@ const fnBlock = (name) => {
 {
     const pickBlk = fnBlock('launchAccountPick');
     ok('launchAccountPick never writes the cursor — it only answers',
-        !/workspaceState\.update/.test(pickBlk));
+        !/workspaceState\.update|setCursor/.test(pickBlk));
 
     const forBlk = fnBlock('launchAccountFor');
-    ok('launchAccountFor writes the cursor only when the caller commits',
-        /if \(o\?\.commit && r\.cursor\)[\s\S]{0,200}?workspaceState\.update\(/.test(forBlk));
+    ok('launchAccountFor writes the cursor only when the caller commits (the host\'s setCursor is the workspace state)',
+        /if \(o\?\.commit && r\.cursor\)[\s\S]{0,200}?d\.setCursor\(/.test(forBlk)
+        && /setCursor: \(k, v\) => \{ void context\.workspaceState\.update\(k, v\); \}/.test(ext));
 
     const envBlk = fnBlock('launchAccountEnv');
     ok('launchAccountEnv commits the cursor — a slot really became an environment',

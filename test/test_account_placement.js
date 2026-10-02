@@ -1,0 +1,108 @@
+// X-475 — THE ACCOUNT / RELAY DECISION SURFACE, DRIVEN THROUGH ITS OPTIONS OBJECT.
+// Until it left extension.ts these decisions were only reachable by grepping the
+// host's text; here the real module answers against stated figures.
+'use strict';
+const path = require('path');
+const ROOT = path.resolve(__dirname, '..');
+const { accountPlacement, roundRobinKey } = require(path.join(ROOT, 'out', 'launch', 'accountPlacement.js'));
+
+let pass = 0, fail = 0;
+const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+
+const now = Date.now();
+const slot = (id, pct) => ({ slotId: id, engine: 'claude', state: 'ok', percent: pct, resetsAt: now + 3600000, plan: 'max', fetchedAt: now });
+const stored = ['claude-a', 'claude-b', 'claude-c'].map(id => ({ id, engine: 'claude', label: id.slice(7), dir: '/x/' + id }));
+const mk = (o) => {
+    const calls = { cursor: [], walled: [], log: [] };
+    const d = Object.assign({
+        ownSetting: k => (k === 'defaultAccountCeiling' ? 70 : undefined),
+        setting: (k, f) => (k === 'quotaHandoverPct' ? 90 : f),
+        usage: () => [slot('claude-a', 92), slot('claude-b', 20), slot('claude-c', 50)],
+        refreshSlot: async () => undefined,
+        markWalled: s => calls.walled.push(s),
+        stored: () => stored,
+        active: () => ({}),
+        standing: () => '',
+        policies: () => [],
+        sentry: () => undefined,
+        guard: () => undefined,
+        cardAccount: () => undefined,
+        liveBatonOn: () => false,
+        cursor: () => '',
+        setCursor: (k, v) => calls.cursor.push([k, v]),
+        log: l => calls.log.push(l)
+    }, o || {});
+    return { p: accountPlacement(d), calls };
+};
+
+console.log('\n== the wall ==');
+{
+    const { p } = mk();
+    ok('the Account ceiling is the wall, under the handover line', p.accountCeiling().value === 70 && p.handoverLine() === 90);
+    ok('a campaign\'s own wall above the handover line acts at the line', p.campaignWall({ ceiling: 95 }).value === 90);
+    ok('…and an empty campaign box is the Account ceiling', p.campaignWall({}).value === 70);
+}
+
+console.log('\n== the launch pick ==');
+{
+    const { p, calls } = mk();
+    ok('@emptiest picks the account with the most room', p.launchAccountPick({ engine: 'claude', account: '@emptiest' }).id === 'claude-b');
+    ok('a stated slot passes straight through', p.launchAccountPick({ engine: 'claude', account: 'claude-a' }).id === 'claude-a');
+    ok('a pick never moves the round-robin cursor', p.launchAccountPick({ engine: 'claude', account: '@round-robin' }) && calls.cursor.length === 0);
+    p.launchAccountFor('claude', '@round-robin');
+    ok('a launch that does not commit (a check, a readout) leaves it too', calls.cursor.length === 0);
+    p.launchAccountFor('claude', '@round-robin', undefined, { commit: true });
+    ok('a committed launch moves it once, under the engine\'s key', calls.cursor.length === 1 && calls.cursor[0][0] === roundRobinKey('claude'));
+    const full = mk({ usage: () => [slot('claude-a', 95), slot('claude-b', 91), slot('claude-c', 99)] }).p;
+    let threw = '';
+    try { full.launchAccountFor('claude', '@emptiest'); } catch (e) { threw = e.message; }
+    ok('‼️ a policy that can choose nothing THROWS at a spawn — never \'\' (the main sign-in)', !!threw);
+    ok('…and the readout answers "no slot" instead of throwing', full.launchAccountSlot({ engine: 'claude', account: '@emptiest' }) === undefined);
+}
+
+console.log('\n== the relay door ==');
+{
+    const b = {
+        id: 'btn_1', chainId: 'chn_x', hop: 1, prompt: 'go', state: 'waiting-end', why: 'w', createdAt: 1, updatedAt: 1,
+        from: { sessionId: 's1', agentId: 'dev', engine: 'claude', cwd: 'D:\\repo' },
+        inherit: { surface: 'console', account: 'claude-c', model: 'opus' }, want: { surface: 'inherit', account: '@emptiest' }
+    };
+    const kept = mk();
+    const early = kept.p.successorPlacement(b, 'dev');
+    ok('an early pass on a slot under the wall keeps the successor there (S-106), and says so in the log',
+        early.stay.stay === true && early.stay.slotId === 'claude-c' && !early.park && /^baton btn_1: /.test(kept.calls.log[0] || ''));
+    const { p, calls } = mk({ cardAccount: () => 'claude-a' });
+    const full = p.successorPlacement(b, 'dev');
+    ok('‼️ the predecessor\'s card at 92% (past the wall): no stay, the pool picks, nothing logged', full.stay.stay === false && calls.log.length === 0);
+    const line90 = { ownSetting: k => (k === 'defaultAccountCeiling' ? 70 : k === 'contextHandoverStayAccountPct' ? 90 : undefined) };
+    const atWall = mk(Object.assign({ usage: () => [slot('claude-b', 20), slot('claude-c', 80)] }, line90)).p.successorPlacement(b, 'dev');
+    ok('‼️ X-470 — a stay is a start: 80% under a 90% stay line but past the 70% wall does not stay', atWall.stay.stay === false);
+    ok('…while 60% under both does', mk(Object.assign({ usage: () => [slot('claude-b', 20), slot('claude-c', 60)] }, line90)).p.successorPlacement(b, 'dev').stay.stay === true);
+    const lim = mk();
+    lim.p.successorPlacement(Object.assign({}, b, { fault: 'limit' }), 'dev');
+    ok('a plan-limit pass marks the walled account full until it turns over', lim.calls.walled[0] === 'claude-c');
+    const none = mk({ usage: () => [slot('claude-a', 95), slot('claude-b', 91), slot('claude-c', 99)] }).p.successorPlacement(b, 'dev');
+    ok('every account full: the row is parked to the first reset, with the refusal', !!none.park && none.park.resetsAt > now && !!none.park.refusal && none.park.bufferMin >= 0);
+}
+
+console.log('\n== the wake hold and the spawn ==');
+{
+    const task = { id: 't1', agentId: 'dev', engine: 'claude', account: '@emptiest' };
+    const full = mk({ usage: () => [slot('claude-a', 95), slot('claude-b', 91), slot('claude-c', 99)], liveBatonOn: () => true }).p;
+    ok('a parked relay row at its wake keeps waiting while its pool is full', full.relayWakeHold(task)?.code === 'quota:5h');
+    ok('…a row no relay holds is not held here', mk({ usage: () => [slot('claude-a', 95)] }).p.relayWakeHold(task) === undefined);
+    const early = mk({ usage: () => [slot('claude-a', 95), slot('claude-b', 91), slot('claude-c', 99)], liveBatonOn: () => { throw new ReferenceError('batonStore is not defined yet'); } }).p;
+    ok('‼️ asked while activating (the relay not wired yet) it holds nothing and never throws', early.relayWakeHold(task) === undefined);
+    const p = mk().p;
+    const moved = p.replaceAccount({ id: 't2', account: 'claude-a', accountPool: '@emptiest' });
+    ok('a system-placed slot past the wall at the start goes back to its pool, with the figure', moved && moved.account === '@emptiest' && /^a: 92% of its window, at or past the 70% wall/.test(moved.why));
+    ok('…a slot with room is kept', p.replaceAccount({ id: 't3', account: 'claude-b', accountPool: '@emptiest' }) === undefined);
+    const camp = mk({ sentry: () => ({ id: 'snt_1', ceiling: 95 }) }).p;
+    ok('a sentry round is judged under its campaign\'s wall (capped at the line: 92 < 90 is false → moved)',
+        !!camp.replaceAccount({ id: 't4', account: 'claude-a', accountPool: '@pool', sentryOf: 'snt_1' }));
+    ok('…and a round of a campaign at 95 on a slot at 85 stays (85 < 90)',
+        mk({ sentry: () => ({ id: 'snt_1', ceiling: 95 }), usage: () => [slot('claude-a', 85)] }).p.replaceAccount({ id: 't5', account: 'claude-a', accountPool: '@pool', sentryOf: 'snt_1' }) === undefined);
+}
+
+console.log(`test_account_placement: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

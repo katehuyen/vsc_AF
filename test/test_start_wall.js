@@ -51,9 +51,12 @@ console.log('\n== the factory default lives in one place ==');
         /export const POLICY_DEFAULT_CEILING: number = Number\(flexPoint\('accounts\.defaultCeiling'\)\?\.default\);/.test(pol));
     ok('…and equals the shipped default of the box', P.POLICY_DEFAULT_CEILING === props['agentFarm.defaultAccountCeiling'].default && Number.isFinite(P.POLICY_DEFAULT_CEILING));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8').replace(/\r\n/g, '\n');
+    // X-475 — accountCeiling / handoverLine live in the placement surface; the host hands it cfg().get as `setting`
+    const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8').replace(/\r\n/g, '\n');
     ok('the host\'s accountCeiling() answers startWall, and the handover line\'s default is the context guard\'s',
-        /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(ext) && /return cfg\(\)\.get<number>\('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS\.quotaHandoverPct\);/.test(ext)
-        && !/'quotaHandoverPct', \d/.test(codeOnly(ext, true)));
+        /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(place) && /return d\.setting<number>\('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS\.quotaHandoverPct\);/.test(place)
+        && /setting: <T,>\(k: string, f: T\): T => cfg\(\)\.get<T>\(k, f\) as T,/.test(ext)
+        && !/'quotaHandoverPct', \d/.test(codeOnly(ext, true) + codeOnly(place, true)));
 }
 
 console.log('\n== X-471: the doors that walked 95 ask the one wall ==');
@@ -69,17 +72,18 @@ console.log('\n== X-471: the doors that walked 95 ask the one wall ==');
 
     const src = (f) => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8').replace(/\r\n/g, '\n');
     const ext = src('extension.ts');
+    const place = src('launch/accountPlacement.ts');
     ok('‼️ the sentry keeps no wall of its own anywhere in src (SENTRY_DEFAULT_CEILING is gone)',
         !/SENTRY_DEFAULT_CEILING/.test(codeOnly(ext, true) + codeOnly(src('core/sentryRun.ts'), true) + codeOnly(src('core/sentryDriver.ts'), true) + codeOnly(src('core/tasks.ts'), true)));
     ok('the campaign\'s wall is the host\'s accountCeiling given the campaign\'s own ceiling',
-        /function campaignWall\(rec: \{ ceiling\?: unknown \}\): StartWall \{\n\s*return accountCeiling\(\{ value: rec\.ceiling, why: 'the campaign\\'s wall' \}\);/.test(ext));
+        /function campaignWall\(rec: \{ ceiling\?: unknown \}\): StartWall \{\n\s*return accountCeiling\(\{ value: rec\.ceiling, why: 'the campaign\\'s wall' \}\);/.test(place));
     ok('…and the tick reads it once, for the facts, the leader\'s seat and the round',
         /const wall = campaignWall\(rec\);/.test(ext) && /slotIsUsable\(u, wall\.value\)\)\.length/.test(ext)
         && /const ceiling = wall\.value;\n\s*const shape = \{/.test(ext) && /running: taskManager\.sentryBusy\(\),\n\s*wall,\n\s*now: Date\.now\(\)/.test(ext));
     ok('the carry, accounts.status, the policies and the Accounts card ask the same wall',
         /accountWall: own => accountCeiling\(own\),/.test(ext)
         && /const wall = accountCeiling\(own \? \{ value: own, why: 'the caller\\'s ceiling' \} : undefined\);/.test(ext)
-        && /ceiling: accountCeiling\(\)\.value,\n\s*handoverPct: handoverLine\(\),/.test(ext)
+        && /ceiling: accountCeiling\(\)\.value,\n\s*handoverPct: handoverLine\(\),/.test(place)
         && /accountOrder\(pool, \{\n\s*ceiling: accountCeiling\(\)\.value, engine: slot\.engine/.test(ext));
     ok('the surfaces say the wall in force (sentry payload, sentry.status, the empty box\'s default)',
         (ext.match(/wall: campaignWall\(rec\),/g) || []).length === 2 && /ceilingWhy: accountCeiling\(\)\.why,/.test(ext));

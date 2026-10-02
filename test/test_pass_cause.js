@@ -43,10 +43,12 @@ console.log('\n== one verdict, every reader ==');
 {
     const src = (f) => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8').replace(/\r\n/g, '\n');
     const ext = src('extension.ts');
+    // X-475 — the stay and the door's classification live in the placement surface
+    const place = src('launch/accountPlacement.ts');
     ok('‼️ the stay reads the verdict, not the order flag (contextGuard …quota.handover is gone from it)',
-        /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(ext) && !/quotaHandover: !!\(sid && contextGuard\.record\(sid\)\?\.quota\?\.handover\)/.test(ext));
+        /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(place) && !/quotaHandover: !!\(sid && (contextGuard\.record|d\.guard)\(sid\)\?\.quota\?\.handover\)/.test(ext + place));
     ok('the relay door and the sentry\'s next round both classify through passCauseOf before they stay',
-        /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*const stay = handoverStay\(was, cause\);/.test(ext)
+        /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*const stay = handoverStay\(was, cause\);/.test(place)
         && /stay: handoverStay\(finishedTask\.account, passCauseOf\(\{ sessionId: successorSessionOf\(finishedTask\), slot: finishedTask\.account \}\)\)/.test(ext));
     ok('the pass and the runner record it (causeOf), and the old starved derivation is gone',
         (ext.match(/causeOf: \(b, agentPct\) => passCauseOf\(/g) || []).length === 2 && !/legStarvedOf|starvedWhy/.test(ext)

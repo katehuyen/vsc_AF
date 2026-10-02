@@ -332,8 +332,7 @@ import {
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
 import {
-    AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, PolicyPool, PolicyResolution,
-    PolicyWorld, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
+    AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
 } from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -352,7 +351,7 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { Baton, BatonFault, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
+import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
@@ -368,11 +367,10 @@ import { BatonRunner } from './core/batonRunner';
 import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
-import { StayVerdict, stayInForceNote, stayOnAccount, stayPctOf } from './core/stayAccount';
-import { StartWall, startRoom, startWall } from './core/startRoom';
-import { PassCause, passCause } from './core/passCause';
+import { stayInForceNote, stayPctOf } from './core/stayAccount';
 import { MisplacedWatch } from './core/misplaced';
-import { fiveHourNow, percentNow } from './core/usageFloor';
+import { accountPlacement, roundRobinKey } from './launch/accountPlacement';
+import { percentNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
 import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
 import { ReopenSetup } from './core/closingSetup';
@@ -3954,6 +3952,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (n) { void vscode.window.showInformationMessage(`Agent Farm — Airtable: ${n} waiting record(s) written to ${instance}.`); }
         }, () => undefined);
     };
+    // X-475 — the account / relay decision surface (src/launch/accountPlacement.ts): built before the queue, every
+    // dep asked only when a decision is made, so a door may ask at any time
+    const {
+        handoverLine, accountCeiling, campaignWall, handoverStay, passCauseOf, freshenSlot, legSlotOf, policyPool,
+        policyWorldFor, launchAccountPick, launchAccountFor, launchAccountSlot, relayWakeHold, replaceAccount, successorPlacement
+    } = accountPlacement({
+        ownSetting: k => ownSetting(k),
+        setting: <T,>(k: string, f: T): T => cfg().get<T>(k, f) as T,
+        usage: () => accountUsage.current(),
+        refreshSlot: slot => accountUsage.refreshSlot(slot, 'auto'),
+        markWalled: slot => accountUsage.markWalled(slot),
+        stored: () => storedAccounts(),
+        active: () => activeAccounts(),
+        standing: (agentId, engine) => agentStandingAccount(agentId, engine),
+        policies: () => accountPolicies(),
+        sentry: () => taskManager.sentry,
+        guard: sid => contextGuard.record(sid),
+        cardAccount: sid => consoleHost.list().find(c => c.sessionId === sid)?.account,
+        liveBatonOn: id => batonStore.all().some(x => x.taskId === id && isLive(x)),
+        cursor: k => context.workspaceState.get<string>(k, ''),
+        setCursor: (k, v) => { void context.workspaceState.update(k, v); },
+        log: l => console.log(`[Agent Farm] ${l}`)
+    });
     // ‼️ S-109 — the one reopen answer is built far below (it needs the index,
     // the manifests and the agents); a task starting before it exists asks
     // nothing and runs on its row, exactly as before.
@@ -4020,15 +4041,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             measuredAccounts: () => accountUsage.current(),
             accountWall: own => accountCeiling(own),
             // X-473 — the last line: a slot the system chose is asked again at the start, under the row's own wall
-            replaceAccount: (task: FarmTask): { account: string; why: string } | undefined => {
-                const u = accountUsage.current().find(x => x.slotId === task.account);
-                const camp: SentryRecord | undefined = taskManager.sentry;
-                const own: StartWall = task.sentryOf && camp?.id === task.sentryOf ? campaignWall(camp) : accountCeiling();
-                const room = startRoom(u, own);
-                if (room.ok) { return undefined; }
-                const sl = findSlot(storedAccounts(), String(task.account));
-                return { account: String(task.accountPool), why: `${sl ? slotLabel(sl) : task.account}: ${room.why} — placed again from ${task.accountPool}` };
-            },
+            replaceAccount,
             // ‼️ X-226 (round 2) — a retry policy that names a RULE for the
             // handover is resolved by the same resolver a launch uses, over the
             // pool the decision already narrowed (never the walled account), and
@@ -17523,72 +17536,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(supervisorSweep) });
-    // ‼️ S-106 — a handover that is not the quota's stays on its account under agentFarm.contextHandoverStayAccountPct
-    const handoverStay = (slotId: string | undefined, cause: PassCause): StayVerdict => {
-        const u = slotId ? accountUsage.current().find(x => x.slotId === slotId) : undefined;
-        const pct = stayPctOf(ownSetting).value;
-        return stayOnAccount({
-            // X-462 / X-472 — the figure the verdict stood on (a floor counts, an agent's figure only raises it); a turned-over window is fresh
-            stayPct: pct, slotId, percent: cause.quotaPct >= 0 ? cause.quotaPct : (u ? percentNow(u) : undefined), resetsAt: u?.resetsAt,
-            // X-472 — the measured cause, never whether an order reached the run
-            quotaHandover: cause.kind === 'quota', walled: cause.kind === 'limit', now: Date.now(),
-            // X-470 — a stay is a start: it obeys the wall every start obeys (startWall)
-            wall: accountCeiling()
-        });
-    };
-    /**
-     * X-472 — why a leg passed, from every reading there is (passCause.ts): Agent Farm's figure for the
-     * slot (a floor counts), the guard's last reading for the session while its window stands, what the
-     * pass recorded, and the agent's own — which only raises it. The stay, the starved note and the card read it.
-     */
-    const passCauseOf = (o: { sessionId?: string; slot?: string; fault?: BatonFault; recorded?: PassCause; agentPct?: number }): PassCause => {
-        const sid = String(o.sessionId ?? '');
-        const u = o.slot ? accountUsage.current().find(x => x.slotId === o.slot) : undefined;
-        const sl = o.slot ? findSlot(storedAccounts(), o.slot) : undefined;
-        const g = sid ? contextGuard.record(sid) : undefined;
-        const live = (resetsAt: number | undefined): boolean => !(resetsAt && resetsAt <= Date.now());
-        return passCause({
-            fault: o.fault, slot: sl ? slotLabel(sl) : o.slot,
-            readings: {
-                'agent-farm': fiveHourNow(u),
-                ...(g?.quota && live(g.quota.resetsAt) ? { guard: g.quota.lastPct } : {}),
-                ...(o.recorded && live(u?.resetsAt) ? { recorded: o.recorded.quotaPct } : {}),
-                ...(o.agentPct !== undefined ? { agent: o.agentPct } : {})
-            },
-            quotaHandoverPct: handoverLine(),
-            contextPct: g?.lastPct,
-            contextHandoverPct: cfg().get<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct)
-        });
-    };
-    /** X-472 — the passing slot read fresh before the verdict; a failed or slow read leaves its floor (usageFloor.ts). */
-    const freshenSlot = async (slot: string | undefined): Promise<void> => {
-        if (!slot) { return; }
-        await Promise.race([
-            accountUsage.refreshSlot(slot, 'auto').then(() => undefined, () => undefined),
-            new Promise<void>(r => setTimeout(r, 4000))
-        ]);
-    };
-    /** The slot a leg ran on: its Console card's, else the one its launch was sealed with. */
-    const legSlotOf = (b: Baton): string | undefined =>
-        (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
-    /**
-     * ‼️ X-462 — A PARKED RELAY LEG'S ROW AT ITS WAKE. The door parked it on its
-     * pool because no account stood under the wall; when its moment comes and
-     * the pool still has none, it keeps waiting (`quota:5h`) — never launched
-     * into a refusal that would fail the row and end the chain. With room, the
-     * launch picks as every launch does. Hoisted: the pump may ask while
-     * activating, before the relay is wired — then it holds nothing.
-     */
-    function relayWakeHold(task: FarmTask): { code: 'quota:5h'; reason: string; basis: 'account' } | undefined {
-        try {
-            if (!isPolicyId(String(task.account ?? '').trim())) { return undefined; }
-            // X-473 — a row sent back to its pool waits for room like a relay leg does
-            if (!task.accountPool && !batonStore.all().some(x => x.taskId === task.id && isLive(x))) { return undefined; }
-            const r = launchAccountPick({ engine: task.engine || 'claude', account: task.account, agentId: task.agentId, model: task.model });
-            if (r.refusal && r.resetsAt) { return { code: 'quota:5h', basis: 'account', reason: `relay leg waits for room — ${r.refusal}` }; }
-            return undefined;
-        } catch { return undefined; }
-    }
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,
@@ -17600,25 +17547,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const b = batonOnClosing(opener, sessionOwnOf(reopenFor({
                 sessionId: opener.from.sessionId, engine: opener.from.engine || 'claude', agentName: agent.name
             })));
-            const was = (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
-            // X-462 — the account the plan limit walled is full until it turns over, whatever its last figure says
-            if (b.fault === 'limit' && was) { try { accountUsage.markWalled(was); } catch { /* the stay rule still refuses it */ } }
-            // X-462 — a pass the plan limit forced never keeps the successor on the walled account
-            // X-472 — classified again at the door, raised by what the pass recorded; the stay reads that verdict
-            const cause = passCauseOf({ sessionId: b.from.sessionId, slot: was, fault: b.fault, recorded: b.cause });
-            const stay = handoverStay(was, cause);
-            if (stay.stay) { console.log(`[Agent Farm] baton ${b.id}: ${stay.why}`); }
-            // S-73 — every account full RIGHT NOW: the row is written with the
-            // first reset + the safety buffer as its notBefore (a preview — the
-            // round-robin cursor does not move; the real pick is the launch's).
-            const pick = launchAccountPick({ engine: b.from.engine, account: stay.stay ? stay.slotId : b.want.account, agentId: agent.id, model: b.inherit.model });
-            const park = pick.refusal && pick.resetsAt
-                ? {
-                    resetsAt: pick.resetsAt,
-                    bufferMin: normalizeRetry(cfg().get<unknown>('taskRetry'))?.safetyBufferMin ?? RETRY_DEFAULT_SAFETY_MIN,
-                    refusal: pick.refusal
-                }
-                : undefined;
+            // X-475 — the predecessor's slot, the measured cause, the stay and the park (accountPlacement.ts)
+            const { stay, park } = successorPlacement(b, agent.id);
             const row = successorRow(b, {
                 agentName: agent.name, agentDir: agent.dir, ...(park ? { park } : {}),
                 // S-82 — the chain's own ceiling ("hop n/N"), and the user's header and standing rule
@@ -22584,145 +22514,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** X-305 — the user's named rules, as `agentFarm.accountPolicies` holds them. */
     const accountPolicies = (): AccountPolicy[] =>
         cfg().get<AccountPolicy[]>('accountPolicies', []) ?? [];
-    /**
-     * ‼️ X-305 — THE POOL `@pool` WALKS IS THE CAMPAIGN'S OWN, derived here the
-     * same way the round derives it (see the sentry tick) rather than restated:
-     * the named accounts in the user's order, or — when the campaign named an
-     * engine and no accounts — every slot of that engine. A campaign that named
-     * neither fences nothing off, so there is no pool to walk and `@pool`
-     * refuses rather than quietly meaning "any account".
-     */
-    const policyPool = (): PolicyPool | undefined => {
-        const rec = taskManager.sentry;
-        if (!rec || rec.stoppedAt) { return undefined; }
-        const engineId = String(rec.engine ?? '').trim().toLowerCase();
-        const accounts = (rec.pool ?? []).length
-            ? (rec.pool ?? [])
-            : engineId
-                ? accountUsage.current()
-                    .filter(u => String(u.engine ?? '').toLowerCase() === engineId)
-                    .map(u => u.slotId)
-                : [];
-        if (!accounts.length) { return undefined; }
-        return {
-            accounts,
-            ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
-            ceiling: campaignWall(rec).value,
-            ...(engineId ? { engine: engineId } : {})
-        };
-    };
-    /** Where `@round-robin` remembers the slot it picked last, per engine. */
-    const roundRobinKey = (engine: string): string =>
-        `af.roundRobinCursor.${(engine || 'claude').trim().toLowerCase() || 'claude'}`;
-    /**
-     * ‼️ X-305 — THE FIGURES A POLICY DECIDES AGAINST, AT THE MOMENT IT IS
-     * ASKED. The core is pure and engine-agnostic by design, so everything it
-     * reads about this machine is assembled here: the usage snapshot, what the
-     * standing layers answer, the campaign's pool, the round-robin cursor and
-     * the user's own rules. One assembly, so a policy cannot mean one thing to
-     * the launcher and another to the spawn.
-     */
-    // ‼️ X-469 — THE wall every unattended start obeys (startRoom.ts startWall): defaultAccountCeiling, or a wall the
-    // caller names for itself, never above the quota handover line. A declaration, hoisted: the baton door's stay asks it too.
-    function accountCeiling(own?: { value: unknown; why: string }): StartWall {
-        const mine = ownSetting('defaultAccountCeiling');
-        const set = resolveFlex('accounts.defaultCeiling', mine === undefined || mine === null || mine === '' ? {} : { settings: mine }).value;
-        return startWall({ setting: set, handoverPct: handoverLine(), ...(own ? { own: own.value, ownWhy: own.why } : {}) });
-    }
-    /** X-471 — a sentry campaign's wall: its own ceiling when it states one, else the Account ceiling; never above the handover line. */
-    function campaignWall(rec: { ceiling?: unknown }): StartWall {
-        return accountCeiling({ value: rec.ceiling, why: 'the campaign\'s wall' });
-    }
-    /** agentFarm.quotaHandoverPct — its default is the context guard's, never a number written here. */
-    function handoverLine(): number {
-        return cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
-    }
-    const policyWorldFor = (
-        engine: string | undefined, agentId?: string, model?: string
-    ): PolicyWorld => {
-        const eng = (String(engine || '').trim() || 'claude').toLowerCase();
-        const standing = accountResolution('', eng, activeAccounts(),
-            agentStandingAccount(agentId, eng));
-        const pool = policyPool();
-        return {
-            engine: eng,
-            usage: accountUsage.current(),
-            ceiling: accountCeiling().value,
-            handoverPct: handoverLine(),
-            standing: standing.id,
-            standingOrigin: standing.origin,
-            ...(pool ? { pool } : {}),
-            cursor: context.workspaceState.get<string>(roundRobinKey(eng), ''),
-            policies: accountPolicies(),
-            ...(model ? { model } : {}),
-            stored: storedAccounts().filter(s => s.engine === eng).map(s => s.id),
-            labelOf: (id: string) => {
-                const sl = findSlot(storedAccounts(), id);
-                return sl ? slotLabel(sl) : id;
-            }
-        };
-    };
-    /**
-     * ‼️ X-305 — WHAT THE ACCOUNT BOX RESOLVES TO RIGHT NOW, REFUSAL AND ALL,
-     * and the ONE place that answers it. A stated slot passes straight through
-     * (`resolvePolicy` hands a non-policy back untouched), so every launch may
-     * be sent through here and only the policies are changed.
-     *
-     * ‼️ IT NEVER THROWS AND IT NEVER COMMITS. The doors that are about to
-     * SPAWN ask `launchAccountFor`, which refuses out loud; a page that is
-     * merely describing a setup asks this and gets the refusal as a fact it can
-     * draw. The round-robin cursor moves only where a launch is real.
-     */
-    const launchAccountPick = (
-        o: { engine?: string; account?: string; agentId?: string; model?: string }
-    ): PolicyResolution => {
-        const stated = String(o.account ?? '').trim();
-        if (!isPolicyId(stated)) {
-            const r = accountResolution(stated, o.engine, activeAccounts(),
-                agentStandingAccount(o.agentId, o.engine),
-                id => { const sl = findSlot(storedAccounts(), id); return sl ? slotLabel(sl) : id; });
-            return { id: r.id, policy: '', note: r.note };
-        }
-        return resolvePolicy(stated, policyWorldFor(o.engine, o.agentId, o.model));
-    };
-    /**
-     * ‼️ X-169 / X-305 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, and
-     * the answer a door about to spawn asks for.
-     *
-     * ‼️ A STATED POLICY THAT CAN CHOOSE NOTHING THROWS RATHER THAN ANSWERING
-     * `''` (X-302). `''` on this seam means "inject no variable", and no
-     * variable means the machine's main sign-in — so a silent empty answer
-     * would spend exactly the plan the rule was written to protect, on a launch
-     * nobody was watching. The sentence the core wrote is the one the user sees.
-     *
-     * `commit` moves the `@round-robin` cursor, and only a door that is really
-     * starting a process passes it: a refusal check and a readout that both ask
-     * the same question must not each advance the rotation by one.
-     */
-    const launchAccountFor = (
-        engine: string | undefined, stated?: string, agentId?: string,
-        o?: { model?: string; commit?: boolean }
-    ): string => {
-        const r = launchAccountPick({ engine, account: stated, agentId, model: o?.model });
-        if (r.refusal) { throw new Error(r.refusal); }
-        if (o?.commit && r.cursor) {
-            void context.workspaceState.update(
-                roundRobinKey(String(engine || 'claude')), r.cursor);
-        }
-        return r.id;
-    };
-    /**
-     * The slot a launch resolves to, or nothing — which IS the main account.
-     * ‼️ X-305 — a policy that refuses is "no slot" HERE rather than a throw:
-     * this is what the readouts resolve with, and a page cannot draw an
-     * exception. The spawn seam (`launchAccountEnv`) asks for itself.
-     */
-    const launchAccountSlot = (
-        o: { engine?: string; account?: string; agentId?: string }
-    ): EngineAccountSlot | undefined => {
-        const id = launchAccountPick(o).id;
-        return id ? findSlot(storedAccounts(), id) : undefined;
-    };
     /**
      * ‼️ THE ENVIRONMENT LAYER, AND IT IS A LAYER RATHER THAN A SECOND
      * INJECTION PATH. `providerRuntime.spawnEnvironment` and

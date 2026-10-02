@@ -65,20 +65,20 @@ console.log('\n== the start asks again ==');
 
 console.log('\n== the incident, replayed at the spawn ==');
 {
-    // the host's answer, built on the real startRoom: the slot's figure at the start against the Account ceiling
-    const { startRoom } = require(path.join(ROOT, 'out', 'core', 'startRoom.js'));
+    // the host's own answer (X-475: src/launch/accountPlacement.ts), the Account ceiling at 70 under a 90 handover line
+    const { accountPlacement } = require(path.join(ROOT, 'out', 'launch', 'accountPlacement.js'));
     const now = Date.now();
-    const usage = { 'claude-kept': 92, 'claude-free': 40 };
-    const wall = { value: 70, why: '70% — defaultAccountCeiling' };
+    const usage = [92, 40].map((pct, i) => ({ slotId: ['claude-kept', 'claude-free'][i], engine: 'claude', state: 'ok', percent: pct, resetsAt: now + 7200000, plan: 'max', fetchedAt: now }));
+    const place = accountPlacement({
+        ownSetting: k => (k === 'defaultAccountCeiling' ? 70 : undefined),
+        setting: (k, f) => (k === 'quotaHandoverPct' ? 90 : f),
+        usage: () => usage, stored: () => [], sentry: () => undefined
+    });
     const m = new TaskManager(path.join(tmp, 'incident.json'), () => [agent], () => false, () => '', {
         isRunner: () => true,
         quotaCheck: () => 'test hold',
-        accountWall: () => wall,
-        replaceAccount: (t) => {
-            const pct = usage[t.account];
-            const room = startRoom({ slotId: t.account, engine: 'claude', state: 'ok', percent: pct, resetsAt: now + 7200000, plan: 'max', fetchedAt: now }, wall, now);
-            return room.ok ? undefined : { account: t.accountPool, why: `${t.account}: ${room.why} — placed again from ${t.accountPool}` };
-        }
+        accountWall: own => place.accountCeiling(own),
+        replaceAccount: t => place.replaceAccount(t)
     });
     const leg = m.addTask(agent, 'relay leg 3', 'go on', 'headless', { account: 'claude-kept', accountPool: '@emptiest' });
     m.startTask(leg);
@@ -104,9 +104,11 @@ console.log('\n== who carries a pool ==');
     ok('a sentry round on a slot carries the campaign pool (@pool), a carried run its rule',
         /account: spec\.slotId, accountPool: POOL/.test(tasks) && /isPolicyId\(carryWant\) \? \{ accountPool: carryWant \}/.test(tasks));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8');
     ok('the host asks startRoom under the row\'s own wall, and a re-placed row waits like a relay leg',
-        /const room = startRoom\(u, own\);/.test(ext) && /campaignWall\(camp\) : accountCeiling\(\);/.test(ext)
-        && /if \(!task\.accountPool && !batonStore\.all\(\)\.some\(x => x\.taskId === task\.id && isLive\(x\)\)\) \{ return undefined; \}/.test(ext));
+        /const room = startRoom\(u, own\);/.test(place) && /campaignWall\(camp\) : accountCeiling\(\);/.test(place)
+        && /if \(!task\.accountPool && !d\.liveBatonOn\(task\.id\)\) \{ return undefined; \}/.test(place)
+        && /liveBatonOn: id => batonStore\.all\(\)\.some\(x => x\.taskId === id && isLive\(x\)\),/.test(ext) && /\n\s*replaceAccount,\n/.test(ext));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -157,15 +157,18 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
     console.log('\n== the wiring ==');
     {
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-        ok('the door marks the account the plan limit walled', /if \(b\.fault === 'limit' && was\) \{ try \{ accountUsage\.markWalled\(was\); \}/.test(ext));
-        ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : b\.want\.account, agentId: agent\.id, model: b\.inherit\.model \}\);/.test(ext));
-        ok('the stay reads the figure in force (a floor counts)', /stayPct: pct, slotId, percent: cause\.quotaPct >= 0 \? cause\.quotaPct : \(u \? percentNow\(u\) : undefined\), resetsAt: u\?\.resetsAt,/.test(ext));
-        const wake = (ext.match(/function relayWakeHold\(task: FarmTask\)[\s\S]*?\n    \}\n/) || [''])[0];
+        // X-475 — the door's account, the stay and the wake hold live in the placement surface
+        const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8').replace(/\r\n/g, '\n');
+        ok('the door marks the account the plan limit walled', /if \(b\.fault === 'limit' && was\) \{ try \{ d\.markWalled\(was\); \}/.test(place) && /markWalled: slot => accountUsage\.markWalled\(slot\),/.test(ext));
+        ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : b\.want\.account, agentId, model: b\.inherit\.model \}\);/.test(place)
+            && /const \{ stay, park \} = successorPlacement\(b, agent\.id\);/.test(ext));
+        ok('the stay reads the figure in force (a floor counts)', /stayPct: pct, slotId, percent: cause\.quotaPct >= 0 \? cause\.quotaPct : \(u \? percentNow\(u\) : undefined\), resetsAt: u\?\.resetsAt,/.test(place));
+        const wake = (place.match(/function relayWakeHold\(task: FarmTask\)[\s\S]*?\n    \}\n/) || [''])[0];
         ok('a parked row keeps waiting at its wake, before the quota line', /quotaCheck: \(task\) => relayWakeHold\(task\) \?\? quotaBrake\(/.test(ext) && /if \(r\.refusal && r\.resetsAt\) \{ return \{ code: 'quota:5h'/.test(wake));
         ok('‼️ …and never pins an account on the row: the launch picks as every launch does', !!wake && !/task\.account =/.test(wake) && !/noteTaskEvent/.test(wake));
         ok('the starved evidence reaches the pass and the runner', (ext.match(/causeOf: \(b, agentPct\) => passCauseOf\(/g) || []).length === 2);
         ok('the floors outlive a reload', /memory: fileUsageMemory\(path\.join\(context\.globalStorageUri\.fsPath, 'account-usage-floors\.json'\)\)/.test(ext));
-        ok('‼️ no second wall: no leg start line, no cap on the policies', !/batonMinRoomPct|legStartLine|relayPlace|legLine|cap\?: number/.test(ext)
+        ok('‼️ no second wall: no leg start line, no cap on the policies', !/batonMinRoomPct|legStartLine|relayPlace|legLine|cap\?: number/.test(ext + place)
             && !/\bcap\b|capOf|capped/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'accountPolicy.ts'), 'utf8')));
         const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).contributes.configuration;
         const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
