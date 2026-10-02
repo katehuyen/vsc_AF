@@ -2746,6 +2746,10 @@ export class ConsoleHost {
         // and only once every other refusal has been said: a move that is not
         // going to happen must not advance the round-robin cursor.
         let why = '';
+        // ‼️ S-102 — the agent's next session remembers the RULE picked here (the
+        // card keeps only its slot); a sign-in clears it, but only when the card moves.
+        const rule = isPolicyId(want) ? want : '';
+        const remember = (): void => { this.chose(id, { account: rule }); };
         if (isPolicyId(want)) {
             if (h.engine.shape !== 'perTurn' && !h.state.sessionId) { return noId; }
             const r = this.pickAccount(h.engine.id, want, h.state.agentId, h.state.model);
@@ -2755,7 +2759,10 @@ export class ConsoleHost {
         }
         const said = why ? `${want} (${why})` : want;
         const now = (h.state.accountNext ?? h.state.account ?? '');
-        if (now === want) { return { ok: true, note: '' }; }
+        if (now === want) {
+            if (rule) { remember(); }
+            return { ok: true, note: '' };
+        }
         // A per-turn engine has no process to re-seal: the flags and the
         // environment of the turn about to start ARE the control (see setModel).
         if (h.engine.shape === 'perTurn') {
@@ -2767,6 +2774,7 @@ export class ConsoleHost {
                         + 'so nothing had to be interrupted'
                 }]
             }));
+            remember();
             return { ok: true, note: '' };
         }
         // ‼️ …and a persistent one cannot move until its process does. A session
@@ -2781,6 +2789,7 @@ export class ConsoleHost {
                     + 'so this one is ended and the same conversation is resumed on it'
             }]
         }));
+        remember();
         return { ok: true, note: '' };
     }
 

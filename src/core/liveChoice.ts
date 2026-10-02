@@ -1,4 +1,4 @@
-import { ENGINE_MEMORY_FIELDS, EngineLaunchMemory, LastLaunch, rememberedOn } from './launch';
+import { ENGINE_MEMORY_FIELDS, EngineLaunchMemory, LastLaunch, rememberedAccount, rememberedOn } from './launch';
 
 /**
  * ‼️ S-102 — A SETUP CHOSEN ON A LIVE CARD IS THE AGENT'S LAST SETUP.
@@ -10,13 +10,15 @@ import { ENGINE_MEMORY_FIELDS, EngineLaunchMemory, LastLaunch, rememberedOn } fr
  * (S-109); this is the other half, for the agent's next session.
  *
  * Only a change somebody ASKED for and the engine ACCEPTED counts: the engine
- * re-spelling a model or aligning a card at startup is not a choice. The
- * account is not here — it is not remembered at all (media/afDimensions.js).
+ * re-spelling a model or aligning a card at startup is not a choice. An
+ * account moved on the card is written through the same verdict a launch is
+ * (`rememberedAccount`): a rule is kept, a sign-in clears the row's account.
  */
 export interface SetupChoice {
     model?: string;
     effort?: string;
     permissionMode?: string;
+    account?: string;
 }
 
 /** The slice of a card's state the confirmation is read from. */
@@ -66,6 +68,7 @@ export function withLiveChoice(last: LastLaunch | undefined, engine: string, cho
     for (const k of ['model', 'effort', 'permissionMode'] as const) {
         if (choice[k] !== undefined) { picked[k] = choice[k]; }
     }
+    if (choice.account !== undefined) { picked.account = rememberedAccount(choice.account); }
     const flatIsThis = (base.engine || '').trim() === eng;
     return {
         ...base,

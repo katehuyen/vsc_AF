@@ -334,7 +334,7 @@ import {
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
 import {
-    AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
+    AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, findPolicy, isPolicyId, policyRefusal, policyShapeRefusal, policyStrategy, resolvePolicy
 } from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -26375,7 +26375,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * and unsayable.
      */
     const seedLastLaunch = (agentId: string, o: LaunchOptions = {}): LaunchOptions => {
-        const seeded = withLastLaunch(o, lastLaunchOf(agentId));
+        const inherited = withLastLaunch(o, lastLaunchOf(agentId));
+        // S-102 — a remembered rule since deleted is dropped, as the composer's box drops it;
+        // left in, every door without a box would refuse on a name nobody can see.
+        const seeded = !(o.account ?? '').trim() && policyRefusal(inherited.account, accountPolicies())
+            ? { ...inherited, account: '' } : inherited;
         const agent = agents.find(a => a.id === agentId);
         if (!agent) { return seeded; }
         // The engine this seed is FOR — what the caller said, else what the
@@ -26634,8 +26638,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const o = applyProfile({}, use) as LaunchOptions;
         // ‼️ X-169 — and whose plan pays, resolved from the one place that holds
         // it whenever the profile itself does not name a sign-in.
+        // ‼️ S-102 — the profile's RULE is what gets remembered, and in the Console
+        // it is the composer that turns it into a slot at Send (and moves the
+        // round-robin cursor then), so only the terminal commits here.
+        const statedAccount = o.account;
+        const rule = isPolicyId(statedAccount) ? statedAccount : undefined;
         o.account = launchAccountFor(o.engine, o.account, agent.id,
-            { model: o.model || '', commit: true });
+            { model: o.model || '', commit: surface === 'terminal' });
         // the window's active project, the same answer `launchProjectRow` opens
         // on — a setup stores a SHAPE, never which project it was last used for.
         const projectId = activeProjectId() || undefined;
@@ -26647,13 +26656,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 engine: o.engine,
                 launch: {
                     model: o.model, effort: o.effort, permissionMode: o.permissionMode,
-                    superpowers: o.superpowers, account: o.account, prompt: o.prompt
+                    superpowers: o.superpowers, account: rule ?? o.account, prompt: o.prompt
                 }
             });
             return;
         }
         if (!startClaudeSession(agent, o, undefined, undefined, projectId)) { return; }
-        await rememberLaunch(agent.id, o, 'terminal');
+        await rememberLaunch(agent.id, { ...o, account: statedAccount }, 'terminal');
     };
 
     /**

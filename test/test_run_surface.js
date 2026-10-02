@@ -219,7 +219,7 @@ const base = read('src/panels/base.ts');
     ok('‼️ X-180: …a profile that never stored a surface is ASKED, never guessed',
         /let surface = profileSurface\(p\);\s*\n\s*if \(!surface\) \{/.test(ext));
     ok('‼️ X-180: …and the terminal arm records it like every other door',
-        /if \(!startClaudeSession\(agent, o, undefined, undefined, projectId\)\) \{ return; \}\s*\n\s*await rememberLaunch\(agent\.id, o, 'terminal'\);/.test(ext));
+        /if \(!startClaudeSession\(agent, o, undefined, undefined, projectId\)\) \{ return; \}\s*\n\s*await rememberLaunch\(agent\.id, \{ \.\.\.o, account: statedAccount \}, 'terminal'\);/.test(ext));
     ok('…and the answer really reaches the launch',
         treeRow.collect({
             agentId: 'a', engine: 'codex',

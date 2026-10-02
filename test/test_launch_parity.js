@@ -358,7 +358,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     eq('…with what this launch actually ran on, and \'\' where it chose none',
         perEngine.map(k => `${k}=${row[k]}`).sort().join(),
         ['model=opus', 'effort=high', 'permissionMode=plan',
-            'providerId=', 'tier=', 'variant='].sort().join());
+            'providerId=', 'tier=', 'variant=', 'account='].sort().join());
     // ‼️ X-145 — AND THE OTHER ENGINES' ROWS SURVIVE THE LAUNCH. Writing the map
     // from scratch would make every start erase what the agent runs as on the
     // engines it was not started on — a memory that only remembers the last
@@ -423,7 +423,10 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('the extension reads the record through one function',
         /const lastLaunchOf = \(agentId: string\): LastLaunch \| undefined => lastLaunch\(\)\[agentId\];/.test(extTs));
     ok('…and layers it through one more',
-        /const seedLastLaunch = \(agentId: string, o: LaunchOptions = \{\}\): LaunchOptions => \{\s*\n\s*const seeded = withLastLaunch\(o, lastLaunchOf\(agentId\)\);/.test(extTs));
+        /const seedLastLaunch = \(agentId: string, o: LaunchOptions = \{\}\): LaunchOptions => \{\s*\n\s*const inherited = withLastLaunch\(o, lastLaunchOf\(agentId\)\);/.test(extTs));
+    // S-102 — …where a remembered rule since deleted is dropped (the composer prunes it the same way)
+    ok('…which drops a remembered rule that names nothing any more',
+        /const seeded = !\(o\.account \?\? ''\)\.trim\(\) && policyRefusal\(inherited\.account, accountPolicies\(\)\)/.test(extTs));
     /**
      * ‼️ AND THE LAYER UNDER THE MEMORY IS IN THE SAME FUNCTION, WHICH IS THE
      * ONLY WAY IT REACHES EVERY DOOR.
@@ -802,6 +805,24 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('‼️ …while "new session in the same folder" does NOT inherit it — it is not that session',
         (door.match(/account: reopened \?/g) || []).length === 1
         && !/account: this\.deps\.sessionAccount/.test(door));
+}
+
+// ---------- S-102 — THE ACCOUNT RULE REACHES THE DOORS THAT HAVE A BOX ----------
+// The core verdict is driven in test_launch_dimensions / test_live_choice; these
+// are the surfaces that read or write the record by hand, measured in the source.
+{
+    const panelTs = read('src', 'panels', 'consolePanel.ts');
+    ok('S-102 — the composer opened for an agent shows its remembered rule, pruned like a pick',
+        /if \(!opts\.launch\) \{ c\.composerAccount = c\.prunedAccount\(last\?\.account\); \}/.test(panelTs));
+    ok('…switching the engine recalls the rule remembered for the NEW engine first',
+        /this\.composerAccount = this\.prunedAccount\(mem\?\.account\) \?\? this\.prunedAccount\(this\.composerAccount\);/.test(panelTs));
+    ok('‼️ …and after Send a rule stays in the box, so the next Send cannot record a sign-in over it',
+        /this\.composerAccount = rememberedAccount\(started\.account\) \|\| undefined;/.test(panelTs));
+    ok('‼️ a saved setup records the account it STATED, not the slot it resolved',
+        /await rememberLaunch\(agent\.id, \{ \.\.\.o, account: statedAccount \}, 'terminal'\);/.test(extTs));
+    ok('…and hands its rule to the composer, which resolves and commits it at Send',
+        /account: rule \?\? o\.account, prompt: o\.prompt/.test(extTs)
+        && /\{ model: o\.model \|\| '', commit: surface === 'terminal' \}/.test(extTs));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

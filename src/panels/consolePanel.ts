@@ -23,7 +23,7 @@ import { ProviderForm, ProviderPick, ProviderTransport } from '../core/launchPro
 import { EngineModels, narrowLaunch } from '../core/models';
 import {
     EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES, permissionChoicesByEngine,
-    rememberedOn, RunSurface
+    rememberedAccount, rememberedOn, RunSurface
 } from '../core/launch';
 import { LaunchIntent } from '../core/launchDimensions';
 import { catalog as launchCatalog, narrow as narrowIntent } from '../core/aflaunch';
@@ -913,6 +913,8 @@ export class ConsolePanel {
                 // this is a new launch decision, not the launcher's.
                 c.composerAgent = opts.agentId;
                 c.composerPrompt = undefined;
+                // S-102 — the record's account is a rule or nothing; pruned like a pick
+                if (!opts.launch) { c.composerAccount = c.prunedAccount(last?.account); }
                 if (!opts.launch && (last || own.model || own.effort)) {
                     const pick = (...v: (string | undefined)[]) =>
                         v.map(x => (x ?? '').trim()).find(x => x) ?? '';
@@ -1811,7 +1813,8 @@ export class ConsolePanel {
             ? { model: this.composerIntent.model, effort: this.composerIntent.effort } : null;
         this.narrowComposer(keep, false);
         this.composerRoute = this.prunedRoute(this.composerRoute);
-        this.composerAccount = this.prunedAccount(this.composerAccount);
+        // S-102 — the rule remembered for the NEW engine first, as the model above
+        this.composerAccount = this.prunedAccount(mem?.account) ?? this.prunedAccount(this.composerAccount);
     }
 
     /**
@@ -2298,8 +2301,10 @@ export class ConsolePanel {
                 this.composerRoute = undefined;
                 // …and its own account, for the same reason: a card started on
                 // the second plan must not hand it to the next session nobody
-                // launched from it.
-                this.composerAccount = undefined;
+                // launched from it. A RULE stays (S-102): it is what was just
+                // remembered, and dropping it here would let the next Send
+                // record the standing sign-in over it.
+                this.composerAccount = rememberedAccount(started.account) || undefined;
                 // ‼️ K-34 — one-shot. A prompt left standing would reapply itself
                 // to the NEXT session, which nobody launched from it.
                 this.composerPrompt = undefined;

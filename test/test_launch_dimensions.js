@@ -70,7 +70,7 @@ function fieldsOf(name) {
 {
     const remembered = D.idsWhere('remembered');
     const perEngine = D.idsWhere('perEngine');
-    eq('the engine-owned dimensions are the six of EngineLaunchMemory',
+    eq('the engine-owned dimensions are exactly those of EngineLaunchMemory',
         perEngine.slice().sort(), fieldsOf('EngineLaunchMemory').slice().sort());
     ok('‼️ …and a per-engine dimension is by definition a remembered one',
         perEngine.every(id => remembered.indexOf(id) >= 0));
@@ -112,7 +112,14 @@ function fieldsOf(name) {
         Object.keys(row.byEngine.claude).slice().sort(), D.idsWhere('perEngine').slice().sort());
     ok('…writing \'\' for the ones it chose none of',
         row.byEngine.claude.providerId === '' && row.byEngine.claude.tier === ''
-        && row.byEngine.claude.variant === '');
+        && row.byEngine.claude.variant === '' && row.byEngine.claude.account === '');
+    // ‼️ S-102 — the account is the one dimension written through a verdict: a rule, never a sign-in
+    const acct = a => L.launchToRemember({ engine: 'claude', account: a }, 'console');
+    eq('a launch on a rule remembers the rule, flat and in its engine row',
+        [acct('@round-robin').account, acct('@round-robin').byEngine.claude.account], ['@round-robin', '@round-robin']);
+    eq('‼️ a launch on a sign-in remembers NO account',
+        [acct('claude-2').account, acct('claude-2').byEngine.claude.account], ['', '']);
+    eq('…and the machine\'s own sign-in is a sign-in, not a rule', acct('@machine').byEngine.claude.account, '');
 
     // ‼️ AND `undefined` SURVIVES AS A THIRD STATE (K-34). Folding superpowers
     // would have spelt it '' and turned "the agent's own default decides" into
@@ -135,6 +142,11 @@ function fieldsOf(name) {
         L.withLastLaunch({ engine: 'codex', model: 'luna' }, last).model === 'luna');
     ok('…and the discipline is inherited flat, because it belongs to the agent',
         onCodex.superpowers === true);
+    // ‼️ S-102 — a rule is the ENGINE's: chosen on Codex, it is not walked over Claude's sign-ins
+    const ruled = L.launchToRemember({ engine: 'codex', account: '@emptiest' }, 'console', last);
+    eq('a remembered rule seeds the next launch on its own engine', L.withLastLaunch({ engine: 'codex' }, ruled).account, '@emptiest');
+    eq('‼️ …and not a launch on another engine', L.withLastLaunch({ engine: 'claude' }, ruled).account, '');
+    eq('…while a launch that states its own account keeps it', L.withLastLaunch({ engine: 'codex', account: 'codex-2' }, ruled).account, 'codex-2');
 }
 
 /* =========================================================================

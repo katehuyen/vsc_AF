@@ -14,6 +14,7 @@
  * own default stays in charge.
  */
 
+import { isPolicyId } from './accountPolicy';
 import { AGY_MODES_REFUSED, agyModeRefusal } from './agy';
 import { engineFirstPromptFlag, engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
 import { EffectivePermission, permissionFlags } from './permissionmode';
@@ -46,14 +47,13 @@ export interface LaunchOptions {
      * default explicitly would put a config-dir override into every session
      * Agent Farm starts that no session carried before.
      *
-     * ‼️ IT IS NOT REMEMBERED, unlike the model or the effort, and that is a
-     * decision rather than an omission. Those are preferences; an account is a
-     * STATE — how much of a plan is left, which changes hourly. Remembered per
-     * agent it would pin an agent to an exhausted plan and, through the S-34
-     * layer order, would silently outrank the "use this next" gesture on the
-     * Engines page: the user would press a button that does nothing visible.
-     * One place holds it (`agentFarm.activeAccounts`, per engine), one gesture
-     * moves it, and `accountStore.resolveAccount` is the only order there is.
+     * ‼️ S-102 — ONLY A RULE IS REMEMBERED, NEVER A SIGN-IN (`rememberedAccount`).
+     * A model is a preference; a sign-in is a STATE — how much of a plan is
+     * left, which changes hourly. Remembered per agent it would pin an agent to
+     * an exhausted plan and, through the S-34 layer order, silently outrank the
+     * "use this next" gesture on the Engines page. A rule (`@emptiest`, a named
+     * one) reads the plans at each start, so the user's decision is that it IS
+     * carried to the agent's next session, on the engine it was chosen for.
      *
      * ‼️ AN ID THAT NAMES NOTHING IS REFUSED, NOT IGNORED
      * (`accountStore.accountRefusal`): falling back to the main account for a
@@ -738,6 +738,8 @@ export interface EngineLaunchMemory {
     providerId?: string;
     tier?: string;
     variant?: string;
+    /** S-102 — a RULE or '' — never a sign-in (`rememberedAccount`); a rule walks this engine's sign-ins. */
+    account?: string;
 }
 
 /**
@@ -841,6 +843,23 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
  * since, which is a regression dressed up as a fix.
  */
 export function rememberedOn(engine: string | undefined, last: LastLaunch): LastLaunch {
+    const out = rowOn(engine, last);
+    // S-102 — a sign-in in a record (hand-edited, or written by another build) is never read back
+    return out.account === undefined ? out : { ...out, account: rememberedAccount(out.account) };
+}
+
+/**
+ * ‼️ S-102 — THE ONE VERDICT ON WHAT ACCOUNT THE MEMORY HOLDS: a rule
+ * (`isPolicyId` — `@machine` is a sign-in, not a rule) or nothing. Applied where
+ * a record is written AND where it is read, so a sign-in cannot reach the next
+ * session by either path.
+ */
+export function rememberedAccount(account: string | undefined): string {
+    const s = String(account ?? '').trim();
+    return isPolicyId(s) ? s : '';
+}
+
+function rowOn(engine: string | undefined, last: LastLaunch): LastLaunch {
     const was = (last.engine || '').trim();
     const now = (engine || '').trim();
     const own = now ? last.byEngine?.[now] : undefined;
@@ -882,7 +901,10 @@ export function launchToRemember(
     // touched. A row that omitted a field would let the previous engine's value
     // show through the merge in `rememberedOn`, which is what makes writing
     // every one of them, blank included, part of the shape rather than a habit.
-    const mem: EngineLaunchMemory = rememberIntent(o as LaunchIntent) as EngineLaunchMemory;
+    const mem: EngineLaunchMemory = {
+        ...(rememberIntent(o as LaunchIntent) as EngineLaunchMemory),
+        account: rememberedAccount(o.account)
+    };
     const engine = (o.engine || '').trim();
     /**
      * ‼️ X-145 — THE OTHER ENGINES' ROWS SURVIVE THIS LAUNCH.

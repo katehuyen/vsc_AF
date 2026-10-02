@@ -162,8 +162,11 @@ const fnBlock = (name) => {
     // REPORT or CHECK must not, or one launch advances the rotation three times.
     // X-106 (2) made the Console task door (`consoleTaskStart`) the fourth: a
     // task handed to the Console really starts a process there.
-    const commits = [...ext.matchAll(/launchAccountFor\([\s\S]{0,200}?commit: true/g)].length;
+    const commits = [...ext.matchAll(/launchAccountFor\([\s\S]{0,200}?commit: (true|surface === 'terminal')/g)].length;
     ok('exactly the four pre-resolving spawn doors commit', commits === 4);
+    // S-102 — a saved setup opened in the Console hands its RULE to the composer, which commits at Send
+    ok('…a saved setup commits only when it spawns a terminal itself',
+        /launchAccountFor\(o\.engine, o\.account, agent\.id,\s*\{ model: o\.model \|\| '', commit: surface === 'terminal' \}\)/.test(ext));
     ok('…the fourth is the Console task door', /consoleTaskStart = spec => \{[\s\S]{0,1500}?launchAccountFor\(engine, spec\.account, spec\.agentId, \{ model, commit: true \}\)/.test(ext));
 
     /**

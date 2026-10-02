@@ -72,13 +72,13 @@
             why: 'Which program runs. Absent means claude, which is what every caller written before engines existed meant.'
         },
         {
-            id: 'account', owner: 'user', remembered: false, perEngine: false, redraws: false,
+            id: 'account', owner: 'user', remembered: true, perEngine: true, redraws: false,
             appliesTo: c => c.hasAccounts !== false,
-            why: 'WHICH SIGN-IN of that engine runs it. NOT remembered, and that is the '
-                + 'decision rather than an omission: a model is a preference, an account is a '
-                + 'STATE (how much of a plan is left, which changes hourly). Remembered per agent '
-                + 'it would pin an agent to an exhausted plan and outrank the account switch '
-                + 'on the Engines page, which would then visibly do nothing.'
+            why: 'WHICH SIGN-IN of that engine runs it. Only a RULE (@emptiest, a named rule) is '
+                + 'remembered, never a sign-in (src/core/launch.ts rememberedAccount): a rule looks at '
+                + 'the plans as they are at each start, while a remembered sign-in would pin an agent '
+                + 'to an exhausted plan and outrank the account switch on the Engines page. Per engine, '
+                + 'because a rule walks the sign-ins of the engine it was chosen for.'
         },
         {
             id: 'providerId', owner: 'user', remembered: true, perEngine: true, redraws: true,

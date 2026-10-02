@@ -4,7 +4,7 @@
 // Console card, once the engine ACCEPTS it, is written into the agent's
 // remembered row for that engine, so the agent's next session opens on it.
 // A refusal writes nothing; the other engines' rows and the flat engine are
-// untouched; the account is never remembered. Driven against the real
+// untouched; an account RULE is remembered, a sign-in never. Driven against the real
 // ConsoleHost with a fake child for the confirmation half.
 'use strict';
 const fs = require('fs');
@@ -82,7 +82,19 @@ const { ConsoleHost } = require(path.join(ROOT, 'out', 'core', 'consolehost.js')
     eq('…the flat fields follow when they describe this engine', next.effort, 'xhigh');
     eq('another engine\'s row is untouched', next.byEngine.codex, last.byEngine.codex);
     eq('superpowers and surface survive', [next.superpowers, next.surface], [false, 'console']);
-    ok('the account is never written', !('account' in next) && !('account' in next.byEngine.claude));
+    eq('a choice that names no account leaves the row\'s account blank', next.byEngine.claude.account, '');
+    // S-102 (the user's option A): a RULE picked on the card is remembered, a sign-in never
+    const ruled = L.withLiveChoice(last, 'claude', { account: '@emptiest' });
+    eq('‼️ a rule picked on the card is written into the engine row', ruled.byEngine.claude.account, '@emptiest');
+    eq('…and seeds the next session', Launch.withLastLaunch({}, ruled).account, '@emptiest');
+    const slotted = L.withLiveChoice(ruled, 'claude', { account: 'claude-2' });
+    eq('‼️ a sign-in picked on the card is NEVER written — it clears the rule', slotted.byEngine.claude.account, '');
+    eq('…the machine\'s own sign-in is a sign-in, not a rule',
+        L.withLiveChoice(ruled, 'claude', { account: '@machine' }).byEngine.claude.account, '');
+    eq('…and a later model choice keeps the rule', L.withLiveChoice(ruled, 'claude', { model: 'sonnet' }).byEngine.claude.account, '@emptiest');
+    const forged = { ...last, byEngine: { ...last.byEngine, claude: { ...last.byEngine.claude, account: 'claude-2' } } };
+    eq('‼️ a sign-in found in a record is never read back into a launch', Launch.withLastLaunch({}, forged).account, '');
+    eq('…nor carried by the next card choice', L.withLiveChoice(forged, 'claude', { effort: 'low' }).byEngine.claude.account, '');
 
     const other = L.withLiveChoice({ ...last, engine: 'agy' }, 'claude', { effort: 'high' });
     eq('a card on a different engine than the flat record leaves the flat engine alone',
@@ -92,7 +104,7 @@ const { ConsoleHost } = require(path.join(ROOT, 'out', 'core', 'consolehost.js')
     const old = L.withLiveChoice({ engine: 'claude', model: 'opus', effort: 'low', permissionMode: 'plan' },
         'claude', { effort: 'xhigh' });
     eq('a record with no engine rows keeps its flat answers in the new row',
-        old.byEngine.claude, { providerId: '', tier: '', variant: '', model: 'opus', effort: 'xhigh', permissionMode: 'plan' });
+        old.byEngine.claude, { account: '', providerId: '', tier: '', variant: '', model: 'opus', effort: 'xhigh', permissionMode: 'plan' });
 
     const fresh = L.withLiveChoice(undefined, 'claude', { model: 'sonnet' });
     eq('an agent with no record gets one on this engine', [fresh.engine, fresh.byEngine.claude.model], ['claude', 'sonnet']);
@@ -141,6 +153,18 @@ async function main() {
     await tick();
     eq('a refusal announces nothing', heard.length, 1);
 
+    // S-102 — the card's account box: a rule is announced as the rule, a sign-in as a cleared account
+    ok('moving the card to a sign-in is accepted', host.setAccount(id, 'claude-2').ok === true);
+    eq('‼️ …and announced as a cleared account — a sign-in is never remembered',
+        heard.slice(1).map(h => h.choice), [{ account: '' }]);
+    host.setAccount(id, 'claude-2');
+    eq('…while picking the sign-in it is already moving to announces nothing', heard.length, 2);
+    ok('a rule this window cannot resolve is refused', host.setAccount(id, '@emptiest').ok === false);
+    eq('…and announces nothing', heard.length, 2);
+    host.accountPick = () => ({ id: 'claude-3', note: 'the emptiest' });
+    ok('a rule it can resolve is accepted', host.setAccount(id, '@emptiest').ok === true);
+    eq('‼️ …and the RULE is announced, not the slot it picked', heard[2] && heard[2].choice, { account: '@emptiest' });
+
     host.dispose && host.dispose();
 }
 
@@ -152,8 +176,8 @@ main().then(() => {
     ok('…and writes them through the one merge',
         /\[agentId\]: withLiveChoice\(lastLaunchOf\(agentId\), engine, choice\)/.test(ext));
     const hostTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
-    eq('every engine path announces its accepted choice (claude confirm, opencode model, three direct setters, opencode mode)',
-        (hostTs.match(/this\.chose\(id, /g) || []).length, 6);
+    eq('every engine path announces its accepted choice (claude confirm, opencode model, three direct setters, opencode mode, account move)',
+        (hostTs.match(/this\.chose\(id, /g) || []).length, 7);
     console.log(`test_live_choice: ${pass} passed, ${fail} failed`);
     if (fail) { process.exit(1); }
     process.exit(0);
