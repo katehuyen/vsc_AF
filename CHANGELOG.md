@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.794.0 - Clearing a sound step from the bridge works, and the Tasks forms fit a phone (2026-10-03)
+
+- **Clearing a sound step from the bridge.** `alerts.voice.set` with an
+  empty `voice` is described as clearing that step of the sound chain, but
+  it was refused with "Missing required string arg" in every scope. It now
+  clears the step for the settings, an agent or a single session.
+- **The Tasks page's workflow and step forms fit a phone.** The supervisor's
+  wake rows (a field, an operator, a value and a remove button) were one
+  line that ran off a 360px screen. On a narrow screen a row now takes two
+  lines; a wide panel is unchanged.
+
 ## 3.793.0 - The Turns page sorts runs the way the Sessions table does (2026-10-03)
 
 - **Four categories on Turns.** The Turns page sorted turns only into
