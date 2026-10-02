@@ -263,6 +263,8 @@ export interface LiveConfig {
         session_id?: string; hook_event_name?: string; tool_name?: string;
         tool_input?: Record<string, unknown>; cwd?: string; engine?: string; transcript_path?: string;
     }) => string | undefined;
+    /** B-30 — the whole answer to a `SessionStart` (the work-area line, core/workArea.ts); `undefined` elsewhere. */
+    startContext?: (payload: { session_id?: string; hook_event_name?: string }) => string | undefined;
     /**
      * ‼️ S-43 — what the CLI's own session registry says about an id: `true` a
      * daemon spare / background worker, `false` somebody's session, `undefined`
@@ -882,6 +884,7 @@ export class LiveMonitor implements vscode.Disposable {
                         // second shape: one adds to the model's context, this
                         // one stops the call before it runs.
                         answer = cfg.toolGuard?.(payload)
+                            ?? cfg.startContext?.(payload)
                             ?? hookResponseBody(payload.hook_event_name, cfg.contextSignal?.(payload));
                     } catch { answer = '{}'; }
                 }

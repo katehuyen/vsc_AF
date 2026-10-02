@@ -33,6 +33,8 @@
  *  string here is a refusal, not a value. */
 export interface PathVarContext {
     home?: string;
+    /** the system's temporary folder (os.tmpdir) */
+    temp?: string;
     workspace?: string;
     repo?: string;
     vault?: string;
@@ -66,6 +68,7 @@ export interface ResolvedPath {
  *  without the UI being touched. */
 export const PATH_VARS: { name: string; describe: string }[] = [
     { name: 'home', describe: 'your user folder — the same thing VS Code calls ${userHome}' },
+    { name: 'temp', describe: 'the system temporary folder — %TEMP% on Windows, $TMPDIR or /tmp elsewhere' },
     { name: 'workspace', describe: 'the open workspace folder — VS Code calls it ${workspaceFolder}' },
     { name: 'repo', describe: 'the repository the work is happening in' },
     { name: 'vault', describe: 'your notes vault, when one is configured; absent on a machine without one' },
@@ -133,6 +136,7 @@ function valueOf(rawName: string, ctx: PathVarContext): string | undefined {
             return id ? id.slice(0, 8) : undefined;
         }
         case 'home': return val(ctx.home);
+        case 'temp': return val(ctx.temp);
         case 'workspace': return val(ctx.workspace);
         case 'repo': return val(ctx.repo);
         case 'vault': return val(ctx.vault);

@@ -37,6 +37,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const NOW = new Date(2026, 8, 5, 12, 34, 56).getTime();
 const CTX = {
     home: 'C:/Users/rotam',
+    temp: 'C:/Users/rotam/AppData/Local/Temp',
     workspace: 'D:/repo',
     repo: 'D:/repo',
     vault: 'D:/vault',

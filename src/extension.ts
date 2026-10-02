@@ -345,6 +345,11 @@ import {
 import { BRIDGE_GUARD_ESCAPE, bridgeGuardCoverage, bridgeGuardVerdict, bridgeGuardView, denyResponseBody } from './core/bridgeGuard';
 import { hookEngineOf, HEREDOC_MAX_LINES, LITERAL_MAX, SHELL_GUARD_ESCAPE, ShellGuardCatch, shellGuardRules, shellGuardVerdict } from './core/shellGuard';
 import { BridgeGuardLog } from './core/bridgeGuardLog';
+import {
+    forgetWorkArea, nextWorkAreaState, resolveWorkArea, retireWorkArea, RetiredWorkArea, startContextBody,
+    WORK_AREA_DEFAULT, WORK_AREA_ENV, WORK_AREA_ESCAPE, WORK_AREA_SETTING, WorkAreaCatch, workAreaInForceNote,
+    WorkAreaResolution, workAreaStartText, WorkAreaState, workAreaVerdict
+} from './core/workArea';
 import { EngineRunner, ProviderAim, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
@@ -1705,6 +1710,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** X-439 — the shell guard's refusals, its own file (`sessions.shellGuard`). */
     const shellGuardLog = new BridgeGuardLog<ShellGuardCatch>(path.join(context.globalStorageUri.fsPath, 'shell-guard.json'));
     context.subscriptions.push({ dispose: () => shellGuardLog.flush() });
+    /** B-30 — the scratch folder in force and the folders it moved away from; filled by `refreshWorkArea` once `pathCtx` exists. */
+    let workArea: WorkAreaResolution & { retired: RetiredWorkArea[] } = {
+        path: '', template: WORK_AREA_DEFAULT, source: 'default', why: '', retired: []
+    };
+    const workAreaGuardLog = new BridgeGuardLog<WorkAreaCatch>(path.join(context.globalStorageUri.fsPath, 'workarea-guard.json'));
+    context.subscriptions.push({ dispose: () => workAreaGuardLog.flush() });
+    const workAreaMade = new Set<string>();
+    /** Created on demand — when an agent is told the folder or asks for it, never at activation. */
+    const ensureWorkArea = (): boolean => {
+        if (!workArea.path) { return false; }
+        if (workAreaMade.has(workArea.path)) { return true; }
+        try { fs.mkdirSync(workArea.path, { recursive: true }); workAreaMade.add(workArea.path); return true; }
+        catch { return false; }
+    };
     // S-75 — the session's OWN sign-in: its Console card's slot, else the slot
     // its sealed launch manifest names. No slot known = no line (a figure
     // from the wrong account is worse than none — 2026-09-06, home 95% vs own 23%).
@@ -1837,6 +1856,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         return denyResponseBody(p.hook_event_name, v);
                     }
                 }
+                // B-30 — a write into a scratch folder the setting moved away from.
+                const wv = workAreaVerdict({
+                    tool: p.tool_name, input: p.tool_input, current: workArea.path,
+                    retired: workArea.retired, win: process.platform === 'win32'
+                });
+                if (wv) {
+                    workAreaGuardLog.add({ ...wv, ts: Date.now(), sessionId: String(p.session_id ?? '') });
+                    return denyResponseBody(p.hook_event_name, wv);
+                }
                 // X-439 — the shell rule: a payload never travels inside a command.
                 if (!cfg().get<boolean>('shellGuard', true)) { return undefined; }
                 const sv = shellGuardVerdict({
@@ -1845,6 +1873,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (sv) { shellGuardLog.add({ ...sv, id: sv.rule, ts: Date.now(), sessionId: String(p.session_id ?? '') }); }
                 return denyResponseBody(p.hook_event_name, sv);
             },
+            // B-30 — every start and resume is told the work area in force
+            startContext: (p) => (p.hook_event_name === 'SessionStart' && ensureWorkArea()
+                ? startContextBody(p.hook_event_name, workAreaStartText(workArea.path)) : undefined),
             stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
             notifyStuck: cfg().get<boolean>('notifyStuck', true),
@@ -16943,10 +16974,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const pathCtx = (extra: PathVarContext = {}): PathVarContext => ({
         home: os.homedir(),
+        temp: os.tmpdir(),
         workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
         repo: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
         vault: vaultNow().value,
         ...extra
+    });
+
+    /**
+     * B-30 — THE WORK AREA IN FORCE, AND WHAT IT MOVED AWAY FROM.
+     *
+     * Resolved here because `pathCtx` is what every path setting resolves
+     * against. The retired list lives in globalState (`nextWorkAreaState` is
+     * idempotent, so every window may run it), and the folder is put into the
+     * environment twice: this host's own (every `cp.spawn` inherits it) and the
+     * terminals' collection (VS Code applies it to every terminal it opens).
+     */
+    const WORK_AREA_STATE_KEY = 'agentfarm.workArea.state';
+    const isWin = process.platform === 'win32';
+    const workAreaState = (): WorkAreaState =>
+        context.globalState.get<WorkAreaState>(WORK_AREA_STATE_KEY) ?? { retired: [] };
+    const refreshWorkArea = (): void => {
+        const r = resolveWorkArea(afConfig().get<string>('workArea') ?? '', t => {
+            const b = resolvePathVars(t, pathCtx());
+            return { ...b, value: b.ok && b.value.trim() ? path.normalize(b.value) : '' };
+        }, path.isAbsolute);
+        const state = nextWorkAreaState(workAreaState(), r.path, Date.now(), isWin);
+        void context.globalState.update(WORK_AREA_STATE_KEY, state);
+        workArea = { ...r, retired: state.retired };
+        if (r.path) {
+            process.env[WORK_AREA_ENV] = r.path;
+            context.environmentVariableCollection.replace(WORK_AREA_ENV, r.path);
+        }
+    };
+    refreshWorkArea();
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration(WORK_AREA_SETTING)) { refreshWorkArea(); }
+    }));
+    const setRetired = (state: WorkAreaState): void => {
+        void context.globalState.update(WORK_AREA_STATE_KEY, state);
+        workArea = { ...workArea, retired: state.retired };
+    };
+    const workAreaReading = () => ({
+        path: workArea.path, exists: ensureWorkArea(), template: workArea.template, source: workArea.source,
+        ...(workArea.why ? { why: workArea.why } : {}),
+        env: WORK_AREA_ENV, escape: WORK_AREA_ESCAPE,
+        retired: workArea.retired, refused: workAreaGuardLog.total
     });
 
     /**
@@ -18890,6 +18963,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     bridge.register([
         {
+            op: 'farm.workArea',
+            describe: 'B-30 — the agents\' scratch folder. `path` is the folder in force (absolute, created on demand), '
+                + '`template` + `source` say where it came from (the setting agentFarm.workArea, or the built-in '
+                + `${WORK_AREA_DEFAULT} with a \`why\` when the setting could not be used), \`env\` is the variable every `
+                + 'spawned process and terminal carries, and every session is told the folder at its start and on '
+                + 'every resume. `retired` lists folders it moved away from: a file write into one is REFUSED by the '
+                + `hook, a shell command naming one runs only with ${WORK_AREA_ESCAPE} in it; \`refused\` counts those stops. `
+                + 'args: retire=<folder> (refuse writes into a folder agents used by habit that the setting never held) '
+                + '· forget=<folder> (take a folder off that list)',
+            handler: (args) => {
+                const retire = optStr(args, 'retire');
+                const forget = optStr(args, 'forget');
+                if (retire) {
+                    const r = retireWorkArea(workAreaState(), retire, workArea.path, Date.now(), isWin);
+                    if (r.refusal) { throw new Error(r.refusal); }
+                    setRetired(r.state);
+                }
+                if (forget) { setRetired(forgetWorkArea(workAreaState(), forget, isWin)); }
+                return workAreaReading();
+            }
+        },
+        {
             op: 'farm.health',
             describe: 'What is actually running: extension version, this activation\'s bootId (a new one '
                 + 'on every extension host start — compare it to prove a restart really happened), uptime, '
@@ -18911,6 +19006,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'variable is being skipped, which was previously silent. ‼️ `sessions.revived` — X-349 — '
                 + 'cards a restart took up again that nobody has spoken into yet: they read `idle` because '
                 + 'the CLI registry says their process is up, not because the engine has announced itself. '
+                + '`workArea` — B-30 — the agents\' scratch folder in force, how many folders it refuses and how '
+                + 'many writes it stopped (farm.workArea has the whole reading). '
                 + 'args: none',
             handler: () => {
                 const w = restartWorld();
@@ -18960,6 +19057,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             open: v.candidates.filter(c => c.open).length
                         };
                     })(),
+                    // B-30 — the scratch folder in force (full reading: farm.workArea)
+                    workArea: { path: workArea.path, source: workArea.source, retired: workArea.retired.length, refused: workAreaGuardLog.total },
                     bootId,
                     startedAt: new Date(bootAt).toISOString(),
                     uptimeMs: Date.now() - bootAt,
@@ -27820,6 +27919,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const settingRowNotes: SettingRowNotes = {
         refusalOf: cfgRefusal,
         inForceOf: key => {
+            if (key === WORK_AREA_SETTING) { return workAreaInForceNote(workArea, workArea.retired); }
             return key === 'agentFarm.contextHandoverStayAccountPct' ? stayInForceNote(stayPctOf(ownSetting).value, accountCeiling()) : undefined;
         }
     };

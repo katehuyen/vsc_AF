@@ -363,6 +363,11 @@
             id: 'accounts.defaultWeeklyCeiling', label: 'Account policies — weekly wall (%)', type: 'number', default: 95, min: 1, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.defaultAccountWeeklyCeiling', bridge: 'settings.set:agentFarm.defaultAccountWeeklyCeiling' } }
         },
+        // B-30 — the agents' scratch folder (src/core/workArea.ts)
+        {
+            id: 'workArea', label: 'Work area — the agents\' scratch folder', type: 'text', default: '${temp}/agent_farm', remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.workArea', bridge: 'settings.set:agentFarm.workArea' } }
+        },
         // X-437 — Antigravity's quota read (agy -p /usage), timed by Antigravity's own turns only (src/core/agyUsageBeat.ts)
         {
             id: 'agyUsage.idleMinutes', label: 'Antigravity quota — re-read while it is idle (min, 0 = never)', type: 'number', default: 240, min: 0, remembered: false,

@@ -122,7 +122,7 @@ console.log('\n== the wiring — the listener, the setting and the bridge op =='
     const props = pkg.contributes.configuration.properties || (pkg.contributes.configuration[0] || {}).properties || {};
     eq('the guard is a setting, on by default', props['agentFarm.bridgeGuard'].default, true);
     ok('‼️ the refusal OUTRANKS the context signal on PreToolUse — a call that will not run has no next step',
-        /cfg\.toolGuard\?\.\(payload\)\s*\?\?\s*hookResponseBody\(/.test(live));
+        /cfg\.toolGuard\?\.\(payload\)\s*\?\?\s*(cfg\.startContext\?\.\(payload\)\s*\?\?\s*)?hookResponseBody\(/.test(live));
     ok('the host asks the guard only on PreToolUse, and only while the setting is on',
         /get<boolean>\('bridgeGuard', true\)/.test(ext) && /p\.hook_event_name !== 'PreToolUse'/.test(ext));
     ok('‼️ the known ids are CACHED — this runs on every tool call of every agent here',

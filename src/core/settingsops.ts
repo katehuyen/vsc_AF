@@ -172,6 +172,7 @@ const CATEGORY_OF: Record<string, string> = {
     agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
     includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
     agentEngineDefaults: 'core',
+    workArea: 'core',   // B-30 — the agents' scratch folder (core/workArea.ts)
     modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', flexPresets: 'flow', flexOverrides: 'flow', projects: 'core',
     // projects — the umbrella everything else hangs under
     projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',

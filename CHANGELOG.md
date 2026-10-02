@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.790.0 - The agents' scratch folder is a setting the system holds (2026-10-02)
+
+- **One work area, set by you.** Agents need somewhere for drafts, test
+  files and logs; until now they picked a folder themselves and kept using
+  whatever an earlier session had used. The new Work area setting
+  (`agentFarm.workArea`, in Core & Agents) is that folder: by default
+  `${temp}/agent_farm`, or any absolute folder you choose. The row shows the
+  folder in force. It is created when first needed.
+- **Every agent knows it, every time.** Each session is told the folder when
+  it starts and again whenever it is resumed, so a change reaches
+  conversations that were already open; every process and terminal Agent
+  Farm starts also carries it as `AGENT_FARM_WORKAREA`.
+- **The old place stops working.** When you change the setting, the previous
+  folder is retired: writing a file into it is refused and the agent is told
+  the new folder. A folder used out of habit that the setting never held can
+  be retired too (`farm.workArea retire=`).
+
 ## 3.789.0 - Copy an A2A note's or task's id from its right-click menu (2026-10-02)
 
 - **Every board row can hand its id to an agent.** A2A notes and tasks now
