@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.784.0 - An account that filled while a run waited is never used (2026-10-02)
+
+- **Checked again at the start.** When Agent Farm itself puts a run on a
+  particular account — a relay leg kept on its account, a sentry round, a run
+  carried to another account by a rule — the account is checked again at the
+  moment the run starts, not only when it was placed. If it filled up in the
+  meantime and is now at or past your Account ceiling (or the campaign's own
+  wall), the run goes back to the pool it came from and starts on an account
+  with room, or waits for the first window to turn over.
+- **Said on the run.** The task's history shows a "placed again" line with
+  the figure and the wall that sent it back.
+- **Your own choice is kept.** A run you put on an account yourself is never
+  moved by this check; it still hands over at the quota handover line.
+
 ## 3.783.0 - Why a relay leg passed is measured, not taken from the agent (2026-10-02)
 
 - **One verdict for every pass.** When a relay leg passes the baton — or

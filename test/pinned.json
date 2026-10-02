@@ -154,6 +154,13 @@
       "hash": "7f00155ed265",
       "incident": "X-472 (2026-10-02, chn_muqifjzc001n2b hop 2): the agent read 90, Agent Farm 89, no quota order went out, and the pass was counted \"not the quota's\" — the successor stayed on the full account",
       "why": "the second derivation stays gone"
+    },
+    {
+      "file": "test_spawn_seam.js",
+      "title": "‼️ chn_muqifjzc001n2b replayed at the spawn: a leg kept on a slot reading 92% at its start goes back to @emptiest — never started there",
+      "hash": "9f5226cc01f3",
+      "incident": "X-473 (2026-10-02, chn_muqifjzc001n2b): a relay successor was opened on an account already at 92%, past the Account ceiling — nothing at the spawn asked the slot again",
+      "why": "the spawn point catches a full slot even when a door forgot the rule"
     }
   ]
 }

@@ -63,6 +63,33 @@ console.log('\n== the start asks again ==');
     m.dispose();
 }
 
+console.log('\n== the incident, replayed at the spawn ==');
+{
+    // the host's answer, built on the real startRoom: the slot's figure at the start against the Account ceiling
+    const { startRoom } = require(path.join(ROOT, 'out', 'core', 'startRoom.js'));
+    const now = Date.now();
+    const usage = { 'claude-kept': 92, 'claude-free': 40 };
+    const wall = { value: 70, why: '70% — defaultAccountCeiling' };
+    const m = new TaskManager(path.join(tmp, 'incident.json'), () => [agent], () => false, () => '', {
+        isRunner: () => true,
+        quotaCheck: () => 'test hold',
+        accountWall: () => wall,
+        replaceAccount: (t) => {
+            const pct = usage[t.account];
+            const room = startRoom({ slotId: t.account, engine: 'claude', state: 'ok', percent: pct, resetsAt: now + 7200000, plan: 'max', fetchedAt: now }, wall, now);
+            return room.ok ? undefined : { account: t.accountPool, why: `${t.account}: ${room.why} — placed again from ${t.accountPool}` };
+        }
+    });
+    const leg = m.addTask(agent, 'relay leg 3', 'go on', 'headless', { account: 'claude-kept', accountPool: '@emptiest' });
+    m.startTask(leg);
+    ok('‼️ chn_muqifjzc001n2b replayed at the spawn: a leg kept on a slot reading 92% at its start goes back to @emptiest — never started there',
+        leg.account === '@emptiest' && (leg.events || []).some(e => e.kind === 'placed' && /92% of its window, at or past the 70% wall/.test(e.note || '')));
+    const fine = m.addTask(agent, 'relay leg 4', 'go on', 'headless', { account: 'claude-free', accountPool: '@emptiest' });
+    m.startTask(fine);
+    ok('…the same leg on a slot under the wall starts where it was kept', fine.account === 'claude-free');
+    m.dispose();
+}
+
 console.log('\n== who carries a pool ==');
 {
     const b = {
