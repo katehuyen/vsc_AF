@@ -94,6 +94,7 @@ const OPTS = { accountOrder: 1, pickAccount: 1, carryOnAccount: 0 };
 const ALLOWED_CONST = new Set(['POLICY_DEFAULT_CEILING']);
 // X-471 — a record's own optional field handed straight in: absent, it falls to the primitive's default 100 (the sentry's facts did)
 const RAW_CEILING = /^\w+\??\.ceiling$/;
+const ROOM_LINE = /\b(?:\w+\.)?(?:percent|pct|percentNow\([^)]*\)|fiveHourNow\([^)]*\))\s*(?:<|<=|>=|>)\s*[1-9]\d/;
 const RAW_KIND = 'a record\'s optional ceiling passed raw (absent = no wall)';
 
 /** Every place in one source file that states a wall of its own. */
@@ -117,6 +118,8 @@ function offendersOf(file, src) {
         const consts = (l.match(/\b\w*(DEFAULT|WALL)_CEILING\b/g) || []).filter(n => !ALLOWED_CONST.has(n));
         if (consts.length) { out.push({ file, kind: 'a wall constant', line: i + 1, text: l.trim() }); }
         if (/\bceiling\s*[:=]\s*\d|['"]ceiling['"]\s*,\s*\d/.test(l)) { out.push({ file, kind: 'a wall written as a number', line: i + 1, text: l.trim() }); }
+        // X-477 — a room check that compares a figure with a number of its own (the supervisor's `u.percent < 95` slipped past the call patterns)
+        if (ROOM_LINE.test(l)) { out.push({ file, kind: 'a room line written as a number', line: i + 1, text: l.trim() }); }
     });
     return out;
 }
@@ -172,7 +175,9 @@ console.log('\n== the gate bites (fixtures) ==');
     ok('‼️ …a record\'s optional ceiling handed in raw, which falls to 100 when unset (X-471)',
         judge(at('const n = usage.filter(u => slotIsUsable(u, rec.ceiling)).length;'), empty).length === 1
         && judge(at('const o = accountOrder(list, { ceiling: pool.ceiling, now });'), empty).length === 1);
-    ok('a wall from startWall passes', judge(at('const s = slotIsUsable(u, wall.value, now); const o = accountOrder(p, { ceiling: wall.value });'), empty).length === 0);
+    ok('‼️ …a room line written as a number (X-477: the supervisor\'s 95)',
+        judge(at("return u.percent < 95 ? 'free' : 'full';"), empty).length === 1 && judge(at('const full = percentNow(u) >= 90;'), empty).length === 1);
+    ok('a wall from startWall passes',judge(at('const s = slotIsUsable(u, wall.value, now); const o = accountOrder(p, { ceiling: wall.value });'), empty).length === 0);
     ok('the Account ceiling\'s own default constant passes', judge(at('const c = n > 0 ? n : POLICY_DEFAULT_CEILING;'), empty).length === 0);
     ok('a comment or a string that names one is not a door', judge(at('// slotIsUsable(u, 90)\nconst s = "roomOrder(list, 95)";'), empty).length === 0);
     ok('a method declaration is not a call', judge(at('class H { pickAccount(engine: string, stated?: string) { return 1; } }'), empty).length === 0);

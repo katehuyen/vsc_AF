@@ -104,5 +104,18 @@ console.log('\n== the wake hold and the spawn ==');
         mk({ sentry: () => ({ id: 'snt_1', ceiling: 95 }), usage: () => [slot('claude-a', 85)] }).p.replaceAccount({ id: 't5', account: 'claude-a', accountPool: '@pool', sentryOf: 'snt_1' }) === undefined);
 }
 
+console.log('\n== the supervisor\'s turn (X-477) ==');
+{
+    const on = (pct, extra) => mk(Object.assign({ standing: () => 'claude-a', usage: () => [Object.assign(slot('claude-a', pct), extra || {})] })).p.supervisorRoom({ engine: 'claude' });
+    ok('‼️ the sign-in it would run on at 92% is FULL under the Account ceiling (it used to start under its own 95)', on(92) === 'full');
+    ok('…at 50% it is free', on(50) === 'free');
+    ok('…a failed read that left a 95% floor is full, not free', on(-1, { state: 'error', floor: { percent: 95, resetsAt: now + 3600000, bars: [], fetchedAt: now } }) === 'full');
+    ok('…no figure at all is unknown, never free (M-13)', on(-1) === 'unknown');
+    ok('…a rejected sign-in is full', on(10, { state: 'expired' }) === 'full');
+    const ext = require('fs').readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('the host\'s supervisor door asks the surface (Kapıcı spends no plan)',
+        /supervisorRoom: p => \(p\.engine === KAPICI_ENGINE \? 'free' : supervisorRoom\(p\)\),/.test(ext) && !/percent < 95/.test(ext));
+}
+
 console.log(`test_account_placement: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

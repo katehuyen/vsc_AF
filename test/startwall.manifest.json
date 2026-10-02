@@ -2,6 +2,7 @@
   "about": "X-469 — every unattended start obeys ONE wall (src/core/startRoom.ts startWall: the user's Account ceiling, or a wall a rule, campaign, task or caller names for itself, never above the quota handover line). test/test_start_wall.js reads src/ and fails on a wall written as a number, a wall constant, or a room check that states no wall at all, unless it is listed here. 'exempt' = not a start decision, with why. 'pending' = a known door still on its own line, owned by the named item; pendingBudget may only shrink, and an entry that no longer matches anything fails as stale.",
   "pendingBudget": 0,
   "exempt": [
+    { "file": "src/core/living.ts", "match": "pct >= 100 ?", "why": "the Living page's 'Spend today' row: dollars spent against agentFarm.budgets, drawn as ok / warn / dead — not an account window, and it starts nothing" },
     { "file": "src/core/accountPolicy.ts", "match": "roomOrder(recorded, 100, now)", "why": "a rule's listed steps were each walled by their own step wall above (accountOf … wallOf); this only orders the survivors by room" },
     { "file": "src/core/sentryWatch.ts", "match": "slotIsUsable(u, 100)", "why": "asks whether ANY sign-in is usable at all (not rejected, not at the plan's own 100%) — a health fact, not where to start" },
     { "file": "src/core/accountUsage.ts", "match": "ceiling = 100, now = Date.now()", "why": "the primitives' own parameter default; every CALL must state its wall, which this gate checks separately" },

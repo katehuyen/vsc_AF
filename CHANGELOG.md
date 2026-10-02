@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.786.0 - The retry supervisor obeys your Account ceiling too (2026-10-02)
+
+- **No line of its own.** When a failed run waits for its supervisor's word,
+  the supervisor's turn used to start on any account under a fixed figure of
+  its own, above your quota handover line. It now starts only on an account
+  under your Account ceiling, like every other unattended start; otherwise it
+  waits for the account to reset.
+- **A figure it cannot see is not room.** An account whose last reading failed
+  still counts at its last known figure, and an account never measured is
+  treated as unknown rather than free.
+
 ## 3.785.0 - A run started on a full account is reported, not left for you to find (2026-10-02)
 
 - **The first reading decides.** Agent Farm keeps the first quota reading of

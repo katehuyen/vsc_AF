@@ -3956,7 +3956,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // dep asked only when a decision is made, so a door may ask at any time
     const {
         handoverLine, accountCeiling, campaignWall, handoverStay, passCauseOf, freshenSlot, legSlotOf, policyPool,
-        policyWorldFor, launchAccountPick, launchAccountFor, launchAccountSlot, relayWakeHold, replaceAccount, successorPlacement
+        policyWorldFor, launchAccountPick, launchAccountFor, launchAccountSlot, relayWakeHold, replaceAccount, successorPlacement,
+        supervisorRoom
     } = accountPlacement({
         ownSetting: k => ownSetting(k),
         setting: <T,>(k: string, f: T): T => cfg().get<T>(k, f) as T,
@@ -4071,16 +4072,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             consoleTaskState: id => consoleTaskRead?.(id),
             // M-13 — room on the supervisor's own pick, read off the same meter the
             // quota brake reads; no figure is 'unknown', never 'free'
-            supervisorRoom: p => {
-                if (p.engine === KAPICI_ENGINE) { return 'free'; }
-                try {
-                    const r = launchAccountPick({ engine: p.engine, ...(p.model ? { model: p.model } : {}) });
-                    if (r.refusal) { return 'full'; }
-                    const u = r.id ? accountUsage.current().find(x => x.slotId === r.id) : undefined;
-                    if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return 'unknown'; }
-                    return u.percent < 95 ? 'free' : 'full';
-                } catch { return 'unknown'; }
-            },
+            // X-477 — the supervisor's turn obeys the one wall too (accountPlacement.ts); Kapıcı spends no plan
+            supervisorRoom: p => (p.engine === KAPICI_ENGINE ? 'free' : supervisorRoom(p)),
             // ‼️ X-176 — the sentry's one step, and how often an idling
             // campaign looks again. Both live out here because the manager owns
             // no vault path, no git and no backlog file; see `sentryTick`.

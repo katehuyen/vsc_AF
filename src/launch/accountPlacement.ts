@@ -17,6 +17,7 @@ import { EngineAccountSlot } from '../core/engineAccounts';
 import { resolveFlex } from '../core/flexResolve';
 import { PassCause, passCause } from '../core/passCause';
 import { normalizeRetry, RETRY_DEFAULT_SAFETY_MIN } from '../core/retry';
+import type { SupervisorRoom } from '../core/retrySupervisor';
 import type { SentryRecord } from '../core/sentryCampaign';
 import { StartWall, startRoom, startWall } from '../core/startRoom';
 import { StayVerdict, stayOnAccount, stayPctOf } from '../core/stayAccount';
@@ -224,6 +225,20 @@ export function accountPlacement(d: PlacementDeps) {
         return { account: String(task.accountPool), why: `${labelOf(String(task.account))}: ${room.why} — placed again from ${task.accountPool}` };
     };
     /**
+     * ‼️ X-477 — WHETHER THE SUPERVISOR'S TURN MAY START NOW (M-13): the sign-in it would run on, judged by the one
+     * wall every unattended start obeys, on the figure in force (a floor counts). No figure is 'unknown', never 'free'.
+     */
+    const supervisorRoom = (p: { engine?: string; model?: string }): SupervisorRoom => {
+        try {
+            const r = launchAccountPick({ engine: p.engine, ...(p.model ? { model: p.model } : {}) });
+            if (r.refusal) { return 'full'; }
+            const u = r.id ? d.usage().find(x => x.slotId === r.id) : undefined;
+            if (!u || u.state === 'no-source' || !Number.isFinite(u.percent)) { return 'unknown'; }
+            const room = startRoom(u, accountCeiling());
+            return !room.ok ? 'full' : room.pct < 0 ? 'unknown' : 'free';
+        } catch { return 'unknown'; }
+    };
+    /**
      * The relay door's account: the predecessor's slot, the measured cause, the S-106 stay, and — every account full
      * RIGHT NOW — the park (first reset + the safety buffer; a preview, the round-robin cursor does not move).
      */
@@ -249,7 +264,8 @@ export function accountPlacement(d: PlacementDeps) {
     };
     return {
         handoverLine, accountCeiling, campaignWall, handoverStay, passCauseOf, freshenSlot, legSlotOf, policyPool,
-        policyWorldFor, launchAccountPick, launchAccountFor, launchAccountSlot, relayWakeHold, replaceAccount, successorPlacement
+        policyWorldFor, launchAccountPick, launchAccountFor, launchAccountSlot, relayWakeHold, replaceAccount, successorPlacement,
+        supervisorRoom
     };
 }
 
