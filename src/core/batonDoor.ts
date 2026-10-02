@@ -12,6 +12,7 @@
  * ‼️ ALWAYS A FRESH SESSION, NEVER A RESUME — carrying the saturated run's
  * context into the next hop defeats the whole point (_REF/handover.md).
  */
+import { isPolicyId } from './accountPolicy';
 import { Baton, successorSurface } from './baton';
 import { emergencyPrompt } from './batonFailsafe';
 import { InteractiveClose, InteractiveTarget } from './launch';
@@ -36,6 +37,8 @@ export interface DoorRow {
         tier?: string;
         superpowers?: boolean;
         account: string;
+        /** X-473 — the chain's pool, on a leg kept on a slot (FarmTask.accountPool) */
+        accountPool?: string;
         interactiveTarget?: InteractiveTarget;
         interactiveClose?: InteractiveClose;
         workDir?: string;
@@ -180,6 +183,8 @@ export function successorRow(b: Baton, ctx: DoorContext = {}): DoorRow {
         ...(i.tier ? { tier: i.tier } : {}),
         ...(i.superpowers !== undefined ? { superpowers: i.superpowers } : {}),
         account: String(ctx.account ?? '').trim() || b.want.account,
+        // X-473 — a leg kept on its slot carries the chain's pool: if the slot fills before it starts, it goes back there
+        ...(String(ctx.account ?? '').trim() && isPolicyId(b.want.account) ? { accountPool: b.want.account } : {}),
         ...(b.from.cwd && !same(b.from.cwd, ctx.agentDir) ? { workDir: b.from.cwd } : {})
     };
     const park = ctx.park && ctx.park.resetsAt > 0 ? ctx.park : undefined;

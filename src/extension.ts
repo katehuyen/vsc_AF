@@ -369,7 +369,7 @@ import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { StayVerdict, stayInForceNote, stayOnAccount, stayPctOf } from './core/stayAccount';
-import { StartWall, startWall } from './core/startRoom';
+import { StartWall, startRoom, startWall } from './core/startRoom';
 import { PassCause, passCause } from './core/passCause';
 import { fiveHourNow, percentNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
@@ -4018,6 +4018,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // fetches to answer a question.
             measuredAccounts: () => accountUsage.current(),
             accountWall: own => accountCeiling(own),
+            // X-473 — the last line: a slot the system chose is asked again at the start, under the row's own wall
+            replaceAccount: (task: FarmTask): { account: string; why: string } | undefined => {
+                const u = accountUsage.current().find(x => x.slotId === task.account);
+                const camp: SentryRecord | undefined = taskManager.sentry;
+                const own: StartWall = task.sentryOf && camp?.id === task.sentryOf ? campaignWall(camp) : accountCeiling();
+                const room = startRoom(u, own);
+                if (room.ok) { return undefined; }
+                const sl = findSlot(storedAccounts(), String(task.account));
+                return { account: String(task.accountPool), why: `${sl ? slotLabel(sl) : task.account}: ${room.why} — placed again from ${task.accountPool}` };
+            },
             // ‼️ X-226 (round 2) — a retry policy that names a RULE for the
             // handover is resolved by the same resolver a launch uses, over the
             // pool the decision already narrowed (never the walled account), and
@@ -17571,7 +17581,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     function relayWakeHold(task: FarmTask): { code: 'quota:5h'; reason: string; basis: 'account' } | undefined {
         try {
             if (!isPolicyId(String(task.account ?? '').trim())) { return undefined; }
-            if (!batonStore.all().some(x => x.taskId === task.id && isLive(x))) { return undefined; }
+            // X-473 — a row sent back to its pool waits for room like a relay leg does
+            if (!task.accountPool && !batonStore.all().some(x => x.taskId === task.id && isLive(x))) { return undefined; }
             const r = launchAccountPick({ engine: task.engine || 'claude', account: task.account, agentId: task.agentId, model: task.model });
             if (r.refusal && r.resetsAt) { return { code: 'quota:5h', basis: 'account', reason: `relay leg waits for room — ${r.refusal}` }; }
             return undefined;

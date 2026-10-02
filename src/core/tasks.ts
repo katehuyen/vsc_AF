@@ -95,6 +95,7 @@ import { applySentryStep, SentryRoundSpec, SentryStep } from './sentryDriver';
 import { SENTRY_DEFAULT_STALL_MIN, SlotHealth, slotHealth, stalledRound } from './sentryWatch';
 import { carryOnAccount, CARRY_ON_FLOOR_MS, SlotUsage } from './accountUsage';
 import type { StartWall } from './startRoom';
+import { isPolicyId, POOL } from './accountPolicy';
 import {
     handedOverRoundPrompt, handedOverRoundWhy,
     normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
@@ -559,6 +560,12 @@ export interface FarmTask {
      */
     accountHandover?: { from: string; why: string };
     /**
+     * X-473 — the POOL a row the system placed on a concrete slot was placed from (a relay successor's stay,
+     * a sentry round, a carried run): at its start the slot is asked again (startRoom) and, past the wall,
+     * the row goes back to this pool. Absent on a row a person placed: their slot is theirs (quotaBrake).
+     */
+    accountPool?: string;
+    /**
      * ‼️ S-19 — CONTINUE AN EXISTING CONVERSATION AS A TASK.
      *
      * A task could only ever open a new one. "Carry on with what that session
@@ -733,7 +740,9 @@ export type TaskEventKind =
     | 'route'
     // ‼️ S-109 — A RESUMED RUN TOOK WHAT ITS CONVERSATION CLOSED WITH (model,
     // effort, mode) instead of the task's launch copy, and the note says which.
-    | 'setup';
+    | 'setup'
+    // X-473 — the slot the system placed the row on had no room left at its start: the row went back to its pool.
+    | 'placed';
 
 /** The most a task keeps. A run that ping-pongs against a ceiling for a day
  *  would otherwise grow without bound; the newest are the ones being read. */
@@ -1827,6 +1836,12 @@ export interface TaskManagerOptions {
     measuredAccounts?: () => SlotUsage[];
     /** X-471 — the wall a run carried to another account starts under: the host's accountCeiling (startRoom.ts startWall), given a wall the run names for itself */
     accountWall: (own?: { value: unknown; why: string }) => StartWall;
+    /**
+     * X-473 — THE LAST LINE: a row with an `accountPool` is asked again at its start (startRoom against the
+     * Account ceiling, or its campaign's wall). An answer moves the row back to its pool, with the reason;
+     * undefined = the slot still has room. The launch then picks from the pool, or the pool's own hold parks it.
+     */
+    replaceAccount?: (task: FarmTask) => { account: string; why: string } | undefined;
     /**
      * ‼️ X-226 (round 2) — resolves a retry policy's `carryOn` when it names a
      * rule (`@emptiest`, `@round-robin`, `@<named>`) over the OTHER accounts of
@@ -3363,7 +3378,7 @@ export class TaskManager implements vscode.Disposable {
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
-            | 'sentryWhy' | 'account' | 'accountHandover' | 'baton' | 'batonChainId' | 'batonMaxHops'>>
+            | 'sentryWhy' | 'account' | 'accountHandover' | 'accountPool' | 'baton' | 'batonChainId' | 'batonMaxHops'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -3497,6 +3512,16 @@ export class TaskManager implements vscode.Disposable {
                     // simply "n minutes from the failure".
                     + (task.notBeforeWhy ? ` (${task.notBeforeWhy})` : '')
             };
+        }
+        // X-473 — a slot the system chose may have filled while the row waited: asked again here, at every start
+        const pool = String(task.accountPool ?? '').trim();
+        if (pool && task.account && task.account !== pool) {
+            const moved = this.opts.replaceAccount?.(task);
+            if (moved) {
+                task.account = moved.account;
+                noteTaskEvent(task, 'placed', moved.why);
+                this.save();
+            }
         }
         /**
          * ‼️ M-27 — A ROUND WAITS FOR THE CONVERSATION IT IS A REPLY TO.
@@ -5404,6 +5429,8 @@ export class TaskManager implements vscode.Disposable {
                     ...(carry?.slotId
                         ? {
                             account: carry.slotId,
+                            // X-473 — carried by a rule: the rule is the pool the row goes back to if the slot fills before it starts
+                            ...(isPolicyId(carryWant) ? { accountPool: carryWant } : {}),
                             accountHandover: { from: task.account ?? '', why: carry.why },
                             notBeforeWhy: `account handover · ${carry.why}`
                         }
@@ -5946,7 +5973,8 @@ export class TaskManager implements vscode.Disposable {
             sentryOf: this.sentry.id,
             // X-195 — the account of why these words, written once, on the row.
             ...(spec.why ? { sentryWhy: spec.why } : {}),
-            ...(spec.slotId ? { account: spec.slotId } : {}),
+            // X-473 — the slot the round was placed on, and the campaign pool it came from: asked again at its start
+            ...(spec.slotId ? { account: spec.slotId, accountPool: POOL } : {}),
             ...(spec.engine ? { engine: spec.engine } : {}),
             ...(spec.model ? { model: spec.model } : {}),
             ...(spec.permissionMode ? { permissionMode: spec.permissionMode } : {}),
