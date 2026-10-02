@@ -1,0 +1,138 @@
+{
+  "about": "X-468 — assertions written for a real incident. test/test_pinned.js fails when one disappears, is renamed or its statement changes. Removing or loosening one needs the user's yes, asked in chat (_REF/test-discipline.md, docs/CONVENTIONS.md \"Incident guards are pinned\"). A refactor that keeps a guard exactly as strict updates its hash and names it under \"Pins changed:\" in the commit body.",
+  "pins": [
+    {
+      "file": "test_account_policies.js",
+      "title": "‼️ S-105 — the bug: under the fixed 90% wall an 80% slot is picked, and a 70% handover line would end it at once",
+      "hash": "75e080a3694a",
+      "incident": "S-105 (2026-09): @emptiest walked a fixed 90% wall under a 70% handover line, so it opened runs that handed over at once — a loop",
+      "why": "replays the loop itself"
+    },
+    {
+      "file": "test_account_policies.js",
+      "title": "the wall in force is the LOWER of defaultAccountCeiling and quotaHandoverPct, and says so",
+      "hash": "a5721b4dac09",
+      "incident": "S-105 (2026-09): @emptiest walked a fixed 90% wall under a 70% handover line, so it opened runs that handed over at once — a loop",
+      "why": "the wall never stands above the handover line"
+    },
+    {
+      "file": "test_account_policies.js",
+      "title": "‼️ …so with the handover line at 70% the 80% slot is passed over — the loop cannot happen",
+      "hash": "e1319cac3161",
+      "incident": "S-105 (2026-09): @emptiest walked a fixed 90% wall under a 70% handover line, so it opened runs that handed over at once — a loop",
+      "why": "the loop cannot happen"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ a FAILED read keeps the floor of the good one before it: 95%, not \"unmeasured\"",
+      "hash": "8c85142443a4",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "a failed read never makes a full account look empty"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ a 429 next: the reading says error, and the account is STILL 95% — not usable under 90",
+      "hash": "60cee2f73b0a",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "the 429 that erased a good figure, replayed through the service"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ a window reload: nothing has been read yet, and the account is still known to be at 95%",
+      "hash": "ce7c261d263d",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "the reload that made every account read \"not read yet\""
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ @emptiest no longer falls back to the \"unmeasured\" account at 95%: it refuses",
+      "hash": "f4cfa7ca95c2",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "the 18:38Z placement replayed with the four accounts as measured"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ the passing leg was out of room: no brake — the door places or parks",
+      "hash": "66118cd52f04",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "a starved leg is not barren"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ the replayed pass of leg 3 is NOT braked: it waits for its session, marked starved",
+      "hash": "5bff7e70e0fe",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "leg 3's barren pass replayed through baton.pass"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ a walled leg whose chain had two commitless legs is passed for, not braked",
+      "hash": "9be92a3edc45",
+      "incident": "X-462 / chn_muptzpk5002246 (2026-10-02 01:34-01:42 Bangkok): after a reload every account read \"not read yet\" and @emptiest placed a leg on aicozums at 95%; a 429 erased a good figure the same way; two starved legs tripped the barren brake and the chain died",
+      "why": "the plan-limit pass through a real runner"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ no second wall: no leg start line, no cap on the policies",
+      "hash": "2af13282b191",
+      "incident": "X-462 round 2 (2026-10-02, 7b5d9f86): a second wall (batonMinRoomPct) was built on top of the user's own Account ceiling box; the user ordered it gone — one box, the user's",
+      "why": "the user's order: no second wall in the source"
+    },
+    {
+      "file": "test_relay_room.js",
+      "title": "‼️ the duplicate setting is gone; the user's own box is the wall, 70 out of the box",
+      "hash": "9569bb80a84f",
+      "incident": "X-462 round 2 (2026-10-02, 7b5d9f86): a second wall (batonMinRoomPct) was built on top of the user's own Account ceiling box; the user ordered it gone — one box, the user's",
+      "why": "the user's order: the duplicate setting stays gone, the Account ceiling default is 70"
+    },
+    {
+      "file": "test_stay_account.js",
+      "title": "‼️ the handover was the QUOTA's: the pool picks, however low the reading",
+      "hash": "fd06227a4e08",
+      "incident": "S-106 (2026-09-28): a handover that is not the quota's keeps its successor on the account; a quota handover or a plan-limit wall must never keep it there",
+      "why": "a quota handover never keeps the successor"
+    },
+    {
+      "file": "test_stay_account.js",
+      "title": "‼️ X-462 — the plan limit WALLED the run on that slot: the pool picks, however low its stale figure reads",
+      "hash": "261027c4a1fe",
+      "incident": "S-106 (2026-09-28): a handover that is not the quota's keeps its successor on the account; a quota handover or a plan-limit wall must never keep it there",
+      "why": "a walled account never keeps the successor"
+    },
+    {
+      "file": "test_stay_account.js",
+      "title": "‼️ chn_muqifjzc001n2b hop 2 replayed: Agent Farm at 89%, no quota order, stay line 90, wall 70 — the pool picks",
+      "hash": "f648d859fd42",
+      "incident": "X-467 / chn_muqifjzc001n2b hop 2 (2026-10-02 13:29 Bangkok): c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out; the stay rule judged its own 90 line and never the Account ceiling (70), so the successor 2190d4d4 opened on wmmuratvural at 92% and handed over at once",
+      "why": "the day's incident itself, through the real startWall"
+    },
+    {
+      "file": "test_stay_account.js",
+      "title": "‼️ chn_muptzpk5002246 leg 1 replayed: murvietnam at 86% under a 90% stay line, wall 70 — it no longer keeps the leg there",
+      "hash": "557a92714f52",
+      "incident": "X-467 / chn_muqifjzc001n2b hop 2 (2026-10-02 13:29 Bangkok): c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out; the stay rule judged its own 90 line and never the Account ceiling (70), so the successor 2190d4d4 opened on wmmuratvural at 92% and handed over at once",
+      "why": "the same loop on 2026-10-02 01:34; its replay was deleted once (232aec69) and is restored here"
+    },
+    {
+      "file": "test_start_wall.js",
+      "title": "‼️ the user's Account ceiling is the wall (70 of 70 / 90)",
+      "hash": "a59708f11d2d",
+      "incident": "X-467 / chn_muqifjzc001n2b hop 2 (2026-10-02 13:29 Bangkok): c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out; the stay rule judged its own 90 line and never the Account ceiling (70), so the successor 2190d4d4 opened on wmmuratvural at 92% and handed over at once",
+      "why": "the user's own box is the wall every start obeys"
+    },
+    {
+      "file": "test_start_wall.js",
+      "title": "‼️ …but never above the quota handover line either (95 → 90)",
+      "hash": "03a07a0b21bf",
+      "incident": "X-467 / chn_muqifjzc001n2b hop 2 (2026-10-02 13:29 Bangkok): c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out; the stay rule judged its own 90 line and never the Account ceiling (70), so the successor 2190d4d4 opened on wmmuratvural at 92% and handed over at once",
+      "why": "a wall a campaign or task names for itself never reopens the loop"
+    },
+    {
+      "file": "test_start_wall.js",
+      "title": "‼️ no door states a wall of its own outside the manifest",
+      "hash": "8eb1a269304d",
+      "incident": "X-467 / chn_muqifjzc001n2b hop 2 (2026-10-02 13:29 Bangkok): c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out; the stay rule judged its own 90 line and never the Account ceiling (70), so the successor 2190d4d4 opened on wmmuratvural at 92% and handed over at once",
+      "why": "five doors answered one question with five lines; a new door cannot bring a sixth"
+    }
+  ]
+}

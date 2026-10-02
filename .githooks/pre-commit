@@ -38,4 +38,16 @@ if ! node tools/scan_staged.js; then
   exit 1
 fi
 
+# Incident guards (X-468). An assertion written for a real incident is pinned in
+# test/pinned.json; deleting, renaming or loosening one stops the commit here,
+# with or without a full suite run. It reads the sources, so it needs no build.
+if ! node test/test_pinned.js >/dev/null 2>&1; then
+  echo ""
+  echo "COMMIT BLOCKED - a pinned incident guard is gone or changed."
+  node test/test_pinned.js | tail -20
+  echo ""
+  echo "Removing or loosening a pin needs the user's yes (docs/CONVENTIONS.md, Incident guards are PINNED)."
+  exit 1
+fi
+
 exit 0

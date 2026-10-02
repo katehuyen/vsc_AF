@@ -635,6 +635,31 @@ A red test nobody can explain gets fixed or deleted in the turn it is found. It
 does not get carried in a handover note as a known failure: the moment a suite's
 number is "N passed, 4 failed, the same four", nobody reads the four again.
 
+## Incident guards are PINNED (X-468)
+
+An assertion written for a real incident — a chain that broke, a loop that
+happened, a figure that lied — is listed in `test/pinned.json`: its file, its
+exact title, a fingerprint of its whole statement (whitespace normalised), the
+incident and why it matters. `test/test_pinned.js` fails when a pinned assertion
+is deleted, renamed, commented out, duplicated, or its statement changes; the
+statements are read from the source by `test/pinlex.js`, so a regex full of
+parentheses is no obstacle and a commented-out copy does not count.
+
+- **Measured reason.** 232aec69 removed a duplicate setting and, with it, the
+  assertion that kept a relay successor off an account with no room — the exact
+  replay of the night's incident. Nothing failed, the commit said the opposite of
+  what the code did, and the loop came back the same day (chn_muqifjzc001n2b).
+- **Removing or loosening a pin needs the user's yes, asked in chat.** A red
+  pinned test is never "fixed" by deleting it; that is the regression it exists
+  to stop. A refactor that keeps the guard exactly as strict updates the `hash`
+  in `pinned.json` (the gate prints the new one) and lists it under
+  `Pins changed:` in the commit body, so the change is read rather than slipped.
+- **What gets pinned:** behaviour replays of an incident, through public
+  functions — not source-shape regexes about wiring that a planned refactor will
+  legitimately rewrite. Pin when the incident's guard is written, in the same
+  commit. A title with a `${…}` in it cannot be pinned; give the guard a plain
+  title.
+
 ## The wiring gate — a callback that defaults to a no-op can be left off (X-267)
 
 **What happened.** `ConsoleHost` was given a ninth constructor parameter,
