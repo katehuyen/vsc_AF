@@ -9038,6 +9038,13 @@
           "maximum": 100,
           "description": "Handover discipline: when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off. Default 70."
         },
+        "agentFarm.batonMinRoomPct": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "maximum": 50,
+          "description": "Baton relay: a leg opens only on an account with at least this many points of its five-hour window left below the quota handover line (quotaHandoverPct) — with the line at 90 and this at 10, a leg starts on an account under 80%. Staying on the same account (contextHandoverStayAccountPct) obeys it too, so a leg is never kept where it would hand over at once. With no account under it, the successor waits for the first account to turn over and is placed again when it wakes. A leg that passed because its account was out of room is not counted by the barren-chain brake: running out of quota delays a chain, it never ends it. 0 = only the account policies' wall."
+        },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,

@@ -97,6 +97,8 @@ export interface Baton {
     rescue?: string;
     /** X-427 — the engine flagged the leg's conversation, or X-462 its account hit the plan limit, and Agent Farm passed for it (engineFaultWatch.ts) */
     fault?: BatonFault;
+    /** X-462 — the passing leg had no room left (batonRoom.ts starvedWhy): the barren brake does not count it */
+    starved?: string;
     /** S-84 — the A2A card this pass hung on the board (batonBoard.ts) */
     a2aNoteId?: string;
     /** S-96 — on the opener of a RUNNING leg only: the user made that leg the chain's last (batonLastLeg.ts) */

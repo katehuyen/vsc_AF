@@ -6,6 +6,7 @@ import {
 } from './planusage';
 import { UsageGate, DEFAULT_CROSS_SERVICE_MS } from './usageGate';
 import { UsageShelf } from './usageShelf';
+import { backAt, floorOf, percentNow, UsageFloor, UsageMemory, wallFloor, withFloor } from './usageFloor';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
 import { EngineId } from './engines';
@@ -187,6 +188,8 @@ export interface SlotUsage {
     window?: string;
     /** one honest line for anything other than a live figure */
     note?: string;
+    /** ‼️ X-462 — what is still known when this reading is not a live figure (usageFloor.ts) */
+    floor?: UsageFloor;
 }
 
 /**
@@ -420,12 +423,14 @@ export function fiveHourOf(u: SlotUsage | undefined): UsageBar | undefined {
  * simply does not publish, and refusing to start a session because a number is
  * missing would turn "we cannot see it" into "you cannot use it". Only a
  * measured wall (the five-hour window at or above the ceiling) and a rejected
- * login stop it.
+ * login stop it. ‼️ X-462 — "measured" includes what a failed read, a reload or
+ * the plan limit left behind (`percentNow`), and a window that has turned over
+ * is fresh.
  */
-export function slotIsUsable(u: SlotUsage, ceiling = 100): boolean {
+export function slotIsUsable(u: SlotUsage, ceiling = 100, now = Date.now()): boolean {
     if (u.state === 'expired' || u.state === 'no-auth') { return false; }
-    if (u.state === 'ok' && u.percent >= 0) { return u.percent < ceiling; }
-    return true;
+    const p = percentNow(u, now);
+    return p < 0 || p < ceiling;
 }
 
 /**
@@ -437,8 +442,8 @@ export function slotIsUsable(u: SlotUsage, ceiling = 100): boolean {
  * 4% is choosing a guess over a fact — and the guess is the one that ends the
  * session ten minutes in.
  */
-export function mostRoom(list: SlotUsage[], ceiling = 100): SlotUsage | undefined {
-    return roomOrder(list, ceiling)[0];
+export function mostRoom(list: SlotUsage[], ceiling = 100, now = Date.now()): SlotUsage | undefined {
+    return roomOrder(list, ceiling, now)[0];
 }
 
 /**
@@ -461,10 +466,10 @@ export function mostRoom(list: SlotUsage[], ceiling = 100): SlotUsage | undefine
  *   · among equals the user's own list order stands (the sort is stable), which
  *     is the same rule the tiers follow.
  */
-export function roomOrder(list: SlotUsage[], ceiling = 100): SlotUsage[] {
-    const usable = list.filter(u => slotIsUsable(u, ceiling));
-    const read = (u: SlotUsage): boolean => u.state === 'ok' && u.percent >= 0;
-    return [...usable.filter(read)].sort((a, b) => a.percent - b.percent)
+export function roomOrder(list: SlotUsage[], ceiling = 100, now = Date.now()): SlotUsage[] {
+    const usable = list.filter(u => slotIsUsable(u, ceiling, now));
+    const read = (u: SlotUsage): boolean => percentNow(u, now) >= 0;
+    return [...usable.filter(read)].sort((a, b) => percentNow(a, now) - percentNow(b, now))
         .concat(usable.filter(u => !read(u)));
 }
 
@@ -476,6 +481,8 @@ export interface PickAccountOptions {
     rotation?: string;
     /** the campaign's own engine, which is the first tier when it has accounts here */
     engine?: string;
+    /** X-462 — the moment the figures are judged at (a turned-over window is fresh); default now */
+    now?: number;
 }
 
 /**
@@ -521,8 +528,9 @@ export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): S
  */
 export function accountOrder(list: SlotUsage[], opts: PickAccountOptions = {}): SlotUsage[] {
     const ceiling = typeof opts.ceiling === 'number' ? opts.ceiling : 100;
+    const now = typeof opts.now === 'number' ? opts.now : Date.now();
     if (String(opts.rotation ?? '').trim().toLowerCase() !== 'tiered') {
-        return roomOrder(list, ceiling);
+        return roomOrder(list, ceiling, now);
     }
     const engineOf = (u: SlotUsage): string => String(u.engine ?? '').trim().toLowerCase();
     // First-appearance order, with the campaign's own engine promoted — but only
@@ -538,7 +546,7 @@ export function accountOrder(list: SlotUsage[], opts: PickAccountOptions = {}): 
         ? [primary, ...tiers.filter(e => e !== primary)]
         : tiers;
     const out: SlotUsage[] = [];
-    for (const e of order) { out.push(...roomOrder(list.filter(u => engineOf(u) === e), ceiling)); }
+    for (const e of order) { out.push(...roomOrder(list.filter(u => engineOf(u) === e), ceiling, now)); }
     return out;
 }
 
@@ -683,7 +691,7 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
     if (want.toLowerCase() !== '@emptiest') {
         return { why: `${want} names a policy and nothing here can resolve one, so the wait stands` };
     }
-    const pick = pickAccount(pool, { ceiling, engine });
+    const pick = pickAccount(pool, { ceiling, engine, now });
     if (!pick) {
         return { why: `every other ${engine} account is at or above ${ceiling}% of its five-hour `
             + 'window too, so the wait stands' };
@@ -698,12 +706,11 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
 /**
  * When the first exhausted account comes back — the moment an idle runner
  * should wake up, and the reason it can sleep spending nothing until then.
- * Zero when nothing is waiting on a reset.
+ * Zero when nothing is waiting on a reset. ‼️ X-462 — a slot is back when EVERY
+ * window holding it at the wall has turned over (`backAt`), floors included.
  */
 export function nextResetAt(list: SlotUsage[], ceiling = 100, now = Date.now()): number {
-    const waiting = list
-        .filter(u => u.state === 'ok' && u.percent >= ceiling && u.resetsAt > now)
-        .map(u => u.resetsAt);
+    const waiting = list.map(u => backAt(u, ceiling, now)).filter(t => t > now);
     return waiting.length ? Math.min(...waiting) : 0;
 }
 
@@ -789,6 +796,8 @@ export interface AccountUsageOptions {
      *  Defaults to `DEFAULT_CROSS_SERVICE_MS`; never below the hard floor. */
     minIntervalMs?(): number;
     now?(): number;
+    /** ‼️ X-462 — where the floors outlive a window reload (usageFloor.ts); absent = memory only */
+    memory?: UsageMemory;
 }
 
 /**
@@ -839,9 +848,33 @@ export class AccountUsageService {
      *  while a first is still held (see the header). */
     private backoffUntil = 0;
     private inflight: Promise<SlotUsage[]> | undefined;
+    /** ‼️ X-462 — the last thing known per slot, kept through failed reads and reloads */
+    private floors = new Map<string, UsageFloor>();
 
     constructor(private opts: AccountUsageOptions) {
         this.gate = opts.gate ?? new UsageGate();
+        try { this.floors = new Map(Object.entries(opts.memory?.load() ?? {})); } catch { /* no memory is a fresh start, not a broken service */ }
+    }
+
+    private remember(): void {
+        const keep = new Set(this.opts.slots().map(s => s.id));
+        const out: Record<string, UsageFloor> = {};
+        for (const [id, f] of this.floors) { if (keep.has(id)) { out[id] = f; } }
+        try { this.opts.memory?.save(out); } catch { /* the figure stands in memory; the file is a courtesy */ }
+    }
+
+    /**
+     * ‼️ X-462 — THE PLAN LIMIT STOPPED A RUN ON THIS SLOT: full until its window
+     * turns over, whatever an older figure still says. The next good reading
+     * replaces it.
+     */
+    markWalled(slotId: string): SlotUsage[] {
+        const u = this.current().find(x => x.slotId === slotId);
+        if (!u) { return this.current(); }
+        this.floors.set(slotId, wallFloor(u, this.now()));
+        this.remember();
+        this.announce();
+        return this.current();
     }
 
     private now(): number { return (this.opts.now ?? Date.now)(); }
@@ -862,9 +895,11 @@ export class AccountUsageService {
             const own = this.byId.get(s.id);
             // ‼️ U-160 — the indicator may have read this token since this service did
             const shelved = this.opts.shelf?.latest(slotCredentialsFile(s));
-            return shelved && (!own || shelved.fetchedAt > own.fetchedAt)
+            const chosen = shelved && (!own || shelved.fetchedAt > own.fetchedAt)
                 ? usageFrom(s, shelved)
                 : own ?? unreadUsage(s);
+            // ‼️ X-462 — a failed read, a reload or a wall keeps what was known
+            return withFloor(chosen, this.floors.get(s.id));
         });
     }
 
@@ -1052,6 +1087,8 @@ export class AccountUsageService {
      */
     private settle(u: SlotUsage): SlotUsage[] {
         this.byId.set(u.slotId, u);
+        const known = floorOf(u);
+        if (known) { this.floors.set(u.slotId, known); this.remember(); }
         const all = this.current();
         try { this.opts.onRead?.(all); } catch { /* announcing never breaks a read */ }
         return all;

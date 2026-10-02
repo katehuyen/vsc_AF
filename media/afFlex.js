@@ -348,6 +348,11 @@
             id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 70, min: 0, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.contextHandoverStayAccountPct', bridge: 'settings.set:agentFarm.contextHandoverStayAccountPct' } }
         },
+        // X-462 — a relay leg opens only with this much room below the quota handover line, or parks to the first turnover (src/core/batonRoom.ts)
+        {
+            id: 'baton.minRoomPct', label: 'Relay — room a leg needs below the handover line (points)', type: 'number', default: 10, min: 0, max: 50, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.batonMinRoomPct', bridge: 'settings.set:agentFarm.batonMinRoomPct' } }
+        },
         // S-105 — the wall a policy picks a starting account under, never above the quota handover line (accountPolicy.ts effectiveCeiling)
         {
             id: 'accounts.defaultCeiling', label: 'Account policies — default wall (%)', type: 'number', default: 90, min: 1, max: 100, remembered: false,

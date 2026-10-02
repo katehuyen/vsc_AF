@@ -25,6 +25,12 @@ export interface BatonBrake {
  *   only spend another window the same way. ‼️ S-83: `head` fingerprints the
  *   leg's folder AND its project's repositories (legRoots.ts) — the folder
  *   alone read three commits in the project's repo as none and killed a rescue.
+ *   ‼️ X-462: a STARVED leg (no room left on its account when it passed —
+ *   batonRoom.ts) is not evidence of a chain spinning; it is a chain waiting
+ *   for quota, so either leg of the two being starved keeps the brake off. The
+ *   door then places the next leg where there is room or parks it until the
+ *   first turnover — and the starved account itself is never placed on again
+ *   before it turns over (its figure, or its wall, says so).
  */
 export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: number): BatonBrake | undefined {
     const next = draft.hop + 1;
@@ -44,9 +50,10 @@ export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: numbe
     const head = draft.head;
     if (!head) { return undefined; }
     const legOf = (hop: number) => prior.find(p => p.chainId === draft.chainId && p.hop === hop && p.state === 'started');
-    const h1 = legOf(draft.hop - 1)?.head;
+    const prev = legOf(draft.hop - 1);
+    const h1 = prev?.head;
     const h2 = legOf(draft.hop - 2)?.head;
-    if (h1 === head && h2 === head) {
+    if (h1 === head && h2 === head && !draft.starved && !prev?.starved) {
         const roots = headsRoots(head);
         return {
             kind: 'barren',

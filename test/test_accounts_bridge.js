@@ -115,7 +115,8 @@ function registry(state) {
                 const ceiling = optNum(a, 'ceiling', 95);
                 const mine = slotsFor(state.slots, engine).map(s => s.id);
                 const usage = state.usage.filter(u => mine.includes(u.slotId));
-                const best = mostRoom(usage, ceiling);
+                // the fixture's resets (5000, 9000) are moments on this test's own clock, which starts at 0
+                const best = mostRoom(usage, ceiling, 0);
                 return {
                     engine, ceiling, best: best ? best.slotId : null,
                     nextResetAt: nextResetAt(usage, ceiling, 0) || null,

@@ -34,6 +34,8 @@ export interface StayInput {
     quotaHandover: boolean;
     /** X-462 — the plan limit walled the run on this slot: its figure may still read under the line */
     walled?: boolean;
+    /** X-462 — a relay leg's start line (batonRoom.ts legStartLine): at or past it the account has no room for a leg */
+    startLine?: { value: number; why: string };
     now: number;
 }
 
@@ -50,6 +52,9 @@ export function stayOnAccount(i: StayInput): StayVerdict {
     const pct = fresh ? 0 : Number(i.percent);
     if (!Number.isFinite(pct) || pct < 0) { return { stay: false, why: `${slot}'s five-hour window is not measured — the pool picks` }; }
     if (pct >= line) { return { stay: false, why: `${slot} is at ${Math.round(pct)}% of its five-hour window, not under the ${line}% line — the pool picks` }; }
+    if (i.startLine && pct >= i.startLine.value) {
+        return { stay: false, why: `${slot} is at ${Math.round(pct)}% of its five-hour window — no room to open a leg there (start line ${i.startLine.why}); the pool picks` };
+    }
     return {
         stay: true, slotId: slot,
         why: `${slot} is at ${Math.round(pct)}% of its five-hour window${fresh ? ' (it has reset)' : ''}, under the ${line}% line — `

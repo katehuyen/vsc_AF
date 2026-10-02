@@ -352,7 +352,7 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
+import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
@@ -369,6 +369,9 @@ import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { StayVerdict, stayOnAccount, stayPctOf } from './core/stayAccount';
+import { legStartLine, LegPlace, minRoomOf, placeLeg, starvedWhy } from './core/batonRoom';
+import { fiveHourNow, percentNow } from './core/usageFloor';
+import { fileUsageMemory } from './core/usageFloorFile';
 import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
 import { ReopenSetup } from './core/closingSetup';
 import { ReopenDeps, ReopenQuery, batonOnClosing, reopenSetupFor, sessionOwnOf } from './launch/reopen';
@@ -505,7 +508,7 @@ import {
 } from './core/bridge';
 import {
     archivedOutputBody, archivedReplyText, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
-    FarmTemplate,
+    FarmTemplate, noteTaskEvent,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
     InteractiveClose, InteractiveTarget, launchDimsOf,
     previousOccurrenceKey, RouteSeal, routeOf, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
@@ -4071,7 +4074,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // that states an account is judged by the window of the slot it
             // resolves to (a preview — no round-robin cursor moves), and a row
             // that states none keeps the machine figure it always had.
-            quotaCheck: (task) => quotaBrake({
+            // ‼️ X-462 — a relay leg's row is placed (or keeps waiting) at its wake, under the leg start line
+            quotaCheck: (task) => relayWakeHold(task) ?? quotaBrake({
                 guard: cfg().get<number>('quotaGuardPercent', 0),
                 handover: cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct),
                 stated: task.account,
@@ -4085,7 +4089,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 },
                 usageOf: slotId => {
                     const u = accountUsage.current().find(x => x.slotId === slotId);
-                    return u ? { percent: u.percent, known: u.state !== 'no-source' && Number.isFinite(u.percent) } : undefined;
+                    // X-462 — the figure in force: a floor a failed read or a wall left counts, a turned-over window is fresh
+                    return u ? { percent: percentNow(u), known: u.state !== 'no-source' && Number.isFinite(u.percent) } : undefined;
                 },
                 machinePct: windowPct
             }),
@@ -17433,21 +17438,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         board: batonBoard,
         cancelRow: cancelSuccessorRow,
         caller: async (argSession, from) => (await callerWhoami(argSession, from)).r,
-        // a preview: launchAccountPick RETURNS a round-robin cursor, only a real
-        // launch commits it — so asking here moves nothing
+        // a preview, by the door's own answer (X-462 relayPlace): the round-robin
+        // cursor is committed only by the door, so asking here moves nothing
         room: b => {
             try {
-                const r = launchAccountPick({
-                    engine: b.from.engine, account: b.want.account, agentId: b.from.agentId, model: b.inherit.model
-                });
-                if (r.refusal) { return r.resetsAt ? { resetsAt: r.resetsAt } : { refusal: r.refusal }; }
-                if (!r.id) { return undefined; }
-                const sl = findSlot(storedAccounts(), r.id);
-                return { account: sl ? slotLabel(sl) : r.id };
+                const place = relayPlace(b, { stay: true });
+                if ('park' in place) { return { resetsAt: place.park.resetsAt }; }
+                if ('refusal' in place) { return { refusal: place.refusal }; }
+                const sl = findSlot(storedAccounts(), place.slot);
+                const u = accountUsage.current().find(x => x.slotId === place.slot);
+                const used = u ? percentNow(u) : -1;
+                return { account: sl ? slotLabel(sl) : place.slot, ...(used >= 0 ? { usedPct: used } : {}) };
             } catch (e) {
                 return { refusal: String((e as Error)?.message ?? e) };
             }
         },
+        // X-462 — a leg out of room is waiting for quota, not spinning (the barren brake skips it)
+        starvedOf: b => legStarvedOf(b),
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         // S-74 — the runner is made just below; the op only runs long after activation
         startNow: (b, by) => batonRunner.startNow(b, by),
@@ -17503,37 +17510,95 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(supervisorSweep) });
     // ‼️ S-106 — a handover that is not the quota's stays on its account under agentFarm.contextHandoverStayAccountPct
-    const handoverStay = (sessionId: string | undefined, slotId: string | undefined, o: { walled?: boolean } = {}): StayVerdict => {
+    const handoverStay = (
+        sessionId: string | undefined, slotId: string | undefined, o: { walled?: boolean; startLine?: { value: number; why: string } } = {}
+    ): StayVerdict => {
         const sid = String(sessionId ?? '');
         const u = slotId ? accountUsage.current().find(x => x.slotId === slotId) : undefined;
         const pct = stayPctOf(ownSetting).value;
         return stayOnAccount({
-            stayPct: pct, slotId, percent: u?.percent, resetsAt: u?.resetsAt,
-            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), walled: !!o.walled, now: Date.now()
+            stayPct: pct, slotId, percent: u ? percentNow(u) : undefined, resetsAt: u?.resetsAt,
+            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), walled: !!o.walled,
+            ...(o.startLine ? { startLine: o.startLine } : {}), now: Date.now()
         });
     };
+    // ‼️ X-462 — a relay leg STARTS only under this line: the policies' wall, batonMinRoomPct under the quota handover line
+    const legLine = () => legStartLine(accountCeiling().value, cfg().get<number>('quotaHandoverPct', 90), minRoomOf(ownSetting).value);
+    /** The slot a leg ran on: its Console card's, else the one its launch was sealed with. */
+    const legSlotOf = (b: Baton): string | undefined =>
+        (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
+    /**
+     * ‼️ X-462 — WHERE A RELAY LEG OPENS, one answer for the door, the pass's
+     * sentence and a parked row's wake (batonRoom.ts placeLeg): S-106 asked with
+     * the start line, else the chain's pool capped at it, else a park on the
+     * first turnover.
+     */
+    const relayPlace = (b: Baton, o: { stay: boolean }): LegPlace => {
+        const line = legLine();
+        const stay = o.stay ? handoverStay(b.from.sessionId, legSlotOf(b), { walled: b.fault === 'limit', startLine: line }) : undefined;
+        return placeLeg(stay, () => launchAccountPick({
+            engine: b.from.engine, account: b.want.account, agentId: findAgent(b.from.agentId)?.id, model: b.inherit.model, cap: line.value
+        }));
+    };
+    /** X-462 — why the passing leg had no room left: walled by the plan limit, or its account at the quota handover line. */
+    const legStarvedOf = (b: Baton): string | undefined => {
+        const slot = legSlotOf(b);
+        const u = slot ? accountUsage.current().find(x => x.slotId === slot) : undefined;
+        const sl = slot ? findSlot(storedAccounts(), slot) : undefined;
+        return starvedWhy({ fault: b.fault, slot: sl ? slotLabel(sl) : slot, percent: fiveHourNow(u), handoverPct: cfg().get<number>('quotaHandoverPct', 90) });
+    };
+    /**
+     * ‼️ X-462 — A PARKED LEG'S ROW AT ITS WAKE. The door parked it on the
+     * chain's pool because no account had room under the leg start line; when
+     * its moment comes it is placed by the same answer — PINNED to the slot
+     * that has room now, or kept waiting (`quota:5h`) with the sentence, never
+     * launched into a refusal that would fail the row and end the chain. A row
+     * already pinned (S-106, or the door found room) is the door's decision and
+     * is left to the ordinary quota line. Hoisted: the pump may ask while
+     * activating, before the relay is wired — then it holds nothing.
+     */
+    function relayWakeHold(task: FarmTask): { code: 'quota:5h'; reason: string; basis: 'account' } | undefined {
+        try {
+            if (!isPolicyId(String(task.account ?? '').trim())) { return undefined; }
+            const b = batonStore.all().find(x => x.taskId === task.id && isLive(x));
+            if (!b) { return undefined; }
+            const place = relayPlace(b, { stay: false });
+            if (place.slot) {
+                task.account = place.slot;
+                if ('cursor' in place && place.cursor) { void context.workspaceState.update(roundRobinKey(b.from.engine || 'claude'), place.cursor); }
+                noteTaskEvent(task, 'setup', `relay leg placed on ${place.slot} at its wake — ${place.why}`);
+                return undefined;
+            }
+            if ('park' in place) { return { code: 'quota:5h', basis: 'account', reason: `relay leg waits for room — ${place.park.refusal}` }; }
+            return undefined;
+        } catch { return undefined; }
+    }
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,
+        starvedOf: b => legStarvedOf(b),
         door: opener => {
             const agent = findAgent(opener.from.agentId);
             // ‼️ S-109 — the successor runs on what its predecessor CLOSED with
             const b = batonOnClosing(opener, sessionOwnOf(reopenFor({
                 sessionId: opener.from.sessionId, engine: opener.from.engine || 'claude', agentName: agent.name
             })));
-            const was = (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
-            // X-462 — a pass the plan limit forced never keeps the successor on the walled account
-            const stay = handoverStay(b.from.sessionId, was, { walled: b.fault === 'limit' });
-            if (stay.stay) { console.log(`[Agent Farm] baton ${b.id}: ${stay.why}`); }
-            // S-73 — every account full RIGHT NOW: the row is written with the
-            // first reset + the safety buffer as its notBefore (a preview — the
-            // round-robin cursor does not move; the real pick is the launch's).
-            const pick = launchAccountPick({ engine: b.from.engine, account: stay.stay ? stay.slotId : b.want.account, agentId: agent.id, model: b.inherit.model });
-            const park = pick.refusal && pick.resetsAt
+            // X-462 — the account the plan limit walled is full until it turns over, whatever its last figure says
+            const walled = b.fault === 'limit' ? legSlotOf(b) : undefined;
+            if (walled) { try { accountUsage.markWalled(walled); } catch { /* the stay rule still refuses it */ } }
+            // X-462 — S-106, then the pool, under the leg start line; nothing under it = S-73's park on the
+            // first turnover + the safety buffer. A slot found is PINNED on the row, so the launch cannot
+            // pick another one above the line; a parked row keeps the pool and is placed at its wake.
+            const place = relayPlace(b, { stay: true });
+            console.log(`[Agent Farm] baton ${b.id}: ${place.why}`);
+            if (place.slot && 'cursor' in place && place.cursor) {
+                void context.workspaceState.update(roundRobinKey(b.from.engine || 'claude'), place.cursor);
+            }
+            const park = 'park' in place
                 ? {
-                    resetsAt: pick.resetsAt,
+                    resetsAt: place.park.resetsAt,
                     bufferMin: normalizeRetry(cfg().get<unknown>('taskRetry'))?.safetyBufferMin ?? RETRY_DEFAULT_SAFETY_MIN,
-                    refusal: pick.refusal
+                    refusal: place.park.refusal
                 }
                 : undefined;
             const row = successorRow(b, {
@@ -17543,7 +17608,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 template: cfg().get<string>('batonHandoverTemplate', ''),
                 directive: cfg().get<string>('batonInjectedDirective', ''),
                 emergencyTemplate: cfg().get<string>('batonEmergencyTemplate', ''),
-                ...(stay.stay ? { account: stay.slotId } : {})
+                ...(place.slot ? { account: place.slot } : {})
             });
             const task = taskManager.addTask(agent, row.title, row.prompt, row.mode, row.extra);
             const started = taskManager.startTask(task);
@@ -21032,6 +21097,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         edgeFloorMs: planEdgeFloorMs,
         // X-240 — the same ledger the standing account's indicator writes to.
         gate: usageGate, shelf: usageShelf, minIntervalMs: usageMinIntervalMs,
+        // ‼️ X-462 — what each account was last known to be outlives a window reload
+        memory: fileUsageMemory(path.join(context.globalStorageUri.fsPath, 'account-usage-floors.json')),
         cliVersion: installedCliVersion,
         busy: accountIsBusy,
         /**
@@ -22530,7 +22597,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return effectiveCeiling(set, cfg().get<number>('quotaHandoverPct', 90));
     };
     const policyWorldFor = (
-        engine: string | undefined, agentId?: string, model?: string
+        engine: string | undefined, agentId?: string, model?: string, cap?: number
     ): PolicyWorld => {
         const eng = (String(engine || '').trim() || 'claude').toLowerCase();
         const standing = accountResolution('', eng, activeAccounts(),
@@ -22543,6 +22610,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             standing: standing.id,
             standingOrigin: standing.origin,
             ...(pool ? { pool } : {}),
+            // X-462 — a relay leg's start line bounds every wall the policy walks with
+            ...(cap ? { cap } : {}),
             cursor: context.workspaceState.get<string>(roundRobinKey(eng), ''),
             policies: accountPolicies(),
             ...(model ? { model } : {}),
@@ -22565,7 +22634,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * draw. The round-robin cursor moves only where a launch is real.
      */
     const launchAccountPick = (
-        o: { engine?: string; account?: string; agentId?: string; model?: string }
+        o: { engine?: string; account?: string; agentId?: string; model?: string; cap?: number }
     ): PolicyResolution => {
         const stated = String(o.account ?? '').trim();
         if (!isPolicyId(stated)) {
@@ -22574,7 +22643,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 id => { const sl = findSlot(storedAccounts(), id); return sl ? slotLabel(sl) : id; });
             return { id: r.id, policy: '', note: r.note };
         }
-        return resolvePolicy(stated, policyWorldFor(o.engine, o.agentId, o.model));
+        return resolvePolicy(stated, policyWorldFor(o.engine, o.agentId, o.model, o.cap));
     };
     /**
      * ‼️ X-169 / X-305 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, and

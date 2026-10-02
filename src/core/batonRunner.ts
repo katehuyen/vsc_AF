@@ -109,6 +109,8 @@ export interface BatonRunnerDeps {
     dirtOf?: FolderRead;
     /** S-84 — the A2A board the chain's handover cards live on; absent = no cards */
     board?: BatonBoard;
+    /** X-462 — why a leg had no room left when it ended (batonRoom.ts starvedWhy); the rescue's barren brake skips it */
+    starvedOf?: (b: Baton) => string | undefined;
 }
 
 /** A baton on a task row: the row's session becomes the successor (`was` = the id it held before, S-85). */
@@ -129,7 +131,7 @@ export class BatonRunner {
             store: deps.store, legFacts: deps.legFacts,
             isEnded: (sid, o) => endedVerdict(deps.evidence({ ...o, from: { ...o.from, sessionId: sid } })).ended,
             launchIdOf: deps.launchIdOf, manifestOf: deps.manifestOf, headOf: deps.headOf, dirtOf: deps.dirtOf, maxLegs: deps.maxLegs,
-            notify: deps.notify, now: () => this.now(), log: l => this.log(l), settleMs: deps.settleMs
+            notify: deps.notify, now: () => this.now(), log: l => this.log(l), settleMs: deps.settleMs, starvedOf: deps.starvedOf
         }, (b, why) => this.release(b, why));
     }
 

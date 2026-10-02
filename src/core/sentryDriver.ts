@@ -337,7 +337,7 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     // S-106 — below the leader's own choice: a slot the pool measures and the ceiling still allows
     const ceiling = typeof c.ceiling === 'number' ? c.ceiling : SENTRY_DEFAULT_CEILING;
     const kept = i.stay?.stay ? i.usage.find(u => u.slotId === (i.stay as { slotId: string }).slotId) : undefined;
-    const stayed = kept && slotIsUsable(kept, ceiling) ? kept.slotId : '';
+    const stayed = kept && slotIsUsable(kept, ceiling, i.now) ? kept.slotId : '';
     const slotId = chosen && i.usage.some(u => u.slotId === chosen) ? chosen : stayed || plan.slotId;
     if (stayed && slotId === stayed && stayed !== plan.slotId && i.stay) { plan.why = `${plan.why} · ${i.stay.why}`; }
 

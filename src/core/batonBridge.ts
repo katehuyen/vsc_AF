@@ -47,6 +47,8 @@ export interface BatonBridgeDeps {
     notify?: (title: string, body: string, key: string) => void;
     /** S-84 — the A2A board a pass hangs its handover card on; absent = no card */
     board?: BatonBoard;
+    /** X-462 — why the passing leg had no room left (batonRoom.ts starvedWhy), or undefined */
+    starvedOf?: (b: Baton) => string | undefined;
 }
 
 /** S-74 — the live batons an op's `baton` / `chain` / `session` argument names. */
@@ -116,6 +118,8 @@ export function batonView(b: Baton): Record<string, unknown> {
         note: b.note ?? null,
         ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
         ...(b.rescue ? { rescue: b.rescue } : {}),
+        ...(b.fault ? { fault: b.fault } : {}),
+        ...(b.starved ? { starved: b.starved } : {}),
         ...(b.a2aNoteId ? { a2aNoteId: b.a2aNoteId } : {}),
         ...(b.lastLeg ? { lastLeg: b.lastLeg } : {}),
         wakeAt: b.wakeAt ?? null, taskId: b.taskId ?? null, toSessionId: b.toSessionId ?? null,
@@ -145,7 +149,10 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                         step: 'pass', sessionId: who.sessionId, source: who.source, launchId: launchId ?? null
                     });
                 }
-                const accepted: Baton = await markFolder(res.baton, deps.headOf, deps.dirtOf);
+                const marked: Baton = await markFolder(res.baton, deps.headOf, deps.dirtOf);
+                // X-462 — a leg out of room is waiting for quota, not spinning: the barren brake skips it
+                const starved = (() => { try { return deps.starvedOf?.(marked); } catch { return undefined; } })();
+                const accepted: Baton = starved ? { ...marked, starved } : marked;
                 const brake = batonBrake(accepted, deps.store.all(),
                     chainMaxLegs(deps.store.all(), accepted.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
                 if (brake) {

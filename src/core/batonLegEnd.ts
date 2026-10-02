@@ -44,6 +44,8 @@ export interface LegEndDeps {
     log: (line: string) => void;
     /** how long to let the card and the task row settle before reading them */
     settleMs?: number;
+    /** X-462 — why the ended leg had no room left (batonRoom.ts starvedWhy), or undefined */
+    starvedOf?: (b: Baton) => string | undefined;
 }
 
 export class LegEndWatch {
@@ -155,6 +157,10 @@ export class LegEndWatch {
             ? { ...draft, rescue: why, note: `engine — ${why}`, fault: engine.fault, ...(engine.model ? { inherit: { ...draft.inherit, model: engine.model } } : {}) }
             : { ...draft, rescue: why, note: `failsafe — ${why}` };
         draft = await markFolder(draft, this.deps.headOf, this.deps.dirtOf);
+        // X-462 — a leg out of room (the plan limit, or its account at the handover line) is not a barren one
+        const starved = (() => { try { return this.deps.starvedOf?.(draft); } catch { return undefined; } })()
+            || (engine?.fault === 'limit' ? 'its account hit the plan limit' : undefined);
+        if (starved) { draft = { ...draft, starved }; }
         const all = this.deps.store.all();
         const brake = batonBrake(draft, all, chainMaxLegs(all, draft.chainId, this.deps.maxLegs ? this.deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
         if (brake) {

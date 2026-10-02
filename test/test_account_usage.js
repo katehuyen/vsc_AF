@@ -625,7 +625,7 @@ async function main() {
             { id: 'seven_day', title: 'Current week (all models)', percent: 100, resetsAt: t + 3600_000 }
         ] };
         ok('‼️ the drill\'s exact case: 0% of five hours, 100% of the week → the slot is NOT usable',
-            !slotIsUsable(usageFrom(slot('a'), walledWeek), 95)
+            !slotIsUsable(usageFrom(slot('a'), walledWeek), 95, NOW)
             && usageFrom(slot('a'), walledWeek).window === 'Current week (all models)');
         ok('a snapshot with only the five-hour bar reads exactly as before',
             usageFrom(slot('a'), { ...snap, bars: [{ id: FIVE_HOUR, title: 'Current session', percent: 33, resetsAt: t }] }).percent === 33);
@@ -707,7 +707,7 @@ async function main() {
         ok('‼️ the FULLER engine window binds, exactly as it does for Claude (X-309)',
             ce.percent === 72 && ce.resetsAt === t + 86400_000 && ce.window === 'Current week');
         ok('…so a Codex account walled by its week is no longer offered as empty',
-            !slotIsUsable(ce, 70));
+            !slotIsUsable(ce, 70, NOW));
         const one = usageFromEngine(slot('c', 'codex'), { ...eu, bars: [eu.bars[0]] });
         ok('a single-window engine reads exactly as it did — one bar, its own name',
             one.bars.length === 1 && one.percent === 8 && one.window === 'Current 5h window');

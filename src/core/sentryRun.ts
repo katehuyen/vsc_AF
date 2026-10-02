@@ -122,10 +122,10 @@ const MIN = 60 * 1000;
  * an engine's name and never touches a disk.
  */
 export function campaignPick(
-    c: { rotation?: string; engine?: string }, usage: SlotUsage[], ceiling: number
+    c: { rotation?: string; engine?: string }, usage: SlotUsage[], ceiling: number, now?: number
 ): SlotUsage | undefined {
     return pickAccount(usage, {
-        ceiling,
+        ceiling, ...(typeof now === 'number' ? { now } : {}),
         ...(c.rotation ? { rotation: c.rotation } : {}),
         ...(c.engine ? { engine: c.engine } : {})
     });
@@ -177,7 +177,7 @@ export function leaderAccountFor(
         const u = usage.find(x => x.slotId === named);
         // A named account the pool does not measure is the caller's own choice,
         // exactly as before — the spawn seam refuses it by name if it is gone.
-        if (!u || (slotIsUsable(u, ceiling) && !except.includes(named))) { return { account: named }; }
+        if (!u || (slotIsUsable(u, ceiling, now) && !except.includes(named))) { return { account: named }; }
         const resetsAt = u.state === 'ok' && u.resetsAt > now ? u.resetsAt : 0;
         return {
             hold: {
@@ -192,7 +192,7 @@ export function leaderAccountFor(
     }
     if (!usage.length) { return { account: '' }; }
     const pool = except.length ? usage.filter(u => !except.includes(u.slotId)) : usage;
-    const pick = pool.length ? campaignPick(c, pool, ceiling) : undefined;
+    const pick = pool.length ? campaignPick(c, pool, ceiling, now) : undefined;
     if (pick) { return { account: pick.slotId }; }
     // ‼️ THE WALL IS THE POOL'S, NOT THE MACHINE'S. Everything in the pool is
     // at or past the ceiling: wait for the first one back, spend nothing.
@@ -293,7 +293,7 @@ export function planSentry(i: SentryInputs): SentryPlan {
      * the user allowed: `sentryTick` filters it before this is called, so a slot
      * reaching here is a slot with permission. `pickAccount` decides only WHICH.
      */
-    const pick = campaignPick(c, i.usage, ceiling);
+    const pick = campaignPick(c, i.usage, ceiling, i.now);
     if (pick) {
         // ‼️ A ROUND THAT CROSSED ENGINES SAYS SO. It is the one fact a reader
         // cannot derive from the slot id, and it is the whole behaviour this
