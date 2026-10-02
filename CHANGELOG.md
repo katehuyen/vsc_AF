@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.797.0 - A revived session no longer freezes the window, and a stopped turn says who stopped it (2026-10-03)
+
+- **A revive no longer replays the old conversation.** When Agent Farm
+  restarted and took a Console session up again, the conversation read back
+  from its transcript was reported to the Live Timeline as if it had just
+  happened — every old reply stamped with today's time — and the extension
+  host was unresponsive for several seconds while it did, which also delayed
+  the message that tells the revived session to carry on. History read back
+  from a transcript is never a live event now, on a revive and on "load
+  earlier" alike.
+- **A stopped turn says who stopped it.** The row that closes an interrupted
+  turn names where the stop came from: the Console (Esc or the ⎋ button), the
+  phone, the card's menu, the Interrupt command, the bridge or Telegram. When
+  the engine ends a turn as interrupted although nothing in Agent Farm asked it
+  to stop, the row says exactly that.
+
 ## 3.796.0 - Agent Farm can speak your language: the first pages in Turkish (2026-10-03)
 
 - **A language setting.** Farm Settings ▸ Display has a new choice,
