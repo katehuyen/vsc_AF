@@ -175,8 +175,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-carry-'));
 const agentDir = path.join(tmp, 'agent'); fs.mkdirSync(agentDir, { recursive: true });
 const agent = { id: 'a1', name: 'developer', dir: agentDir };
 const agents = () => [agent];
+// X-471 — the host hands the carry its wall (accountCeiling); these fixtures are written against this one
+const TEST_WALL = () => ({ value: 95, why: 'the test wall' });
 const mk = (name, opts) =>
-    new TaskManager(path.join(tmp, name + '.json'), agents, () => false, () => '', opts);
+    new TaskManager(path.join(tmp, name + '.json'), agents, () => false, () => '', Object.assign({ accountWall: TEST_WALL }, opts));
 
 const LIMIT = 'Claude usage limit reached. You have hit your session limit · resets 6:50pm';
 const BROKE = 'Error: ENOENT: no such file or directory';
@@ -214,6 +216,24 @@ const failed = (m, out, extra) => {
         t.events.some(e => /c2/.test(e.note || '') && /c1/.test(e.note || '')));
     ok('‼️ …and the retry still carries everything else the original ran with',
         !!row && row.retryAttempt === 1 && row.retry && row.retry.delayMin === 40);
+    m.dispose();
+}
+
+{
+    // X-471 — the carry walks the wall the host hands it, never a number of its own
+    const usage = [at('c1', 99), at('c2', 60)];
+    const asked = [];
+    const m = mk('carrywall', {
+        isRunner: () => true,
+        limitResetAt: () => RESET(),
+        measuredAccounts: () => usage,
+        accountWall: (own) => { asked.push(own); return { value: 50, why: '50% — defaultAccountCeiling' }; }
+    });
+    const t = failed(m, LIMIT, { account: 'c1' });
+    m.maybeScheduleRetry(t);
+    const row = m.tasks.find(x => x.retryOf === t.id);
+    ok('‼️ X-471 — a run carried after a limit obeys the Account ceiling: c2 at 60% is past a 50% wall, so it waits on c1',
+        asked.length === 1 && asked[0] === undefined && !!row && row.account === 'c1');
     m.dispose();
 }
 

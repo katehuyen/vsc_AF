@@ -29,6 +29,8 @@ const OUT = path.join(__dirname, '..', 'out', 'core');
 const {
     sentryStep, applySentryStep, SENTRY_DEFAULT_FAIL_LIMIT, sentryRoundTitle
 } = require(path.join(OUT, 'sentryDriver.js'));
+// X-471 - every round decides under the wall the host hands it (startWall)
+const WALL = { value: 95, why: 'the test wall' };
 const { newSentry, stopSentry } = require(path.join(OUT, 'sentryCampaign.js'));
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
@@ -61,7 +63,7 @@ const goodRound = (over) => Object.assign({
 }, over || {});
 
 const step = (over) => sentryStep(Object.assign({
-    campaign: rec(), usage: [slot('a')], next: NEXT, now: NOW
+    campaign: rec(), usage: [slot('a')], next: NEXT, wall: WALL, now: NOW
 }, over || {}));
 
 // ---- the first round: the words are the caller's, because nothing preceded --
@@ -195,7 +197,7 @@ const step = (over) => sentryStep(Object.assign({
 
     let r = rec();
     for (let n = 1; n <= SENTRY_DEFAULT_FAIL_LIMIT; n++) {
-        const s = sentryStep({ campaign: r, usage: [slot('a')], next: NEXT, finished: barren, now: NOW });
+        const s = sentryStep({ wall: WALL, campaign: r, usage: [slot('a')], next: NEXT, finished: barren, now: NOW });
         ok(`round ${n} of nothing counts toward the brake`, s.failStreak === n);
         if (n < SENTRY_DEFAULT_FAIL_LIMIT) {
             ok(`...and below the limit the campaign carries on`, s.plan.action === 'start' && !s.stop);
@@ -211,9 +213,9 @@ const step = (over) => sentryStep(Object.assign({
 
     // one good round wipes the streak — a brake that never resets is a budget
     let r2 = rec();
-    applySentryStep(r2, sentryStep({ campaign: r2, usage: [slot('a')], next: NEXT, finished: barren, now: NOW }), 't1', NOW);
+    applySentryStep(r2, sentryStep({ wall: WALL, campaign: r2, usage: [slot('a')], next: NEXT, finished: barren, now: NOW }), 't1', NOW);
     ok('a failed round leaves a streak behind', r2.failStreak === 1);
-    const good = sentryStep({ campaign: r2, usage: [slot('a')], next: NEXT, finished: goodRound(), now: NOW });
+    const good = sentryStep({ wall: WALL, campaign: r2, usage: [slot('a')], next: NEXT, finished: goodRound(), now: NOW });
     ok('‼️ a round that achieved something wipes the streak — the brake is not a budget',
         good.failStreak === 0);
     applySentryStep(r2, good, 't2', NOW);
@@ -223,7 +225,7 @@ const step = (over) => sentryStep(Object.assign({
 // ---- the brake is a SETTING, and it can be switched off ---------------------
 {
     const off = rec({ failLimit: 0, failStreak: 99 });
-    const s = sentryStep({
+    const s = sentryStep({ wall: WALL,
         campaign: off, usage: [slot('a')], next: NEXT, now: NOW,
         finished: goodRound({ status: 'failed', facts: { sessionId: SID, answerFiles: [], repos: [], codes: [], output: '' } })
     });
@@ -231,7 +233,7 @@ const step = (over) => sentryStep(Object.assign({
         s.plan.action === 'start' && !s.stop);
 
     const tight = rec({ failLimit: 1 });
-    const t = sentryStep({
+    const t = sentryStep({ wall: WALL,
         campaign: tight, usage: [slot('a')], next: NEXT, now: NOW,
         finished: goodRound({ status: 'failed', facts: { sessionId: SID, answerFiles: [], repos: [], codes: [], output: '' } })
     });
@@ -272,7 +274,7 @@ const step = (over) => sentryStep(Object.assign({
     const r = rec();
     let last;
     for (let n = 1; n <= SENTRY_DEFAULT_FAIL_LIMIT; n++) {
-        last = sentryStep({ campaign: r, usage: [slot('a')], next: NEXT, finished: noTrace, now: NOW });
+        last = sentryStep({ wall: WALL, campaign: r, usage: [slot('a')], next: NEXT, finished: noTrace, now: NOW });
         applySentryStep(r, last, last.round ? 't' + n : undefined, NOW);
     }
     ok('...and repeating it stops the campaign instead of billing for the loop',
@@ -303,7 +305,7 @@ const step = (over) => sentryStep(Object.assign({
         const r2 = rec();
         let l2;
         for (let n = 1; n <= SENTRY_DEFAULT_FAIL_LIMIT + 1; n++) {
-            l2 = sentryStep({ campaign: r2, usage: [slot('a')], next: NEXT, finished: weekly, now: NOW });
+            l2 = sentryStep({ wall: WALL, campaign: r2, usage: [slot('a')], next: NEXT, finished: weekly, now: NOW });
             applySentryStep(r2, l2, l2.round ? 'w' + n : undefined, NOW);
         }
         ok('…so any number of them never trips the brake — the rotation and the sleep answer a wall',
@@ -393,7 +395,7 @@ const step = (over) => sentryStep(Object.assign({
     ok('...on the record, because the wait is exactly what a reload happens in the middle of',
         !!r.carry && r.carry.prompt === asleep.words.prompt && r.carry.at === NOW);
 
-    const woke = sentryStep({
+    const woke = sentryStep({ wall: WALL,
         campaign: r, usage: [slot('a')], next: NEXT, opening: 'FIRST ROUND WORDS', now: NOW + 60 * MIN
     });
     ok('‼️ the tick that wakes up opens on the CARRIED words, never on the opening sentence again',
@@ -409,7 +411,7 @@ const step = (over) => sentryStep(Object.assign({
     ok('...but a row that could not be created keeps them, rather than losing the words to a failed write',
         !!failed.carry && failed.carry.prompt === asleep.words.prompt);
 
-    const moved = sentryStep({
+    const moved = sentryStep({ wall: WALL,
         campaign: r, usage: [slot('a')], next: { code: 'X-999', text: 'something else', effort: 'S' },
         opening: 'FIRST ROUND WORDS', now: NOW + 60 * MIN
     });
@@ -435,14 +437,14 @@ const step = (over) => sentryStep(Object.assign({
     const asleep = step({ usage: [slot('a', { percent: 99 })], finished: goodRound() });
     const held = rec({ carry: { prompt: asleep.words.prompt, code: NEXT.code, at: NOW } });
 
-    const empty = sentryStep({ campaign: held, usage: [slot('a')], now: NOW + 10 * MIN });
+    const empty = sentryStep({ wall: WALL, campaign: held, usage: [slot('a')], now: NOW + 10 * MIN });
     ok('a tick that finds nothing in the backlog KEEPS the sentence it is holding',
         empty.plan.action === 'idle' && !!empty.carry && empty.carry.prompt === asleep.words.prompt);
     applySentryStep(held, empty, undefined, NOW + 10 * MIN);
     ok('...on the record, so the item that comes back ten minutes later still gets it',
         !!held.carry && held.carry.code === NEXT.code);
 
-    const back = sentryStep({
+    const back = sentryStep({ wall: WALL,
         campaign: held, usage: [slot('a')], next: NEXT,
         opening: 'FIRST ROUND WORDS', now: NOW + 20 * MIN
     });
@@ -457,7 +459,7 @@ const step = (over) => sentryStep(Object.assign({
 // that is kept — the one that names an item stands.
 {
     const held = rec({ carry: { prompt: 'HELD WORDS FOR X-177', code: NEXT.code, at: NOW } });
-    const s = sentryStep({
+    const s = sentryStep({ wall: WALL,
         campaign: held, usage: [slot('a')], finished: goodRound(), now: NOW + MIN
     });
     ok('a round that ends into an empty backlog builds words that name no item',
@@ -471,7 +473,7 @@ const step = (over) => sentryStep(Object.assign({
 
 // ---- a stopped campaign is not driven at all -------------------------------
 {
-    const s = sentryStep({
+    const s = sentryStep({ wall: WALL,
         campaign: stopSentry(rec(), NOW), usage: [slot('a')], next: NEXT, opening: 'go', now: NOW
     });
     ok('a campaign the user stopped plans nothing and opens nothing',
@@ -518,11 +520,11 @@ const step = (over) => sentryStep(Object.assign({
 
     const gone = stopSentry(rec(), NOW);
     ok('‼️ AND THE LEADER CANNOT OVERRULE THE USER\'S HAND',
-        sentryStep({ campaign: gone, usage: [slot('a')], next: NEXT, leader: LEAD, now: NOW })
+        sentryStep({ wall: WALL, campaign: gone, usage: [slot('a')], next: NEXT, leader: LEAD, now: NOW })
             .plan.action === 'stopped');
 
     const r = rec({ failStreak: SENTRY_DEFAULT_FAIL_LIMIT - 1 });
-    const braked = sentryStep({ campaign: r, usage: [slot('a')], next: NEXT,
+    const braked = sentryStep({ wall: WALL, campaign: r, usage: [slot('a')], next: NEXT,
         finished: { status: 'failed', code: 'X-1', taskId: 't', facts: { sessionId: SID, answerFiles: [], repos: [{ path: 'D:/r', dirty: 0 }], codes: [], progress: { assistantSteps: 0, toolCalls: 0 }, output: '' } },
         leader: LEAD, now: NOW });
     ok('‼️ ...nor the failure brake', braked.plan.action === 'stopped' && braked.plan.rule === 'fail-streak');

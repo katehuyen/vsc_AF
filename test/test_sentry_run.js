@@ -22,7 +22,10 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const OUT = path.join(__dirname, '..', 'out', 'core');
-const { planSentry, SENTRY_DEFAULT_CEILING } = require(path.join(OUT, 'sentryRun.js'));
+const SENTRY = require(path.join(OUT, 'sentryRun.js'));
+const { planSentry } = SENTRY;
+// X-471 — the planner decides under the wall the host hands it (startWall); these fixtures are written against this one
+const WALL = { value: 95, why: 'the test wall' };
 const { RETRY_DEFAULT_SAFETY_MIN } = require(path.join(OUT, 'retry.js'));
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
@@ -40,7 +43,7 @@ const slot = (id, over) => Object.assign({
 const next = { code: 'X-177', text: 'NOBET YUZEYI', effort: 'M' };
 
 const plan = (over) => planSentry(Object.assign({
-    campaign: campaign(), usage: [slot('a')], next, prompt: 'Take X-177.', now: NOW
+    campaign: campaign(), usage: [slot('a')], next, prompt: 'Take X-177.', wall: WALL, now: NOW
 }, over || {}));
 
 // ---- the user's switch outranks everything ---------------------------------
@@ -166,13 +169,15 @@ const plan = (over) => planSentry(Object.assign({
             campaign: campaign({ safetyBufferMin: 11 }),
             usage: [slot('y', { percent: 97, resetsAt: early })]
         }).wakeAt === early + 11 * MIN);
-    ok('...and its own ceiling, so 90% can be the wall if the user says so',
+    ok('...and the wall it is handed decides, so 90% can be the wall (the campaign\'s own, resolved by the host)',
         plan({
-            campaign: campaign({ ceiling: 90 }), usage: [slot('y', { percent: 92, resetsAt: early })]
+            campaign: campaign({ ceiling: 90 }), wall: { value: 90, why: 'the campaign\'s wall' },
+            usage: [slot('y', { percent: 92, resetsAt: early })]
         }).action === 'sleep');
-    ok('the default ceiling is a stated number, not a magic one',
-        typeof SENTRY_DEFAULT_CEILING === 'number'
-        && SENTRY_DEFAULT_CEILING > 50 && SENTRY_DEFAULT_CEILING <= 100);
+    ok('‼️ X-471 — the sentry keeps no wall of its own: no default constant, the wall is handed in',
+        !('SENTRY_DEFAULT_CEILING' in SENTRY)
+        && plan({ wall: { value: 70, why: 'the Account ceiling' }, usage: [slot('y', { percent: 75, resetsAt: early })] }).action === 'sleep'
+        && plan({ wall: { value: 70, why: 'the Account ceiling' }, usage: [slot('y', { percent: 65, resetsAt: early })] }).action === 'start');
 }
 
 // ---- ‼️ a wall with nothing to wait for is a BLOCK, not a sleep ------------
@@ -260,7 +265,7 @@ const plan = (over) => planSentry(Object.assign({
 // sign-in", which is exactly the plan the pool exists to protect.
 {
     const { leaderAccountFor } = require(path.join(OUT, 'sentryRun.js'));
-    const C = SENTRY_DEFAULT_CEILING;
+    const C = WALL.value;
     const room = [slot('a', { percent: 40 }), slot('b', { percent: 70 })];
     const r1 = leaderAccountFor({}, { account: '' }, room, C, NOW);
     ok('with room in the pool the leader runs on the pool\'s own pick',

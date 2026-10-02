@@ -126,6 +126,22 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         const ghost = await reg.dispatch('settings.get', { key: 'notAThing' });
         ok('‼️ …and a key the manifest does not declare is refused — the schema IS the allowlist',
             !ghost.ok && /not an Agent Farm setting/.test(ghost.error));
+
+        // X-470 — the host's row notes (a refusal, what a bounded box acts at) reached the page and were dropped by this projection
+        const noted = new BridgeRegistry();
+        registerSettingsOps(noted, {
+            getAgents: () => [],
+            categories: () => buildSettingsModel(schema, (k) => values[k], {
+                refusalOf: k => k === 'agentFarm.livePort' ? 'refused: not a number' : undefined,
+                inForceOf: k => k === 'agentFarm.guideLanguage' ? 'In force: en' : undefined
+            })
+        });
+        const nGet = await noted.dispatch('settings.get', { key: 'guideLanguage' });
+        const nList = await noted.dispatch('settings.list', {});
+        const nPort = nList.result.categories.flatMap(c => c.items).find(i => i.key === 'agentFarm.livePort');
+        ok('‼️ settings.get / settings.list carry the row notes the page shows (inForce, refusal)',
+            nGet.result.inForce === 'In force: en' && nPort && nPort.refusal === 'refused: not a number'
+            && !('inForce' in nPort));
     }
 
     // ---- writing, through the page's own validation ----

@@ -56,9 +56,41 @@ console.log('\n== the factory default lives in one place ==');
         && !/'quotaHandoverPct', \d/.test(codeOnly(ext, true)));
 }
 
+console.log('\n== X-471: the doors that walked 95 ask the one wall ==');
+{
+    const rule = (ceiling, step) => ({ name: 'night', chain: [Object.assign({ account: 'a' }, step || {})], ...(ceiling ? { ceiling } : {}) });
+    const world = (o) => Object.assign({ engine: 'claude', usage: [slot('a', 92), slot('b', 10)], ceiling: 70, handoverPct: 90, stored: ['a', 'b'], now: NOW }, o);
+    const r95 = P.resolvePolicy('@night', world({ policies: [rule(95)] }));
+    ok('‼️ a rule\'s own wall above the quota handover line acts AT that line (a at 92 under 95 → 90 is passed over)', r95.id !== 'a');
+    ok('…and with the handover line off the rule\'s own 95 stands (a at 92 starts)', P.resolvePolicy('@night', world({ policies: [rule(95)], handoverPct: 0 })).id === 'a');
+    ok('…a step\'s own wall likewise', P.resolvePolicy('@night', world({ policies: [rule(0, { ceiling: 95 })] })).id !== 'a');
+    const pool = (c) => world({ usage: [slot('a', 92)], pool: { accounts: ['a'], ceiling: c } });
+    ok('…and the campaign pool\'s wall (@pool) likewise', !!P.resolvePolicy('@pool', pool(95)).refusal && P.resolvePolicy('@pool', Object.assign(pool(95), { handoverPct: 0 })).id === 'a');
+
+    const src = (f) => fs.readFileSync(path.join(ROOT, 'src', f), 'utf8').replace(/\r\n/g, '\n');
+    const ext = src('extension.ts');
+    ok('‼️ the sentry keeps no wall of its own anywhere in src (SENTRY_DEFAULT_CEILING is gone)',
+        !/SENTRY_DEFAULT_CEILING/.test(codeOnly(ext, true) + codeOnly(src('core/sentryRun.ts'), true) + codeOnly(src('core/sentryDriver.ts'), true) + codeOnly(src('core/tasks.ts'), true)));
+    ok('the campaign\'s wall is the host\'s accountCeiling given the campaign\'s own ceiling',
+        /function campaignWall\(rec: \{ ceiling\?: unknown \}\): StartWall \{\n\s*return accountCeiling\(\{ value: rec\.ceiling, why: 'the campaign\\'s wall' \}\);/.test(ext));
+    ok('…and the tick reads it once, for the facts, the leader\'s seat and the round',
+        /const wall = campaignWall\(rec\);/.test(ext) && /slotIsUsable\(u, wall\.value\)\)\.length/.test(ext)
+        && /const ceiling = wall\.value;\n\s*const shape = \{/.test(ext) && /running: taskManager\.sentryBusy\(\),\n\s*wall,\n\s*now: Date\.now\(\)/.test(ext));
+    ok('the carry, accounts.best, the policies and the Accounts card ask the same wall',
+        /accountWall: own => accountCeiling\(own\),/.test(ext)
+        && /const wall = accountCeiling\(own \? \{ value: own, why: 'the caller\\'s ceiling' \} : undefined\);/.test(ext)
+        && /ceiling: accountCeiling\(\)\.value,\n\s*handoverPct: handoverLine\(\),/.test(ext)
+        && /accountOrder\(pool, \{\n\s*ceiling: accountCeiling\(\)\.value, engine: slot\.engine/.test(ext));
+    ok('the surfaces say the wall in force (sentry payload, sentry.status, the empty box\'s default)',
+        (ext.match(/wall: campaignWall\(rec\),/g) || []).length === 2 && /ceilingWhy: accountCeiling\(\)\.why,/.test(ext));
+}
+
 const TWO = ['slotIsUsable', 'mostRoom', 'roomOrder', 'nextResetAt'];
 const OPTS = { accountOrder: 1, pickAccount: 1, carryOnAccount: 0 };
 const ALLOWED_CONST = new Set(['POLICY_DEFAULT_CEILING']);
+// X-471 — a record's own optional field handed straight in: absent, it falls to the primitive's default 100 (the sentry's facts did)
+const RAW_CEILING = /^\w+\??\.ceiling$/;
+const RAW_KIND = 'a record\'s optional ceiling passed raw (absent = no wall)';
 
 /** Every place in one source file that states a wall of its own. */
 function offendersOf(file, src) {
@@ -67,11 +99,13 @@ function offendersOf(file, src) {
         let kind = '';
         if (TWO.includes(c.name)) {
             const a = c.args[1];
-            kind = a === undefined ? 'states no wall' : /^\d/.test(a) ? 'a wall written as a number' : /\b\w*(DEFAULT|WALL)_CEILING\b/.test(a) && !ALLOWED_CONST.has(a) ? 'a wall constant' : '';
+            kind = a === undefined ? 'states no wall' : /^\d/.test(a) ? 'a wall written as a number' : /\b\w*(DEFAULT|WALL)_CEILING\b/.test(a) && !ALLOWED_CONST.has(a) ? 'a wall constant'
+                : RAW_CEILING.test(a) ? RAW_KIND : '';
         } else {
             const o = c.args[OPTS[c.name]] || '';
             kind = !/\bceiling\b/.test(o) ? 'states no wall' : /\bceiling\s*:\s*\d/.test(o) ? 'a wall written as a number'
-                : /\bceiling\s*:\s*(\w*(DEFAULT|WALL)_CEILING)\b/.test(o) && !ALLOWED_CONST.has(/\bceiling\s*:\s*(\w+)/.exec(o)[1]) ? 'a wall constant' : '';
+                : /\bceiling\s*:\s*(\w*(DEFAULT|WALL)_CEILING)\b/.test(o) && !ALLOWED_CONST.has(/\bceiling\s*:\s*(\w+)/.exec(o)[1]) ? 'a wall constant'
+                    : /\bceiling\s*:\s*\w+\??\.ceiling\s*[,}]/.test(o) ? RAW_KIND : '';
         }
         if (kind) { out.push({ file, kind, line: c.line, text: c.text }); }
     }
@@ -131,6 +165,9 @@ console.log('\n== the gate bites (fixtures) ==');
     ok('…an options call without a ceiling', judge(at('const o = accountOrder(pool, { engine: e });'), empty).length === 1);
     ok('…with a literal ceiling option', judge(at('const o = pickAccount(pool, { ceiling: 95, engine });'), empty).length >= 1);
     ok('…an op default written as a number', judge(at("const c = optNum(args, 'ceiling', 95);"), empty).length === 1);
+    ok('‼️ …a record\'s optional ceiling handed in raw, which falls to 100 when unset (X-471)',
+        judge(at('const n = usage.filter(u => slotIsUsable(u, rec.ceiling)).length;'), empty).length === 1
+        && judge(at('const o = accountOrder(list, { ceiling: pool.ceiling, now });'), empty).length === 1);
     ok('a wall from startWall passes', judge(at('const s = slotIsUsable(u, wall.value, now); const o = accountOrder(p, { ceiling: wall.value });'), empty).length === 0);
     ok('the Account ceiling\'s own default constant passes', judge(at('const c = n > 0 ? n : POLICY_DEFAULT_CEILING;'), empty).length === 0);
     ok('a comment or a string that names one is not a door', judge(at('// slotIsUsable(u, 90)\nconst s = "roomOrder(list, 95)";'), empty).length === 0);

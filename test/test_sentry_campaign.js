@@ -14,9 +14,9 @@
 //     item has: a campaign that believes it is still running a round that died
 //     with the window, and therefore never starts another as long as it lives.
 //   · ‼️ AN UNREADABLE NUMBER IS NOT A SETTING. A ceiling of "soon" leaves the
-//     field ABSENT so `SENTRY_DEFAULT_CEILING` applies — the one default lives
-//     in the planner, and a store that invents 95 of its own makes changing it
-//     a two-file job that will be done in one.
+//     field ABSENT so the Account ceiling applies (startRoom.ts startWall) — the
+//     one default is the user's setting, and a store that invents a number of
+//     its own makes changing it a two-file job that will be done in one.
 const path = require('path');
 
 let pass = 0, fail = 0;
@@ -27,7 +27,11 @@ const {
     newSentry, refuseSentry, stopSentry, pauseSentry, resumeSentry, sentryRunning, noteSentryPlan, noteSentryRound,
     sentryDue, SENTRY_TAKEN_KEEP
 } = require(path.join(OUT, 'sentryCampaign.js'));
-const { planSentry, SENTRY_DEFAULT_CEILING } = require(path.join(OUT, 'sentryRun.js'));
+const { planSentry } = require(path.join(OUT, 'sentryRun.js'));
+const { startWall } = require(path.join(OUT, 'startRoom.js'));
+// X-471 — the host's composition: the campaign's own ceiling into startWall, under the Account ceiling and the handover line
+const wallOf = (rec) => startWall({ setting: 70, handoverPct: 90, own: rec.ceiling, ownWhy: 'the campaign\'s wall' });
+const WALL = wallOf({});
 const { presetConditions } = require(path.join(OUT, 'sentryPolicy.js'));
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
@@ -45,7 +49,7 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
 
     // ‼️ THE POINT OF THE SHAPE: no translation layer between store and decision.
     const p = planSentry({
-        campaign: rec, usage: [], next: { code: 'X-177', text: 'a' }, prompt: 'go', now: NOW
+        campaign: rec, usage: [], next: { code: 'X-177', text: 'a' }, prompt: 'go', wall: WALL, now: NOW
     });
     ok('‼️ the stored record IS what the planner plans over, with nothing in between',
         p.action === 'start');
@@ -75,17 +79,19 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
         newSentry(Object.assign({ ceiling: 400 }, asked), NOW).ceiling === 100);
     ok('a ceiling below one is brought up to it',
         newSentry(Object.assign({ ceiling: -3 }, asked), NOW).ceiling === 1);
-    ok('a ceiling that is not a number is left ABSENT, so the planner default applies',
+    ok('a ceiling that is not a number is left ABSENT, so the Account ceiling applies',
         newSentry(Object.assign({ ceiling: 'soon' }, asked), NOW).ceiling === undefined);
-    ok('...and the planner really is the one place that default lives',
-        planSentry({
-            campaign: newSentry(Object.assign({ ceiling: 'soon' }, asked), NOW),
-            usage: [{
-                slotId: 'a', engine: 'claude', state: 'ok', percent: SENTRY_DEFAULT_CEILING - 1,
-                resetsAt: NOW + 60 * MIN, plan: 'pro', fetchedAt: NOW
-            }],
-            next: { code: 'X-177', text: 'a' }, prompt: 'go', now: NOW
-        }).action === 'start');
+    const soon = newSentry(Object.assign({ ceiling: 'soon' }, asked), NOW);
+    const at = (pct, rec) => planSentry({
+        campaign: rec,
+        usage: [{ slotId: 'a', engine: 'claude', state: 'ok', percent: pct, resetsAt: NOW + 60 * MIN, plan: 'pro', fetchedAt: NOW }],
+        next: { code: 'X-177', text: 'a' }, prompt: 'go', wall: wallOf(rec), now: NOW
+    }).action;
+    ok('‼️ X-471 — …and the Account ceiling really is that one default (69 starts, 75 waits on a 70 ceiling)',
+        wallOf(soon).value === 70 && at(69, soon) === 'start' && at(75, soon) === 'sleep');
+    const own95 = newSentry(Object.assign({ ceiling: 95 }, asked), NOW);
+    ok('‼️ …and a campaign\'s own ceiling above the quota handover line acts AT that line (92 waits under 95 → 90)',
+        wallOf(own95).value === 90 && /quota handover line/.test(wallOf(own95).why) && at(92, own95) === 'sleep' && at(85, own95) === 'start');
     ok('a safety buffer of zero is a real answer and survives',
         newSentry(Object.assign({ safetyBufferMin: 0 }, asked), NOW).safetyBufferMin === 0);
     ok('a negative safety buffer is brought up to zero',
@@ -107,7 +113,7 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
     ok('a stopped campaign says so and remembers when',
         rec.status === 'stopped' && rec.stoppedAt === NOW + MIN);
     ok('...and the planner plans nothing for it',
-        planSentry({ campaign: rec, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', now: NOW })
+        planSentry({ campaign: rec, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', wall: WALL, now: NOW })
             .action === 'stopped');
 }
 
@@ -232,8 +238,8 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
     ok('a record round-trips through the store unchanged',
         JSON.stringify(back) === JSON.stringify(rec));
     ok('...and the planner reads the copy exactly as it read the original',
-        planSentry({ campaign: back, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', now: NOW }).action
-        === planSentry({ campaign: rec, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', now: NOW }).action);
+        planSentry({ campaign: back, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', wall: WALL, now: NOW }).action
+        === planSentry({ campaign: rec, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', wall: WALL, now: NOW }).action);
 }
 
 // ---- X-194 — A CAMPAIGN IS STARTED WITH A MODE, not patched into one --------

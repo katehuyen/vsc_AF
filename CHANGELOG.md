@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.782.0 - The sentry, a carried run and accounts.best obey your Account ceiling (2026-10-02)
+
+- **No more door of its own.** The sentry campaign, a run carried to another
+  account after it hit a limit, `accounts.best` and the Accounts card's
+  rotation line used to judge "full" against a fixed figure of their own, above
+  the quota handover line — so a round could open on an account that would be
+  told to hand over on its first reading. They now all use your Account
+  ceiling, like every other unattended start.
+- **Own walls stay, under the line.** A campaign's Ceiling, a rule's or a
+  step's own wall, and a ceiling passed to `accounts.best` still replace the
+  Account ceiling — but none of them acts above the quota handover line.
+- **The leader cannot overrule it.** An account the sentry's leader names is
+  used only while it has room under the campaign's wall; otherwise the pool
+  picks, and the round's reason says why.
+- **Said where you look.** The campaign's Ceiling box says what an empty box
+  acts at and the wall in force; `sentry.status` carries it as `wall`, and
+  `settings.get` / `settings.list` now carry a setting's "In force" note and
+  refusal, as the Settings page shows them.
+
 ## 3.781.0 - A relay successor never stays on an account with no room (2026-10-02)
 
 - **One wall for every start.** Whether a session may start on an account is

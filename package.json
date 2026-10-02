@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.781.0",
+  "version": "3.782.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9029,7 +9029,7 @@
           "default": 70,
           "minimum": 1,
           "maximum": 100,
-          "description": "Account policies: the wall every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none uses when it picks the account a session STARTS on — a sign-in at or past this share of its five-hour window is passed over. It never stands above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so the policies walk with the lower of the two, and lowering the handover line lowers the wall with it. The Account Policies table shows the wall in force and why."
+          "description": "Account ceiling: the wall every unattended start obeys — a sign-in at or past this share of its five-hour window is passed over. Every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none, a relay successor staying on its account, a sentry round whose campaign names no ceiling, a run carried to another account after a limit, and accounts.best when asked without a ceiling. A campaign, rule, step or caller may name its own wall instead, but nothing — this box included — ever acts above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so lowering the handover line lowers every wall with it. The Account Policies table, the campaign's Ceiling box and sentry.status show the wall in force and why."
         },
         "agentFarm.contextHandoverStayAccountPct": {
           "type": "number",
@@ -10368,7 +10368,7 @@
               },
               "ceiling": {
                 "type": "number",
-                "description": "the wall, as a percentage of the window, for every step that names none (default 95 — a session STARTED on a slot with 5% left is a session that ends ten minutes in)"
+                "description": "the wall, as a percentage of the window, for every step that names none (default the Account ceiling, agentFarm.defaultAccountCeiling). A rule's or a step's own wall never acts above agentFarm.quotaHandoverPct — a session STARTED past the handover line is told to hand over on its first reading"
               },
               "strategy": {
                 "type": "string",

@@ -93,6 +93,8 @@ const mk = (name) => new TaskManager(
         quotaCheck: () => 'test hold',
         limitResetAt: () => Date.now() + 4 * HOUR,
         measuredAccounts: () => USAGE,
+        // X-471 — the host's accountCeiling; the fixtures are written against this wall
+        accountWall: () => ({ value: 95, why: 'the test wall' }),
         sentryTick: (t) => drives.push(t ? t.id : '(poll)'),
         // X-226 (round 2) — the handover is opt-in; this suite opts the
         // ordinary run in, so the sentry's refusal is measured against a run

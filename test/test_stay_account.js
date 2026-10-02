@@ -81,7 +81,7 @@ console.log('\n== the relay\'s next leg ==');
 console.log('\n== the sentry\'s next round ==');
 {
     const slot = (id, pct) => ({ slotId: id, engine: 'claude', state: 'ok', percent: pct, resetsAt: NOW + 60 * MIN, plan: 'pro', fetchedAt: NOW - MIN });
-    const base = { campaign: newSentry({ project: 'prj_1', agent: 'developer' }, NOW), usage: [slot('a', 10), slot('b', 40)], next: { code: 'S-106', text: 'x', effort: 'S' }, opening: 'Take S-106.', now: NOW };
+    const base = { campaign: newSentry({ project: 'prj_1', agent: 'developer' }, NOW), usage: [slot('a', 10), slot('b', 40)], next: { code: 'S-106', text: 'x', effort: 'S' }, opening: 'Take S-106.', wall: { value: 95, why: 'the campaign\'s wall' }, now: NOW };
     const plain = sentryStep(base);
     const picked = plain.round && plain.round.slotId;
     ok('without a stay the pool picks (the emptiest here)', picked === 'a');
@@ -93,6 +93,9 @@ console.log('\n== the sentry\'s next round ==');
     ok('the leader\'s own choice still wins', led.round && led.round.slotId === 'a');
     const walled = sentryStep(Object.assign({}, base, { usage: [slot('a', 10), slot('b', 99)], stay: { stay: true, slotId: 'b', why: 'w' } }));
     ok('a stay slot past the campaign\'s ceiling is not used', walled.round && walled.round.slotId === 'a');
+    const pastWall = sentryStep(Object.assign({}, base, { usage: [slot('a', 10), slot('b', 99)], leader: { account: 'b' } }));
+    ok('‼️ X-471 — nor is a slot the LEADER names past the wall: the pool picks, and the reason says so',
+        pastWall.round && pastWall.round.slotId === 'a' && /leader named b/.test(pastWall.plan.why) && /campaign's wall/.test(pastWall.plan.why));
     const off = sentryStep(Object.assign({}, base, { stay: { stay: false, why: 'off' } }));
     ok('a verdict that says no leaves the pool in charge', off.round && off.round.slotId === 'a');
 }

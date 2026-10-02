@@ -179,7 +179,7 @@ import {
     presetConditions as sentryPresetConditions
 } from './core/sentryPolicy';
 import { roundWhy, whyShorthand } from './core/sentryWhy';
-import { SENTRY_DEFAULT_CEILING, leaderAccountFor } from './core/sentryRun';
+import { leaderAccountFor } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
 import {
@@ -4017,6 +4017,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // service answers from what it has already measured and never
             // fetches to answer a question.
             measuredAccounts: () => accountUsage.current(),
+            accountWall: own => accountCeiling(own),
             // ‼️ X-226 (round 2) — a retry policy that names a RULE for the
             // handover is resolved by the same resolver a launch uses, over the
             // pool the decision already narrowed (never the walled account), and
@@ -22098,8 +22099,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             line: (() => {
                 const pool = usage.filter(x =>
                     String(x.engine ?? '').trim().toLowerCase() === slot.engine);
+                // X-471 — the wall the carry and every policy walk, so the card never names a turn the rotation will not give
                 const order = accountOrder(pool, {
-                    ceiling: ACCOUNT_WALL_CEILING, engine: slot.engine
+                    ceiling: accountCeiling().value, engine: slot.engine
                 });
                 const at = order.findIndex(x => x.slotId === slot.id);
                 return at < 0 ? null : { place: at + 1, of: order.length };
@@ -22551,7 +22553,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return {
             accounts,
             ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
-            ceiling: typeof rec.ceiling === 'number' ? rec.ceiling : SENTRY_DEFAULT_CEILING,
+            ceiling: campaignWall(rec).value,
             ...(engineId ? { engine: engineId } : {})
         };
     };
@@ -22573,6 +22575,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const set = resolveFlex('accounts.defaultCeiling', mine === undefined || mine === null || mine === '' ? {} : { settings: mine }).value;
         return startWall({ setting: set, handoverPct: handoverLine(), ...(own ? { own: own.value, ownWhy: own.why } : {}) });
     }
+    /** X-471 — a sentry campaign's wall: its own ceiling when it states one, else the Account ceiling; never above the handover line. */
+    function campaignWall(rec: { ceiling?: unknown }): StartWall {
+        return accountCeiling({ value: rec.ceiling, why: 'the campaign\'s wall' });
+    }
     /** agentFarm.quotaHandoverPct — its default is the context guard's, never a number written here. */
     function handoverLine(): number {
         return cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
@@ -22588,6 +22594,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engine: eng,
             usage: accountUsage.current(),
             ceiling: accountCeiling().value,
+            handoverPct: handoverLine(),
             standing: standing.id,
             standingOrigin: standing.origin,
             ...(pool ? { pool } : {}),
@@ -33661,6 +33668,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const engineId = (rec.engine ?? '').trim().toLowerCase();
         const allUsage = accountUsage.current();
         const allowed = rec.pool ?? [];
+        // X-471 — one wall for the whole tick: the facts, the leader's seat and the round all read it
+        const wall = campaignWall(rec);
         // ‼️ AN ALLOWED ACCOUNT THAT NO LONGER EXISTS IS NEWS, NOT A GAP. The
         // user can forget a slot on the Engines page while a campaign is
         // running, and quietly shrinking their pool would be the extension
@@ -33767,7 +33776,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     },
                     ...(typeof facts.quotaPercent === 'number' && facts.quotaPercent >= 0
                         ? { quota: { percent: facts.quotaPercent } } : {}),
-                    accounts: { usable: usage.filter(u => slotIsUsable(u, rec.ceiling)).length },
+                    accounts: { usable: usage.filter(u => slotIsUsable(u, wall.value)).length },
                     ...(facts.output !== undefined ? { output: facts.output } : {}),
                     ...(facts.codes ? { code: { closed: facts.codes.some(c => c.closed) } } : {})
                 };
@@ -33795,7 +33804,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     repos: doc.project.repos ?? [],
                     accounts: usage.map(u => ({
                         slotId: u.slotId, percent: Number(u.percent) || 0,
-                        usable: slotIsUsable(u, rec.ceiling)
+                        usable: slotIsUsable(u, wall.value)
                     })),
                     // ‼️ X-192 — the user's own words, as MATERIAL. Not the whole
                     // pool: `materialFor` drops the other verdicts' templates, so
@@ -33833,7 +33842,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const runner = sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir());
                 const clock = { today: resolvePathVars('${today}').value, now: () => Date.now() };
                 const caps = leaderCapsFor(rec);
-                const ceiling = typeof rec.ceiling === 'number' ? rec.ceiling : SENTRY_DEFAULT_CEILING;
+                const ceiling = wall.value;
                 const shape = {
                     ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
                     ...(rec.engine ? { engine: String(rec.engine) } : {})
@@ -33944,6 +33953,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             project: doc.project.name,
             bridge: stagedBridgeCliPath(context.globalStorageUri.fsPath),
             running: taskManager.sentryBusy(),
+            wall,
             now: Date.now()
         });
 
@@ -34036,7 +34046,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const failLimit = cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT);
         const base = {
             defaults: {
-                ceiling: SENTRY_DEFAULT_CEILING,
+                // X-471 — an empty Ceiling box is the Account ceiling, said with its reason
+                ceiling: accountCeiling().value,
+                ceilingWhy: accountCeiling().why,
                 safetyBufferMin: RETRY_DEFAULT_SAFETY_MIN,
                 failLimit,
                 /**
@@ -34140,6 +34152,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...base,
             campaign: rec,
             running: !!live,
+            // X-471 — the wall this campaign's rounds start under right now, and why (its own ceiling, the Account ceiling or the handover line)
+            wall: campaignWall(rec),
             // X-207 — a pool rotates accounts whether or not an engine was named.
             rotatesAccounts: !!rec.pool?.length || !!rec.engine,
             /**
@@ -42106,10 +42120,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'request to refresh a stale figure — one, whatever the number of accounts, because the '
                 + 'budget is shared. args: engine? (default claude), ceiling? (0-100, the percentage at '
                 + 'which an account counts as full — read against whichever of its windows is FULLEST, '
-                + 'not the five-hour one alone, since either wall ends a run; default 95)',
+                + 'not the five-hour one alone, since either wall ends a run; default the Account ceiling, '
+                + 'agentFarm.defaultAccountCeiling — and never above the quota handover line, '
+                + 'agentFarm.quotaHandoverPct; `ceilingWhy` names which one acts)',
             handler: async (args) => {
                 const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
-                const ceiling = Math.max(1, Math.min(100, optNum(args, 'ceiling', 95)));
+                // X-471 — the wall every unattended start obeys; a caller's own figure replaces the Account ceiling, capped at the handover line
+                const own = optNum(args, 'ceiling', 0);
+                const wall = accountCeiling(own ? { value: own, why: 'the caller\'s ceiling' } : undefined);
+                const ceiling = wall.value;
                 // ‼️ X-240 — 'auto': this op names an unattended runner as its
                 // caller, and a runner in a loop is not a person. It used to
                 // refresh as `user`, which is the one reason allowed through a
@@ -42124,7 +42143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ? `No ${engine} account has been captured yet — accounts.capture seals the sign-in that is on this disk.`
                     : '';
                 return {
-                    engine, ceiling,
+                    engine, ceiling, ceilingWhy: wall.why,
                     best: best ? best.slotId : null,
                     percent: best ? best.percent : -1,
                     usable: usage.filter(u => u.state !== 'expired' && u.state !== 'no-auth').length,
@@ -42738,7 +42757,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'having written nothing, are diagnosed as the wall, and are reopened for ever. '
                 + 'Unattended rounds that write outside their own cwd need `bypassPermissions`), '
                 + 'superpowers?, ceiling? (five-hour % at or above '
-                + 'which an account is a wall, default ' + String(SENTRY_DEFAULT_CEILING) + '), '
+                + 'which an account is a wall; default the Account ceiling, agentFarm.defaultAccountCeiling, '
+                + 'and never above the quota handover line, agentFarm.quotaHandoverPct — sentry.status '
+                + '`wall` says which acts), '
                 + 'safetyBufferMin? (minutes past a reset before trying again), failLimit? (barren '
                 + 'rounds in a row that stop it; 0 = no brake, default from '
                 + 'agentFarm.sentryFailureLimit), '
@@ -42946,6 +42967,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     campaign: rec,
                     running: taskManager.sentryBusy(),
+                    // X-471 — the wall its rounds start under, and why
+                    wall: campaignWall(rec),
                     // X-207 — a pool rotates accounts with or without an engine.
                     rotatesAccounts: !!rec.pool?.length || !!rec.engine,
                     /**

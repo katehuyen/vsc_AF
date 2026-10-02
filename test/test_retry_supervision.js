@@ -120,7 +120,7 @@ console.log('\n== the runner ==');
         }],
         schedules: [], templates: [], workflows: [], triggers: []
     }), 'utf8');
-    const tm = new TaskManager(store, () => [agent], () => false, () => '', { supervisorRoom: () => 'free' });
+    const tm = new TaskManager(store, () => [agent], () => false, () => '', { supervisorRoom: () => 'free', accountWall: () => ({ value: 95, why: 'the test wall' }) });
     tm.maybeScheduleRetry(tm.tasks.find(t => t.id === 't1'));
     const held = tm.tasks.find(t => t.retryOf === 't1');
     ok('the retry row exists, queued, as Smart Continue made it (same session, continuation)',
@@ -143,7 +143,7 @@ console.log('\n== the runner ==');
     seed.tasks = seed.tasks.filter(t => t.id === 't1');
     seed.tasks[0].retry.supervisor = { engine: 'claude' };
     fs.writeFileSync(store2, JSON.stringify(seed), 'utf8');
-    const tm2 = new TaskManager(store2, () => [agent], () => false, () => '', { supervisorRoom: () => 'free' });
+    const tm2 = new TaskManager(store2, () => [agent], () => false, () => '', { supervisorRoom: () => 'free', accountWall: () => ({ value: 95, why: 'the test wall' }) });
     tm2.maybeScheduleRetry(tm2.tasks.find(t => t.id === 't1'));
     const same = tm2.tasks.find(t => t.retryOf === 't1');
     ok('‼️ a Claude supervisor on the task\'s own sign-in is NOT asked now, whatever "room" says',

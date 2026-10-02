@@ -286,9 +286,9 @@ function pending(status: string): boolean {
 /**
  * ‼️ AN UNREADABLE NUMBER IS NOT A SETTING.
  *
- * A ceiling of "soon" leaves the field ABSENT so the planner's own default
- * applies. A store that invented 95 of its own would make changing that default
- * a two-file job — which is to say a one-file job, done wrong.
+ * A ceiling of "soon" leaves the field ABSENT so the Account ceiling applies
+ * (startRoom.ts startWall). A store that invented a number of its own would make
+ * changing that setting a two-file job — which is to say a one-file job, done wrong.
  */
 function clamp(v: unknown, lo: number, hi: number): number | undefined {
     if (v === undefined || v === null || v === '') { return undefined; }

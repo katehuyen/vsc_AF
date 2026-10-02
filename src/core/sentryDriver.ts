@@ -9,7 +9,8 @@ import {
 import {
     buildNextPrompt, ModelAssist, NextPrompt, SentryTemplate, withItemLine
 } from './sentryPrompt';
-import { planSentry, SENTRY_DEFAULT_CEILING, SentryPlan } from './sentryRun';
+import { planSentry, SentryPlan } from './sentryRun';
+import type { StartWall } from './startRoom';
 import {
     noteSentryPlan, noteSentryRound, SentryRecord, stopSentry
 } from './sentryCampaign';
@@ -101,6 +102,8 @@ export interface SentryStepInputs {
     stay?: StayVerdict;
     /** is a round of this campaign already on the board? (`sentryRunning`) */
     running?: boolean;
+    /** X-471 — the wall every account this round may open on obeys: the pool's pick, the stay and the leader's own choice alike */
+    wall: StartWall;
     now: number;
 }
 
@@ -327,18 +330,23 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
 
     const plan = planSentry({
         campaign: c, usage: i.usage, automation: i.automation,
-        next: i.next, prompt, running: i.running, now: i.now
+        next: i.next, prompt, running: i.running, wall: i.wall, now: i.now
     });
     if (plan.action !== 'start' || !i.next) { return { ...base, plan }; }
     // The account the leader named, only when it named one and only on a round
-    // that is actually starting — `planSentry` has already refused every slot
-    // that is walled, and a leader cannot spend an account the quota rules out.
-    const chosen = String(i.leader?.account ?? '').trim();
-    // S-106 — below the leader's own choice: a slot the pool measures and the ceiling still allows
-    const ceiling = typeof c.ceiling === 'number' ? c.ceiling : SENTRY_DEFAULT_CEILING;
-    const kept = i.stay?.stay ? i.usage.find(u => u.slotId === (i.stay as { slotId: string }).slotId) : undefined;
-    const stayed = kept && slotIsUsable(kept, ceiling, i.now) ? kept.slotId : '';
-    const slotId = chosen && i.usage.some(u => u.slotId === chosen) ? chosen : stayed || plan.slotId;
+    // that is actually starting — and only while it has room under the wall:
+    // a leader cannot spend an account the quota rules out (X-471).
+    const ceiling = i.wall.value;
+    const roomOn = (id: string): boolean => i.usage.some(u => u.slotId === id && slotIsUsable(u, ceiling, i.now));
+    const named = String(i.leader?.account ?? '').trim();
+    const chosen = named && roomOn(named) ? named : '';
+    // S-106 — below the leader's own choice: a slot the pool measures and the wall still allows
+    const kept = i.stay?.stay ? (i.stay as { slotId: string }).slotId : '';
+    const stayed = kept && roomOn(kept) ? kept : '';
+    const slotId = chosen || stayed || plan.slotId;
+    if (named && !chosen && i.usage.some(u => u.slotId === named)) {
+        plan.why = `${plan.why} · the leader named ${named}, which is at or past the wall — ${i.wall.why}`;
+    }
     if (stayed && slotId === stayed && stayed !== plan.slotId && i.stay) { plan.why = `${plan.why} · ${i.stay.why}`; }
 
     /**

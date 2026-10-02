@@ -1,6 +1,7 @@
 import { AutomationState, gateBlock } from './automation';
 import { nextResetAt, pickAccount, slotIsUsable, SlotUsage } from './accountUsage';
 import { RETRY_DEFAULT_SAFETY_MIN } from './retry';
+import type { StartWall } from './startRoom';
 
 /**
  * X-176 — WHAT THE CAMPAIGN DOES NEXT, decided without starting anything.
@@ -31,13 +32,6 @@ import { RETRY_DEFAULT_SAFETY_MIN } from './retry';
 /** The five answers. Nothing else is ever returned. */
 export type SentryAction = 'start' | 'sleep' | 'idle' | 'blocked' | 'stopped';
 
-/**
- * Above this much of the five-hour window an account is not worth starting a
- * session on — it would end mid-item and leave the mess the sentry exists to
- * avoid. Stated rather than magic, and a campaign may set its own.
- */
-export const SENTRY_DEFAULT_CEILING = 95;
-
 /** The campaign itself — what the user set up and left running. */
 export interface SentryCampaign {
     /** the project whose backlog it works through */
@@ -48,7 +42,7 @@ export interface SentryCampaign {
     status: string;
     /** rounds run so far — a RECORD, never a limit */
     rounds?: number;
-    /** the five-hour percentage at or above which an account is a wall */
+    /** the campaign's own wall; absent = the Account ceiling. Never acts above the quota handover line (startRoom.ts startWall) */
     ceiling?: number;
     /** minutes to wait past a reset before trying again */
     safetyBufferMin?: number;
@@ -90,6 +84,8 @@ export interface SentryInputs {
     prompt?: string;
     /** is a round of this campaign already running? */
     running?: boolean;
+    /** X-471 — the wall this round starts under, resolved by the host from the campaign's `ceiling` (startWall) */
+    wall: StartWall;
     now: number;
 }
 
@@ -216,7 +212,7 @@ export function leaderAccountFor(
 /** The one decision the campaign makes, over and over. */
 export function planSentry(i: SentryInputs): SentryPlan {
     const c = i.campaign;
-    const ceiling = typeof c.ceiling === 'number' ? c.ceiling : SENTRY_DEFAULT_CEILING;
+    const ceiling = i.wall.value;
     const buffer = typeof c.safetyBufferMin === 'number' ? c.safetyBufferMin : RETRY_DEFAULT_SAFETY_MIN;
 
     // ‼️ X-177 — PAUSED IS NOT STOPPED. A hold that belongs to this campaign

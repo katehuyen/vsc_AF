@@ -94,7 +94,7 @@ import {
 import { applySentryStep, SentryRoundSpec, SentryStep } from './sentryDriver';
 import { SENTRY_DEFAULT_STALL_MIN, SlotHealth, slotHealth, stalledRound } from './sentryWatch';
 import { carryOnAccount, CARRY_ON_FLOOR_MS, SlotUsage } from './accountUsage';
-import { SENTRY_DEFAULT_CEILING } from './sentryRun';
+import type { StartWall } from './startRoom';
 import {
     handedOverRoundPrompt, handedOverRoundWhy,
     normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
@@ -1825,6 +1825,8 @@ export interface TaskManagerOptions {
      * sign-in (X-172) and behaves exactly as it did before this existed.
      */
     measuredAccounts?: () => SlotUsage[];
+    /** X-471 — the wall a run carried to another account starts under: the host's accountCeiling (startRoom.ts startWall), given a wall the run names for itself */
+    accountWall: (own?: { value: unknown; why: string }) => StartWall;
     /**
      * ‼️ X-226 (round 2) — resolves a retry policy's `carryOn` when it names a
      * rule (`@emptiest`, `@round-robin`, `@<named>`) over the OTHER accounts of
@@ -2289,7 +2291,8 @@ export class TaskManager implements vscode.Disposable {
         private autoAdvance: () => boolean,
         /** Extra CLI args appended to every task's claude command, e.g. "--model haiku". */
         private extraArgs: () => string = () => '',
-        private opts: TaskManagerOptions = {}
+        // the host passes every required option; the empty default serves the unit tests that never reach them
+        private opts: TaskManagerOptions = {} as TaskManagerOptions
     ) {
         this.load();
         this.applySeedFile();
@@ -5243,7 +5246,9 @@ export class TaskManager implements vscode.Disposable {
                 ...(task.account ? { from: task.account } : {}),
                 ...(task.engine ? { engine: task.engine } : {}),
                 usage: this.opts.measuredAccounts?.() ?? [],
-                ceiling: SENTRY_DEFAULT_CEILING,
+                // X-471 — the Account ceiling, or the campaign's own wall when this run is one of its rounds
+                ceiling: this.opts.accountWall(task.sentryOf && this.sentry?.id === task.sentryOf
+                    ? { value: this.sentry.ceiling, why: 'the campaign\'s wall' } : undefined).value,
                 waitUntil: wait,
                 want: carryWant,
                 ...(this.opts.resolveCarryOn

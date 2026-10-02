@@ -4551,7 +4551,10 @@
                     mirrorNum(sentryForm.ceiling, (s.defaults || {}).ceiling, '%',
                         'At or above it an account is not worth starting a round on: the round would open, '
                         + 'run into the limit and end barren. Every account walled is what makes the '
-                        + 'campaign sleep instead of spending the night on nothing.'))}
+                        + 'campaign sleep instead of spending the night on nothing. Empty means the Account '
+                        + 'ceiling, and no figure here acts above the quota handover line.'
+                        + (s.wall && s.wall.why ? ` In force: ${s.wall.why}.`
+                            : ((s.defaults || {}).ceilingWhy ? ` Empty acts at ${s.defaults.ceilingWhy}.` : ''))))}
                 ${tipLabel(
                     `Safety min<input id="s-buffer" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).safetyBufferMin || ''))}" value="${C.esc(sentryForm.safetyBufferMin)}">`,
                     'Minutes to wait PAST a measured reset',

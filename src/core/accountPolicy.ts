@@ -168,6 +168,14 @@ export interface PolicyWorld {
     now?: number;
     /** S-105 — the ceiling in force when a rule names none (effectiveCeiling); absent = POLICY_DEFAULT_CEILING */
     ceiling?: number;
+    /** X-471 — agentFarm.quotaHandoverPct: a wall a rule, step or pool names for itself never acts above it; 0/absent = off */
+    handoverPct?: number;
+}
+
+/** X-471 — a wall named for itself, never above the quota handover line (startRoom.ts startWall's rule). */
+function underLine(own: number, handoverPct: number | undefined): number {
+    const q = Number(handoverPct);
+    return Number.isFinite(q) && q > 0 && q < own ? q : own;
 }
 
 export interface PolicyResolution {
@@ -328,7 +336,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         if (!pool || !pool.accounts.length) {
             return { id: '', policy: outer, note: '', refusal: '@pool: no sentry campaign pool is running on this machine — pick @emptiest, a named rule, or an account.' };
         }
-        const c = typeof pool.ceiling === 'number' ? pool.ceiling : ceiling;
+        const c = typeof pool.ceiling === 'number' ? underLine(pool.ceiling, w.handoverPct) : ceiling;
         const byId = new Map(w.usage.map(u => [u.slotId, u]));
         const list = pool.accounts.map(a => byId.get(a)).filter((u): u is SlotUsage => !!u);
         const line = accountOrder(list, { ceiling: c, now, ...(pool.rotation ? { rotation: pool.rotation } : {}), ...(pool.engine ? { engine: pool.engine } : {}) });
@@ -386,7 +394,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
     if (ruleEngine && ruleEngine !== engine) {
         return { id: '', policy: outer, note: '', refusal: `@${rule.name} is a rule for ${ruleEngine} and this launch is on ${engine}. A slot belongs to one engine, so a rule does too.` };
     }
-    const ruleCeiling = typeof rule.ceiling === 'number' ? rule.ceiling : ceiling;
+    const ruleCeiling = typeof rule.ceiling === 'number' ? underLine(rule.ceiling, w.handoverPct) : ceiling;
     const model = String(w.model ?? '').trim().toLowerCase();
     const skipped: string[] = [];
     let earliest = 0;
@@ -394,7 +402,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         const back = r ? backAt(r, c, now) : 0;
         if (back > now) { earliest = earliest ? Math.min(earliest, back) : back; }
     };
-    const wallOf = (st: PolicyStep): number => typeof st.ceiling === 'number' ? st.ceiling : ruleCeiling;
+    const wallOf = (st: PolicyStep): number => typeof st.ceiling === 'number' ? underLine(st.ceiling, w.handoverPct) : ruleCeiling;
     /** A model-filtered step that is not for this launch — said in `skipped`. */
     const offModel = (st: PolicyStep, i: number): boolean => {
         const models = (st.models ?? []).map(m => String(m).trim().toLowerCase()).filter(Boolean);

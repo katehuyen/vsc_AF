@@ -125,7 +125,10 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
         modified: it.modified,
         masked: isSensitiveKey(it.key),
         reloadRequired: needsReload(it.description),
-        description: it.description
+        description: it.description,
+        // X-470 — the row's notes reach the bridge as they reach the page: a refusal or an in-force figure said on one surface only is a second opinion
+        ...(it.refusal ? { refusal: it.refusal } : {}),
+        ...(it.inForce ? { inForce: it.inForce } : {})
     });
 
     const findAgent = (ref: string): AgentInfo => {
