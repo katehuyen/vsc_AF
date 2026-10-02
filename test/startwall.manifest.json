@@ -11,7 +11,7 @@
     { "file": "src/core/accountUsage.ts", "match": "export const ACCOUNT_WALL_CEILING = 100", "why": "the plan's own wall (100%): what 'at the wall' means on a usage bar, never where a session starts" },
     { "file": "src/extension.ts", "match": "ACCOUNT_WALL_CEILING, AccountUsageService", "why": "the import the 'at the wall' readout uses" },
     { "file": "src/extension.ts", "match": "at: u.percent >= ACCOUNT_WALL_CEILING", "why": "a usage bar marked 'at the wall' = the plan itself is full (100%), not a start decision" },
-    { "file": "src/extension.ts", "match": "optNum(args, 'ceiling', 0)", "why": "0 = the caller named no wall of its own: the rule it saves keeps none, and accounts.best hands its figure to accountCeiling, which caps it at the quota handover line" }
+    { "file": "src/extension.ts", "match": "optNum(args, 'ceiling', 0)", "why": "0 = the caller named no wall of its own: the rule it saves keeps none, and accounts.status hands its figure to accountCeiling, which caps it at the quota handover line" }
   ],
   "pending": []
 }

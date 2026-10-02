@@ -17,7 +17,9 @@ const OUT = path.join(ROOT, 'out', 'core');
 const F = require(path.join(OUT, 'usageFloor.js'));
 const U = require(path.join(OUT, 'accountUsage.js'));
 const P = require(path.join(OUT, 'accountPolicy.js'));
-const R = require(path.join(OUT, 'batonRoom.js'));
+const C = require(path.join(OUT, 'passCause.js'));
+// X-472 — the starved note is read off the one verdict (passCause.ts); this is its X-462 reading: Agent Farm's figure alone
+const R = { starvedWhy: (i) => C.starvedOf(C.passCause({ fault: i.fault, slot: i.slot, readings: { 'agent-farm': i.percent }, quotaHandoverPct: i.handoverPct, contextHandoverPct: 0 })) };
 const { batonBrake } = require(path.join(OUT, 'batonBrake.js'));
 const { BridgeRegistry } = require(path.join(OUT, 'bridge.js'));
 const { registerBatonOps } = require(path.join(OUT, 'batonBridge.js'));
@@ -133,7 +135,7 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
         registerBatonOps(reg, {
             store, caller: async () => ({ ok: true, sessionId: 'sess-A', source: 'env' }), launchIdOf: () => 'lch_abc123def',
             manifests: () => [manifest], headOf: async () => H1, notify: (t, b, k) => notes.push({ t, b, k }), now: () => NOW,
-            starvedOf: b => R.starvedWhy({ slot: b.inherit.account, percent: 95, handoverPct: 90 })
+            causeOf: b => C.passCause({ slot: b.inherit.account, readings: { 'agent-farm': 95 }, quotaHandoverPct: 90, contextHandoverPct: 0 })
         });
         const r = await reg.dispatch('baton.pass', { prompt: 'carry on' });
         ok('‼️ the replayed pass of leg 3 is NOT braked: it waits for its session, marked starved', r.ok && !r.result.braked && r.result.baton.state === 'waiting-end'
@@ -157,11 +159,11 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
         ok('the door marks the account the plan limit walled', /if \(b\.fault === 'limit' && was\) \{ try \{ accountUsage\.markWalled\(was\); \}/.test(ext));
         ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : b\.want\.account, agentId: agent\.id, model: b\.inherit\.model \}\);/.test(ext));
-        ok('the stay reads the figure in force (a floor counts)', /stayPct: pct, slotId, percent: u \? percentNow\(u\) : undefined, resetsAt: u\?\.resetsAt,/.test(ext));
+        ok('the stay reads the figure in force (a floor counts)', /stayPct: pct, slotId, percent: cause\.quotaPct >= 0 \? cause\.quotaPct : \(u \? percentNow\(u\) : undefined\), resetsAt: u\?\.resetsAt,/.test(ext));
         const wake = (ext.match(/function relayWakeHold\(task: FarmTask\)[\s\S]*?\n    \}\n/) || [''])[0];
         ok('a parked row keeps waiting at its wake, before the quota line', /quotaCheck: \(task\) => relayWakeHold\(task\) \?\? quotaBrake\(/.test(ext) && /if \(r\.refusal && r\.resetsAt\) \{ return \{ code: 'quota:5h'/.test(wake));
         ok('‼️ …and never pins an account on the row: the launch picks as every launch does', !!wake && !/task\.account =/.test(wake) && !/noteTaskEvent/.test(wake));
-        ok('the starved evidence reaches the pass and the runner', (ext.match(/starvedOf: b => legStarvedOf\(b\)/g) || []).length === 2);
+        ok('the starved evidence reaches the pass and the runner', (ext.match(/causeOf: \(b, agentPct\) => passCauseOf\(/g) || []).length === 2);
         ok('the floors outlive a reload', /memory: fileUsageMemory\(path\.join\(context\.globalStorageUri\.fsPath, 'account-usage-floors\.json'\)\)/.test(ext));
         ok('‼️ no second wall: no leg start line, no cap on the policies', !/batonMinRoomPct|legStartLine|relayPlace|legLine|cap\?: number/.test(ext)
             && !/\bcap\b|capOf|capped/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'accountPolicy.ts'), 'utf8')));

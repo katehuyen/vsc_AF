@@ -15,6 +15,7 @@
  */
 import { isPolicyId } from './accountPolicy';
 import { LaunchManifest, LaunchSurface } from './launchManifest';
+import type { PassCause } from './passCause';
 
 export type BatonState = 'armed' | 'waiting-end' | 'parked' | 'started' | 'stopped' | 'refused' | 'done' | 'failed';
 
@@ -97,7 +98,9 @@ export interface Baton {
     rescue?: string;
     /** X-427 — the engine flagged the leg's conversation, or X-462 its account hit the plan limit, and Agent Farm passed for it (engineFaultWatch.ts) */
     fault?: BatonFault;
-    /** X-462 — the passing leg had no room left (batonRoom.ts starvedWhy): the barren brake does not count it */
+    /** X-472 — why the leg passed, measured (passCause.ts): limit · quota · context · flagged · early, with the figures */
+    cause?: PassCause;
+    /** X-462 — the passing leg had no room left (passCause.ts starvedOf): the barren brake does not count it */
     starved?: string;
     /** S-84 — the A2A card this pass hung on the board (batonBoard.ts) */
     a2aNoteId?: string;

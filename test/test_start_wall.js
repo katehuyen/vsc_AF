@@ -76,7 +76,7 @@ console.log('\n== X-471: the doors that walked 95 ask the one wall ==');
     ok('…and the tick reads it once, for the facts, the leader\'s seat and the round',
         /const wall = campaignWall\(rec\);/.test(ext) && /slotIsUsable\(u, wall\.value\)\)\.length/.test(ext)
         && /const ceiling = wall\.value;\n\s*const shape = \{/.test(ext) && /running: taskManager\.sentryBusy\(\),\n\s*wall,\n\s*now: Date\.now\(\)/.test(ext));
-    ok('the carry, accounts.best, the policies and the Accounts card ask the same wall',
+    ok('the carry, accounts.status, the policies and the Accounts card ask the same wall',
         /accountWall: own => accountCeiling\(own\),/.test(ext)
         && /const wall = accountCeiling\(own \? \{ value: own, why: 'the caller\\'s ceiling' \} : undefined\);/.test(ext)
         && /ceiling: accountCeiling\(\)\.value,\n\s*handoverPct: handoverLine\(\),/.test(ext)

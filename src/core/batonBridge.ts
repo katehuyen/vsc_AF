@@ -17,6 +17,7 @@ import { markFolder } from './batonLegFacts';
 import type { FolderRead } from './legRoots';
 import { attachRelay } from './batonAttach';
 import { BatonBoard } from './batonBoard';
+import { PassCause, starvedOf } from './passCause';
 import { chainMaxLegs } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { LaunchManifest, manifestOf } from './launchManifest';
@@ -47,8 +48,10 @@ export interface BatonBridgeDeps {
     notify?: (title: string, body: string, key: string) => void;
     /** S-84 — the A2A board a pass hangs its handover card on; absent = no card */
     board?: BatonBoard;
-    /** X-462 — why the passing leg had no room left (batonRoom.ts starvedWhy), or undefined */
-    starvedOf?: (b: Baton) => string | undefined;
+    /** X-472 — why the leg passed, from every reading there is (passCause.ts); `agentPct` is the agent's own figure, which only raises it */
+    causeOf?: (b: Baton, agentPct?: number) => PassCause | undefined;
+    /** X-472 — re-read the passing slot before the verdict; a failed read leaves its floor (usageFloor.ts) */
+    freshen?: (b: Baton) => Promise<void>;
 }
 
 /** S-74 — the live batons an op's `baton` / `chain` / `session` argument names. */
@@ -119,6 +122,7 @@ export function batonView(b: Baton): Record<string, unknown> {
         ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
         ...(b.rescue ? { rescue: b.rescue } : {}),
         ...(b.fault ? { fault: b.fault } : {}),
+        ...(b.cause ? { cause: b.cause } : {}),
         ...(b.starved ? { starved: b.starved } : {}),
         ...(b.a2aNoteId ? { a2aNoteId: b.a2aNoteId } : {}),
         ...(b.lastLeg ? { lastLeg: b.lastLeg } : {}),
@@ -133,7 +137,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
     bridge.register([
         {
             op: 'baton.pass',
-            describe: 'S-66 — LEAVE THE BATON: the words your successor starts from, when this run is ending (5-hour quota or context wall — _REF/handover.md). It STARTS NOTHING: it records the baton against the calling session (found as sessions.whoami finds it — never from the folder), reads that session\'s sealed launch manifest for the successor\'s whole setup (engine, model, effort, permission, provider, superpowers, folder, project), and answers with `sentence` — what will happen when this session ENDS. A second pass from the same session replaces the first. args: prompt (required — the successor\'s first message), from? (a session id, when you are not the caller), surface? (inherit | console | terminal | headless; default inherit = the surface this run used), account? (the pool the successor is placed from — used only while the chain has none: a chain whose first leg named a policy (tasks.add baton:true, S-81) or whose first pass did keeps that pool on every leg, and a different account here is answered in `poolKept`; default @emptiest), note? (a line for the person reading the chain, never sent to the successor). ‼️ The prompt is prose: never inline it in a shell command — write { "prompt": "…" } to a file with your Write tool and call: node af.js baton.pass "@baton.json". Refused as data (no session found, no launch id or manifest, empty prompt, unknown surface) — except that a RELAY LEG with no launch id or manifest passes on its chain\'s own setup and says so in `setupFromChain` (S-89). ‼️ S-78: a pass past the leg ceiling (agentFarm.batonMaxHops) or after two legs in a row that left no new commit is answered with `braked` (ceiling | barren) and opens NOTHING — the baton is kept as stopped; write the handover note instead.',
+            describe: 'S-66 — LEAVE THE BATON: the words your successor starts from, when this run is ending (5-hour quota or context wall — _REF/handover.md). It STARTS NOTHING: it records the baton against the calling session (found as sessions.whoami finds it — never from the folder), reads that session\'s sealed launch manifest for the successor\'s whole setup (engine, model, effort, permission, provider, superpowers, folder, project), and answers with `sentence` — what will happen when this session ENDS. A second pass from the same session replaces the first. args: prompt (required — the successor\'s first message), from? (a session id, when you are not the caller), surface? (inherit | console | terminal | headless; default inherit = the surface this run used), account? (the pool the successor is placed from — used only while the chain has none: a chain whose first leg named a policy (tasks.add baton:true, S-81) or whose first pass did keeps that pool on every leg, and a different account here is answered in `poolKept`; default @emptiest), note? (a line for the person reading the chain, never sent to the successor), quota? (your own five-hour probe reading, 0-100 — it can only RAISE the figure Agent Farm measured, never lower it). ‼️ X-472: WHY the leg passed is measured at the pass, not taken from you — the passing slot is re-read and the highest of Agent Farm\'s figure, the guard\'s last reading and yours decides `cause` (limit · quota · context · flagged · early, with the figures); whether the successor stays on your account reads that cause. ‼️ The prompt is prose: never inline it in a shell command — write { "prompt": "…" } to a file with your Write tool and call: node af.js baton.pass "@baton.json". Refused as data (no session found, no launch id or manifest, empty prompt, unknown surface) — except that a RELAY LEG with no launch id or manifest passes on its chain\'s own setup and says so in `setupFromChain` (S-89). ‼️ S-78: a pass past the leg ceiling (agentFarm.batonMaxHops) or after two legs in a row that left no new commit is answered with `braked` (ceiling | barren) and opens NOTHING — the baton is kept as stopped; write the handover note instead.',
             handler: async (args, from) => {
                 const who = await deps.caller(optStr(args, 'from') || undefined, from);
                 if (!who.ok) { throw new BridgeRefusal(who.why, { step: 'caller' }); }
@@ -150,9 +154,13 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                     });
                 }
                 const marked: Baton = await markFolder(res.baton, deps.headOf, deps.dirtOf);
+                // X-472 — why it passed is measured here, once: the stay, the starved note and the card read it
+                try { await deps.freshen?.(marked); } catch { /* the floor stands */ }
+                const agentPct = optNum(args, 'quota', -1);
+                const cause = (() => { try { return deps.causeOf?.(marked, agentPct >= 0 ? agentPct : undefined); } catch { return undefined; } })();
                 // X-462 — a leg out of room is waiting for quota, not spinning: the barren brake skips it
-                const starved = (() => { try { return deps.starvedOf?.(marked); } catch { return undefined; } })();
-                const accepted: Baton = starved ? { ...marked, starved } : marked;
+                const starved = starvedOf(cause);
+                const accepted: Baton = { ...marked, ...(cause ? { cause } : {}), ...(starved ? { starved } : {}) };
                 const brake = batonBrake(accepted, deps.store.all(),
                     chainMaxLegs(deps.store.all(), accepted.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
                 if (brake) {

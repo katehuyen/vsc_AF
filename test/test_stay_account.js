@@ -103,10 +103,10 @@ console.log('\n== the sentry\'s next round ==');
 console.log('\n== the wiring ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('the door asks the stay for the predecessor\'s account', /const stay = handoverStay\(b\.from\.sessionId, was, \{ walled: b\.fault === 'limit' \}\);/.test(ext));
+    ok('the door asks the stay for the predecessor\'s account, with the measured cause (X-472)', /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*const stay = handoverStay\(was, cause\);/.test(ext));
     ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : b\.want\.account/.test(ext) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
-    ok('the quota reason is the guard\'s quota handover', /quotaHandover: !!\(sid && contextGuard\.record\(sid\)\?\.quota\?\.handover\), walled: !!o\.walled/.test(ext));
-    ok('the sentry step gets the finished round\'s stay', /stay: handoverStay\(successorSessionOf\(finishedTask\), finishedTask\.account\)/.test(ext));
+    ok('‼️ X-472 — the quota reason is the measured cause, never whether an order reached the run', /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(ext) && !/contextGuard\.record\(sid\)\?\.quota\?\.handover/.test(ext));
+    ok('the sentry step gets the finished round\'s stay, on the same verdict', /stay: handoverStay\(finishedTask\.account, passCauseOf\(\{ sessionId: successorSessionOf\(finishedTask\), slot: finishedTask\.account \}\)\)/.test(ext));
     const src = ext.replace(/\r\n/g, '\n');
     const from = src.indexOf('const handoverStay = ('), to = src.indexOf('\n    };', from);
     ok('‼️ the stay is judged under the start wall (accountCeiling → startWall)', from > 0 && to > from && src.slice(from, to).includes('wall: accountCeiling()'));

@@ -26,7 +26,7 @@ export interface BatonBrake {
  *   leg's folder AND its project's repositories (legRoots.ts) — the folder
  *   alone read three commits in the project's repo as none and killed a rescue.
  *   ‼️ X-462: a STARVED leg (no room left on its account when it passed —
- *   batonRoom.ts) is not evidence of a chain spinning; it is a chain waiting
+ *   passCause.ts starvedOf) is not evidence of a chain spinning; it is a chain waiting
  *   for quota, so either leg of the two being starved keeps the brake off. The
  *   door then places the next leg where there is room or parks it until the
  *   first turnover — and the starved account itself is never placed on again

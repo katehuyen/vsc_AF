@@ -3,9 +3,9 @@
  *
  * Every unattended start asks it here: a policy's pick, a relay successor
  * staying on its account, a sentry round, a task carried to another account,
- * `accounts.best`, the spawn seam. Measured 2026-10-02 (chn_muqifjzc001n2b):
+ * `accounts.status`, the spawn seam. Measured 2026-10-02 (chn_muqifjzc001n2b):
  * five doors answered it with five lines — the policies 70, the stay 90, the
- * sentry, the carry and `accounts.best` a constant 95, a named slot nothing at
+ * sentry, the carry and `accounts.status` a constant 95, a named slot nothing at
  * all — so each fix closed one door and left the others open, and a relay leg
  * was opened on an account at 89% and handed over at once.
  *

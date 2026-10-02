@@ -2,16 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.782.0 - The sentry, a carried run and accounts.best obey your Account ceiling (2026-10-02)
+## 3.783.0 - Why a relay leg passed is measured, not taken from the agent (2026-10-02)
+
+- **One verdict for every pass.** When a relay leg passes the baton — or
+  Agent Farm passes for it — the account it ran on is read again and the
+  reason is recorded on the baton: the plan limit, the quota (the highest of
+  Agent Farm's figure, the guard's last reading and the figure the agent
+  sent), the context window, a flagged conversation, or an early pass.
+- **An agent's figure can only raise it.** A leg that reads 90% on its own
+  probe while Agent Farm reads 89% is a quota handover; a leg that reports a
+  lower figure than Agent Farm measured changes nothing.
+- **Staying on the account follows the verdict.** Whether the next leg (or
+  the sentry's next round) stays on the same account no longer depends on
+  whether a quota order happened to reach the agent; the barren-chain brake
+  and the Console card ("Passed: …") read the same verdict.
+
+## 3.782.0 - The sentry, a carried run and accounts.status obey your Account ceiling (2026-10-02)
 
 - **No more door of its own.** The sentry campaign, a run carried to another
-  account after it hit a limit, `accounts.best` and the Accounts card's
+  account after it hit a limit, `accounts.status` and the Accounts card's
   rotation line used to judge "full" against a fixed figure of their own, above
   the quota handover line — so a round could open on an account that would be
   told to hand over on its first reading. They now all use your Account
   ceiling, like every other unattended start.
 - **Own walls stay, under the line.** A campaign's Ceiling, a rule's or a
-  step's own wall, and a ceiling passed to `accounts.best` still replace the
+  step's own wall, and a ceiling passed to `accounts.status` still replace the
   Account ceiling — but none of them acts above the quota handover line.
 - **The leader cannot overrule it.** An account the sentry's leader names is
   used only while it has room under the campaign's wall; otherwise the pool

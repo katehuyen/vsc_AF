@@ -352,7 +352,7 @@ import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, readProcessTableAsync } from './core/processTree';
 import { registryMatch, whoami } from './core/whoami';
-import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
+import { Baton, BatonFault, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
@@ -370,7 +370,7 @@ import { EngineFaultWatch } from './core/engineFaultWatch';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { StayVerdict, stayInForceNote, stayOnAccount, stayPctOf } from './core/stayAccount';
 import { StartWall, startWall } from './core/startRoom';
-import { starvedWhy } from './core/batonRoom';
+import { PassCause, passCause } from './core/passCause';
 import { fiveHourNow, percentNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
 import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
@@ -17456,7 +17456,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         // X-462 — a leg out of room is waiting for quota, not spinning (the barren brake skips it)
-        starvedOf: b => legStarvedOf(b),
+        causeOf: (b, agentPct) => passCauseOf({ sessionId: b.from.sessionId, slot: legSlotOf(b), fault: b.fault, recorded: b.cause, agentPct }),
+        freshen: b => freshenSlot(legSlotOf(b)),
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         // S-74 — the runner is made just below; the op only runs long after activation
         startNow: (b, by) => batonRunner.startNow(b, by),
@@ -17512,28 +17513,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const supervisorSweep = setInterval(() => { if (taskRunner) { void Promise.all(supervisorRunner.sweep()); } }, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(supervisorSweep) });
     // ‼️ S-106 — a handover that is not the quota's stays on its account under agentFarm.contextHandoverStayAccountPct
-    const handoverStay = (sessionId: string | undefined, slotId: string | undefined, o: { walled?: boolean } = {}): StayVerdict => {
-        const sid = String(sessionId ?? '');
+    const handoverStay = (slotId: string | undefined, cause: PassCause): StayVerdict => {
         const u = slotId ? accountUsage.current().find(x => x.slotId === slotId) : undefined;
         const pct = stayPctOf(ownSetting).value;
         return stayOnAccount({
-            // X-462 — the figure in force: a floor a failed read or a wall left counts, a turned-over window is fresh
-            stayPct: pct, slotId, percent: u ? percentNow(u) : undefined, resetsAt: u?.resetsAt,
-            quotaHandover: !!(sid && contextGuard.record(sid)?.quota?.handover), walled: !!o.walled, now: Date.now(),
+            // X-462 / X-472 — the figure the verdict stood on (a floor counts, an agent's figure only raises it); a turned-over window is fresh
+            stayPct: pct, slotId, percent: cause.quotaPct >= 0 ? cause.quotaPct : (u ? percentNow(u) : undefined), resetsAt: u?.resetsAt,
+            // X-472 — the measured cause, never whether an order reached the run
+            quotaHandover: cause.kind === 'quota', walled: cause.kind === 'limit', now: Date.now(),
             // X-470 — a stay is a start: it obeys the wall every start obeys (startWall)
             wall: accountCeiling()
         });
     };
+    /**
+     * X-472 — why a leg passed, from every reading there is (passCause.ts): Agent Farm's figure for the
+     * slot (a floor counts), the guard's last reading for the session while its window stands, what the
+     * pass recorded, and the agent's own — which only raises it. The stay, the starved note and the card read it.
+     */
+    const passCauseOf = (o: { sessionId?: string; slot?: string; fault?: BatonFault; recorded?: PassCause; agentPct?: number }): PassCause => {
+        const sid = String(o.sessionId ?? '');
+        const u = o.slot ? accountUsage.current().find(x => x.slotId === o.slot) : undefined;
+        const sl = o.slot ? findSlot(storedAccounts(), o.slot) : undefined;
+        const g = sid ? contextGuard.record(sid) : undefined;
+        const live = (resetsAt: number | undefined): boolean => !(resetsAt && resetsAt <= Date.now());
+        return passCause({
+            fault: o.fault, slot: sl ? slotLabel(sl) : o.slot,
+            readings: {
+                'agent-farm': fiveHourNow(u),
+                ...(g?.quota && live(g.quota.resetsAt) ? { guard: g.quota.lastPct } : {}),
+                ...(o.recorded && live(u?.resetsAt) ? { recorded: o.recorded.quotaPct } : {}),
+                ...(o.agentPct !== undefined ? { agent: o.agentPct } : {})
+            },
+            quotaHandoverPct: handoverLine(),
+            contextPct: g?.lastPct,
+            contextHandoverPct: cfg().get<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct)
+        });
+    };
+    /** X-472 — the passing slot read fresh before the verdict; a failed or slow read leaves its floor (usageFloor.ts). */
+    const freshenSlot = async (slot: string | undefined): Promise<void> => {
+        if (!slot) { return; }
+        await Promise.race([
+            accountUsage.refreshSlot(slot, 'auto').then(() => undefined, () => undefined),
+            new Promise<void>(r => setTimeout(r, 4000))
+        ]);
+    };
     /** The slot a leg ran on: its Console card's, else the one its launch was sealed with. */
     const legSlotOf = (b: Baton): string | undefined =>
         (() => { try { return consoleHost.list().find(c => c.sessionId === b.from.sessionId)?.account; } catch { return undefined; } })() || b.inherit.account;
-    /** X-462 — why the passing leg had no room left: walled by the plan limit, or its account at the quota handover line. */
-    const legStarvedOf = (b: Baton): string | undefined => {
-        const slot = legSlotOf(b);
-        const u = slot ? accountUsage.current().find(x => x.slotId === slot) : undefined;
-        const sl = slot ? findSlot(storedAccounts(), slot) : undefined;
-        return starvedWhy({ fault: b.fault, slot: sl ? slotLabel(sl) : slot, percent: fiveHourNow(u), handoverPct: handoverLine() });
-    };
     /**
      * ‼️ X-462 — A PARKED RELAY LEG'S ROW AT ITS WAKE. The door parked it on its
      * pool because no account stood under the wall; when its moment comes and
@@ -17554,7 +17580,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const batonRunner = new BatonRunner({
         store: batonStore,
         board: batonBoard,
-        starvedOf: b => legStarvedOf(b),
+        causeOf: (b, agentPct) => passCauseOf({ sessionId: b.from.sessionId, slot: legSlotOf(b), fault: b.fault, recorded: b.cause, agentPct }),
+        freshen: b => freshenSlot(legSlotOf(b)),
         door: opener => {
             const agent = findAgent(opener.from.agentId);
             // ‼️ S-109 — the successor runs on what its predecessor CLOSED with
@@ -17565,7 +17592,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // X-462 — the account the plan limit walled is full until it turns over, whatever its last figure says
             if (b.fault === 'limit' && was) { try { accountUsage.markWalled(was); } catch { /* the stay rule still refuses it */ } }
             // X-462 — a pass the plan limit forced never keeps the successor on the walled account
-            const stay = handoverStay(b.from.sessionId, was, { walled: b.fault === 'limit' });
+            // X-472 — classified again at the door, raised by what the pass recorded; the stay reads that verdict
+            const cause = passCauseOf({ sessionId: b.from.sessionId, slot: was, fault: b.fault, recorded: b.cause });
+            const stay = handoverStay(was, cause);
             if (stay.stay) { console.log(`[Agent Farm] baton ${b.id}: ${stay.why}`); }
             // S-73 — every account full RIGHT NOW: the row is written with the
             // first reset + the safety buffer as its notBefore (a preview — the
@@ -33945,7 +33974,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             } : {}),
             usage,
             // S-106 — the finished round's account, kept when its handover was not the quota's and it has room
-            ...(finishedTask ? { stay: handoverStay(successorSessionOf(finishedTask), finishedTask.account) } : {}),
+            ...(finishedTask ? { stay: handoverStay(finishedTask.account, passCauseOf({ sessionId: successorSessionOf(finishedTask), slot: finishedTask.account })) } : {}),
             automation: taskManager.automation,
             ...(next ? { next } : {}),
             templates: pool.templates,

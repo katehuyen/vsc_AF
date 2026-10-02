@@ -18,6 +18,7 @@ import { chainMaxLegs, isSeal } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
 import type { FolderRead } from './legRoots';
+import { PassCause, passCause, starvedOf } from './passCause';
 
 export type NoticeLevel = 1 | 2 | 3 | 4;
 
@@ -44,8 +45,10 @@ export interface LegEndDeps {
     log: (line: string) => void;
     /** how long to let the card and the task row settle before reading them */
     settleMs?: number;
-    /** X-462 — why the ended leg had no room left (batonRoom.ts starvedWhy), or undefined */
-    starvedOf?: (b: Baton) => string | undefined;
+    /** X-472 — why the ended leg passed (or was passed for), measured (passCause.ts) */
+    causeOf?: (b: Baton, agentPct?: number) => PassCause | undefined;
+    /** X-472 — re-read the leg's slot before the verdict; a failed read leaves its floor */
+    freshen?: (b: Baton) => Promise<void>;
 }
 
 export class LegEndWatch {
@@ -157,10 +160,13 @@ export class LegEndWatch {
             ? { ...draft, rescue: why, note: `engine — ${why}`, fault: engine.fault, ...(engine.model ? { inherit: { ...draft.inherit, model: engine.model } } : {}) }
             : { ...draft, rescue: why, note: `failsafe — ${why}` };
         draft = await markFolder(draft, this.deps.headOf, this.deps.dirtOf);
+        // X-472 — the one verdict; with no host to read figures, the fault alone still classifies it
+        try { await this.deps.freshen?.(draft); } catch { /* the floor stands */ }
+        const cause = (() => { try { return this.deps.causeOf?.(draft); } catch { return undefined; } })()
+            ?? passCause({ fault: draft.fault, readings: {}, quotaHandoverPct: 0, contextHandoverPct: 0 });
         // X-462 — a leg out of room (the plan limit, or its account at the handover line) is not a barren one
-        const starved = (() => { try { return this.deps.starvedOf?.(draft); } catch { return undefined; } })()
-            || (engine?.fault === 'limit' ? 'its account hit the plan limit' : undefined);
-        if (starved) { draft = { ...draft, starved }; }
+        const starved = starvedOf(cause);
+        draft = { ...draft, cause, ...(starved ? { starved } : {}) };
         const all = this.deps.store.all();
         const brake = batonBrake(draft, all, chainMaxLegs(all, draft.chainId, this.deps.maxLegs ? this.deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
         if (brake) {

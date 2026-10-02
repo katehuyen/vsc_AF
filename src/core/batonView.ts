@@ -158,6 +158,8 @@ export function batonCardView(list: readonly Baton[], sessionId: string, fallbac
             : 'Predecessor: none — this run started the chain.',
         left ? nextLine(left) : 'Successor: none yet — this run has not passed the baton.'
     ];
+    // X-472 — why this leg passed, as measured (limit · quota · context · flagged · early), with the figure it stood on
+    if (left?.cause) { lines.push(`Passed: ${left.cause.why}.`); }
     if (left?.note) { lines.push(`Note: ${left.note}`); }
     const stoppable = chain.some(isLive);
     const brake = brakeStateOf(list, sid);

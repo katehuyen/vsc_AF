@@ -24,6 +24,7 @@ import { markStored } from './batonLegFacts';
 import type { FolderRead } from './legRoots';
 import { BatonStore } from './batonStore';
 import { LaunchManifest } from './launchManifest';
+import type { PassCause } from './passCause';
 
 /** What the live monitor holds for a session. */
 export type LiveKnowledge = 'alive' | 'ended' | 'unknown';
@@ -109,8 +110,10 @@ export interface BatonRunnerDeps {
     dirtOf?: FolderRead;
     /** S-84 — the A2A board the chain's handover cards live on; absent = no cards */
     board?: BatonBoard;
-    /** X-462 — why a leg had no room left when it ended (batonRoom.ts starvedWhy); the rescue's barren brake skips it */
-    starvedOf?: (b: Baton) => string | undefined;
+    /** X-472 — why a leg passed (or was passed for), measured (passCause.ts); the rescue's barren brake skips a starved one */
+    causeOf?: (b: Baton, agentPct?: number) => PassCause | undefined;
+    /** X-472 — re-read the leg's slot before the verdict */
+    freshen?: (b: Baton) => Promise<void>;
 }
 
 /** A baton on a task row: the row's session becomes the successor (`was` = the id it held before, S-85). */
@@ -131,7 +134,7 @@ export class BatonRunner {
             store: deps.store, legFacts: deps.legFacts,
             isEnded: (sid, o) => endedVerdict(deps.evidence({ ...o, from: { ...o.from, sessionId: sid } })).ended,
             launchIdOf: deps.launchIdOf, manifestOf: deps.manifestOf, headOf: deps.headOf, dirtOf: deps.dirtOf, maxLegs: deps.maxLegs,
-            notify: deps.notify, now: () => this.now(), log: l => this.log(l), settleMs: deps.settleMs, starvedOf: deps.starvedOf
+            notify: deps.notify, now: () => this.now(), log: l => this.log(l), settleMs: deps.settleMs, causeOf: deps.causeOf, freshen: deps.freshen
         }, (b, why) => this.release(b, why));
     }
 

@@ -133,6 +133,27 @@
       "hash": "8eb1a269304d",
       "incident": "X-467 / chn_muqifjzc001n2b hop 2 (2026-10-02 13:29 Bangkok): c5124b6e passed on its own probe at 90 while Agent Farm read 89 and no quota order had gone out; the stay rule judged its own 90 line and never the Account ceiling (70), so the successor 2190d4d4 opened on wmmuratvural at 92% and handed over at once",
       "why": "five doors answered one question with five lines; a new door cannot bring a sixth"
+    },
+    {
+      "file": "test_pass_cause.js",
+      "title": "‼️ chn_muqifjzc001n2b hop 2 replayed: Agent Farm 89, the agent's probe 90, no order — it IS the quota's",
+      "hash": "ef0a0419bbb3",
+      "incident": "X-472 (2026-10-02, chn_muqifjzc001n2b hop 2): the agent read 90, Agent Farm 89, no quota order went out, and the pass was counted \"not the quota's\" — the successor stayed on the full account",
+      "why": "replays the pass that was counted \"not the quota's\""
+    },
+    {
+      "file": "test_pass_cause.js",
+      "title": "‼️ an agent's figure only RAISES: 10 from the agent never lowers Agent Farm's 95",
+      "hash": "cd34e18d3000",
+      "incident": "X-472 (2026-10-02, chn_muqifjzc001n2b hop 2): the agent read 90, Agent Farm 89, no quota order went out, and the pass was counted \"not the quota's\" — the successor stayed on the full account",
+      "why": "an agent cannot talk a full account into a stay"
+    },
+    {
+      "file": "test_pass_cause.js",
+      "title": "‼️ the stay reads the verdict, not the order flag (contextGuard …quota.handover is gone from it)",
+      "hash": "7f00155ed265",
+      "incident": "X-472 (2026-10-02, chn_muqifjzc001n2b hop 2): the agent read 90, Agent Farm 89, no quota order went out, and the pass was counted \"not the quota's\" — the successor stayed on the full account",
+      "why": "the second derivation stays gone"
     }
   ]
 }
