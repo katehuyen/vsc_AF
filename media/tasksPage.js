@@ -4147,8 +4147,10 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .chip.on { opacity:1; border-color:var(--vscode-focusBorder); background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent); }
                 .wkchips { display:flex; gap:4px; align-items:center; margin:2px 0 6px; }
                 .wkchips .chip { color:var(--vscode-foreground); }
-                .wkrow { display:flex; gap:6px; align-items:center; margin:3px 0; }
-                .wkrow input { width:120px; padding:3px 6px; font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
+                /* U-193 - a phone-wide form wraps the row instead of pushing its last box off the screen */
+                .wkrow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:3px 0; }
+                .wkrow select { min-width:0; max-width:100%; }
+                .wkrow input { width:120px; max-width:100%; padding:3px 6px; font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
                     background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
                 .ntf textarea { font-family:inherit; font-size:13px; padding:6px 8px; resize:vertical; min-height:70px; }
                 /* ‼️ M-27 — THE ROUNDS. One row per prompt, and the row is read
