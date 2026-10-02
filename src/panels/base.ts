@@ -446,6 +446,8 @@ export function htmlShell(
     // whole item exists to end.
     const dims = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afDimensions.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
+    // U-192 — a share column never narrower than the fact it holds.
+    const colFit = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afColFit.js'));
     // U-191 — the four run categories as a bar, for any page listing runs.
     const runCategory = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunCategory.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
@@ -658,6 +660,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${mobile}"></script>
 <script nonce="${nonce}" src="${ask}"></script>
 <script nonce="${nonce}" src="${voice}"></script>
+<script nonce="${nonce}" src="${colFit}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${runCategory}"></script>
 <script nonce="${nonce}" src="${script}"></script>

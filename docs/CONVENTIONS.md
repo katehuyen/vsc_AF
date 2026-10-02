@@ -1156,6 +1156,22 @@ whose box shrank while its text did not is drawn straight over its neighbour
 (measured: 10px over the badge at 900px, 23px at 760px, 35px at 640px).
 Guard: `test/test_console_identity_width.js`.
 
+### A table column is never narrower than the fact it holds (U-192)
+
+The same rule for a table whose widths are SHARES (the Sessions table's
+`SHARE`): a share scales with the table, so on a narrow one it ends up narrower
+than its own header and figure, and a no-wrap figure is drawn over its
+neighbour. Each column declares a FLOOR (`FLOOR_EM`, in em of the table's font:
+the widest figure it holds); its header text, measured live, is the floor when
+wider. `media/afColFit.js` leaves the declared shares alone wherever they hold
+every floor; where one falls under, that column gets its floor and the others
+share the rest by their shares; where the floors alone are wider than the box,
+the table takes that width and `.tablewrap` scrolls sideways. Hiding columns
+was measured and refused: at 800px the floors still need more than the box
+with four figure columns gone, so a narrow table scrolls either way, and
+hiding would only take facts off it. Guard: `test/test_colfit.js` (it runs the
+fitter in Chrome, because the static render carries no live script).
+
 ### A multi-pick dropdown has TWO gestures
 
 `AFFilter.multi` (`media/afFilters.js`), and both are free on every picker in

@@ -166,7 +166,9 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afVoice.js',
     // afRunCategory.js — the four run categories as a bar (U-191). It reads
     // sessionsTable.js's list when it DRAWS, so a page using it loads that too.
-    'afRunCategory.js'];
+    'afRunCategory.js',
+    // afColFit.js — a share column never narrower than the fact it holds (U-192).
+    'afColFit.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];

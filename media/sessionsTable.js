@@ -272,6 +272,13 @@
         duration: 5.522, turns: 3.721, tools: 3.624, files: 3.244, errors: 2.387,
         tokens: 8.962, ctx: 5.241, cost: 3.906
     };
+    /** U-192 — the narrowest each column may be drawn, in em of the table's font and padding included:
+     *  the widest figure it holds, measured on the sessions fixture (`32m⋯25.8 h`, `12.9k ⚖ 8.7k (off-plan)`,
+     *  an `Antigravity` badge). A header wider than this is its floor instead (media/afColFit.js). */
+    const FLOOR_EM = {
+        title: 10, agent: 8, engine: 10, project: 4, when: 4.5, duration: 6.2,
+        turns: 3.5, tools: 3.5, files: 3, errors: 2.5, tokens: 10.3, ctx: 4, cost: 4.5
+    };
 
     /**
      * The colgroup for one embed's column set.
@@ -1610,6 +1617,7 @@
             if (!el) { return; }
             el.innerHTML = sectionHtml();
             wire(el);
+            window.AFColFit.attach(el, { table: 'table.sesstable', head: 'tr[data-afcardhead]', cols, shares: SHARE, floorsEm: FLOOR_EM });
         }
 
         function wire(root) {
@@ -1934,5 +1942,5 @@
     }
 
     // U-191 — the Turns page draws the same four categories from this one list.
-    window.AFSessionsTable = { SORTS, create, CATEGORIES, HLESS_GLYPH };
+    window.AFSessionsTable = { SORTS, create, CATEGORIES, HLESS_GLYPH, SHARE, FLOOR_EM };
 })();
