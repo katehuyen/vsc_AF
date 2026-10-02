@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.796.0 - Agent Farm can speak your language: the first pages in Turkish (2026-10-03)
+
+- **A language setting.** Farm Settings ▸ Display has a new choice,
+  `agentFarm.language`: Auto (follow VS Code's display language), English or
+  Türkçe. English stays the main language, and translations are added one
+  surface at a time; anything not translated yet is shown in English, never
+  blank. Pages pick up a change the next time they are drawn.
+- **The first translated surfaces.** The header row every page shares (each
+  destination's name and its description on hover, the Notices / Queue / A2A
+  tabs and the version stamp) and, on the phone, the bottom tabs and the page
+  list.
+- **Dates and times in the chosen language.** Choosing a language also
+  formats clocks and dates in it. On Auto they keep your system's formats,
+  exactly as before.
+
 ## 3.795.0 - The Sessions table stays readable when it is narrow (2026-10-03)
 
 - **No more figures drawn over each other.** On a narrow Sessions table (a
