@@ -21,6 +21,9 @@ export interface FirstQuota {
     account: string;
     /** agentFarm.quotaHandoverPct when it was read; 0 = off */
     line: number;
+    /** X-478 — the week's first reading and its own line (agentFarm.quotaWeeklyHandoverPct; 0 = off) */
+    week?: number;
+    weekLine?: number;
 }
 
 export interface Misplaced {
@@ -31,15 +34,25 @@ export interface Misplaced {
     /** the quota handover line the first reading stood at or past */
     line: number;
     at: number;
+    /** X-478 — the window it was full in, when it was the week */
+    window?: 'week';
     why: string;
 }
 
 export function misplacedVerdict(first: FirstQuota | undefined, wall: StartWall): Misplaced | undefined {
-    if (!first || !(first.line > 0) || !(first.pct >= first.line)) { return undefined; }
+    if (!first) { return undefined; }
+    const placed = `it was placed on a full account, where the wall in force was ${wall.value}% (${wall.why})`;
+    if (first.line > 0 && first.pct >= first.line) {
+        return {
+            slot: first.account, pct: first.pct, wall: wall.value, line: first.line, at: first.ts,
+            why: `${first.account} read ${first.pct}% at its first reading — at or past the quota handover line (${first.line}%): ${placed}`
+        };
+    }
+    const week = Number(first.week), wline = Number(first.weekLine);
+    if (!(wline > 0) || !(week >= wline)) { return undefined; }
     return {
-        slot: first.account, pct: first.pct, wall: wall.value, line: first.line, at: first.ts,
-        why: `${first.account} read ${first.pct}% at its first reading — at or past the quota handover line (${first.line}%): `
-            + `it was placed on a full account, where the wall in force was ${wall.value}% (${wall.why})`
+        slot: first.account, pct: week, wall: wall.value, line: wline, at: first.ts, window: 'week',
+        why: `${first.account} read ${week}% of its weekly window at its first reading — at or past the weekly quota handover line (${wline}%): ${placed}`
     };
 }
 

@@ -37,6 +37,8 @@ import * as path from 'path';
 import { ContextSample, contextPercent } from './consoleproto';
 import { parseHandoverName, shortSessionId } from './sessionDiagnosis';
 import type { BatonRelay } from './baton';
+import { WeekRecord, weekSignalText, weekStep } from './quotaWeek';
+import { flexPoint } from './flexPoints';
 
 /** The two words the law waits for — `_REF/handover.md` names exactly these. */
 export const CONTEXT_CONVERGE_WORD = 'CONTEXT CONVERGE';
@@ -55,6 +57,8 @@ export interface ContextThresholds {
     /** S-75 — the quota line, percent of the session's OWN account's 5-hour window; 0 = off */
     quotaConvergePct: number;
     quotaHandoverPct: number;
+    /** X-478 — the account's WEEKLY window, its own handover line (quotaWeek.ts); 0 = off */
+    quotaWeeklyHandoverPct: number;
 }
 
 /**
@@ -62,7 +66,11 @@ export interface ContextThresholds {
  * ≥ 40%; quota hand over ≥ 90% and NO quota converge — below 90 a run works at
  * full capacity (the user's rule, 2026-09-21), so that line ships switched off.
  */
-export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 };
+export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = {
+    convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90,
+    // X-478 — read from the box's flex point, never written as a second number
+    quotaWeeklyHandoverPct: Number(flexPoint('discipline.quotaWeeklyHandoverPct')?.default)
+};
 
 /**
  * Both figures clamped to 0..100 and read as integers; a converge line ABOVE
@@ -80,7 +88,8 @@ export function normalizeThresholds(t: Partial<ContextThresholds> | undefined): 
     const quotaHandoverPct = n(t?.quotaHandoverPct, DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
     let quotaConvergePct = n(t?.quotaConvergePct, DEFAULT_CONTEXT_THRESHOLDS.quotaConvergePct);
     if (quotaHandoverPct > 0 && quotaConvergePct > quotaHandoverPct) { quotaConvergePct = quotaHandoverPct; }
-    return { convergePct, handoverPct, quotaConvergePct, quotaHandoverPct };
+    const quotaWeeklyHandoverPct = n(t?.quotaWeeklyHandoverPct, DEFAULT_CONTEXT_THRESHOLDS.quotaWeeklyHandoverPct);
+    return { convergePct, handoverPct, quotaConvergePct, quotaHandoverPct, quotaWeeklyHandoverPct };
 }
 
 /** Which line a reading has crossed — the higher one wins. */
@@ -234,8 +243,10 @@ export interface QuotaSignalRecord {
     handover?: QuotaDelivery;
     lastPct?: number;
     lastTs?: number;
-    /** X-474 — the session's FIRST reading, kept as read: misplaced.ts judges its placement by it */
-    first?: { pct: number; ts: number; account: string; line: number };
+    /** X-474 — the session's FIRST reading, kept as read: misplaced.ts judges its placement by it (X-478: the week's too) */
+    first?: { pct: number; ts: number; account: string; line: number; week?: number; weekLine?: number };
+    /** X-478 — the weekly window's own line, kept apart from the five-hour one (quotaWeek.ts) */
+    week?: WeekRecord;
     resetsAt?: number;
     undelivered?: { level: ContextLevel; ts: number; pct: number; why: string };
 }
@@ -246,6 +257,8 @@ export interface QuotaSample {
     /** the slot the session runs on, by label */
     account: string;
     resetsAt?: number;
+    /** X-478 — the same account's all-models WEEK, when its engine publishes one */
+    week?: { pct: number; resetsAt?: number };
 }
 
 /** What the hook is answered with, for a session that is due a signal. */
@@ -395,12 +408,46 @@ export class ContextGuard {
     private checkQuota(id: string, opts: { event?: string; engine?: string }, t: ContextThresholds, hint: ContextReadHint)
         : { level: ContextLevel; pct: number; account: string; text: string } | undefined {
         const sample = this.deps.quota?.(id, hint);
+        // X-478 — two windows, two lines; both due on one turn = one handover carrying both sentences
+        const five = this.checkFiveHour(id, opts, t, sample);
+        const week = this.checkWeek(id, opts, t, sample);
+        if (five && week) { return { ...five, level: 'handover', text: `${five.text}\n\n${week.text}` }; }
+        return five ?? week;
+    }
+
+    private checkWeek(id: string, opts: { event?: string; engine?: string }, t: ContextThresholds, sample: QuotaSample | undefined)
+        : { level: ContextLevel; pct: number; account: string; text: string } | undefined {
+        const w = sample?.week;
+        if (!sample || !w || typeof w.pct !== 'number' || !Number.isFinite(w.pct)) { return undefined; }
+        const rec = this.recordFor(id, opts.engine);
+        const q: QuotaSignalRecord = rec.quota ?? (rec.quota = {});
+        const wk: WeekRecord = q.week ?? (q.week = {});
+        const ts = this.now();
+        const step = weekStep(wk, w, t.quotaWeeklyHandoverPct, ts);
+        const ch = step.say ? this.deps.channelFor(opts.engine) : undefined;
+        if (!step.say || !ch) { this.save(); return undefined; }
+        if (ch.channel === 'none') {
+            wk.undelivered = wk.undelivered ?? { ts, pct: step.pct, why: ch.why ?? 'this engine’s hooks carry no additionalContext' };
+            this.save();
+            return undefined;
+        }
+        if (!opts.event || !(CONTEXT_SIGNAL_HOOKS as readonly string[]).includes(opts.event)) { this.save(); return undefined; }
+        wk.handover = { ts, pct: step.pct, channel: ch.channel, via: opts.event, account: sample.account };
+        this.save();
+        return { level: 'handover', pct: step.pct, account: sample.account, text: weekSignalText(QUOTA_HANDOVER_WORD, step.pct, sample.account, orderFor('handover', this.relayOf(id), this.orders())) };
+    }
+
+    private checkFiveHour(id: string, opts: { event?: string; engine?: string }, t: ContextThresholds, sample: QuotaSample | undefined)
+        : { level: ContextLevel; pct: number; account: string; text: string } | undefined {
         if (!sample || typeof sample.pct !== 'number' || !Number.isFinite(sample.pct)) { return undefined; }
         const pct = Math.round(sample.pct);
         const rec = this.recordFor(id, opts.engine);
         const q: QuotaSignalRecord = rec.quota ?? (rec.quota = {});
         const ts = this.now();
-        if (q.lastTs === undefined) { q.first = { pct, ts, account: sample.account, line: t.quotaHandoverPct }; }
+        if (q.lastTs === undefined) {
+            const wk = sample.week && Number.isFinite(sample.week.pct) ? { week: Math.round(sample.week.pct), weekLine: t.quotaWeeklyHandoverPct } : {};
+            q.first = { pct, ts, account: sample.account, line: t.quotaHandoverPct, ...wk };
+        }
         q.lastPct = pct; q.lastTs = ts; q.account = sample.account;
         if (sample.resetsAt) { q.resetsAt = sample.resetsAt; }
         const floor = t.quotaConvergePct > 0 ? t.quotaConvergePct : t.quotaHandoverPct;

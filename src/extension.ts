@@ -326,7 +326,7 @@ import {
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
-    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, UsageBar, accountOrder, engineUsageFromSlot, fiveHourOf,
+    ACCOUNT_WALL_CEILING, AccountUsageService, SEVEN_DAY, SlotUsage, UsageBar, accountOrder, engineUsageFromSlot, fiveHourOf,
     mostRoom, nextResetAt,
     slotCredentialsFile, slotIsUsable,
     slotSessionDir, windowNameOf, windowPhraseOf
@@ -1750,14 +1750,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const five = fiveHourOf(u);
         if (!five) { return undefined; }
         const sl = findSlot(storedAccounts(), slotId);
-        return { pct: five.percent, account: sl ? slotLabel(sl) : slotId, ...(five.resetsAt ? { resetsAt: five.resetsAt } : {}) };
+        // X-478 — the all-models week rides along under its own name (never a per-model bar: that depends on the launch's model)
+        const week = (u.bars ?? []).find(b => b.id === SEVEN_DAY && Number.isFinite(b.percent) && b.percent >= 0);
+        return {
+            pct: five.percent, account: sl ? slotLabel(sl) : slotId, ...(five.resetsAt ? { resetsAt: five.resetsAt } : {}),
+            ...(week ? { week: { pct: week.percent, ...(week.resetsAt ? { resetsAt: week.resetsAt } : {}) } } : {})
+        };
     };
     const contextGuard = new ContextGuard({
         thresholds: () => ({
             convergePct: cfg().get<number>('contextConvergePct', DEFAULT_CONTEXT_THRESHOLDS.convergePct),
             handoverPct: cfg().get<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct),
             quotaConvergePct: cfg().get<number>('quotaConvergePct', DEFAULT_CONTEXT_THRESHOLDS.quotaConvergePct),
-            quotaHandoverPct: cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct)
+            quotaHandoverPct: cfg().get<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct),
+            quotaWeeklyHandoverPct: cfg().get<number>('quotaWeeklyHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaWeeklyHandoverPct)
         }),
         read: contextReadingFor,
         quota: sessionQuotaSample,
@@ -11553,18 +11559,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.contextGuard.set',
-            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. ‼️ S-80 — `orders` sets WHAT those lines say (agentFarm.disciplineOrders): an object with any of converge, handover, relayConverge, relayHandover, relayPassedConverge, relayPassedHandover, relayBrakedConverge, relayBrakedHandover (S-97: a leg the user braked as the chain\'s last); `{chain}` becomes the relay\'s chain and hop, and a branch set to "" goes back to its built-in sentence. The lead words and the reading in front of the order are the law\'s and are not settable. Answers the thresholds and the orders in force after the write. args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?, orders? (object, or its JSON)',
+            describe: 'S-64 — set the discipline thresholds (global settings): the context pair agentFarm.contextConvergePct / contextHandoverPct (percent of the window) and — S-75 — the quota pair agentFarm.quotaConvergePct / quotaHandoverPct (percent of the session\'s OWN account\'s 5-hour window). Integers 0..100; 0 switches that line off; a converge line above its handover line is folded down onto it. ‼️ S-80 — `orders` sets WHAT those lines say (agentFarm.disciplineOrders): an object with any of converge, handover, relayConverge, relayHandover, relayPassedConverge, relayPassedHandover, relayBrakedConverge, relayBrakedHandover (S-97: a leg the user braked as the chain\'s last); `{chain}` becomes the relay\'s chain and hop, and a branch set to "" goes back to its built-in sentence. The lead words and the reading in front of the order are the law\'s and are not settable. Answers the thresholds and the orders in force after the write. X-478 — quotaWeeklyHandoverPct is the account\'s WEEKLY window\'s own handover line (0 = off). args: convergePct?, handoverPct?, quotaConvergePct?, quotaHandoverPct?, quotaWeeklyHandoverPct?, orders? (object, or its JSON)',
             handler: async (args) => {
                 const cur = contextGuard.thresholds();
                 const next = normalizeThresholds({
                     convergePct: optNum(args, 'convergePct', cur.convergePct),
                     handoverPct: optNum(args, 'handoverPct', cur.handoverPct),
                     quotaConvergePct: optNum(args, 'quotaConvergePct', cur.quotaConvergePct),
-                    quotaHandoverPct: optNum(args, 'quotaHandoverPct', cur.quotaHandoverPct)
+                    quotaHandoverPct: optNum(args, 'quotaHandoverPct', cur.quotaHandoverPct),
+                    quotaWeeklyHandoverPct: optNum(args, 'quotaWeeklyHandoverPct', cur.quotaWeeklyHandoverPct)
                 });
                 const keys: [keyof ContextThresholds, string][] = [
                     ['convergePct', 'contextConvergePct'], ['handoverPct', 'contextHandoverPct'],
-                    ['quotaConvergePct', 'quotaConvergePct'], ['quotaHandoverPct', 'quotaHandoverPct']
+                    ['quotaConvergePct', 'quotaConvergePct'], ['quotaHandoverPct', 'quotaHandoverPct'],
+                    ['quotaWeeklyHandoverPct', 'quotaWeeklyHandoverPct']
                 ];
                 let changed = false;
                 for (const [k, setting] of keys) {

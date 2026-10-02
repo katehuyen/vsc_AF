@@ -216,7 +216,7 @@ const CATEGORY_OF: Record<string, string> = {
      * context figure is drawn against, not a line anybody is held to.
      */
     contextConvergePct: 'discipline', contextHandoverPct: 'discipline',
-    quotaConvergePct: 'discipline', quotaHandoverPct: 'discipline',
+    quotaConvergePct: 'discipline', quotaHandoverPct: 'discipline', quotaWeeklyHandoverPct: 'discipline',
     disciplineOrders: 'discipline',
     // S-78 — where a relay stops by itself: the same law, carried by a baton
     batonMaxHops: 'discipline',

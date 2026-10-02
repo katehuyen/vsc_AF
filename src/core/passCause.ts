@@ -27,6 +27,8 @@ export interface PassCause {
     quotaPct: number;
     /** which reader gave it */
     quotaFrom?: QuotaReader;
+    /** X-478 — the weekly figure, the highest reading of the week; absent = none known */
+    weekPct?: number;
     /** the guard's last context reading for the session, when it had one */
     contextPct?: number;
     /** the slot the leg ran on, as a person reads it */
@@ -43,6 +45,8 @@ export interface PassCauseInput {
     readings: Partial<Record<QuotaReader, number>>;
     /** agentFarm.quotaHandoverPct — 0 = off */
     quotaHandoverPct: number;
+    /** X-478 — the weekly window's readings and its own line (agentFarm.quotaWeeklyHandoverPct, 0 = off) */
+    week?: { readings: Partial<Record<QuotaReader, number>>; line: number };
     /** the guard's last context reading (percent of the window) */
     contextPct?: number;
     /** agentFarm.contextHandoverPct — 0 = off */
@@ -73,10 +77,12 @@ export function passCause(i: PassCauseInput): PassCause {
     const slot = String(i.slot ?? '').trim();
     const name = slot || 'its account';
     const q = highestReading(i.readings);
+    const wq = highestReading(i.week?.readings ?? {});
     const ctx = Number(i.contextPct);
     const base = {
         quotaPct: q.pct,
         ...(q.from ? { quotaFrom: q.from } : {}),
+        ...(wq.from ? { weekPct: wq.pct } : {}),
         ...(Number.isFinite(ctx) && ctx >= 0 ? { contextPct: ctx } : {}),
         ...(slot ? { slot } : {})
     };
@@ -87,6 +93,11 @@ export function passCause(i: PassCauseInput): PassCause {
     const line = Number(i.quotaHandoverPct);
     if (line > 0 && q.pct >= line) {
         return { kind: 'quota', ...base, why: `${name} was at ${figure}, at or past the quota handover line ${line}%` };
+    }
+    // X-478 — the week is a quota handover too: the successor never stays on an account whose week is spent
+    const wline = Number(i.week?.line);
+    if (wline > 0 && wq.from && wq.pct >= wline) {
+        return { kind: 'quota', ...base, why: `${name} was at ${Math.round(wq.pct)}% of its weekly window (${READER_WORDS[wq.from]}), at or past the weekly quota handover line ${wline}%` };
     }
     const cline = Number(i.contextHandoverPct);
     if (cline > 0 && Number.isFinite(ctx) && ctx >= cline) {

@@ -348,6 +348,11 @@
             id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 70, min: 0, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.contextHandoverStayAccountPct', bridge: 'settings.set:agentFarm.contextHandoverStayAccountPct' } }
         },
+        // X-478 — the account's WEEKLY window: its own handover line for the guard (src/core/quotaWeek.ts); 0 = off
+        {
+            id: 'discipline.quotaWeeklyHandoverPct', label: 'Quota — weekly handover line (%)', type: 'number', default: 98, min: 0, max: 100, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.quotaWeeklyHandoverPct', bridge: 'settings.set:agentFarm.quotaWeeklyHandoverPct' } }
+        },
         // S-105 — the wall a policy picks a starting account under, never above the quota handover line (accountPolicy.ts effectiveCeiling)
         {
             id: 'accounts.defaultCeiling', label: 'Account policies — default wall (%)', type: 'number', default: 70, min: 1, max: 100, remembered: false,

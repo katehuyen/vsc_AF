@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.787.0 - The weekly quota is a handover trigger too (2026-10-02)
+
+- **A line for the week.** A running session is now also told to hand over
+  when its account's weekly window reaches your weekly handover line (a new
+  setting in Handover Discipline, `agentFarm.quotaWeeklyHandoverPct`; 0 turns
+  it off). The order names the weekly window, so it is never mistaken for the
+  five-hour one, and it is said once per week.
+- **The relay respects it.** A leg that passes because its week is spent is
+  counted as a quota handover: its successor never stays on that account.
+- **Said where you look.** The misplaced alarm also fires when a leg's very
+  first reading already has a spent week; `sessions.contextGuard.set` sets the
+  weekly line like the others.
+
 ## 3.786.0 - The retry supervisor obeys your Account ceiling too (2026-10-02)
 
 - **No line of its own.** When a failed run waits for its supervisor's word,

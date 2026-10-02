@@ -73,14 +73,23 @@ export function percentNow(u: SlotUsage | undefined, now = Date.now()): number {
 
 /** The five-hour window alone, the same way — the handover law's own figure (X-353). -1 = not known. */
 export function fiveHourNow(u: SlotUsage | undefined, now = Date.now()): number {
+    return windowNow(u, FIVE_HOUR_ID, now);
+}
+
+/** X-478 — the all-models week alone, the same way: the weekly handover line's figure. -1 = not known. */
+export function weekNow(u: SlotUsage | undefined, now = Date.now()): number {
+    return windowNow(u, 'seven_day', now);
+}
+
+function windowNow(u: SlotUsage | undefined, id: string, now: number): number {
     if (!u) { return -1; }
-    const five = (bars: UsageBar[] | undefined): number => {
-        const b = (bars ?? []).find(x => x.id === FIVE_HOUR_ID);
+    const one = (bars: UsageBar[] | undefined): number => {
+        const b = (bars ?? []).find(x => x.id === id);
         return b && b.percent >= 0 ? (turned(b.resetsAt, now) ? 0 : b.percent) : -1;
     };
-    const live = u.state === 'ok' ? five(u.bars) : -1;
+    const live = u.state === 'ok' ? one(u.bars) : -1;
     const f = u.floor;
-    const floor = !f ? -1 : f.walled && f.resetsAt > now ? 100 : five(f.bars);
+    const floor = !f ? -1 : f.walled && f.resetsAt > now ? 100 : one(f.bars);
     return Math.max(live, floor);
 }
 

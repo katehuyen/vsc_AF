@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.786.0",
+  "version": "3.787.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8934,6 +8934,13 @@
           "minimum": 0,
           "maximum": 100,
           "description": "Quota discipline: when the session's own account window is this full, it is told once — QUOTA HANDOVER — to stop, commit, write the handover note and end the run (the handover law's 90%). A converge line above this one is folded down onto it. 0 = off."
+        },
+        "agentFarm.quotaWeeklyHandoverPct": {
+          "type": "number",
+          "default": 98,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Quota discipline: when the session's own account has used this much of its WEEKLY window, it is told once — QUOTA HANDOVER, naming the weekly window — to stop, commit, write the handover note (or pass the baton) and end the run, and the relay's successor never stays on that account. Kept apart from the five-hour line: each window has its own line and each is said once until it turns over. 0 turns the weekly line off."
         },
         "agentFarm.disciplineOrders": {
           "type": "object",

@@ -10,7 +10,7 @@
  */
 import { AccountPolicy, isPolicyId, PolicyPool, PolicyResolution, PolicyWorld, resolvePolicy } from '../core/accountPolicy';
 import { accountResolution, findSlot, slotLabel } from '../core/accountStore';
-import { SlotUsage } from '../core/accountUsage';
+import { SEVEN_DAY, SlotUsage } from '../core/accountUsage';
 import type { Baton, BatonFault } from '../core/baton';
 import { DEFAULT_CONTEXT_THRESHOLDS, ContextSignalRecord } from '../core/contextGuard';
 import { EngineAccountSlot } from '../core/engineAccounts';
@@ -22,7 +22,7 @@ import type { SentryRecord } from '../core/sentryCampaign';
 import { StartWall, startRoom, startWall } from '../core/startRoom';
 import { StayVerdict, stayOnAccount, stayPctOf } from '../core/stayAccount';
 import type { FarmTask } from '../core/tasks';
-import { fiveHourNow, percentNow } from '../core/usageFloor';
+import { fiveHourNow, percentNow, weekNow } from '../core/usageFloor';
 
 export interface PlacementDeps {
     /** agentFarm.<key> as the user set it, no default (undefined = unset) */
@@ -101,6 +101,15 @@ export function accountPlacement(d: PlacementDeps) {
                 ...(o.agentPct !== undefined ? { agent: o.agentPct } : {})
             },
             quotaHandoverPct: handoverLine(),
+            // X-478 — the week, read the same three ways, against its own line
+            week: {
+                readings: {
+                    'agent-farm': weekNow(u),
+                    ...(g?.quota?.week && live(g.quota.week.resetsAt) ? { guard: g.quota.week.lastPct } : {}),
+                    ...(o.recorded?.weekPct !== undefined && live((u?.bars ?? []).find(b => b.id === SEVEN_DAY)?.resetsAt) ? { recorded: o.recorded.weekPct } : {})
+                },
+                line: d.setting<number>('quotaWeeklyHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaWeeklyHandoverPct)
+            },
             contextPct: g?.lastPct,
             contextHandoverPct: d.setting<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct)
         });

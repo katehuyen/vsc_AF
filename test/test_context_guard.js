@@ -39,11 +39,11 @@ const { contextAfter } = require(path.join(ROOT, 'out', 'core', 'pricing.js'));
 
 console.log('\n== thresholds — the law\'s figures, clamped and ordered ==');
 {
-    eq('defaults are the law\'s 35 / 40, and the quota\'s 90 with no converge line', G.normalizeThresholds(undefined), { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 });
-    eq('a converge line above the handover line folds down onto it', G.normalizeThresholds({ convergePct: 50, handoverPct: 40 }), { convergePct: 40, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 });
-    eq('0 is off and survives', G.normalizeThresholds({ convergePct: 0, handoverPct: 0 }), { convergePct: 0, handoverPct: 0, quotaConvergePct: 0, quotaHandoverPct: 90 });
-    eq('out of range is clamped, fractions rounded', G.normalizeThresholds({ convergePct: -3, handoverPct: 140.6 }), { convergePct: 0, handoverPct: 100, quotaConvergePct: 0, quotaHandoverPct: 90 });
-    eq('garbage falls to the default', G.normalizeThresholds({ convergePct: 'x', handoverPct: NaN }), { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90 });
+    eq('defaults are the law\'s 35 / 40, and the quota\'s 90 with no converge line', G.normalizeThresholds(undefined), { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90, quotaWeeklyHandoverPct: 98 });
+    eq('a converge line above the handover line folds down onto it', G.normalizeThresholds({ convergePct: 50, handoverPct: 40 }), { convergePct: 40, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90, quotaWeeklyHandoverPct: 98 });
+    eq('0 is off and survives', G.normalizeThresholds({ convergePct: 0, handoverPct: 0 }), { convergePct: 0, handoverPct: 0, quotaConvergePct: 0, quotaHandoverPct: 90, quotaWeeklyHandoverPct: 98 });
+    eq('out of range is clamped, fractions rounded', G.normalizeThresholds({ convergePct: -3, handoverPct: 140.6 }), { convergePct: 0, handoverPct: 100, quotaConvergePct: 0, quotaHandoverPct: 90, quotaWeeklyHandoverPct: 98 });
+    eq('garbage falls to the default', G.normalizeThresholds({ convergePct: 'x', handoverPct: NaN }), { convergePct: 35, handoverPct: 40, quotaConvergePct: 0, quotaHandoverPct: 90, quotaWeeklyHandoverPct: 98 });
     const t = G.normalizeThresholds(undefined);
     eq('34 crosses nothing', G.contextLevelFor(34, t), undefined);
     eq('35 is the converge line', G.contextLevelFor(35, t), 'converge');
