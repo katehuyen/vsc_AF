@@ -358,6 +358,11 @@
             id: 'accounts.defaultCeiling', label: 'Account policies — default wall (%)', type: 'number', default: 70, min: 1, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.defaultAccountCeiling', bridge: 'settings.set:agentFarm.defaultAccountCeiling' } }
         },
+        // X-479 — the all-models WEEK's own wall for every start, never above the weekly handover line (startRoom.ts weeklyCeiling)
+        {
+            id: 'accounts.defaultWeeklyCeiling', label: 'Account policies — weekly wall (%)', type: 'number', default: 95, min: 1, max: 100, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.defaultAccountWeeklyCeiling', bridge: 'settings.set:agentFarm.defaultAccountWeeklyCeiling' } }
+        },
         // X-437 — Antigravity's quota read (agy -p /usage), timed by Antigravity's own turns only (src/core/agyUsageBeat.ts)
         {
             id: 'agyUsage.idleMinutes', label: 'Antigravity quota — re-read while it is idle (min, 0 = never)', type: 'number', default: 240, min: 0, remembered: false,

@@ -370,7 +370,7 @@ import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { stayInForceNote, stayPctOf } from './core/stayAccount';
 import { MisplacedWatch } from './core/misplaced';
 import { accountPlacement, roundRobinKey } from './launch/accountPlacement';
-import { percentNow } from './core/usageFloor';
+import { splitNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
 import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
 import { ReopenSetup } from './core/closingSetup';
@@ -4115,8 +4115,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 usageOf: slotId => {
                     const u = accountUsage.current().find(x => x.slotId === slotId);
                     // X-462 — the figure in force: a floor a failed read or a wall left counts, a turned-over window is fresh
-                    return u ? { percent: percentNow(u), known: u.state !== 'no-source' && Number.isFinite(u.percent) } : undefined;
+                    // X-479 — the five-hour figure and the week apart, each against its own line
+                    const s = u ? splitNow(u) : undefined;
+                    return u && s ? { percent: s.five, week: s.week, known: u.state !== 'no-source' && Number.isFinite(u.percent) } : undefined;
                 },
+                weekLine: cfg().get<number>('quotaWeeklyHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaWeeklyHandoverPct),
                 machinePct: windowPct
             }),
             // The daily budget as a BRAKE. `agentFarm.budgets` used to raise an
@@ -22086,7 +22089,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     String(x.engine ?? '').trim().toLowerCase() === slot.engine);
                 // X-471 — the wall the carry and every policy walk, so the card never names a turn the rotation will not give
                 const order = accountOrder(pool, {
-                    ceiling: accountCeiling().value, engine: slot.engine
+                    ceiling: accountCeiling(), engine: slot.engine
                 });
                 const at = order.findIndex(x => x.slotId === slot.id);
                 return at < 0 ? null : { place: at + 1, of: order.length };
@@ -33622,7 +33625,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     },
                     ...(typeof facts.quotaPercent === 'number' && facts.quotaPercent >= 0
                         ? { quota: { percent: facts.quotaPercent } } : {}),
-                    accounts: { usable: usage.filter(u => slotIsUsable(u, wall.value)).length },
+                    accounts: { usable: usage.filter(u => slotIsUsable(u, wall)).length },
                     ...(facts.output !== undefined ? { output: facts.output } : {}),
                     ...(facts.codes ? { code: { closed: facts.codes.some(c => c.closed) } } : {})
                 };
@@ -33650,7 +33653,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     repos: doc.project.repos ?? [],
                     accounts: usage.map(u => ({
                         slotId: u.slotId, percent: Number(u.percent) || 0,
-                        usable: slotIsUsable(u, wall.value)
+                        usable: slotIsUsable(u, wall)
                     })),
                     // ‼️ X-192 — the user's own words, as MATERIAL. Not the whole
                     // pool: `materialFor` drops the other verdicts' templates, so
@@ -33688,14 +33691,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const runner = sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir());
                 const clock = { today: resolvePathVars('${today}').value, now: () => Date.now() };
                 const caps = leaderCapsFor(rec);
-                const ceiling = wall.value;
                 const shape = {
                     ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
                     ...(rec.engine ? { engine: String(rec.engine) } : {})
                 };
                 const walledNow: string[] = [...(rec.leaderHold?.walled ?? [])];
                 for (let attempt = 0; attempt < 2; attempt++) {
-                    const seat = leaderAccountFor(shape, caps, usage, ceiling, Date.now(), walledNow);
+                    const seat = leaderAccountFor(shape, caps, usage, wall, Date.now(), walledNow);
                     if ('hold' in seat) {
                         rec.leaderHold = {
                             taskId: finishedTask.id, since: rec.leaderHold?.since ?? Date.now(),
@@ -41964,11 +41966,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'whether anything is usable at all, and when the first exhausted account comes back so '
                 + 'a loop can sleep spending nothing until then. Unlike accounts.list this may spend one '
                 + 'request to refresh a stale figure — one, whatever the number of accounts, because the '
-                + 'budget is shared. args: engine? (default claude), ceiling? (0-100, the percentage at '
-                + 'which an account counts as full — read against whichever of its windows is FULLEST, '
-                + 'not the five-hour one alone, since either wall ends a run; default the Account ceiling, '
+                + 'budget is shared. args: engine? (default claude), ceiling? (0-100, the percentage of '
+                + 'its five-hour window at which an account counts as full; default the Account ceiling, '
                 + 'agentFarm.defaultAccountCeiling — and never above the quota handover line, '
-                + 'agentFarm.quotaHandoverPct; `ceilingWhy` names which one acts)',
+                + 'agentFarm.quotaHandoverPct; `ceilingWhy` names which one acts). The all-models week is '
+                + 'judged against its own wall, returned as weekCeiling / weekCeilingWhy: '
+                + 'agentFarm.defaultAccountWeeklyCeiling, never above agentFarm.quotaWeeklyHandoverPct',
             handler: async (args) => {
                 const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
                 // X-471 — the wall every unattended start obeys; a caller's own figure replaces the Account ceiling, capped at the handover line
@@ -41983,13 +41986,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await accountUsage.refresh('auto');
                 const mine = slotsFor(storedAccounts(), engine).map(s => s.id);
                 const usage = accountUsage.current().filter(u => mine.includes(u.slotId));
-                const best = mostRoom(usage, ceiling);
-                const waking = nextResetAt(usage, ceiling);
+                const best = mostRoom(usage, wall);
+                const waking = nextResetAt(usage, wall);
                 const refusal = !mine.length
                     ? `No ${engine} account has been captured yet — accounts.capture seals the sign-in that is on this disk.`
                     : '';
                 return {
-                    engine, ceiling, ceilingWhy: wall.why,
+                    engine, ceiling, ceilingWhy: wall.why, weekCeiling: wall.week ?? ceiling, weekCeilingWhy: wall.weekWhy ?? wall.why,
                     best: best ? best.slotId : null,
                     percent: best ? best.percent : -1,
                     usable: usage.filter(u => u.state !== 'expired' && u.state !== 'no-auth').length,
@@ -42185,7 +42188,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(optBool(args, 'raw', false) ? { policies: accountPolicies() } : {}),
                     builtIn: BUILT_IN_POLICIES.map(p => p.id),
                     ceiling: accountCeiling().value,
-                    ceilingWhy: accountCeiling().why
+                    ceilingWhy: accountCeiling().why,
+                    weekCeiling: accountCeiling().week,
+                    weekCeilingWhy: accountCeiling().weekWhy
                 };
             }
         },

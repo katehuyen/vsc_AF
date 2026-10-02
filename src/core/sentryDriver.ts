@@ -336,8 +336,7 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     // The account the leader named, only when it named one and only on a round
     // that is actually starting — and only while it has room under the wall:
     // a leader cannot spend an account the quota rules out (X-471).
-    const ceiling = i.wall.value;
-    const roomOn = (id: string): boolean => i.usage.some(u => u.slotId === id && slotIsUsable(u, ceiling, i.now));
+    const roomOn = (id: string): boolean => i.usage.some(u => u.slotId === id && slotIsUsable(u, i.wall, i.now));
     const named = String(i.leader?.account ?? '').trim();
     const chosen = named && roomOn(named) ? named : '';
     // S-106 — below the leader's own choice: a slot the pool measures and the wall still allows

@@ -1854,7 +1854,7 @@
         {
             title: 'When a run is spoken to',
             why: 'A run is held to whichever line it reaches first — its own context window, or the 5-hour or weekly quota of the account it is signed in as (read from that session\'s sign-in, never the home folder\'s). Converge is the earlier, quieter word; hand over is the end of the run. 0 switches a line off, and a converge line above its own handover line is folded down onto it.',
-            keys: ['contextConvergePct', 'contextHandoverPct', 'quotaConvergePct', 'quotaHandoverPct', 'quotaWeeklyHandoverPct', 'defaultAccountCeiling']
+            keys: ['contextConvergePct', 'contextHandoverPct', 'quotaConvergePct', 'quotaHandoverPct', 'quotaWeeklyHandoverPct', 'defaultAccountCeiling', 'defaultAccountWeeklyCeiling']
         },
         {
             title: 'What it is told',

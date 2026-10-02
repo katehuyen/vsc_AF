@@ -22,7 +22,7 @@ import type { SentryRecord } from '../core/sentryCampaign';
 import { StartWall, startRoom, startWall } from '../core/startRoom';
 import { StayVerdict, stayOnAccount, stayPctOf } from '../core/stayAccount';
 import type { FarmTask } from '../core/tasks';
-import { fiveHourNow, percentNow, weekNow } from '../core/usageFloor';
+import { fiveHourNow, splitNow, weekNow } from '../core/usageFloor';
 
 export interface PlacementDeps {
     /** agentFarm.<key> as the user set it, no default (undefined = unset) */
@@ -57,12 +57,18 @@ export function accountPlacement(d: PlacementDeps) {
     function handoverLine(): number {
         return d.setting<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
     }
+    /** X-479 — a box's value as the flex point resolves it (an unset box is its shipped default). */
+    const boxOf = (key: string, point: string): unknown => {
+        const mine = d.ownSetting(key);
+        return resolveFlex(point, mine === undefined || mine === null || mine === '' ? {} : { settings: mine }).value;
+    };
     // ‼️ X-469 — THE wall every unattended start obeys (startRoom.ts startWall): defaultAccountCeiling, or a wall the
-    // caller names for itself, never above the quota handover line.
+    // caller names for itself, never above the quota handover line. X-479 — the week walled apart, by its own box.
     function accountCeiling(own?: { value: unknown; why: string }): StartWall {
-        const mine = d.ownSetting('defaultAccountCeiling');
-        const set = resolveFlex('accounts.defaultCeiling', mine === undefined || mine === null || mine === '' ? {} : { settings: mine }).value;
-        return startWall({ setting: set, handoverPct: handoverLine(), ...(own ? { own: own.value, ownWhy: own.why } : {}) });
+        const set = boxOf('defaultAccountCeiling', 'accounts.defaultCeiling');
+        return startWall({ setting: set, handoverPct: handoverLine(), ...(own ? { own: own.value, ownWhy: own.why } : {}),
+            weekSetting: boxOf('defaultAccountWeeklyCeiling', 'accounts.defaultWeeklyCeiling'),
+            weekHandoverPct: d.setting<number>('quotaWeeklyHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaWeeklyHandoverPct) });
     }
     /** X-471 — a sentry campaign's wall: its own ceiling when it states one, else the Account ceiling; never above the handover line. */
     function campaignWall(rec: { ceiling?: unknown }): StartWall {
@@ -72,9 +78,12 @@ export function accountPlacement(d: PlacementDeps) {
     const handoverStay = (slotId: string | undefined, cause: PassCause): StayVerdict => {
         const u = slotId ? d.usage().find(x => x.slotId === slotId) : undefined;
         const pct = stayPctOf(d.ownSetting).value;
+        const s = splitNow(u);
         return stayOnAccount({
             // X-462 / X-472 — the figure the verdict stood on (a floor counts, an agent's figure only raises it); a turned-over window is fresh
-            stayPct: pct, slotId, percent: cause.quotaPct >= 0 ? cause.quotaPct : (u ? percentNow(u) : undefined), resetsAt: u?.resetsAt,
+            stayPct: pct, slotId, percent: cause.quotaPct >= 0 ? cause.quotaPct : (u ? s.five : undefined), resetsAt: u?.resetsAt,
+            // X-479 — the week, judged against the wall's own weekly figure (a recorded week only raises it)
+            week: Math.max(s.week, typeof cause.weekPct === 'number' ? cause.weekPct : -1),
             // X-472 — the measured cause, never whether an order reached the run
             quotaHandover: cause.kind === 'quota', walled: cause.kind === 'limit', now: Date.now(),
             // X-470 — a stay is a start: it obeys the wall every start obeys (startWall)
@@ -161,6 +170,7 @@ export function accountPlacement(d: PlacementDeps) {
             usage: d.usage(),
             ceiling: accountCeiling().value,
             handoverPct: handoverLine(),
+            weekCeiling: accountCeiling().week,
             standing: standing.id,
             standingOrigin: standing.origin,
             ...(pool ? { pool } : {}),

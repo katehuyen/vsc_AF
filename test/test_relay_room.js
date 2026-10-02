@@ -162,7 +162,8 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
         ok('the door marks the account the plan limit walled', /if \(b\.fault === 'limit' && was\) \{ try \{ d\.markWalled\(was\); \}/.test(place) && /markWalled: slot => accountUsage\.markWalled\(slot\),/.test(ext));
         ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : b\.want\.account, agentId, model: b\.inherit\.model \}\);/.test(place)
             && /const \{ stay, park \} = successorPlacement\(b, agent\.id\);/.test(ext));
-        ok('the stay reads the figure in force (a floor counts)', /stayPct: pct, slotId, percent: cause\.quotaPct >= 0 \? cause\.quotaPct : \(u \? percentNow\(u\) : undefined\), resetsAt: u\?\.resetsAt,/.test(place));
+        ok('the stay reads the figure in force (a floor counts), the week apart (X-479)', /const s = splitNow\(u\);/.test(place) && /stayPct: pct, slotId, percent: cause\.quotaPct >= 0 \? cause\.quotaPct : \(u \? s\.five : undefined\), resetsAt: u\?\.resetsAt,/.test(place)
+            && /week: Math\.max\(s\.week, typeof cause\.weekPct === 'number' \? cause\.weekPct : -1\),/.test(place));
         const wake = (place.match(/function relayWakeHold\(task: FarmTask\)[\s\S]*?\n    \}\n/) || [''])[0];
         ok('a parked row keeps waiting at its wake, before the quota line', /quotaCheck: \(task\) => relayWakeHold\(task\) \?\? quotaBrake\(/.test(ext) && /if \(r\.refusal && r\.resetsAt\) \{ return \{ code: 'quota:5h'/.test(wake));
         ok('‼️ …and never pins an account on the row: the launch picks as every launch does', !!wake && !/task\.account =/.test(wake) && !/noteTaskEvent/.test(wake));

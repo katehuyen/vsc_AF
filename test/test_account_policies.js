@@ -237,7 +237,7 @@ ok('‼️ X-305 R2 — the default wall is 70: a policy chooses where to START,
     const place = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'launch', 'accountPlacement.ts'), 'utf8');
     ok('the host walks every policy with the wall in force, and the pages and policies.list show it with its why',
         // X-471 — the world also carries the handover line (a rule's own wall is capped at it); the sentry form's empty Ceiling box is the third why
-        /ceiling: accountCeiling\(\)\.value,\s*handoverPct: handoverLine\(\),\s*standing/.test(place) && (ext.match(/ceilingWhy: accountCeiling\(\)\.why/g) || []).length === 3
+        /ceiling: accountCeiling\(\)\.value,\s*handoverPct: handoverLine\(\),\s*weekCeiling: accountCeiling\(\)\.week,\s*standing/.test(place) && (ext.match(/ceilingWhy: accountCeiling\(\)\.why/g) || []).length === 3
         && /return startWall\(\{ setting: set, handoverPct: handoverLine\(\)/.test(place)
         && /return d\.setting<number>\('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS\.quotaHandoverPct\);/.test(place)
         && /setting: <T,>\(k: string, f: T\): T => cfg\(\)\.get<T>\(k, f\) as T,/.test(ext));

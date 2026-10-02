@@ -50,9 +50,13 @@ export function misplacedVerdict(first: FirstQuota | undefined, wall: StartWall)
     }
     const week = Number(first.week), wline = Number(first.weekLine);
     if (!(wline > 0) || !(week >= wline)) { return undefined; }
+    // X-479 — a week judged against its own wall names that wall
+    const ww = typeof wall.week === 'number' ? wall.week : wall.value;
+    const placedWeek = typeof wall.week === 'number'
+        ? `it was placed on a full account, where the weekly wall in force was ${wall.week}% (${wall.weekWhy})` : placed;
     return {
-        slot: first.account, pct: week, wall: wall.value, line: wline, at: first.ts, window: 'week',
-        why: `${first.account} read ${week}% of its weekly window at its first reading — at or past the weekly quota handover line (${wline}%): ${placed}`
+        slot: first.account, pct: week, wall: ww, line: wline, at: first.ts, window: 'week',
+        why: `${first.account} read ${week}% of its weekly window at its first reading — at or past the weekly quota handover line (${wline}%): ${placedWeek}`
     };
 }
 

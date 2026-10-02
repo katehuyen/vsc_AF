@@ -3,6 +3,7 @@ import {
 } from './accountUsage';
 import { backAt, floorPhrase, percentNow } from './usageFloor';
 import { flexPoint } from './flexPoints';
+import { Wall, wallText, withFive } from './wall';
 
 /**
  * X-305 — AN ACCOUNT CHOSEN AT LAUNCH TIME BY A RULE, NOT BY A NAME.
@@ -168,6 +169,8 @@ export interface PolicyWorld {
     now?: number;
     /** S-105 — the ceiling in force when a rule names none (effectiveCeiling); absent = POLICY_DEFAULT_CEILING */
     ceiling?: number;
+    /** X-479 — the week's own wall (startWall's `week`); absent = the week is walled like the five-hour window */
+    weekCeiling?: number;
     /** X-471 — agentFarm.quotaHandoverPct: a wall a rule, step or pool names for itself never acts above it; 0/absent = off */
     handoverPct?: number;
 }
@@ -265,7 +268,9 @@ export function resolvePolicy(stated: string | undefined, world: PolicyWorld): P
     const s = String(stated ?? '').trim();
     if (!isPolicyId(s)) { return { id: s, policy: '', note: '' }; }
     const c = Number(world.ceiling);
-    return walk(s, world, Number.isFinite(c) && c > 0 && c <= 100 ? c : POLICY_DEFAULT_CEILING, 0, s);
+    const five = Number.isFinite(c) && c > 0 && c <= 100 ? c : POLICY_DEFAULT_CEILING;
+    const wk = Number(world.weekCeiling);
+    return walk(s, world, Number.isFinite(wk) && wk > 0 && wk <= 100 ? { value: five, week: wk } : five, 0, s);
 }
 
 /**
@@ -285,7 +290,7 @@ export function effectiveCeiling(setting: unknown, quotaHandoverPct: unknown): {
     return { value: own, why: `${own}% — defaultAccountCeiling${own === POLICY_DEFAULT_CEILING && !(Number.isFinite(n) && n > 0) ? ' (default)' : ''}` };
 }
 
-function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer: string): PolicyResolution {
+function walk(id: string, w: PolicyWorld, ceiling: Wall, depth: number, outer: string): PolicyResolution {
     const engine = String(w.engine || 'claude').trim().toLowerCase() || 'claude';
     const now = w.now ?? Date.now();
     const name = (slot: string): string => (w.labelOf ? w.labelOf(slot) : slot) || slot;
@@ -304,7 +309,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
             note: '', resetsAt
         };
     };
-    const usableOf = (slot: string, c: number): SlotUsage | undefined | null => {
+    const usableOf = (slot: string, c: Wall): SlotUsage | undefined | null => {
         // null = walled or dead; undefined = unmeasured (usable by the rule every runner follows)
         const u = w.usage.find(x => x.slotId === slot);
         if (!u) { return undefined; }
@@ -320,7 +325,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         const pick = line[0];
         if (!pick) {
             return refuse(mine.length
-                ? `@emptiest: every ${engine} sign-in is at or past ${ceiling}% of its window (${mine.map(u => `${name(u.slotId)} ${figure(u)}`).join(', ')}).`
+                ? `@emptiest: every ${engine} sign-in is at or past ${wallText(ceiling)} of its window (${mine.map(u => `${name(u.slotId)} ${figure(u)}`).join(', ')}).`
                 : `@emptiest: no ${engine} sign-in is stored on this machine, so there is nothing to choose from.`, mine);
         }
         const next = line[1];
@@ -336,13 +341,13 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         if (!pool || !pool.accounts.length) {
             return { id: '', policy: outer, note: '', refusal: '@pool: no sentry campaign pool is running on this machine — pick @emptiest, a named rule, or an account.' };
         }
-        const c = typeof pool.ceiling === 'number' ? underLine(pool.ceiling, w.handoverPct) : ceiling;
+        const c = typeof pool.ceiling === 'number' ? withFive(ceiling, underLine(pool.ceiling, w.handoverPct)) : ceiling;
         const byId = new Map(w.usage.map(u => [u.slotId, u]));
         const list = pool.accounts.map(a => byId.get(a)).filter((u): u is SlotUsage => !!u);
         const line = accountOrder(list, { ceiling: c, now, ...(pool.rotation ? { rotation: pool.rotation } : {}), ...(pool.engine ? { engine: pool.engine } : {}) });
         const pick = line[0];
         if (!pick) {
-            return refuse(`@pool: every account of the campaign pool is at or past ${c}% (${pool.accounts.map(a => `${name(a)} ${figure(byId.get(a))}`).join(', ')}).`, list);
+            return refuse(`@pool: every account of the campaign pool is at or past ${wallText(c)} (${pool.accounts.map(a => `${name(a)} ${figure(byId.get(a))}`).join(', ')}).`, list);
         }
         return {
             id: pick.slotId, policy: outer,
@@ -358,7 +363,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         }
         const u = usableOf(st, ceiling);
         if (u === null) {
-            return refuse(`@standing: ${name(st)} (${w.standingOrigin || 'standing'}) is at ${figure(w.usage.find(x => x.slotId === st))}, at or past ${ceiling}%.`, w.usage.filter(x => x.slotId === st));
+            return refuse(`@standing: ${name(st)} (${w.standingOrigin || 'standing'}) is at ${figure(w.usage.find(x => x.slotId === st))}, at or past ${wallText(ceiling)}.`, w.usage.filter(x => x.slotId === st));
         }
         return { id: st, policy: outer, note: `${name(st)} — @standing: the ${w.standingOrigin || 'standing'} sign-in for ${engine} (${figure(u ?? undefined)}).` };
     }
@@ -367,7 +372,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         const usable = mine.filter(u => slotIsUsable(u, ceiling, now));
         if (!usable.length) {
             return refuse(mine.length
-                ? `@round-robin: every ${engine} sign-in is at or past ${ceiling}% (${mine.map(u => `${name(u.slotId)} ${figure(u)}`).join(', ')}).`
+                ? `@round-robin: every ${engine} sign-in is at or past ${wallText(ceiling)} (${mine.map(u => `${name(u.slotId)} ${figure(u)}`).join(', ')}).`
                 : `@round-robin: no ${engine} sign-in is stored on this machine.`, mine);
         }
         // The one after the last pick, in the user's list order; the list may have
@@ -394,15 +399,15 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
     if (ruleEngine && ruleEngine !== engine) {
         return { id: '', policy: outer, note: '', refusal: `@${rule.name} is a rule for ${ruleEngine} and this launch is on ${engine}. A slot belongs to one engine, so a rule does too.` };
     }
-    const ruleCeiling = typeof rule.ceiling === 'number' ? underLine(rule.ceiling, w.handoverPct) : ceiling;
+    const ruleCeiling: Wall = typeof rule.ceiling === 'number' ? withFive(ceiling, underLine(rule.ceiling, w.handoverPct)) : ceiling;
     const model = String(w.model ?? '').trim().toLowerCase();
     const skipped: string[] = [];
     let earliest = 0;
-    const noteReset = (r: SlotUsage | undefined, c: number): void => {
+    const noteReset = (r: SlotUsage | undefined, c: Wall): void => {
         const back = r ? backAt(r, c, now) : 0;
         if (back > now) { earliest = earliest ? Math.min(earliest, back) : back; }
     };
-    const wallOf = (st: PolicyStep): number => typeof st.ceiling === 'number' ? underLine(st.ceiling, w.handoverPct) : ruleCeiling;
+    const wallOf = (st: PolicyStep): Wall => typeof st.ceiling === 'number' ? withFive(ceiling, underLine(st.ceiling, w.handoverPct)) : ruleCeiling;
     /** A model-filtered step that is not for this launch — said in `skipped`. */
     const offModel = (st: PolicyStep, i: number): boolean => {
         const models = (st.models ?? []).map(m => String(m).trim().toLowerCase()).filter(Boolean);
@@ -415,12 +420,12 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
      * (undefined = nobody has read it, usable by the rule every runner
      * follows), or null when it is not stored or is walled — said in `skipped`.
      */
-    const accountOf = (acc: string, i: number, c: number): SlotUsage | undefined | null => {
+    const accountOf = (acc: string, i: number, c: Wall): SlotUsage | undefined | null => {
         if (w.stored && !w.stored.includes(acc)) { skipped.push(`step ${i + 1}: no account "${acc}" is stored`); return null; }
         const u = usableOf(acc, c);
         if (u === null) {
             const r = w.usage.find(x => x.slotId === acc);
-            skipped.push(`step ${i + 1}: ${name(acc)} is at ${figure(r)} (wall ${c}%)`);
+            skipped.push(`step ${i + 1}: ${name(acc)} is at ${figure(r)} (wall ${wallText(c)})`);
             noteReset(r, c);
         }
         return u;
@@ -476,7 +481,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         if (acc) {
             const u = accountOf(acc, i, c);
             if (u === null) { continue; }
-            return { id: acc, policy: outer, note: `${name(acc)} — @${rule.name} step ${i + 1} of ${total} (${figure(u ?? undefined)}, wall ${c}%).` };
+            return { id: acc, policy: outer, note: `${name(acc)} — @${rule.name} step ${i + 1} of ${total} (${figure(u ?? undefined)}, wall ${wallText(c)}).` };
         }
         const inner = walk(String(st.policy ?? '').trim(), w, c, depth + 1, outer);
         if (!inner.refusal) {

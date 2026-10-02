@@ -78,13 +78,13 @@ console.log('\n== X-471: the doors that walked 95 ask the one wall ==');
     ok('the campaign\'s wall is the host\'s accountCeiling given the campaign\'s own ceiling',
         /function campaignWall\(rec: \{ ceiling\?: unknown \}\): StartWall \{\n\s*return accountCeiling\(\{ value: rec\.ceiling, why: 'the campaign\\'s wall' \}\);/.test(place));
     ok('…and the tick reads it once, for the facts, the leader\'s seat and the round',
-        /const wall = campaignWall\(rec\);/.test(ext) && /slotIsUsable\(u, wall\.value\)\)\.length/.test(ext)
-        && /const ceiling = wall\.value;\n\s*const shape = \{/.test(ext) && /running: taskManager\.sentryBusy\(\),\n\s*wall,\n\s*now: Date\.now\(\)/.test(ext));
+        /const wall = campaignWall\(rec\);/.test(ext) && /slotIsUsable\(u, wall\)\)\.length/.test(ext)
+        && /leaderAccountFor\(shape, caps, usage, wall, Date\.now\(\), walledNow\)/.test(ext) && /running: taskManager\.sentryBusy\(\),\n\s*wall,\n\s*now: Date\.now\(\)/.test(ext));
     ok('the carry, accounts.status, the policies and the Accounts card ask the same wall',
         /accountWall: own => accountCeiling\(own\),/.test(ext)
         && /const wall = accountCeiling\(own \? \{ value: own, why: 'the caller\\'s ceiling' \} : undefined\);/.test(ext)
         && /ceiling: accountCeiling\(\)\.value,\n\s*handoverPct: handoverLine\(\),/.test(place)
-        && /accountOrder\(pool, \{\n\s*ceiling: accountCeiling\(\)\.value, engine: slot\.engine/.test(ext));
+        && /accountOrder\(pool, \{\n\s*ceiling: accountCeiling\(\), engine: slot\.engine/.test(ext));
     ok('the surfaces say the wall in force (sentry payload, sentry.status, the empty box\'s default)',
         (ext.match(/wall: campaignWall\(rec\),/g) || []).length === 2 && /ceilingWhy: accountCeiling\(\)\.why,/.test(ext));
 }
@@ -117,7 +117,8 @@ function offendersOf(file, src) {
     codeOnly(src, true).split('\n').forEach((l, i) => {
         const consts = (l.match(/\b\w*(DEFAULT|WALL)_CEILING\b/g) || []).filter(n => !ALLOWED_CONST.has(n));
         if (consts.length) { out.push({ file, kind: 'a wall constant', line: i + 1, text: l.trim() }); }
-        if (/\bceiling\s*[:=]\s*\d|['"]ceiling['"]\s*,\s*\d/.test(l)) { out.push({ file, kind: 'a wall written as a number', line: i + 1, text: l.trim() }); }
+        // X-479 — a typed default (`ceiling: Wall = 100`) and a wall read with a fallback (`wallOr(x, 100)`) state a number too
+        if (/\bceiling(?:\s*:\s*\w+)?\s*[:=]\s*\d|['"]ceiling['"]\s*,\s*\d|\bwallOr\([^)]*,\s*\d/.test(l)) { out.push({ file, kind: 'a wall written as a number', line: i + 1, text: l.trim() }); }
         // X-477 — a room check that compares a figure with a number of its own (the supervisor's `u.percent < 95` slipped past the call patterns)
         if (ROOM_LINE.test(l)) { out.push({ file, kind: 'a room line written as a number', line: i + 1, text: l.trim() }); }
     });
@@ -172,6 +173,8 @@ console.log('\n== the gate bites (fixtures) ==');
     ok('…an options call without a ceiling', judge(at('const o = accountOrder(pool, { engine: e });'), empty).length === 1);
     ok('…with a literal ceiling option', judge(at('const o = pickAccount(pool, { ceiling: 95, engine });'), empty).length >= 1);
     ok('…an op default written as a number', judge(at("const c = optNum(args, 'ceiling', 95);"), empty).length === 1);
+    ok('…a typed default and a wall read with a number fallback (X-479)', judge(at('function f(ceiling: Wall = 90) { return 1; }'), empty).length === 1
+        && judge(at('const c = wallOr(rec.ceiling, 95);'), empty).length === 1);
     ok('‼️ …a record\'s optional ceiling handed in raw, which falls to 100 when unset (X-471)',
         judge(at('const n = usage.filter(u => slotIsUsable(u, rec.ceiling)).length;'), empty).length === 1
         && judge(at('const o = accountOrder(list, { ceiling: pool.ceiling, now });'), empty).length === 1);

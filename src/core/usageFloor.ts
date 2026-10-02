@@ -16,6 +16,7 @@
  * keeps them on disk (`UsageMemory`).
  */
 import type { SlotUsage, UsageBar } from './accountUsage';
+import { Wall, wallParts } from './wall';
 
 /** The last thing known for certain about one slot's window. */
 export interface UsageFloor {
@@ -41,6 +42,8 @@ export interface UsageMemory {
 const FIVE_HOUR_ID = 'five_hour';
 /** A per-model week binds only the launches on that model; like `bindingBar`, a floor leaves it out. */
 const PER_MODEL = /^seven_day_./;
+/** The all-models week (accountUsage `SEVEN_DAY`). */
+const WEEK_ID = 'seven_day';
 /** No plan window outlasts this, so a wall with no turnover named is over by then. */
 export const LONGEST_WINDOW_MS = 5 * 60 * 60 * 1000;
 
@@ -59,16 +62,45 @@ function floorNow(f: UsageFloor, now: number): number {
     return inForce(f.walled ? { percent: 0, resetsAt: 0, bars: f.bars } : f, now);
 }
 
+/** X-479 — a slot's figures in force, the all-models week apart from every other window (the five-hour one, or an engine's own). -1 = not known. */
+export interface WindowSplit {
+    five: number;
+    week: number;
+}
+
+const NOT_KNOWN: WindowSplit = { five: -1, week: -1 };
+
+/** `inForce`, split: max(five, week) is exactly what `inForce` answers. */
+function splitInForce(r: { percent: number; resetsAt: number; bars?: UsageBar[] }, now: number): WindowSplit {
+    if (!(r.percent >= 0)) { return NOT_KNOWN; }
+    const bars = (r.bars ?? []).filter(b => !PER_MODEL.test(b.id) && b.percent >= 0);
+    if (!bars.length) { return { five: turned(r.resetsAt, now) ? 0 : r.percent, week: -1 }; }
+    const fig = (b: UsageBar): number => (turned(b.resetsAt, now) ? 0 : b.percent);
+    const other = bars.filter(b => b.id !== WEEK_ID);
+    const week = bars.find(b => b.id === WEEK_ID);
+    return { five: other.length ? Math.max(0, ...other.map(fig)) : -1, week: week ? fig(week) : -1 };
+}
+
+/** The live reading's figures or the floor's, whichever says more, window by window; a wall in force is full on both. */
+export function splitNow(u: SlotUsage | undefined, now = Date.now()): WindowSplit {
+    if (!u) { return NOT_KNOWN; }
+    const live = u.state === 'ok' ? splitInForce(u, now) : NOT_KNOWN;
+    const f = u.floor;
+    const floor = !f ? NOT_KNOWN
+        : f.walled && f.resetsAt > now ? { five: 100, week: 100 }
+            : splitInForce(f.walled ? { percent: 0, resetsAt: 0, bars: f.bars } : f, now);
+    return { five: Math.max(live.five, floor.five), week: Math.max(live.week, floor.week) };
+}
+
 /**
  * ‼️ THE FIGURE A DECISION STANDS ON: the live reading's, or the floor a failed
  * read, a reload or a wall left — whichever says more. -1 = nothing is known,
  * which every policy still treats as room (a figure we cannot see is not a
- * wall we can name).
+ * wall we can name). The fuller of the two windows (`splitNow`).
  */
 export function percentNow(u: SlotUsage | undefined, now = Date.now()): number {
-    if (!u) { return -1; }
-    const live = u.state === 'ok' ? inForce(u, now) : -1;
-    return Math.max(live, u.floor ? floorNow(u.floor, now) : -1);
+    const s = splitNow(u, now);
+    return Math.max(s.five, s.week);
 }
 
 /** The five-hour window alone, the same way — the handover law's own figure (X-353). -1 = not known. */
@@ -78,7 +110,7 @@ export function fiveHourNow(u: SlotUsage | undefined, now = Date.now()): number 
 
 /** X-478 — the all-models week alone, the same way: the weekly handover line's figure. -1 = not known. */
 export function weekNow(u: SlotUsage | undefined, now = Date.now()): number {
-    return windowNow(u, 'seven_day', now);
+    return windowNow(u, WEEK_ID, now);
 }
 
 function windowNow(u: SlotUsage | undefined, id: string, now: number): number {
@@ -96,14 +128,17 @@ function windowNow(u: SlotUsage | undefined, id: string, now: number): number {
 /**
  * When a slot at or past `ceiling` is back under it: the LATEST turnover among
  * the windows holding it there (a week at 92% still holds after the five-hour
- * window turns over). 0 = it is not held, or no turnover is known.
+ * window turns over). 0 = it is not held, or no turnover is known. X-479 — the
+ * week is held by the wall's own weekly figure.
  */
-export function backAt(u: SlotUsage, ceiling: number, now = Date.now()): number {
+export function backAt(u: SlotUsage, ceiling: Wall, now = Date.now()): number {
+    const p = wallParts(ceiling);
     const walls: number[] = [];
     const take = (r: { percent: number; resetsAt: number; bars?: UsageBar[] }): void => {
         const bars = (r.bars ?? []).filter(b => !PER_MODEL.test(b.id));
-        for (const b of bars.length ? bars : [r]) {
-            if (b.percent >= ceiling && b.resetsAt > now) { walls.push(b.resetsAt); }
+        const list: { id?: string; percent: number; resetsAt: number }[] = bars.length ? bars : [r];
+        for (const b of list) {
+            if (b.percent >= (b.id === WEEK_ID ? p.week : p.five) && b.resetsAt > now) { walls.push(b.resetsAt); }
         }
     };
     if (u.state === 'ok') { take(u); }

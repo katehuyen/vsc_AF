@@ -46,6 +46,8 @@ export interface StayInput {
     walled?: boolean;
     /** X-470 — the wall every start obeys (startWall); the stay line never stands above it */
     wall: StartWall;
+    /** X-479 — that slot's all-models week now; judged against the wall's own weekly figure when it has one */
+    week?: number;
     now: number;
 }
 
@@ -82,6 +84,10 @@ export function stayOnAccount(i: StayInput): StayVerdict {
     const at = stayLineOf(line, i.wall);
     if (pct >= at.value) {
         return { stay: false, why: `${slot} is at ${Math.round(pct)}% of its five-hour window, not under ${at.why} — the pool picks` };
+    }
+    const wk = Number(i.week);
+    if (typeof i.wall?.week === 'number' && Number.isFinite(wk) && wk >= i.wall.week) {
+        return { stay: false, why: `${slot}'s week is at ${Math.round(wk)}%, at or past the ${i.wall.week}% weekly wall (${i.wall.weekWhy}) — the pool picks` };
     }
     return {
         stay: true, slotId: slot,

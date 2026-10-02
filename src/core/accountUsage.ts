@@ -6,7 +6,8 @@ import {
 } from './planusage';
 import { UsageGate, DEFAULT_CROSS_SERVICE_MS } from './usageGate';
 import { UsageShelf } from './usageShelf';
-import { backAt, floorOf, percentNow, UsageFloor, UsageMemory, wallFloor, withFloor } from './usageFloor';
+import { backAt, floorOf, percentNow, splitNow, UsageFloor, UsageMemory, wallFloor, withFloor } from './usageFloor';
+import { Wall, wallHit, wallOr, wallText } from './wall';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
 import { EngineId } from './engines';
@@ -425,12 +426,12 @@ export function fiveHourOf(u: SlotUsage | undefined): UsageBar | undefined {
  * measured wall (the five-hour window at or above the ceiling) and a rejected
  * login stop it. ‼️ X-462 — "measured" includes what a failed read, a reload or
  * the plan limit left behind (`percentNow`), and a window that has turned over
- * is fresh.
+ * is fresh. X-479 — each window against its own wall (`Wall`): the all-models
+ * week against the week's, every other window against the five-hour one.
  */
-export function slotIsUsable(u: SlotUsage, ceiling = 100, now = Date.now()): boolean {
+export function slotIsUsable(u: SlotUsage, ceiling: Wall = 100, now = Date.now()): boolean {
     if (u.state === 'expired' || u.state === 'no-auth') { return false; }
-    const p = percentNow(u, now);
-    return p < 0 || p < ceiling;
+    return !wallHit(splitNow(u, now), ceiling);
 }
 
 /**
@@ -442,7 +443,7 @@ export function slotIsUsable(u: SlotUsage, ceiling = 100, now = Date.now()): boo
  * 4% is choosing a guess over a fact — and the guess is the one that ends the
  * session ten minutes in.
  */
-export function mostRoom(list: SlotUsage[], ceiling = 100, now = Date.now()): SlotUsage | undefined {
+export function mostRoom(list: SlotUsage[], ceiling: Wall = 100, now = Date.now()): SlotUsage | undefined {
     return roomOrder(list, ceiling, now)[0];
 }
 
@@ -466,7 +467,7 @@ export function mostRoom(list: SlotUsage[], ceiling = 100, now = Date.now()): Sl
  *   · among equals the user's own list order stands (the sort is stable), which
  *     is the same rule the tiers follow.
  */
-export function roomOrder(list: SlotUsage[], ceiling = 100, now = Date.now()): SlotUsage[] {
+export function roomOrder(list: SlotUsage[], ceiling: Wall = 100, now = Date.now()): SlotUsage[] {
     const usable = list.filter(u => slotIsUsable(u, ceiling, now));
     const read = (u: SlotUsage): boolean => percentNow(u, now) >= 0;
     return [...usable.filter(read)].sort((a, b) => percentNow(a, now) - percentNow(b, now))
@@ -475,8 +476,8 @@ export function roomOrder(list: SlotUsage[], ceiling = 100, now = Date.now()): S
 
 /** How a campaign walks the accounts the user allowed it (X-207). */
 export interface PickAccountOptions {
-    /** the five-hour percentage at or above which an account is a wall */
-    ceiling?: number;
+    /** the five-hour percentage at or above which an account is a wall; X-479 — a Wall carries the week's own */
+    ceiling?: Wall;
     /** 'tiered' keeps to one engine at a time; anything else is the free pool */
     rotation?: string;
     /** the campaign's own engine, which is the first tier when it has accounts here */
@@ -527,7 +528,7 @@ export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): S
  * predict for themselves.
  */
 export function accountOrder(list: SlotUsage[], opts: PickAccountOptions = {}): SlotUsage[] {
-    const ceiling = typeof opts.ceiling === 'number' ? opts.ceiling : 100;
+    const ceiling = wallOr(opts.ceiling, 100);
     const now = typeof opts.now === 'number' ? opts.now : Date.now();
     if (String(opts.rotation ?? '').trim().toLowerCase() !== 'tiered') {
         return roomOrder(list, ceiling, now);
@@ -577,8 +578,8 @@ export interface CarryOnInput {
     engine?: string;
     /** the accounts this machine has measured, as they were measured */
     usage: SlotUsage[];
-    /** at or above this five-hour percentage an account is a wall */
-    ceiling?: number;
+    /** at or above this five-hour percentage an account is a wall; X-479 — a Wall carries the week's own */
+    ceiling?: Wall;
     /** the moment the run would otherwise start again, epoch ms */
     waitUntil?: number;
     now?: number;
@@ -631,7 +632,7 @@ export interface CarryOn {
  */
 export function carryOnAccount(i: CarryOnInput): CarryOn {
     const now = typeof i.now === 'number' ? i.now : Date.now();
-    const ceiling = typeof i.ceiling === 'number' ? i.ceiling : 100;
+    const ceiling = wallOr(i.ceiling, 100);
     const from = String(i.from ?? '').trim();
     const engine = (String(i.engine ?? '').trim() || 'claude').toLowerCase();
     const wait = typeof i.waitUntil === 'number' ? i.waitUntil : 0;
@@ -672,7 +673,7 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
             return { why: `the policy names ${want} to carry on with, which is not a captured ${engine} `
                 + 'sign-in on this machine, so the wait stands' };
         }
-        if (u.state !== 'ok' || u.percent >= ceiling) {
+        if (u.state !== 'ok' || !slotIsUsable(u, ceiling, now)) {
             return { why: `the policy names ${want} to carry on with, and it is ${u.state === 'ok'
                 ? `at ${u.percent}% of its window too` : u.state}, so the wait stands` };
         }
@@ -693,7 +694,7 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
     }
     const pick = pickAccount(pool, { ceiling, engine, now });
     if (!pick) {
-        return { why: `every other ${engine} account is at or above ${ceiling}% of its five-hour `
+        return { why: `every other ${engine} account is at or above ${wallText(ceiling)} of its five-hour `
             + 'window too, so the wait stands' };
     }
     return {
@@ -709,7 +710,7 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
  * Zero when nothing is waiting on a reset. ‼️ X-462 — a slot is back when EVERY
  * window holding it at the wall has turned over (`backAt`), floors included.
  */
-export function nextResetAt(list: SlotUsage[], ceiling = 100, now = Date.now()): number {
+export function nextResetAt(list: SlotUsage[], ceiling: Wall = 100, now = Date.now()): number {
     const waiting = list.map(u => backAt(u, ceiling, now)).filter(t => t > now);
     return waiting.length ? Math.min(...waiting) : 0;
 }

@@ -5275,7 +5275,7 @@ export class TaskManager implements vscode.Disposable {
                 usage: this.opts.measuredAccounts?.() ?? [],
                 // X-471 — the Account ceiling, or the campaign's own wall when this run is one of its rounds
                 ceiling: this.opts.accountWall(task.sentryOf && this.sentry?.id === task.sentryOf
-                    ? { value: this.sentry.ceiling, why: 'the campaign\'s wall' } : undefined).value,
+                    ? { value: this.sentry.ceiling, why: 'the campaign\'s wall' } : undefined),
                 waitUntil: wait,
                 want: carryWant,
                 ...(this.opts.resolveCarryOn

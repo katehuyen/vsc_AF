@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.787.0",
+  "version": "3.788.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9036,7 +9036,14 @@
           "default": 70,
           "minimum": 1,
           "maximum": 100,
-          "description": "Account ceiling: the wall every unattended start obeys — a sign-in at or past this share of its five-hour window is passed over. Every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none, a relay successor staying on its account, a sentry round whose campaign names no ceiling, a run carried to another account after a limit, and accounts.status when asked without a ceiling. A campaign, rule, step or caller may name its own wall instead, but nothing — this box included — ever acts above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so lowering the handover line lowers every wall with it. The Account Policies table, the campaign's Ceiling box and sentry.status show the wall in force and why."
+          "description": "Account ceiling: the wall every unattended start obeys — a sign-in at or past this share of its five-hour window is passed over (its all-models week has its own wall, defaultAccountWeeklyCeiling). Every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none, a relay successor staying on its account, a sentry round whose campaign names no ceiling, a run carried to another account after a limit, and accounts.status when asked without a ceiling. A campaign, rule, step or caller may name its own wall instead, but nothing — this box included — ever acts above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so lowering the handover line lowers every wall with it. The Account Policies table, the campaign's Ceiling box and sentry.status show the wall in force and why."
+        },
+        "agentFarm.defaultAccountWeeklyCeiling": {
+          "type": "number",
+          "default": 95,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Weekly Account ceiling: the wall every unattended start obeys on the all-models WEEK — a sign-in at or past this share of its weekly window is passed over, while its five-hour window is judged by the Account ceiling (defaultAccountCeiling). Kept apart so an account whose week is past the Account ceiling is still used for days instead of sitting idle; the emptiest account still leads, and a week at its limit is never picked. Every place the Account ceiling binds (the built-in policies and rule steps, a relay successor staying on its account, a sentry round, a run carried to another account, accounts.status) judges the week here. Never acts above quotaWeeklyHandoverPct: a session started past the weekly handover line would be told to hand over on its first reading."
         },
         "agentFarm.contextHandoverStayAccountPct": {
           "type": "number",

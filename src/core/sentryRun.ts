@@ -2,6 +2,7 @@ import { AutomationState, gateBlock } from './automation';
 import { nextResetAt, pickAccount, slotIsUsable, SlotUsage } from './accountUsage';
 import { RETRY_DEFAULT_SAFETY_MIN } from './retry';
 import type { StartWall } from './startRoom';
+import { Wall, wallParts, wallText } from './wall';
 
 /**
  * X-176 — WHAT THE CAMPAIGN DOES NEXT, decided without starting anything.
@@ -118,7 +119,7 @@ const MIN = 60 * 1000;
  * an engine's name and never touches a disk.
  */
 export function campaignPick(
-    c: { rotation?: string; engine?: string }, usage: SlotUsage[], ceiling: number, now?: number
+    c: { rotation?: string; engine?: string }, usage: SlotUsage[], ceiling: Wall, now?: number
 ): SlotUsage | undefined {
     return pickAccount(usage, {
         ceiling, ...(typeof now === 'number' ? { now } : {}),
@@ -166,7 +167,7 @@ export interface LeaderHold {
 export function leaderAccountFor(
     c: { rotation?: string; engine?: string },
     caps: { account: string },
-    usage: SlotUsage[], ceiling: number, now: number, except: string[] = []
+    usage: SlotUsage[], ceiling: Wall, now: number, except: string[] = []
 ): { account: string } | { hold: LeaderHold } {
     const named = String(caps.account ?? '').trim();
     if (named) {
@@ -192,13 +193,13 @@ export function leaderAccountFor(
     if (pick) { return { account: pick.slotId }; }
     // ‼️ THE WALL IS THE POOL'S, NOT THE MACHINE'S. Everything in the pool is
     // at or past the ceiling: wait for the first one back, spend nothing.
-    const walled = usage.map(u => except.includes(u.slotId) ? { ...u, percent: Math.max(u.percent, ceiling) } : u);
+    const walled = usage.map(u => except.includes(u.slotId) ? { ...u, percent: Math.max(u.percent, wallParts(ceiling).five) } : u);
     const resetsAt = nextResetAt(walled, ceiling, now);
     const first = resetsAt ? walled.find(u => u.state === 'ok' && u.resetsAt === resetsAt) : undefined;
     return {
         hold: {
             slotId: first?.slotId ?? '', resetsAt,
-            why: `every account in the pool is at or above ${ceiling}% of its five-hour window — `
+            why: `every account in the pool is at or above ${wallText(ceiling)} of its five-hour window — `
                 + (resetsAt
                     ? `the leader turn waits for ${first?.slotId ?? 'the first one back'} to reset at `
                         + `${new Date(resetsAt).toLocaleTimeString()} and runs there; it never spends a `
@@ -212,7 +213,7 @@ export function leaderAccountFor(
 /** The one decision the campaign makes, over and over. */
 export function planSentry(i: SentryInputs): SentryPlan {
     const c = i.campaign;
-    const ceiling = i.wall.value;
+    const ceiling: Wall = i.wall;
     const buffer = typeof c.safetyBufferMin === 'number' ? c.safetyBufferMin : RETRY_DEFAULT_SAFETY_MIN;
 
     // ‼️ X-177 — PAUSED IS NOT STOPPED. A hold that belongs to this campaign
@@ -300,7 +301,7 @@ export function planSentry(i: SentryInputs): SentryPlan {
         return {
             action: 'start', rule: crossed ? 'engine-fallback' : 'has-room', slotId: pick.slotId, prompt,
             why: crossed
-                ? `every ${c.engine} account is at or above ${ceiling}%, so ${i.next.code} falls back `
+                ? `every ${c.engine} account is at or above ${wallText(ceiling)}, so ${i.next.code} falls back `
                     + `to ${pick.slotId} on ${pick.engine} rather than sleeping`
                 : `${pick.slotId} has the most room left, so ${i.next.code} starts there`
         };
@@ -312,7 +313,7 @@ export function planSentry(i: SentryInputs): SentryPlan {
     if (reset > 0) {
         return {
             action: 'sleep', rule: 'wait-for-reset', wakeAt: reset + buffer * MIN,
-            why: `every account is at or above ${ceiling}% of its five-hour window — sleeping until `
+            why: `every account is at or above ${wallText(ceiling)} of its five-hour window — sleeping until `
                 + `the earliest reset plus ${buffer} minute${buffer === 1 ? '' : 's'} of safety`
         };
     }

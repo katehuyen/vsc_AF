@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.788.0 - An account whose week is busy is still used (2026-10-02)
+
+- **The week has its own wall.** Every unattended start used to judge the
+  fuller of an account's five-hour window and its week against your Account
+  ceiling, so an account past that figure on its week alone sat unused for
+  days. Now the five-hour window meets the Account ceiling and the week meets
+  a new box, the weekly Account ceiling (`agentFarm.defaultAccountWeeklyCeiling`,
+  in Handover Discipline), which never stands above your weekly handover line.
+- **Same everywhere.** The account policies, a relay successor staying on its
+  account, sentry rounds, a run carried to another account and
+  `accounts.status` all use the two walls; the emptiest account still leads,
+  and an account whose week is at its limit is never picked.
+- **The quota brake reads the week apart.** A queued run on an account whose
+  week is at the weekly handover line waits and says "weekly window"; a busy
+  week is no longer reported as a full five-hour window.
+
 ## 3.787.0 - The weekly quota is a handover trigger too (2026-10-02)
 
 - **A line for the week.** A running session is now also told to hand over
