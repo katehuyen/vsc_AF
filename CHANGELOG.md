@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.785.0 - A run started on a full account is reported, not left for you to find (2026-10-02)
+
+- **The first reading decides.** Agent Farm keeps the first quota reading of
+  every session. A relay leg or a sentry round whose very first reading is
+  already at or past your quota handover line was put on a full account — and
+  that is now said instead of passing in silence.
+- **Where you look.** The leg's relay bar shows a "Misplaced" line naming the
+  account, the figure and the wall it should have been placed under; the pass
+  that placed it carries it in `baton.status` and `baton.legs`; a sentry
+  round's history gets an "opened on a full account" line. One notice goes out
+  per placement, never twice.
+
 ## 3.784.0 - An account that filled while a run waited is never used (2026-10-02)
 
 - **Checked again at the start.** When Agent Farm itself puts a run on a

@@ -16,6 +16,7 @@
 import { isPolicyId } from './accountPolicy';
 import { LaunchManifest, LaunchSurface } from './launchManifest';
 import type { PassCause } from './passCause';
+import type { Misplaced } from './misplaced';
 
 export type BatonState = 'armed' | 'waiting-end' | 'parked' | 'started' | 'stopped' | 'refused' | 'done' | 'failed';
 
@@ -102,6 +103,8 @@ export interface Baton {
     cause?: PassCause;
     /** X-462 — the passing leg had no room left (passCause.ts starvedOf): the barren brake does not count it */
     starved?: string;
+    /** X-474 — the leg this pass opened read its account at or past the handover line on its first reading (misplaced.ts) */
+    misplaced?: Misplaced;
     /** S-84 — the A2A card this pass hung on the board (batonBoard.ts) */
     a2aNoteId?: string;
     /** S-96 — on the opener of a RUNNING leg only: the user made that leg the chain's last (batonLastLeg.ts) */

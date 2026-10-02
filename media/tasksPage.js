@@ -3682,6 +3682,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         // having been edited.
         'route-drift': 'route moved under it',
         placed: 'placed again from its pool',
+        misplaced: 'opened on a full account',
         // X-109 - a resumed run's route was decided by the gate, not copied
         // off the task; the note says which of pinned/switch/unbound it was.
         route: 'route decided',

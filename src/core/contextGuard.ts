@@ -234,6 +234,8 @@ export interface QuotaSignalRecord {
     handover?: QuotaDelivery;
     lastPct?: number;
     lastTs?: number;
+    /** X-474 — the session's FIRST reading, kept as read: misplaced.ts judges its placement by it */
+    first?: { pct: number; ts: number; account: string; line: number };
     resetsAt?: number;
     undelivered?: { level: ContextLevel; ts: number; pct: number; why: string };
 }
@@ -398,6 +400,7 @@ export class ContextGuard {
         const rec = this.recordFor(id, opts.engine);
         const q: QuotaSignalRecord = rec.quota ?? (rec.quota = {});
         const ts = this.now();
+        if (q.lastTs === undefined) { q.first = { pct, ts, account: sample.account, line: t.quotaHandoverPct }; }
         q.lastPct = pct; q.lastTs = ts; q.account = sample.account;
         if (sample.resetsAt) { q.resetsAt = sample.resetsAt; }
         const floor = t.quotaConvergePct > 0 ? t.quotaConvergePct : t.quotaHandoverPct;

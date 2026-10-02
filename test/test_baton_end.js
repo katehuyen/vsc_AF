@@ -93,7 +93,7 @@ console.log('\n== the ender: once, then the release is asked for ==');
     ok('…and so do the watcher and the store, and the sweep checks as the backstop',
         /live\.onEvent\(e => \{[\s\S]{0,300}batonEnder\.poke\(\);/.test(ext)
         && /batonStore\.onDidChange\(\(\) => \{ updateBatonBar\(\); ConsolePanel\.refreshIfOpen\(\); batonEnder\.poke\(\); \}\)/.test(ext)
-        && /setInterval\(\(\) => \{ batonRunner\.sweep\(\); updateBatonBar\(\); batonEnder\.check\(\); engineFaults\.check\(\); \}, 60_000\)/.test(ext));
+        && /setInterval\(\(\) => \{ batonRunner\.sweep\(\); updateBatonBar\(\); batonEnder\.check\(\); engineFaults\.check\(\); misplacedWatch\.sweep\(\); \}, 60_000\)/.test(ext));
     ok('the card is closed through the host, with the reason on it', /closeCard: \(id, why\) => \{ consoleHost\.close\(id, \{ reason: why \}\);/.test(ext));
     ok('the facts read the card by the ENGINE session id, with its queue, its question and its last turn',
         /consoleHost\.list\(\)\.find\(x => x\.sessionId === sid\)/.test(ext) && /queued: c\.queued\?\.length \?\? 0/.test(ext)

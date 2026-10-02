@@ -159,6 +159,8 @@ export function batonCardView(list: readonly Baton[], sessionId: string, fallbac
         left ? nextLine(left) : 'Successor: none yet — this run has not passed the baton.'
     ];
     // X-472 — why this leg passed, as measured (limit · quota · context · flagged · early), with the figure it stood on
+    // X-474 — this leg's first reading already stood at the handover line: the pass that placed it is named
+    if (opener?.misplaced) { lines.push(`Misplaced: ${opener.misplaced.why}.`); }
     if (left?.cause) { lines.push(`Passed: ${left.cause.why}.`); }
     if (left?.note) { lines.push(`Note: ${left.note}`); }
     const stoppable = chain.some(isLive);

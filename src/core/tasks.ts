@@ -742,7 +742,9 @@ export type TaskEventKind =
     // effort, mode) instead of the task's launch copy, and the note says which.
     | 'setup'
     // X-473 — the slot the system placed the row on had no room left at its start: the row went back to its pool.
-    | 'placed';
+    | 'placed'
+    // X-474 — a sentry round's first quota reading already stood at the handover line (misplaced.ts).
+    | 'misplaced';
 
 /** The most a task keeps. A run that ping-pongs against a ceiling for a day
  *  would otherwise grow without bound; the newest are the ones being read. */
@@ -6562,6 +6564,14 @@ export class TaskManager implements vscode.Disposable {
         const rec = this.runRecords.get(runId);
         if (!rec) { return; }
         rec.board = { steps: rec.board?.steps ?? {}, notes: [...(rec.board?.notes ?? []), note].slice(-20) };
+        this.save();
+    }
+
+    /** X-474 — a round placed on a full account says so on its row, once (misplaced.ts). */
+    noteMisplaced(taskId: string, why: string): void {
+        const t = this.tasks.find(x => x.id === taskId);
+        if (!t || (t.events ?? []).some(e => e.kind === 'misplaced')) { return; }
+        noteTaskEvent(t, 'misplaced', why);
         this.save();
     }
 

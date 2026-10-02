@@ -161,6 +161,13 @@
       "hash": "9f5226cc01f3",
       "incident": "X-473 (2026-10-02, chn_muqifjzc001n2b): a relay successor was opened on an account already at 92%, past the Account ceiling — nothing at the spawn asked the slot again",
       "why": "the spawn point catches a full slot even when a door forgot the rule"
+    },
+    {
+      "file": "test_misplaced.js",
+      "title": "‼️ 2190d4d4 replayed: a relay leg whose first reading stood at 92% marks the pass that placed it, and one Notice says so",
+      "hash": "26f9acef942d",
+      "incident": "X-474 (2026-10-02): session 2190d4d4 was born at 92% on the account its pass placed it on; the system only marked it starved when it passed, and the user caught the misplacement",
+      "why": "a misplacement is said by the system, never left for the user to find"
     }
   ]
 }

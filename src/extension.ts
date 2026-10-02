@@ -371,6 +371,7 @@ import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { StayVerdict, stayInForceNote, stayOnAccount, stayPctOf } from './core/stayAccount';
 import { StartWall, startRoom, startWall } from './core/startRoom';
 import { PassCause, passCause } from './core/passCause';
+import { MisplacedWatch } from './core/misplaced';
 import { fiveHourNow, percentNow } from './core/usageFloor';
 import { fileUsageMemory } from './core/usageFloorFile';
 import { ClosingSetupStore, transcriptSetupOf } from './core/closingSetupStore';
@@ -17771,7 +17772,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openLeg: sid => { void vscode.commands.executeCommand('agentfarm.openConsole', { sessionId: sid }); }
     };
     registerLegsOp(bridge, batonLegsDeps);
-    registerChainOps(bridge, { sessions: () => index.allWithExternal() });
+    registerChainOps(bridge, { sessions: () => index.allWithExternal(), misplacedOf: sid => openerOf(batonStore.all(), sid)?.misplaced });
     // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
     // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
     const batonLegFacts = (sid: string): PassedLegFacts => {
@@ -17846,8 +17847,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(taskManager.onDidChange(() => batonRunner.follow()));
     // The boot pass waits for the monitor to rebuild and the Console to reclaim
     // its seats; a baton judged before that would see every session as unknown.
+    // X-474 — a leg or a round born on a full account is said: on the pass that placed it, and once on Notices
+    const misplacedWatch = new MisplacedWatch({
+        batons: () => batonStore.all(),
+        put: b => batonStore.put(b),
+        first: sid => contextGuard.record(sid)?.quota?.first,
+        wall: r => { const camp = taskManager.sentry; return r && camp?.id === r.sentryOf ? campaignWall(camp) : accountCeiling(); },
+        rounds: () => taskManager.tasks.flatMap(t => {
+            const sid = t.sentryOf && t.status === 'running' ? successorSessionOf(t) : undefined;
+            return sid && t.sentryOf ? [{ taskId: t.id, sessionId: sid, sentryOf: t.sentryOf, said: (t.events ?? []).some(e => e.kind === 'misplaced') }] : [];
+        }),
+        markRound: (id, m) => taskManager.noteMisplaced(id, m.why),
+        notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
+    });
     const batonBootSweep = setTimeout(() => { batonRunner.sweep(); updateBatonBar(); }, 20_000);
-    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); engineFaults.check(); }, 60_000);
+    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); engineFaults.check(); misplacedWatch.sweep(); }, 60_000);
     context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); } });
 
     registerA2AOps(bridge, {
