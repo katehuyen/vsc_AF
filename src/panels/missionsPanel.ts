@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /** Everything the Missions page needs from the extension host. The panel is a
  *  thin shell: state lives in the MissionStore/engines; this only routes. */
@@ -59,23 +60,27 @@ export class MissionsPanel {
 
     static show(deps: MissionsDeps, opts?: { newForm?: boolean }): void {
         if (MissionsPanel.current) {
-            MissionsPanel.current.panel.reveal();
+            MissionsPanel.current.host.reveal();
             if (opts?.newForm) {
-                void MissionsPanel.current.panel.webview.postMessage({ type: 'openForm' });
+                void MissionsPanel.current.host.webview.postMessage({ type: 'openForm' });
             }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.missions',
-            'Agent Farm — Missions',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        MissionsPanel.current = new MissionsPanel(panel, deps, opts?.newForm);
+        MissionsPanel.current = new MissionsPanel(
+            desktopHost({ viewType: 'agentfarm.missions', title: 'Agent Farm — Missions' }), deps, opts?.newForm);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<MissionsPanel>();
+
+    /** X-456 — the missions page on a phone's view. */
+    static openOn(host: PanelHost, deps: MissionsDeps): void {
+        MissionsPanel.phones.add(new MissionsPanel(host, deps));
     }
 
     static refreshIfOpen(): void {
         MissionsPanel.current?.refresh();
+        for (const p of MissionsPanel.phones) { p.refresh(); }
     }
 
     /** Open the page ON one run — what "Open" means from a project's Work tab
@@ -83,24 +88,24 @@ export class MissionsPanel {
      *  tick, because a freshly created panel's script has not run yet. */
     static focusRun(deps: MissionsDeps, runId: string): void {
         MissionsPanel.show(deps);
-        void MissionsPanel.current?.panel.webview.postMessage({ type: 'focus-run', id: runId });
+        void MissionsPanel.current?.host.webview.postMessage({ type: 'focus-run', id: runId });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: MissionsDeps, newForm?: boolean) {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+    private constructor(readonly host: PanelHost, private deps: MissionsDeps, newForm?: boolean) {
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             'Missions',
             { ...this.deps.data(), newForm: !!newForm },
             'missions.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         deps.onDidChange(() => this.refresh(), null, this.disposables);
     }
 
     private refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.deps.data() });
+        void this.host.webview.postMessage({ type: 'data', data: this.deps.data() });
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
@@ -110,7 +115,7 @@ export class MissionsPanel {
                 // fires these faster than they come back, and a stale answer
                 // painted over a newer one is precisely the race this feature
                 // exists to end — so the page drops anything but the latest.
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'preview',
                     seq: typeof msg.seq === 'number' ? msg.seq : 0,
                     preview: this.deps.preview(msg.input as Record<string, unknown>)
@@ -120,9 +125,9 @@ export class MissionsPanel {
             case 'create': {
                 const error = this.deps.create(msg.input as Record<string, unknown>);
                 if (error) {
-                    void this.panel.webview.postMessage({ type: 'formError', error });
+                    void this.host.webview.postMessage({ type: 'formError', error });
                 } else {
-                    void this.panel.webview.postMessage({ type: 'created' });
+                    void this.host.webview.postMessage({ type: 'created' });
                     this.refresh();
                 }
                 break;
@@ -132,7 +137,7 @@ export class MissionsPanel {
                 const runId = String(msg.runId ?? '');
                 if (!runId || (action !== 'pause' && action !== 'unpause' && action !== 'resume' && action !== 'cancel')) { break; }
                 if (action === 'cancel') {
-                    const pick = await vscode.window.showWarningMessage(
+                    const pick = await this.host.ask.warn(
                         'Cancel this mission? Running delegations are cancelled too.',
                         { modal: true }, 'Cancel mission');
                     if (pick !== 'Cancel mission') { break; }
@@ -148,7 +153,7 @@ export class MissionsPanel {
             // purpose, and the record of the night goes with it.
             case 'sentryStart': {
                 const error = this.deps.sentryStart(msg.input as Record<string, unknown>);
-                void this.panel.webview.postMessage({ type: 'sentryError', error: error ?? '' });
+                void this.host.webview.postMessage({ type: 'sentryError', error: error ?? '' });
                 this.refresh();
                 break;
             }
@@ -156,7 +161,7 @@ export class MissionsPanel {
             // own rule: the editor repaints on every keystroke and an answer
             // about a draft the user has since edited would mark the wrong row.
             case 'sentryProbe': {
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'sentryProbe',
                     seq: typeof msg.seq === 'number' ? msg.seq : 0,
                     ...this.deps.sentryProbe({
@@ -169,7 +174,7 @@ export class MissionsPanel {
                 const action = String(msg.action ?? '');
                 if (action !== 'stop' && action !== 'pause' && action !== 'resume') { break; }
                 if (action === 'stop') {
-                    const pick = await vscode.window.showWarningMessage(
+                    const pick = await this.host.ask.warn(
                         'Stop the sentry campaign? A round already running is left to finish.',
                         { modal: true }, 'Stop campaign');
                     if (pick !== 'Stop campaign') { break; }
@@ -187,7 +192,7 @@ export class MissionsPanel {
             case 'guide':
                 if (typeof msg.runId === 'string' && typeof msg.text === 'string') {
                     const out = this.deps.guide(msg.runId, msg.text);
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'guided', runId: msg.runId, note: out.note ?? '', error: out.error ?? ''
                     });
                     this.refresh();
@@ -202,7 +207,7 @@ export class MissionsPanel {
                 break;
             case 'pickFolder': {
                 const dir = await this.deps.pickFolder();
-                if (dir) { void this.panel.webview.postMessage({ type: 'folder', path: dir }); }
+                if (dir) { void this.host.webview.postMessage({ type: 'folder', path: dir }); }
                 break;
             }
             case 'openFile':
@@ -216,7 +221,7 @@ export class MissionsPanel {
                 const file = String(msg.file ?? '');
                 if (!file) { break; }
                 const t = this.deps.readTail(file);
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'tail', file, text: t?.text ?? '', size: t?.size ?? 0, missing: !t
                 });
                 break;
@@ -269,7 +274,9 @@ export class MissionsPanel {
     }
 
     private dispose(): void {
-        MissionsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (MissionsPanel.current === this) { MissionsPanel.current = undefined; }
+        MissionsPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

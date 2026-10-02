@@ -19,7 +19,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const LEGACY = [
     'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'agentDetail', 'airtablePanel', 'capabilities',
     'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
-    'missionsPanel', 'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
+    'portfolioPanel', 'projectsPanel', 'queuePanel', 'searchPanel',
     'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'timeline', 'toolboxPanel', 'turnsPanel', 'wikiPanel'
 ].map(n => `src/panels/${n}.ts`);
