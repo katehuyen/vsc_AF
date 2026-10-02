@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.779.0 - The Notices page opens on the phone (2026-10-02)
+
+- **Notices on the phone.** The paired phone opens the Notices board from its
+  Menu. It reads, answers and declines questions, marks notices read, and —
+  on a device allowed to manage — pins, stars, files, edits, queues and
+  deletes them, exactly as on the PC. A notice posted while the board is open
+  reaches the phone at once.
+- **Built for a 360px screen.** The search, the chips and the filters are one
+  line you scroll sideways, the board actions another, and each notice's
+  title has its own line with its marks under it — the board used to start
+  ten rows down and every row was cut off at the right.
+- **What only the PC can do stays on the PC.** A report is named with "open it
+  on the PC"; Hand to agent, Export MD and a project's page are not drawn; a
+  link in a notice is copied to the phone's clipboard; a queue item the notice
+  spawned is listed as text.
+
 ## 3.778.0 - Quota delays a relay, it never ends it (2026-10-02)
 
 - **A baton relay waits out the quota instead of stopping.** A leg that hands

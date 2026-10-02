@@ -6,6 +6,10 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    // X-456 — on a phone: what opens a report, an export dialog, a terminal, a browser or another
+    // PC page is not drawn; a body link is copied to the phone's clipboard (AFCtx.copy) instead.
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
+    const ON_THE_PC = 'That opens on the PC — open it from Agent Farm there.';
     let DATA = window.__DATA__;
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
@@ -222,7 +226,7 @@
     // the notice so "what did I turn this into, what did I write" stays visible.
     function spawnedHtml(n) {
         if (!n.spawnedItems || !n.spawnedItems.length) { return ''; }
-        const rows = n.spawnedItems.map(s =>
+        const rows = n.spawnedItems.map(s => ON_PHONE_HOST ? `<li>📥 ${esc(s.text || '(item)')}</li>` :
             `<li><a href="#" class="nt-openitem" data-id="${esc(s.itemId)}" title="Go to the queue item">📥 ${esc(s.text || '(item)')}</a></li>`).join('');
         return `<div class="nt-spawned"><div class="muted small">🔁 Queue items spawned from this message:</div><ul>${rows}</ul></div>`;
     }
@@ -312,21 +316,24 @@
         let body = '';
         if (inEdit) { body = editForm(n); }
         else {
-            const reportBtn = n.reportPath ? `<div class="nt-report">
+            const reportBtn = !n.reportPath ? '' : ON_PHONE_HOST ? `<div class="nt-report">
+                    <span class="muted small nt-reppath" title="${esc(n.reportPath)}">📄 ${esc(reportBase(n.reportPath))}</span>
+                    <span class="muted small">· open it on the PC</span>
+                </div>` : `<div class="nt-report">
                     ${docSplit(n.id, '📄 Open full report', n.reportPath)}
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">${esc(reportBase(n.reportPath))}</span>
-                </div>` : '';
+                </div>`;
             body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(window.AFTime.full(n.editedAt).toLocaleString()) : '') : ''}</div>
                 ${due}
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
                 ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}${projectPicker(n)}
                 <div class="btnrow nt-actions">
-                    <button data-act="handoffNotice" data-id="${esc(n.id)}" title="Open the responsible agent and type this message into its terminal (not sent)">🔗 Hand to agent</button>
+                    ${ON_PHONE_HOST ? '' : `<button data-act="handoffNotice" data-id="${esc(n.id)}" title="Open the responsible agent and type this message into its terminal (not sent)">🔗 Hand to agent</button>`}
                     ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="Turn this message into a queue item">📥 Add to queue</button>` : ''}
                     <button class="secondary" data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${n.read ? 'Mark unread' : 'Mark read'}</button>
                     <button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>
                     ${n.edited ? `<button class="secondary" data-act="orig" data-id="${esc(n.id)}">${showOrig.has(n.id) ? 'Hide original' : 'Show original'}</button>` : ''}
-                    <button class="secondary" data-act="exportone" data-id="${esc(n.id)}">Export MD</button>
+                    ${ON_PHONE_HOST ? '' : `<button class="secondary" data-act="exportone" data-id="${esc(n.id)}">Export MD</button>`}
                     <button class="secondary" data-act="dismiss" data-id="${esc(n.id)}">${isQ ? 'Delete' : 'Dismiss'}</button>
                 </div>`;
         }
@@ -404,7 +411,7 @@
                 title="Which project this message is about. It shows on that project's Work tab and timeline; the empty option takes the stamp off again.">
                 ${window.AFProject.options(DATA.projects, cur, { anyLabel: '— none' })}
             </select>
-            ${cur && projOf(n) ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="Open this project's page">◧ Open</button>` : ''}
+            ${cur && projOf(n) && !ON_PHONE_HOST ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="Open this project's page">◧ Open</button>` : ''}
             ${cur && !projOf(n) ? '<span class="muted small" title="The project this was filed under no longer exists — pick another, or clear it">⚠ project gone</span>' : ''}
         </div>`;
     }
@@ -480,7 +487,7 @@
     }
     function actionsHtml() {
         const undo = DATA.undoable || 0;
-        return `<span class="nt-break"></span>
+        return `<span class="nt-break"></span><span class="nt-acts">
             <span class="nt-grp nt-bulk">
                 <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
                 <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
@@ -498,9 +505,9 @@
             <span class="nt-grp">
                 <button class="secondary" data-hact="needs" title="Open the Needs You page">🙋 Needs You</button>
                 ${fileUnderHtml()}
-                <button data-hact="export">⬇ Export MD</button>
+                ${ON_PHONE_HOST ? '' : '<button data-hact="export">⬇ Export MD</button>'}
                 <button class="secondary nt-undo" data-hact="undo" ${undo ? '' : 'disabled'} title="${undo ? 'Restore the ' + undo + ' notice(s) just deleted' : 'Nothing to undo'}">↶ Undo</button>
-            </span>`;
+            </span></span>`;
     }
 
     /**
@@ -582,6 +589,16 @@
            that fight is what was stranding "all…Delete" up with the filters
            while Clear read/Export MD wrapped to a line of their own below. */
         .nt-break { flex-basis:100%; height:0; }
+        .nt-acts { display:contents; }
+        /* X-456 on a phone the board is the page: the filters and the board actions are one line each,
+           scrolled sideways, and a row's title takes its own line with the marks under it. */
+        html.af-phone .nt-controls, html.af-phone .nt-acts { display:flex; flex:0 0 100%; max-width:100%; flex-wrap:nowrap;
+            gap:6px; align-items:center; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; }
+        html.af-phone .nt-controls > *, html.af-phone .nt-acts > * { flex:0 0 auto; }
+        html.af-phone #nt-search { flex:0 0 160px; width:160px; min-width:0; }
+        html.af-phone .nt-row { flex-wrap:wrap; row-gap:4px; }
+        html.af-phone .nt-title { flex:1 1 calc(100% - 80px); white-space:normal; }
+        html.af-phone .nt-body { padding-left:12px; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
         .nt-trashic { color:var(--vscode-editorError-foreground, #e51400); }
         /* Small, deliberately subdued mark riding in front of "Clear read" —
@@ -751,14 +768,17 @@
             e.stopPropagation();
             vscode.postMessage({ type: 'setProject', id: sel.dataset.id, project: sel.value });
         }));
-        document.querySelectorAll('[data-openproj]').forEach(el => el.addEventListener('click', e => {
-            e.stopPropagation();
-            vscode.postMessage({ type: 'openProject', project: el.dataset.openproj });
-        }));
-        document.querySelectorAll('[data-act="openproj"]').forEach(el => el.addEventListener('click', e => {
-            e.stopPropagation();
-            vscode.postMessage({ type: 'openProject', project: el.dataset.project });
-        }));
+        // A project's page opens on the PC; on a phone a tap on the mark opens the row like any other part of it.
+        if (!ON_PHONE_HOST) {
+            document.querySelectorAll('[data-openproj]').forEach(el => el.addEventListener('click', e => {
+                e.stopPropagation();
+                vscode.postMessage({ type: 'openProject', project: el.dataset.openproj });
+            }));
+            document.querySelectorAll('[data-act="openproj"]').forEach(el => el.addEventListener('click', e => {
+                e.stopPropagation();
+                vscode.postMessage({ type: 'openProject', project: el.dataset.project });
+            }));
+        }
 
         // bulk actions run on the SELECTED ids, or — if nothing is checked — on
         // everything currently shown (the active filter).
@@ -877,7 +897,9 @@
             }
         }));
         document.querySelectorAll('.nt-link').forEach(a => a.addEventListener('click', ev => {
-            ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
+            ev.preventDefault(); ev.stopPropagation();
+            if (ON_PHONE_HOST) { window.AFCtx.copy(a.dataset.href); return; }
+            vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
         }));
 
         // "Open with" split button on the report link (Feature B): main = default
@@ -911,6 +933,10 @@
         // put `id` first would produce a different object for the same act.
         const post = (m) => vscode.postMessage(m);
         const notice = () => (DATA.notices || []).find(n => n.id === id);
+        if (ON_PHONE_HOST && (verb === 'ntHand' || verb === 'ntExport' || verb === 'ntReport')) {
+            window.AFCtx.toast(ON_THE_PC, true);
+            return;
+        }
 
         switch (verb) {
             case 'ntOpen': toggleNotice(id); return;
