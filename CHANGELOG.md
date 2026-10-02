@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.778.0 - Quota delays a relay, it never ends it (2026-10-02)
+
+- **A baton relay waits out the quota instead of stopping.** A leg that hands
+  over because its account reached the quota handover line, or because the
+  plan limit stopped it, is no longer counted by the barren-chain brake. Two
+  such legs in a row used to look like a loop: the chain was stopped, the
+  repair was left to a leg with no quota, and nothing opened again even after
+  an account turned over.
+- **A known usage figure survives a failed read.** An account's last good
+  five-hour reading now stands until its window turns over, and is kept across
+  a window reload. A 429 or a failed read no longer makes an account at 95%
+  look "not read, so empty" and hand it the next leg. An account the plan
+  limit stopped counts as full until it turns over or reads again.
+- **A parked relay leg keeps waiting when it wakes.** A successor parked until
+  the first reset that wakes while every account is still past the wall waits
+  on the Tasks board again, instead of failing and ending the chain.
+- **The account policies' default wall is now 70%** (Settings → Account
+  policies, `agentFarm.defaultAccountCeiling`; it was 90%). The built-in
+  policies pass over a sign-in at or past 70% of its five-hour window. A value
+  you set yourself is kept.
+
 ## 3.777.0 - A relay survives the plan limit; Tasks and transcripts open on the phone (2026-10-02)
 
 - **A baton relay no longer stops at the plan limit.** When a leg's account

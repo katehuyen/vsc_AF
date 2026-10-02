@@ -18,7 +18,6 @@ const F = require(path.join(OUT, 'usageFloor.js'));
 const U = require(path.join(OUT, 'accountUsage.js'));
 const P = require(path.join(OUT, 'accountPolicy.js'));
 const R = require(path.join(OUT, 'batonRoom.js'));
-const S = require(path.join(OUT, 'stayAccount.js'));
 const { batonBrake } = require(path.join(OUT, 'batonBrake.js'));
 const { BridgeRegistry } = require(path.join(OUT, 'bridge.js'));
 const { registerBatonOps } = require(path.join(OUT, 'batonBridge.js'));
