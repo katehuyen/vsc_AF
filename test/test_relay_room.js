@@ -1,7 +1,8 @@
-// X-462 (round 2) — A RELAY SURVIVES THE QUOTA: a leg opens only where it has room,
-// what an account was known to be survives a failed read and a window reload,
-// and a leg that ran out of room is not a barren one (quota delays a chain, it
-// never ends it). Replays the 2026-10-02 break of chain chn_muptzpk5002246.
+// X-462 (round 2) — A RELAY SURVIVES THE QUOTA: what an account was known to be
+// survives a failed read and a window reload, and a leg that ran out of room is
+// not a barren one (quota delays a chain, it never ends it). Where a leg opens
+// is the account policies' answer (defaultAccountCeiling). Replays the
+// 2026-10-02 break of chain chn_muptzpk5002246.
 //
 //   node test/test_relay_room.js
 'use strict';
@@ -103,46 +104,6 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
         ok('(before X-462 — the same moment without the floor picked aicozums)', P.resolvePolicy('@emptiest', { ...world, usage: unread }).id === 'claude-aicozums');
     }
 
-    console.log('\n== the leg start line and the cap ==');
-    {
-        ok('handover 90, room 10: a leg starts under 80', R.legStartLine(90, 90, 10).value === 80 && /10 points of room below the quota handover line 90%/.test(R.legStartLine(90, 90, 10).why));
-        ok('room 0: the policies\' wall alone', R.legStartLine(90, 90, 0).value === 90);
-        ok('handover off: the wall alone', R.legStartLine(90, 0, 10).value === 90);
-        ok('a wall already lower stays', R.legStartLine(75, 90, 10).value === 75);
-        ok('the room is on the flex chain: 10 out of the box', R.minRoomOf(() => undefined).value === 10);
-        ok('the user\'s value wins, 0 included', R.minRoomOf(k => (k === 'batonMinRoomPct' ? 25 : undefined)).value === 25 && R.minRoomOf(() => 0).value === 0);
-        ok('a value out of range is refused and the built-in stands', R.minRoomOf(() => 80).value === 10);
-        const usage = [okRead('x', 85, NOW + HOUR), okRead('y', 88, NOW + 2 * HOUR)];
-        const world = { engine: 'claude', usage, standing: '', ceiling: 90, now: NOW };
-        ok('without a cap @emptiest takes the 85% account', P.resolvePolicy('@emptiest', world).id === 'x');
-        const capped = P.resolvePolicy('@emptiest', { ...world, cap: 80 });
-        ok('‼️ under the leg start line (cap 80) it refuses, and names the first turnover', !capped.id && capped.resetsAt === NOW + HOUR);
-        const rule = { name: 'mine', ceiling: 95, chain: [{ account: 'x' }] };
-        ok('‼️ a rule\'s own wall is capped too', !P.resolvePolicy('@mine', { ...world, cap: 80, policies: [rule], stored: ['x', 'y'] }).id
-            && P.resolvePolicy('@mine', { ...world, policies: [rule], stored: ['x', 'y'] }).id === 'x');
-    }
-
-    console.log('\n== S-106 with the start line: leg 2, replayed ==');
-    {
-        const line = R.legStartLine(90, 90, 10);
-        const v = o => S.stayOnAccount(Object.assign({ stayPct: 90, slotId: 'claude-murvietnam', percent: 86, resetsAt: NOW + 4 * HOUR, quotaHandover: false, now: NOW, startLine: line }, o));
-        ok('‼️ the user\'s line 90, the account at 86%: it no longer keeps the leg there (no room)', v().stay === false && /no room to open a leg there/.test(v().why));
-        ok('…at 70% it still stays (room enough)', v({ percent: 70 }).stay === true);
-        ok('…and without a start line (the sentry) nothing changes', v({ startLine: undefined }).stay === true);
-    }
-
-    console.log('\n== one placement for the door, the sentence and the wake ==');
-    {
-        const stay = { stay: true, slotId: 'claude-kate', why: 'kate at 40%' };
-        ok('a stay wins and is said', R.placeLeg(stay, () => { throw new Error('not asked'); }).slot === 'claude-kate');
-        const room = R.placeLeg({ stay: false, why: 'no' }, () => ({ id: 'claude-b', note: 'b — most room', cursor: 'claude-b' }));
-        ok('else the pool under the line: the slot, its note, its round-robin cursor', room.slot === 'claude-b' && room.cursor === 'claude-b' && !room.stayed);
-        const park = R.placeLeg(undefined, () => ({ id: '', refusal: 'every one past 80%', resetsAt: NOW + HOUR }));
-        ok('‼️ nothing under the line: a PARK on the first turnover', !park.slot && park.park && park.park.resetsAt === NOW + HOUR);
-        const bad = R.placeLeg(undefined, () => ({ id: '', refusal: 'No account policy "@x" exists.' }));
-        ok('a refusal with no turnover is a setup problem, said as one', !bad.slot && !bad.park && /@x/.test(bad.refusal));
-    }
-
     console.log('\n== a leg out of room is not barren ==');
     {
         ok('starved: the plan limit', /hit its plan limit/.test(R.starvedWhy({ fault: 'limit', slot: 'aicozums', percent: -1, handoverPct: 90 })));
@@ -195,16 +156,19 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
     console.log('\n== the wiring ==');
     {
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-        ok('the leg start line: the policies\' wall, batonMinRoomPct under quotaHandoverPct', /const legLine = \(\) => legStartLine\(accountCeiling\(\)\.value, cfg\(\)\.get<number>\('quotaHandoverPct', 90\), minRoomOf\(ownSetting\)\.value\);/.test(ext));
-        ok('the door places the leg by relayPlace and pins the slot it found', /const place = relayPlace\(b, \{ stay: true \}\);/.test(ext) && /\.\.\.\(place\.slot \? \{ account: place\.slot \} : \{\}\)/.test(ext));
-        ok('…marks the account the plan limit walled', /if \(walled\) \{ try \{ accountUsage\.markWalled\(walled\); \}/.test(ext));
-        ok('the pass\'s sentence asks the same placement', /room: b => \{\s*try \{\s*const place = relayPlace\(b, \{ stay: true \}\);/.test(ext));
-        ok('a parked row is placed at its wake, before the quota line', /quotaCheck: \(task\) => relayWakeHold\(task\) \?\? quotaBrake\(/.test(ext) && /function relayWakeHold\(task: FarmTask\)/.test(ext));
+        ok('the door marks the account the plan limit walled', /if \(b\.fault === 'limit' && was\) \{ try \{ accountUsage\.markWalled\(was\); \}/.test(ext));
+        ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : b\.want\.account, agentId: agent\.id, model: b\.inherit\.model \}\);/.test(ext));
+        ok('the stay reads the figure in force (a floor counts)', /stayPct: pct, slotId, percent: u \? percentNow\(u\) : undefined, resetsAt: u\?\.resetsAt,/.test(ext));
+        const wake = (ext.match(/function relayWakeHold\(task: FarmTask\)[\s\S]*?\n    \}\n/) || [''])[0];
+        ok('a parked row keeps waiting at its wake, before the quota line', /quotaCheck: \(task\) => relayWakeHold\(task\) \?\? quotaBrake\(/.test(ext) && /if \(r\.refusal && r\.resetsAt\) \{ return \{ code: 'quota:5h'/.test(wake));
+        ok('‼️ …and never pins an account on the row: the launch picks as every launch does', !!wake && !/task\.account =/.test(wake) && !/noteTaskEvent/.test(wake));
         ok('the starved evidence reaches the pass and the runner', (ext.match(/starvedOf: b => legStarvedOf\(b\)/g) || []).length === 2);
         ok('the floors outlive a reload', /memory: fileUsageMemory\(path\.join\(context\.globalStorageUri\.fsPath, 'account-usage-floors\.json'\)\)/.test(ext));
+        ok('‼️ no second wall: no leg start line, no cap on the policies', !/batonMinRoomPct|legStartLine|relayPlace|legLine|cap\?: number/.test(ext)
+            && !/\bcap\b|capOf|capped/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'accountPolicy.ts'), 'utf8')));
         const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).contributes.configuration;
         const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
-        ok('the setting is contributed, 0–50, default 10', props['agentFarm.batonMinRoomPct'] && props['agentFarm.batonMinRoomPct'].default === 10 && props['agentFarm.batonMinRoomPct'].maximum === 50);
+        ok('‼️ the duplicate setting is gone; the user\'s own box is the wall, 70 out of the box', !props['agentFarm.batonMinRoomPct'] && props['agentFarm.defaultAccountCeiling'].default === 70);
     }
 
     console.log(`\ntest_relay_room: ${pass} passed, ${fail} failed`);

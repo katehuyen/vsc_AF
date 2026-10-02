@@ -51,7 +51,7 @@ export const ROUND_ROBIN = '@round-robin';
 export const MACHINE_ACCOUNT_ID = '@machine';
 
 /** Where a policy starts refusing a slot, unless the rule, step or pool says otherwise. */
-export const POLICY_DEFAULT_CEILING = 90;
+export const POLICY_DEFAULT_CEILING = 70;
 
 /** How deep a rule may point at another rule before it is a loop. */
 const MAX_CHAIN_DEPTH = 4;
@@ -162,8 +162,6 @@ export interface PolicyWorld {
     now?: number;
     /** S-105 — the ceiling in force when a rule names none (effectiveCeiling); absent = POLICY_DEFAULT_CEILING */
     ceiling?: number;
-    /** X-462 — an upper bound on EVERY wall this walk uses, a rule's own included (a relay leg's start line, batonRoom.ts) */
-    cap?: number;
 }
 
 export interface PolicyResolution {
@@ -253,13 +251,7 @@ export function resolvePolicy(stated: string | undefined, world: PolicyWorld): P
     const s = String(stated ?? '').trim();
     if (!isPolicyId(s)) { return { id: s, policy: '', note: '' }; }
     const c = Number(world.ceiling);
-    return walk(s, world, capOf(world)(Number.isFinite(c) && c > 0 && c <= 100 ? c : POLICY_DEFAULT_CEILING), 0, s);
-}
-
-/** X-462 — the world's cap applied to one wall; no cap = the wall as named. */
-function capOf(w: PolicyWorld): (wall: number) => number {
-    const cap = Number(w.cap);
-    return wall => (Number.isFinite(cap) && cap > 0 ? Math.min(wall, cap) : wall);
+    return walk(s, world, Number.isFinite(c) && c > 0 && c <= 100 ? c : POLICY_DEFAULT_CEILING, 0, s);
 }
 
 /**
@@ -284,7 +276,6 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
     const now = w.now ?? Date.now();
     const name = (slot: string): string => (w.labelOf ? w.labelOf(slot) : slot) || slot;
     const mine = w.usage.filter(u => String(u.engine ?? '').trim().toLowerCase() === engine);
-    const capped = capOf(w);
     const hhmm = (t: number): string => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     // X-462 — a live figure first; then what a failed read, a reload or a wall left (its age said)
     const figure = (u: SlotUsage | undefined): string =>
@@ -331,7 +322,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         if (!pool || !pool.accounts.length) {
             return { id: '', policy: outer, note: '', refusal: '@pool: no sentry campaign pool is running on this machine — pick @emptiest, a named rule, or an account.' };
         }
-        const c = capped(typeof pool.ceiling === 'number' ? pool.ceiling : ceiling);
+        const c = typeof pool.ceiling === 'number' ? pool.ceiling : ceiling;
         const byId = new Map(w.usage.map(u => [u.slotId, u]));
         const list = pool.accounts.map(a => byId.get(a)).filter((u): u is SlotUsage => !!u);
         const line = accountOrder(list, { ceiling: c, now, ...(pool.rotation ? { rotation: pool.rotation } : {}), ...(pool.engine ? { engine: pool.engine } : {}) });
@@ -389,7 +380,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
     if (ruleEngine && ruleEngine !== engine) {
         return { id: '', policy: outer, note: '', refusal: `@${rule.name} is a rule for ${ruleEngine} and this launch is on ${engine}. A slot belongs to one engine, so a rule does too.` };
     }
-    const ruleCeiling = capped(typeof rule.ceiling === 'number' ? rule.ceiling : ceiling);
+    const ruleCeiling = typeof rule.ceiling === 'number' ? rule.ceiling : ceiling;
     const model = String(w.model ?? '').trim().toLowerCase();
     const skipped: string[] = [];
     let earliest = 0;
@@ -397,7 +388,7 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
         const back = r ? backAt(r, c, now) : 0;
         if (back > now) { earliest = earliest ? Math.min(earliest, back) : back; }
     };
-    const wallOf = (st: PolicyStep): number => capped(typeof st.ceiling === 'number' ? st.ceiling : ruleCeiling);
+    const wallOf = (st: PolicyStep): number => typeof st.ceiling === 'number' ? st.ceiling : ruleCeiling;
     /** A model-filtered step that is not for this launch — said in `skipped`. */
     const offModel = (st: PolicyStep, i: number): boolean => {
         const models = (st.models ?? []).map(m => String(m).trim().toLowerCase()).filter(Boolean);

@@ -26,7 +26,7 @@ ok('‼️ @machine is NOT a policy — it is X-211\'s "the machine\'s own sign-
 ok('a slot id, an empty string and a bare @ are not policies', !P.isPolicyId('claude-main') && !P.isPolicyId('') && !P.isPolicyId('@'));
 ok('a named rule is a policy by its @name, case-insensitively', P.isPolicyId('@Night') && !!P.findPolicy('@night', [{ name: 'Night', chain: [] }]));
 ok('the built-in list has four entries with a label and a detail each', P.BUILT_IN_POLICIES.length === 4 && P.BUILT_IN_POLICIES.every(p => p.id && p.label && p.detail));
-ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses where to START, and 90% is where the fleet hands over', P.POLICY_DEFAULT_CEILING === 90);
+ok('‼️ X-305 R2 — the default wall is 70: a policy chooses where to START, and a session started there has room before the 90% quota handover line', P.POLICY_DEFAULT_CEILING === 70);
 
 // ---- a non-policy passes through untouched -------------------------------
 {
@@ -185,7 +185,7 @@ ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses 
     ok('‼️ …and the SAME steps as a chain pick the FIRST listed (a) — the strategy is the whole difference',
         P.resolvePolicy('@order', world({ policies })).id === 'a');
     ok('‼️ only the LISTED sign-ins compete: d (unread, engine-wide @emptiest\'s runner-up) is not listed and never chosen',
-        P.resolvePolicy('@trio', world({ policies, usage: [u('a', 85), u('c', 97), unread('d')] })).id === 'a');
+        P.resolvePolicy('@trio', world({ policies, ceiling: 90, usage: [u('a', 85), u('c', 97), unread('d')] })).id === 'a');
     ok('an unlisted slot at 1% does not enter the pool either', P.resolvePolicy('@trio', world({ policies, usage: [u('a', 60), u('b', 70), u('zz', 1)] })).id === 'a');
     const walled = P.resolvePolicy('@walled', world({ policies, usage: [u('a', 25), u('b', 5)] }));
     ok('‼️ a step\'s own wall holds in emptiest mode: b at 5% clears its 10% wall and has more room than a', walled.id === 'b');
@@ -200,7 +200,7 @@ ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses 
         && P.resolvePolicy('@fenced', world({ policies, model: 'opus', usage: [u('a', 5), u('b', 50)] })).id === 'a');
     ok('a listed slot the host says is not stored is out of the pool', P.resolvePolicy('@trio', world({ policies, stored: ['c', 'b'], usage: [u('a', 1), u('b', 50), u('c', 60)] })).id === 'b');
     ok('a measured listed slot beats an unread listed one, however the list is ordered',
-        P.resolvePolicy('@trio', world({ policies, usage: [unread('a'), u('b', 80), unread('c')] })).id === 'b');
+        P.resolvePolicy('@trio', world({ policies, ceiling: 90, usage: [unread('a'), u('b', 80), unread('c')] })).id === 'b');
     const unreadOnly = P.resolvePolicy('@trio', world({ policies, usage: [unread('a'), unread('c')] }));
     ok('only unread records: the first listed unread starts — unread is usable by the rule every runner follows', unreadOnly.id === 'a');
     const noRecord = P.resolvePolicy('@trio', world({ policies, usage: [u('x', 5, { engine: 'codex' })] }));
@@ -215,7 +215,7 @@ ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses 
 // ---- S-105 — the default wall, never above the quota handover line ---------
 {
     const loop = [u('m', 80), u('n', 95)];
-    const at90 = P.resolvePolicy('@emptiest', world({ usage: loop }));
+    const at90 = P.resolvePolicy('@emptiest', world({ usage: loop, ceiling: 90 }));
     ok('‼️ S-105 — the bug: under the fixed 90% wall an 80% slot is picked, and a 70% handover line would end it at once', at90.id === 'm');
     const c = P.effectiveCeiling(90, 70);
     ok('the wall in force is the LOWER of defaultAccountCeiling and quotaHandoverPct, and says so', c.value === 70 && /quota handover line/.test(c.why));
@@ -225,8 +225,9 @@ ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses 
         && !!P.resolvePolicy('@standing', world({ usage: loop, standing: 'm', ceiling: 70 })).refusal);
     ok('a slot under the wall is still chosen', P.resolvePolicy('@emptiest', world({ usage: [u('m', 80), u('k', 30)], ceiling: 70 })).id === 'k');
     ok('the user\'s own wall wins when it is the lower one', P.effectiveCeiling(60, 90).value === 60 && /defaultAccountCeiling/.test(P.effectiveCeiling(60, 90).why));
-    ok('quotaHandoverPct 0 (off) leaves the wall alone; nothing written = 90 (default)', P.effectiveCeiling(undefined, 0).value === 90 && /default/.test(P.effectiveCeiling(undefined, 0).why));
-    ok('a nonsense world ceiling falls back to the built-in 90', P.resolvePolicy('@emptiest', world({ usage: loop, ceiling: 0 })).id === 'm');
+    ok('quotaHandoverPct 0 (off) leaves the wall alone; nothing written = 70 (default)', P.effectiveCeiling(undefined, 0).value === 70 && /default/.test(P.effectiveCeiling(undefined, 0).why));
+    ok('a nonsense world ceiling falls back to the built-in 70', P.resolvePolicy('@emptiest', world({ usage: loop, ceiling: 0 })).id === ''
+        && P.resolvePolicy('@emptiest', world({ usage: [u('m', 60), u('n', 95)], ceiling: 0 })).id === 'm');
     const rule = { name: 'mine', chain: [{ policy: '@emptiest' }] };
     ok('a rule step that names no wall walks the world\'s wall too', !!P.resolvePolicy('@mine', world({ usage: loop, ceiling: 70, policies: [rule] })).refusal);
     const own = { name: 'own', ceiling: 85, chain: [{ policy: '@emptiest' }] };

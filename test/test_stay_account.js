@@ -80,10 +80,8 @@ console.log('\n== the sentry\'s next round ==');
 console.log('\n== the wiring ==');
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('the door asks the stay for the predecessor\'s account — X-462: with the leg start line', /handoverStay\(b\.from\.sessionId, legSlotOf\(b\), \{ walled: b\.fault === 'limit', startLine: line \}\)/.test(ext)
-        && /const place = relayPlace\(b, \{ stay: true \}\);/.test(ext));
-    ok('…and opens the leg on the placed slot, the chain\'s pool untouched for later legs', /account: b\.want\.account, agentId: findAgent\(b\.from\.agentId\)\?\.id, model: b\.inherit\.model, cap: line\.value/.test(ext)
-        && /\.\.\.\(place\.slot \? \{ account: place\.slot \} : \{\}\)/.test(ext));
+    ok('the door asks the stay for the predecessor\'s account', /const stay = handoverStay\(b\.from\.sessionId, was, \{ walled: b\.fault === 'limit' \}\);/.test(ext));
+    ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : b\.want\.account/.test(ext) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
     ok('the quota reason is the guard\'s quota handover', /quotaHandover: !!\(sid && contextGuard\.record\(sid\)\?\.quota\?\.handover\), walled: !!o\.walled/.test(ext));
     ok('the sentry step gets the finished round\'s stay', /stay: handoverStay\(successorSessionOf\(finishedTask\), finishedTask\.account\)/.test(ext));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).contributes.configuration;
