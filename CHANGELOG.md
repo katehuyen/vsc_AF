@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.798.0 - An account rule carries to the agent's next session, and Antigravity reads the constitution once (2026-10-03)
+
+- **An account rule is remembered.** Pick a rule in the account box —
+  `@emptiest`, `@round-robin` or one of your named rules — and the agent's
+  next new session opens with the same rule, which looks at your plans as
+  they are at that moment. A specific sign-in is still never remembered: a
+  plan's room changes by the hour, and a remembered sign-in would tie the
+  agent to an exhausted plan. The rule is kept per engine, so one chosen for
+  Claude is not applied to Codex. A rule picked on a running session's card
+  counts too, and a saved setup that names a rule passes it on.
+- **Antigravity no longer loads the constitution three times.** Antigravity
+  reads every `AGENTS.md` from the session's folder up to the repository
+  root, so the extra copies Agent Farm used to write into `.agents/AGENTS.md`
+  were loaded on top of the shared one — about 65–90 KB of rules per agent
+  where about 25 KB is needed, past Antigravity's rules budget, with the
+  overflow reduced to a bare file path. Each folder now has one `AGENTS.md`
+  that Codex, OpenCode and Antigravity all read. Syncing an agent removes the
+  old copies Agent Farm wrote; a copy you edited by hand is reported and left
+  for you. A folder that is its own git repository still gets the
+  constitution embedded, because Antigravity's walk cannot reach it there.
+- **The sync says what Antigravity loads.** Syncing an agent now reports the
+  rule files Antigravity will load, their size, any text that arrives twice,
+  and any file longer than the 24,000 bytes Antigravity cuts at. Insights
+  shows a duplicate copy or an over-long rules file.
+
 ## 3.797.0 - A revived session no longer freezes the window, and a stopped turn says who stopped it (2026-10-03)
 
 - **A revive no longer replays the old conversation.** When Agent Farm
