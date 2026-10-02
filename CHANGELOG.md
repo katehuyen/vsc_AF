@@ -2,6 +2,12 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.789.0 - Copy an A2A note's or task's id from its right-click menu (2026-10-02)
+
+- **Every board row can hand its id to an agent.** A2A notes and tasks now
+  have a right-click Copy menu like Notices and Queue: their id (what an agent
+  quotes or claims it by) or their title and text.
+
 ## 3.788.0 - An account whose week is busy is still used (2026-10-02)
 
 - **The week has its own wall.** Every unattended start used to judge the

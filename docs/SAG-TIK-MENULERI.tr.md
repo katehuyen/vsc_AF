@@ -140,6 +140,8 @@ Mevcut 14 madde: Open Transcript · Resume in Terminal/Console · Focus Terminal
 ### 4.6 İş kuyruğu (`queue.js`)
 
 `afQueueRow`: Answer… · Hand to agent · Urgency ▸ (normal · ⏫ · 🔼 · 🔽) · Edit… · Open source notice · Open delegation output · Copy ▸ (text · id) · 9: Drop · Delete.
+
+`afA2aNote` / `afA2aTask` (U-194, 3.789.0 — A2A panosunun not ve görev kartları): Copy ▸ (id — ajanın andığı / üstlendiği kimlik · başlık ve metin). Kartın görünür ⧉ kimlik düğmesi aynı kopyalamayı yapar.
 `afQueueLane`: Collapse / Expand · Show dropped · Copy lane as Markdown.
 
 ### 4.7 Alet çantası (`toolbox.js`)

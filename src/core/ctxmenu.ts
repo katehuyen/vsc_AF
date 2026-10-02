@@ -157,6 +157,9 @@ const CONSOLE_ASK = "webviewSection == 'afConsoleAsk'";
 /** The two message boards and the blocker queue between them. */
 const NOTICE_ROW = "webviewSection == 'afNoticeRow'";
 const QUEUE_ROW = "webviewSection == 'afQueueRow'";
+// U-194 — the A2A board's two rows: a note, a task
+const A2A_NOTE = "webviewSection == 'afA2aNote'";
+const A2A_TASK = "webviewSection == 'afA2aTask'";
 const QUEUE_LANE = "webviewSection == 'afQueueLane'";
 const NEED_ROW = 'webviewSection =~ /^afNeed(Row|Session)$/';
 
@@ -228,6 +231,8 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     // Urgency is a live item's field; a dropped or finished one has no more of it.
     { id: CTX_PREFIX + 'qUrg', label: 'Urgency', group: '2_edit@3', when: `${QUEUE_ROW} && !afTerminal` },
     { id: CTX_PREFIX + 'qCopy', label: 'Copy', group: '5_copy@1', when: QUEUE_ROW },
+    { id: CTX_PREFIX + 'a2nCopy', label: 'Copy', group: '5_copy@1', when: A2A_NOTE },
+    { id: CTX_PREFIX + 'a2tCopy', label: 'Copy', group: '5_copy@1', when: A2A_TASK },
     { id: CTX_PREFIX + 'tbCopy', label: 'Copy', group: '5_copy@1', when: TOOL_ROW },
     // ‼️ On a turn and a search hit the session's own Copy items sit at
     // 5_copy@1–2, so these arrows take @3 — two menu entries in one seat are
@@ -989,6 +994,15 @@ export const CTX_ITEMS: CtxItem[] = [
     ...picker(CTX_PREFIX + 'qCopy', QUEUE_ROW, 'qCopy', [
         ['text', 'What it says'],
         ['id', 'Its id']
+    ]),
+    // U-194 — an A2A note and task are quoted to an agent by their id (a2a.notes.get / a2a.tasks.claim id=…)
+    ...picker(CTX_PREFIX + 'a2nCopy', A2A_NOTE, 'a2nCopy', [
+        ['id', 'Its id — what an agent quotes'],
+        ['text', 'Its title and text']
+    ]),
+    ...picker(CTX_PREFIX + 'a2tCopy', A2A_TASK, 'a2tCopy', [
+        ['id', 'Its id — what an agent claims it by'],
+        ['text', 'Its title and instructions']
     ]),
     // Dropping is how an unwanted capture is HANDLED; only a handled item can
     // then be deleted, and the two are never offered together.

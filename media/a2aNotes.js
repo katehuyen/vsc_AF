@@ -189,7 +189,7 @@
         }) : '';
         const cls = `a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}`
             + `${n.pinned ? ' pinned' : ''}${selected.has(n.id) ? ' sel' : ''}`;
-        if (!open) { return `<div class="${cls}" data-id="${n.id}">${line}${cp}</div>`; }
+        if (!open) { return `<div ${window.AFCtx.row('afA2aNote', { a2Id: n.id })} class="${cls}" data-id="${n.id}">${line}${cp}</div>`; }
         const files = (n.contextFiles || []).length
             ? `<div class="a2a-sec"><div class="a2a-sech">Files</div><div class="a2a-files">${n.contextFiles.map(f => `<div><a data-file="${esc(f)}" data-note="${n.id}">${esc(f)}</a></div>`).join('')}</div></div>` : '';
         const actions = `<div class="a2a-actions">
@@ -206,7 +206,7 @@
                 + 'and the sweep clears it 48 hours later.'
                 + (n.pinned ? '\n\n📌 This note is pinned: the sweep spares it, but your hand does not.' : ''))}
         </div>`;
-        return `<div class="${cls}" data-id="${n.id}">${line}${cp}
+        return `<div ${window.AFCtx.row('afA2aNote', { a2Id: n.id })} class="${cls}" data-id="${n.id}">${line}${cp}
             <div class="a2a-body">
                 ${A.directive(n.humanDirective)}
                 ${n.body ? A.md(n.body) : '<div class="muted">(no body)</div>'}
@@ -362,5 +362,14 @@
         }
     });
     if (focusId) { expanded.add(focusId); }
+    // U-194 — the row's right-click Copy (src/core/ctxmenu.ts a2nCopy); the identity travels in the menu's context
+    window.AFCtx.listen((act, ctx) => {
+        const [verb, arg] = act.split(':');
+        if (verb !== 'a2nCopy') { return; }
+        const n = (DATA.notes || []).find(x => x.id === ctx.a2Id);
+        if (arg === 'id') { window.AFCtx.copy(String(ctx.a2Id || '')); return; }
+        window.AFCtx.copy(n ? [n.title, n.body].filter(Boolean).join('\n\n') : '');
+    });
+
     render();
 })();

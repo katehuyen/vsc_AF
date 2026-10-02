@@ -138,7 +138,7 @@
             runNow: !closed
         }) : '';
         const cls = `a2a-card${focusId === t.id ? ' a2a-focus' : ''}${closed ? ' a2a-closed' : ''}${selected.has(t.id) ? ' sel' : ''}`;
-        if (!open) { return `<div class="${cls}" data-id="${t.id}">${line}${cp}</div>`; }
+        if (!open) { return `<div ${window.AFCtx.row('afA2aTask', { a2Id: t.id })} class="${cls}" data-id="${t.id}">${line}${cp}</div>`; }
         const xref = [];
         if (t.sourceNoteId) {
             const n = (DATA.notesById || {})[t.sourceNoteId];
@@ -151,7 +151,7 @@
             ${closed ? '' : `<button class="secondary" data-act="cancel" data-id="${t.id}" title="Cancel this task — it is never re-queued and its claimant, if any, loses it">⊘ Cancel</button>`}
             <button class="secondary" data-act="copyId" data-id="${t.id}" title="Copy the task id — a2a.tasks.claim id=…">⧉ ${esc(t.id)}</button>
         </div>`;
-        return `<div class="${cls}" data-id="${t.id}">${line}${cp}
+        return `<div ${window.AFCtx.row('afA2aTask', { a2Id: t.id })} class="${cls}" data-id="${t.id}">${line}${cp}
             <div class="a2a-body">
                 ${A.directive(t.humanDirective)}
                 ${t.instructions ? A.md(t.instructions) : '<div class="muted">(no instructions)</div>'}
@@ -313,5 +313,14 @@
         }
     });
     if (focusId) { expanded.add(focusId); }
+    // U-194 — the row's right-click Copy (src/core/ctxmenu.ts a2tCopy); the identity travels in the menu's context
+    window.AFCtx.listen((act, ctx) => {
+        const [verb, arg] = act.split(':');
+        if (verb !== 'a2tCopy') { return; }
+        const t = (DATA.tasks || []).find(x => x.id === ctx.a2Id);
+        if (arg === 'id') { window.AFCtx.copy(String(ctx.a2Id || '')); return; }
+        window.AFCtx.copy(t ? [t.title, t.instructions].filter(Boolean).join('\n\n') : '');
+    });
+
     render();
 })();
