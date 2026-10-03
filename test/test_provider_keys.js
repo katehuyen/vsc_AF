@@ -122,6 +122,35 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     ok('‼️ no bridge op names a key or binds one', !ext.split(/\n\s*\{\s*\n\s*op: '/).filter(s => /^providers\./.test(s))
         .some(s => /providerKeys\.(bind|set)|useFarmSecretForRoute|confirmRouteKey/.test(s)));
 
+    // ---------- X-495 — an Anthropic model on a third-party route is asked for by its alias ----------
+    const { routedModel } = require(path.join(OUT, 'routeModels.js'));
+    const third = { spawnEnv: { ANTHROPIC_BASE_URL: 'https://openrouter.ai/api', ANTHROPIC_DEFAULT_OPUS_MODEL: 'x/opus', ANTHROPIC_DEFAULT_HAIKU_MODEL: 'x/haiku' } };
+    ok('‼️ a full Anthropic id becomes its family alias on a third-party route', routedModel('claude-opus-5-5', third) === 'opus'
+        && routedModel('claude-opus-5-5[1m]', third) === 'opus' && routedModel('claude-haiku-4-5-20251001', third) === 'haiku');
+    ok('…an alias stays an alias', routedModel('opus', third) === 'opus' && routedModel('haiku', third) === 'haiku');
+    ok('‼️ a family the route maps no model for is dropped — the route\'s default answers, never a model it cannot serve',
+        routedModel('claude-sonnet-5', third) === '' && routedModel('sonnet', third) === '' && routedModel('claude-mystery-1', third) === '');
+    ok('the route\'s own model id passes untouched', routedModel('deepseek/deepseek-r1', third) === 'deepseek/deepseek-r1');
+    ok('nothing changes off a third-party route (first-party route, no route, no runtime)',
+        routedModel('claude-opus-5-5', { spawnEnv: { ANTHROPIC_API_KEY: 'k' } }) === 'claude-opus-5-5'
+        && routedModel('claude-opus-5-5', undefined) === 'claude-opus-5-5' && routedModel('', third) === '');
+
+    const host = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
+    const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    ok('‼️ the Console asks with the runtime its environment is built from',
+        /const args = hostArgs\(\{ \.\.\.init, model: routedModel\(init\.model, routeRt\),/.test(host)
+        && /\[this\.accountLayer\?\.\(engine\.id, init\.account\)\], routeRt\)/.test(host));
+    ok('…and a live switch on a running card too', /const asked = routedModel\(model\.trim\(\), this\.engineRuntime\?\.\(h\.state\.agentId/.test(host)
+        && /controlLine\(requestId, 'set_model', \{ model: asked \}\)/.test(host));
+    ok('tasks: the picked model and the policy\'s both, on both spawn shapes',
+        /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(tasksTs)
+        && (tasksTs.match(/this\.modelArgs\(task, agent\.id\)/g) || []).length === 2 && !/this\.modelArgs\(task\)/.test(tasksTs));
+    ok('terminal launch, launcher preview and terminal resume',
+        (ext.match(/model: routedModel\(merged\.model, resolveLaunchRoute\(/g) || []).length === 3);
+    ok('the mission planner, with the runtime its environment uses',
+        /launch: \{ \.\.\.launch, model: \{ \.\.\.launch\.model, value: routedModel\(launch\.model\.value, plannerRt\) \} \}/.test(ext)
+        && /\[launchAccountEnv\(\{ engine: 'claude', account: spec\.plannerAccount \}\)\],\s*plannerRt\)/.test(ext));
+
     console.log(`\ntest_provider_keys: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

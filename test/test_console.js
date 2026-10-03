@@ -1278,8 +1278,10 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         other.model === 'claude-opus-5' && !!other.pendingModel);
 
     const host = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'consolehost.ts'), 'utf8');
+    // X-495 — `asked` is the model itself everywhere but a third-party route (routedModel)
     ok('the host sends it as the CLI\'s own control request',
-        /controlLine\(requestId, 'set_model', \{ model: model\.trim\(\) \}\)/.test(host));
+        /controlLine\(requestId, 'set_model', \{ model: asked \}\)/.test(host)
+        && /const asked = routedModel\(model\.trim\(\), /.test(host));
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('…and an agent can do it too, over the bridge', ext.includes("op: 'console.setModel'"));
 

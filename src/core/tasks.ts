@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { sendToTerminalWhenReady } from './shellReady';
 import { spawnEnvironment, terminalEnvOverlay } from './providerRuntime';
+import { routedModel } from './routeModels';
 import { SecretScrubber, secretValuesOf } from './secretScrub';
 import { AgentInfo } from './agents';
 import { RoundWhy } from './sentryWhy';
@@ -4209,7 +4210,7 @@ export class TaskManager implements vscode.Disposable {
                     `"${p}"`
                 ].join(' ');
             } else {
-                const policy = this.modelArgs(task);
+                const policy = this.modelArgs(task, agent.id);
                 if (policy) { extra = (extra ? extra + ' ' : '') + policy.args; }
                 const launch = this.launchArgs(task);
                 if (launch) { extra = (extra ? extra + ' ' : '') + launch; }
@@ -4444,11 +4445,16 @@ export class TaskManager implements vscode.Disposable {
         return { mechanism: 'task' };
     }
 
-    private modelArgs(task: FarmTask): { args: string; reason: string } | undefined {
-        if (task.model && modelIdOk(task.model)) {
-            return { args: `--model ${task.model}`, reason: `explicit override (${task.model})` };
-        }
-        return this.opts.modelArgsFor?.(task);
+    private modelArgs(task: FarmTask, agentId: string): { args: string; reason: string } | undefined {
+        const picked = task.model && modelIdOk(task.model)
+            ? { args: `--model ${task.model}`, reason: `explicit override (${task.model})` }
+            : this.opts.modelArgsFor?.(task);
+        // ‼️ X-495 — an Anthropic model, picked or chosen by policy, is asked of a third-party route by its alias.
+        const flag = /^--model (\S+)$/.exec(picked?.args.trim() ?? '');
+        if (!picked || !flag) { return picked; }
+        const m = routedModel(flag[1], this.opts.engineRuntime?.(agentId, task.engine ?? 'claude', this.spawnRouteOf(task)));
+        if (m === flag[1]) { return picked; }
+        return m ? { args: `--model ${m}`, reason: `${picked.reason}; asked of the route as ${m}` } : undefined;
     }
 
     /**
@@ -4508,7 +4514,7 @@ export class TaskManager implements vscode.Disposable {
         // the terminal path above. Claude is the one engine whose headless run is
         // built as a string here; every other one goes through `runArgs`.
         const perTurn = !profile && engine.shape !== 'persistent';
-        const policy = profile || perTurn ? undefined : this.modelArgs(task);
+        const policy = profile || perTurn ? undefined : this.modelArgs(task, agent.id);
         const header = `# ${task.title}\n\n` +
             `- Agent: ${task.agentName}\n` +
             `- Started: ${new Date().toLocaleString()}\n` +

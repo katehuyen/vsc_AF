@@ -225,7 +225,7 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
     // pinned copy rather than a fresh composition of the same subject.
     ok('‼️ the hosted spawn carries it on EVERY spawn, on the one line that builds the command',
         /const ctxFile = this\.projectContextFile\(projectId, superpowers, init\.resume\);/.test(host)
-        && /hostArgs\(\{ \.\.\.init, permission, projectContextFile: ctxFile \}\)/.test(host));
+        && /hostArgs\(\{ \.\.\.init, model: routedModel\(init\.model, routeRt\), permission, projectContextFile: ctxFile \}\)/.test(host));
     ok('‼️ …and a card retaking its own seat is asked what it was started with, before that record is dropped',
         /const seatSuperpowers = seat \? !!this\.sessions\.get\(seat\.id\)\?\.state\.superpowers : false;/.test(host)
         && host.indexOf('const seatSuperpowers') < host.indexOf('this.sessions.delete(seat.id)'));

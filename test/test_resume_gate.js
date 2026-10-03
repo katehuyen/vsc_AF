@@ -283,7 +283,9 @@ console.log('\n== X-109 — the wire: every resume door passes through the gate 
     const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
     ok('‼️ the task runner gates a continuation before the manifest and reads the pin at both spawn shapes',
         /this\.opts\.resumeRoute\(/.test(tasks)
-        && (tasks.match(/this\.spawnRouteOf\(task\)/g) || []).length === 2
+        // two spawn shapes, plus X-495's model check asking the same reader (never a spawn of its own)
+        && (tasks.match(/this\.spawnRouteOf\(task\)/g) || []).length === 3
+        && /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(tasks)
         && !/engineRuntime\?\.\([^)]*routeOf\(task\)\)/.test(tasks));
 }
 

@@ -24,6 +24,7 @@ import { settleVerdict, swapPlaceholder } from './consoleRevive';
 import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
 import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import { spawnEnvironment } from './providerRuntime';
+import { routedModel } from './routeModels';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
@@ -1000,7 +1001,11 @@ export class ConsoleHost {
         }
         // ‼️ X-267 — a resume asks for its OWN conversation's context, pinned.
         const ctxFile = this.projectContextFile(projectId, superpowers, init.resume);
-        const args = hostArgs({ ...init, permission, projectContextFile: ctxFile });
+        const routeRt = this.engineRuntime?.(init.agentId, engine.id, {
+            providerId: init.providerId, tier: init.tier, pinned: init.routePinned
+        });
+        // X-495 — the model asked of a third-party route by its alias (routedModel)
+        const args = hostArgs({ ...init, model: routedModel(init.model, routeRt), permission, projectContextFile: ctxFile });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
         // flag values come from fixed vocabularies (launch.ts).
@@ -1034,10 +1039,7 @@ export class ConsoleHost {
                 // has always been for. A second injection path would have to
                 // re-solve the clearing order below, and one of the two would
                 // eventually be wrong.
-                process.env, [this.accountLayer?.(engine.id, init.account)],
-                this.engineRuntime?.(init.agentId, engine.id, {
-                    providerId: init.providerId, tier: init.tier, pinned: init.routePinned
-                }))
+                process.env, [this.accountLayer?.(engine.id, init.account)], routeRt)
         });
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
@@ -2639,9 +2641,24 @@ export class ConsoleHost {
             this.chose(id, { model: model.trim() });
             return true;
         }
+        // ‼️ X-495 — on this card's third-party route an Anthropic model is asked for by its alias,
+        // and one the route maps no model for is not sent at all (it could only fail there).
+        const asked = routedModel(model.trim(), this.engineRuntime?.(h.state.agentId, h.engine.id, {
+            providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned
+        }));
+        if (!asked) {
+            this.mutate(id, s => ({
+                ...s, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                    text: `"${model.trim()}" was not sent — this card's route maps no model for it; pick one of the route's tiers`
+                }]
+            }));
+            return true;
+        }
         const requestId = `model-${++h.reqSeq}`;
-        if (!this.write(id, controlLine(requestId, 'set_model', { model: model.trim() }))) { return false; }
-        this.mutate(id, s => ({ ...s, pendingModel: { requestId, model: model.trim() } }));
+        if (!this.write(id, controlLine(requestId, 'set_model', { model: asked }))) { return false; }
+        this.mutate(id, s => ({ ...s, pendingModel: { requestId, model: asked } }));
         return true;
     }
 

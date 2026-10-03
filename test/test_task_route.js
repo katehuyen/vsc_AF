@@ -99,8 +99,11 @@ console.log('\n== …and reaches the SPAWN, in the shape the resolver takes ==')
     const calls = (src.match(/engineRuntime\?\.\([^)]*this\.spawnRouteOf\(task\)\)/g) || []).length;
     ok('…and the reader they share is routeOf(task) plus the pin',
         /private spawnRouteOf\(task: FarmTask\)[\s\S]{0,300}const route = routeOf\(task\);/.test(src));
+    // …and X-495's model check asks the same reader, so a third call is that one, never a spawn's own
     ok('‼️ the interactive spawn AND the headless spawn both pass the task\'s own route',
-        calls === 2);
+        calls === 3 && /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(src)
+        && /const routeRuntime = this\.opts\.engineRuntime\?\.\(agent\.id, engine\.id, this\.spawnRouteOf\(task\)\);/.test(src)
+        && /this\.opts\.engineRuntime\?\.\(agent\.id, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(src));
     ok('…and neither of them reads the fields by hand instead',
         !/engineRuntime\?\.\([^)]*\{\s*providerId:\s*task\./.test(src));
     // ‼️ …AND THE RETRY'S ROUTE IS DECIDED BEFORE THE ROW EXISTS, not written

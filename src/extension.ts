@@ -218,6 +218,7 @@ import { treeRowDoor } from './launch/doors/treeRow';
 import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, publicProfile, secretKeyFor } from './core/providerOwnership';
 import { ProviderKeys } from './core/providerKeys';
 import { keyHint, keyPickItems, routeKeyFor } from './core/routeKey';
+import { routedModel } from './core/routeModels';
 import {
     describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
     ProviderTransport, pruneProviderPick
@@ -6486,8 +6487,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // subject, and they were being paid for on every run.
                 const ctxFile = systemPromptFileFor(
                     spec.projectId, 'mission', false, resumeSessionId);
+                const plannerRt = engineRuntimeFor(spec.leadAgentId, 'claude', routeOf({
+                    providerId: spec.plannerProviderId, tier: spec.plannerTier
+                }));
                 const command = plannerCommand({
-                    launch,
+                    // X-495 — the mission's model asked of a third-party route by its alias
+                    launch: { ...launch, model: { ...launch.model, value: routedModel(launch.model.value, plannerRt) } },
                     disallowedTools: MISSION_PLANNER_DISALLOWED_TOOLS,
                     maxTurns: MISSION_PLANNER_MAX_TURNS,
                     ...(ctxFile ? { contextFile: ctxFile } : {}),
@@ -6544,9 +6549,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         env: spawnEnvironment(
                             process.env,
                             [launchAccountEnv({ engine: 'claude', account: spec.plannerAccount })],
-                            engineRuntimeFor(spec.leadAgentId, 'claude', routeOf({
-                                providerId: spec.plannerProviderId, tier: spec.plannerTier
-                            })))
+                            plannerRt)
                     });
                     let out = '', err = '';
                     const timer = setTimeout(() => {
@@ -26194,7 +26197,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // (`--add-dir`), so the same directory the terminal opens in has to be on
         // the command line too (see LaunchOptions.cwd).
         const command = buildLaunchCommand(spec.exe, {
-            ...merged, permission, projectContextFile: contextFile, cwd: launchCwd
+            ...merged, permission, projectContextFile: contextFile, cwd: launchCwd,
+            // X-495 — an Anthropic model asked of a third-party route by its alias
+            model: routedModel(merged.model, resolveLaunchRoute(agent.id, spec.id,
+                { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned }))
         });
         // ‼️ …EXCEPT ON AN ENGINE WITH NO SYSTEM-PROMPT CHANNEL, WHICH SAYS SO.
         // `codex` takes no `--append-system-prompt-file` (measured against its
@@ -27262,7 +27268,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const previewCwd = merged.cwd ?? agent.dir;
             const command = buildLaunchCommand(spec.exe, {
                 ...merged, cwd: previewCwd,
-                permission: resolveLaunchPermission(merged.permissionMode, previewCwd)
+                permission: resolveLaunchPermission(merged.permissionMode, previewCwd),
+                // X-495 — the preview names the model the launch will really ask for
+                model: routedModel(merged.model, resolveLaunchRoute(agent.id, spec.id,
+                    { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned }))
             });
             const d = launchDefaults();
             const inherited = (own: string | undefined, def: string | undefined) =>
@@ -37113,7 +37122,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // context, not a fresh one: regenerating it changes the
                         // system prompt and re-bills the whole thread.
                         projectContextFile: systemPromptFileFor(own || undefined, 'session',
-                            superpowersOnFor(s.agentName), s.sessionId)
+                            superpowersOnFor(s.agentName), s.sessionId),
+                        // X-495 — on the conversation's own route, an Anthropic model by its alias
+                        model: routedModel(merged.model, resolveLaunchRoute(ownerAgent?.id ?? '', engine, gatedRoute(gate)))
                     }),
                     launchAccountEnv({ engine, account }),
                     // '' = do not stamp. A resume does not decide where a session
