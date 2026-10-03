@@ -160,7 +160,7 @@ details summary { cursor: pointer; opacity: .8; font-size: 12px; }
 }
 
 /* Transcript search panel */
-input[type="text"], select {
+input[type="text"], input[type="password"], select {
     font-family: inherit; font-size: 13px;
     color: var(--vscode-input-foreground); background: var(--vscode-input-background);
     border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px;

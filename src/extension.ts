@@ -21059,13 +21059,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     // The vault page, opened from the nav and from the two palette commands
     // that used to ask for a secret in input boxes (U-14).
+    const routeLabel = (id: string): string => providerProfiles().find(p => p.id === id)?.label || id;
     const secretsDeps = {
         extensionUri: context.extensionUri,
         vault,
         getAgents: () => agents,
         // X-487 — what a rename or a delete touches: routes signing in with it, and Agent Farm's own readers
-        routesUsing: (name: string) => Object.entries(providerKeys.binds()).filter(([, b]) => b.secretRef === name)
-            .map(([id]) => ({ id, label: providerProfiles().find(p => p.id === id)?.label || id })),
+        routesUsing: (name: string) => providerKeys.refsTo(name).map(id => ({ id, label: routeLabel(id) })),
         readers: (name: string) => secretReaders(name, {
             telegram: TELEGRAM_SECRET,
             kapici: (k => k ? [k] : KEY_CANDIDATES.map(c => c.name))(kapiciSettings((k, d) => cfg().get(k, d)).keyName),
@@ -21074,14 +21074,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             replicate: cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'),
             engines: ENGINE_KEY_ENVS
         }),
-        renamed: async (from: string, to: string) => {
-            const moved: string[] = [];
-            for (const [id, b] of Object.entries(providerKeys.binds()).filter(([, x]) => x.secretRef === from)) {
-                await providerKeys.bind(id, { ...b, secretRef: to });
-                moved.push(providerProfiles().find(p => p.id === id)?.label || id);
-            }
-            return moved;
-        }
+        renamed: async (from: string, to: string) => (await providerKeys.followRename(from, to)).map(routeLabel)
     };
 
     /**

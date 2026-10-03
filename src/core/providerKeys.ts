@@ -92,6 +92,21 @@ export class ProviderKeys {
 
     bindOf(id: string): KeyBind | undefined { return this.binds()[id]; }
 
+    /** The routes signing in with the Farm Secret of this name. */
+    refsTo(name: string): string[] {
+        return name ? Object.entries(this.binds()).filter(([, b]) => b.secretRef === name).map(([id]) => id) : [];
+    }
+
+    /** A Farm Secret was renamed: every route signing in with it follows, in one write. Returns the ids. */
+    async followRename(from: string, to: string): Promise<string[]> {
+        if (!to || from === to) { return []; }
+        const all = this.binds();
+        const moved = this.refsTo(from);
+        for (const id of moved) { all[id] = { baseUrl: all[id].baseUrl, secretRef: to }; }
+        if (moved.length) { await this.state.update(PROVIDER_KEY_BINDS, all); }
+        return moved;
+    }
+
     async bind(id: string, b: KeyBind | undefined): Promise<void> {
         const all = this.binds();
         if (b) { all[id] = b.secretRef ? { baseUrl: b.baseUrl, secretRef: b.secretRef } : { baseUrl: b.baseUrl }; } else { delete all[id]; }

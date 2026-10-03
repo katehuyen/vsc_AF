@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.817.0 - Secrets: rename a secret, and see who uses it (2026-10-04)
+
+- **Rename a secret.** The name on a secret's edit card can now be changed:
+  the value, what it is for and who may use it move to the new name, and
+  every route that signs in with it follows. While you type, the card says
+  what a rename moves and what it cannot — `{secret:OLD}` in prompts and
+  `$OLD` in an agent's own scripts are not rewritten, and a feature of
+  Agent Farm that looks the key up by its fixed name is named so you can
+  change its setting yourself.
+- **Who may use it is one choice.** Every agent, Chosen agents or Agent
+  Farm only. Chosen agents brings the agent ticks with Tick all / Untick
+  all and a count, and saving it with nobody ticked is refused in the card.
+- **See what a secret is tied to.** Each row shows the routes signing in
+  with it and an "Agent Farm" mark when Agent Farm reads it by name; the
+  filter also finds a secret by its route. Deleting one names the routes
+  left without a key and the features that read it.
+- **The edit card opens under its own row**, and the new-value box follows
+  the theme instead of showing white on a dark one.
+
 ## 3.816.0 - A route with no tier picked still answers with its own model (2026-10-04)
 
 - **No more raw Anthropic model ids sent to a third-party route.** When you
