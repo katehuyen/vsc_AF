@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.799.0 - Relay chains can be listed, continued and ended; the Now page speaks Turkish (2026-10-03)
+
+- **Every relay chain in one list.** The new bridge operation `chains.list`
+  shows each chain from what is on record — not from what a leg said about
+  itself: whether it is running, waiting, parked, done or stopped, which leg
+  it is on and its ceiling, the session of that leg and whether it is
+  working, idle or gone, when it started and last moved, what it has cost,
+  and the setup its next leg opens on. Five problems are flagged on their
+  own: a leg that went quiet without passing the baton or closing the chain,
+  a next leg that cannot start because the previous session will not end, a
+  chain cut short, an engine failure on the running leg, and a brake that
+  refused a pass. How long "quiet" and "cannot start" take are two settings,
+  *Chains — a leg idle without passing is hanging after* and *Chains — a
+  successor still waiting is stuck after*. The page for this list comes
+  next; agents and the phone can ask for it already.
+- **Continue or end a chain yourself.** `chains.continue` reopens a chain
+  that stopped, ended or went quiet: the next leg starts from the chain's
+  last handover words (or from words you give it) under a "reopened by the
+  user" header, on the chain's own accounts and model. A leg that is still
+  working is never taken over. `chains.end` ends a chain on purpose: a
+  waiting next leg is stopped, and a running leg is told to write its note
+  instead of passing — and with `endSession` its session is closed too, at
+  once when it is at rest and only after asking you when it is working.
+- **A stopped pass says which brake stopped it** (the leg ceiling, your own
+  "last leg", or a chain making no progress), in `baton.status` as well.
+- **`sessions.start` takes `superpowers`** (on or off), as `console.start`
+  already did; leaving it out still means the agent's own default.
+- **The Now page in Turkish.** With the interface language set to Türkçe the
+  Now page — its sections, states, quota lines and the message box — and
+  every relative time ("5 dk önce") and clock hover across the pages are
+  drawn in Turkish.
+
 ## 3.798.0 - An account rule carries to the agent's next session, and Antigravity reads the constitution once (2026-10-03)
 
 - **An account rule is remembered.** Pick a rule in the account box —
