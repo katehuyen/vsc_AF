@@ -529,6 +529,8 @@ export const ENGINE_LABELS: Record<string, string> = {
  * missing here.
  */
 export const ENGINE_IDS: EngineId[] = SPECS.map(s => s.id);
+/** X-487 — each engine that signs in from a vault secret of this exact name (core/secretReaders). */
+export const ENGINE_KEY_ENVS: { label: string; env: string }[] = SPECS.filter(s => s.env).map(s => ({ label: s.label, env: s.env }));
 
 /**
  * ‼️ M-14 — WHAT ONE UNATTENDED RUN OF THIS ENGINE WEIGHS, IN CONCURRENCY SLOTS.

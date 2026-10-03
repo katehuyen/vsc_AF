@@ -16,6 +16,12 @@ export interface SecretsPanelDeps {
     extensionUri: vscode.Uri;
     vault: SecretsVault;
     getAgents(): AgentInfo[];
+    /** X-487 — the routes that sign in with this secret by name (their secretRef). */
+    routesUsing?(name: string): { id: string; label: string }[];
+    /** X-487 — where Agent Farm itself reads it by this name (core/secretReaders). */
+    readers?(name: string): string[];
+    /** X-487 — a rename carries what Agent Farm owns (the routes' secretRef); answers what moved. */
+    renamed?(from: string, to: string): Promise<string[]>;
 }
 
 const NAME_RE = /^[\w.-]+$/;
@@ -30,6 +36,8 @@ function buildData(deps: SecretsPanelDeps): Record<string, unknown> {
         agents: s.agents.map(id => ({ id, name: byId.get(id) ?? id, missing: !byId.has(id) })),
         allAgents: s.agents.length === 0 && !s.farmOnly,
         farmOnly: s.farmOnly,
+        routes: deps.routesUsing?.(s.name) ?? [],
+        readers: deps.readers?.(s.name) ?? [],
         updatedAt: s.updatedAt,
         createdAt: s.createdAt
     }));
@@ -131,11 +139,17 @@ export class SecretsPanel {
         const s = (k: string) => String(raw[k] ?? '').trim();
         const editing = s('mode') === 'edit';
         const name = s('name');
+        // X-487 — the name the card was opened on; a different `name` is a rename
+        const from = editing ? (s('from') || name) : '';
+        const renaming = editing && from !== name;
         const value = String(raw.value ?? '');
         const description = s('description');
-        const agents = Array.isArray(raw.agents)
+        const ticked = Array.isArray(raw.agents)
             ? (raw.agents as unknown[]).map(String).filter(Boolean) : [];
-        const farmOnly = raw.farmOnly === true;
+        // X-487 — exactly one of three: every agent, the chosen ones, or Agent Farm alone
+        const choice = s('reach') || (raw.farmOnly === true ? 'farm' : ticked.length ? 'some' : 'all');
+        const farmOnly = choice === 'farm';
+        const agents = choice === 'some' ? ticked : [];
         const reach = farmOnly ? 'Farm only: Agent Farm reads it itself and no agent\'s task receives it.'
             : agents.length ? agents.length + ' agent(s) may use it.' : '';
 
@@ -144,13 +158,31 @@ export class SecretsPanel {
         if (!editing && this.known(name)) {
             return this.say(`"${name}" already exists. Open its row instead — the value can be replaced there without losing its description or its scope.`);
         }
-        if (editing && !this.known(name)) {
-            return this.say(`"${name}" is no longer in the keychain — refresh the page.`);
+        if (editing && !this.known(from)) {
+            return this.say(`"${from}" is no longer in the keychain — refresh the page.`);
+        }
+        if (renaming && this.known(name)) {
+            return this.say(`"${name}" already exists — pick a name no other secret has.`);
+        }
+        if (choice === 'some' && !agents.length) {
+            return this.say('Chosen agents: tick at least one — or pick Every agent.');
         }
         if (!editing && !value) {
             return this.say('A new secret needs its value. It goes straight into the OS keychain and is never read back.');
         }
 
+        const lost = renaming ? (this.deps.readers?.(from) ?? []) : [];
+        let carried: string[] = [];
+        if (renaming) {
+            if (!await this.deps.vault.rename(from, name)) {
+                return this.say(`"${from}" could not be renamed — refresh the page.`);
+            }
+            carried = await this.deps.renamed?.(from, name) ?? [];
+        }
+        const moved = renaming
+            ? ` Renamed from "${from}"${carried.length ? `; ${carried.join(', ')} now use${carried.length === 1 ? 's' : ''} the new name` : ''}.`
+                + (lost.length ? ` Agent Farm still looks for "${from}" for: ${lost.join('; ')}.` : '')
+            : '';
         if (value) {
             // set() writes the value and merges the metadata in one go.
             await this.deps.vault.set(name, value, { description, agents, farmOnly });
@@ -159,7 +191,7 @@ export class SecretsPanel {
         }
         this.refresh();
         this.say(editing
-            ? `"${name}" updated${value ? ' — value replaced' : ''}. ${reach || 'Every agent may use it.'}`
+            ? `"${name}" updated${value ? ' — value replaced' : ''}.${moved} ${reach || 'Every agent may use it.'}`
             : farmOnly ? `"${name}" stored in the OS keychain. ${reach}`
                 : `"${name}" stored in the OS keychain. It reaches a task as an environment variable and a prompt as {secret:${name}}. ${reach || 'Every agent may use it until you scope it.'}`,
             true);
@@ -167,9 +199,16 @@ export class SecretsPanel {
 
     private async remove(name: string): Promise<void> {
         if (!this.known(name)) { return; }
+        // X-487 — what stops working is said before, not discovered after
+        const routes = (this.deps.routesUsing?.(name) ?? []).map(r => r.label);
+        const readers = this.deps.readers?.(name) ?? [];
+        const detail = [
+            routes.length ? `Route${routes.length === 1 ? '' : 's'} signing in with it, left with no key: ${routes.join(', ')}.` : '',
+            readers.length ? `Agent Farm reads it for: ${readers.join('; ')}.` : ''
+        ].filter(Boolean).join('\n');
         const pick = await vscode.window.showWarningMessage(
             `Delete secret "${name}"? It is removed from the OS keychain and can't be recovered.`,
-            { modal: true }, 'Delete');
+            { modal: true, ...(detail ? { detail } : {}) }, 'Delete');
         if (pick !== 'Delete') { return; }
         await this.deps.vault.delete(name);
         this.refresh();

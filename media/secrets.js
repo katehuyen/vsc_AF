@@ -6,6 +6,7 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     let DATA = window.__DATA__;
     const state = { q: '' };
 
@@ -19,140 +20,27 @@
         const m = ev.data;
         if (m.type === 'data') { DATA = m.data; repaint(); return; }
         if (m.type === 'sec-compose') { openForm(m.seed || {}); return; }
-        if (m.type === 'sec-msg') {
-            secMsg = String(m.text || '');
-            secMsgOk = m.ok === true;
-            if (secMsgOk) { form = null; }
-            render();
-        }
+        if (m.type === 'sec-msg') { SF.answer(String(m.text || ''), m.ok === true); render(); }
     });
 
     const post = (m) => vscode.postMessage(m);
     const esc = (s) => C.esc(String(s === undefined || s === null ? '' : s));
 
     // ------------------------------------------------------------- THE FORM
-    /**
-     * ‼️ THE VAULT PAGE CAN NOW FILL ITSELF — U-14, surface 5.
-     *
-     * Four of this page's own buttons posted to the host, which asked an input
-     * box each: add (three boxes in a row), replace, edit description, and a
-     * multi-pick for the scope. So the one page whose entire subject is a table
-     * of secrets could not put a secret in it, and setting a secret's name, its
-     * value, what it is for and who may use it meant four separate trips.
-     *
-     * ‼️ AND THE VALUE STILL ONLY TRAVELS ONE WAY. `buildData` sends metadata
-     * and nothing else; the form's value box starts EMPTY on an edit and an
-     * empty box means "leave the stored value alone". There is no route by
-     * which a stored value reaches this page, which is the same promise the
-     * missing "copy the value" menu item makes.
-     */
-    let form = null;
-    let secMsg = '';
-    let secMsgOk = false;
+    // ‼️ X-487 — the card is media/afSecretForm.js (rename, who may use it, the
+    // routes it carries); this page is the table the card belongs to. An edit
+    // opens under its own row, a new secret at the top.
+    const SF = window.AFSecretForm.create({
+        data: () => DATA,
+        render: () => render(),
+        submit: secret => post({ type: 'sec-save', secret: secret })
+    });
 
     function openForm(seed) {
-        const s = seed || {};
-        const known = (DATA.secrets || []).find(x => x.name === s.name);
-        form = {
-            mode: s.name ? 'edit' : 'new',
-            name: s.name || '',
-            value: '',
-            description: known ? (known.description || '') : '',
-            farmOnly: !!(known && known.farmOnly),
-            // The scope is a tick per agent. "None ticked" is not "no agent" —
-            // it is the vault's own "unrestricted", and the card says so out
-            // loud, because that default is the opposite of what an empty
-            // multi-select usually means.
-            scope: (() => {
-                const on = {};
-                if (known && !known.allAgents) { known.agents.forEach(a => { on['ag_' + a.id] = true; }); }
-                return on;
-            })()
-        };
-        secMsg = '';
-        secMsgOk = false;
+        SF.open(seed);
         render();
         const box = document.getElementById('secform');
         if (box) { box.scrollIntoView(); }
-    }
-
-    function formHtml() {
-        const F = window.AFForm;
-        const editing = form.mode === 'edit';
-        const ticked = Object.keys(form.scope).filter(k => form.scope[k]).length;
-        return F.card({
-            id: 'secform',
-            title: editing ? 'Edit “' + form.name + '”' : 'New secret',
-            lede: editing
-                ? 'The stored value is not shown and never will be — leave the value box empty to keep it, or type a new one to replace it.'
-                : 'The value goes into the OS keychain, never into a settings file and never into git. It reaches a task as an environment variable and a prompt as {secret:NAME}.',
-            body: F.grid([
-                editing
-                    ? F.stat('Name', form.name)
-                    : F.text('name', 'Name', form.name, {
-                        required: true, mono: true, ph: 'FAL_KEY',
-                        tip: 'Letters, digits, _ . and - . It becomes the environment variable name and the {secret:NAME} reference, so it is the one thing that cannot be changed later.'
-                    }),
-                F.text('value', editing ? 'New value' : 'Value', form.value, {
-                    type: 'password', required: !editing,
-                    tip: editing
-                        ? 'Empty = keep what is stored. Typing here replaces it.'
-                        : 'Held in the OS keychain (VS Code SecretStorage). It is never read back into this page.'
-                }),
-                F.text('description', 'What it is for', form.description, {
-                    wide: true, ph: 'which site / which API / whose account',
-                    tip: 'The only thing about a secret you will still recognise in six months.'
-                })
-            ])
-                + F.sec('Who may use it', form.farmOnly
-                    ? 'Farm only: Agent Farm uses it itself and no agent\'s task receives it.'
-                    : 'Nothing ticked means EVERY agent — that is the vault\'s own default, not "no agent". Tick some and only their tasks receive it.')
-                + F.grid([F.check('farmOnly', 'Farm only — no agent receives it', !!form.farmOnly, {
-                    redraw: true,
-                    tip: 'Farm only: ' + (form.farmOnly ? 'on' : 'off') + '\n\nFor a key Agent Farm uses itself (the Gatekeeper decision gate, search embeddings). It is never put into any agent\'s task environment, whichever agents are ticked; Agent Farm still reads it. A workflow step that names it as {secret:NAME} still gets it — that is your own explicit reference.'
-                })])
-                + (form.farmOnly ? '' : F.grid((DATA.agents || []).map(a =>
-                    F.check('ag_' + a.id, a.name, !!form.scope['ag_' + a.id], {
-                        redraw: true,
-                        tip: 'Only ' + a.name + '\'s tasks would receive it.'
-                    }))))
-                + F.msg(form.farmOnly
-                    ? 'Farm only: Agent Farm reads it itself; no agent\'s task receives it.'
-                    : ticked
-                        ? ticked + ' agent(s) ticked — no other agent\'s task receives this secret.'
-                        : 'Unrestricted: every agent\'s tasks receive it.'),
-            msg: secMsg, warn: !secMsgOk,
-            submit: editing ? 'Save changes' : 'Store it in the keychain'
-        });
-    }
-
-    function wireForm() {
-        const F = window.AFForm;
-        const box = document.getElementById('secform');
-        if (!box || !form) { return; }
-        F.wire(box, {
-            onEdit: v => {
-                Object.keys(v).forEach(k => {
-                    if (k.indexOf('ag_') === 0) { form.scope[k] = !!v[k]; }
-                    else { form[k] = v[k]; }
-                });
-            },
-            onRedraw: () => render(),
-            onSubmit: () => {
-                secMsg = '';
-                post({
-                    type: 'sec-save',
-                    secret: {
-                        mode: form.mode, name: form.name, value: form.value,
-                        description: form.description,
-                        farmOnly: !!form.farmOnly,
-                        agents: Object.keys(form.scope)
-                            .filter(k => form.scope[k]).map(k => k.slice(3))
-                    }
-                });
-            },
-            onCancel: () => { form = null; secMsg = ''; render(); }
-        });
     }
 
     function relTime(ts) {
@@ -178,11 +66,19 @@
         return chips || `<span class="tag none" title="scoped to no agent — no task receives it">no agent</span>`;
     }
 
+    /** X-487 — the routes that sign in with it and the places Agent Farm reads it by name, beside its reach. */
+    function usedCell(s) {
+        return (s.routes || []).map(r => ` <span class="tag route" title="${esc(t('Route {r} signs in with this secret.', { r: r.label }))}">🔗 ${esc(r.label)}</span>`).join('')
+            + ((s.readers || []).length
+                ? ` <span class="tag reader" title="${esc(t('Agent Farm reads it by this name for: {list}', { list: s.readers.join('; ') }))}">⚙ ${esc(t('Agent Farm'))}</span>` : '');
+    }
+
     function rows() {
         // the box is a QUERY, not a substring — media/afQuery.js
         const q = window.AFQuery.compile(state.q);
-        const list = DATA.secrets.filter(s =>
-            q.test(s.name + ' ' + s.description + ' ' + s.agents.map(a => a.name).join(' ') + (s.farmOnly ? ' farm only' : '')));
+        const list = DATA.secrets.filter(s => s.name === SF.rowOf() ||
+            q.test(s.name + ' ' + s.description + ' ' + s.agents.map(a => a.name).join(' ') + (s.farmOnly ? ' farm only' : '')
+                + ' ' + (s.routes || []).map(r => r.label).join(' ')));
         if (!list.length) {
             return `<tr><td colspan="6" class="muted" style="padding:14px">${
                 DATA.secrets.length ? 'Nothing matches the filter.' : 'No secrets stored yet — click <b>+ Add secret</b>.'
@@ -194,10 +90,10 @@
             <td class="val"><span class="dots" title="stored in the OS keychain — never shown">••••••••</span>
                 <button class="mini" data-edit="${esc(s.name)}" title="Replace the value, change what it is for, or choose which agents may use it — one card">edit</button></td>
             <td class="desc">${s.description ? esc(s.description) : '<span class="muted">—</span>'}</td>
-            <td class="scope">${scopeCell(s)}</td>
+            <td class="scope">${scopeCell(s)}${usedCell(s)}</td>
             <td class="small muted">${relTime(s.updatedAt)}</td>
             <td class="act"><button class="mini danger" data-act="delete" data-name="${esc(s.name)}" title="delete from keychain">delete</button></td>
-        </tr>`).join('');
+        </tr>${SF.rowOf() === s.name ? `<tr class="secformrow"><td colspan="6">${SF.html()}</td></tr>` : ''}`).join('');
     }
 
     function render() {
@@ -245,6 +141,10 @@
                 .tag.none, .tag.missing { }
                 .tag.none { color: var(--vscode-charts-orange, #d18616); }
                 .tag.farm { color: var(--vscode-charts-purple, #b180d7); }
+                .tag.route { color: var(--vscode-charts-blue, #3794ff); }
+                .tag.reader { color: var(--vscode-charts-yellow, #cca700); }
+                .tb tr.secformrow td { background: none; padding: 4px 0 10px; }
+                .secpick { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
             </style>
             ${window.AFHeader.html({
                 page: 'secrets',
@@ -259,11 +159,11 @@
                 <span class="tag farm">farm only</span> when Agent Farm uses it itself and no agent should. The value itself is
                 never shown here — use <b>replace</b> to change it.
             </div>
-            ${form ? formHtml() : (secMsg ? window.AFForm.msg(secMsg, !secMsgOk) : '')}
+            ${SF.isOpen() ? (SF.rowOf() ? '' : SF.html()) : window.AFForm.msg(SF.message(), !SF.good())}
             <div class="sec-tools">
                 <div class="searchbar"><input id="sec-q" type="text" placeholder="filter secrets…" value="${esc(state.q)}"
                     title="${esc(window.AFQuery.tip('Searched against the name, the description and the agents it is scoped to.'))}"></div>
-                <button class="mini add" id="sec-add"${form ? ' disabled' : ''}
+                <button class="mini add" id="sec-add"${SF.isOpen() ? ' disabled' : ''}
                     title="Name, value, what it is for and who may use it — on one card">+ Add secret</button>
             </div>
             <div class="card tablewrap"><table class="tb">
@@ -294,7 +194,7 @@
             b.addEventListener('click', () => openForm({ name: b.dataset.edit })));
         document.querySelectorAll('[data-act]').forEach(b =>
             b.addEventListener('click', () => post({ type: b.dataset.act, name: b.dataset.name })));
-        wireForm();
+        SF.wire();
     }
 
     /**

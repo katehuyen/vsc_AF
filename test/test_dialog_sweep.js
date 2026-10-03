@@ -726,12 +726,14 @@ const SEC_DATA = () => ({
     ok('a new secret is asked for its name', h.indexOf('data-af="name"') >= 0);
     ok('…its value, as a password field', /data-af="value"[^>]*type="password"|type="password"[^>]*data-af="value"/.test(h));
     ok('…what it is for', h.indexOf('data-af="description"') >= 0);
-    ok('…and who may use it, in the same card', h.indexOf('data-af="ag_a1"') >= 0 && h.indexOf('data-af="ag_a2"') >= 0);
-    ok('‼️ and it says what "none ticked" means, because it is the opposite of the usual',
-        h.indexOf('Unrestricted: every agent') >= 0);
-
+    // X-487 — who may use it is ONE choice of three (every agent / chosen / Agent Farm only)
+    ok('…and who may use it, in the same card, opening on every agent', /data-af="reach"/.test(h) && /<option value="all"[^>]*selected/.test(h));
     p.query('[data-af="name"]')[0].value = 'TG_TOKEN';
     p.query('[data-af="value"]')[0].value = 'hunter2';
+    p.query('[data-af="reach"]')[0].value = 'some';
+    p.query('[data-af="reach"]')[0].fire('change');
+    ok('‼️ "Chosen agents" brings the ticks, and says none ticked is not yet an answer',
+        p.html().indexOf('data-af="ag_a1"') >= 0 && p.html().indexOf('Tick at least one agent') >= 0);
     p.query('[data-af="ag_a1"]')[0].checked = true;
     p.query('[data-af="ag_a1"]')[0].fire('change');
     p.query('[data-afact="submit"]')[0].click();

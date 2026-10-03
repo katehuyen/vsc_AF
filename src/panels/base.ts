@@ -497,6 +497,8 @@ export function htmlShell(
     const policies = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afPolicies.js'));
     // The route form (X-494): one form for a new route and a route's Edit, on AFForm.
     const routeForm = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRouteForm.js'));
+    // The Secrets page's card (X-487): a new secret or a stored one's edit, on AFForm.
+    const secretForm = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSecretForm.js'));
     // The Telegram bridge card (U-84). Ships everywhere for the reason the
     // badges above do, with one extra: the fact it draws is "can your phone
     // reach the farm", and a card invented per page is a card that answers that
@@ -641,6 +643,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${routeForm}"></script>
+<script nonce="${nonce}" src="${secretForm}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${soundCard}"></script>
 <script nonce="${nonce}" src="${soundStrips}"></script>

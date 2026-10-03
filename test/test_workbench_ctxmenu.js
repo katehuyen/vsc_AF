@@ -285,8 +285,9 @@ const NOW = Date.now();
     p.send({ type: 'afctx', act: 'scAct:editScope', ctx: s });
     ok('‼️ the menu opens the same card the row button does',
         p.html().indexOf('id="secform"') >= 0);
+    // X-487 — who may use it is one picker of three; the agent ticks come with "Chosen agents"
     ok('scoping it to agents is on that card',
-        p.html().indexOf('data-af="ag_a1"') >= 0);
+        p.html().indexOf('data-af="reach"') >= 0 && p.html().indexOf('value="some"') >= 0);
     ok('…and the value box is EMPTY on an edit — a stored value never comes back here',
         /data-af="value"[^>]*value=""/.test(p.html()));
     p.query('[data-afact="cancel"]')[0].click();

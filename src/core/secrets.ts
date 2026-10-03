@@ -118,6 +118,25 @@ export class SecretsVault {
         await this.state.update(META_KEY, all);
     }
 
+    /**
+     * X-487 — a secret under a new name: value, description, scope and createdAt go with it.
+     * The new key is written before the old one is removed, so a failure half way never loses the value.
+     */
+    async rename(from: string, to: string): Promise<boolean> {
+        if (from === to || !this.names().includes(from) || this.names().includes(to)) { return false; }
+        const value = this.cache.get(from) ?? await this.storage.get(PREFIX + from);
+        if (value === undefined) { return false; }
+        await this.storage.store(PREFIX + to, value);
+        const all = this.allMeta();
+        if (all[from]) { all[to] = { ...all[from], updatedAt: Date.now() }; delete all[from]; }
+        await this.state.update(META_KEY, all);
+        await this.state.update(INDEX_KEY, [...this.names().filter(n => n !== from), to].sort());
+        await this.storage.delete(PREFIX + from);
+        this.cache.delete(from);
+        this.cache.set(to, value);
+        return true;
+    }
+
     async delete(name: string): Promise<void> {
         await this.storage.delete(PREFIX + name);
         await this.state.update(INDEX_KEY, this.names().filter(n => n !== name));

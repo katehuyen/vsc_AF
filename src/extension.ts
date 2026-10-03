@@ -318,7 +318,7 @@ import {
 } from './core/consoleEngine';
 import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
-    ENGINE_IDS, claudeOnlyScopeNote
+    ENGINE_IDS, ENGINE_KEY_ENVS, claudeOnlyScopeNote
 } from './core/engines';
 import {
     AccountFs, AccountIdentity, EngineAccountSlot, EngineAuthAdapter, ENGINE_AUTH_ADAPTERS,
@@ -632,7 +632,8 @@ import { libraryWall } from './core/studioLibrary';
 import { StudioEditRequest, writeStudioEdit } from './core/studioLibraryWrite';
 import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
-import { KapiciHost, kapiciSettings, registerKapiciOps } from './core/kapiciBridge';
+import { KapiciHost, KEY_CANDIDATES, kapiciSettings, registerKapiciOps } from './core/kapiciBridge';
+import { secretReaders } from './core/secretReaders';
 import { kapiciMcpState, registerKapiciMcpOps, setKapiciMcp, stageKapiciMcp } from './core/kapiciMcp';
 import { consumerMode } from './core/kapici/shadow';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
@@ -1282,10 +1283,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // D4 semantic layer: file-based vector index + provider config from settings/vault.
     const semIndex = new SemanticIndex(path.join(context.globalStorageUri.fsPath, 'semantic-index.json'));
+    const embeddingsSecretName = (): string => cfg().get<string>('embeddingsSecret', '').trim()
+        || (cfg().get<string>('embeddingsProvider', 'off') === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
     const embeddingsCfg = (): EmbeddingsConfig => {
         const provider = cfg().get<string>('embeddingsProvider', 'off') as EmbeddingsProvider;
-        const secretName = cfg().get<string>('embeddingsSecret', '').trim() ||
-            (provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY');
+        const secretName = embeddingsSecretName();
         return {
             provider,
             model: cfg().get<string>('embeddingsModel', ''),
@@ -21060,7 +21062,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const secretsDeps = {
         extensionUri: context.extensionUri,
         vault,
-        getAgents: () => agents
+        getAgents: () => agents,
+        // X-487 — what a rename or a delete touches: routes signing in with it, and Agent Farm's own readers
+        routesUsing: (name: string) => Object.entries(providerKeys.binds()).filter(([, b]) => b.secretRef === name)
+            .map(([id]) => ({ id, label: providerProfiles().find(p => p.id === id)?.label || id })),
+        readers: (name: string) => secretReaders(name, {
+            telegram: TELEGRAM_SECRET,
+            kapici: (k => k ? [k] : KEY_CANDIDATES.map(c => c.name))(kapiciSettings((k, d) => cfg().get(k, d)).keyName),
+            ...(cfg().get<string>('embeddingsProvider', 'off') !== 'off' ? { embeddings: embeddingsSecretName() } : {}),
+            media: cfg().get<string>('mediaAuthSecret', 'FAL_KEY'),
+            replicate: cfg().get<string>('replicateAuthSecret', 'REPLICATE_API_TOKEN'),
+            engines: ENGINE_KEY_ENVS
+        }),
+        renamed: async (from: string, to: string) => {
+            const moved: string[] = [];
+            for (const [id, b] of Object.entries(providerKeys.binds()).filter(([, x]) => x.secretRef === from)) {
+                await providerKeys.bind(id, { ...b, secretRef: to });
+                moved.push(providerProfiles().find(p => p.id === id)?.label || id);
+            }
+            return moved;
+        }
     };
 
     /**

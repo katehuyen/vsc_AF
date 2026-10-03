@@ -171,11 +171,37 @@ function fakes() {
     ok('the adopt list names the Kapici key', require(path.join(__dirname, '..', 'out', 'core', 'secrets.js')).FARM_ONLY_ADOPT.includes('TYPESAFE_API_KEY'));
 
     const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'secrets.js'), 'utf8');
-    ok('page: the farm-only box travels with the save', /farmOnly: !!form\.farmOnly/.test(page));
-    ok('page: the box mirrors its value first, then explains', /tip: 'Farm only: ' \+ \(form\.farmOnly \? 'on' : 'off'\) \+ '\\n\\n/.test(page));
+    // X-487 — the card moved to media/afSecretForm.js, and farm-only became one choice of three
+    const card = fs.readFileSync(path.join(__dirname, '..', 'media', 'afSecretForm.js'), 'utf8');
+    ok('page: the farm-only choice travels with the save', /reach: form\.reach, farmOnly: form\.reach === 'farm'/.test(card));
+    ok('page: the picker mirrors its value first, then explains', /tip: t\('Who may use it: \{v\}', \{ v: reachNow\.label \}\) \+ '\\n\\n' \+ reachNow\.detail/.test(card));
     ok('page: a farm-only row says so', page.includes('<span class="tag farm"'));
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'secretsPanel.ts'), 'utf8');
     ok('panel: saves the flag both ways', /vault\.set\(name, value, \{ description, agents, farmOnly \}\)/.test(panel) && /vault\.setMeta\(name, \{ description, agents, farmOnly \}\)/.test(panel));
+}
+// X-487 — a rename carries value, description, scope and createdAt; the old key goes only after the new one is written
+{
+    const { storage, state } = fakes();
+    const v = new SecretsVault(storage, state);
+    await v.set('OLD', 'val', { description: 'd', agents: ['ag1'] });
+    const born = v.list()[0].createdAt;
+    ok('rename moves it', await v.rename('OLD', 'NEW') === true && JSON.stringify(v.names()) === '["NEW"]');
+    const row = v.list()[0];
+    ok('…value, description, scope and createdAt with it', v.get('NEW') === 'val' && row.description === 'd'
+        && row.agents.join() === 'ag1' && row.createdAt === born && v.env('ag1').NEW === 'val' && v.get('OLD') === undefined);
+    ok('…the old key is gone from the keychain', await storage.get('agentfarm.secret.OLD') === undefined
+        && await storage.get('agentfarm.secret.NEW') === 'val');
+    await v.set('OTHER', 'o');
+    ok('…and it refuses a name that exists, an unknown name and a no-op',
+        await v.rename('NEW', 'OTHER') === false && await v.rename('NOPE', 'X') === false && await v.rename('NEW', 'NEW') === false
+        && v.get('OTHER') === 'o' && v.get('NEW') === 'val');
+    const { secretReaders } = require(path.join(__dirname, '..', 'out', 'core', 'secretReaders.js'));
+    const src = { telegram: 'TELEGRAM_BOT_TOKEN', kapici: ['TYPESAFE_API_KEY'], media: 'FAL_KEY', replicate: 'REPLICATE_API_TOKEN',
+        engines: [{ label: 'Claude Code', env: 'ANTHROPIC_API_KEY' }] };
+    ok('secretReaders names where Agent Farm reads a secret by name',
+        secretReaders('TELEGRAM_BOT_TOKEN', src).length === 1 && /Gatekeeper/.test(secretReaders('TYPESAFE_API_KEY', src)[0])
+        && /Claude Code signs in/.test(secretReaders('ANTHROPIC_API_KEY', src)[0]) && secretReaders('MY_KEY', src).length === 0
+        && secretReaders('X', { ...src, embeddings: 'X' }).length === 1);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
