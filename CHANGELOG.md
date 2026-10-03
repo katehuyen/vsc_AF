@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.811.0 - A route gets a model it can serve (2026-10-03)
+
+- **Picking an Anthropic model on a route no longer breaks the session.**
+  With a provider route chosen, a model like `claude-opus-5-5` (picked in
+  the Model box or remembered from the last launch) used to be sent to the
+  route as is, and the route answered that it has no such model. It is now
+  asked for as its family (opus, sonnet, haiku, fable), which the route
+  maps to its own model. A family the route maps no model for is left out,
+  so the route's default answers. This holds in the Console, a running
+  card's model switch, terminal sessions, tasks and mission planning.
+
 ## 3.810.0 - Pick a route's key from Farm Secrets; a key stays with its endpoint (2026-10-03)
 
 - **Use a key you already keep in Farm Secrets.** On Engines ▸ Providers,
