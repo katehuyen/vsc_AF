@@ -179,6 +179,11 @@ export interface PublicProviderProfile {
      *  surface has to be able to draw "this route has no key yet" without ever
      *  reading one. */
     hasSecret: boolean;
+    description?: string;
+    /** X-488 — the Farm Secret's NAME the route signs in with; a name, never its value. */
+    secretRef?: string;
+    /** X-488 — a masked reminder of which key it is (`sk-or-…4444`), derived on the way out, never stored. */
+    keyHint?: string;
 }
 
 /**
@@ -191,7 +196,7 @@ export interface PublicProviderProfile {
  * settings, a bridge response, a CLI line, a notice and an export at once.
  */
 export function publicProfile(
-    stored: Record<string, unknown>, opts?: { hasSecret?: boolean }
+    stored: Record<string, unknown>, opts?: { hasSecret?: boolean; keyHint?: string }
 ): PublicProviderProfile {
     const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
     const tiersIn = (stored.tiers && typeof stored.tiers === 'object' && !Array.isArray(stored.tiers))
@@ -211,6 +216,9 @@ export function publicProfile(
     };
     if (str(stored.baseUrl)) { out.baseUrl = str(stored.baseUrl); }
     if (str(stored.authKind)) { out.authKind = str(stored.authKind); }
+    if (str(stored.description)) { out.description = str(stored.description); }
+    if (str(stored.secretRef)) { out.secretRef = str(stored.secretRef); }
+    if (out.hasSecret && opts?.keyHint) { out.keyHint = opts.keyHint; }
     return out;
 }
 
@@ -264,5 +272,6 @@ export function bumpRevision<T extends { revision?: number }>(profile: T): T & {
 export function copyProfile(
     profile: Record<string, unknown>, newId: string
 ): PublicProviderProfile {
-    return { ...publicProfile(profile), id: newId.trim(), revision: 1, hasSecret: false };
+    const { secretRef: _ref, keyHint: _hint, ...rest } = publicProfile(profile);
+    return { ...rest, id: newId.trim(), revision: 1, hasSecret: false };
 }

@@ -481,12 +481,25 @@ const data = () => {
                 id: 'kimi', label: 'Kimi (Moonshot)', engine: 'claude', providerId: 'kimi',
                 baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
                 tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' },
-                revision: 3, hasSecret: true
+                revision: 3, hasSecret: true, keyHint: 'sk-kim…9f2a'
             },
             {
                 id: 'minimax', label: 'MiniMax', engine: 'claude', providerId: 'minimax',
                 baseUrl: 'https://api.minimax.io/anthropic', authKind: 'api-key',
                 tiers: {}, revision: 1, hasSecret: false
+            },
+            // X-488 — signing in with a Farm Secret by name, with the owner's note; and one whose secret is gone.
+            {
+                id: 'openrouter-r1', label: 'OpenRouter R1', engine: 'claude', providerId: 'openrouter',
+                baseUrl: 'https://openrouter.ai/api', authKind: 'oauth',
+                tiers: { opus: 'deepseek/deepseek-r1' }, revision: 4, hasSecret: true,
+                description: 'Ahmet\'s OpenRouter account — night experiments',
+                secretRef: 'OpenRouter-ahmetseymen4444', keyHint: 'sk-or-…4444'
+            },
+            {
+                id: 'groq', label: 'Groq', engine: 'claude', providerId: 'groq',
+                baseUrl: 'https://api.groq.com/anthropic', authKind: 'api-key',
+                tiers: {}, revision: 2, hasSecret: false, secretRef: 'GROQ_KEY'
             }
         ],
         verdicts: [

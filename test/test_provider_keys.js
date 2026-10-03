@@ -51,11 +51,47 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
 
     // ---------- the wiring ----------
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('‼️ the launch reads the key from its owner, not the vault', /secretFor: \(id: string\) => providerKeys\.get\(id\),/.test(ext)
+    ok('‼️ the launch reads the key from its owner, not the vault\'s cache under the keychain name',
+        /secretFor: \(id: string\) => \{\s*const p = providerProfiles\(\)\.find\(x => x\.id === id\);\s*return p \? routeKeyOf\(p\)\.value : undefined;/.test(ext)
+        && /routeKeyFor\(p, id => providerKeys\.get\(id\), name => vault\.get\(name\)\)/.test(ext)
         && !/vault\.get\(secretKeyFor/.test(ext));
     ok('the keys are loaded before activation goes on', /const providerKeys = new ProviderKeys\(context\.secrets, context\.globalState\);\s*await providerKeys\.load\(\);/.test(ext));
     ok('every launch path refuses what the adapter refuses (a route with no key)',
         /return adapterFor\(engineId, registryDeps\(\)\)\.preflight\(\{ engine: engineId, providerId, \.\.\.\(tier \? \{ tier \} : \{\}\) \}\)\[0\];/.test(ext));
+
+    // ---------- X-488 — a Farm Secret named by the route ----------
+    const { routeKeyFor, keyHint, keyPickItems } = require(path.join(OUT, 'providerKeys.js'));
+    const own = id => (id === 'r' ? 'own-key-value-123456' : undefined);
+    const named = n => (n === 'OpenRouter-ahmet' ? 'sk-or-v1-0123456789abcdef4444' : undefined);
+    const a = routeKeyFor({ id: 'r', secretRef: 'OpenRouter-ahmet' }, own, named);
+    ok('‼️ a named Farm Secret is the key, and it wins over a key of the route\'s own',
+        a.value === 'sk-or-v1-0123456789abcdef4444' && a.from === 'secret' && a.secretRef === 'OpenRouter-ahmet');
+    const gone = routeKeyFor({ id: 'r', secretRef: 'deleted' }, own, named);
+    ok('‼️ a named secret that is gone is NO key — never a quiet fall back to another one',
+        gone.value === undefined && gone.from === 'secret');
+    ok('no name: the route\'s own key', routeKeyFor({ id: 'r' }, own, named).value === 'own-key-value-123456');
+    ok('the masked hint tells keys apart and gives none away', keyHint('sk-or-v1-0123456789abcdef4444') === 'sk-or-…4444'
+        && keyHint('short-key') === '…ey' && keyHint('') === '' && keyHint(undefined) === '');
+    ok('…and a canary never survives into it', !/CANARY/.test(keyHint('sk-ant-api03-CANARYx115CANARYx115CANARYx115')));
+    const secrets = [{ name: 'OpenRouter-ahmet', description: 'ahmet hesabı', agents: [], farmOnly: false },
+        { name: 'TYPESAFE_API_KEY', description: '', agents: [], farmOnly: true }];
+    const items = keyPickItems({ secretRef: 'OpenRouter-ahmet' }, secrets, true);
+    ok('the picker offers typing, every Farm Secret by name, and removing', items.map(i => i.action).join(',') === 'type,secret,secret,remove'
+        && items[1].name === 'OpenRouter-ahmet' && /in use/.test(items[1].description) && /ahmet hesabı/.test(items[1].description));
+    ok('…each secret says who else receives it', /every agent/.test(items[1].detail) && /Farm-only/.test(items[2].detail));
+    ok('…removing a named secret says the secret stays in the vault', /stays in the vault/.test(items[3].detail));
+    ok('no key yet: nothing to remove', !keyPickItems({}, secrets, false).some(i => i.action === 'remove'));
+    ok('‼️ no item carries a value', !JSON.stringify(keyPickItems({}, secrets, true)).includes('sk-or-v1'));
+
+    ok('‼️ only the host picker names a Farm Secret: the page form and both bridge writes drop it',
+        (ext.match(/withoutSecretRef\(args as Record<string, unknown>\)/g) || []).length === 2
+        && /const form = withoutSecretRef\(input\);/.test(ext));
+    ok('picking a Farm Secret collects the route\'s own key; typing one lets the secret go',
+        /if \(providerKeys\.has\(id\)\) \{ await providerKeys\.delete\(id\); \}/.test(ext)
+        && /const \{ secretRef: _was, \.\.\.own \} = list\[at\];\s*next\[at\] = bumpRevision\(own\);/.test(ext));
+    ok('every surface sees a route through one builder (hasSecret + keyHint)',
+        /const publicProviderProfiles = \(\) => providerProfiles\(\)\.map\(publicRoute\);/.test(ext)
+        && (ext.match(/publicRoute\(w\.profile!\)/g) || []).length === 3 && !/publicProfiles\(\[w\.profile/.test(ext));
 
     console.log(`\ntest_provider_keys: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

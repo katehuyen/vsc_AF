@@ -42,7 +42,14 @@ export interface StoredProviderProfile {
     /** tier (`opus`, `sonnet`, `haiku`) → the model id this route serves for it. */
     tiers: Record<string, string>;
     revision: number;
+    /** The owner's own note — whose key, which account, what for. */
+    description?: string;
+    /** X-488 — the NAME of a Farm Secret this route signs in with, instead of a key of its own. */
+    secretRef?: string;
 }
+
+/** A Farm Secret's name, as the Secrets page accepts it. */
+export const SECRET_REF = /^[\w.-]{1,80}$/;
 
 /**
  * ‼️ THE ID IS ALSO A KEYCHAIN KEY (`secretKeyFor`), so its charset is a
@@ -68,6 +75,8 @@ export interface ProviderProfileInput {
     authKind?: string;
     tiers?: Record<string, unknown>;
     revision?: number;
+    description?: string;
+    secretRef?: string;
     [k: string]: unknown;
 }
 
@@ -99,6 +108,8 @@ export function storedProfile(input: ProviderProfileInput): StoredProviderProfil
     };
     if (str(input.baseUrl)) { out.baseUrl = str(input.baseUrl); }
     if (str(input.authKind)) { out.authKind = str(input.authKind); }
+    if (str(input.description)) { out.description = str(input.description).replace(/\s+/g, ' ').slice(0, 200); }
+    if (SECRET_REF.test(str(input.secretRef))) { out.secretRef = str(input.secretRef); }
     return out;
 }
 
@@ -183,6 +194,7 @@ export function routeChanged(a: StoredProviderProfile, b: StoredProviderProfile)
     if ((a.baseUrl ?? '') !== (b.baseUrl ?? '')) { return true; }
     if ((a.authKind ?? '') !== (b.authKind ?? '')) { return true; }
     if (a.engine !== b.engine) { return true; }
+    if ((a.secretRef ?? '') !== (b.secretRef ?? '')) { return true; }
     const ta = Object.keys(a.tiers).sort(), tb = Object.keys(b.tiers).sort();
     if (ta.join(',') !== tb.join(',')) { return true; }
     return ta.some(k => a.tiers[k] !== b.tiers[k]);
@@ -281,6 +293,9 @@ export function setProfile(
         id: before.id,
         revision: before.revision
     });
+    // ‼️ A Farm Secret does not follow its route to a new endpoint unless the same write names it
+    // again: otherwise one edit could send a farm-only secret to a host nobody chose it for.
+    if ((before.baseUrl ?? '') !== (merged.baseUrl ?? '') && !str(patch.secretRef)) { delete merged.secretRef; }
     const refusal = profileRefusal(merged, { engines });
     if (refusal.length) { return refuse(list, refusal); }
     const next = routeChanged(before, merged)
@@ -322,6 +337,7 @@ export function duplicateProfile(
     const copy: StoredProviderProfile = {
         ...src, id: wanted, label: `${src.label} (copy)`, revision: 1
     };
+    delete copy.secretRef;
     const refusal = profileRefusal(copy, { takenIds: list.map(x => x.id) });
     if (refusal.length) { return refuse(list, refusal); }
     return { list: [...list, copy], refusal: [], profile: copy };

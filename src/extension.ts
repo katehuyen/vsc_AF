@@ -215,8 +215,8 @@ import { projectsDoor } from './launch/doors/projects';
 import { paletteDoor } from './launch/doors/palette';
 import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
-import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, secretKeyFor } from './core/providerOwnership';
-import { ProviderKeys } from './core/providerKeys';
+import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, publicProfile, secretKeyFor } from './core/providerOwnership';
+import { keyHint, keyPickItems, ProviderKeys, routeKeyFor } from './core/providerKeys';
 import {
     describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
     ProviderTransport, pruneProviderPick
@@ -282,7 +282,7 @@ import { loadRows, metricsRefusal, performanceSummary, planMetrics } from './cor
 import { publishStepOf } from './core/calendarSignals';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
-    addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
+    addProfile, duplicateProfile, readProfiles, readProfilesReport, removeProfile, setProfile,
     StoredProviderProfile
 } from './core/providerProfiles';
 import {
@@ -23638,8 +23638,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const writeProviderProfiles = async (list: StoredProviderProfile[]): Promise<void> => {
         await cfg().update('providerProfiles', list, vscode.ConfigurationTarget.Global);
     };
+    /** X-488 — the key a route signs in with: its own, or the Farm Secret it names. */
+    const routeKeyOf = (p: StoredProviderProfile) =>
+        routeKeyFor(p, id => providerKeys.get(id), name => vault.get(name));
+    /** One route as every surface may see it — whether it has a key, and a masked reminder of which. */
+    const publicRoute = (p: StoredProviderProfile) => {
+        const k = routeKeyOf(p).value;
+        return publicProfile(p as unknown as Record<string, unknown>, { hasSecret: !!k, keyHint: keyHint(k) });
+    };
     /** The list as every surface may see it — settings, bridge, page, notice. */
-    const publicProviderProfiles = () => publicProfiles(providerProfiles(), providerSecretIds());
+    const publicProviderProfiles = () => providerProfiles().map(publicRoute);
     /**
      * ‼️ X-101 — THE ONE PLACE A LAUNCH'S ROUTE IS RESOLVED, and the reason
      * every surface is handed an answer rather than the ingredients.
@@ -23675,7 +23683,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         profiles: providerProfiles(),
         // Asked one id at a time, so exactly one credential is in memory here
         // and only when a launch actually needs it.
-        secretFor: (id: string) => providerKeys.get(id),
+        secretFor: (id: string) => {
+            const p = providerProfiles().find(x => x.id === id);
+            return p ? routeKeyOf(p).value : undefined;
+        },
         inheritedEnv: process.env,
         // Absent means NOT FETCHED, which the catalog reader treats as a
         // distinct state from "the engine offers none" — so an unread catalog
@@ -23779,7 +23790,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             adapter,
             catalog: adapter.catalog(),
             profiles: providerProfiles().filter(p => p.engine === engine),
-            hasSecret: (id: string) => providerSecretIds().includes(id),
+            hasSecret: (id: string) => providerProfiles().some(p => p.id === id && !!routeKeyOf(p).value),
             cli: { present: !!row?.cli.found, ...(version ? { version } : {}) },
             inheritedEnv: process.env,
             // ‼️ Claude only, because it is the only engine whose route IS the
@@ -24321,10 +24332,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const at = list.findIndex(p => p.id === id);
         if (at >= 0) {
             const next = [...list];
-            next[at] = bumpRevision(list[at]);
+            // X-488 — a typed key replaces a Farm Secret the route named: one key per route.
+            const { secretRef: _was, ...own } = list[at];
+            next[at] = bumpRevision(own);
             await writeProviderProfiles(next);
         }
         EnginesPanel.refreshIfOpen();
+    };
+    /**
+     * ‼️ X-488 — A FARM SECRET IS NAMED ONLY FROM THE HOST'S OWN PICKER. A form or a bridge call that
+     * could set it would let an agent send a farm-only secret to an endpoint of its choosing.
+     */
+    const withoutSecretRef = (input: Record<string, unknown>): Record<string, unknown> => {
+        const { secretRef: _ignored, ...rest } = input;
+        return rest;
+    };
+    /** X-488 — sign the route in with a Farm Secret; its own key, if it had one, is collected. */
+    const useFarmSecretForRoute = async (id: string, name: string): Promise<string[]> => {
+        const w = setProfile(providerProfiles(), id, { secretRef: name });
+        if (w.refusal.length) { return w.refusal; }
+        await writeProviderProfiles(w.list);
+        if (providerKeys.has(id)) { await providerKeys.delete(id); }
+        EnginesPanel.refreshIfOpen();
+        return [];
+    };
+    /** X-488 — no key at all: the route's own is collected and a named Farm Secret is let go (it stays in the vault). */
+    const removeRouteKey = async (id: string): Promise<void> => {
+        const p = providerProfiles().find(x => x.id === id);
+        if (p?.secretRef) { await writeProviderProfiles(setProfile(providerProfiles(), id, { secretRef: '' }).list); }
+        await clearProviderSecret(id);
     };
     /** Collecting the key is half of removing a profile — a list that dropped
      *  the row while the entry stayed behind is an orphan credential nobody can
@@ -24342,6 +24378,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * defeat the keychain it is on its way to.
      */
     const askProviderSecret = async (id: string, label: string): Promise<void> => {
+        const route = providerProfiles().find(p => p.id === id);
+        if (!route) { return; }
+        // X-488 — a key of the route's own, or one the user already keeps in Farm Secrets, picked by name.
+        const pick = await vscode.window.showQuickPick(
+            keyPickItems(route, vault.list(), !!routeKeyOf(route).value),
+            {
+                title: `Key for ${label}`, matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true,
+                placeHolder: 'Every session started on this route receives this key in its environment.'
+            });
+        if (!pick) { return; }
+        if (pick.action === 'remove') { await removeRouteKey(id); return; }
+        if (pick.action === 'secret' && pick.name) {
+            const refused = await useFarmSecretForRoute(id, pick.name);
+            if (refused.length) { void vscode.window.showWarningMessage(refused.join(' · ')); }
+            return;
+        }
         const value = await vscode.window.showInputBox({
             title: `Credential for ${label}`,
             prompt: 'Stored in the OS keychain under this profile\'s id. Never written to settings, '
@@ -24349,7 +24401,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             password: true, ignoreFocusOut: true
         });
         if (value === undefined) { return; }
-        if (!value.trim()) { await clearProviderSecret(id); return; }
+        if (!value.trim()) { await removeRouteKey(id); return; }
         await setProviderSecret(id, value.trim());
     };
     /**
@@ -24499,9 +24551,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const list = providerProfiles();
             const id = String(input.id ?? '').trim().toLowerCase();
             const engines = Object.keys(ENGINES);
+            const form = withoutSecretRef(input);
             const w = list.some(p => p.id === id)
-                ? setProfile(list, id, input, engines)
-                : addProfile(list, input, engines);
+                ? setProfile(list, id, form, engines)
+                : addProfile(list, form, engines);
             if (w.refusal.length) { return w.refusal; }
             await writeProviderProfiles(w.list);
             EnginesPanel.refreshIfOpen();
@@ -43668,7 +43721,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, '
                 + 'tier mapping) or its key is replaced, never on a rename: a launch records the '
                 + 'revision it ran on, so a route edited afterwards cannot silently rewrite what a '
-                + 'past session was served by. args: id? (one route by id)',
+                + 'past session was served by. X-488 — `description` is the owner\'s note, `secretRef` '
+                + 'names the Farm Secret the route signs in with (absent = a key of its own), and '
+                + '`keyHint` is a masked reminder of which key it is (`sk-or-…4444`), never the key. '
+                + 'args: id? (one route by id)',
             handler: (args) => {
                 const id = optStr(args, 'id').trim().toLowerCase();
                 const all = publicProviderProfiles();
@@ -43689,15 +43745,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'own way of signing in. A base URL must be https or http on loopback: a key sent '
                 + 'over plain http to another host travels in clear. The id is PERMANENT because the '
                 + 'credential is filed under it; it is 2-40 characters of lowercase letters, digits '
-                + 'and hyphens. args: id, label?, providerId, baseUrl?, authKind?, tiers? (object, '
-                + 'tier → model id), engine? (claude)',
+                + 'and hyphens. ‼️ X-488 — `secretRef` (signing in with a Farm Secret) is dropped here '
+                + 'too: it is picked only in the Engines page, so no call can send a farm-only secret to '
+                + 'an endpoint of its choosing. args: id, label?, providerId, baseUrl?, authKind?, '
+                + 'tiers? (object, tier → model id), description? (the owner\'s note), engine? (claude)',
             handler: async (args) => {
-                const w = addProfile(providerProfiles(), args as Record<string, unknown>,
+                const w = addProfile(providerProfiles(), withoutSecretRef(args as Record<string, unknown>),
                     Object.keys(ENGINES));
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
                 EnginesPanel.refreshIfOpen();
-                return { added: publicProfiles([w.profile!], providerSecretIds())[0] };
+                return { added: publicRoute(w.profile!) };
             }
         },
         {
@@ -43708,15 +43766,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'in the OS keychain with nothing left to collect it — use providers.copy, whose copy '
                 + 'deliberately carries no key. The revision bumps only when the ROUTE changed; a '
                 + 'rename leaves it alone, because the number is a statement about the route rather '
-                + 'than a count of edits. args: id, label?, providerId?, baseUrl?, authKind?, tiers?',
+                + 'than a count of edits. ‼️ X-488 — `secretRef` is ignored (Engines page only), and a '
+                + 'new baseUrl lets go of the Farm Secret the route named: a person picks it again for '
+                + 'the new endpoint. args: id, label?, providerId?, baseUrl?, authKind?, tiers?, description?',
             handler: async (args) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
-                const w = setProfile(providerProfiles(), id, args as Record<string, unknown>,
+                const w = setProfile(providerProfiles(), id, withoutSecretRef(args as Record<string, unknown>),
                     Object.keys(ENGINES));
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
                 EnginesPanel.refreshIfOpen();
-                return { profile: publicProfiles([w.profile!], providerSecretIds())[0] };
+                return { profile: publicRoute(w.profile!) };
             }
         },
         {
@@ -43733,7 +43793,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
                 EnginesPanel.refreshIfOpen();
-                return { copy: publicProfiles([w.profile!], providerSecretIds())[0] };
+                return { copy: publicRoute(w.profile!) };
             }
         },
         {

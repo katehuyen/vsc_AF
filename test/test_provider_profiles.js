@@ -245,7 +245,9 @@ const claude = {
     ok('the page is handed the public list and nothing else',
         /profiles: deps\.profiles\(\)/.test(panelTs)
         && /profiles: \(\) => publicProviderProfiles\(\)/.test(extTs)
-        && /const publicProviderProfiles = \(\) => publicProfiles\(providerProfiles\(\), providerSecretIds\(\)\)/.test(extTs));
+        && /const publicProviderProfiles = \(\) => providerProfiles\(\)\.map\(publicRoute\);/.test(extTs)
+        // X-488 — one builder: the public shape plus whether there is a key and a masked hint of it.
+        && /const publicRoute = \(p: StoredProviderProfile\) => \{\s*const k = routeKeyOf\(p\)\.value;\s*return publicProfile\(p as unknown as Record<string, unknown>, \{ hasSecret: !!k, keyHint: keyHint\(k\) \}\);/.test(extTs));
     ok('…and the panel has no way to reach the store or the keychain at all',
         !/providerProfiles\(|context\.secrets|secretKeyFor/.test(panelTs));
     // The bridge: every read answers with the public shape, and there is no op
@@ -279,7 +281,7 @@ const claude = {
         /injected: Object\.keys\(rt\.spawnEnv/.test(extTs));
     ok('‼️ every provider op that carries a profile answers with the PUBLIC shape',
         provOps.filter(s => !/^providers\.(runtime|status|test)'/.test(s))
-            .every(s => /publicProfiles\(|publicProviderProfiles\(|ownershipTable\(|removed: id/.test(s)));
+            .every(s => /publicRoute\(|publicProviderProfiles\(|ownershipTable\(|removed: id/.test(s)));
     ok('…and none of them touches the keychain for a value',
         !provOps.some(s => /context\.secrets\.get|setProviderSecret|askProviderSecret/.test(s)));
     // ‼️ THE ONE DELIBERATE ASYMMETRY, STATED RATHER THAN LEFT TO BE NOTICED:
@@ -323,7 +325,8 @@ const claude = {
     // ‼️ Derived from a FULLY POPULATED profile, not from an empty one: the two
     // optional fields are omitted when empty, so `publicProfile({})` would name
     // six and the gate would then reject the page for drawing a base URL.
-    const allowed = Object.keys(O.publicProfile(claude, { hasSecret: true })).sort();
+    const allowed = Object.keys(O.publicProfile({ ...claude, description: 'n', secretRef: 'S' },
+        { hasSecret: true, keyHint: 'sk-…0000' })).sort();
     eq('‼️ the row renderer reads nothing that is not on the public shape',
         touched.filter(f => !allowed.includes(f)), []);
     /**
@@ -333,9 +336,11 @@ const claude = {
      * the boundary between a keychain and a webview: a field added to the public
      * shape is a decision, and it should cost one failing test.
      */
-    eq('the public shape is nine fields — a tenth is a decision, not a detail',
-        allowed, ['authKind', 'baseUrl', 'engine', 'hasSecret', 'id', 'label',
-            'providerId', 'revision', 'tiers']);
+    // X-488 (the user's own request) is the decision that added three: the owner's note, the Farm
+    // Secret's NAME and a masked hint — none of them a value.
+    eq('the public shape is twelve fields — a thirteenth is a decision, not a detail',
+        allowed, ['authKind', 'baseUrl', 'description', 'engine', 'hasSecret', 'id', 'keyHint', 'label',
+            'providerId', 'revision', 'secretRef', 'tiers']);
     ok('…and the row really reads most of them, so the gate has something to hold',
         touched.length >= 7);
 
@@ -344,7 +349,33 @@ const claude = {
     // same endpoint under a different key would go on claiming to be what
     // served a past session.
     ok('replacing a credential is a new route',
-        /await providerKeys\.set\(id, value\);[\s\S]{0,900}bumpRevision\(list\[at\]\)/.test(extTs));
+        /await providerKeys\.set\(id, value\);[\s\S]{0,900}bumpRevision\(own\)/.test(extTs));
+}
+
+// ---------- X-488 — the owner's note and a Farm Secret named by the route ----------
+{
+    const s = P.storedProfile({ ...claude, description: '  ahmet   hesabı \n anahtarı ', secretRef: 'OpenRouter-ahmet' });
+    eq('the note is kept on one line', s.description, 'ahmet hesabı anahtarı');
+    eq('a Farm Secret is kept by NAME', s.secretRef, 'OpenRouter-ahmet');
+    ok('a name the Secrets page could not have made is not kept',
+        P.storedProfile({ ...claude, secretRef: 'a b/c' }).secretRef === undefined);
+    const list = P.addProfile([], { ...claude, secretRef: 'OpenRouter-ahmet' }).list;
+    const relabel = P.setProfile(list, 'kimi', { label: 'Kimi 2', description: 'x' });
+    ok('a new note or label keeps the revision and the secret',
+        relabel.profile.revision === 1 && relabel.profile.secretRef === 'OpenRouter-ahmet');
+    const other = P.setProfile(list, 'kimi', { secretRef: 'Other' });
+    ok('‼️ another secret is another key, so another route', other.profile.revision === 2);
+    const moved = P.setProfile(list, 'kimi', { baseUrl: 'https://elsewhere.example/anthropic' });
+    ok('‼️ a new endpoint lets the named secret go — it is not sent to a host nobody chose it for',
+        moved.profile.secretRef === undefined && moved.profile.revision === 2);
+    ok('…unless the same write names it again',
+        P.setProfile(list, 'kimi', { baseUrl: 'https://elsewhere.example/anthropic', secretRef: 'OpenRouter-ahmet' })
+            .profile.secretRef === 'OpenRouter-ahmet');
+    const copied = P.duplicateProfile(list, 'kimi');
+    ok('‼️ a copy starts with no key, a named one included', copied.profile.secretRef === undefined);
+    ok('…and the public copy too', O.copyProfile({ ...claude, secretRef: 'S' }, 'k2').secretRef === undefined);
+    ok('a hint is only drawn for a route that has a key',
+        O.publicProfile(claude, { hasSecret: false, keyHint: 'x…1234' }).keyHint === undefined);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

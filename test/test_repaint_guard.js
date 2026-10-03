@@ -368,7 +368,7 @@ const AFRepaint = sandbox.window.AFRepaint;
     ok('…every answer redraws through it too, never a bare render',
         !/m\.type === '(eng-testing|prov-msg|acc-msg|eng-msg)'[^\n]*\brender\(\)/.test(src) && /AFPolicies\.onMessage\(m\)\) \{ draw\(\);/.test(src));
     ok('a saved route empties the route form, and only a saved one',
-        /if \(m\.saved === true\) \{ clearBoxes\(\['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers'\]\); \}/.test(src));
+        /if \(m\.saved === true\) \{ clearBoxes\(\['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers', 'po-desc'\]\); \}/.test(src));
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'enginesPanel.ts'), 'utf8');
     ok('the host says saved only for the route form\'s own save',
         /saveProfile\([\s\S]{0,160}\), true\);/.test(panel) && /\.\.\.\(saved \? \{ saved: true \} : \{\}\)/.test(panel)

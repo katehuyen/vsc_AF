@@ -15,6 +15,7 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     let DATA = window.__DATA__;
     /** engines with a call in flight — the button says so rather than going quiet */
     const testing = new Set();
@@ -50,7 +51,7 @@
         if (m.type === 'eng-testing') { testing.add(m.id); draw(); return; }
         if (m.type === 'prov-msg') {
             provMsg = String(m.text || '');
-            if (m.saved === true) { clearBoxes(['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers']); }
+            if (m.saved === true) { clearBoxes(['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers', 'po-desc']); }
             draw();
             return;
         }
@@ -319,14 +320,21 @@
         // ‼️ MIRROR — a control narrow enough to cut its own text puts its
         // CURRENT value on the first line of its tooltip.
         const tiers = Object.keys(p.tiers || {});
-        const key = p.hasSecret
-            ? T.wrap('<span class="pokey k-yes">key stored</span>', 'A credential is stored',
-                'It lives in the OS keychain under this profile\'s id — never in settings, never on the '
-                + 'bridge, and it is never read back out to draw anything. The only public fact about it '
-                + 'is that it is there.')
-            : T.wrap('<span class="pokey k-no">no key</span>', 'No credential yet',
-                'This route cannot be used until one is stored. Press Add key — the value is typed into a '
-                + 'password box outside this page and goes straight to the keychain.');
+        // X-488 — which key: a Farm Secret by name, or the route's own; the masked hint tells two apart.
+        const hint = p.keyHint ? ' · ' + esc(p.keyHint) : '';
+        const key = p.secretRef && p.hasSecret
+            ? T.wrap('<span class="pokey k-yes">' + esc(p.secretRef) + hint + '</span>',
+                t('Signs in with the Farm Secret {name}', { name: p.secretRef }),
+                t('The key is read from Farm Secrets each time a session starts on this route. Editing the secret there changes it here; removing this route leaves the secret in the vault.'))
+            : p.secretRef
+                ? T.wrap('<span class="pokey k-no">' + esc(t('{name} — not in Farm Secrets', { name: p.secretRef })) + '</span>',
+                    t('The Farm Secret this route names is gone'),
+                    t('No session can start on this route until it has a key again. Press Change key to pick another secret or type one.'))
+                : p.hasSecret
+                    ? T.wrap('<span class="pokey k-yes">' + esc(t('own key')) + hint + '</span>', t('A key of its own is stored'),
+                        t('It lives in the OS keychain under this route\'s id — never in settings, never on the bridge, and never read back out to draw anything; only a masked reminder of which key it is is shown.'))
+                    : T.wrap('<span class="pokey k-no">no key</span>', 'No credential yet',
+                        t('This route cannot be used until it has a key. Press Add key to pick one of your Farm Secrets or type one — the value never enters this page.'));
         return '<div class="pocard">'
             + '<div class="pohead">'
             + '<span class="poname">' + esc(p.label) + '</span>'
@@ -339,8 +347,9 @@
                 + 'its key is replaced. Never on a rename. A launch records the revision it ran on, so a '
                 + 'route edited afterwards cannot silently rewrite what a past session was served by.')
             + '<span class="grow"></span>'
-            + '<button class="secondary small" data-pokey="' + esc(p.id) + '" data-polabel="' + esc(p.label) + '">'
-            + (p.hasSecret ? 'Replace key' : 'Add key') + '</button>'
+            + '<button class="secondary small" data-pokey="' + esc(p.id) + '" data-polabel="' + esc(p.label) + '" title="'
+            + esc(t('Type a key for this route, or pick one you already keep in Farm Secrets.')) + '">'
+            + esc(p.hasSecret || p.secretRef ? t('Change key') : t('Add key')) + '</button>'
             + '<button class="secondary small" data-pocopy="' + esc(p.id) + '" title="'
             + esc('A copy is a NEW route: its own id, its own history from revision 1, and no credential — '
                 + 'duplicating a key would put one secret behind two names.') + '">Copy</button>'
@@ -348,6 +357,7 @@
             + esc('Removes the route AND collects its credential from the keychain. A row dropped with the '
                 + 'entry left behind is a working key nobody can see.') + '">Remove</button>'
             + '</div>'
+            + (p.description ? '<div class="pobody small">' + esc(p.description) + '</div>' : '')
             + '<div class="pobody muted small">'
             + esc(p.providerId) + (p.baseUrl ? ' · ' + esc(p.baseUrl) : ' · first-party endpoint')
             + (p.authKind ? ' · ' + esc(p.authKind) : '')
@@ -565,6 +575,8 @@
                 'Which model each tier resolves to',
                 'Comma-separated tier=model pairs. Empty = the route\'s own defaults. Changing one bumps '
                 + 'the revision, because it changes what a session is actually served by.')
+            + field('po-desc', t('note (whose key, what for)'), t('Your own note'),
+                t('Shown on the route\'s card — which account the key belongs to, what the route is for. Never sent anywhere.'))
             + '<button class="small" id="po-add">Add route</button>'
             + '</div>'
             + '<div class="pomsg" id="po-msg">' + esc(provMsg) + '</div>'
@@ -775,7 +787,7 @@
                 profile: {
                     id: val('po-id'), label: val('po-label'), engine: 'claude',
                     providerId: val('po-provider'), baseUrl: val('po-url'),
-                    tiers: parseTiers(val('po-tiers'))
+                    tiers: parseTiers(val('po-tiers')), description: val('po-desc')
                 }
             }));
         }
