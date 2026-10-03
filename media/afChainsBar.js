@@ -11,7 +11,7 @@
         ['legs', 'Legs', 'The longest chains first.'], // i18n-exempt — translated where drawn, t(o[1]) / t(o[2])
         ['attention', 'Attention', 'Chains with something going wrong first, then the newest.'] // i18n-exempt — translated where drawn, t(o[1]) / t(o[2])
     ];
-    const SHOWS = [['25', '25'], ['50', '50'], ['0', 'All']]; // i18n-exempt — translated where drawn, t(o[1]) / t(o[2])
+    const SHOWS = [['25', '25', 'The newest 25 finished chains.'], ['50', '50', 'The newest 50 finished chains.'], ['0', 'All', 'Every finished chain.']]; // i18n-exempt — translated where drawn, t(o[1]) / t(o[2])
     const REASONS = [['hanging', 'Hanging'], ['stuck-wait', 'Stuck wait'], ['cut', 'Cut'], ['fault', 'Engine fault'], // i18n-exempt — translated where drawn, t(o[1]) / t(o[2])
         ['brake', 'Brake refused'], ['ceiling', 'Ceiling'], ['barren', 'Barren']]; // i18n-exempt — translated where drawn, t(o[1]) / t(o[2])
 
@@ -32,11 +32,12 @@
 
     /** Which rows the table draws: the filtered ones, sorted, live and attention first; the rest cut at `show`. */
     function view(rows, q) {
-        const text = String(q.text || '').trim().toLowerCase();
+        // the one query grammar every typed box shares (media/afQuery.js): Turkish i, quotes, -not, OR
+        const m = String(q.text || '').trim() ? window.AFQuery.compile(q.text) : null;
         const kept = rows.filter(r => (q.agents === null || q.agents.indexOf(r.agentName || '') >= 0)
             && (q.projects === null || q.projects.indexOf(r.projectId || '') >= 0)
             && (q.reasons === null || reasonsOf(r).some(k => q.reasons.indexOf(k) >= 0))
-            && (!text || [r.title, r.chainId, r.agentName, r.why, r.words].some(s => String(s || '').toLowerCase().indexOf(text) >= 0)))
+            && (!m || m.test([r.title, r.chainId, r.agentName, r.why, r.words].filter(Boolean).join('\n'))))
             .sort(BY[q.sort] || BY.last);
         const top = kept.filter(pinned);
         const rest = kept.filter(r => !pinned(r));
@@ -50,7 +51,7 @@
     function select(id, label, list, value, detail) {
         const cur = list.find(o => o[0] === String(value)) || list[0];
         return window.AFTip.wrap(`<select id="${id}" aria-label="${esc(t(label))}">${list.map(o =>
-            `<option value="${esc(o[0])}"${o[0] === String(value) ? ' selected' : ''}>${esc(t(o[1]))}</option>`).join('')}</select>`,
+            `<option value="${esc(o[0])}" title="${esc(t(o[2]))}"${o[0] === String(value) ? ' selected' : ''}>${esc(t(o[1]))}</option>`).join('')}</select>`,
         t(label), window.AFTip.lines([t('{label}: {value}', { label: t(label), value: t(cur[1]) }), window.AFTip.GAP, detail(cur)]), 'ch-barw');
     }
 
@@ -64,8 +65,9 @@
             ${F.multi({ id: 'ch-agents', label: t('Agent'), options: agents.map(a => ({ v: a, t: a || '—' })), selected: q.agents })}
             ${F.multi({ id: 'ch-projects', label: t('Project'), options: projs.map(p => ({ v: p, t: pname(p) })), selected: q.projects })}
             ${F.multi({ id: 'ch-reasons', label: t('Reason'), options: REASONS.map(o => ({ v: o[0], t: t(o[1]) })), selected: q.reasons })}
-            <input id="ch-q" type="text" value="${esc(q.text)}" placeholder="${esc(t('search titles, ids, reasons, handover words'))}" aria-label="${esc(t('Search'))}">
-            ${select('ch-show', 'Show', SHOWS, q.show, () => t('How many finished chains to list. Running, waiting, parked and attention chains are always listed.'))}
+            ${window.AFTip.wrap(`<input id="ch-q" type="text" value="${esc(q.text)}" placeholder="${esc(t('search titles, ids, reasons, handover words'))}" aria-label="${esc(t('Search'))}">`,
+        t('Search'), window.AFQuery.tip(t('Searched against the title, the chain id, the agent, the record\'s reason and the latest handover words.')), 'ch-barw ch-qw')}
+            ${select('ch-show', 'Show', SHOWS, q.show, o => t(o[2]) + ' ' + t('Running, waiting, parked and attention chains are always listed.'))}
             ${narrowing(q) ? window.AFTip.wrap(`<button id="ch-reset" class="secondary" aria-label="${esc(t('Reset filters'))}">↺</button>`,
         t('Reset filters'), t('Agent, project, reason and search back to all; the sort and Show stay.'), 'ch-barw') : ''}
         </div>`;
@@ -92,7 +94,7 @@
         .ch-bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 8px; }
         .ch-bar select { min-height:26px; }
         .ch-bar #ch-q { flex:1 1 220px; min-width:0; min-height:26px; }
-        .ch-bar .af-clr { flex:1 1 220px; min-width:0; }
+        .ch-bar .af-clr, .ch-bar .ch-qw { flex:1 1 220px; min-width:0; display:flex; }
         .ch-barw { display:inline-block; }
         .ch-more { margin:6px 0; font-size:12px; }`;
 

@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.818.0 - Chains: every chain can be ended, and the page reads at a glance (2026-10-04)
+
+- **No chain stays stuck on the Chains page.** A chain whose session had
+  been sealed into two chains at once (possible in older versions) could
+  not be ended from any button — End answered with the other chain's id.
+  End now closes such a chain on its own, leaving the other chain and the
+  session untouched. A leg that never reported its session can be ended too.
+- **End all hanging chains at once.** On the ⚠ Needs attention chip, a
+  🧹 End hanging button ends every chain whose leg is idle or gone with no
+  handover — after asking, and without closing any session.
+- **A colour per state.** Running blue, waiting and parked yellow, done
+  green, stopped grey; anything going wrong in orange, with a bar at the
+  row's edge for chains that are live or need you.
+- **The same symbols as the Console card.** ✕⑂ Stop chain, ⑂⊣ Last leg
+  (it was ⛔), ⑂✓ End chain (it looked like a checkbox).
+- **Legs as a strip.** ● ran, the current leg in its state, ○ still allowed
+  under the ceiling, ∞ with none; long chains fold to ●×12. ⑂⊣ marks the
+  last leg.
+- **Sort, filter and search.** Sort by last move, cost, legs or attention;
+  filter by agent, project and reason (hanging, ceiling, …); search titles,
+  ids and the latest handover words. Show 25 / 50 / All finished chains —
+  live and attention chains are always listed. Your choice is remembered.
+- **Copy a chain id** with ⧉ next to it.
+
 ## 3.817.0 - Secrets: rename a secret, and see who uses it (2026-10-04)
 
 - **Rename a secret.** The name on a secret's edit card can now be changed:

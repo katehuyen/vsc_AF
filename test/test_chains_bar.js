@@ -14,7 +14,9 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 const ROOT = path.join(__dirname, '..');
 const box = { window: {} };
-vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'media', 'afChainsBar.js'), 'utf8'), box);
+vm.createContext(box);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'media', 'afQuery.js'), 'utf8'), box);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'media', 'afChainsBar.js'), 'utf8'), box);
 const B = box.window.AFChainsBar;
 const C = require(path.join(ROOT, 'out', 'core', 'chainBoard.js'));
 const fx = require('./fixtures/chains.js');
@@ -50,6 +52,7 @@ ok('none ticked is an honest empty list', B.view(rows, q({ agents: [], show: 0 }
 const night = rows.find(r => r.chainId === 'chn_night');
 ok('‼️ the search reaches the handover words, which are nowhere else on the row',
     /S-122/.test(night.words || '') && !/S-122/.test(night.title + night.why) && ids(B.view(rows, q({ text: 's-122', show: 0 })).rows).includes('chn_night'));
+ok('…through the shared query grammar: a -word excludes', !ids(B.view(rows, q({ text: 's-122 -gece', show: 0 })).rows).includes('chn_night'));
 const byCost = B.view(rows, q({ sort: 'cost', show: 0 })).rows;
 const pinnedCosts = byCost.filter(r => ACTIVE.includes(r.state) || r.signals.length).map(r => r.totals.cost);
 ok('Cost sorts the dearest first (inside the pinned group)', pinnedCosts.every((c, i) => i === 0 || pinnedCosts[i - 1] >= c));
