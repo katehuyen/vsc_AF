@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.809.0 - Provider routes really sign in with their key (2026-10-03)
+
+- **A route now uses the key you stored for it.** Every session started on
+  a third-party route (OpenRouter and the like) went out with no key at
+  all and failed with "401 Missing Authentication header", while the
+  Engines page said "key stored". The key is now read from where it is
+  saved, so the route signs in.
+- **A route without a key is refused before it starts.** The Console, the
+  launcher, tasks and missions now all stop a session on a third-party
+  route that has no key, and say which route is missing it, instead of
+  starting one that can only fail.
+- **Every model choice stays on the route.** On a route, Claude Code's
+  model aliases (opus, sonnet, haiku, fable) and its quick background
+  calls now all go to the models the route maps, not to Anthropic's.
+
 ## 3.808.0 - The stuck-warning box really silences Needs You; typed words survive more pages (2026-10-03)
 
 - **"Stuck warning" off means quiet.** With the notifyStuck box unticked, a
