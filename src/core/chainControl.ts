@@ -10,7 +10,7 @@
  *
  * Pure: the store, the clock and the setting's ceiling come in.
  */
-import { Baton, isLive, newBatonId, normalizeLegCeiling } from './baton';
+import { Baton, isLive, newBatonId, normalizeLegCeiling, openerOf } from './baton';
 import { chainMaxLegs, isSeal } from './batonSeal';
 import { closingRecord } from './batonFailsafe';
 import { setLastLeg } from './batonLastLeg';
@@ -26,6 +26,13 @@ export type LegLiveness = 'working' | 'idle' | 'gone';
 
 const short = (id: string | undefined): string => String(id ?? '').slice(0, 8);
 const chainOf = (list: readonly Baton[], chainId: string): Baton[] => list.filter(b => b.chainId === chainId);
+
+/** X-497 — the chain a leg's session belongs to when it is not this one: a twin seal's other chain, or one it left a record in. */
+function movedOn(list: readonly Baton[], sid: string, chainId: string): string | undefined {
+    const opener = openerOf(list, sid);
+    if (opener && opener.chainId !== chainId) { return opener.chainId; }
+    return list.filter(b => b.from.sessionId === sid && !isSeal(b) && b.chainId !== chainId).sort(newerRecord)[0]?.chainId;
+}
 
 /** The newest handover words on record: the latest pass, braked pass or rescue — never a seal's placeholder. */
 export function lastWords(list: readonly Baton[], chainId: string): string {
@@ -79,6 +86,8 @@ export function continueChain(list: readonly Baton[], q: ContinueInput): Continu
         fromSid = top.toSessionId ?? '';
         if (!fromSid) { return saidWhy('leg {leg} of chain {chain} has not named its session yet — nothing to continue from.', { leg: hop, chain: chainId }); }
     }
+    // X-497 — closed with no session of its own (a twin's, or one never named): a reopened leg would wait for an end that never comes
+    if (!fromSid) { return saidWhy('chain {chain} was closed with no session of its own to follow — start a new chain for this work.', { chain: chainId }); }
     const words = String(q.prompt ?? '').trim() || lastWords(list, chainId);
     if (!words) { return saidWhy('chain {chain} has no handover words on record — say what the new leg starts from (prompt).', { chain: chainId }); }
     const next = hop + 1;
@@ -165,10 +174,10 @@ export function endChain(list: readonly Baton[], q: EndInput): EndResult {
     if (!top) {
         // the cap dropped every baton of a leg that never passed: its link still reads `started`, and the closing record's link ends it
         const last = chainId ? (q.links ?? []).filter(l => l.chainId === chainId).sort(newerRecord)[0] : undefined;
-        if (last?.state !== 'started' || !last.to) { return saidWhy('no chain {chain} with records left — chains.list shows the chains.', { chain: chainId || '(none named)' }); }
-        const closingLink: ChainLink = { chainId, hop: last.hop + 1, from: last.to, state: 'done', createdAt: q.now, updatedAt: q.now };
+        if (last?.state !== 'started') { return saidWhy('no chain {chain} with records left — chains.list shows the chains.', { chain: chainId || '(none named)' }); }
+        const closingLink: ChainLink = { chainId, hop: last.hop + 1, from: last.to ?? '', state: 'done', createdAt: q.now, updatedAt: q.now };
         return {
-            ok: true, stop: [], closingLink, sessionId: last.to, why,
+            ok: true, stop: [], closingLink, ...(last.to ? { sessionId: last.to } : {}), why,
             ...saidSentence(say(reason !== undefined
                 ? 'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — only its links were left on record, and its closing record is now one of them.'
                 : 'Chain {chain} ended at leg {leg} (ended by {by}) — only its links were left on record, and its closing record is now one of them.',
@@ -185,10 +194,27 @@ export function endChain(list: readonly Baton[], q: EndInput): EndResult {
             { ...endVars,session: short(top.from.sessionId) }))
         };
     }
-    if (top.state !== 'started' || !top.toSessionId) {
+    if (top.state !== 'started') {
         return saidWhy('chain {chain} has already ended ({state}: {why}).', { chain: chainId, state: top.state, why: top.why });
     }
-    const sid = top.toSessionId;
+    const sid = top.toSessionId ?? '';
+    const other = sid ? movedOn(list, sid, chainId) : undefined;
+    if (!sid || other) {
+        // X-497 — a leg its session cannot speak for is braked and closed on this chain alone; no session is named, so none is closed
+        const braked: Baton = top.lastLeg ? top : { ...top, lastLeg: { at: q.now, by: q.by } };
+        const closing = closingRecord(braked, '', 'done', why, newBatonId(q.now, q.rnd ?? Math.random), q.now);
+        const vars = { ...endVars, leg: top.hop + 1, ...(other ? { session: short(sid), other } : {}) };
+        return {
+            ok: true, stop: [], braked, closing, why,
+            ...saidSentence(say(other
+                ? (reason !== undefined
+                    ? 'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — its session {session} is a leg of chain {other}, which is left as it is.'
+                    : 'Chain {chain} ended at leg {leg} (ended by {by}) — its session {session} is a leg of chain {other}, which is left as it is.')
+                : (reason !== undefined
+                    ? 'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — the leg never named its session, so only its record is closed.'
+                    : 'Chain {chain} ended at leg {leg} (ended by {by}) — the leg never named its session, so only its record is closed.'), vars))
+        };
+    }
     const brake = setLastLeg(list, sid, true, q.by, q.now);
     if (!brake.ok) { return brake; }
     const closing = closingRecord(brake.baton, sid, 'done', why, newBatonId(q.now, q.rnd ?? Math.random), q.now);

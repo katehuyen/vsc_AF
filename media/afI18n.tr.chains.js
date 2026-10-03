@@ -128,6 +128,11 @@
     'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — its handover line now asks for the note, and no successor opens.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — devir çizgisi artık notu ister ve ardıl açılmaz.',
     'Chain {chain} ended at leg {leg} (ended by {by}) — only its links were left on record, and its closing record is now one of them.': '{chain} zinciri {leg}. halkada kapatıldı — kayıtta yalnızca halka bağları kalmıştı; kapanış kaydı artık onlardan biri.',
     'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — only its links were left on record, and its closing record is now one of them.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — kayıtta yalnızca halka bağları kalmıştı; kapanış kaydı artık onlardan biri.',
+    'Chain {chain} ended at leg {leg} (ended by {by}) — its session {session} is a leg of chain {other}, which is left as it is.': '{chain} zinciri {leg}. halkada kapatıldı — {session} oturumu {other} zincirinin halkası; o zincire dokunulmadı.',
+    'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — its session {session} is a leg of chain {other}, which is left as it is.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — {session} oturumu {other} zincirinin halkası; o zincire dokunulmadı.',
+    'Chain {chain} ended at leg {leg} (ended by {by}) — the leg never named its session, so only its record is closed.': '{chain} zinciri {leg}. halkada kapatıldı — halka oturumunu hiç bildirmemişti, yalnızca kaydı kapatıldı.',
+    'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — the leg never named its session, so only its record is closed.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — halka oturumunu hiç bildirmemişti, yalnızca kaydı kapatıldı.',
+    'chain {chain} was closed with no session of its own to follow — start a new chain for this work.': '{chain} zinciri izlenecek kendi oturumu olmadan kapatıldı — bu iş için yeni bir zincir başlat.',
     'Its session was closed.': 'Oturumu kapatıldı.',
     'Its session was working and keeps running.': 'Oturumu çalışıyordu, çalışmayı sürdürüyor.'
 });
