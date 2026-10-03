@@ -216,6 +216,7 @@ import { paletteDoor } from './launch/doors/palette';
 import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
 import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, secretKeyFor } from './core/providerOwnership';
+import { ProviderKeys } from './core/providerKeys';
 import {
     describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
     ProviderTransport, pruneProviderPick
@@ -1073,6 +1074,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const vault = new SecretsVault(context.secrets, context.globalState);
     await vault.refresh();
     await vault.adoptFarmOnly(FARM_ONLY_ADOPT);
+    // X-491 — a route's key: written, indexed, cached and read by one owner (never through the vault above)
+    const providerKeys = new ProviderKeys(context.secrets, context.globalState);
+    await providerKeys.load();
 
     // D1/D2: file-backed stores for quality scores and instruction suggestions.
     fs.mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
@@ -23628,11 +23632,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * A route's key is owned by its profile, dies with it, and has no business
      * appearing as a row somebody can hand to an agent.
      */
-    const PROVIDER_SECRET_IDS = 'agentfarm.providerSecretIds';
     const providerProfiles = (): StoredProviderProfile[] =>
         readProfiles(cfg().get<unknown[]>('providerProfiles', []));
-    const providerSecretIds = (): string[] =>
-        context.globalState.get<string[]>(PROVIDER_SECRET_IDS, []);
+    const providerSecretIds = (): string[] => providerKeys.ids();
     const writeProviderProfiles = async (list: StoredProviderProfile[]): Promise<void> => {
         await cfg().update('providerProfiles', list, vscode.ConfigurationTarget.Global);
     };
@@ -23673,7 +23675,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         profiles: providerProfiles(),
         // Asked one id at a time, so exactly one credential is in memory here
         // and only when a launch actually needs it.
-        secretFor: (id: string) => vault.get(secretKeyFor(id)),
+        secretFor: (id: string) => providerKeys.get(id),
         inheritedEnv: process.env,
         // Absent means NOT FETCHED, which the catalog reader treats as a
         // distinct state from "the engine offers none" — so an unread catalog
@@ -24017,9 +24019,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return `"${providerId}" is not a route ${engineOf(engine).id} can be pointed at — `
                 + 'engines.providers lists what is set up, and an engine with no provider axis takes none.';
         }
-        return tier && !kept.tier
-            ? `"${tier}" is not a tier the "${providerId}" route maps — engines.providers lists what it serves.`
-            : undefined;
+        if (tier && !kept.tier) {
+            return `"${tier}" is not a tier the "${providerId}" route maps — engines.providers lists what it serves.`;
+        }
+        // X-491 — the adapter's own refusals (a third-party route with no key would run unauthenticated)
+        const engineId = engineOf(engine).id;
+        return adapterFor(engineId, registryDeps()).preflight({ engine: engineId, providerId, ...(tier ? { tier } : {}) })[0];
     };
 
     const routeSealOf = (
@@ -24303,12 +24308,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     const setProviderSecret = async (id: string, value: string): Promise<void> => {
-        const key = secretKeyFor(id);
-        if (!key) { return; }
-        await context.secrets.store(key, value);
-        const ids = new Set(providerSecretIds());
-        ids.add(id);
-        await context.globalState.update(PROVIDER_SECRET_IDS, [...ids].sort());
+        if (!secretKeyFor(id)) { return; }
+        await providerKeys.set(id, value);
         /**
          * ‼️ REPLACING THE KEY IS A NEW ROUTE. The same endpoint under a
          * different credential is not the thing that served a past session, and
@@ -24329,11 +24330,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  the row while the entry stayed behind is an orphan credential nobody can
      *  see and nobody can revoke. */
     const clearProviderSecret = async (id: string): Promise<void> => {
-        const key = secretKeyFor(id);
-        if (!key) { return; }
-        await context.secrets.delete(key);
-        await context.globalState.update(PROVIDER_SECRET_IDS,
-            providerSecretIds().filter(x => x !== id));
+        if (!secretKeyFor(id)) { return; }
+        await providerKeys.delete(id);
         EnginesPanel.refreshIfOpen();
     };
     /**

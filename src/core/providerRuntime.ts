@@ -37,6 +37,7 @@
 
 import { RedactedRoute } from './providerIdentity';
 import { StoredProviderProfile } from './providerProfiles';
+import { routeModelEnv } from './routeModels';
 
 /**
  * ‼️ MEANING, NOT MEMBERSHIP. A closed list of `CLAUDE_*` names goes stale
@@ -183,6 +184,8 @@ export function claudeRouteRuntime(
         if (profile.authKind === 'oauth') { spawnEnv.ANTHROPIC_AUTH_TOKEN = secret; }
         else { spawnEnv.ANTHROPIC_API_KEY = secret; }
     }
+
+    Object.assign(spawnEnv, routeModelEnv(profile.tiers));
 
     const t = String(tier ?? '').trim();
     if (t) {

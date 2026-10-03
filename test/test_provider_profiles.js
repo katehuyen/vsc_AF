@@ -344,7 +344,7 @@ const claude = {
     // same endpoint under a different key would go on claiming to be what
     // served a past session.
     ok('replacing a credential is a new route',
-        /await context\.secrets\.store\(key, value\);[\s\S]{0,900}bumpRevision\(list\[at\]\)/.test(extTs));
+        /await providerKeys\.set\(id, value\);[\s\S]{0,900}bumpRevision\(list\[at\]\)/.test(extTs));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
