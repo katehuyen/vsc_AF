@@ -68,6 +68,16 @@
     // the edit — hold the data and apply it when focus leaves (2.47.0 lesson).
     let editing = false;
     let pendingData = null;
+    // U-219 — the raw settings.json Apply in flight: the file's text it was written over
+    let ccRawSent = null;
+    /** A raw Apply that changed the file hands the box back to the file; a failed write leaves the words to fix. */
+    function ccRawLanded() {
+        if (!ccRawSent) { return; }
+        const now = DATA.claude ? String(DATA.claude.raw) : '';
+        const ta = document.getElementById('ccraw');
+        if (ta && now !== ccRawSent.was) { ta.value = ta.defaultValue; }
+        ccRawSent = null;
+    }
 
     function shortKey(k) { return k.replace(/^agentFarm\./, ''); }
 
@@ -3096,6 +3106,7 @@
             ccApply.addEventListener('click', () => {
                 delete errors['cc:__raw__'];
                 const ta = document.getElementById('ccraw');
+                ccRawSent = { was: DATA.claude ? String(DATA.claude.raw) : '' };
                 vscode.postMessage({ type: 'ccRaw', text: ta ? ta.value : '' });
             });
         }
@@ -3146,7 +3157,7 @@
             });
             app.addEventListener('focusout', () => {
                 editing = false;
-                if (pendingData) { DATA = pendingData; pendingData = null; render(); }
+                if (pendingData) { DATA = pendingData; pendingData = null; ccRawLanded(); draw(); }
             });
         }
 
@@ -3214,11 +3225,15 @@
     // arrives while somebody is typing detaches the box they are typing in and
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
-    const repaint = window.AFRepaint.guard(render);
+    // ‼️ U-219 — the push, the focus-leaving redraw and a refused raw Apply carry what was
+    // typed and not yet saved (the raw settings.json box above all); a landed Apply lets go.
+    const draw = window.AFRepaint.keeping(render);
+    const repaint = window.AFRepaint.guard(draw);
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') {
             if (editing) { pendingData = { ...DATA, ...ev.data.data }; return; }
             DATA = { ...DATA, ...ev.data.data };
+            ccRawLanded();
             // U-142 — the store answered, so nothing is waiting to be put back:
             // a refusal arrives as `error` and never as a redraw.
             for (const k of Object.keys(jsonSent)) { delete jsonSent[k]; }
@@ -3240,7 +3255,8 @@
         }
         if (ev.data.type === 'ccError') {
             errors['cc:' + ev.data.id] = ev.data.error;
-            render();
+            if (ev.data.id === '__raw__') { ccRawSent = null; }
+            draw();
             focusKey('cc:' + ev.data.id);
             return;
         }

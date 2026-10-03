@@ -112,7 +112,12 @@
         }
     }
 
-    /** `render` with the user's unsent edits carried across it. */
+    /**
+     * `render` with the user's unsent edits carried across it. `options.scope()`
+     * names WHOSE boxes are on screen (read before and after the draw): when the
+     * draw shows somebody else's — another project in the same form — nothing is
+     * carried, because the same id would put one record's words into another's.
+     */
     function keeping(render, options) {
         const opts = options || {};
         track(opts.document || (typeof document !== 'undefined' ? document : undefined));
@@ -120,8 +125,9 @@
             const doc = opts.document || (typeof document !== 'undefined' ? document : undefined);
             track(doc);
             const edits = editsOf(doc);
+            const was = typeof opts.scope === 'function' ? opts.scope() : undefined;
             const r = render.apply(this, arguments);
-            if (edits.length) { putBack(doc, edits); }
+            if (edits.length && (typeof opts.scope !== 'function' || opts.scope() === was)) { putBack(doc, edits); }
             return r;
         };
     }

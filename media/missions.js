@@ -5875,6 +5875,8 @@
             wire('d-send-' + id, () => {
                 const inp = document.getElementById('d-answer-' + id);
                 vscode.postMessage({ type: 'answer', runId: id, text: inp ? inp.value : '' });
+                // an answer is never refused (the host only records it): sent is done, the box empties
+                if (inp) { inp.value = ''; }
             });
             wire('lv-toggle-' + id, () => { liveOpen = !liveOpen; render(); });
             wire('lg-toggle-' + id, () => { ledgerOpen = !ledgerOpen; render(); });
@@ -6099,7 +6101,10 @@
     // arrives while somebody is typing detaches the box they are typing in and
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
-    const repaint = window.AFRepaint.guard(render);
+    // ‼️ U-219 — a steer or an answer typed into a live run's bare box survives the
+    // once-a-second push; each box is emptied by the page once its text is sent.
+    const draw = window.AFRepaint.keeping(render);
+    const repaint = window.AFRepaint.guard(draw);
     window.addEventListener('message', ev => {
         const m = ev.data;
         if (m.type === 'data') {
@@ -6175,7 +6180,9 @@
             // would be a second rule about what may be steered.
             guideNote[m.runId] = { note: m.note || '', error: m.error || '' };
             guideOpen = true;
-            render();
+            // a refused steer keeps its words to fix; a queued one leaves the box empty
+            if (!m.error) { const box = document.getElementById('gd-text-' + m.runId); if (box) { box.value = ''; } }
+            draw();
         } else if (m.type === 'tail') {
             // direct DOM update — no re-render, so reading the tail never
             // fights the 1s live refresh or a scroll position

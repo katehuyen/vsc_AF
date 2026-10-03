@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.808.0 - The stuck-warning box really silences Needs You; typed words survive more pages (2026-10-03)
+
+- **"Stuck warning" off means quiet.** With the notifyStuck box unticked, a
+  stalled session no longer puts a row on Needs You (or on the Tasks page's
+  waiting list) and no notification pops up; only its card still says
+  STALLED. Ticked, both come as before. The Settings text says so.
+- **What you type is kept while the page refreshes** on three more pages:
+  a steer or an answer typed into a running mission, a project's settings
+  and a new plan item on Projects, and the raw settings.json box on
+  Settings. A refused raw settings.json now stays in the box to be fixed
+  instead of vanishing. Each box empties once what you sent was taken.
+
 ## 3.807.0 - The cleanup ends hanging chains; the phone says why a button did nothing (2026-10-03)
 
 - **Stuck-items cleanup now sees hanging chains.** A relay chain whose

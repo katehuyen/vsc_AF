@@ -13,6 +13,10 @@
     // null = closed. `folderTouched` stops the name from overwriting a folder
     // the user picked or typed themselves.
     let creating = null;
+    /** U-219 — the plan item last sent, until the host answers whether it was taken */
+    let planSent = null;
+    /** U-219 — the project whose boxes the last render drew (AFRepaint.keeping's scope) */
+    let shownProject = '';
 
     /**
      * The project's own tabs.
@@ -83,10 +87,19 @@
     // arrives while somebody is typing detaches the box they are typing in and
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
-    const repaint = window.AFRepaint.guard(render);
+    // ‼️ U-219 — the host push carries what was typed and not yet saved (a
+    // project's settings, a plan item), never into another project's boxes.
+    const draw = window.AFRepaint.keeping(render, { scope: () => shownProject });
+    const repaint = window.AFRepaint.guard(draw);
     window.addEventListener('message', ev => {
         if (ev.data.type === 'result') {
             flash = ev.data.error ? { error: ev.data.error } : (ev.data.ok ? { ok: ev.data.ok } : null);
+            // a plan item the plan took is no longer the user's to keep (the answer comes before the push)
+            if (planSent !== null) {
+                const box = document.getElementById('plan-new');
+                if (!ev.data.error && box && box.value.trim() === planSent) { box.value = ''; }
+                planSent = null;
+            }
             // a create that came back clean has nothing left to show
             if (creating && !ev.data.error) { creating = null; }
             // ‼️ A backlog edit in flight is only let go once the host says it
@@ -1566,6 +1579,8 @@
 
     function render() {
         const p = sel();
+        // U-219 — whose boxes are on screen: a redraw that carries typed words never carries them to another project
+        shownProject = p ? p.id : '';
         const note = flash
             ? `<div class="pj-flash ${flash.error ? 'bad' : 'good'}">${C.esc(flash.error || flash.ok)}</div>`
             : '';
@@ -7867,6 +7882,7 @@
                     const box = document.getElementById('plan-new');
                     const item = ((box && box.value) || '').trim();
                     if (!item) { break; }
+                    planSent = item;
                     vscode.postMessage({
                         type: 'planAdd', id, item,
                         section: (document.getElementById('plan-sec') || {}).value || ''
