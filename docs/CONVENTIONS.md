@@ -1085,6 +1085,11 @@ files, and `media/afTime.js` formats with `AFI18n.locale()`.
   the English `title` stays whole for the bridge and the agents reading it,
   `titleKey` + `titleVars` travel beside it, and the page draws
   `t(titleKey, titleVars)`. A page never re-parses an English sentence.
+- A language's catalog is the files its `LANGS` entry lists — `afI18n.<id>.js`
+  plus one part per surface (`parts: ['needs', 'chains']` → `afI18n.<id>.needs.js`
+  …); `files(id)` in `media/afI18n.js` is the one list the shell, the host and the
+  test harnesses load. A surface's strings go in its own part, so no file
+  outgrows the size rule.
 - A new language is a catalog file and an entry in `LANGS`; `test/test_i18n.js`
   holds the setting's enum, its flex point and the catalog files to that list,
   and fails a header destination missing from a catalog.

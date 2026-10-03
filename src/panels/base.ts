@@ -4,6 +4,7 @@ import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
 import { currentUiLanguage } from './uiLanguage';
+import { catalogFiles } from '../core/i18n';
 import { quotaStyleCss } from '../core/quotaStyle';
 import type { SoundHeader } from '../core/soundHeader';
 import { ctxPageActions } from '../core/ctxmenu';
@@ -566,7 +567,7 @@ export function htmlShell(
     const ui = currentUiLanguage();
     const i18n = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afI18n.js'));
     const catalog = ui.lang === 'en' ? ''
-        : `<script nonce="${nonce}" src="${webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', `afI18n.${ui.lang}.js`))}"></script>\n`;
+        : catalogFiles(ui.lang).map(f => `<script nonce="${nonce}" src="${webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', f))}"></script>\n`).join('');
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
     // picked up on the next page render. See src/core/speaker.ts.

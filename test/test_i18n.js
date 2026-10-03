@@ -9,7 +9,8 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
 const ROOT = path.resolve(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const fresh = () => { const w = {}; vm.runInNewContext(read('media', 'afI18n.js'), { window: w }); return w.AFI18n; };
-const TR = require(path.join(ROOT, 'media', 'afI18n.tr.js'));
+// the Türkçe catalog is every file its language lists (media/afI18n.js files())
+const TR = Object.assign({}, ...require(path.join(ROOT, 'media', 'afI18n.js')).files('tr').map(f => require(path.join(ROOT, 'media', f))));
 
 {
     const I = fresh();
@@ -107,7 +108,10 @@ const TR = require(path.join(ROOT, 'media', 'afI18n.tr.js'));
     ok('…and reads exactly as before in English', [back(0), back(5 * 60000), back(3 * 3600000), back(2 * 86400000)].join('|') === 'just now|5m ago|3h ago|2d ago');
     ok('a clock\'s hover translates its label and the machine line', /^Başladı: /.test(trTip) && /\nbu makinede UTC[+-]\d\d:\d\d$/.test(trTip));
     ok('…and is unchanged in English', /^Started: /.test(AT.tip(at, 'Started')) && /\nUTC[+-]\d\d:\d\d on this machine$/.test(AT.tip(at, 'Started')));
-    ok('every language listed has a catalog file', i18n.LANGUAGES.every(l => l.id === 'en' || fs.existsSync(path.join(ROOT, 'media', `afI18n.${l.id}.js`))));
+    ok('every language listed has a catalog file, and every part it lists exists', i18n.LANGUAGES.every(l => l.id === 'en'
+        || (i18n.catalogFiles(l.id)[0] === `afI18n.${l.id}.js` && i18n.catalogFiles(l.id).every(f => fs.existsSync(path.join(ROOT, 'media', f))))));
+    ok('a part is drawn: the host draws a Chains and a Needs string from their own files', (() => { i18n.applyUiLanguage({ lang: 'tr', locale: 'tr' });
+        const r = i18n.t('Chains') === 'Zincirler' && i18n.t('Needs You') === 'Seni Bekleyenler'; i18n.applyUiLanguage({ lang: 'en', locale: '' }); return r; })());
     const pkg = JSON.parse(read('package.json')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));
     const ids = ['auto'].concat(i18n.LANGUAGES.map(l => l.id));

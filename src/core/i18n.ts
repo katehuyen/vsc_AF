@@ -17,6 +17,7 @@ export interface UiLanguage {
 
 interface I18nModule {
     LANGS: { id: string; name: string }[];
+    files(id: string): string[];
     resolve(tag: unknown): string;
     setLanguage(tag: string, locale?: string): void;
     add(id: string, table: Record<string, string>): void;
@@ -31,11 +32,13 @@ const MEDIA = path.join(__dirname, '..', '..', 'media');
 const impl: I18nModule = require(path.join(MEDIA, 'afI18n.js'));
 for (const l of impl.LANGS) {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    if (l.id !== 'en') { impl.add(l.id, require(path.join(MEDIA, `afI18n.${l.id}.js`))); }
+    for (const f of impl.files(l.id)) { impl.add(l.id, require(path.join(MEDIA, f))); }
 }
 
 /** Every language the interface can be set to. */
 export const LANGUAGES: ReadonlyArray<{ id: string; name: string }> = impl.LANGS;
+/** The media files a language's catalog is made of, in load order (none for English). */
+export const catalogFiles = (id: string): string[] => impl.files(id);
 
 /**
  * What `agentFarm.language` resolves to. `auto` draws the interface in VS

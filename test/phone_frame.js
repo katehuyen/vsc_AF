@@ -40,7 +40,7 @@ function withPhoneLayer(html, page) {
     // afI18n.js first, as the shell loads it: the phone layer draws its words through it (U-189) —
     // in the language the render was drawn in (`<html lang>`, render_page --lang), with its catalog.
     const lang = (/<html\b[^>]*\blang="([a-z]+)"/i.exec(String(html)) || [])[1] || '';
-    const catalog = lang && lang !== 'en' && fs.existsSync(path.join(__dirname, '..', 'media', `afI18n.${lang}.js`)) ? [`afI18n.${lang}.js`] : [];
+    const catalog = lang && lang !== 'en' ? require('../media/afI18n.js').files(lang) : [];
     const ui = catalog.length ? `window.__AFUI__=${JSON.stringify({ lang, locale: lang })};\n` : '';
     const js = ui + ['afI18n.js', ...catalog, 'afMobile.js'].map(f => fs.readFileSync(path.join(__dirname, '..', 'media', f), 'utf8'))
         .join('\n').replace(/<\/script/gi, '<\\/script');

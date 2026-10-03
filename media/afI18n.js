@@ -23,8 +23,15 @@
 })(function () {
     'use strict';
 
-    /** Every language the interface can be set to; English is the source. */
-    const LANGS = [{ id: 'en', name: 'English' }, { id: 'tr', name: 'Türkçe' }];
+    /** Every language the interface can be set to; English is the source. `parts`: its catalog's further files, one per surface. */
+    const LANGS = [{ id: 'en', name: 'English' }, { id: 'tr', name: 'Türkçe', parts: ['needs', 'chains'] }];
+
+    /** The files a language's catalog is made of — every loader (shell, host, tests) reads this one list. */
+    function files(id) {
+        const l = LANGS.find(x => x.id === id);
+        if (!l || l.id === 'en') { return []; }
+        return [`afI18n.${l.id}.js`, ...(l.parts || []).map(p => `afI18n.${l.id}.${p}.js`)];
+    }
     const catalogs = {};
     let lang = 'en';
     // '' = the runtime's own locale (the system's formats), which is what `auto` keeps.
@@ -60,5 +67,5 @@
         return m[1] + t(m[2]) + m[3] + (cut < 0 ? '' : s.slice(cut));
     }
 
-    return { LANGS, resolve, setLanguage, add, t, label, lang: () => lang, locale: () => loc };
+    return { LANGS, files, resolve, setLanguage, add, t, label, lang: () => lang, locale: () => loc };
 });

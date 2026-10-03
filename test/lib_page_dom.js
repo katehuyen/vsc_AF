@@ -48,7 +48,7 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
     const media = (f) => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
     // U-189 — a page handed a language gets its catalog, as the shell loads it (src/panels/base.ts).
     const ui = (extraWindow && extraWindow.__AFUI__) || {};
-    const catalog = ui.lang && ui.lang !== 'en' ? media(`afI18n.${ui.lang}.js`) + '\n' : '';
+    const catalog = ui.lang && ui.lang !== 'en' ? require('../media/afI18n.js').files(ui.lang).map(f => media(f) + '\n').join('') : '';
     const code = media('charts.js') + '\n' + shared.sharedMedia() + catalog
         + media('sessionsTable.js') + '\n' + media(scriptFile);
 
