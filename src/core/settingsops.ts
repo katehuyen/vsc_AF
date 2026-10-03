@@ -189,7 +189,7 @@ const CATEGORY_OF: Record<string, string> = {
     liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
     stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
     'quotaStyle.percent': 'live', 'quotaStyle.left': 'live', 'quotaStyle.reset': 'live',
-    notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live',
+    notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live', idleSessionNoticeMinutes: 'live',
     // K-43 — what happens to a question nobody is there to answer
     'console.autoAnswer.enabled': 'live', 'console.autoAnswer.timeoutSeconds': 'live',
     'console.autoAnswer.filter': 'live', 'console.autoAnswer.words': 'live',
@@ -306,7 +306,7 @@ const CATEGORY_OF: Record<string, string> = {
     'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access', 'telegram.digest': 'access',
     'telegram.whenBusy': 'access',
     // health & insights
-    livingChecks: 'health', noticeStaleHours: 'health', idleSessionNoticeMinutes: 'health',
+    livingChecks: 'health', noticeStaleHours: 'health',
     staleMemoryDays: 'health', contextBudgetTokens: 'health', permissionLint: 'health',
     pulse: 'health', insightAutoDelegate: 'health', qualitySample: 'health',
     qualitySamplesPerAgent: 'health', suggestScan: 'health', packGalleryRepos: 'health',

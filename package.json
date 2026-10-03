@@ -8781,7 +8781,7 @@
         "agentFarm.notifyConsoleTurnEnd": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Tell you when a **Console** turn finishes and you are not watching that conversation — a notice carrying what the turn took, with a button that opens it. Never fires for the session on your screen, and never for a turn you interrupted. The Console's own signals (the card's *your turn* state and the count on its tab) do not depend on this."
+          "markdownDescription": "The **\"‹agent› is waiting for you\"** box in VS Code's bottom-right corner, shown when a **Console** turn finishes and you are not watching that conversation — with what the turn took and a button that opens it. Never for the session on your screen, never for a turn you interrupted. Untick to stop these boxes. The reminder of the same name on the **Notices** page is a separate switch: `#agentFarm.idleSessionNoticeMinutes#`. The Console's own signals (the card's *your turn* state and the count on its tab) do not depend on this."
         },
         "agentFarm.speakerLabelTemplate": {
           "type": "string",
@@ -10960,7 +10960,7 @@
         "agentFarm.idleSessionNoticeMinutes": {
           "type": "number",
           "default": 30,
-          "description": "Minutes a session may sit waiting for your input before ONE notice is posted about it (0 disables). An idle session never blocks the farm, so it is not a Needs You row — but one left waiting all afternoon is a loop that quietly never closed."
+          "markdownDescription": "The **\"‹agent› is waiting for you\"** reminder on the **Notices** page: posted once when a session has waited this many minutes for your input. **0 turns it off.** The box of the same name in VS Code's bottom-right corner is a separate switch: `#agentFarm.notifyConsoleTurnEnd#`. An idle session never blocks the farm, so it is not a Needs You row — but one left waiting all afternoon is a loop that quietly never closed."
         },
         "agentFarm.consoleDropZone": {
           "type": "boolean",
