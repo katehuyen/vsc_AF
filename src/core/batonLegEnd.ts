@@ -88,7 +88,7 @@ export class LegEndWatch {
             if (v.act === 'none') { return undefined; }
             const now = this.deps.now();
             if (v.act !== 'rescue') {
-                const rec = closingRecord(v.opener, sid, v.act, v.why, newBatonId(now), now);
+                const rec: Baton = { ...closingRecord(v.opener, sid, v.act, v.why, newBatonId(now), now), ...(v.byUser ? { byUser: true } : {}) };
                 this.deps.store.put(rec);
                 this.deps.log(`baton ${rec.id}: chain ${rec.chainId} ${v.act} — ${v.why} (${reason})`);
                 this.say(v.act === 'done' ? `Relay finished — chain ${rec.chainId}` : `Relay failed — chain ${rec.chainId}`,

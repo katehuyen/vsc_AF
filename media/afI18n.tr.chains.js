@@ -164,5 +164,14 @@
     'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — the leg never named its session, so only its record is closed.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — halka oturumunu hiç bildirmemişti, yalnızca kaydı kapatıldı.',
     'chain {chain} was closed with no session of its own to follow — start a new chain for this work.': '{chain} zinciri izlenecek kendi oturumu olmadan kapatıldı — bu iş için yeni bir zincir başlat.',
     'Its session was closed.': 'Oturumu kapatıldı.',
-    'Its session was working and keeps running.': 'Oturumu çalışıyordu, çalışmayı sürdürüyor.'
+    'Its session was working and keeps running.': 'Oturumu çalışıyordu, çalışmayı sürdürüyor.',
+    'Context window': 'Bağlam penceresi',
+    'Quota window': 'Kota penceresi',
+    'User intervention': 'Kullanıcı müdahalesi',
+    'Fault': 'Arıza',
+    'Early pass': 'Erken devir',
+    'Finished': 'Bitti',
+    'Handover words': 'Devir sözleri',
+    'Copy the handover words': 'Devir sözlerini kopyala',
+    'Account: {rule} → {slot}': 'Hesap: {rule} → {slot}'
 });

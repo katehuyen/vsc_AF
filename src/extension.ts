@@ -377,7 +377,7 @@ import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
 import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
-import { attachRelay, passNowText } from './core/batonAttach';
+import { attachRelay, markPassNow, passNowText } from './core/batonAttach';
 import { chainMaxLegs, chainPool } from './core/batonSeal';
 import { relayHandoffHold, rowSessionId, successorRow } from './core/batonDoor';
 import { lastUserSaidAt, PassedLegCard, PassedLegEnder, PassedLegFacts } from './core/batonEnd';
@@ -30075,6 +30075,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // …and ⑂ Pass now says the handover order the context line would have sent
         batonPassNowText: (sessionId: string) =>
             passNowText(batonRelayOf(batonStore.all(), sessionId), contextGuard.orders()),
+        // S-128 — the delivered Pass now is recorded on the leg's opener, so the chains page can name the user as its cause
+        batonPassNowSaid: (sessionId: string) => {
+            const stamped = markPassNow(batonStore.all(), sessionId, 'the user (Console card)', Date.now());
+            if (stamped) { batonStore.put(stamped); }
+        },
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Console card', Date.now(), batonBoard, cancelSuccessorRow).length,
@@ -31098,7 +31103,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         build: () => chainsPageData(boardNow(chainBoardDeps), batonStore.all(), chainBoardDeps.thresholds(), Date.now()),
         projects: () => projectRefs({ all: true }),
-        legs: chainId => chainLegLines(chainIndexNow(), chainId, batonStore.all(), chainBoardDeps.factsNow()),
+        legs: chainId => chainLegLines(chainIndexNow(), chainId, batonStore.all(), chainBoardDeps.factsNow(), sid => sessionAccountOf(sid)?.label),
         stop: chainId => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Chains page', Date.now(), batonBoard, cancelSuccessorRow).length,
         lastLeg: (sid, on) => {

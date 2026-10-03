@@ -53,7 +53,7 @@ export interface LegEndFacts {
 
 export type FailsafeVerdict =
     | { act: 'none'; why: string }
-    | { act: 'done' | 'failed'; why: string; opener: Baton }
+    | { act: 'done' | 'failed'; why: string; opener: Baton; byUser?: true }
     | { act: 'rescue'; why: string; opener: Baton; evidence: string[] };
 
 /** The baton that opened this session's leg (a seal for leg 1), if it runs in a relay. */
@@ -82,7 +82,7 @@ export function failsafeVerdict(list: readonly Baton[], f: LegEndFacts): Failsaf
         return { act: 'done', opener, why: `leg ${leg} was the chain's last — ${opener.lastLeg.by} braked it, so the failsafe stays out and the chain ends here` };
     }
     if (f.byUser) {
-        return { act: 'done', opener, why: `leg ${leg} was ended by the user — the failsafe stays out, and the chain ends here` };
+        return { act: 'done', opener, byUser: true, why: `leg ${leg} was ended by the user — the failsafe stays out, and the chain ends here` };
     }
     const lived = Math.max(0, f.endedAt - opener.updatedAt);
     if (!isSeal(opener) && lived < CRASH_LOOP_MS && !(Number(f.toolCalls) > 0)) {

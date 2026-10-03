@@ -5,10 +5,10 @@
  * runner to pass now (the handover order, said into its turn — the card's
  * ⑂ Pass now, which the console.send op already is for an agent).
  */
-import { BATON_DEFAULT_MAX_LEGS, Baton, BatonRelay, batonRelayOf, normalizeLegCeiling } from './baton';
+import { BATON_DEFAULT_MAX_LEGS, Baton, BatonRelay, batonRelayOf, normalizeLegCeiling, openerOf } from './baton';
 import { markStored } from './batonLegFacts';
 import type { FolderRead } from './legRoots';
-import { chainMaxLegs, sealFirstLeg } from './batonSeal';
+import { chainMaxLegs, isSeal, sealFirstLeg } from './batonSeal';
 import { BatonStore } from './batonStore';
 import { DisciplineOrders, orderFor } from './contextGuard';
 import { LaunchManifest, manifestOf } from './launchManifest';
@@ -88,4 +88,17 @@ export const PASS_NOW_WORD = 'PASS NOW';
  */
 export function passNowText(relay: BatonRelay | undefined, orders?: Partial<DisciplineOrders>): string {
     return `${PASS_NOW_WORD} — the user pressed Pass now on this session's Console card. ${orderFor('handover', relay, orders)}`;
+}
+
+/**
+ * S-128 — the record a delivered ⑂ Pass now leaves: on the running leg's
+ * opener, so the chain board can say the pass that follows was the user's.
+ * Nothing else moves (updatedAt included: the crash-loop guard reads it as
+ * the leg's start). A leg that already left its pass or end is not stamped.
+ */
+export function markPassNow(list: readonly Baton[], sessionId: string, by: string, now: number): Baton | undefined {
+    const sid = String(sessionId ?? '').trim();
+    const opener = openerOf(list, sid);
+    if (!opener || list.some(b => b.from.sessionId === sid && !isSeal(b))) { return undefined; }
+    return { ...opener, passNow: { at: now, by } };
 }

@@ -114,6 +114,10 @@ export interface Baton {
     lastLeg?: BatonLastLeg;
     /** S-120 — on a pass a brake stopped: which one, so the chain board reads a field rather than the sentence */
     brake?: BrakeKind;
+    /** S-128 — on a closing record only: the user ended the leg by hand (the failsafe's `byUser`) */
+    byUser?: boolean;
+    /** S-128 — on the opener of a RUNNING leg only: ⑂ Pass now was said into it, when and by whom */
+    passNow?: BatonLastLeg;
     createdAt: number;
     updatedAt: number;
 }

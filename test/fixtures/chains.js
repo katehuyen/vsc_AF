@@ -42,6 +42,23 @@ const batons = [
     ...chain('chn_ceil', 'c', 6, 600 * MIN, { state: 'stopped', brake: 'ceiling', why: 'the chain reached its ceiling of 6 legs' }, { maxLegs: 6 }),
     ...chain('chn_fail', 'f', 2, 900 * MIN, { state: 'failed', why: 'the crash-loop guard stopped the chain: three legs ended within minutes' })
 ];
+// S-128 — the night's legs ended for every reason the record can hold: the context line, the quota line,
+// a plan limit, the user's ⑂ Pass now, a failsafe rescue, a flagged conversation, an early pass
+const night = h => batons.find(b => b.chainId === 'chn_night' && b.hop === h);
+const cause = (kind, why) => ({ cause: { kind, quotaPct: 52, quotaFrom: 'agent-farm', why } });
+const ENDS = {
+    1: cause('context', 'the context window was at 41%, at or past the context handover line 40% (claude-kateanhkim at 52% of its five-hour window (Agent Farm))'),
+    2: cause('quota', 'claude-murvietnam was at 91% of its five-hour window (Agent Farm), at or past the quota handover line 90%'),
+    3: cause('limit', 'claude-hesap3 hit its plan limit'),
+    5: cause('early', 'an early pass — no handover line was reached (claude-hesap3 at 52% of its five-hour window (Agent Farm), context 22%)'),
+    6: { rescue: 'leg 6 ended without passing the baton: CONTEXT HANDOVER 41% had reached it; it left uncommitted changes' },
+    7: { fault: 'flagged', ...cause('flagged', 'the engine flagged the conversation and Agent Farm passed for it (claude-kateanhkim at 30% of its five-hour window (Agent Farm))') }
+};
+for (let h = 1; h < 13; h++) { Object.assign(night(h), ENDS[h] || cause('context', `the context window was at 40%, at or past the context handover line 40% (leg ${h})`)); }
+Object.assign(night(3), { passNow: { at: night(4).createdAt - MIN, by: 'the user (Console card)' } });
+const SLOTS = ['claude-murvietnam', 'claude-kateanhkim', 'claude-hesap3'];
+const slotOf = sid => (/^n\d+$/.test(sid) ? SLOTS[Number(sid.slice(1)) % 3] : undefined);
+
 const links = [
     { chainId: 'chn_old', hop: 0, from: 'o1', to: 'o1', state: 'started', createdAt: T - 30 * 24 * 60 * MIN, updatedAt: T - 30 * 24 * 60 * MIN },
     { chainId: 'chn_old', hop: 1, from: 'o1', to: 'o2', state: 'started', createdAt: T - 29 * 24 * 60 * MIN, updatedAt: T - 29 * 24 * 60 * MIN },
@@ -66,7 +83,7 @@ const projects = [{ id: 'prj_af', name: 'Agent Farm', icon: 'rocket', color: 'ch
 
 const rows = (o = {}) => B.chainBoard({ batons: o.batons || batons, links: o.links || links, facts, faults, now: T, maxLegs: 6, thresholds: TH });
 const data = (o = {}) => ({ ...P.chainsPageData(rows(o), o.batons || batons, TH, T), projects });
-const legsOf = id => P.chainLegLines(M.chainIndex([...links, ...batons.map(M.linkOf)]), id, batons, facts);
+const legsOf = id => P.chainLegLines(M.chainIndex([...links, ...batons.map(M.linkOf)]), id, batons, facts, slotOf);
 const openNight = r => { const row = r.query('.ch-row').find(e => e.dataset.chain === 'chn_night'); if (row) { row.click(); } r.send({ type: 'legs', chainId: 'chn_night', legs: legsOf('chn_night') }); };
 
 module.exports = {
@@ -77,6 +94,8 @@ module.exports = {
     variants: () => [
         { id: 'chains', label: 'Chains — every relay chain, one row each: running, idle past the threshold, known nowhere, waiting, parked, braked, done, stopped, failed, links only (S-122)', data: data() },
         { id: 'chains-legs', label: 'Chains — a running chain opened: its legs strip with each leg\'s run, cost and handover words', data: data(), act: openNight },
+        { id: 'chains-leg-cause', label: 'Chains — a leg\'s number hover: why it ended (the user pressed Pass now) and the record it stands on (S-128)', data: data(), act: openNight, tip: 'ch-ln:4' },
+        { id: 'chains-leg-account', label: 'Chains — a leg\'s title hover: its session, and the account rule it was placed by → the slot it ran on (S-128)', data: data(), act: openNight, tip: 'ch-lt:2' },
         {
             id: 'chains-continue', label: 'Chains — ↻ Continue pressed on a finished chain: the form under its row', data: data(),
             act: r => { const btn = r.query('[data-act="continue"]').find(e => e.dataset.chain === 'chn_done'); if (btn) { btn.click(); } }

@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.819.0 - Chains: why each leg handed over, and where it ran (2026-10-04)
+
+- **Each leg says why it ended.** In an opened chain, the leg number
+  carries a mark: 📊 the context line, ⏱ the quota line (a plan limit too),
+  👤 your hand (Pass now, Last leg, End, or a session you closed), 🛑 a
+  fault (the leg ended without passing, or the engine flagged it). An early
+  pass and a clean finish carry none. Hover the number for the record the
+  verdict stands on.
+- **The whole handover words, readable and copyable.** Hover a leg's words
+  for all of them; ⧉ copies them.
+- **Which account a leg ran on.** A leg's title hover shows the account
+  rule it was placed by and the slot it actually ran on (e.g.
+  `@emptiest → claude-…`).
+
 ## 3.818.0 - Chains: every chain can be ended, and the page reads at a glance (2026-10-04)
 
 - **No chain stays stuck on the Chains page.** A chain whose session had

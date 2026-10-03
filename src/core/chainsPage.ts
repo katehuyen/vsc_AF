@@ -9,9 +9,11 @@
  *
  * Pure: the host hands in the board, the batons, the index and the facts.
  */
-import { Baton, isLive } from './baton';
+import { Baton, isLive, openerOf } from './baton';
+import { leftBy } from './batonLastLeg';
 import { BoardCounts, ChainRow, LegFacts, boardCounts, newerRecord } from './chainBoard';
 import { lastWords } from './chainControl';
+import { LegEnd, legEndOf } from './chainLegEnd';
 import type { ChainIndex } from './chainMembership';
 
 export interface ChainActs {
@@ -85,15 +87,27 @@ export interface ChainLegLine {
     live?: 'working' | 'idle' | 'gone';
     /** the handover words this leg passed to the next (absent: no pass, or the store dropped it) */
     words?: string;
+    /** S-128 — why it ended, off its record (chainLegEnd.ts) */
+    end?: LegEnd;
+    /** S-128 — the account rule it was placed by (its opener's), and the slot it ran on */
+    rule?: string;
+    account?: string;
 }
 
-export function chainLegLines(ix: ChainIndex, chainId: string, batons: readonly Baton[], facts: (sessionId: string) => LegFacts | undefined): ChainLegLine[] {
+export function chainLegLines(
+    ix: ChainIndex, chainId: string, batons: readonly Baton[], facts: (sessionId: string) => LegFacts | undefined,
+    slotOf?: (sessionId: string) => string | undefined
+): ChainLegLine[] {
     const chain = ix.byChain.get(chainId);
     if (!chain) { return []; }
-    const passes = batons.filter(b => b.chainId === chainId && b.hop > 0 && b.prompt).sort(newerRecord);
+    const mine = batons.filter(b => b.chainId === chainId);
+    const passes = mine.filter(b => b.hop > 0 && b.prompt).sort(newerRecord);
     return chain.legs.map(l => {
         const f = facts(l.sessionId);
         const words = passes.find(b => b.from.sessionId === l.sessionId)?.prompt;
+        const opener = openerOf(mine, l.sessionId);
+        const end = legEndOf(leftBy(mine, l.sessionId), opener);
+        const slot = slotOf?.(l.sessionId);
         return {
             leg: l.leg, sessionId: l.sessionId,
             ...(f?.title ? { title: f.title } : {}),
@@ -105,7 +119,10 @@ export function chainLegLines(ix: ChainIndex, chainId: string, batons: readonly 
             ...(f?.cost !== undefined ? { cost: f.cost } : {}),
             ...(f?.tokens !== undefined ? { tokens: f.tokens } : {}),
             ...(f ? { live: f.alive ? (f.idleSince !== undefined ? 'idle' as const : 'working' as const) : 'gone' as const } : {}),
-            ...(words ? { words } : {})
+            ...(words ? { words } : {}),
+            ...(end ? { end } : {}),
+            ...(opener?.want.account ? { rule: opener.want.account } : {}),
+            ...(slot ? { account: slot } : {})
         };
     });
 }

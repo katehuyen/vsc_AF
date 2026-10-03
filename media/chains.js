@@ -41,6 +41,7 @@
     const post = (type, o) => vscode.postMessage(Object.assign({ type }, o));
     const ask = id => post('legs', { chainId: id });
     const line1 = s => String(s || '').split('\n').map(x => x.trim()).find(Boolean) || '';
+    const N_ = s => s;
     function focusOn(id) { chip = ''; open.add(id); ask(id); focus = id; render(); }
 
     function liveWord(r) {
@@ -128,19 +129,34 @@
         ].join('') + '</td>';
     }
 
+    // S-128 — a leg's three subjects: why it ended (its number's mark), the session it ran (its title), the words it passed on
+    const END = { context: N_('Context window'), quota: N_('Quota window'), user: N_('User intervention'), fault: 'Fault', early: N_('Early pass'), done: 'Finished' };
+    function legNoCell(l) {
+        const e = l.end;
+        if (!e) { return `<td class="num muted">${l.leg}</td>`; }
+        return TIP.cell('num ch-ln muted', '', `${l.leg}<span class="ch-cause">${L.CAUSE[e.kind] || ''}</span>`, t(END[e.kind]), TIP.lines([e.why]));
+    }
+    function wordsCell(l) {
+        const text = esc(line1(l.words) || (l.passed ? '' : t('no pass on record')));
+        if (!l.words) { return `<td class="ch-lw muted">${text}</td>`; }
+        const copy = `<button class="ch-copy" data-copy="${esc(l.words)}" aria-label="${esc(t('Copy the handover words'))}">${L.SYM.copy}</button>`;
+        return TIP.cell('ch-lw muted', '', copy + text, t('Handover words'), TIP.lines([l.words]));
+    }
+    const accountLine = l => (l.account && l.rule && l.rule !== l.account ? t('Account: {rule} → {slot}', { rule: l.rule, slot: l.account })
+        : l.account || l.rule ? t('Account: {account}', { account: l.account || l.rule }) : '');
+
     function legsRow(r) {
         const list = legs[r.chainId];
         const body = !list ? `<span class="muted">${esc(t('Loading the legs…'))}</span>` : !list.length ? `<span class="muted">${esc(t('No legs on record.'))}</span>`
             : '<table class="ch-legs">' + list.map(l => {
                 const ran = l.firstTs && l.lastTs ? C.fmtDur(Math.max(0, l.lastTs - l.firstTs)) : '';
                 const title = l.title || short(l.sessionId);
-                const lines = [t('Session: {id}', { id: l.sessionId }), l.agentName ? t('Agent: {agent}', { agent: l.agentName }) : '',
+                const lines = [t('Session: {id}', { id: l.sessionId }), l.agentName ? t('Agent: {agent}', { agent: l.agentName }) : '', accountLine(l),
                     l.opened ? T.tip(l.opened, 'Opened') : '', l.passed ? T.tip(l.passed, 'Passed') : '', ran ? t('Ran: {time}', { time: ran }) : '',
-                    l.cost !== undefined ? t('Cost: {cost}', { cost: money(l.cost) }) : '', l.tokens ? t('Tokens: {n}', { n: C.fmtTok(l.tokens) }) : '',
-                    l.words ? TIP.GAP : '', l.words || ''];
-                return `<tr class="ch-leg" data-open="${esc(l.sessionId)}" tabindex="0"><td class="num muted">${l.leg}</td>
+                    l.cost !== undefined ? t('Cost: {cost}', { cost: money(l.cost) }) : '', l.tokens ? t('Tokens: {n}', { n: C.fmtTok(l.tokens) }) : ''];
+                return `<tr class="ch-leg" data-open="${esc(l.sessionId)}" tabindex="0">${legNoCell(l)}
                     ${TIP.cell('ch-lt', '', esc(title), t('Leg {leg}: {title}', { leg: l.leg, title }), TIP.lines(lines))}
-                    <td class="ch-lw muted">${esc(line1(l.words) || (l.passed ? '' : t('no pass on record')))}</td>
+                    ${wordsCell(l)}
                     <td class="num muted ch-wide">${esc(ran)}</td><td class="num">${l.cost !== undefined ? money(l.cost) : ''}</td>
                     <td class="ch-live ${esc(l.live || '')}">${esc(l.live ? t(l.live) : '')}</td></tr>`;
             }).join('') + '</table>';

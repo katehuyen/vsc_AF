@@ -6,6 +6,8 @@
     const GLYPH = { running: '▶', waiting: '⏳', parked: '🅿', done: '■', stopped: '✕', refused: '⊘', failed: '✖' };
     /** One symbol per relay control, the same as on the Console card (⛔ is the Tasks dependency mark, never a brake). */
     const SYM = { stop: '✕⑂', lastLeg: '⑂⊣', end: '⑂✓', copy: '⧉' };
+    /** S-128 — why a leg ended, in the marks the user chose; an early pass and a clean end draw none. */
+    const CAUSE = { context: '📊', quota: '⏱', user: '👤', fault: '🛑' };
     const TONE = { running: 'run', waiting: 'hold', parked: 'hold', done: 'ok', stopped: 'off', refused: 'off', failed: 'off' };
     const ACTIVE = { running: 1, waiting: 1, parked: 1 };
     const FOLD = 6;
@@ -64,7 +66,9 @@
         .ch-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .ch-id { display:block; font-size:11px; }
         .ch-copy { margin-left:4px; padding:0 3px; min-height:0; font-size:11px; line-height:14px; background:transparent; color:inherit; border:1px solid transparent; border-radius:3px; cursor:pointer; opacity:.55; }
-        .ch-row:hover .ch-copy, .ch-copy:focus { opacity:1; border-color:var(--vscode-panel-border); }
+        .ch-row:hover .ch-copy, .ch-leg:hover .ch-copy, .ch-copy:focus { opacity:1; border-color:var(--vscode-panel-border); }
+        .ch-lw .ch-copy { margin:0 6px 0 0; }
+        .ch-cause { margin-left:4px; }
         .ch-steps { letter-spacing:1px; white-space:nowrap; }
         .ch-steps .s-ran { color:var(--ch-tone); }
         .ch-steps .s-cur { margin:0 1px; }
@@ -80,7 +84,7 @@
         .ch-sub > td { padding:4px 8px 8px 24px; background:var(--vscode-editorWidget-background, transparent); }
         .ch-legs { table-layout:fixed; }
         .ch-legs td { padding:3px 8px 3px 0; }
-        .ch-legs td:nth-child(1) { width:28px; }
+        .ch-legs td:nth-child(1) { width:48px; white-space:nowrap; }
         .ch-legs td:nth-child(2) { width:32%; }
         .ch-legs td:nth-child(4), .ch-legs td:nth-child(5), .ch-legs td:nth-child(6) { width:90px; }
         .ch-leg { cursor:pointer; }
@@ -102,5 +106,5 @@
             .ch-sub > td { padding-left:8px; }
         }`;
 
-    window.AFChainsLook = { GLYPH, SYM, tone, stepper, atEnd, CSS };
+    window.AFChainsLook = { GLYPH, SYM, CAUSE, tone, stepper, atEnd, CSS };
 })();

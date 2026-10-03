@@ -504,6 +504,7 @@ export interface ConsoleDeps {
     batonAttach?(sessionId: string, account: string, maxHops: unknown): Promise<{ ok: true; sentence: string } | { ok: false; why: string }>;
     /** S-82 — ⑂ Pass now: the handover order for this runner, worded for its relay (passNowText) */
     batonPassNowText?(sessionId: string): string;
+    batonPassNowSaid?(sessionId: string): void;
     /** the fleet's leg ceiling (agentFarm.batonMaxHops), for the empty max-legs boxes */
     batonMaxLegs?(): number;
     /** S-77 — the card's ✕: every live baton of the chain stops, recorded (`stopBatons`). Answers how many. */
@@ -2889,6 +2890,8 @@ export class ConsolePanel {
                 const r = host.send(s.id, text);
                 if (!r || r.refused) {
                     void this.surface.ask.warn(`Agent Farm: ${r?.refused || 'that session has ended — there is no run to pass from.'}`);
+                } else {
+                    this.deps.batonPassNowSaid?.(s.sessionId!);
                 }
                 break;
             }

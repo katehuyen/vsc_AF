@@ -26,7 +26,7 @@ export type LastLegResult =
 const short = (id: string): string => id.slice(0, 8);
 
 /** What the leg left behind it — its pass, a braked pass, or its closing record — newest first. */
-function leftBy(list: readonly Baton[], sid: string): Baton | undefined {
+export function leftBy(list: readonly Baton[], sid: string): Baton | undefined {
     return list.filter(b => b.from.sessionId === sid && !isSeal(b)).sort((a, b) => b.updatedAt - a.updatedAt)[0];
 }
 
