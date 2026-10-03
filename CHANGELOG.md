@@ -2,8 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.806.0 - Paired phones: choose each one's scope, see what each did (2026-10-03)
+## 3.806.0 - A press is never lost to a redraw; paired phones get a scope and an activity list (2026-10-03)
 
+- **Pressing a button right after typing works again.** Pages that refresh
+  on their own (Engines every second, others whenever an agent is running)
+  could redraw the page in the instant between pressing a button and
+  letting it go, so the press was lost; on Engines the route form also
+  emptied itself and nothing was saved. A redraw now waits until the press
+  is finished, on every page.
+- **The Engines forms keep what you typed.** The route form and the account
+  form keep their boxes through every refresh, and a route that is refused
+  comes back with what you typed so you can fix the one wrong box. A saved
+  route empties the form.
 - **A paired phone's scope is chosen on the card.** Toolbox > Services >
   Agent Farm app now has a scope choice on every paired phone: read (sees
   the farm), answer (also answers questions and permissions), manage (also

@@ -264,5 +264,116 @@ const AFRepaint = sandbox.window.AFRepaint;
         unused.length === 0);
 }
 
+/* =========================================================================
+ * U-218 — THE PRESS, AND WHAT WAS TYPED
+ *
+ * ‼️ THE REPORT: on Engines, the route form emptied itself the moment its
+ * user reached for "Add route", and nothing was saved. The host pushes every
+ * second; the push typed over was owed, and leaving the box for the button
+ * fires focusout on the way DOWN — the debt was paid there, the button was
+ * replaced between its mousedown and its click, and the click never landed.
+ * ========================================================================= */
+{
+    // A clock the test moves by hand: the order of the ticks IS the claim.
+    const timers = [];
+    const box = { window: {}, document: undefined,
+        setTimeout: (fn, ms) => { timers.push({ fn, ms: ms || 0 }); return timers.length; },
+        clearTimeout: (id) => { if (timers[id - 1]) { timers[id - 1].fn = null; } } };
+    box.globalThis = box;
+    vm.createContext(box);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'media', 'afRepaint.js'), 'utf8'), box);
+    const R = box.window.AFRepaint;
+    const runTicks = (maxMs = 0) => {
+        for (let i = 0; i < timers.length; i++) {
+            const t = timers[i];
+            if (t.fn && t.ms <= maxMs) { const f = t.fn; t.fn = null; f(); }
+        }
+    };
+
+    const doc = mkDoc();
+    let paints = 0;
+    const repaint = R.guard(() => { paints++; }, { document: doc });
+    doc.activeElement = field('INPUT');
+    repaint();
+    ok('a push while typing is owed', paints === 0 && repaint.pending());
+    doc.fire('pointerdown');
+    doc.activeElement = { tagName: 'BUTTON', getAttribute: () => null };
+    doc.fire('focusout');
+    runTicks();
+    ok('‼️ leaving the box for a button does not pay the debt while the button is held', paints === 0 && repaint.pending());
+    doc.fire('pointerup');
+    ok('…not even in the release itself, where the click is still to come', paints === 0);
+    runTicks();
+    ok('…it is paid one tick after the release, behind the click', paints === 1 && !repaint.pending());
+
+    ok('a push during a press waits for it', (() => { doc.fire('pointerdown'); repaint(); return paints === 1 && repaint.pending(); })());
+    runTicks(3000);
+    ok('a hand that let go outside the page does not hold the page for ever', paints === 2 && !repaint.pending());
+    doc.fire('pointerdown'); repaint(); doc.fire('pointercancel'); runTicks();
+    ok('a cancelled press releases too', paints === 3);
+    doc.activeElement = field('INPUT');
+    doc.fire('pointerdown'); repaint(); doc.fire('pointerup'); runTicks();
+    ok('a press INTO a box keeps the debt owed, the box holds the hands', paints === 3 && repaint.pending());
+}
+
+{
+    // A DOM with real defaults: a box knows what it was drawn with, so a
+    // change can be told from a value the page set.
+    function mkForm() {
+        const listeners = {};
+        let els = [];
+        const mk = (o) => Object.assign({ value: '', defaultValue: '', type: o.type || 'text' }, o);
+        const doc = {
+            addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+            querySelectorAll: () => els.slice(),
+            getElementById: (id) => els.find(e => e.id === id) || null,
+            draw(list) { els = list.map(mk); },
+            type(id, value) { const e = doc.getElementById(id); e.value = value; for (const fn of listeners.input || []) { fn({ target: e }); } }
+        };
+        return doc;
+    }
+    const doc = mkForm();
+    const page = () => [
+        { id: 'po-id', tagName: 'INPUT' }, { id: 'po-url', tagName: 'INPUT' },
+        { id: 'pw', tagName: 'INPUT', type: 'password' },
+        { id: 'flag', tagName: 'INPUT', type: 'checkbox', checked: false, defaultChecked: false },
+        { id: 'set', tagName: 'INPUT', value: 'from-host', defaultValue: '' }
+    ];
+    doc.draw(page());
+    const draw = AFRepaint.keeping(() => doc.draw(page()), { document: doc });
+    doc.type('po-id', 'kimi');
+    doc.type('pw', 'secret');
+    const f = doc.getElementById('flag'); f.checked = true; doc.type('flag', undefined); f.checked = true;
+    draw();
+    ok('‼️ what the user typed survives a repaint, by the box\'s id', doc.getElementById('po-id').value === 'kimi');
+    ok('a box nobody typed in comes back as the page draws it', doc.getElementById('po-url').value === '');
+    ok('a value the PAGE set is never carried over a fresh one', doc.getElementById('set').value === 'from-host');
+    ok('a password is never carried', doc.getElementById('pw').value === '');
+    ok('a ticked box is carried', doc.getElementById('flag').checked === true);
+    doc.getElementById('po-id').value = '';
+    draw();
+    doc.getElementById('po-id').value = 'x';
+    doc.draw(page());
+    draw();
+    ok('a box the page emptied (a sent form) is no longer the user\'s, so it is not carried again', doc.getElementById('po-id').value === '');
+    ok('no document, no throw', (() => { AFRepaint.keeping(() => 1)(); return true; })());
+}
+
+{
+    // The page this was found on: its route form and its account form are kept,
+    // and a write that went through empties exactly its own form.
+    const src = fs.readFileSync(path.join(ROOT, 'media', 'engines.js'), 'utf8');
+    ok('Engines draws through keeping, and the host push goes through the guard over it',
+        /const draw = window\.AFRepaint\.keeping\(render\);\s*const repaint = window\.AFRepaint\.guard\(draw\);/.test(src));
+    ok('…every answer redraws through it too, never a bare render',
+        !/m\.type === '(eng-testing|prov-msg|acc-msg|eng-msg)'[^\n]*\brender\(\)/.test(src) && /AFPolicies\.onMessage\(m\)\) \{ draw\(\);/.test(src));
+    ok('a saved route empties the route form, and only a saved one',
+        /if \(m\.saved === true\) \{ clearBoxes\(\['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers'\]\); \}/.test(src));
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'enginesPanel.ts'), 'utf8');
+    ok('the host says saved only for the route form\'s own save',
+        /saveProfile\([\s\S]{0,160}\), true\);/.test(panel) && /\.\.\.\(saved \? \{ saved: true \} : \{\}\)/.test(panel)
+        && (panel.match(/, true\);/g) || []).length === 1);
+}
+
 console.log(`test_repaint_guard: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

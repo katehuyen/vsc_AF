@@ -32,15 +32,38 @@
     // arrives while somebody is typing detaches the box they are typing in and
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
-    const repaint = window.AFRepaint.guard(render);
+    // ‼️ U-218 — every redraw carries what was typed into the route and account
+    // forms: the one-second account beat, and the answers too, so a refused
+    // route comes back with its boxes filled and the one wrong box is fixed in place.
+    const draw = window.AFRepaint.keeping(render);
+    const repaint = window.AFRepaint.guard(draw);
+    /** A form whose write went through is left empty; a refused one keeps its boxes. */
+    const clearBoxes = (ids) => {
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el) { el.value = ''; }
+        }
+    };
     window.addEventListener('message', ev => {
         const m = ev.data;
         if (m.type === 'data') { DATA = m.data; testing.clear(); repaint(); return; }
-        if (m.type === 'eng-testing') { testing.add(m.id); render(); return; }
-        if (m.type === 'prov-msg') { provMsg = String(m.text || ''); render(); return; }
-        if (m.type === 'acc-msg') { acctMsg = String(m.text || ''); render(); return; }
-        if (window.AFPolicies.onMessage(m)) { render(); return; }
-        if (m.type === 'eng-msg') { notes[m.id] = String(m.text || ''); render(); }
+        if (m.type === 'eng-testing') { testing.add(m.id); draw(); return; }
+        if (m.type === 'prov-msg') {
+            provMsg = String(m.text || '');
+            if (m.saved === true) { clearBoxes(['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers']); }
+            draw();
+            return;
+        }
+        if (m.type === 'acc-msg') {
+            acctMsg = String(m.text || '');
+            // An empty answer is an account write that went through (the
+            // accounts handler says nothing on success).
+            if (!acctMsg) { clearBoxes(['ac-label']); }
+            draw();
+            return;
+        }
+        if (window.AFPolicies.onMessage(m)) { draw(); return; }
+        if (m.type === 'eng-msg') { notes[m.id] = String(m.text || ''); draw(); }
     });
 
     const post = (m) => vscode.postMessage(m);

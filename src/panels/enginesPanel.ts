@@ -478,7 +478,7 @@ export class EnginesPanel {
                 // dropped rather than stored.
                 await this.write(await this.deps.saveProfile(
                     (msg.profile && typeof msg.profile === 'object'
-                        ? msg.profile : {}) as Record<string, unknown>));
+                        ? msg.profile : {}) as Record<string, unknown>), true);
                 break;
             case 'providerRemove':
                 await this.write(await this.deps.removeProfile(String(msg.id ?? '')));
@@ -506,12 +506,13 @@ export class EnginesPanel {
      * form. All of them together: a form that reports one fault per press makes
      * the user find them serially.
      */
-    private async write(refusal: string[]): Promise<void> {
+    /** `saved` = this answers the route form, which empties itself on success and only then. */
+    private async write(refusal: string[], saved = false): Promise<void> {
         if (refusal.length) {
             await this.panel.webview.postMessage({ type: 'prov-msg', text: refusal.join(' · ') });
             return;
         }
-        await this.panel.webview.postMessage({ type: 'prov-msg', text: '' });
+        await this.panel.webview.postMessage({ type: 'prov-msg', text: '', ...(saved ? { saved: true } : {}) });
         this.refresh();
     }
 

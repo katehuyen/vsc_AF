@@ -52,6 +52,83 @@
         return attr === '' || attr === 'true';
     }
 
+    // ‼️ U-218 — A REPAINT MUST NOT TAKE WHAT THE USER TYPED AND HAS NOT SENT.
+    // A form drawn as bare boxes (no value from page state) is emptied by every
+    // repaint, so the owed one paid on focusout wiped the Engines route form
+    // the moment its user reached for "Add route". `keeping(render)` carries
+    // every field with an id that the USER changed (an input or change event
+    // seen on it) into the new DOM by that id. It is opt-in, page by page: a
+    // page whose form is emptied by the host's push after a send would get the
+    // sent text back, so a page takes it only once its own send-and-clear
+    // path is known (Engines clears its route form on the host's `saved`).
+    const touched = new WeakMap();
+    function track(doc) {
+        if (!doc || typeof doc.addEventListener !== 'function' || touched.has(doc)) { return; }
+        const ids = new Set();
+        touched.set(doc, ids);
+        const mark = (e) => { const t = e && e.target; if (t && typeof t.id === 'string' && t.id) { ids.add(t.id); } };
+        doc.addEventListener('input', mark, true);
+        doc.addEventListener('change', mark, true);
+    }
+
+    function editsOf(doc) {
+        if (!doc || typeof doc.querySelectorAll !== 'function') { return []; }
+        const ids = touched.get(doc);
+        if (!ids || !ids.size) { return []; }
+        const out = [];
+        // Only a change that can be MEASURED is carried: a stand-in DOM with no
+        // default to compare against says nothing about what the user did.
+        Array.prototype.forEach.call(doc.querySelectorAll('input[id], textarea[id], select[id]'), el => {
+            if (!el || typeof el.id !== 'string' || !ids.has(el.id)) { return; }
+            const tag = String(el.tagName || '').toUpperCase();
+            const type = String(el.type || '').toLowerCase();
+            if (type === 'file' || type === 'password') { return; }
+            if (type === 'checkbox' || type === 'radio') {
+                if (typeof el.defaultChecked === 'boolean' && el.checked !== el.defaultChecked) {
+                    out.push({ id: el.id, tag, type, checked: el.checked });
+                }
+                return;
+            }
+            if (tag === 'SELECT') {
+                const opts = el.options ? Array.prototype.slice.call(el.options) : [];
+                const def = opts.find(o => o.defaultSelected === true) || opts[0];
+                if (def && typeof def.value === 'string' && el.value !== def.value) { out.push({ id: el.id, tag, type, value: el.value }); }
+                return;
+            }
+            if (typeof el.defaultValue === 'string' && el.value !== el.defaultValue) { out.push({ id: el.id, tag, type, value: el.value }); }
+        });
+        // A field back at its default (sent, or cleared by the page) is no longer the user's edit.
+        const kept = new Set(out.map(e => e.id));
+        for (const id of [...ids]) { if (!kept.has(id)) { ids.delete(id); } }
+        return out;
+    }
+
+    function putBack(doc, edits) {
+        if (!doc || typeof doc.getElementById !== 'function') { return; }
+        for (const e of edits) {
+            const el = doc.getElementById(e.id);
+            if (!el || String(el.tagName || '').toUpperCase() !== e.tag || String(el.type || '').toLowerCase() !== e.type) { continue; }
+            if ('checked' in e) { el.checked = e.checked; } else { el.value = e.value; }
+        }
+    }
+
+    /** `render` with the user's unsent edits carried across it. */
+    function keeping(render, options) {
+        const opts = options || {};
+        track(opts.document || (typeof document !== 'undefined' ? document : undefined));
+        return function () {
+            const doc = opts.document || (typeof document !== 'undefined' ? document : undefined);
+            track(doc);
+            const edits = editsOf(doc);
+            const r = render.apply(this, arguments);
+            if (edits.length) { putBack(doc, edits); }
+            return r;
+        };
+    }
+
+    /** A press longer than this is a hand that let go outside the page; the debt is paid anyway. */
+    const PRESS_MAX_MS = 3000;
+
     /**
      * Wrap a page's `render` so a HOST-driven repaint waits for the hands.
      *
@@ -66,7 +143,14 @@
     function guard(render, options) {
         const opts = options || {};
         const doc = opts.document || (typeof document !== 'undefined' ? document : undefined);
+        // ‼️ U-218 — A PRESS IS HANDS ON THE PAGE TOO. Leaving a box for a
+        // button fires focusout on the way DOWN; paying the debt there replaced
+        // the button between its mousedown and its click, so the click never
+        // landed. The debt now waits for the press to finish.
+        let pressing = false;
+        let pressTimer = null;
         const busy = () => {
+            if (pressing) { return true; }
             if (typeof opts.busy === 'function' && opts.busy()) { return true; }
             return inAField(doc);
         };
@@ -82,14 +166,26 @@
         // event that says so. It fires BEFORE the new focus is settled, so the
         // check is deferred by a tick — asked immediately, `activeElement` is
         // still the box being left and the page would stay stale for ever.
+        const later = (fn) => ((typeof setTimeout === 'function') ? setTimeout(fn, 0) : fn());
+        // The click is dispatched with the release, so a paint one tick after
+        // the release comes after the click's own handler has run.
+        const release = () => {
+            if (!pressing) { return; }
+            pressing = false;
+            if (pressTimer !== null && typeof clearTimeout === 'function') { clearTimeout(pressTimer); }
+            pressTimer = null;
+            later(flush);
+        };
         const wire = () => {
             if (wired || !doc || !doc.addEventListener) { return; }
             wired = true;
-            doc.addEventListener('focusout', () => {
-                const later = (typeof setTimeout === 'function')
-                    ? (fn) => setTimeout(fn, 0) : (fn) => fn();
-                later(flush);
-            });
+            doc.addEventListener('focusout', () => { later(flush); });
+            doc.addEventListener('pointerdown', () => {
+                pressing = true;
+                if (pressTimer !== null && typeof clearTimeout === 'function') { clearTimeout(pressTimer); }
+                pressTimer = (typeof setTimeout === 'function') ? setTimeout(release, PRESS_MAX_MS) : null;
+            }, true);
+            for (const ev of ['pointerup', 'pointercancel']) { doc.addEventListener(ev, release, true); }
         };
         const guarded = function () {
             wire();
@@ -111,5 +207,5 @@
         return guarded;
     }
 
-    window.AFRepaint = { guard, inAField };
+    window.AFRepaint = { guard, inAField, keeping };
 })();
