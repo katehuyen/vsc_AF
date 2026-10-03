@@ -5,7 +5,9 @@
  *   read    pages and events, and ops that only look (their verb says so)
  *   answer  + questions, permissions and approvals
  *   manage  + starting sessions, messages, cancelling, tasks and queues
- *   admin   + settings, accounts, engines and agent files
+ *   admin   + settings, accounts, engines and agent files — and the phone
+ *           host itself (pairing, devices, scopes, listening, the audit log),
+ *           or a phone at manage could raise its own scope
  *
  * Derived from the op's name, failing upward: an op is `read` only when its
  * verb is a known looking verb, and anything unrecognised needs `manage`, so a
@@ -18,7 +20,7 @@ import type { OpResult, RemoteCaller } from './port';
 export type Scope = 'read' | 'answer' | 'manage' | 'admin';
 
 const ANSWER_OPS = new Set(['console.answer', 'sessions.answerPermission', 'needs.act']);
-const ADMIN_NAMESPACES = new Set(['settings', 'accounts', 'agents', 'providers', 'engines', 'telegram', 'web', 'farm', 'policies', 'browser']);
+const ADMIN_NAMESPACES = new Set(['settings', 'accounts', 'agents', 'providers', 'engines', 'telegram', 'web', 'farm', 'policies', 'browser', 'remote']);
 const READ_VERBS = new Set([
     'list', 'get', 'read', 'status', 'find', 'search', 'history', 'health', 'summary', 'timeline',
     'peek', 'preview', 'show', 'stats', 'catalog', 'ops', 'ping', 'whoami', 'versions', 'waits', 'trace',

@@ -21,6 +21,8 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
         pairingLink: () => listening ? { link: 'agentfarm://pair?c=1', addresses: ['1.2.3.4:7443'] } : { error: 'not listening (off)' },
         devices: () => [{ id: 'd1', name: 'Pixel', scope: 'read', pairedAt: 1, revoked: false }],
         revoke: id => { calls.push(['revoke', id]); return id === undefined ? 2 : 1; },
+        setScope: (id, scope) => { calls.push(['scope', id, scope]); return id === 'd1' ? { ok: true, device: { id, scope }, from: 'manage' } : { ok: false, error: 'no paired device ' + id }; },
+        audit: q => { calls.push(['audit', q]); if ((q.what || []).includes('nope')) { throw new Error('what is one or more of pair, call'); } return [{ ts: 1, what: 'call' }]; },
         firewall: async () => { calls.push(['firewall']); return { state: 'closed', canFix: true }; },
         allowFirewall: async () => { calls.push(['allow']); return { ok: true, verdict: { state: 'open' } }; }
     };
@@ -80,6 +82,25 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
     ok('revoke all (also as text), even if a device is named too', r.ok && r.result.revoked === 2 && calls.pop()[1] === undefined);
     r = await call('remote.revoke', { all: true, device: 'd1' });
     ok('all wins over a named device', r.ok && calls.pop()[1] === undefined);
+
+    // ---------- X-444: a phone's scope and the audit log ----------
+    ok('scope and audit are in the catalog', names.includes('remote.scope') && names.includes('remote.audit'));
+    r = await call('remote.scope', { device: 'd1', scope: 'admin' });
+    ok('scope passes device and scope, answers what it was', r.ok && r.result.from === 'manage' && JSON.stringify(calls.pop()) === '["scope","d1","admin"]');
+    r = await call('remote.scope', { device: 'dX', scope: 'read' });
+    ok('a refusal from the host is the op\'s error', !r.ok && /no paired device dX/.test(r.error) && calls.pop()[1] === 'dX');
+    r = await call('remote.scope', { scope: 'read' });
+    ok('scope without a device asks nothing of the host', !r.ok && calls.length === 0);
+    r = await call('remote.audit');
+    ok('audit with no args is the host\'s default list', r.ok && r.result.entries.length === 1 && JSON.stringify(calls.pop()) === '["audit",{}]');
+    r = await call('remote.audit', { device: 'd1', what: 'call, action', since: '1000', limit: 5 });
+    ok('audit passes the filters, a comma list and numbers typed as text',
+        r.ok && JSON.stringify(calls.pop()) === '["audit",{"device":"d1","what":["call","action"],"since":1000,"limit":5}]');
+    r = await call('remote.audit', { what: ['revoke'] });
+    ok('what may come as a list', r.ok && JSON.stringify(calls.pop()[1].what) === '["revoke"]');
+    r = await call('remote.audit', { what: 'nope' });
+    ok('a kind the log does not know is the op\'s error', !r.ok && /one or more of/.test(r.error));
+    calls.length = 0;
 
     // ---------- wiring in extension.ts ----------
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');

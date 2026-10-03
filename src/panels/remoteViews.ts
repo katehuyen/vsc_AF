@@ -138,18 +138,22 @@ export class RemoteViews {
         return made;
     }
 
-    message(caller: ViewCaller, view: string, message: unknown): void {
+    /** What the message was, for the audit log: `act` = not a mere look, `ran` = it reached the page. */
+    message(caller: ViewCaller, view: string, message: unknown): { page: string; type: string; act: boolean; ran: boolean } | undefined {
         const host = this.views.get(keyOf(caller, view));
-        if (!host) { return; }
+        if (!host) { return undefined; }
         const type = String((message as { type?: unknown } | null)?.type ?? '');
         // The answer to the host's own question (X-447): settled here, never the page's message.
         if (type === 'afAskAnswer') {
-            if (this.d.atLeast(caller.scope, host.spec.open)) { host.asker.answer(message); }
-            return;
+            const ran = this.d.atLeast(caller.scope, host.spec.open);
+            if (ran) { host.asker.answer(message); }
+            return { page: host.page, type, act: true, ran };
         }
         const need = messageScope(host.spec, type);
-        if (need === null || !this.d.atLeast(caller.scope, need)) { return; }
-        host.webview.receive(message);
+        const ran = need !== null && this.d.atLeast(caller.scope, need);
+        if (ran) { host.webview.receive(message); }
+        const look = host.spec.looks.includes(type) || SHELL_LOOKS.includes(type);
+        return { page: host.page, type, act: !look, ran };
     }
 
     close(caller: ViewCaller, view: string): void {

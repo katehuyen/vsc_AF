@@ -87,7 +87,8 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
         allowFirewall: async () => { calls.push(['allow']); return allowAnswer; },
         setRemoteListen: async m => { calls.push(['listen', m]); },
         pairingLink: () => listening ? { link: LINK, addresses: ['192.168.1.40:7443'] } : { error: 'not listening (off)' },
-        revoke: id => { calls.push(['revoke', id]); return id === 'nope' ? 0 : id === undefined ? 2 : 1; }
+        revoke: id => { calls.push(['revoke', id]); return id === 'nope' ? 0 : id === undefined ? 2 : 1; },
+        setScope: (id, scope) => { calls.push(['scope', id, scope]); return id === 'd2' ? { ok: false, error: 'Old is revoked - it must pair again' } : { ok: true, from: id === 'd3' ? 'read' : 'manage' }; }
     };
     let said, pair = 'unset';
     const ctx = { host, setPair: x => { pair = x; }, say: m => { said = m; } };
@@ -148,6 +149,25 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
     await send({ type: 'remote-revoke-all' });
     ok('confirmed, every phone', calls.pop()[1] === undefined && /2 phone/.test(said.text));
 
+    // X-444 - a scope chosen on the card; admin is opened on purpose
+    calls.length = 0; warns.length = 0;
+    await send({ type: 'remote-scope', device: 'd1', name: 'Pixel', scope: 'read' });
+    ok('a lower scope is set without a question, and says what it was', JSON.stringify(calls.pop()) === '["scope","d1","read"]'
+        && said.ok && /manage → read/.test(said.text) && warns.length === 0);
+    answer = undefined;
+    await send({ type: 'remote-scope', device: 'd1', name: 'Pixel', scope: 'admin' });
+    ok('admin asks first; a dismissed question changes nothing', calls.length === 0 && said === undefined && /admin/.test(warns.pop()));
+    answer = 'Make admin';
+    await send({ type: 'remote-scope', device: 'd1', name: 'Pixel', scope: 'admin' });
+    ok('confirmed, the phone is admin', JSON.stringify(calls.pop()) === '["scope","d1","admin"]' && said.ok);
+    await send({ type: 'remote-scope', device: 'd3', name: 'Tablet', scope: 'read' });
+    ok('the scope it already has says so', said.ok && /already has read/.test(said.text) && calls.pop()[1] === 'd3');
+    await send({ type: 'remote-scope', device: 'd2', name: 'Old', scope: 'read' });
+    ok('the host\'s refusal is the card\'s answer', said.ok === false && /revoked/.test(said.text) && calls.pop()[1] === 'd2');
+    await send({ type: 'remote-scope', scope: 'read' });
+    ok('a change naming nobody asks nothing', said.ok === false && calls.length === 0);
+    warns.length = 0;
+
     await send({ type: 'remote-copy-link', link: LINK });
     ok('copy link puts the pairing link on the clipboard and says it works once', clip.pop() === LINK && said.ok && /once/.test(said.text));
     await send({ type: 'remote-copy-link', link: 'https://evil.example/' });
@@ -162,6 +182,28 @@ ok('a link too long for a QR keeps the link and draws no code', huge && huge.qr 
     ok('a shown code carries its link as selectable text and a copy link button',
         html.includes('class="rm-pairlink"') && html.includes(LINK.replace(/&/g, '&amp;')) && html.includes('data-remote="copy-link"'));
     ok('no code, no link', !PA.card(C.remoteCardData(input(), NOW)).includes('rm-pairlink'));
+
+    const seenAt = Date.now() - 60e3;
+    const drawn = PA.card(C.remoteCardData(input({
+        devices: [
+            { id: 'd1', name: 'Pixel', scope: 'answer', pairedAt: NOW - 5e8, revoked: false, lastSeen: seenAt, lastAddress: '192.168.1.20' },
+            { id: 'd2', name: 'Old', scope: 'read', pairedAt: NOW - 1e6, revoked: true }
+        ],
+        audit: [
+            { ts: seenAt, what: 'action', device: 'd1', name: 'Pixel', ok: true, page: 'chains', op: 'stop' },
+            { ts: seenAt - 1, what: 'call', device: 'd1', name: 'Pixel', ok: false, op: 'accounts.list', detail: 'scope: accounts.list needs admin' }
+        ]
+    }), NOW));
+    ok('a paired phone\'s scope is a choice holding its scope', /<select class="rm-scope" data-device="d1" data-name="Pixel">/.test(drawn)
+        && /<option value="answer" title="answer: also answers questions and permissions" selected>/.test(drawn));
+    ok('a revoked phone\'s scope is only shown', (drawn.match(/class="rm-scope"/g) || []).length === 1);
+    ok('last seen is a column, the time drawn', drawn.includes('Last seen') && drawn.includes(new Date(seenAt).toTimeString().slice(0, 5)));
+    ok('recent activity lists the acts, a refused one marked', /Recent activity \(2\)/.test(drawn) && drawn.includes('chains · stop')
+        && /called ✕/.test(drawn) && drawn.includes('class="rm-no"'));
+    ok('no activity, no block', !PA.card(C.remoteCardData(input(), NOW)).includes('rm-audit'));
+    ok('the card hands the activity through, empty when none', Array.isArray(C.remoteCardData(input(), NOW).audit)
+        && C.remoteCardData(input(), NOW).audit.length === 0);
+    ok('the card asks for every kind but connect', !C.CARD_AUDIT_KINDS.includes('connect') && C.CARD_AUDIT_KINDS.length === 7);
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

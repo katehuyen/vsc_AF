@@ -32,6 +32,9 @@ ok('starting a session needs manage', requiredScope('console.start') === 'manage
 ok('an unknown op needs manage (fails upward)', requiredScope('newthing.frobnicate') === 'manage');
 ok('accounts stay admin even to look', requiredScope('accounts.list') === 'admin' && !scopeAllows('manage', 'accounts.list') && scopeAllows('admin', 'accounts.list'));
 ok('restarting the host is admin', !scopeAllows('manage', 'farm.restartExtensionHost'));
+for (const op of ['remote.scope', 'remote.pair', 'remote.revoke', 'remote.listen', 'remote.devices', 'remote.audit']) {
+    ok(`${op} is admin, so a phone at manage cannot raise its own scope or pair another`, requiredScope(op) === 'admin' && !scopeAllows('manage', op));
+}
 ok('a connecting phone may ping at read', scopeAllows('read', 'farm.ping'));
 ok('an unknown scope may call nothing', !scopeAllows('owner', 'tasks.list') && !scopeAllows('', 'farm.ping'));
 const answerable = ops.filter(op => requiredScope(op) === 'answer');

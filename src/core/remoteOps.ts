@@ -1,10 +1,12 @@
 /**
- * The phone host on the bridge: remote.status / listen / pair / firewall / devices / revoke.
+ * The phone host on the bridge: remote.status / listen / pair / firewall / devices / revoke / scope / audit.
  * The handlers only check arguments and call what the extension hands in — the
  * same calls the Devices card makes — so they are dispatched in tests as they are.
  */
-import { argStr, need, optBool, optStr, type BridgeOpSpec } from './bridge';
+import { argStr, need, optBool, optNum, optStr, type BridgeOpSpec } from './bridge';
 import { isListenMode, type ListenMode } from './remoteListen';
+
+export interface RemoteAuditQuery { device?: string; what?: string[]; since?: number; limit?: number }
 
 export interface RemoteOpsDeps {
     mode(): ListenMode;
@@ -13,6 +15,9 @@ export interface RemoteOpsDeps {
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     devices(): object[];
     revoke(id?: string): number;
+    setScope(id: string, scope: string): { ok: true; device: object; from: string } | { ok: false; error: string };
+    /** Throws on a kind it does not know. */
+    audit(q: RemoteAuditQuery): object[];
     firewall(): Promise<object>;
     allowFirewall(): Promise<object>;
 }
@@ -66,8 +71,42 @@ export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
         },
         {
             op: 'remote.devices',
-            describe: 'The paired phones: id, name, scope (read|answer|manage|admin), pairedAt, revoked. Works while not listening. args: none',
+            describe: 'The paired phones: id, name, scope (read|answer|manage|admin), user, pairedAt, lastSeen?, lastAddress?, revoked. '
+                + 'Works while not listening. args: none',
             handler: () => ({ devices: d.devices() })
+        },
+        {
+            op: 'remote.scope',
+            describe: 'Grant a paired phone another scope — read (sees the farm) | answer (+ questions, permissions) | manage '
+                + '(+ starts and stops work; the pairing default) | admin (+ settings, accounts, agent files, this host). Its open '
+                + 'connection holds the new scope at once; the change is written to the audit log. Returns device and from. '
+                + 'args: device (an id from remote.devices), scope',
+            handler: (args) => {
+                const r = d.setScope(argStr(args, 'device'), argStr(args, 'scope'));
+                if (!r.ok) { need(false, r.error); }
+                return r;
+            }
+        },
+        {
+            op: 'remote.audit',
+            describe: 'What paired phones did, newest first: pair, pair-refused (a wrong code), connect, refused (a handshake turned '
+                + 'away, with the reason), call (a bridge op that changes something, or any the scope refused), action (a press on a '
+                + 'page), revoke, scope. Each entry: ts, what, device, name, user, ok, op?, page?, detail?, address?. Looks are not '
+                + 'written. Works while not listening. args: device?, what? (comma list of the kinds), since? (ms), limit? (default 100)',
+            handler: (args) => {
+                const what = (Array.isArray(args.what) ? args.what.map(String) : optStr(args, 'what').split(','))
+                    .map(s => s.trim()).filter(Boolean);
+                const since = optNum(args, 'since', NaN);
+                const limit = optNum(args, 'limit', NaN);
+                return {
+                    entries: d.audit({
+                        ...(optStr(args, 'device') ? { device: optStr(args, 'device') } : {}),
+                        ...(what.length ? { what } : {}),
+                        ...(isFinite(since) ? { since } : {}),
+                        ...(isFinite(limit) ? { limit } : {})
+                    })
+                };
+            }
         },
         {
             op: 'remote.revoke',

@@ -8114,6 +8114,15 @@
       ]
     },
     {
+      "capability": "toolboxRemote.ts#remote-scope",
+      "ui": [
+        "page:toolboxRemote.ts#remote-scope"
+      ],
+      "ops": [
+        "remote.scope"
+      ]
+    },
+    {
       "capability": "toolboxWeb.ts#web-bind",
       "ui": [
         "page:toolboxWeb.ts#web-bind"

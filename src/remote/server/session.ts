@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import { CONTRACT_VERSION, checkFrame, signedText } from '../contract';
 import type { FeatureAnswer } from '../features';
 import type { FarmIdentity, OpResult, RemoteCaller, RemoteViewsPort } from '../port';
+import type { Auditor } from './auditLog';
 import type { DeviceBook } from './devices';
 import type { EventFrame, EventLog } from './eventLog';
 
@@ -28,6 +29,7 @@ export interface SessionDeps {
     features(caller: RemoteCaller): Record<string, FeatureAnswer>;
     views: ViewSink | null;
     helloTimeoutMs: number;
+    audit?: Auditor;
 }
 
 /** Answers already given, per device and call id, so a resend returns the same answer instead of running twice. */
@@ -54,7 +56,8 @@ export class RemoteSession {
     private views = new Set<string>();
     private timer: NodeJS.Timeout | null;
 
-    constructor(private readonly wire: Wire, private readonly d: SessionDeps) {
+    /** `address` = where the socket came from, for the device's last-seen line and the audit log. */
+    constructor(private readonly wire: Wire, private readonly d: SessionDeps, private readonly address?: string) {
         this.frame({ kind: 'challenge', nonce: this.nonce, farm: d.farm, contract: CONTRACT_VERSION });
         this.timer = setTimeout(() => this.refuse('not-allowed', 'no hello in time'), d.helloTimeoutMs);
         this.timer.unref?.();
@@ -76,7 +79,7 @@ export class RemoteSession {
             case 'call': void this.call(f.id as string, f.op as string, (f.args as Record<string, unknown>) ?? {}); return;
             case 'ping': this.frame({ kind: 'pong', ts: f.ts }); return;
             case 'view.open': this.openView(f.view as string, f.page as string, f.args as Record<string, unknown> | undefined); return;
-            case 'view.msg': if (this.views.has(f.view as string)) { this.d.views?.message(this.caller, f.view as string, f.message); } return;
+            case 'view.msg': return this.viewMessage(f.view as string, f.message);
             case 'view.close': this.closeView(f.view as string); return;
         }
     }
@@ -96,16 +99,23 @@ export class RemoteSession {
     }
 
     private hello(f: Record<string, unknown>): void {
+        const named = String(f.device ?? '');
+        const refused = (reason: string, detail?: string, extra?: Record<string, unknown>) => {
+            this.d.audit?.note(named, 'refused', { ok: false, detail: reason, ...this.from() });
+            this.refuse(reason, detail, extra);
+        };
         if (f.contract !== CONTRACT_VERSION) {
-            return this.refuse('contract', `this farm speaks contract ${CONTRACT_VERSION}`, { minContract: CONTRACT_VERSION });
+            return refused('contract', `this farm speaks contract ${CONTRACT_VERSION}`, { minContract: CONTRACT_VERSION });
         }
-        const device = this.d.devices.get(f.device as string);
-        if (!device) { return this.refuse('unknown-device'); }
-        if (device.revoked) { return this.refuse('revoked'); }
+        const device = this.d.devices.get(named);
+        if (!device) { return refused('unknown-device'); }
+        if (device.revoked) { return refused('revoked'); }
         if (!this.d.devices.verify(device.id, signedText(this.d.farm.id, device.id, this.nonce), f.signature as string)) {
-            return this.refuse('bad-signature');
+            return refused('bad-signature');
         }
         if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+        this.d.devices.seen(device.id, this.address);
+        this.d.audit?.note(device.id, 'connect', { ok: true, ...this.from() });
         this.caller = { device: device.id, scope: device.scope };
         this.token = 's_' + crypto.randomBytes(18).toString('base64url');
         this.frame({
@@ -128,6 +138,17 @@ export class RemoteSession {
         });
         const out = await result;
         this.frame(duplicate ? { ...out, duplicate: true } : out);
+    }
+
+    /** A scope change reaches an open socket at once; the phone learns it from its next welcome. */
+    rescope(scope: string): void { if (this.caller) { this.caller = { ...this.caller, scope }; } }
+
+    private from(): { address?: string } { return this.address ? { address: this.address } : {}; }
+
+    private viewMessage(view: string, message: unknown): void {
+        if (!this.views.has(view)) { return; }
+        const n = this.d.views?.message(this.caller!, view, message);
+        if (n?.act) { this.d.audit?.note(this.caller!.device, 'action', { page: n.page, op: n.type, ok: n.ran }); }
     }
 
     private openView(view: string, page: string, args: Record<string, unknown> | undefined): void {

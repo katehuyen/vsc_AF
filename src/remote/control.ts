@@ -6,8 +6,9 @@
  */
 import * as path from 'path';
 import type { RemotePort } from './port';
-import { startRemoteHost, type RunningRemote } from './serve';
-import { DeviceBook } from './server/devices';
+import { AUDIT_FILE, startRemoteHost, type RunningRemote } from './serve';
+import { AUDIT_KINDS, AuditLog, type AuditEntry, type AuditQuery } from './server/auditLog';
+import { DeviceBook, type Device } from './server/devices';
 
 export interface ListenTarget {
     host: string;
@@ -28,7 +29,15 @@ export interface RemoteStatus {
     reason?: string;
 }
 
-export interface DeviceRow { id: string; name: string; scope: string; pairedAt: number; revoked: boolean }
+export interface DeviceRow {
+    id: string; name: string; scope: string; user: string; pairedAt: number; revoked: boolean;
+    lastSeen?: number; lastAddress?: string;
+}
+
+const rowOf = (d: Device): DeviceRow => ({
+    id: d.id, name: d.name, scope: d.scope, user: d.user, pairedAt: d.pairedAt, revoked: d.revoked,
+    ...(d.lastSeen ? { lastSeen: d.lastSeen } : {}), ...(d.lastAddress ? { lastAddress: d.lastAddress } : {}),
+});
 
 export interface RemoteControl {
     /** target null = stop; `reason` says why for the status line. */
@@ -38,6 +47,10 @@ export interface RemoteControl {
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     devices(): DeviceRow[];
     revoke(id?: string): number;
+    /** Another scope for a paired device; its open sockets hold it at once. */
+    setScope(id: string, scope: string): { ok: true; device: DeviceRow; from: string } | { ok: false; error: string };
+    /** The audit log, newest first. Works while not listening; throws on a kind it does not know. */
+    audit(q?: Omit<AuditQuery, 'what'> & { what?: string[] }): AuditEntry[];
     dispose(): Promise<void>;
 }
 
@@ -51,6 +64,9 @@ export function createRemoteControl(port: RemotePort): RemoteControl {
     let chain: Promise<unknown> = Promise.resolve();
 
     const book = () => running?.devices ?? new DeviceBook(path.join(port.storageDir(), 'devices.json'));
+    // One log for the host and this side, so neither overwrites the other's lines.
+    let auditLog: AuditLog | null = null;
+    const audit = () => (auditLog ??= new AuditLog(path.join(port.storageDir(), AUDIT_FILE)));
 
     const status = (): RemoteStatus => ({
         listening: !!running, farm: port.farm(),
@@ -66,7 +82,7 @@ export function createRemoteControl(port: RemotePort): RemoteControl {
         target = next;
         if (!next) { reason = why ?? 'stopped'; return status(); }
         try {
-            running = await startRemoteHost(port, { host: next.host, port: next.port });
+            running = await startRemoteHost(port, { host: next.host, port: next.port }, audit());
             reason = undefined;
         } catch (e) {
             const code = (e as NodeJS.ErrnoException).code;
@@ -91,11 +107,28 @@ export function createRemoteControl(port: RemotePort): RemoteControl {
             const addresses = target.addresses.map(a => `${a}:${running!.port}`);
             return { link: running.server.pairingLink(addresses), addresses };
         },
-        devices: () => book().list().map(d => ({ id: d.id, name: d.name, scope: d.scope, pairedAt: d.pairedAt, revoked: d.revoked })),
+        devices: () => book().list().map(rowOf),
         revoke: id => {
-            const n = book().revoke(id);
+            const b = book();
+            const hit = b.list().filter(d => !d.revoked && (id === undefined || d.id === id));
+            const n = b.revoke(id);
             if (n) { running?.server.dropRevoked(); }
+            for (const d of hit) { audit().record({ what: 'revoke', device: d.id, name: d.name, user: d.user, ok: true }); }
             return n;
+        },
+        setScope: (id, scope) => {
+            const r = book().setScope(id, scope);
+            if (!r.ok) { return r; }
+            if (r.from !== scope) {
+                running?.server.rescope(id, scope);
+                audit().record({ what: 'scope', device: id, name: r.device.name, user: r.device.user, ok: true, detail: `${r.from} -> ${scope}` });
+            }
+            return { ok: true, device: rowOf(r.device), from: r.from };
+        },
+        audit: q => {
+            const unknown = (q?.what ?? []).filter(w => !(AUDIT_KINDS as readonly string[]).includes(w));
+            if (unknown.length) { throw new Error(`what is one or more of ${AUDIT_KINDS.join(', ')} - not ${unknown.join(', ')}`); }
+            return audit().list(q as AuditQuery | undefined);
         },
         dispose: async () => { await chain.then(() => doApply(null, 'disposed')); },
     };

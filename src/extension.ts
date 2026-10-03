@@ -487,6 +487,7 @@ import {
 } from './core/remoteEvents';
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
+import { CARD_AUDIT_KINDS, CARD_AUDIT_ROWS } from './core/remoteCard';
 import { firewallGuard } from './core/firewallWin';
 import type { RemoteDevicesHost } from './panels/toolboxRemote';
 import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePort } from './remote';
@@ -31198,10 +31199,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     toolboxDeps.remote = {
         snapshot: () => ({
             mode: remoteCfg().mode, port: remoteCfg().port, status: remote.status(), devices: remote.devices(), runner: taskRunner,
-            firewall: phoneModes(remoteCfg().mode) ? firewall.verdict() : undefined
+            firewall: phoneModes(remoteCfg().mode) ? firewall.verdict() : undefined,
+            audit: remote.audit({ what: CARD_AUDIT_KINDS, limit: CARD_AUDIT_ROWS })
         }),
         setRemoteListen: mode => setRemoteListen(mode),
         pairingLink: () => remote.pairingLink(),
+        setScope: (id, scope) => remote.setScope(id, scope),
         revoke: id => remote.revoke(id),
         allowFirewall
     };
@@ -31220,6 +31223,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pairingLink: () => remote.pairingLink(),
         devices: () => remote.devices(),
         revoke: id => remote.revoke(id),
+        setScope: (id, scope) => remote.setScope(id, scope),
+        audit: q => remote.audit(q),
         firewall: async () => (await firewall.check()) ?? { state: 'absent', note: 'only Windows has this firewall check' },
         allowFirewall
     }));

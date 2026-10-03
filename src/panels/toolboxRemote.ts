@@ -11,6 +11,7 @@ export interface RemoteDevicesHost {
     setRemoteListen(mode: RemoteCardMode): Promise<unknown>;
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     revoke(id?: string): number;
+    setScope(id: string, scope: string): { ok: true; from: string } | { ok: false; error: string };
     /** Windows' admin prompt, then the one firewall rule that lets phones in */
     allowFirewall(): Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
 }
@@ -90,6 +91,22 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
             if (!await confirm(`Revoke "${name}"? It is disconnected at once and must pair again.`, 'Revoke')) { ctx.say(undefined); return true; }
             const n = host.revoke(id);
             ctx.say(n ? { ok: true, text: `"${name}" is revoked.` } : { ok: false, text: `"${name}" was not paired (or already revoked).` });
+            return true;
+        }
+        case 'remote-scope': {
+            const id = String(msg.device ?? '');
+            const name = String(msg.name ?? id);
+            const scope = String(msg.scope ?? '');
+            if (!id) { ctx.say({ ok: false, text: 'No phone named.' }); return true; }
+            if (scope === 'admin' && !await confirm(
+                `Make "${name}" an admin? It can then change settings, accounts and agent files, and pair, revoke and re-scope phones.`,
+                'Make admin')) {
+                ctx.say(undefined); return true;
+            }
+            const r = host.setScope(id, scope);
+            ctx.say(!r.ok ? { ok: false, text: r.error }
+                : r.from === scope ? { ok: true, text: `"${name}" already has ${scope}.` }
+                    : { ok: true, text: `"${name}": ${r.from} → ${scope}. An open connection holds it at once.` });
             return true;
         }
         case 'remote-revoke-all': {

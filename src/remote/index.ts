@@ -7,7 +7,8 @@
 import { CONTRACT_NAME, CONTRACT_VERSION } from './contract';
 import type { RemotePort } from './port';
 
-export type { RemotePort, RemoteCaller, RemoteViewsPort, ServedPage, FarmIdentity, FarmEvent, OpResult, Unsubscribe } from './port';
+export type { RemotePort, RemoteCaller, RemoteViewsPort, ServedPage, FarmIdentity, FarmEvent, OpResult, Unsubscribe, ViewMessageNote } from './port';
+export type { AuditEntry, AuditQuery, AuditWhat } from './server/auditLog';
 export { scopeAtLeast } from './scopes';
 export { allOpen, featureMap, isFeature } from './features';
 export type { FeatureAnswer, FeatureGate, FeatureId } from './features';

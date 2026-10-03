@@ -14,6 +14,12 @@ import { acceptUpgrade } from './ws';
 
 const MAX_BODY = 16 * 1024;
 
+/** The peer's address, an IPv4 one without its IPv6 wrapping. */
+function addressOf(req: IncomingMessage): string | undefined {
+    const a = req.socket?.remoteAddress;
+    return a ? a.replace(/^::ffff:/, '') : undefined;
+}
+
 export type Page = ServedPage;
 
 export interface HostDeps extends SessionDeps {
@@ -30,6 +36,8 @@ export interface RemoteServer {
     emit(type: string, data: Record<string, unknown>): void;
     /** Ends the sockets of devices that are no longer allowed (after a revoke). */
     dropRevoked(): void;
+    /** A device's open sockets hold its new scope from the next frame on. */
+    rescope(device: string, scope: string): void;
     /** A pairing link with a fresh one-time code for these host:port addresses. */
     pairingLink(addresses: string[]): string;
     sessions(): number;
@@ -67,8 +75,14 @@ export function createRemoteServer(d: HostDeps): RemoteServer {
             const check = checkPairRequest(b);
             if (!check.ok) { return json(res, 400, { error: check.error }); }
             const r = b as { code: string; name: string; publicKey: string; platform: string };
-            if (!d.devices.take(r.code)) { return json(res, 403, { error: 'code' }); }
+            const address = addressOf(req);
+            if (!d.devices.take(r.code)) {
+                d.audit?.note('', 'pair-refused', { ok: false, name: r.name, ...(address ? { address } : {}) });
+                return json(res, 403, { error: 'code' });
+            }
             const dev = d.devices.add(r.name, r.publicKey);
+            d.devices.seen(dev.id, address);
+            d.audit?.note(dev.id, 'pair', { ok: true, detail: r.platform, ...(address ? { address } : {}) });
             d.log(`remote: paired ${dev.id} (${r.name}, ${r.platform})`);
             return json(res, 200, { device: dev.id, farm: d.farm, scope: dev.scope });
         }
@@ -88,7 +102,7 @@ export function createRemoteServer(d: HostDeps): RemoteServer {
         if ((req.url || '').split('?')[0] !== '/ws') { socket.destroy(); return; }
         const conn = acceptUpgrade(req, socket, head);
         if (!conn) { return; }
-        const s = new RemoteSession(conn, d);
+        const s = new RemoteSession(conn, d, addressOf(req));
         live.add(s);
         conn.on('message', (t: string) => s.onMessage(t));
         conn.on('close', () => { live.delete(s); s.ended(); });
@@ -114,6 +128,9 @@ export function createRemoteServer(d: HostDeps): RemoteServer {
                 const dev = s.caller ? d.devices.get(s.caller.device) : undefined;
                 if (s.caller && (!dev || dev.revoked)) { s.refuse('revoked'); }
             }
+        },
+        rescope(device, scope) {
+            for (const s of live) { if (s.caller?.device === device) { s.rescope(scope); } }
         },
         pairingLink: addresses => pairingUri({
             v: CONTRACT_VERSION, farm: d.farm.id, name: d.farm.name, code: d.devices.newCode(), fp: d.cert.fingerprint, addresses,

@@ -296,6 +296,27 @@ const variants = () => ([
             }) })
     },
     {
+        id: 'toolbox-remote-activity',
+        label: 'Toolbox — Services: three phones with their scope to choose and when each was last seen, and the recent activity line',
+        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
+            remote: remote({
+                devices: [
+                    { ...phone('d1', 'Pixel 8', 'manage', 3), lastSeen: RNOW - 5 * 60e3, lastAddress: '192.168.1.20' },
+                    { ...phone('d2', 'Samsung Galaxy Tab S9 Ultra (salon)', 'read', 40), lastSeen: RNOW - 3 * 864e5, lastAddress: '100.101.12.9' },
+                    phone('d3', 'Eski telefon', 'manage', 120, true)
+                ],
+                audit: [
+                    { ts: RNOW - 4 * 60e3, what: 'action', device: 'd1', name: 'Pixel 8', ok: true, page: 'chains', op: 'stop' },
+                    { ts: RNOW - 9 * 60e3, what: 'call', device: 'd1', name: 'Pixel 8', ok: true, op: 'console.send' },
+                    { ts: RNOW - 30 * 60e3, what: 'call', device: 'd2', name: 'Samsung Galaxy Tab S9 Ultra (salon)', ok: false, op: 'console.start',
+                        detail: 'scope: console.start needs manage, this device has read' },
+                    { ts: RNOW - 864e5, what: 'refused', device: 'd3', name: 'Eski telefon', ok: false, detail: 'revoked', address: '192.168.1.33' },
+                    { ts: RNOW - 2 * 864e5, what: 'scope', device: 'd2', name: 'Samsung Galaxy Tab S9 Ultra (salon)', ok: true, detail: 'manage -> read' },
+                    { ts: RNOW - 3 * 864e5, what: 'pair-refused', device: '', name: 'Unknown', ok: false, address: '192.168.1.77' }
+                ]
+            }) })
+    },
+    {
         id: 'toolbox-remote-failed',
         label: 'Toolbox — Services: Tailscale chosen, but this machine has no tailnet address',
         data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),

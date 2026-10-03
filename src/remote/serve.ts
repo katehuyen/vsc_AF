@@ -8,12 +8,15 @@ import * as path from 'path';
 import { featureMap } from './features';
 import type { RemoteCaller, RemotePort, Unsubscribe } from './port';
 import { scopeGated } from './scopes';
+import { AuditLog, auditedCalls, auditor } from './server/auditLog';
 import { loadOrMakeCert } from './server/certStore';
 import { DeviceBook } from './server/devices';
 import { resourcePage } from './server/resources';
 import { EventLog } from './server/eventLog';
 import { createRemoteServer, type RemoteServer } from './server/host';
 import { CallMemory } from './server/session';
+
+export const AUDIT_FILE = 'audit.jsonl';
 
 export interface ListenAt {
     host: string;
@@ -29,12 +32,14 @@ export interface RunningRemote {
     stop(): Promise<void>;
 }
 
-export async function startRemoteHost(port: RemotePort, at: ListenAt): Promise<RunningRemote> {
+/** `log` = the audit log the caller also reads and writes; absent = one of the host's own in the storage dir. */
+export async function startRemoteHost(port: RemotePort, at: ListenAt, log?: AuditLog): Promise<RunningRemote> {
     const dir = port.storageDir();
     const farm = port.farm();
     const cert = loadOrMakeCert(dir, `Agent Farm · ${farm.name}`);
     if (cert.made) { port.log(`remote: new host certificate ${cert.fingerprint.slice(0, 12)}… - paired phones scan a new QR`); }
     const devices = new DeviceBook(path.join(dir, 'devices.json'));
+    const audit = auditor(log ?? new AuditLog(path.join(dir, AUDIT_FILE)), devices);
     const views = port.views ? port.views() : null;
     const res = port.resourceDir ? port.resourceDir() : null;
     const page = (url: string, caller: RemoteCaller) => url.startsWith('/view/')
@@ -44,11 +49,12 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt): Promise<R
         farm, cert, devices,
         events: new EventLog(path.join(dir, 'events.json')),
         calls: new CallMemory(),
-        callOp: scopeGated((op, args, caller) => port.callOp(op, args, caller)),
+        callOp: auditedCalls(scopeGated((op, args, caller) => port.callOp(op, args, caller)), audit),
         features: () => featureMap(f => port.can(f)),
         views,
         page,
         helloTimeoutMs: 10_000,
+        audit,
         log: line => port.log(line),
     });
     const bound = await server.listen(at.port, at.host);

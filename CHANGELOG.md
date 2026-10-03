@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.806.0 - Paired phones: choose each one's scope, see what each did (2026-10-03)
+
+- **A paired phone's scope is chosen on the card.** Toolbox > Services >
+  Agent Farm app now has a scope choice on every paired phone: read (sees
+  the farm), answer (also answers questions and permissions), manage (also
+  starts and stops work; what a phone pairs with) or admin (also settings,
+  accounts, agent files and the phones themselves). Admin asks first. A
+  phone that is connected holds its new scope at once.
+- **Each phone's last connection.** The phone list shows when each phone
+  last connected, and from which address.
+- **What the phones did.** Every remote act is written down with the
+  phone's name: pairing (and a wrong pairing code), a connection turned
+  away and why, every call that changes something, every press on a page,
+  and every call its scope refused. The card shows the latest under
+  "Recent activity"; the bridge op remote.audit reads the whole log, and
+  remote.scope changes a phone's scope.
+- **Managing phones needs admin.** Pairing, revoking, changing a phone's
+  scope, choosing where the farm listens and reading the log are admin
+  acts for a phone, so a phone paired at manage can no longer raise its
+  own scope or pair another device. Nothing changes on this computer.
+
 ## 3.805.0 - Two relay chains in one agent no longer hold each other up (2026-10-03)
 
 - **A relay chain waits only for itself.** With two relay chains running in

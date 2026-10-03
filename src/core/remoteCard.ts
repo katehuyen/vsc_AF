@@ -8,6 +8,14 @@ import type { FirewallVerdict } from './firewallVerdict';
 
 export type RemoteCardMode = 'off' | 'local' | 'lan' | 'tailscale';
 
+/** The card's "recent activity": every kind but connect, which the device row's "last seen" already says. */
+export const CARD_AUDIT_KINDS = ['pair', 'pair-refused', 'refused', 'call', 'action', 'revoke', 'scope'];
+export const CARD_AUDIT_ROWS = 8;
+
+export interface RemoteCardAudit {
+    ts: number; what: string; device: string; name: string; ok: boolean; op?: string; page?: string; detail?: string; address?: string;
+}
+
 export interface RemoteCardInput {
     mode: RemoteCardMode;
     status: {
@@ -15,7 +23,12 @@ export interface RemoteCardInput {
         fingerprint?: string; sockets: number; reason?: string;
     };
     port: number;
-    devices: { id: string; name: string; scope: string; pairedAt: number; revoked: boolean }[];
+    devices: {
+        id: string; name: string; scope: string; user?: string; pairedAt: number; revoked: boolean;
+        lastSeen?: number; lastAddress?: string;
+    }[];
+    /** the newest audit entries, newest first */
+    audit?: RemoteCardAudit[];
     /** a pairing link made on this card, and when its one-time code stops working */
     pair?: { link: string; addresses: string[]; until: number };
     /** false = another window runs the task queue and hosts the phone */
@@ -94,6 +107,7 @@ export function remoteCardData(i: RemoteCardInput, now: number): Record<string, 
         sockets: i.status.sockets,
         devices,
         activeDevices: devices.filter(d => !d.revoked).length,
+        audit: i.audit ?? [],
         ...(pair ? { pair } : {})
     };
 }

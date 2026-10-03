@@ -9,6 +9,19 @@
     const esc = v => (window.AFCharts && window.AFCharts.esc)
         ? window.AFCharts.esc(v)
         : String(v === null || v === undefined ? '' : v);
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const N_ = s => s;
+
+    const SCOPES = [
+        ['read', N_('read: sees the farm')],
+        ['answer', N_('answer: also answers questions and permissions')],
+        ['manage', N_('manage: also starts and stops work')],
+        ['admin', N_('admin: also settings, accounts, agent files and the phones')]
+    ];
+    const WHAT = {
+        pair: N_('paired'), 'pair-refused': N_('wrong pairing code'), connect: N_('connected'), refused: N_('turned away'),
+        call: N_('called'), action: N_('pressed'), revoke: N_('revoked'), scope: N_('scope changed')
+    };
 
     const TONE_DOT = { ok: '●', bad: '●', warn: '●', off: '○' };
     const WORDS = {
@@ -25,6 +38,13 @@
     const day = ms => {
         const d = new Date(ms);
         return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+    };
+    /** Today: the time; earlier: the day and the time. */
+    const when = ms => {
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) { return ''; }
+        const hm = d.toTimeString().slice(0, 5);
+        return d.toDateString() === new Date().toDateString() ? hm : day(ms) + ' ' + hm;
     };
 
     /** MIRROR — the badge opens with the current value, then what is behind it. */
@@ -83,15 +103,59 @@
         }
         const rows = r.devices.map(d => `<tr class="${d.revoked ? 'rm-revoked' : ''}">
             <td>${esc(d.name)}</td>
-            <td>${window.AFTip.wrap(esc(d.scope), 'Scope: ' + d.scope,
-            'read: sees the farm · answer: also answers questions and permissions · manage: also starts and stops work · admin: everything', 'svc-tip')}</td>
+            <td>${scopeCell(d)}</td>
             <td class="muted">${esc(day(d.pairedAt))}</td>
+            <td class="muted">${seenCell(d)}</td>
             <td>${d.revoked ? '<span class="muted">revoked</span>'
                 : `<button class="mini" data-remote="revoke" data-device="${esc(d.id)}" data-name="${esc(d.name)}">revoke</button>`}</td>
         </tr>`).join('');
         return `<table class="rm-devices"><thead><tr>
-            <th>Phone</th><th>Scope</th><th>Paired</th><th></th>
+            <th>Phone</th><th>Scope</th><th>Paired</th><th>${esc(t('Last seen'))}</th><th></th>
         </tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    /** A paired phone's scope is chosen here; a revoked one only shows what it had. */
+    function scopeCell(d) {
+        const levels = SCOPES.map(s => t(s[1])).join('\n');
+        const head = t('Scope: {scope}', { scope: d.scope });
+        if (d.revoked) { return window.AFTip.wrap(esc(d.scope), head, levels, 'svc-tip'); }
+        const opt = s => `<option value="${s[0]}" title="${esc(t(s[1]))}"${d.scope === s[0] ? ' selected' : ''}>${esc(s[0])}</option>`;
+        return window.AFTip.wrap(
+            `<select class="rm-scope" data-device="${esc(d.id)}" data-name="${esc(d.name)}">${SCOPES.map(opt).join('')}</select>`,
+            head, levels + '\n\n' + t('Admin asks first. An open connection holds a new scope at once.'), 'svc-tip');
+    }
+
+    function seenCell(d) {
+        if (!d.lastSeen) { return '—'; }
+        return window.AFTip.wrap(esc(when(d.lastSeen)), t('Last seen: {when}', { when: when(d.lastSeen) }),
+            d.lastAddress ? t('From {address}', { address: d.lastAddress }) : t('The address was not recorded.'), 'svc-tip');
+    }
+
+    /** Every act redraws the card; an opened activity list stays open through it. */
+    let auditOpen = false;
+
+    /** The newest acts of the paired phones; connections are the rows' "last seen". */
+    function activity(r) {
+        const a = r.audit || [];
+        if (!a.length) { return ''; }
+        const rows = a.map(e => {
+            const what = t(WHAT[e.what] || e.what);
+            const thing = e.op ? (e.page ? e.page + ' · ' + e.op : e.op) : (e.detail || '');
+            const tip = [
+                when(e.ts),
+                e.ok ? '' : t('Not done.'),
+                e.detail && e.op ? e.detail : '',
+                e.address ? t('From {address}', { address: e.address }) : ''
+            ].filter(Boolean).join('\n');
+            return `<tr class="${e.ok ? '' : 'rm-no'}">
+                <td class="muted">${esc(when(e.ts))}</td>
+                <td>${esc(e.name || e.device || '—')}</td>
+                <td>${window.AFTip.wrap(esc(what) + (e.ok ? '' : ' ✕'), what, tip, 'svc-tip')}</td>
+                <td class="muted">${esc(thing)}</td>
+            </tr>`;
+        }).join('');
+        return `<details class="rm-audit"${auditOpen ? ' open' : ''}><summary class="muted small">${esc(t('Recent activity ({n})', { n: a.length }))}</summary>
+            <table class="rm-devices"><tbody>${rows}</tbody></table></details>`;
     }
 
     function card(r, opts) {
@@ -125,6 +189,7 @@
                 <div class="webbody-l">
                     ${modeRow(r)}
                     ${deviceRows(r)}
+                    ${activity(r)}
                 </div>
                 ${pairBlock(r)}
             </div>
@@ -135,6 +200,9 @@
     function wire(post) {
         const mode = document.getElementById('remote-mode');
         if (mode) { mode.addEventListener('change', () => post({ type: 'remote-listen', mode: mode.value })); }
+        document.querySelectorAll('details.rm-audit').forEach(d => d.addEventListener('toggle', () => { auditOpen = !!d.open; }));
+        document.querySelectorAll('select.rm-scope').forEach(s => s.addEventListener('change', () =>
+            post({ type: 'remote-scope', device: s.dataset.device, name: s.dataset.name, scope: s.value })));
         document.querySelectorAll('[data-remote]').forEach(b => b.addEventListener('click', () => {
             const act = b.dataset.remote;
             if (act === 'pair') { post({ type: 'remote-pair' }); }
@@ -154,6 +222,10 @@
             .rm-devices th, .rm-devices td { text-align:left; padding:2px 10px 2px 0; }
             .rm-devices th { font-weight:normal; opacity:.7; }
             .rm-revoked td:first-child { text-decoration:line-through; opacity:.6; }
+            .rm-scope { font-size:11px; padding:0 2px; }
+            .rm-audit { margin-top:6px; }
+            .rm-audit summary { cursor:pointer; }
+            .rm-no td { opacity:.75; }
             .rm-fw { margin:4px 0 2px; }
             .rm-link { display:flex; flex-direction:column; align-items:center; gap:4px; max-width:190px; }
             .rm-pairlink { font-family:var(--vscode-editor-font-family); font-size:10px; word-break:break-all;

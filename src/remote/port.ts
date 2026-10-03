@@ -33,6 +33,9 @@ export type Unsubscribe = () => void;
 /** One answer of the page and resource routes. */
 export interface ServedPage { status: number; type: string; body: Buffer | string }
 
+/** What a phone's page message was: `act` = not a mere look, `ran` = the device's scope let it through. */
+export interface ViewMessageNote { page: string; type: string; act: boolean; ran: boolean }
+
 /**
  * The farm's pages as a phone opens them (X-441): a view is opened over the
  * socket, its HTML fetched from /view/<page>?view=<id>, and its messages go
@@ -41,7 +44,8 @@ export interface ServedPage { status: number; type: string; body: Buffer | strin
 export interface RemoteViewsPort {
     /** False when this page does not exist for the phone or the device may not open it. */
     open(caller: RemoteCaller, view: string, page: string, args: Record<string, unknown> | undefined, post: (message: unknown) => void): boolean;
-    message(caller: RemoteCaller, view: string, message: unknown): void;
+    /** Nothing when the view is not open. */
+    message(caller: RemoteCaller, view: string, message: unknown): ViewMessageNote | undefined;
     close(caller: RemoteCaller, view: string): void;
     /** GET /view/… for this caller; may wait briefly for a view whose open is still on its way. */
     page(url: string, caller: RemoteCaller): Promise<ServedPage | null>;

@@ -13,7 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { DeviceBook, CODE_TTL_MS, DEFAULT_SCOPE } = require(path.join(ROOT, 'out', 'remote', 'server', 'devices.js'));
+const { DeviceBook, CODE_TTL_MS, DEFAULT_SCOPE, OWNER } = require(path.join(ROOT, 'out', 'remote', 'server', 'devices.js'));
 
 let t = 5_000;
 const clock = () => t;
@@ -49,6 +49,28 @@ try {
     ok('revoking it again changes nothing', again.revoke(d.id) === 0);
     ok('revoke-all takes the rest', again.revoke() === 1 && again.list().every(x => x.revoked));
     ok('a revoke survives a reload', new DeviceBook(file, clock).get(e.id).revoked === true);
+
+    // X-444 - the user field, last seen, and a scope chosen after pairing
+    const fresh = new DeviceBook(file, clock);
+    const f = fresh.add('Phone', spki);
+    ok('a device belongs to the farm\'s one user', f.user === OWNER);
+    ok('it has not been seen yet', f.lastSeen === undefined && f.lastAddress === undefined);
+    t += 1000;
+    fresh.seen(f.id, '192.168.1.20');
+    ok('a welcomed connection stamps when and from where, and it is kept', (() => {
+        const g = new DeviceBook(file, clock).get(f.id);
+        return g.lastSeen === t && g.lastAddress === '192.168.1.20';
+    })());
+    fresh.seen(f.id);
+    ok('a connection without an address keeps the last one', fresh.get(f.id).lastAddress === '192.168.1.20');
+    let sc = fresh.setScope(f.id, 'admin');
+    ok('a scope change names what it was and is kept', sc.ok && sc.from === DEFAULT_SCOPE && new DeviceBook(file, clock).get(f.id).scope === 'admin');
+    ok('an unknown scope is refused', !fresh.setScope(f.id, 'root').ok && fresh.get(f.id).scope === 'admin');
+    fresh.revoke(f.id);
+    sc = fresh.setScope(f.id, 'read');
+    ok('a revoked device keeps its scope', !sc.ok && /revoked/.test(sc.error));
+    fs.writeFileSync(file, JSON.stringify([{ id: 'dev_old', name: 'Old', publicKey: spki, scope: 'manage', pairedAt: 1, revoked: false }]));
+    ok('a device paired before the user field reads as the owner\'s', new DeviceBook(file, clock).get('dev_old').user === OWNER);
     fs.writeFileSync(file, 'not json');
     ok('an unreadable file reads as no devices', new DeviceBook(file, clock).list().length === 0);
 } finally {

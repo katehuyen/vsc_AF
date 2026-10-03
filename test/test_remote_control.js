@@ -20,8 +20,11 @@ serve.startRemoteHost = async (...a) => {
     const r = await realStart(...a);
     const d = r.server.dropRevoked.bind(r.server);
     r.server.dropRevoked = () => { drops++; return d(); };
+    const rs = r.server.rescope.bind(r.server);
+    r.server.rescope = (dev, scope) => { rescopes.push(dev + ':' + scope); return rs(dev, scope); };
     return r;
 };
+const rescopes = [];
 const { createRemoteControl } = require(path.join(ROOT, 'out', 'remote', 'index.js'));
 const { DeviceBook } = require(path.join(ROOT, 'out', 'remote', 'server', 'devices.js'));
 
@@ -44,6 +47,15 @@ const health = port => new Promise(resolve => {
         let s = ''; res.on('data', d => { s += d; }); res.on('end', () => resolve(JSON.parse(s)));
     }).on('error', e => resolve({ error: e.code }));
 });
+const postJson = (port, p, body) => new Promise(resolve => {
+    const data = JSON.stringify(body);
+    const req = https.request({ host: '127.0.0.1', port, path: p, method: 'POST', rejectUnauthorized: false, agent: false,
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(data) } }, res => {
+        res.resume(); res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', e => resolve(e.code));
+    req.end(data);
+});
 const freePort = () => new Promise(resolve => {
     const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); });
 });
@@ -55,7 +67,7 @@ const freePort = () => new Promise(resolve => {
         fs.mkdirSync(store, { recursive: true });
         const seed = new DeviceBook(path.join(store, 'devices.json'));
         const a = seed.add('Pixel', 'pk-a');
-        seed.add('Tablet', 'pk-b');
+        const b = seed.add('Tablet', 'pk-b');
 
         const p = fakePort(store);
         const c = createRemoteControl(p);
@@ -64,10 +76,27 @@ const freePort = () => new Promise(resolve => {
         ok('its farm is the port\'s', st.farm.id === 'farm_c');
         ok('a pairing link is refused while not listening', 'error' in c.pairingLink() && /not listening/.test(c.pairingLink().error));
         ok('devices are listed from the file while stopped', c.devices().map(d => d.name).sort().join() === 'Pixel,Tablet');
-        ok('a device row carries id, name, scope, pairedAt, revoked only',
-            Object.keys(c.devices()[0]).sort().join() === 'id,name,pairedAt,revoked,scope');
+        ok('a device row carries id, name, scope, user, pairedAt, revoked - never the key, last-seen only once seen',
+            Object.keys(c.devices()[0]).sort().join() === 'id,name,pairedAt,revoked,scope,user' && c.devices()[0].user === 'owner');
         ok('revoking one while stopped writes the file', c.revoke(a.id) === 1
             && new DeviceBook(path.join(store, 'devices.json')).get(a.id).revoked === true);
+
+        // X-444 - a scope chosen on the card, while stopped: the file holds it
+        let sc = c.setScope(b.id, 'read');
+        ok('a scope change while stopped writes the file and names what it was', sc.ok && sc.from === 'manage' && sc.device.scope === 'read'
+            && new DeviceBook(path.join(store, 'devices.json')).get(b.id).scope === 'read');
+        ok('a revoked phone keeps its scope: it must pair again', !c.setScope(a.id, 'admin').ok && /revoked/.test(c.setScope(a.id, 'admin').error));
+        ok('a scope the contract does not know is refused by name', /read \| answer \| manage \| admin/.test(c.setScope(b.id, 'owner').error));
+        ok('an unknown phone is refused', !c.setScope('dev_none', 'read').ok);
+        let log = c.audit();
+        ok('the revoke and the change are in the audit log, newest first, with the names',
+            log.length === 2 && log[0].what === 'scope' && log[0].detail === 'manage -> read' && log[0].name === 'Tablet'
+            && log[1].what === 'revoke' && log[1].device === a.id && log[1].name === 'Pixel' && log[1].user === 'owner');
+        ok('the same scope again writes nothing', c.setScope(b.id, 'read').from === 'read' && c.audit().length === 2);
+        let threw = '';
+        try { c.audit({ what: ['nope'] }); } catch (e) { threw = e.message; }
+        ok('a kind the log does not know is refused, naming the kinds', /pair-refused/.test(threw) && /not nope/.test(threw));
+        ok('a kind filter keeps only that kind', c.audit({ what: ['revoke'] }).length === 1);
 
         const port1 = await freePort();
         st = await c.apply({ host: '127.0.0.1', port: port1, addresses: ['127.0.0.1'] });
@@ -78,7 +107,18 @@ const freePort = () => new Promise(resolve => {
         ok('a pairing link while listening names the addresses', pl.link && pl.link.startsWith('agentfarm://pair?') && pl.addresses.join() === `127.0.0.1:${port1}`);
         ok('the same target again is not a restart', (await c.apply({ host: '127.0.0.1', port: port1, addresses: ['127.0.0.1'] })).listening
             && p.logs.filter(l => l.includes('stopped')).length === 0);
+        sc = c.setScope(b.id, 'answer');
+        ok('a scope change while running reaches the open sockets at once', sc.ok && rescopes.join() === b.id + ':answer'
+            && c.devices().find(d => d.id === b.id).scope === 'answer');
+        ok('no change, no socket touched', c.setScope(b.id, 'answer').ok && rescopes.length === 1);
+        ok('a wrong pairing code is turned away', await postJson(port1, '/pair', { code: 'WRONG000', name: 'Intruder', publicKey: 'pk', platform: 'android', app: '0.2.0' }) === 403);
+        ok('and the host writes it, with the name it gave and where from', c.audit()[0].what === 'pair-refused'
+            && c.audit()[0].name === 'Intruder' && c.audit()[0].device === '' && c.audit()[0].address === '127.0.0.1');
         ok('revoking every phone while running', c.revoke() === 1 && c.devices().every(d => d.revoked));
+        log = c.audit();
+        ok('the running host and this side write one log', log.length === 5 && log[0].what === 'revoke' && log[0].device === b.id
+            && log[1].what === 'pair-refused'
+            && fs.readFileSync(path.join(store, 'audit.jsonl'), 'utf8').trim().split('\n').length === 5);
         ok('and their open sockets are dropped at once', drops === 1);
         ok('revoking nobody drops nothing', c.revoke('nope') === 0 && drops === 1);
 
