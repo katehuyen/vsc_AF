@@ -22,7 +22,7 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
 (async () => {
     const kc = keychain(), st = memento();
     const keys = new ProviderKeys(kc, st);
-    await keys.set('openrouter-r1', 'sk-or-real');
+    await keys.set('openrouter-r1', 'sk-or-real', 'https://openrouter.ai/api');
     ok('‼️ a stored key is read back by its profile id', keys.get('openrouter-r1') === 'sk-or-real');
     ok('…from the keychain name X-100 chose, never the vault\'s', kc.m.get('agentFarm.providerProfile.openrouter-r1') === 'sk-or-real'
         && ![...kc.m.keys()].some(k => k.startsWith('agentfarm.secret.')));
@@ -53,45 +53,74 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('‼️ the launch reads the key from its owner, not the vault\'s cache under the keychain name',
         /secretFor: \(id: string\) => \{\s*const p = providerProfiles\(\)\.find\(x => x\.id === id\);\s*return p \? routeKeyOf\(p\)\.value : undefined;/.test(ext)
-        && /routeKeyFor\(p, id => providerKeys\.get\(id\), name => vault\.get\(name\)\)/.test(ext)
         && !/vault\.get\(secretKeyFor/.test(ext));
     ok('the keys are loaded before activation goes on', /const providerKeys = new ProviderKeys\(context\.secrets, context\.globalState\);\s*await providerKeys\.load\(\);/.test(ext));
     ok('every launch path refuses what the adapter refuses (a route with no key)',
         /return adapterFor\(engineId, registryDeps\(\)\)\.preflight\(\{ engine: engineId, providerId, \.\.\.\(tier \? \{ tier \} : \{\}\) \}\)\[0\];/.test(ext));
 
-    // ---------- X-488 — a Farm Secret named by the route ----------
-    const { routeKeyFor, keyHint, keyPickItems } = require(path.join(OUT, 'providerKeys.js'));
-    const own = id => (id === 'r' ? 'own-key-value-123456' : undefined);
+    // ---------- X-488 / X-492 — which key, bound to the endpoint it was given for ----------
+    const { routeKeyFor, keyHint, keyPickItems } = require(path.join(OUT, 'routeKey.js'));
+    const { PROVIDER_KEY_BINDS } = require(path.join(OUT, 'providerKeys.js'));
+    const kc2 = keychain(), st2 = memento();
+    const k2 = new ProviderKeys(kc2, st2);
+    await k2.set('r', 'own-key-value-123456', 'https://openrouter.ai/api');
+    ok('a typed key is bound to the endpoint it was given for, beside the keychain (not in settings)',
+        JSON.stringify(st2.m.get(PROVIDER_KEY_BINDS)) === JSON.stringify({ r: { baseUrl: 'https://openrouter.ai/api' } }));
     const named = n => (n === 'OpenRouter-ahmet' ? 'sk-or-v1-0123456789abcdef4444' : undefined);
-    const a = routeKeyFor({ id: 'r', secretRef: 'OpenRouter-ahmet' }, own, named);
-    ok('‼️ a named Farm Secret is the key, and it wins over a key of the route\'s own',
-        a.value === 'sk-or-v1-0123456789abcdef4444' && a.from === 'secret' && a.secretRef === 'OpenRouter-ahmet');
-    const gone = routeKeyFor({ id: 'r', secretRef: 'deleted' }, own, named);
-    ok('‼️ a named secret that is gone is NO key — never a quiet fall back to another one',
-        gone.value === undefined && gone.from === 'secret');
-    ok('no name: the route\'s own key', routeKeyFor({ id: 'r' }, own, named).value === 'own-key-value-123456');
+    const ownOf = id => k2.get(id);
+    const route = { id: 'r', baseUrl: 'https://openrouter.ai/api' };
+    ok('at its endpoint the route signs in with its own key', routeKeyFor(route, k2.bindOf('r'), ownOf, named).value === 'own-key-value-123456');
+    const moved = routeKeyFor({ ...route, baseUrl: 'https://evil.example/api' }, k2.bindOf('r'), ownOf, named);
+    ok('‼️ X-492 — a key NEVER follows its route to a new host, whatever wrote the change',
+        moved.value === undefined && moved.heldFor === 'https://openrouter.ai/api');
+    await k2.delete('r');
+    await k2.bind('r', { baseUrl: 'https://openrouter.ai/api', secretRef: 'OpenRouter-ahmet' });
+    const a = routeKeyFor(route, k2.bindOf('r'), ownOf, named);
+    ok('‼️ a Farm Secret named by the route is its key', a.value === 'sk-or-v1-0123456789abcdef4444' && a.from === 'secret' && a.secretRef === 'OpenRouter-ahmet');
+    ok('…and a moved one is no key either', routeKeyFor({ ...route, baseUrl: 'https://x.example' }, k2.bindOf('r'), ownOf, named).value === undefined);
+    await k2.bind('r', { baseUrl: 'https://openrouter.ai/api', secretRef: 'deleted' });
+    // an own key IS there to fall back to — so a fall back would show
+    const gone = routeKeyFor(route, k2.bindOf('r'), () => 'own-fallback-key-000000', named);
+    ok('‼️ a named secret that is gone is NO key — never a quiet fall back to another one', gone.value === undefined && gone.from === 'secret');
+    ok('no bind, no key — a secretRef typed into settings binds nothing', routeKeyFor({ id: 'z', secretRef: 'OpenRouter-ahmet' }, undefined, ownOf, named).value === undefined);
+    await k2.delete('r');
+    ok('removing the key lets the bind go too', k2.bindOf('r') === undefined);
+    // adoption: a key stored before binds existed is bound to the endpoint its route has at that start
+    const st3 = memento(); st3.m.set(PROVIDER_SECRET_IDS, ['old', 'orphan']);
+    const k3 = new ProviderKeys(keychain(), st3);
+    const adopted = await k3.adopt([{ id: 'old', baseUrl: 'https://api.moonshot.ai/anthropic' }, { id: 'new' }]);
+    ok('a key from before binds is bound to its route\'s endpoint once', adopted.join() === 'old'
+        && k3.bindOf('old').baseUrl === 'https://api.moonshot.ai/anthropic' && k3.bindOf('orphan') === undefined);
+    ok('…and only once', (await k3.adopt([{ id: 'old', baseUrl: 'https://elsewhere' }])).length === 0
+        && k3.bindOf('old').baseUrl === 'https://api.moonshot.ai/anthropic');
+
     ok('the masked hint tells keys apart and gives none away', keyHint('sk-or-v1-0123456789abcdef4444') === 'sk-or-…4444'
         && keyHint('short-key') === '…ey' && keyHint('') === '' && keyHint(undefined) === '');
     ok('…and a canary never survives into it', !/CANARY/.test(keyHint('sk-ant-api03-CANARYx115CANARYx115CANARYx115')));
     const secrets = [{ name: 'OpenRouter-ahmet', description: 'ahmet hesabı', agents: [], farmOnly: false },
         { name: 'TYPESAFE_API_KEY', description: '', agents: [], farmOnly: true }];
-    const items = keyPickItems({ secretRef: 'OpenRouter-ahmet' }, secrets, true);
+    const items = keyPickItems({ from: 'secret', secretRef: 'OpenRouter-ahmet', value: 'x' }, secrets, true);
     ok('the picker offers typing, every Farm Secret by name, and removing', items.map(i => i.action).join(',') === 'type,secret,secret,remove'
         && items[1].name === 'OpenRouter-ahmet' && /in use/.test(items[1].description) && /ahmet hesabı/.test(items[1].description));
     ok('…each secret says who else receives it', /every agent/.test(items[1].detail) && /Farm-only/.test(items[2].detail));
     ok('…removing a named secret says the secret stays in the vault', /stays in the vault/.test(items[3].detail));
-    ok('no key yet: nothing to remove', !keyPickItems({}, secrets, false).some(i => i.action === 'remove'));
-    ok('‼️ no item carries a value', !JSON.stringify(keyPickItems({}, secrets, true)).includes('sk-or-v1'));
+    ok('no key yet: nothing to remove', !keyPickItems({ from: 'none' }, secrets, false).some(i => i.action === 'remove'));
+    const movedItems = keyPickItems({ from: 'route', heldFor: 'https://old.example' }, secrets, true);
+    ok('a moved key is confirmed first, naming where it was given for', movedItems[0].action === 'confirm' && /old\.example/.test(movedItems[0].detail));
+    ok('…but never offered when the key itself is gone', !keyPickItems({ from: 'route', heldFor: 'h' }, secrets, false).some(i => i.action === 'confirm'));
+    ok('‼️ no item carries a value', !JSON.stringify(keyPickItems({ from: 'secret', secretRef: 'OpenRouter-ahmet' }, secrets, true)).includes('sk-or-v1'));
 
-    ok('‼️ only the host picker names a Farm Secret: the page form and both bridge writes drop it',
-        (ext.match(/withoutSecretRef\(args as Record<string, unknown>\)/g) || []).length === 2
-        && /const form = withoutSecretRef\(input\);/.test(ext));
-    ok('picking a Farm Secret collects the route\'s own key; typing one lets the secret go',
-        /if \(providerKeys\.has\(id\)\) \{ await providerKeys\.delete\(id\); \}/.test(ext)
-        && /const \{ secretRef: _was, \.\.\.own \} = list\[at\];\s*next\[at\] = bumpRevision\(own\);/.test(ext));
-    ok('every surface sees a route through one builder (hasSecret + keyHint)',
+    ok('‼️ the binds are read where the launch reads the key', /routeKeyFor\(p, providerKeys\.bindOf\(p\.id\), id => providerKeys\.get\(id\), name => vault\.get\(name\)\)/.test(ext));
+    ok('keys from before binds are adopted at activation, right after the load',
+        /await providerKeys\.load\(\);\s*\/\/[^\n]*\n\s*await providerKeys\.adopt\(readProfiles\(cfg\(\)\.get<unknown\[\]>\('providerProfiles', \[\]\)\)\);/.test(ext));
+    ok('a typed key is bound to the route\'s endpoint as it is now', /await providerKeys\.set\(id, value, route\.baseUrl \?\? ''\);/.test(ext));
+    ok('naming a Farm Secret collects the own key and binds the name to this endpoint',
+        /await providerKeys\.delete\(id\);\s*await providerKeys\.bind\(id, \{ baseUrl: route\.baseUrl \?\? '', secretRef: name \}\);/.test(ext));
+    ok('every surface sees a route through one builder (hasSecret, keyHint, secretRef, keyHeldFor)',
         /const publicProviderProfiles = \(\) => providerProfiles\(\)\.map\(publicRoute\);/.test(ext)
         && (ext.match(/publicRoute\(w\.profile!\)/g) || []).length === 3 && !/publicProfiles\(\[w\.profile/.test(ext));
+    ok('‼️ no bridge op names a key or binds one', !ext.split(/\n\s*\{\s*\n\s*op: '/).filter(s => /^providers\./.test(s))
+        .some(s => /providerKeys\.(bind|set)|useFarmSecretForRoute|confirmRouteKey/.test(s)));
 
     console.log(`\ntest_provider_keys: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

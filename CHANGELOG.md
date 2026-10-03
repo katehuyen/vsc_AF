@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.810.0 - Pick a route's key from Farm Secrets; a key stays with its endpoint (2026-10-03)
+
+- **Use a key you already keep in Farm Secrets.** On Engines ▸ Providers,
+  Add key / Change key now opens a picker: type a key for the route, or pick
+  one of your Farm Secrets by name (each says who else receives it). No more
+  entering the same key twice. Removing the route leaves the secret in the
+  vault.
+- **See which key a route uses.** The route's card shows the secret's name
+  or "own key", with a masked reminder such as `sk-or-…4444` — never the key
+  itself. A route whose secret was deleted says so and will not start.
+- **A note on each route.** Add a short note (whose key, what for) when you
+  add a route; it shows on the route's card.
+- **A key never follows its route to a new endpoint.** If a route's endpoint
+  is changed after its key was given — from the page, by an agent, or by
+  editing settings — the route stops using the key until you confirm it for
+  the new endpoint (Change key → Use the stored key at this endpoint). Keys
+  saved before this version are kept for the endpoint their route has now.
+
 ## 3.809.0 - Provider routes really sign in with their key (2026-10-03)
 
 - **A route now uses the key you stored for it.** Every session started on

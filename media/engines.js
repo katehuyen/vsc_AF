@@ -322,7 +322,13 @@
         const tiers = Object.keys(p.tiers || {});
         // X-488 — which key: a Farm Secret by name, or the route's own; the masked hint tells two apart.
         const hint = p.keyHint ? ' · ' + esc(p.keyHint) : '';
-        const key = p.secretRef && p.hasSecret
+        // X-492 — a key never follows its route to a new endpoint; a person confirms it here.
+        const held = p.keyHeldFor
+            ? T.wrap('<span class="pokey k-no">' + esc(t('key held for another endpoint')) + '</span>',
+                t('Given for {url}', { url: p.keyHeldFor }),
+                t('This route\'s endpoint changed after its key was given, so no session starts on it until you confirm the key for the new endpoint (Change key) or give it another one.'))
+            : '';
+        const key = held || (p.secretRef && p.hasSecret
             ? T.wrap('<span class="pokey k-yes">' + esc(p.secretRef) + hint + '</span>',
                 t('Signs in with the Farm Secret {name}', { name: p.secretRef }),
                 t('The key is read from Farm Secrets each time a session starts on this route. Editing the secret there changes it here; removing this route leaves the secret in the vault.'))
@@ -334,7 +340,7 @@
                     ? T.wrap('<span class="pokey k-yes">' + esc(t('own key')) + hint + '</span>', t('A key of its own is stored'),
                         t('It lives in the OS keychain under this route\'s id — never in settings, never on the bridge, and never read back out to draw anything; only a masked reminder of which key it is is shown.'))
                     : T.wrap('<span class="pokey k-no">no key</span>', 'No credential yet',
-                        t('This route cannot be used until it has a key. Press Add key to pick one of your Farm Secrets or type one — the value never enters this page.'));
+                        t('This route cannot be used until it has a key. Press Add key to pick one of your Farm Secrets or type one — the value never enters this page.')));
         return '<div class="pocard">'
             + '<div class="pohead">'
             + '<span class="poname">' + esc(p.label) + '</span>'
@@ -349,7 +355,7 @@
             + '<span class="grow"></span>'
             + '<button class="secondary small" data-pokey="' + esc(p.id) + '" data-polabel="' + esc(p.label) + '" title="'
             + esc(t('Type a key for this route, or pick one you already keep in Farm Secrets.')) + '">'
-            + esc(p.hasSecret || p.secretRef ? t('Change key') : t('Add key')) + '</button>'
+            + esc(p.hasSecret || p.secretRef || p.keyHeldFor ? t('Change key') : t('Add key')) + '</button>'
             + '<button class="secondary small" data-pocopy="' + esc(p.id) + '" title="'
             + esc('A copy is a NEW route: its own id, its own history from revision 1, and no credential — '
                 + 'duplicating a key would put one secret behind two names.') + '">Copy</button>'

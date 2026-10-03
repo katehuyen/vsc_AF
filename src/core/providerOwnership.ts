@@ -184,6 +184,8 @@ export interface PublicProviderProfile {
     secretRef?: string;
     /** X-488 — a masked reminder of which key it is (`sk-or-…4444`), derived on the way out, never stored. */
     keyHint?: string;
+    /** X-492 — the endpoint the key was given for, when the route has moved since (it has no key until confirmed). */
+    keyHeldFor?: string;
 }
 
 /**
@@ -196,7 +198,8 @@ export interface PublicProviderProfile {
  * settings, a bridge response, a CLI line, a notice and an export at once.
  */
 export function publicProfile(
-    stored: Record<string, unknown>, opts?: { hasSecret?: boolean; keyHint?: string }
+    stored: Record<string, unknown>,
+    opts?: { hasSecret?: boolean; keyHint?: string; secretRef?: string; keyHeldFor?: string }
 ): PublicProviderProfile {
     const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
     const tiersIn = (stored.tiers && typeof stored.tiers === 'object' && !Array.isArray(stored.tiers))
@@ -217,8 +220,10 @@ export function publicProfile(
     if (str(stored.baseUrl)) { out.baseUrl = str(stored.baseUrl); }
     if (str(stored.authKind)) { out.authKind = str(stored.authKind); }
     if (str(stored.description)) { out.description = str(stored.description); }
-    if (str(stored.secretRef)) { out.secretRef = str(stored.secretRef); }
+    // ‼️ The key facts come from the keychain's side (opts), never from the stored record.
+    if (str(opts?.secretRef)) { out.secretRef = str(opts?.secretRef); }
     if (out.hasSecret && opts?.keyHint) { out.keyHint = opts.keyHint; }
+    if (str(opts?.keyHeldFor)) { out.keyHeldFor = str(opts?.keyHeldFor); }
     return out;
 }
 
@@ -272,6 +277,5 @@ export function bumpRevision<T extends { revision?: number }>(profile: T): T & {
 export function copyProfile(
     profile: Record<string, unknown>, newId: string
 ): PublicProviderProfile {
-    const { secretRef: _ref, keyHint: _hint, ...rest } = publicProfile(profile);
-    return { ...rest, id: newId.trim(), revision: 1, hasSecret: false };
+    return { ...publicProfile(profile), id: newId.trim(), revision: 1, hasSecret: false };
 }

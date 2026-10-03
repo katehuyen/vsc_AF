@@ -500,6 +500,12 @@ const data = () => {
                 id: 'groq', label: 'Groq', engine: 'claude', providerId: 'groq',
                 baseUrl: 'https://api.groq.com/anthropic', authKind: 'api-key',
                 tiers: {}, revision: 2, hasSecret: false, secretRef: 'GROQ_KEY'
+            },
+            // X-492 — its endpoint was changed after the key was given: no key until a person confirms it.
+            {
+                id: 'kimi-cn', label: 'Kimi (China)', engine: 'claude', providerId: 'kimi',
+                baseUrl: 'https://api.moonshot.cn/anthropic', authKind: 'api-key',
+                tiers: {}, revision: 5, hasSecret: false, keyHeldFor: 'https://api.moonshot.ai/anthropic'
             }
         ],
         verdicts: [

@@ -247,7 +247,7 @@ const claude = {
         && /profiles: \(\) => publicProviderProfiles\(\)/.test(extTs)
         && /const publicProviderProfiles = \(\) => providerProfiles\(\)\.map\(publicRoute\);/.test(extTs)
         // X-488 — one builder: the public shape plus whether there is a key and a masked hint of it.
-        && /const publicRoute = \(p: StoredProviderProfile\) => \{\s*const k = routeKeyOf\(p\)\.value;\s*return publicProfile\(p as unknown as Record<string, unknown>, \{ hasSecret: !!k, keyHint: keyHint\(k\) \}\);/.test(extTs));
+        && /const publicRoute = \(p: StoredProviderProfile\) => \{\s*const k = routeKeyOf\(p\);\s*return publicProfile\(p as unknown as Record<string, unknown>, \{\s*hasSecret: !!k\.value, keyHint: keyHint\(k\.value\), secretRef: k\.secretRef, keyHeldFor: k\.heldFor\s*\}\);/.test(extTs));
     ok('…and the panel has no way to reach the store or the keychain at all',
         !/providerProfiles\(|context\.secrets|secretKeyFor/.test(panelTs));
     // The bridge: every read answers with the public shape, and there is no op
@@ -325,8 +325,8 @@ const claude = {
     // ‼️ Derived from a FULLY POPULATED profile, not from an empty one: the two
     // optional fields are omitted when empty, so `publicProfile({})` would name
     // six and the gate would then reject the page for drawing a base URL.
-    const allowed = Object.keys(O.publicProfile({ ...claude, description: 'n', secretRef: 'S' },
-        { hasSecret: true, keyHint: 'sk-…0000' })).sort();
+    const allowed = Object.keys(O.publicProfile({ ...claude, description: 'n' },
+        { hasSecret: true, keyHint: 'sk-…0000', secretRef: 'S', keyHeldFor: 'https://old' })).sort();
     eq('‼️ the row renderer reads nothing that is not on the public shape',
         touched.filter(f => !allowed.includes(f)), []);
     /**
@@ -336,11 +336,11 @@ const claude = {
      * the boundary between a keychain and a webview: a field added to the public
      * shape is a decision, and it should cost one failing test.
      */
-    // X-488 (the user's own request) is the decision that added three: the owner's note, the Farm
-    // Secret's NAME and a masked hint — none of them a value.
-    eq('the public shape is twelve fields — a thirteenth is a decision, not a detail',
-        allowed, ['authKind', 'baseUrl', 'description', 'engine', 'hasSecret', 'id', 'keyHint', 'label',
-            'providerId', 'revision', 'secretRef', 'tiers']);
+    // X-488 (the user's own request) and X-492 are the decision that added four: the owner's note,
+    // the Farm Secret's NAME, a masked hint and the endpoint a key was given for — none of them a value.
+    eq('the public shape is thirteen fields — a fourteenth is a decision, not a detail',
+        allowed, ['authKind', 'baseUrl', 'description', 'engine', 'hasSecret', 'id', 'keyHeldFor', 'keyHint',
+            'label', 'providerId', 'revision', 'secretRef', 'tiers']);
     ok('…and the row really reads most of them, so the gate has something to hold',
         touched.length >= 7);
 
@@ -349,33 +349,27 @@ const claude = {
     // same endpoint under a different key would go on claiming to be what
     // served a past session.
     ok('replacing a credential is a new route',
-        /await providerKeys\.set\(id, value\);[\s\S]{0,900}bumpRevision\(own\)/.test(extTs));
+        /await providerKeys\.set\(id, value, route\.baseUrl \?\? ''\);\s*await bumpRouteRevision\(id\);/.test(extTs)
+        && /next\[at\] = bumpRevision\(list\[at\]\);/.test(extTs));
+    ok('…and so is naming a Farm Secret, or confirming a key at a new endpoint',
+        (extTs.match(/await bumpRouteRevision\(id\);/g) || []).length === 3);
 }
 
-// ---------- X-488 — the owner's note and a Farm Secret named by the route ----------
+// ---------- X-488 — the owner's note; which key it is never lives in the route ----------
 {
     const s = P.storedProfile({ ...claude, description: '  ahmet   hesabı \n anahtarı ', secretRef: 'OpenRouter-ahmet' });
     eq('the note is kept on one line', s.description, 'ahmet hesabı anahtarı');
-    eq('a Farm Secret is kept by NAME', s.secretRef, 'OpenRouter-ahmet');
-    ok('a name the Secrets page could not have made is not kept',
-        P.storedProfile({ ...claude, secretRef: 'a b/c' }).secretRef === undefined);
-    const list = P.addProfile([], { ...claude, secretRef: 'OpenRouter-ahmet' }).list;
+    ok('‼️ a secretRef handed to the store (settings, providers.add/set, a hand edit) is not kept — the bind lives beside the keychain',
+        s.secretRef === undefined && !('keyHeldFor' in s) && !('keyHint' in s));
+    const list = P.addProfile([], claude).list;
     const relabel = P.setProfile(list, 'kimi', { label: 'Kimi 2', description: 'x' });
-    ok('a new note or label keeps the revision and the secret',
-        relabel.profile.revision === 1 && relabel.profile.secretRef === 'OpenRouter-ahmet');
-    const other = P.setProfile(list, 'kimi', { secretRef: 'Other' });
-    ok('‼️ another secret is another key, so another route', other.profile.revision === 2);
-    const moved = P.setProfile(list, 'kimi', { baseUrl: 'https://elsewhere.example/anthropic' });
-    ok('‼️ a new endpoint lets the named secret go — it is not sent to a host nobody chose it for',
-        moved.profile.secretRef === undefined && moved.profile.revision === 2);
-    ok('…unless the same write names it again',
-        P.setProfile(list, 'kimi', { baseUrl: 'https://elsewhere.example/anthropic', secretRef: 'OpenRouter-ahmet' })
-            .profile.secretRef === 'OpenRouter-ahmet');
-    const copied = P.duplicateProfile(list, 'kimi');
-    ok('‼️ a copy starts with no key, a named one included', copied.profile.secretRef === undefined);
-    ok('…and the public copy too', O.copyProfile({ ...claude, secretRef: 'S' }, 'k2').secretRef === undefined);
+    ok('a new note or label keeps the revision', relabel.profile.revision === 1 && relabel.profile.description === 'x');
+    ok('the public shape takes the key facts from the keychain side, never the record',
+        O.publicProfile({ ...claude, secretRef: 'FROM-SETTINGS', keyHeldFor: 'x' }, { hasSecret: false }).secretRef === undefined
+        && O.publicProfile(claude, { hasSecret: true, secretRef: 'S' }).secretRef === 'S');
     ok('a hint is only drawn for a route that has a key',
         O.publicProfile(claude, { hasSecret: false, keyHint: 'x…1234' }).keyHint === undefined);
+    ok('a copy names no key', O.copyProfile({ ...claude, description: 'n' }, 'k2').secretRef === undefined);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

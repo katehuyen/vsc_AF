@@ -8,6 +8,14 @@
  * header") while every surface said the route had one (`hasSecret` read the id
  * index, which was right). One owner now writes, indexes, caches and reads.
  *
+ * ‼️ X-488 / X-492 — AND IT OWNS WHICH ENDPOINT THE KEY WAS GIVEN FOR. A route
+ * signs in with a key of its own or with a Farm Secret it names, and either one
+ * is BOUND to the base URL a person gave it for. The bind lives here, beside the
+ * keychain, never in the settings file: settings are written by hand, by
+ * `settings.set` and by `providers.set`, and a key that followed any of those to
+ * a new host would go where nobody chose to send it. A moved route has no key
+ * until a person confirms it in the Engines page (`routeKey.ts` reads the bind).
+ *
  * The cache exists because a launch resolves its environment synchronously; it
  * is filled before activation goes on (as the vault's is) and kept in step by
  * every write here. Pure: the keychain and the state store come in.
@@ -16,6 +24,15 @@ import { secretKeyFor } from './providerOwnership';
 
 /** The index of profile ids that have a stored key: `hasSecret` is derived from it, never stored. */
 export const PROVIDER_SECRET_IDS = 'agentfarm.providerSecretIds';
+/** profile id → the endpoint its key was given for, and the Farm Secret it names (if any). */
+export const PROVIDER_KEY_BINDS = 'agentfarm.providerKeyBinds';
+
+export interface KeyBind {
+    /** The route's base URL when a person gave it this key; '' = the first-party endpoint. */
+    baseUrl: string;
+    /** A Farm Secret's NAME, when the route signs in with one instead of a key of its own. */
+    secretRef?: string;
+}
 
 export interface KeyStore {
     get(key: string): Thenable<string | undefined>;
@@ -49,95 +66,47 @@ export class ProviderKeys {
     /** The key a launch of this route signs in with; never drawn, never logged. */
     get(id: string): string | undefined { return this.cache.get(id); }
 
-    async set(id: string, value: string): Promise<void> {
+    /** A key of the route's own, given for the endpoint it has now; a Farm Secret it named is let go. */
+    async set(id: string, value: string, baseUrl: string): Promise<void> {
         const key = secretKeyFor(id);
         if (!key) { return; }
         await this.keychain.store(key, value);
         this.cache.set(id, value);
         await this.state.update(PROVIDER_SECRET_IDS, [...new Set([...this.ids(), id])].sort());
+        await this.bind(id, { baseUrl });
     }
 
+    /** No key at all: its own is collected and the bind goes (a named Farm Secret stays in the vault). */
     async delete(id: string): Promise<void> {
         const key = secretKeyFor(id);
         if (!key) { return; }
         await this.keychain.delete(key);
         this.cache.delete(id);
         await this.state.update(PROVIDER_SECRET_IDS, this.ids().filter(x => x !== id));
+        await this.bind(id, undefined);
     }
-}
 
-/* ===== X-488 — a route signs in with its own key OR a Farm Secret it names ===== */
-
-export interface RouteKey {
-    /** ‼️ PRIVATE — goes to the spawn's environment and nowhere else. */
-    value?: string;
-    from: 'route' | 'secret';
-    secretRef?: string;
-}
-
-/** A named Farm Secret wins; one that is gone is no key, never a fall back to another. */
-export function routeKeyFor(
-    p: { id: string; secretRef?: string },
-    own: (id: string) => string | undefined,
-    named: (name: string) => string | undefined
-): RouteKey {
-    if (p.secretRef) {
-        const v = named(p.secretRef);
-        return { from: 'secret', secretRef: p.secretRef, ...(v ? { value: v } : {}) };
+    binds(): Record<string, KeyBind> {
+        return { ...this.state.get<Record<string, KeyBind>>(PROVIDER_KEY_BINDS, {}) };
     }
-    const v = own(p.id);
-    return { from: 'route', ...(v ? { value: v } : {}) };
-}
 
-/** `sk-or-v1-…abcd` → `sk-or-…abcd`: enough to tell two keys apart, never enough to use one. */
-export function keyHint(value?: string): string {
-    const v = (value ?? '').trim();
-    if (!v) { return ''; }
-    return v.length < 16 ? `…${v.slice(-2)}` : `${v.slice(0, 6)}…${v.slice(-4)}`;
-}
+    bindOf(id: string): KeyBind | undefined { return this.binds()[id]; }
 
-export interface KeyPick {
-    action: 'type' | 'secret' | 'remove';
-    name?: string;
-    label: string;
-    description?: string;
-    detail?: string;
-}
-
-/** Who else receives a Farm Secret as a variable, in the words the picker shows. */
-function reachOf(s: { agents: string[]; farmOnly: boolean }): string {
-    if (s.farmOnly) { return 'Farm-only: no agent task receives it as a variable'; }
-    return s.agents.length
-        ? `Given as a variable to ${s.agents.length} agent${s.agents.length === 1 ? '' : 's'}`
-        : 'Given as a variable to every agent';
-}
-
-/** The choices behind a route's key button, in the order a person reads them. */
-export function keyPickItems(
-    route: { secretRef?: string },
-    secrets: { name: string; description: string; agents: string[]; farmOnly: boolean }[],
-    hasKey: boolean
-): KeyPick[] {
-    const out: KeyPick[] = [{
-        action: 'type', label: '$(key) Type a key for this route',
-        detail: 'Kept in the OS keychain under this route alone; removing the route removes it.'
-    }];
-    for (const s of secrets) {
-        const inUse = route.secretRef === s.name;
-        out.push({
-            action: 'secret', name: s.name, label: `$(lock) ${s.name}`,
-            ...(s.description || inUse
-                ? { description: [inUse ? 'in use' : '', s.description].filter(Boolean).join(' · ') } : {}),
-            detail: `Farm Secret · ${reachOf(s)}. Removing the route leaves it in the vault.`
-        });
+    async bind(id: string, b: KeyBind | undefined): Promise<void> {
+        const all = this.binds();
+        if (b) { all[id] = b.secretRef ? { baseUrl: b.baseUrl, secretRef: b.secretRef } : { baseUrl: b.baseUrl }; } else { delete all[id]; }
+        await this.state.update(PROVIDER_KEY_BINDS, all);
     }
-    if (hasKey) {
-        out.push({
-            action: 'remove', label: '$(trash) Remove the key',
-            detail: route.secretRef
-                ? `Stops using the Farm Secret ${route.secretRef}; the secret itself stays in the vault.`
-                : 'Deletes this route\'s own key from the OS keychain.'
-        });
+
+    /**
+     * A key stored before binds existed is bound to the endpoint its route has at the first start
+     * that knows about binds — the only endpoint it can be said to have been given for. Returns the ids.
+     */
+    async adopt(routes: { id: string; baseUrl?: string }[]): Promise<string[]> {
+        const all = this.binds();
+        const adopted = this.ids().filter(id => !all[id] && routes.some(r => r.id === id));
+        for (const id of adopted) { all[id] = { baseUrl: routes.find(r => r.id === id)?.baseUrl ?? '' }; }
+        if (adopted.length) { await this.state.update(PROVIDER_KEY_BINDS, all); }
+        return adopted;
     }
-    return out;
 }
