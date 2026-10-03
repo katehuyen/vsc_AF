@@ -21,7 +21,7 @@ export type ChainBucket = 'running' | 'waiting' | 'parked' | 'done' | 'stopped';
 export const CHAIN_BUCKETS: readonly ChainBucket[] = ['running', 'waiting', 'parked', 'done', 'stopped'];
 
 /**
- * hanging — the running leg is idle (or its session is gone) with no pass and no closing record;
+ * hanging — the running leg is idle (or its session is gone, or known nowhere) with no pass and no closing record;
  * stuck-wait — a successor still waits for its predecessor's session to end;
  * cut — the chain ended abnormally (the crash-loop guard, or the door refused the next leg);
  * fault — the running leg's engine failed and the fault watch has not passed for it;
@@ -143,6 +143,12 @@ function signalsOf(row: ChainRow, top: Baton | undefined, f: LegFacts | undefine
                 });
             }
         }
+    } else if (row.state === 'running' && sid && !f && now - row.since >= t.hangMs) {
+        // unknown never reads as gone, but a record nothing has moved past the threshold must not sit silent
+        out.push({
+            kind: 'hanging', since: row.since, sessionId: sid,
+            why: `leg ${row.leg} (session ${short(sid)}) is known nowhere — no card, no process, no watcher, no transcript — and the record has not moved since`
+        });
     }
     if (row.state === 'waiting' && now - row.since >= t.waitMs) {
         out.push({

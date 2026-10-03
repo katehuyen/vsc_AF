@@ -3,7 +3,8 @@
 // What must not go wrong quietly: a chain's state is its NEWEST record's (a live
 // pass before a superseded one, a reopened leg after the closing record); the
 // five attention signals fire from the record and the leg's own facts, never
-// from a guess (no facts = no signal); the thresholds come in as arguments; a
+// from a guess (no facts = no live word, and a hanging signal only once the record
+// itself is past the threshold); the thresholds come in as arguments; a
 // chain whose batons the store dropped is still a row; and the brake a pass hit
 // is a FIELD on the record, written by both doors.
 //
@@ -66,7 +67,11 @@ const kinds = (r) => r.signals.map(s => s.kind).join(',');
     ok('its session gone with no pass and no closing record: hanging', kinds(gone) === 'hanging' && gone.live === 'gone'
         && /no pass and no closing record/.test(gone.signals[0].why));
     ok('…but only once the threshold passed', one([seal, b1], { L2: { alive: false, lastTs: NOW - MIN } }).signals.length === 0);
-    ok('‼️ no facts about the session = no signal (unknown is never evidence)', one([seal, b1], {}).signals.length === 0 && one([seal, b1]).live === undefined);
+    const unknown = one([seal, b1], {});
+    ok('‼️ no facts about the session: no live word (unknown is never evidence of gone)…', unknown.live === undefined);
+    ok('‼️ …but a record nothing has moved past the threshold is hanging, said as known nowhere — never a silent running row',
+        kinds(unknown) === 'hanging' && unknown.signals[0].since === b1.updatedAt && /known nowhere/.test(unknown.signals[0].why));
+    ok('…and a fresh record with an unknown session waits for the threshold', one([seal, { ...b1, updatedAt: NOW - MIN }], {}).signals.length === 0);
     ok('the thresholds are the caller\'s: the same idle leg is hanging under a shorter one',
         board([seal, b1], { L2: { alive: true, idleSince: NOW - 5 * MIN } }, { thresholds: { hangMs: MIN, waitMs: MIN } })[0].signals.length === 1);
 }
@@ -107,7 +112,7 @@ const kinds = (r) => r.signals.map(s => s.kind).join(',');
 // ---------- 4. engine faults ----------
 {
     const ep = (o) => ({ sessionId: 'L2', cardId: 'c', chainId: 'chn_1', leg: 2, kind: 'outage', said: 'x', since: NOW - MIN, nudges: 1, state: 'waiting', why: 'nudging', ...o });
-    const f = (e) => board([seal, b1], {}, { faults: [e] })[0];
+    const f = (e) => board([seal, b1], { L2: { alive: true } }, { faults: [e] })[0];
     ok('a fault the watch is still on: a fault signal', kinds(f(ep({}))) === 'fault' && /outage — waiting: nudging/.test(f(ep({})).signals[0].why));
     ok('held and gave-up are faults too', kinds(f(ep({ state: 'held' }))) === 'fault' && kinds(f(ep({ state: 'gave-up' }))) === 'fault');
     ok('one the watch already passed for: none', f(ep({ state: 'passed' })).signals.length === 0);
@@ -142,7 +147,7 @@ const kinds = (r) => r.signals.map(s => s.kind).join(',');
 // ---------- chips and filters ----------
 {
     const c2 = (id, state, extra) => ({ ...mk(id, 1, state, 'X' + id, state === 'started' ? 'Y' + id : undefined, extra), chainId: 'chn_' + id });
-    const rows = board([seal, b1, c2('a', 'parked'), c2('b', 'failed'), c2('c', 'done', { from: { ...from('Xc'), agentId: 'D:/agents/ops', projectId: 'prj_2' } })]);
+    const rows = board([seal, b1, c2('a', 'parked'), c2('b', 'failed'), c2('c', 'done', { from: { ...from('Xc'), agentId: 'D:/agents/ops', projectId: 'prj_2' } })], { L2: { alive: true } });
     const n = C.boardCounts(rows);
     ok('the chips count each bucket and attention across them', n.total === 4 && n.running === 1 && n.parked === 1 && n.stopped === 1 && n.done === 1 && n.attention === 1);
     ok('filter by bucket (failed is in stopped) or by exact state', C.filterBoard(rows, { state: 'stopped' }).length === 1 && C.filterBoard(rows, { state: 'failed' }).length === 1);
