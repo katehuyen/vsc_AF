@@ -7,6 +7,7 @@
  */
 import type { AutoAnswerView } from './autoAnswer';
 import type { NeedItem } from './needs';
+import { said } from './uiSentence';
 
 export interface ConsoleNeedAsk {
     consoleId: string;
@@ -52,7 +53,7 @@ export function consoleNeedItems(asks: ConsoleNeedAsk[], urgency: number): NeedI
         const line = a.why.length > ROW ? a.why.slice(0, ROW - 1) + '…' : a.why;
         return {
             urgency, kind: 'console-question', agentName: a.agentName,
-            title: `${a.agentName} is asking you — no timer will answer it`,
+            ...said('{agent} is asking you — no timer will answer it', { agent: a.agentName }),
             detail: line, body: `${a.why}\n\n${a.question}`, ts: a.ts,
             ref: { consoleId: a.consoleId, requestId: a.requestId },
             actions: [{ id: 'open-console', label: 'Answer in Console' }]

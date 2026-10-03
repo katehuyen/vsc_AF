@@ -3,6 +3,9 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    // U-189 — a title the host composed travels as its template and values (src/core/uiSentence.ts)
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const said = o => (o.titleKey ? t(o.titleKey, o.titleVars) : o.title);
     let DATA = window.__DATA__;
     const selected = new Set();   // checked row keys (bulk clear)
     /**
@@ -142,7 +145,7 @@
             ${caret}
             <div class="need-icon">${meta.icon}</div>
             <div class="need-main">
-                <div class="need-title">${C.esc(item.title)} <span class="tag">${meta.label}</span></div>
+                <div class="need-title">${C.esc(said(item))} <span class="tag">${meta.label}</span></div>
                 ${detail}
                 <div class="muted small">${C.esc(item.agentName)}${when ? ' · ' + when : ''}</div>
                 ${open && item.body ? `<div class="nd-body">

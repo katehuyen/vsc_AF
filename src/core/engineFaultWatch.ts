@@ -24,6 +24,7 @@ import { Baton, BatonFault, EnginePassHow, openerOf } from './baton';
 import { classifyEngineFault, EngineFault } from './engineFault';
 import { isSeal } from './batonSeal';
 import type { NeedItem } from './needs';
+import { said } from './uiSentence';
 
 export const FAULT_WAIT_DEFAULT_HOURS = 24;
 export const FLAGGED_PASSES_DEFAULT = 3;
@@ -140,9 +141,9 @@ export function nudgeText(f: EngineFault, attempt: number): string {
 export function faultNeedItems(list: readonly FaultEpisode[], urgency: number): NeedItem[] {
     return list.filter(e => e.kind === 'auth' || e.state === 'held' || e.state === 'gave-up').map(e => ({
         urgency, kind: 'engine-fault' as const, agentName: `chain ${e.chainId.slice(-6)}`,
-        title: e.state === 'held'
-            ? (e.kind === 'limit' ? `Leg ${e.leg} hit the plan limit and could not be passed — the chain holds for you` : `Leg ${e.leg} flagged again — the chain holds for you`)
-            : e.kind === 'auth' ? `Leg ${e.leg}: the engine refuses the sign-in` : `Leg ${e.leg}: the engine is still down`,
+        ...said(e.state === 'held'
+            ? (e.kind === 'limit' ? 'Leg {leg} hit the plan limit and could not be passed — the chain holds for you' : 'Leg {leg} flagged again — the chain holds for you')
+            : e.kind === 'auth' ? 'Leg {leg}: the engine refuses the sign-in' : 'Leg {leg}: the engine is still down', { leg: e.leg }),
         // U-118 — the row is a line; the engine's own words are the opened body
         detail: e.why.length > 140 ? e.why.slice(0, 139) + '…' : e.why,
         body: `${e.why}\n\n${e.said}`,

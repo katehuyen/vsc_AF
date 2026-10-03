@@ -17,6 +17,7 @@ import { humanAskSentence } from './humanAsk';
 import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
 import { type OverduePublish, publishNeedItems } from './calendarSignals';
 import { type FaultEpisode, faultNeedItems } from './engineFaultWatch';
+import { said } from './uiSentence';
 
 export type NeedKind =
     | 'permission'        // a live session is blocked on a permission dialog
@@ -62,6 +63,9 @@ export interface NeedItem {
     kind: NeedKind;
     agentName: string;
     title: string;
+    /** U-189 — the title's English template and values; a page draws t(titleKey, titleVars), the bridge keeps `title` */
+    titleKey?: string;
+    titleVars?: Record<string, string>;
     /** ‼️ THE ROW'S LINE, and only that. It is cut to a row on purpose. */
     detail: string;
     /**
@@ -248,7 +252,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 urgency: URGENCY.permission,
                 kind: 'permission',
                 agentName,
-                title: `${agentName} is waiting for permission`,
+                ...said('{agent} is waiting for permission', { agent: agentName }),
                 detail: s.lastPrompt ?? '',
                 body: bodyOf(s.lastPrompt ?? '', s.lastPromptFull),
                 ts: s.lastEventTs,
@@ -275,7 +279,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 urgency: URGENCY.stalled,
                 kind: 'stalled',
                 agentName,
-                title: `${agentName} looks stalled`,
+                ...said('{agent} looks stalled', { agent: agentName }),
                 detail: (s.currentTool ? `last tool: ${s.currentTool}` : s.lastPrompt ?? ''),
                 // ‼️ A STALLED ROW SHOWS THE TOOL, so the prompt behind it is
                 // the thing the reader is missing — the body carries it either
@@ -302,9 +306,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             urgency: URGENCY.mission,
             kind: 'mission',
             agentName: 'mission',
-            title: m.flavor === 'question'
-                ? `Mission "${m.missionTitle}" has a question`
-                : `Mission "${m.missionTitle}" was interrupted`,
+            ...said(m.flavor === 'question' ? 'Mission "{mission}" has a question' : 'Mission "{mission}" was interrupted', { mission: m.missionTitle }),
             ...split(m.detail),
             ts: m.ts,
             ref: { missionRunId: m.runId },
@@ -318,7 +320,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
     for (const q of input.workflowQuestions ?? []) {
         items.push({
             urgency: URGENCY.question, kind: 'question', agentName: 'workflow',
-            title: `Workflow "${q.workflowTitle}" — its supervisor asks`,
+            ...said('Workflow "{workflow}" — its supervisor asks', { workflow: q.workflowTitle }),
             ...split(q.question), ts: q.askedAt, ref: { questionId: q.id }, actions: askActions(q)
         });
     }
@@ -333,9 +335,9 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             urgency: URGENCY['browser-approval'],
             kind: 'browser-approval',
             agentName: kind === 'browser' ? 'browser' : 'workflow',
-            title: kind === 'approval' ? `Approval needed — "${a.title}"`
-                : kind === 'upload' ? `A media step wants to upload to ${a.title}`
-                    : `Browser step "${a.title}" wants to run`,
+            ...said(kind === 'approval' ? 'Approval needed — "{title}"'
+                : kind === 'upload' ? 'A media step wants to upload to {title}'
+                    : 'Browser step "{title}" wants to run', { title: a.title }),
             ...split(humanAskSentence({ kind, title: a.title, url: a.url, goal: a.goal })),
             ts: a.createdAt,
             ref: { approvalId: a.id },
@@ -355,7 +357,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 urgency: URGENCY.conflict,
                 kind: 'conflict',
                 agentName: ins.agentName,
-                title: `Antigravity conflict — ${ins.agentName}`,
+                ...said('Antigravity conflict — {agent}', { agent: ins.agentName }),
                 ...split(ins.message),
                 ts: 0,
                 ref: { agentId: ins.agentId, filePath: ins.filePath },
@@ -370,7 +372,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             urgency: URGENCY.interrupted,
             kind: 'interrupted',
             agentName: 'workflow',
-            title: `Run interrupted — "${r.workflowTitle}"`,
+            ...said('Run interrupted — "{workflow}"', { workflow: r.workflowTitle }),
             detail: `cut at step ${r.stepIndex + 1} (${r.stepTitle}) when the window closed — Resume re-enters there with the previous handoff`,
             ts: 0,
             ref: { runId: r.runId },

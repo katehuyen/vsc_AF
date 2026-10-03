@@ -212,5 +212,30 @@
     'Cost': 'Maliyet',
     'All legs together; hover for tokens and time.': 'Bütün halkalar toplamı; token ve süre için üzerine gel.',
     'Next': 'Sıradaki',
-    'The account and model the next leg opens on.': 'Sıradaki halkanın açılacağı hesap ve model.'
+    'The account and model the next leg opens on.': 'Sıradaki halkanın açılacağı hesap ve model.',
+    // what waits for you — the titles the host composes (src/core/needs.ts and its sources, via uiSentence.ts)
+    '{agent} is waiting for permission': '{agent} izin bekliyor',
+    '{agent} looks stalled': '{agent} takılmış görünüyor',
+    '{agent} is asking you — no timer will answer it': '{agent} sana soruyor — hiçbir zamanlayıcı yanıtlamayacak',
+    'Mission "{mission}" has a question': '"{mission}" misyonunun bir sorusu var',
+    'Mission "{mission}" was interrupted': '"{mission}" misyonu yarıda kesildi',
+    'Workflow "{workflow}" — its supervisor asks': '"{workflow}" iş akışı — süpervizörü soruyor',
+    'Approval needed — "{title}"': 'Onay gerekiyor — "{title}"',
+    'A media step wants to upload to {title}': 'Bir medya adımı {title} hedefine yüklemek istiyor',
+    'Browser step "{title}" wants to run': '"{title}" tarayıcı adımı çalışmak istiyor',
+    'Antigravity conflict — {agent}': 'Antigravity çakışması — {agent}',
+    'Run interrupted — "{workflow}"': 'Çalıştırma yarıda kesildi — "{workflow}"',
+    'Leg {leg} hit the plan limit and could not be passed — the chain holds for you': '{leg}. halka plan sınırına takıldı ve devredilemedi — zincir seni bekliyor',
+    'Leg {leg} flagged again — the chain holds for you': '{leg}. halka yeniden işaretlendi — zincir seni bekliyor',
+    'Leg {leg}: the engine refuses the sign-in': '{leg}. halka: motor oturum açmayı reddediyor',
+    'Leg {leg}: the engine is still down': '{leg}. halka: motor hâlâ çalışmıyor',
+    '"{title}" was due on {platform} {late} ago': '"{title}" {platform} için {late} önce yayımlanmalıydı',
+    // a notice's type (src/core/notices.ts NOTICE_TYPES)
+    'update': 'güncelleme',
+    'report': 'rapor',
+    'result': 'sonuç',
+    'reminder': 'hatırlatma',
+    'suggestion': 'öneri',
+    'warning': 'uyarı',
+    'question': 'soru'
 });

@@ -126,5 +126,34 @@ const TR = require(path.join(ROOT, 'media', 'afI18n.tr.js'));
     ok('the language is set before anything draws', /registerLaunchDoors\(\);\s*\/\/[^\n]*\n\s*installUiLanguage\(context\);/.test(read('src', 'extension.ts')));
 }
 
+// U-189 third slice — a sentence the HOST composes travels as its template and values; the page translates where it draws
+{
+    const { said } = require(path.join(ROOT, 'out', 'core', 'uiSentence.js'));
+    const s = said('{agent} is waiting for permission', { agent: 'developer' });
+    ok('said(): the English sentence for the bridge, the template and values for the page',
+        s.title === 'developer is waiting for permission' && s.titleKey === '{agent} is waiting for permission' && s.titleVars.agent === 'developer');
+    const N = require(path.join(ROOT, 'out', 'core', 'needs.js'));
+    const q = N.buildNeedsQueue({ liveSessions: [{ sessionId: 's1', agentName: 'developer', status: 'waiting-permission', lastPrompt: 'Bash: npm test', lastEventTs: 1 }], approvals: [], insights: [] });
+    ok('a Needs row keeps its English title and carries the template beside it', q[0].title === 'developer is waiting for permission' && q[0].titleKey === '{agent} is waiting for permission');
+    // every quoted template between a said( and its values object
+    const keys = [...new Set(['needs.ts', 'consoleNeeds.ts', 'engineFaultWatch.ts', 'calendarSignals.ts'].flatMap(f => {
+        const src = read('src', 'core', f);
+        return [...src.matchAll(/said\(/g)].flatMap(m => [...src.slice(m.index, src.indexOf(', {', m.index)).matchAll(/'([^']*\{\w+\}[^']*)'/g)].map(x => x[1]));
+    }))];
+    ok('every title template the Needs sources compose is in the Türkçe catalog (' + keys.length + ')', keys.length >= 10 && keys.every(k => k in TR));
+    const { runPage } = require('./lib_page_dom');
+    const draw = (script, data, lang) => {
+        const sb = runPage(script, data, lang ? { __AFUI__: { lang, locale: lang } } : undefined).sandbox;
+        return (sb.document || sb.window.document).getElementById('app').innerHTML;
+    };
+    const now = require('./fixtures/now.js').data();
+    ok('the Now page draws a waiting title and a notice type in Türkçe', draw('now.js', now, 'tr').includes('developer izin bekliyor') && draw('now.js', now, 'tr').includes('güncelleme'));
+    ok('…and in English as before', draw('now.js', now).includes('developer is waiting for permission') && />developer · update</.test(draw('now.js', now).replace(/\s+/g, ' ')));
+    const needs = require('./fixtures/needs.js').data();
+    const titles = [...draw('needs.js', needs, 'tr').matchAll(/class="need-title">([^<]*)/g)].map(m => m[1]);
+    ok('the Needs page draws its titles in Türkçe (the right-click payload keeps the English for the host)',
+        titles.some(x => x.includes('izin bekliyor')) && !titles.some(x => /is waiting for permission|looks stalled/.test(x)));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

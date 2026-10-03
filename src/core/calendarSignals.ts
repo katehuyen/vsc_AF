@@ -8,6 +8,7 @@
 import { type CalEntry, findEntry, whenOf } from './contentCalendar';
 import type { LivingSignal } from './living';
 import type { NeedItem } from './needs';
+import { said } from './uiSentence';
 
 export interface PublishView { upcoming: CalEntry[]; overdue: CalEntry[] }
 
@@ -64,7 +65,7 @@ export function publishStepOf(e: CalEntry, workflows: readonly { id: string; tit
 export function publishNeedItems(list: readonly OverduePublish[], urgency: number): NeedItem[] {
     return list.map(({ entry: e, lateMs, step }) => ({
         urgency, kind: 'publish-overdue' as const, agentName: 'calendar',
-        title: `"${e.title}" was due on ${e.platform} ${span(lateMs)} ago`,
+        ...said('"{title}" was due on {platform} {late} ago', { title: e.title, platform: e.platform, late: span(lateMs) }),
         detail: `${when(e)} · ${e.status} · ${step ? `published by "${step.workflowTitle}" step ${step.stepIndex + 1}` : 'no publish step names this note'}`,
         ts: whenOf(e),
         ref: { filePath: e.file, ...(step ? { workflowId: step.workflowId, stepIndex: step.stepIndex } : {}) },

@@ -39,15 +39,18 @@
         return window.AFTip.wrap(inner, lines[0], window.AFTip.lines(lines.slice(1)), 'nw-tipw');
     }
 
+    // U-189 — a title the host composed travels as its template and values
+    const said = o => (o.titleKey ? t(o.titleKey, o.titleVars) : o.title);
+
     function waitingHtml(d) {
         const rows = d.waiting.map(w => tipped(
             `<div class="nw-row nw-go" data-nav="needs" tabindex="0">
                 <span class="nw-ic">${KIND[w.kind] || '•'}</span>
-                <span class="nw-main"><b>${esc(w.agentName)}</b> · ${esc(w.title)}
+                <span class="nw-main"><b>${esc(w.agentName)}</b> · ${esc(said(w))}
                     <span class="nw-line muted">${esc(w.detail)}</span></span>
                 <span class="nw-when muted">${esc(T.ago(w.ts))}</span>
             </div>`,
-            [`${w.agentName} · ${w.title}`, T.tip(w.ts, 'Raised'), window.AFTip.GAP, w.detail || '']));
+            [`${w.agentName} · ${said(w)}`, T.tip(w.ts, 'Raised'), window.AFTip.GAP, w.detail || '']));
         const more = d.waitingMore ? `<div class="nw-more nw-go" data-nav="needs">${esc(t('+{n} more in Needs You', { n: d.waitingMore }))}</div>` : '';
         return section(t('Waiting for you'), d.waiting.length + d.waitingMore, 'needs',
             rows.join('') + more, '🎉 ' + t('Nothing is waiting for you.'));
@@ -94,7 +97,7 @@
     function noticesHtml(d) {
         const rows = d.notices.map(n => `<div class="nw-row nw-go${n.read ? ' read' : ''}" data-nav="notices" tabindex="0">
                 <span class="nw-ic">${LEVEL[n.level] || '·'}</span>
-                <span class="nw-main">${esc(n.title)}<span class="nw-line muted">${esc(n.agentName)} · ${esc(n.type)}</span></span>
+                <span class="nw-main">${esc(n.title)}<span class="nw-line muted">${esc(n.agentName)} · ${esc(t(n.type))}</span></span>
                 <span class="nw-when muted" title="${esc(T.tip(n.ts, 'Posted'))}">${esc(T.ago(n.ts))}</span>
             </div>`);
         return section(t('Notices'), null, 'notices', rows.join(''), t('No notices yet.'));

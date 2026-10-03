@@ -36,7 +36,11 @@ export interface NowInput {
     now: number;
 }
 
-export interface NowWaiting { key: string; kind: string; agentName: string; title: string; detail: string; ts: number }
+export interface NowWaiting {
+    key: string; kind: string; agentName: string; title: string; detail: string; ts: number;
+    /** U-189 — the title's template and values (needs.ts), drawn through the page's t() */
+    titleKey?: string; titleVars?: Record<string, string>;
+}
 
 export interface NowRunning {
     id: string; agentName: string; engine: string; status: string;
@@ -89,7 +93,8 @@ export function buildNow(i: NowInput): NowData {
             || b.since - a.since);
     return {
         waiting: blocking.slice(0, NOW_LIMITS.waiting).map(n => ({
-            key: needKey(n), kind: n.kind, agentName: n.agentName, title: n.title, detail: n.detail, ts: n.ts
+            key: needKey(n), kind: n.kind, agentName: n.agentName, title: n.title, detail: n.detail, ts: n.ts,
+            ...(n.titleKey ? { titleKey: n.titleKey, titleVars: n.titleVars ?? {} } : {})
         })),
         waitingMore: Math.max(0, blocking.length - NOW_LIMITS.waiting),
         running,

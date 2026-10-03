@@ -1080,6 +1080,11 @@ files, and `media/afTime.js` formats with `AFI18n.locale()`.
   passes through.
 - Translate where the text is DRAWN, not where it is declared: the header's
   `NAV` stays English and `navBtn` translates — one point for every button.
+- A sentence the HOST composes for a row (`developer is waiting for
+  permission`) is built with `said(template, values)` (`src/core/uiSentence.ts`):
+  the English `title` stays whole for the bridge and the agents reading it,
+  `titleKey` + `titleVars` travel beside it, and the page draws
+  `t(titleKey, titleVars)`. A page never re-parses an English sentence.
 - A new language is a catalog file and an entry in `LANGS`; `test/test_i18n.js`
   holds the setting's enum, its flex point and the catalog files to that list,
   and fails a header destination missing from a catalog.
