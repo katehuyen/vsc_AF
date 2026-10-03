@@ -25,7 +25,9 @@
         if (m.type === 'done') { note = { ok: !!m.ok, text: m.text || '', say: Array.isArray(m.say) && m.say.length ? m.say : null }; if (m.ok) { form = null; } render(); }
     });
 
-    const GLYPH = { running: '▶', waiting: '⏳', parked: '🅿', done: '■', stopped: '✕', refused: '⊘', failed: '✖' };
+    // S-128 — colours, the relay symbols and the legs strip live in media/afChainsLook.js
+    const L = window.AFChainsLook;
+    const GLYPH = L.GLYPH;
     const CHIPS = [['', '⑂', 'All'], ['running', '▶', 'Running'], ['waiting', '⏳', 'Waiting'], ['parked', '🅿', 'Parked'],
         ['attention', '⚠', 'Needs attention'], ['done', '■', 'Done'], ['stopped', '✕', 'Stopped']];
     const SIGNAL = { hanging: 'Hanging', 'stuck-wait': 'Stuck wait', cut: 'Cut', fault: 'Engine fault', brake: 'Brake refused' };
@@ -66,16 +68,20 @@
     function chainCell(r, proj) {
         const lines = [t('Chain: {id}', { id: r.chainId }), t('Agent: {agent}', { agent: r.agentName || '—' }),
             t('Project: {project}', { project: proj ? proj.name : '—' }), r.engine ? t('Engine: {engine}', { engine: r.engine }) : '',
-            T.tip(r.startedAt, 'Started'), T.tip(r.lastAt, 'Last move'), r.trimmed ? t('Only its links are left on record.') : ''];
-        return TIP.cell('ch-name', '', `<span class="ch-title">${esc(r.title || r.chainId)}</span><span class="ch-id muted">${esc(r.chainId)}</span>`,
+            T.tip(r.startedAt, 'Started'), T.tip(r.lastAt, 'Last move'), r.trimmed ? t('Only its links are left on record.') : '',
+            TIP.GAP, t('{copy} copies the chain id.', { copy: L.SYM.copy })];
+        const copy = `<button class="ch-copy" data-copy="${esc(r.chainId)}" aria-label="${esc(t('Copy chain id'))}">${L.SYM.copy}</button>`;
+        return TIP.cell('ch-name', '', `<span class="ch-title">${esc(r.title || r.chainId)}</span><span class="ch-id muted">${esc(r.chainId)}${copy}</span>`,
             r.title || r.chainId, TIP.lines(lines));
     }
 
     function legCell(r) {
         const max = r.maxLegs ? String(r.maxLegs) : '∞';
+        const ceiling = !r.lastLeg && L.atEnd(r);
         const lines = [t('Leg: {leg} of {max}', { leg: r.leg, max }), r.lastLeg ? t('Last leg: braked — it writes the handover note instead of passing') : '',
-            r.brake ? t('Brake: {brake}', { brake: r.brake }) : ''];
-        return TIP.cell('num', '', `${r.leg} / ${max}${r.lastLeg ? ' ⛔' : ''}`, t('Leg {leg} of {max}', { leg: r.leg, max }), TIP.lines(lines));
+            ceiling ? t('Last leg: the chain\'s ceiling — it writes the handover note instead of passing') : '',
+            r.brake ? t('Brake: {brake}', { brake: r.brake }) : '', TIP.GAP, t('● ran · ▶ running · ⏳ waiting · 🅿 parked · ○ still allowed · ∞ no ceiling')];
+        return TIP.cell('ch-legc', '', L.stepper(r), t('Leg {leg} of {max}', { leg: r.leg, max }), TIP.lines(lines));
     }
 
     function nowCell(r) {
@@ -107,13 +113,13 @@
         const a = r.acts;
         return '<td class="ch-acts">' + [
             a.now ? act(r, 'now', '⏭', 'Start now', 'The waiting leg goes through the door now instead of waiting.', `data-baton="${esc(a.now)}"`) : '',
-            a.stop ? act(r, 'stop', '✕', 'Stop chain', 'Stops the waiting or parked baton; no further leg opens. Nothing is deleted.') : '',
-            a.lastLeg ? act(r, 'lastLeg', '⛔', r.lastLeg ? 'Release last leg' : 'Last leg',
+            a.stop ? act(r, 'stop', L.SYM.stop, 'Stop chain', 'Stops the waiting or parked baton; no further leg opens. Nothing is deleted.') : '',
+            a.lastLeg ? act(r, 'lastLeg', L.SYM.lastLeg, r.lastLeg ? 'Release last leg' : 'Last leg',
                 r.lastLeg ? 'Braked now. Press to let the leg pass the baton at its handover line again.' : 'The running leg writes the handover note instead of passing.',
                 `data-session="${esc(r.sessionId)}" data-on="${!r.lastLeg}" aria-pressed="${!!r.lastLeg}"`) : '',
             a.legs ? act(r, 'ceiling', '⇕', 'Leg ceiling', 'How many legs this chain may run.') : '',
             a.cont ? act(r, 'continue', '↻', 'Continue', 'Opens a new leg from the last handover words, or from what you write.') : '',
-            a.end ? act(r, 'end', '■', 'End chain', 'Marks the chain finished on purpose; the current leg writes its note instead of passing.') : '',
+            a.end ? act(r, 'end', L.SYM.end, 'End chain', 'Marks the chain finished on purpose; the current leg writes its note instead of passing.') : '',
             r.sessionId ? act(r, 'open', '↗', 'Open session', 'The current leg\'s transcript.', `data-session="${esc(r.sessionId)}"`) : ''
         ].join('') + '</td>';
     }
@@ -144,7 +150,7 @@
             ${cont ? `<textarea id="ch-prompt" rows="3" placeholder="${esc(t('Empty: the new leg starts from the chain\'s last handover words'))}">${esc(form.prompt)}</textarea>` : ''}
             <input id="ch-why" type="text" value="${esc(form.why)}" placeholder="${esc(t('Why (recorded on the chain)'))}">
             ${cont ? '' : `<label class="ch-chk"><input id="ch-close" type="checkbox"${form.endSession ? ' checked' : ''}> ${esc(t('Also close the current leg\'s session (asks first if it is working)'))}</label>`}
-            <button id="ch-go">${esc(cont ? '↻ ' + t('Continue') : '■ ' + t('End chain'))}</button>
+            <button id="ch-go">${esc(cont ? '↻ ' + t('Continue') : L.SYM.end + ' ' + t('End chain'))}</button>
             <button id="ch-cancel" class="secondary">${esc(t('Cancel'))}</button></div></td></tr>`;
     }
 
@@ -152,7 +158,7 @@
         const projects = DATA.projects || [];
         return rows.map(r => {
             const isOpen = open.has(r.chainId);
-            return `<tr class="ch-row${r.signals.length ? ' attn' : ''}${isOpen ? ' open' : ''}" data-chain="${esc(r.chainId)}">
+            return `<tr class="ch-row t-${L.tone(r)}${r.signals.length ? ' attn' : ''}${isOpen ? ' open' : ''}" data-chain="${esc(r.chainId)}">
                 ${stateCell(r)}${chainCell(r, window.AFProject.find(projects, r.projectId))}<td class="ch-wide">${esc(r.agentName || '—')}</td>
                 ${legCell(r)}${nowCell(r)}${TIP.cell('ch-wide muted', '', esc(T.ago(r.lastAt)), t('Last move'), TIP.lines([T.tip(r.lastAt, 'Last move'), T.tip(r.startedAt, 'Started')]))}
                 ${totalsCell(r)}${nextCell(r)}${actsCell(r)}</tr>${formRow(r)}${isOpen ? legsRow(r) : ''}`;
@@ -167,64 +173,14 @@
             : !rows.length ? `<p class="muted">${esc(t('No chain in this state.'))} <a href="#" data-chip="">${esc(t('Show every chain'))}</a></p>`
                 : `<table class="ch-tab"><thead><tr>${th('State', 'Where the chain stands, from its newest record. ⚠ = something the record shows going wrong.')}
                     ${th('Chain', 'The first leg\'s title and the chain id.')}${th('Agent', 'The agent the chain runs as.', 'ch-wide')}
-                    ${th('Leg', 'The current leg and the chain\'s ceiling (∞ = none). ⛔ = braked as the last leg.', 'num')}
+                    ${th('Leg', 'The legs as a strip: ● ran, the current one in its state, ○ still allowed under the ceiling (∞ = none). ⑂⊣ = this leg is the last.')}
                     ${th('Now', 'The current leg: working, idle, gone — or what the next one waits for.')}
                     <th class="ch-wide">${TIP.wrap(esc(t('Last move')), t('Last move'), t('When the chain\'s record last changed.'))}</th>
                     <th class="ch-wide num">${TIP.wrap(esc(t('Cost')), t('Cost'), t('All legs together; hover for tokens and time.'))}</th>
                     <th class="ch-wide">${TIP.wrap(esc(t('Next')), t('Next'), t('The account and model the next leg opens on.'))}</th><th></th></tr></thead>
                     <tbody>${rowsHtml(rows)}</tbody></table>`;
         document.getElementById('app').innerHTML = `
-            <style>
-                .ch-chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
-                .ch-chip { min-height:28px; padding:2px 10px; border-radius:14px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); cursor:pointer; }
-                .ch-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
-                .ch-chip.warn b { color:var(--vscode-editorWarning-foreground, orange); }
-                .ch-chip.on.warn b { color:inherit; }
-                .ch-note { margin:4px 0 8px; font-size:12px; }
-                .ch-note.bad { color:var(--vscode-errorForeground); }
-                .ch-tab td { vertical-align:middle; }
-                .ch-row { cursor:pointer; }
-                .ch-row:hover { background:var(--vscode-list-hoverBackground); }
-                .ch-row.open { background:var(--vscode-list-inactiveSelectionBackground); }
-                .ch-row.focus { box-shadow:inset 3px 0 0 var(--vscode-focusBorder, #007fd4); }
-                .ch-row.attn .ch-st { color:var(--vscode-editorWarning-foreground, orange); }
-                .ch-st { white-space:nowrap; }
-                .ch-warn { margin-right:3px; }
-                .ch-name { max-width:340px; min-width:120px; }
-                .ch-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                .ch-id { display:block; font-size:11px; }
-                .ch-live.working { color:var(--vscode-charts-green, #3a3); }
-                .ch-live.gone { opacity:.7; }
-                .ch-acts { white-space:nowrap; text-align:right; }
-                .ch-actw { display:inline-block; }
-                .ch-act { min-width:28px; min-height:28px; padding:0 4px; margin-left:2px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); border-radius:4px; cursor:pointer; }
-                .ch-act:hover { background:var(--vscode-toolbar-hoverBackground, #8883); }
-                .ch-act[aria-pressed=true] { background:var(--vscode-inputValidation-warningBackground, #a606); border-color:var(--vscode-editorWarning-foreground, orange); }
-                .ch-sub > td { padding:4px 8px 8px 24px; background:var(--vscode-editorWidget-background, transparent); }
-                .ch-legs { table-layout:fixed; }
-                .ch-legs td { padding:3px 8px 3px 0; }
-                .ch-legs td:nth-child(1) { width:28px; }
-                .ch-legs td:nth-child(2) { width:32%; }
-                .ch-legs td:nth-child(4), .ch-legs td:nth-child(5), .ch-legs td:nth-child(6) { width:90px; }
-                .ch-leg { cursor:pointer; }
-                .ch-leg:hover { background:var(--vscode-list-hoverBackground); }
-                .ch-lt, .ch-lw { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                .ch-form { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-                .ch-form textarea { flex:1 1 100%; min-height:56px; font:inherit; resize:vertical; }
-                .ch-form input[type=text] { flex:1 1 260px; min-height:28px; }
-                .ch-chk { flex:1 1 100%; font-size:12px; }
-                @media (max-width:520px) {
-                    .ch-wide, .ch-sw { display:none; }
-                    .ch-tab td, .ch-tab th { padding:4px 4px 4px 0; }
-                    .ch-tab td.num { white-space:nowrap; }
-                    .ch-name { max-width:120px; min-width:0; }
-                    .ch-acts { white-space:normal; width:96px; }
-                    .ch-act { margin:1px; }
-                    .ch-legs td:nth-child(2) { width:auto; }
-                    .ch-legs .ch-lw, .ch-legs .ch-live { display:none; }
-                    .ch-sub > td { padding-left:8px; }
-                }
-            </style>
+            <style>${L.CSS}</style>
             ${window.AFHeader.html({
                 page: 'chains',
                 title: t('Chains'),
@@ -262,6 +218,10 @@
             if (a === 'continue' || a === 'end') { form = { chainId: id, kind: a, prompt: '', why: '', endSession: false }; render(); return; }
             if (a === 'open') { post('openSession', { sessionId: el.dataset.session }); return; }
             post(a, { chainId: id, batonId: el.dataset.baton, sessionId: el.dataset.session, on: el.dataset.on === 'true' });
+        }));
+        document.querySelectorAll('[data-copy]').forEach(el => el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            window.AFCtx.copy(el.dataset.copy);
         }));
         document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => post('openSession', { sessionId: el.dataset.open })));
         const prompt = document.getElementById('ch-prompt');

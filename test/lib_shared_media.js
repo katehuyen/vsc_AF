@@ -98,6 +98,8 @@ const SHARED = [
     'afRouteForm.js',
     // afSecretForm.js — the Secrets page's card (X-487): a new secret or a stored one's edit.
     'afSecretForm.js',
+    // afChainsLook.js — the Chains page's look (S-128): state colours, the relay symbols, the legs strip.
+    'afChainsLook.js',
     // afTelegram.js was the sixteenth — the Telegram bridge card (U-84).
     // Shared the moment the item asked for it in two places: the fact it draws
     // is "can your phone reach the farm", and a card invented per page is a
