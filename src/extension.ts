@@ -366,7 +366,7 @@ import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLe
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
-import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
+import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, endRecords, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
 import { legFactsSnapshot } from './core/chainLegFacts';
 import { chainLegLines, chainsPageData } from './core/chainsPage';
 import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
@@ -17787,9 +17787,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         tasks: () => taskManager.tasks,
         cards: () => consoleHost.list(),
         batons: () => batonStore.all(),
+        // S-127 — the board is built further down and reads every live surface; the cleanup must still count the rest
+        chains: () => { try { return boardNow(chainBoardDeps); } catch { return []; } },
         cancelTask: id => { const t = taskManager.tasks.find(x => x.id === id); if (t) { taskManager.cancelTask(t); } },
         closeCard: id => { consoleHost.forget(id); ConsolePanel.refreshIfOpen(); },
-        stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard, cancelSuccessorRow); }
+        stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard, cancelSuccessorRow); },
+        endChain: (chain, by, why) => { const r = endRecords(chainBoardDeps, { chain, by, why }); if (!r.ok) { throw new Error(r.why); } }
     }, (title, body) => {
         noticesStore.add({ agentName: 'agent-farm', type: 'report', level: 2, title, body, sourceKey: `stale:${Date.now()}` });
         NoticesPanel.refreshIfOpen();

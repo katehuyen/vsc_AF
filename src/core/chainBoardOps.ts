@@ -75,20 +75,29 @@ export type EndOnBoard =
     | { ok: true; stopped: Baton[]; closing?: Baton; sessionId?: string; session?: LegClose; sentence: string; say?: SayPart[] }
     | { ok: false; why: string; say?: SayPart[] };
 
-/** chains.end's body — the op and the Chains page's ■ alike. */
-export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean; confirm?: LegConfirm }): Promise<EndOnBoard> {
-    const r = endChain(deps.store.all(), { chainId: q.chain, by: q.by || 'the user', why: q.why, now: deps.now() });
+/** An end's records — successors stopped, the brake and the closing record — and no session touched (S-127's cleanup ends here). */
+export function endRecords(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string }): Extract<EndOnBoard, { ok: true }> & { why: string } | Extract<EndOnBoard, { ok: false }> {
+    const r = endChain(deps.store.all(), { chainId: q.chain, by: q.by || 'the user', why: q.why, now: deps.now(), links: deps.store.links() });
     if (!r.ok) { return r; }
     const stopped = r.stop.length ? stopBatons(deps.store, r.stop, r.why, deps.now(), deps.board, deps.cancelRow) : [];
     if (r.braked && r.closing) {
         deps.store.put(r.braked, r.closing);
         deps.board?.closeChain(deps.store.chain(q.chain).map(b => b.a2aNoteId), deps.now());
     }
-    const session = q.endSession && r.sessionId && deps.closeLeg ? await deps.closeLeg(r.sessionId, r.why, q.confirm) : undefined;
+    if (r.closingLink) { deps.store.putLink(r.closingLink); }
     return {
         ok: true, stopped, ...(r.closing ? { closing: r.closing } : {}), ...(r.sessionId ? { sessionId: r.sessionId } : {}),
-        ...(session ? { session } : {}), sentence: r.sentence, ...(r.say ? { say: r.say } : {})
+        sentence: r.sentence, ...(r.say ? { say: r.say } : {}), why: r.why
     };
+}
+
+/** chains.end's body — the op and the Chains page's ■ alike. */
+export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean; confirm?: LegConfirm }): Promise<EndOnBoard> {
+    const r = endRecords(deps, q);
+    if (!r.ok) { return r; }
+    const session = q.endSession && r.sessionId && deps.closeLeg ? await deps.closeLeg(r.sessionId, r.why, q.confirm) : undefined;
+    const { why: _recorded, ...done } = r;
+    return { ...done, ...(session ? { session } : {}) };
 }
 
 export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOpsDeps): void {
@@ -128,7 +137,7 @@ export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOp
         },
         {
             op: 'chains.end',
-            describe: 'S-121 — END A CHAIN ON PURPOSE: a waiting or parked successor is stopped (an unstarted successor row is cancelled with it); a RUNNING leg is braked as the chain\'s last and its closing record (done, "ended by …") is written, so its handover line asks for the note, a pass it makes anyway is braked, and the failsafe opens nothing. '
+            describe: 'S-121 — END A CHAIN ON PURPOSE: a waiting or parked successor is stopped (an unstarted successor row is cancelled with it); a RUNNING leg is braked as the chain\'s last and its closing record (done, "ended by …") is written, so its handover line asks for the note, a pass it makes anyway is braked, and the failsafe opens nothing. A running chain whose batons the store\'s cap already dropped (trimmed: only links left) is ended by writing its closing record as one more link. '
                 + 'endSession=true also closes the leg\'s session: at once when it is at rest, and only after asking the person when it is working. Nothing is deleted. Refused as data when the chain has already ended. '
                 + 'args: chain (chn_… id), why? (a line, recorded), endSession? (default false), by? (who, default "the user")',
             handler: async (args) => {

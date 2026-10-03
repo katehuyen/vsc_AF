@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.807.0 - The cleanup ends hanging chains; the phone says why a button did nothing (2026-10-03)
+
+- **Stuck-items cleanup now sees hanging chains.** A relay chain whose
+  running leg ended (or has sat idle) without passing the baton or closing
+  the chain stayed "running" on the Chains page, and the 24-hour cleanup
+  never listed it. Chains hanging for 24 hours or more are now in the
+  cleanup's list, the status-bar count and the daily notice; cleaning one
+  writes the chain's closing record, exactly as ending it on the Chains
+  page does, and leaves its session alone.
+- **Old chains can be ended again.** A chain old enough that only its links
+  were kept on record could not be ended at all — not from the Chains page,
+  not by the cleanup. It now ends with one more record in its links.
+- **On the phone, a button that does nothing says why.** A button whose
+  action belongs to the PC (opening a report, a link, a file, a terminal or
+  another tab) or that is above the phone's access used to do nothing at
+  all. The phone now shows a short note: do it on the PC, or which access
+  the phone has, which one the action needs and where an admin changes it.
+
 ## 3.806.0 - A press is never lost to a redraw; paired phones get a scope and an activity list (2026-10-03)
 
 - **Pressing a button right after typing works again.** Pages that refresh

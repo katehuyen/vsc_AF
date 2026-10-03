@@ -101,7 +101,10 @@ for (const f of timers.splice(0)) { f(); }
 api.postMessage({ type: 'late' });
 ok('a press whose bubble never came (stopPropagation) still ends on the next turn', posted[5].afPress === undefined);
 dispatch('click', {}, () => api.postMessage({ type: 'afnav', to: 'chains:c1' }));
-ok('a shell request keeps its own shape under the mark', posted[6].type === 'afnav' && posted[6].to === 'chains' && posted[6].args.chain === 'c1');
+ok('a shell request (the phone answers it, the farm never sees it) is not marked', posted[6].type === 'afnav' && posted[6].to === 'chains'
+    && posted[6].args.chain === 'c1' && posted[6].afPress === undefined);
+dispatch('click', {}, () => api.postMessage({ type: 'afVoice', token: 'v1' }));
+ok('…a dictation tap neither', JSON.stringify(posted[7]) === JSON.stringify({ type: 'afVoice', token: 'v1' }));
 
 console.log(`\ntest_remote_press: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

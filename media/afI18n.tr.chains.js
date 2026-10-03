@@ -126,6 +126,8 @@
     'chain {chain} has already ended ({state}: {why}).': '{chain} zinciri zaten sona ermiş ({state}: {why}).',
     'Chain {chain} ended at leg {leg} (ended by {by}) — its handover line now asks for the note, and no successor opens.': '{chain} zinciri {leg}. halkada kapatıldı — devir çizgisi artık notu ister ve ardıl açılmaz.',
     'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — its handover line now asks for the note, and no successor opens.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — devir çizgisi artık notu ister ve ardıl açılmaz.',
+    'Chain {chain} ended at leg {leg} (ended by {by}) — only its links were left on record, and its closing record is now one of them.': '{chain} zinciri {leg}. halkada kapatıldı — kayıtta yalnızca halka bağları kalmıştı; kapanış kaydı artık onlardan biri.',
+    'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — only its links were left on record, and its closing record is now one of them.': '{chain} zinciri {leg}. halkada kapatıldı ({reason}) — kayıtta yalnızca halka bağları kalmıştı; kapanış kaydı artık onlardan biri.',
     'Its session was closed.': 'Oturumu kapatıldı.',
     'Its session was working and keeps running.': 'Oturumu çalışıyordu, çalışmayı sürdürüyor.'
 });

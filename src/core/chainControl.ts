@@ -15,6 +15,7 @@ import { chainMaxLegs, isSeal } from './batonSeal';
 import { closingRecord } from './batonFailsafe';
 import { setLastLeg } from './batonLastLeg';
 import { newerRecord } from './chainBoard';
+import type { ChainLink } from './chainMembership';
 import { SayPart, say, saidSentence, saidWhy } from './uiSentence';
 
 /** The first line of a reopened leg's prompt, under the chain header the door puts on top. */
@@ -125,6 +126,8 @@ export interface EndInput {
     why?: string;
     now: number;
     rnd?: () => number;
+    /** the store's links: a chain whose batons the cap dropped is ended from them (S-127) */
+    links?: readonly ChainLink[];
 }
 
 export type EndResult =
@@ -135,6 +138,8 @@ export type EndResult =
         /** the running leg's opener with the last-leg brake, and the chain's closing record */
         braked?: Baton;
         closing?: Baton;
+        /** the closing record's link, when only links are left of the chain */
+        closingLink?: ChainLink;
         /** the session the caller may close: the running leg, or the leg a stopped successor waited on */
         sessionId?: string;
         /** the line recorded on every record this writes */
@@ -154,10 +159,22 @@ export function endChain(list: readonly Baton[], q: EndInput): EndResult {
     const chainId = String(q.chainId ?? '').trim();
     const chain = chainOf(list, chainId);
     const top = [...chain].sort(newerRecord)[0];
-    if (!top) { return saidWhy('no chain {chain} with records left — chains.list shows the chains.', { chain: chainId || '(none named)' }); }
     const reason = q.why ? String(q.why).trim() : undefined;
     const why = `ended by ${q.by}${reason !== undefined ? `: ${reason}` : ''}`;
     const endVars = { chain: chainId, by: q.by, ...(reason !== undefined ? { reason } : {}) };
+    if (!top) {
+        // the cap dropped every baton of a leg that never passed: its link still reads `started`, and the closing record's link ends it
+        const last = chainId ? (q.links ?? []).filter(l => l.chainId === chainId).sort(newerRecord)[0] : undefined;
+        if (last?.state !== 'started' || !last.to) { return saidWhy('no chain {chain} with records left — chains.list shows the chains.', { chain: chainId || '(none named)' }); }
+        const closingLink: ChainLink = { chainId, hop: last.hop + 1, from: last.to, state: 'done', createdAt: q.now, updatedAt: q.now };
+        return {
+            ok: true, stop: [], closingLink, sessionId: last.to, why,
+            ...saidSentence(say(reason !== undefined
+                ? 'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — only its links were left on record, and its closing record is now one of them.'
+                : 'Chain {chain} ended at leg {leg} (ended by {by}) — only its links were left on record, and its closing record is now one of them.',
+            { ...endVars, leg: last.hop + 1 }))
+        };
+    }
     const stop = chain.filter(isLive);
     if (stop.length) {
         return {

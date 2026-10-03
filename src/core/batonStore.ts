@@ -47,6 +47,16 @@ export class BatonStore {
 
     put(...list: Baton[]): void {
         for (const b of list) { if (b && b.id) { this.batons.set(b.id, b); } }
+        this.changed();
+    }
+
+    /** S-127 — a record for a chain the cap dropped every baton of: its links are all that is left to write to. */
+    putLink(link: ChainLink): void {
+        this.archived = [link, ...this.archived].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, LINK_CAP);
+        this.changed();
+    }
+
+    private changed(): void {
         this.save();
         for (const fn of this.listeners) { try { fn(); } catch { /* a surface's redraw never stops a write */ } }
     }

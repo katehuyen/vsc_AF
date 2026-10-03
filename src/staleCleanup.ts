@@ -9,7 +9,7 @@ import { CleanResult, StaleDeps, StaleKind, cleanStale, fmtAge, shouldNotify, st
 import { BridgeRegistry } from './core/bridge';
 import { registerStaleOp } from './core/staleOp';
 
-const ICON: Record<StaleKind, string> = { queued: '$(watch)', running: '$(debug-pause)', baton: '$(git-merge)', card: '$(comment-discussion)' };
+const ICON: Record<StaleKind, string> = { queued: '$(watch)', running: '$(debug-pause)', baton: '$(git-merge)', card: '$(comment-discussion)', chain: '$(debug-disconnect)' };
 
 const said = (r: CleanResult): string => `Cleaned ${r.cleaned.length}${r.failed.length ? `, ${r.failed.length} failed (${r.failed[0].why})` : ''}.`;
 

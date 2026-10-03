@@ -35,22 +35,26 @@
     // can say on the phone why it did nothing; one the page sends by itself never does. The farm
     // takes the mark off before the page's handler sees it.
     var pressing = false;
+    // answered by the shell itself (and_AgentFarm ShellRequest): they never reach the farm
+    var SHELL = { afnav: true, afClipboard: true, afVoice: true };
     function pressStart(e) {
         if (e.type === 'keydown' && e.key !== 'Enter') { return; }
         pressing = true;
         setTimeout(pressEnd, 0);
     }
     function pressEnd() { pressing = false; }
-    ['click', 'change', 'submit', 'keydown'].forEach(function (t) {
-        window.addEventListener(t, pressStart, true);
-        window.addEventListener(t, pressEnd, false);
-    });
+    if (typeof window.addEventListener === 'function') {
+        ['click', 'change', 'submit', 'keydown'].forEach(function (t) {
+            window.addEventListener(t, pressStart, true);
+            window.addEventListener(t, pressEnd, false);
+        });
+    }
     window.acquireVsCodeApi = function () {
         if (api) { return api; }
         api = {
             postMessage: function (m) {
                 var out = readOf(m) || chainOf(m) || m;
-                if (pressing && out && typeof out === 'object') { out = Object.assign({}, out, { afPress: true }); }
+                if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },
             getState: function () {
