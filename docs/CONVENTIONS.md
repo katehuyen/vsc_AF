@@ -1075,6 +1075,19 @@ files, and `media/afTime.js` formats with `AFI18n.locale()`.
   IS the key, `{name}` is filled from the second argument. A string a catalog
   does not carry stays English, so a language is translated one surface at a
   time and never shows a blank.
+- ‼️ **NEW interface text is written through `t()` from its first commit — on
+  every page, wired or not** (the wiring of old pages is frozen; the user's
+  decision, 2026-10-03). A page that has no `t` yet gets the one line
+  `chains.js` carries (`const t = (s, v) => (window.AFI18n ? …)`); a phrase
+  declared in a table and translated where it is drawn is marked
+  `N_('…')` (`const N_ = s => s;` — it returns the phrase unchanged and tells
+  the reader, the gate and a future key extractor that it is interface text).
+  MEASURED: `test/test_i18n_ratchet.js` holds each `media/*.js` file's count of
+  bare interface text (a two-word phrase in a literal or a hover attribute,
+  not handed to t / tr / lab / label / N_) to `test/i18n.ratchet.json` — it may
+  fall, never rise, and a new file starts at 0. `--fix` locks a fall in; a
+  literal that is not interface text (a log line, a font name) carries
+  `i18n-exempt` in a comment on its line.
 - A label that leads with a mark (`🔔 Notices`, `◧ Projects`) goes through
   `label()`: the mark stays, the words are translated, a count badge's markup
   passes through.
