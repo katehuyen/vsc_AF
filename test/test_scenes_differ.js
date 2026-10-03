@@ -93,7 +93,12 @@ ok('‼️ EVERY SCENE DRAWS SOMETHING THE OTHERS DO NOT'
 // The rule has to be able to see the case it was written for: `history` was
 // the default page under a label that said "panel open", and taking its tip
 // away must put it straight back on top of the scene it used to duplicate.
+// The draws share one instant: the page rounds a mission's elapsed minutes, so a
+// suite under load that crossed a half-minute between two draws parted the twins.
 {
+    const realNow = Date.now;
+    const at = realNow();
+    Date.now = () => at;
     const fixture = require(path.join(FIXTURES, 'missions.js'));
     const variants = fixture.variants();
     const hist = variants.find(v => v.id === 'history');
@@ -107,6 +112,7 @@ ok('‼️ EVERY SCENE DRAWS SOMETHING THE OTHERS DO NOT'
     const others = variants.filter(v => v.id !== 'history' && !v.act && !v.tip && !v.menu).map(draw);
     ok('…and without it the page it draws is one another scene already draws (mutation)',
         !!hist && others.some(h => h === draw(Object.assign({}, hist, { tip: undefined }))));
+    Date.now = realNow;
 }
 
 console.log(`${pass} passed, ${fail} failed`);
