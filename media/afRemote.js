@@ -31,11 +31,26 @@
         var at = m && m.type === 'afnav' && typeof m.to === 'string' ? /^chains:(.+)$/.exec(m.to) : null;
         return at ? { type: 'afnav', to: 'chains', args: { chain: at[1] } } : null;
     }
+    // A message posted while the user's own press is being handled carries afPress, so the farm
+    // can say on the phone why it did nothing; one the page sends by itself never does. The farm
+    // takes the mark off before the page's handler sees it.
+    var pressing = false;
+    function pressStart(e) {
+        if (e.type === 'keydown' && e.key !== 'Enter') { return; }
+        pressing = true;
+        setTimeout(pressEnd, 0);
+    }
+    function pressEnd() { pressing = false; }
+    ['click', 'change', 'submit', 'keydown'].forEach(function (t) {
+        window.addEventListener(t, pressStart, true);
+        window.addEventListener(t, pressEnd, false);
+    });
     window.acquireVsCodeApi = function () {
         if (api) { return api; }
         api = {
             postMessage: function (m) {
                 var out = readOf(m) || chainOf(m) || m;
+                if (pressing && out && typeof out === 'object') { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },
             getState: function () {

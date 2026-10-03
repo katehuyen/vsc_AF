@@ -142,6 +142,7 @@ export class RemoteViews {
     message(caller: ViewCaller, view: string, message: unknown): { page: string; type: string; act: boolean; ran: boolean } | undefined {
         const host = this.views.get(keyOf(caller, view));
         if (!host) { return undefined; }
+        const pressed = takePress(message);
         const type = String((message as { type?: unknown } | null)?.type ?? '');
         // The answer to the host's own question (X-447): settled here, never the page's message.
         if (type === 'afAskAnswer') {
@@ -151,7 +152,7 @@ export class RemoteViews {
         }
         const need = messageScope(host.spec, type);
         const ran = need !== null && this.d.atLeast(caller.scope, need);
-        if (ran) { host.webview.receive(message); }
+        if (ran) { host.webview.receive(message); } else if (pressed) { void host.asker.info(refusedNote(need, caller.scope)); }
         const look = host.spec.looks.includes(type) || SHELL_LOOKS.includes(type);
         return { page: host.page, type, act: !look, ran };
     }
@@ -190,3 +191,19 @@ export class RemoteViews {
 }
 
 function keyOf(caller: ViewCaller, view: string): string { return caller.device + '|' + view; }
+
+/** media/afRemote.js marks what the user's own press sent; the page's handler never sees the mark. */
+function takePress(message: unknown): boolean {
+    if (!message || typeof message !== 'object' || !('afPress' in message)) { return false; }
+    const m = message as { afPress?: unknown };
+    const pressed = m.afPress === true;
+    delete m.afPress;
+    return pressed;
+}
+
+/** Why a press on the phone did nothing: the PC's own action, or more than this phone may do. */
+export function refusedNote(need: string | null, scope: string): string {
+    return need === null
+        ? 'Not available on the phone — do this on the PC.'
+        : `This phone may ${scope}; this needs ${need}. An admin can change it on the PC: Toolbox › Services › Agent Farm app.`;
+}
