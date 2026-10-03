@@ -2895,9 +2895,13 @@ export class ConsoleHost {
             }
         }
         killPid(pid);
-        const free = await this.awaitRelease(sessionId, tries);
-        return { free, pid };
+        this.reclaims++;
+        try { return { free: await this.awaitRelease(sessionId, tries), pid }; } finally { this.reclaims--; }
     }
+
+    private reclaims = 0;
+    /** S-124 — a reclaim is between its kill and its release: that session has neither its process nor its card yet. */
+    get reclaiming(): boolean { return this.reclaims > 0; }
 
     /**
      * ‼️ X-349 — A REVIVED CARD NOBODY SPEAKS INTO IS NOT `starting`, IT IS WAITING.

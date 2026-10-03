@@ -1362,6 +1362,8 @@ export class SessionIndex implements vscode.Disposable {
     private parsers = new Map<string, SessionParser>();
     /** Counts scans so a superseded one can stand down — see scanAll. */
     private scanGen = 0;
+    /** S-124 — when a full scan last completed; 0 = never, so the index cannot yet say a session is unknown. */
+    scannedAt = 0;
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
     readonly onDidUpdate = this.onDidUpdateEmitter.event;
     /** E1: configured extra dirs whose projects folder was not found on the last scan. */
@@ -1484,6 +1486,7 @@ export class SessionIndex implements vscode.Disposable {
         }
         if (this.scanGen !== gen) { return; }
         this.sessions = next;
+        this.scannedAt = Date.now();
         this.applyRelayTitles();
         this.reachLive.rebuild(next.values());
         // X-348 — the whole map was replaced, so the kept answer is about

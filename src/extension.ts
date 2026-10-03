@@ -704,7 +704,7 @@ import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchP
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
 import { sessionChainOf } from './core/sessionChain';
-import { chainLivingSignals } from './core/chainSignals';
+import { chainLivingSignals, chainSignalNotices } from './core/chainSignals';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
 import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
@@ -17945,8 +17945,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify: (title, body, key) => noticesStore.add({ agentName: 'agent-farm', title, body, type: 'warning', level: 3, sourceKey: key })
     });
     const batonBootSweep = setTimeout(() => { batonRunner.sweep(); updateBatonBar(); }, 20_000);
+    // ‼️ S-124 — the board's signals behind the bell (chainSignals.ts). Nothing is posted or withdrawn before the
+    // index's first full scan, nor while a reclaim runs: a leg the revive carries across has neither its process
+    // nor its card for those seconds, and would read as hanging.
+    const CHAIN_BELL_BASELINE = 'agentfarm.chainBellBaseline';
+    const chainBell = (): void => {
+        if (!index.scannedAt || consoleHost.reclaiming) { return; }
+        const baseline = context.globalState.get<number>(CHAIN_BELL_BASELINE);
+        const posted = [...Object.keys(context.globalState.get<Record<string, number>>(NEWS_KEY, {})), ...noticesStore.notices.map(n => n.sourceKey ?? '')];
+        const plan = chainSignalNotices(boardNow(chainBoardDeps), { now: Date.now(), baseline, posted, batons: batonStore.all() });
+        if (baseline === undefined) { void context.globalState.update(CHAIN_BELL_BASELINE, plan.baseline); }
+        for (const k of plan.retract) { retractNews(k); }
+        for (const { key, ...n } of plan.post) {
+            if (!noticesStore.notices.some(x => x.sourceKey === key)) { postNewsOnce(key, n); }
+        }
+    };
     const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); engineFaults.check(); misplacedWatch.sweep(); }, 60_000);
-    context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); } });
+    const chainBellSweep = setInterval(chainBell, 60_000);
+    context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); clearInterval(chainBellSweep); } });
 
     registerA2AOps(bridge, {
         notes: a2aNotes, tasks: a2aTasks,

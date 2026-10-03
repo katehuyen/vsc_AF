@@ -9138,13 +9138,13 @@
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "description": "Chain board: a relay chain is flagged as needing attention ('hanging') when its running leg has been idle this many minutes — or its session ended this long ago, or nothing has seen its session and its record has not moved for this long — without passing the baton and without the chain being closed. Read from the record and the session itself, never from what the leg said."
+          "description": "Chain board: a relay chain is flagged as needing attention ('hanging') when its running leg has been idle this many minutes — or its session ended this long ago, or nothing has seen its session and its record has not moved for this long — without passing the baton and without the chain being closed. Read from the record and the session itself, never from what the leg said. It shows on the Chains and Living pages and arrives as a notice, which withdraws itself once the chain moves again."
         },
         "agentFarm.chainWaitMinutes": {
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "description": "Chain board: a relay chain is flagged as needing attention ('stuck') when the next leg has been waiting this many minutes for the session that passed the baton to end."
+          "description": "Chain board: a relay chain is flagged as needing attention ('stuck') when the next leg has been waiting this many minutes for the session that passed the baton to end. It shows on the Chains and Living pages and arrives as a notice, which withdraws itself once the next leg opens."
         },
         "agentFarm.defaultAccountCeiling": {
           "type": "number",
