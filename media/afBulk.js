@@ -11,11 +11,13 @@
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[c]));
     const tip = (html, head, body) => (window.AFTip ? window.AFTip.wrap(html, head, body) : html);
+    // U-189 — this hand's own words; what a page hands it (a label, a head) the page has already translated.
+    const t = s => (window.AFI18n ? window.AFI18n.t(s) : s);
 
     /** The row's head. */
     function cb(id, checked) {
         return `<input type="checkbox" class="afb-cb" data-cb="${esc(id)}"${checked ? ' checked' : ''}`
-            + ' title="Select for the bulk actions under the filters">';
+            + ` title="${esc(t('Select for the bulk actions under the filters'))}">`;
     }
 
     /** The row's tail. `held` disables it and says why — a live hand is on the row. */
@@ -27,12 +29,12 @@
     /** The bar: `id` names the select-all box, `buttons` are drawn after it. */
     function bar(id, allChecked, buttons) {
         return '<span class="afb-break"></span><span class="afb-bar">'
-            + `<label class="afb-selall" title="Select / deselect every row shown"><input type="checkbox" id="${esc(id)}"${allChecked ? ' checked' : ''}> all</label>`
+            + `<label class="afb-selall" title="${esc(t('Select / deselect every row shown'))}"><input type="checkbox" id="${esc(id)}"${allChecked ? ' checked' : ''}> ${esc(t('all'))}</label>`
             + buttons.join('') + '</span>';
     }
 
     function delBtn(head, body) {
-        return tip('<button class="secondary danger" data-hact="bulkDelete"><span class="afb-trash">🗑</span> Delete</button>', head, body);
+        return tip(`<button class="secondary danger" data-hact="bulkDelete"><span class="afb-trash">🗑</span> ${esc(t('Delete'))}</button>`, head, body);
     }
 
     function clearBtn(act, label, head, body) {
@@ -48,9 +50,9 @@
         const d = new Date(ts), n = new Date(now || Date.now());
         const k = v => `${v.getFullYear()}-${v.getMonth()}-${v.getDate()}`;
         const y = new Date(n); y.setDate(n.getDate() - 1);
-        if (k(d) === k(n)) { return 'Today'; }
-        if (k(d) === k(y)) { return 'Yesterday'; }
-        return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+        if (k(d) === k(n)) { return t('Today'); }
+        if (k(d) === k(y)) { return t('Yesterday'); }
+        return d.toLocaleDateString((window.AFI18n && window.AFI18n.locale()) || undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
     }
 
     /** The rows, with a day header wherever the calendar day changes. */

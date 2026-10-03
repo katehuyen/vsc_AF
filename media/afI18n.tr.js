@@ -88,6 +88,27 @@
     'Started': 'Başladı',
     'Turn started': 'Tur başladı',
     'Posted': 'Gönderildi',
+    // the shared list hands (media/afBulk.js, media/afCtx.js, media/afFilters.js)
+    'Filter': 'Süzgeç',
+    'none': 'hiçbiri',
+    'Select all': 'Tümünü seç',
+    'Select all {n} shown': 'Gösterilen {n} öğenin tümünü seç',
+    'Clear': 'Temizle',
+    'find…': 'bul…',
+    'Filter this list of {n}': '{n} seçenekli bu listeyi süz',
+    'Toggle {name}': 'Aç/kapa: {name}',
+    'Show only {name}': 'Yalnızca şunu göster: {name}',
+    'nothing to filter by': 'süzülecek bir şey yok',
+    'nothing matches that': 'bununla eşleşen bir şey yok',
+    'Tick any combination. Click a NAME to show only that one; the checkbox itself still toggles. Select all / Clear are above the list.':
+        'İstediğin birleşimi işaretle. Yalnızca onu göstermek için bir ADA tıkla; onay kutusu yine aç/kapa yapar. Tümünü seç / Temizle listenin üstündedir.',
+    'RIGHT-CLICK flips between everything and {preset} without opening this list. From any other selection, the first press lands on {preset}.':
+        'SAĞ TIK, bu listeyi açmadan hepsi ile {preset} arasında geçiş yapar. Başka bir seçimdeyken ilk basış seni {preset} seçimine getirir.',
+    'Select for the bulk actions under the filters': 'Süzgeçlerin altındaki toplu işlemler için seç',
+    'Select / deselect every row shown': 'Gösterilen tüm satırları seç / seçimi kaldır',
+    'Delete': 'Sil',
+    'Yesterday': 'Dün',
+    'right-click for more': 'daha fazlası için sağ tıkla',
     // the Now page (media/now.js)
     '{waiting} waiting · {running} running · {cost} today': '{waiting} bekliyor · {running} çalışıyor · bugün {cost}',
     'Waiting for you': 'Seni bekleyenler',

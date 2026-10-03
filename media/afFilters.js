@@ -25,6 +25,9 @@
 //    'change': there, every keystroke would be a write.)
 (function () {
     'use strict';
+    // U-189 — this component's own words; a label or title a page hands it, the page has already translated.
+    const t = (s, v) => (typeof window !== 'undefined' && window.AFI18n ? window.AFI18n.t(s, v)
+        : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     // The menu that is open right now, carried across re-renders. Only one is
     // ever open, so page-global state is enough and costs nothing.
@@ -118,9 +121,9 @@
 
     /** null → all · [] → none · one → its own label, cut · many → n/total. */
     function buttonText(o, opts, sel) {
-        const label = o.label || 'Filter';
-        if (sel === null || sel === undefined) { return label + ': ' + shorten(o.allLabel || 'all'); }
-        if (!sel.length) { return label + ': none'; }
+        const label = o.label || t('Filter');
+        if (sel === null || sel === undefined) { return label + ': ' + shorten(o.allLabel || t('all')); }
+        if (!sel.length) { return label + ': ' + t('none'); }
         if (sel.length === 1) {
             const hit = opts.find(x => x.v === sel[0]);
             return label + ': ' + shorten(hit ? hit.t : sel[0]);
@@ -143,8 +146,8 @@
      * the safety net for a label made mostly of emoji.
      */
     function buttonWidth(o, opts) {
-        const label = (o.label || 'Filter').length + 2;          // "state: "
-        const widest = [o.allLabel || 'all', 'none', opts.length + '/' + opts.length]
+        const label = (o.label || t('Filter')).length + 2;          // "state: "
+        const widest = [o.allLabel || t('all'), t('none'), opts.length + '/' + opts.length]
             .concat(opts.map(x => shorten(x.t)))
             .reduce((m, s) => Math.max(m, String(s).length), 0);
         return label + widest + 3;                                // + " ▾"
@@ -171,9 +174,9 @@
      * rule in docs/CONVENTIONS.md.
      */
     function selectionLine(o, opts, sel) {
-        const label = o.label || 'Filter';
-        if (sel === null || sel === undefined) { return label + ': ' + (o.allLabel || 'all'); }
-        if (!sel.length) { return label + ': none'; }
+        const label = o.label || t('Filter');
+        if (sel === null || sel === undefined) { return label + ': ' + (o.allLabel || t('all')); }
+        if (!sel.length) { return label + ': ' + t('none'); }
         const names = sel.map(v => {
             const hit = opts.find(x => x.v === v);
             return hit ? hit.t : v;
@@ -212,9 +215,9 @@
         const items = opts.map(x =>
             `<span class="afms-item"${x.hint ? ` title="${esc(x.hint)}"` : ''}>` +
             `<input type="checkbox" data-afms-opt="${esc(x.v)}"${on(x.v) ? ' checked' : ''}` +
-            ` aria-label="Toggle ${esc(x.t)}">` +
+            ` aria-label="${esc(t('Toggle {name}', { name: x.t }))}">` +
             `<span class="afms-name" data-afms-only="${esc(x.v)}"` +
-            ` role="button" tabindex="0" aria-label="Show only ${esc(x.t)}">${esc(x.t)}</span></span>`).join('');
+            ` role="button" tabindex="0" aria-label="${esc(t('Show only {name}', { name: x.t }))}">${esc(x.t)}</span></span>`).join('');
         /**
          * ‼️ U-92 — A LONG LIST EARNS A FIND BOX, AND IT EARNS IT BY BEING LONG.
          *
@@ -227,8 +230,8 @@
         const searchable = o.search === true || (o.search !== false && opts.length >= FIND_FROM);
         const findBox = searchable
             ? `<input type="text" class="afms-find" data-afms-find="${esc(o.id)}"` +
-                ` placeholder="find…" value="${esc(findText[o.id] || '')}"` +
-                ` aria-label="Filter this list of ${opts.length}">`
+                ` placeholder="${esc(t('find…'))}" value="${esc(findText[o.id] || '')}"` +
+                ` aria-label="${esc(t('Filter this list of {n}', { n: opts.length }))}">`
             : '';
         const presetHtml = presets.map(p =>
             ` · <a data-afms-preset="${esc(p.id)}" aria-label="${esc(p.title || p.label || p.id)}">${esc(p.label || p.id)}</a>`).join('');
@@ -238,11 +241,10 @@
         // the sentence is only true where there IS a preset to flip to — so it
         // is built from the same list the listener reads, never typed twice.
         const flipHint = presets.length
-            ? `\n\nRIGHT-CLICK flips between everything and ${presets[0].label || presets[0].id}`
-                + ' without opening this list. From any other selection, the first press '
-                + `lands on ${presets[0].label || presets[0].id}.`
+            ? '\n\n' + t('RIGHT-CLICK flips between everything and {preset} without opening this list. '
+                + 'From any other selection, the first press lands on {preset}.', { preset: presets[0].label || presets[0].id })
             : '';
-        const explanation = (o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT) + flipHint;
+        const explanation = (o.title ? o.title + '\n\n' + t(MULTI_HINT) : t(MULTI_HINT)) + flipHint;
         // ‼️ A-14 — NO SECOND SIGNAL THAT A FILTER IS SET. The button already
         // says it, in words, in the one place a reader is looking: `state: 2/4`
         // is not `state: every state`. The inset bar and re-tinted fill that
@@ -288,10 +290,10 @@
             ` style="--afms-w:${buttonWidth(o, opts)}ch">` +
             trigger +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
-            `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +
+            `<div class="afms-tools"><a data-afms-act="all">${esc(t('Select all'))}</a>${presetHtml} · <a data-afms-act="none">${esc(t('Clear'))}</a></div>` +
             findBox +
-            `${items || '<span class="muted small">nothing to filter by</span>'}` +
-            (searchable ? '<span class="afms-nofind muted small" hidden>nothing matches that</span>' : '') +
+            `${items || `<span class="muted small">${esc(t('nothing to filter by'))}</span>`}` +
+            (searchable ? `<span class="afms-nofind muted small" hidden>${esc(t('nothing matches that'))}</span>` : '') +
             `</div></span>`;
     }
 
@@ -324,7 +326,7 @@
             r => { r.hidden = false; });
         Array.prototype.forEach.call(scope.querySelectorAll('.afms-nofind'), s => { s.hidden = true; });
         Array.prototype.forEach.call(scope.querySelectorAll('.afms-menu [data-afms-act="all"]'),
-            a => { a.textContent = 'Select all'; });
+            a => { a.textContent = t('Select all'); });
     }
 
     function wireDocClose() {
@@ -443,7 +445,7 @@
             });
             if (nofind) { nofind.hidden = shown > 0; }
             if (allLink) {
-                allLink.textContent = needle ? `Select all ${shown} shown` : 'Select all';
+                allLink.textContent = needle ? t('Select all {n} shown', { n: shown }) : t('Select all');
             }
         };
         if (find && find.addEventListener) {

@@ -165,5 +165,33 @@ const TR = Object.assign({}, ...require(path.join(ROOT, 'media', 'afI18n.js')).f
     ok('…while English reads as it did', ['Needs You', 'PERMISSION', 'Clear all', 'Allow', 'last tool: Bash'].every(s => nen.includes(s)));
 }
 
+// U-189 — the Work Queue page, in its own catalog part; its shared hands (AFBulk, AFCtx.hint) translate their own words
+{
+    const { runPage } = require('./lib_page_dom');
+    const draw = (data, lang) => {
+        const sb = runPage('queue.js', data, lang ? { __AFUI__: { lang, locale: lang } } : undefined).sandbox;
+        return (sb.document || sb.window.document).getElementById('app').innerHTML;
+    };
+    const q = require('./fixtures/queue.js').data();
+    // one item that came from a question, so the source line and its badge are drawn too
+    q.items[0] = Object.assign({}, q.items[0], { sourceNoticeId: 'n1', sourceNoticeType: 'question', sourceNoticeTitle: 'Which repo?' });
+    const qtr = draw(q, 'tr'), qen = draw(q);
+    ok('the Work Queue draws in Türkçe: heading, lanes, categories, filters, the bulk bar, the capture button and a notice\'s kind',
+        ['İş Kuyruğu', 'Seni bekliyor', 'Senin kayıtların', 'Ajanların izlediği devirler', 'Hedefler', 'bırakılanları göster',
+            'Kalıcı olarak sil', 'tümü', 'Kuyruğa ekle', 'daha fazlası için sağ tıkla', 'Kaynak: soru', 'Soru: ', 'Hedefler: tümü', 'Tümünü seç'].every(s => qtr.includes(s))
+        && !/>\s*(Your captures|show dropped|Add to queue)\s*</.test(qtr));
+    ok('…while English reads as it did', ['Work Queue', 'Needs you', 'Your captures', 'Agent-tracked delegations', 'show dropped',
+        '＋ Add to queue', 'right-click for more', 'From a question', 'Question: ', 'Targets: all', 'Select all'].every(s => qen.includes(s)) && !qen.includes('Kuyruk'));
+    // every complete literal the page hands t() or lab() is in the Türkçe catalog, unless it reads the same in both
+    const src = read('media', 'queue.js');
+    const same = new Set(['— model —', '{axis}: {v}']);
+    const unq = s => s.replace(/\\'/g, '\'').replace(/\\n/g, '\n');
+    const keys = [...src.matchAll(/\bt\('((?:[^'\\]|\\.)*)'\s*[,)]/g)].map(m => unq(m[1]))
+        .concat([...src.matchAll(/\blab\('((?:[^'\\]|\\.)*)'\)/g)].map(m => unq(m[1]).replace(/^[^\p{L}\p{N}]*/u, '').trim()));
+    const missing = [...new Set(keys)].filter(k => !same.has(k) && !(k in TR));
+    ok('every word the Work Queue hands t() / lab() has its Türkçe (' + keys.length + ')' + (missing.length ? ' — missing: ' + missing.join(' | ') : ''),
+        keys.length >= 80 && !missing.length);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

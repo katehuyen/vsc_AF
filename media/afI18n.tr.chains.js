@@ -20,7 +20,7 @@
     'done': 'bitti',
     'stopped': 'durduruldu',
     'refused': 'reddedildi',
-    'failed': 'kesildi',
+    'failed': 'başarısız',
     'gone': 'kapandı',
     'not known': 'bilinmiyor',
     'wakes {time}': '{time} uyanır',

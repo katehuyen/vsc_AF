@@ -7,6 +7,9 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
+    // U-189 — every word below is English and drawn through t() / lab(); the catalog part is media/afI18n.tr.queue.js.
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const lab = s => (window.AFI18n ? window.AFI18n.label(s) : s);
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Target / author are multi-pick: null = all (no filter), an array = exactly
@@ -87,14 +90,14 @@
         if (!lv) { return ''; }
         const m = LIVE_META[lv.status] || ['•', String(lv.status || ''), ''];
         const to = lv.kind === 'mission' ? 'missions' : 'tasks';
-        return `<a href="#" class="q-live q-live-${m[2]} q-afnav" data-to="${to}" title="Live ${esc(lv.kind)} status — click to open${lv.title ? ': ' + esc(lv.title) : ''}">${m[0]} ${esc(m[1])}</a>`;
+        return `<a href="#" class="q-live q-live-${m[2]} q-afnav" data-to="${to}" title="${esc(t('Live {kind} status — click to open', { kind: t(String(lv.kind || '')) }))}${lv.title ? ': ' + esc(lv.title) : ''}">${m[0]} ${esc(t(m[1]))}</a>`;
     }
 
     function saveState() { if (vscode.setState) { vscode.setState({ fTarget, fEngine, fAccount, fAuthor, query, showDropped, agentLaneOpen }); } }
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function fileBase(p) { return String(p || '').split(/[\\/]/).pop(); }
-    function authorChip(a) { return a === 'user' ? '🧑 you' : '🤖 ' + esc(a); }
-    function timeLabel(ts) { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+    function authorChip(a) { return a === 'user' ? '🧑 ' + t('you') : '🤖 ' + esc(a); }
+    function timeLabel(ts) { return new Date(ts).toLocaleString((window.AFI18n && window.AFI18n.locale()) || undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
 
     // ---- minimal safe markdown for resolution text (escape first) ----
     function mdInline(t) {
@@ -159,52 +162,53 @@
     function projectPicker(n) {
         const cur = n.projectId || '';
         return `<div class="q-projrow">
-            <label class="muted small" for="q-pj-${esc(n.id)}">Project</label>
+            <label class="muted small" for="q-pj-${esc(n.id)}">${esc(t('Project'))}</label>
             <select class="q-pjsel" id="q-pj-${esc(n.id)}" data-id="${esc(n.id)}"
-                title="Which project this item is work for. It shows on that project's Work tab and timeline; the empty option takes the stamp off again.">
-                ${window.AFProject.options(DATA.projects, cur, { anyLabel: '— none' })}
+                title="${esc(t('Which project this item is work for. It shows on that project\'s Work tab and timeline; the empty option takes the stamp off again.'))}">
+                ${window.AFProject.options(DATA.projects, cur, { anyLabel: t('— none') })}
             </select>
-            ${cur && projOf(n) ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="Open this project's page">◧ Open</button>` : ''}
-            ${cur && !projOf(n) ? '<span class="muted small" title="The project this was filed under no longer exists — pick another, or clear it">⚠ project gone</span>' : ''}
+            ${cur && projOf(n) ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="${esc(t('Open this project\'s page'))}">${esc(lab('◧ Open'))}</button>` : ''}
+            ${cur && !projOf(n) ? `<span class="muted small" title="${esc(t('The project this was filed under no longer exists — pick another, or clear it'))}">${esc(lab('⚠ project gone'))}</span>` : ''}
         </div>`;
     }
 
     function urgencyBadge(n) {
-        return n.urgency && n.urgency !== 'normal' ? `<span class="q-urg u-${n.urgency}">${URG[n.urgency]}</span>` : '';
+        return n.urgency && n.urgency !== 'normal' ? `<span class="q-urg u-${n.urgency}">${lab(URG[n.urgency])}</span>` : '';
     }
 
     // N-10 — an item converted from a notice carries the notice; a legacy one
     // carries only its title, and still draws.
     function sourceKind(n) {
-        const t = String(n.sourceNoticeType || '');
-        return { icon: t === 'question' ? '❓' : '🔔', label: t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Notice' };
+        const type = String(n.sourceNoticeType || '');
+        const word = t(type || 'notice');
+        return { icon: type === 'question' ? '❓' : '🔔', word, label: word.charAt(0).toLocaleUpperCase(window.AFI18n ? window.AFI18n.lang() : undefined) + word.slice(1) };
     }
 
     function sourceLink(n) {
         if (!n.sourceNoticeId) { return ''; }
         const k = sourceKind(n);
-        const t = n.sourceNoticeTitle ? esc(n.sourceNoticeTitle) : '(message)';
-        const from = n.sourceNoticeAgent ? ` <span class="muted">· from <strong>${esc(n.sourceNoticeAgent)}</strong></span>` : '';
+        const title = n.sourceNoticeTitle ? esc(n.sourceNoticeTitle) : esc(t('(message)'));
+        const from = n.sourceNoticeAgent ? ` <span class="muted">· ${t('from {agent}', { agent: '<strong>' + esc(n.sourceNoticeAgent) + '</strong>' })}</span>` : '';
         const secs = n.sourceNoticeSections || [];
         const has = !!(n.sourceNoticeBody || secs.length || n.sourceNoticeReportPath);
         const open = has && srcOpen.has(n.id);
-        const toggle = has ? ` <button class="secondary q-srctoggle" data-act="srcfull" data-id="${esc(n.id)}" title="${open ? 'Hide' : 'Show'} the notice as it read when it became this item">${open ? '▾' : '▸'} Original</button>` : '';
-        let h = `<div class="q-src">${k.icon} ${esc(k.label)}: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="Go to the source notice">${t}</a>${from}${toggle}</div>`;
+        const toggle = has ? ` <button class="secondary q-srctoggle" data-act="srcfull" data-id="${esc(n.id)}" title="${esc(t(open ? 'Hide the notice as it read when it became this item' : 'Show the notice as it read when it became this item'))}">${open ? '▾' : '▸'} ${esc(t('Original'))}</button>` : '';
+        let h = `<div class="q-src">${k.icon} ${esc(k.label)}: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="${esc(t('Go to the source notice'))}">${title}</a>${from}${toggle}</div>`;
         if (!open) { return h; }
         h += '<div class="q-srcfull">';
         if (n.sourceNoticeBody) { h += `<div class="q-md">${mdToHtml(n.sourceNoticeBody)}</div>`; }
         for (const s of secs) { h += `<div class="q-srcsec"><div class="q-srcsec-h">${esc(s.title || '')}</div><div class="q-md">${mdToHtml(s.body || '')}</div></div>`; }
         if (n.sourceNoticeReportPath) {
-            h += `<button class="secondary" data-act="srcreport" data-id="${esc(n.id)}" title="${esc(n.sourceNoticeReportPath)}">📄 Open the notice's report (${esc(fileBase(n.sourceNoticeReportPath))})</button>`;
+            h += `<button class="secondary" data-act="srcreport" data-id="${esc(n.id)}" title="${esc(n.sourceNoticeReportPath)}">📄 ${esc(t('Open the notice\'s report ({file})', { file: fileBase(n.sourceNoticeReportPath) }))}</button>`;
         }
         return h + '</div>';
     }
 
     function delegationLink(n) {
         const bits = [];
-        if (n.missionId) { bits.push(`<a href="#" class="q-afnav" data-to="missions" title="Open the Missions panel">🎯 mission ${esc(n.missionId.slice(0, 8))}</a>`); }
-        if (n.taskId) { bits.push(`<a href="#" class="q-afnav" data-to="tasks" title="Open the Tasks panel">⚙ task ${esc(n.taskId.slice(0, 8))}</a>`); }
-        if (n.groupId) { bits.push(`<span class="muted small">group ${esc(n.groupId.slice(0, 8))}</span>`); }
+        if (n.missionId) { bits.push(`<a href="#" class="q-afnav" data-to="missions" title="${esc(t('Open the Missions panel'))}">🎯 ${esc(t('mission {id}', { id: n.missionId.slice(0, 8) }))}</a>`); }
+        if (n.taskId) { bits.push(`<a href="#" class="q-afnav" data-to="tasks" title="${esc(t('Open the Tasks panel'))}">⚙ ${esc(t('task {id}', { id: n.taskId.slice(0, 8) }))}</a>`); }
+        if (n.groupId) { bits.push(`<span class="muted small">${esc(t('group {id}', { id: n.groupId.slice(0, 8) }))}</span>`); }
         return bits.length ? `<div class="q-deleg">${bits.join(' · ')}</div>` : '';
     }
 
@@ -216,12 +220,12 @@
         const key = kind + ':' + id;
         const def = docDefault();
         const menu = docMenu === key ? `<div class="q-docmenu">
-            ${DOC_MODES.map(([m, l]) => `<button class="q-docopt${m === def ? ' cur' : ''}" data-doc="open" data-kind="${kind}" data-id="${esc(id)}" data-mode="${m}">${l}${m === def ? ' <span class="muted small">· default</span>' : ''}</button>`).join('')}
-            <button class="q-docopt cfg" data-doc="cfg" data-kind="${kind}" data-id="${esc(id)}">⚙ Configure default & custom app…</button>
+            ${DOC_MODES.map(([m, l]) => `<button class="q-docopt${m === def ? ' cur' : ''}" data-doc="open" data-kind="${kind}" data-id="${esc(id)}" data-mode="${m}">${esc(lab(l))}${m === def ? ` <span class="muted small">${esc(t('· default'))}</span>` : ''}</button>`).join('')}
+            <button class="q-docopt cfg" data-doc="cfg" data-kind="${kind}" data-id="${esc(id)}">${esc(lab('⚙ Configure default & custom app…'))}</button>
           </div>` : '';
         return `<span class="q-split">
             <button class="secondary q-docmain" data-doc="main" data-kind="${kind}" data-id="${esc(id)}" title="${esc(path)}">${label}</button>
-            <button class="secondary q-doccaret" data-doc="caret" data-kind="${kind}" data-id="${esc(id)}" title="Open with…" aria-expanded="${docMenu === key ? 'true' : 'false'}">▾</button>
+            <button class="secondary q-doccaret" data-doc="caret" data-kind="${kind}" data-id="${esc(id)}" title="${esc(t('Open with…'))}" aria-expanded="${docMenu === key ? 'true' : 'false'}">▾</button>
             ${menu}</span>`;
     }
 
@@ -229,13 +233,13 @@
         if (!n.stamp && !n.resolution && !n.answerPath && !n.reportPath && !n.userReply) { return ''; }
         let h = '<div class="q-outcome">';
         if (n.stamp) { h += `<div class="q-stamp">${esc(n.stamp)}</div>`; }
-        if (n.userReply) { h += `<div class="q-reply"><span class="q-reply-h">💬 your reply</span><div class="q-md">${mdToHtml(n.userReply)}</div></div>`; }
+        if (n.userReply) { h += `<div class="q-reply"><span class="q-reply-h">💬 ${esc(t('your reply'))}</span><div class="q-md">${mdToHtml(n.userReply)}</div></div>`; }
         if (n.resolution) { h += `<div class="q-md">${mdToHtml(n.resolution)}</div>`; }
         const files = [];
-        if (n.answerPath) { files.push(docSplit('answer', n.id, `📝 Open answer (${esc(fileBase(n.answerPath))})`, n.answerPath)); }
-        if (n.reportPath) { files.push(docSplit('report', n.id, `📄 Open report (${esc(fileBase(n.reportPath))})`, n.reportPath)); }
+        if (n.answerPath) { files.push(docSplit('answer', n.id, `📝 ${esc(t('Open answer ({file})', { file: fileBase(n.answerPath) }))}`, n.answerPath)); }
+        if (n.reportPath) { files.push(docSplit('report', n.id, `📄 ${esc(t('Open report ({file})', { file: fileBase(n.reportPath) }))}`, n.reportPath)); }
         if (files.length) { h += `<div class="q-files">${files.join(' ')}</div>`; }
-        if (n.handledAt) { h += `<div class="muted small">handled: ${esc(window.AFTime.full(n.handledAt))}</div>`; }
+        if (n.handledAt) { h += `<div class="muted small">${esc(t('handled: {when}', { when: window.AFTime.full(n.handledAt) }))}</div>`; }
         return h + '</div>';
     }
 
@@ -248,17 +252,17 @@
         urgent: 'Goes to the front and stays visible until it is done.'
     };
     const urgencyOpts = cur => ['normal', 'soon', 'urgent'].map(k =>
-        C.option(k, k, { selected: cur === k, detail: URGENCY_WHY[k] })).join('');
+        C.option(k, t(k), { selected: cur === k, detail: t(URGENCY_WHY[k]) })).join('');
 
     function editForm(n) {
         const d = editDrafts[n.id];
         const urgOpts = urgencyOpts(d.urgency);
         return `<div class="q-edit">
-            <label>Text</label><textarea class="q-ef" data-ef="text" rows="3">${esc(d.text)}</textarea>
-            <div class="q-erow"><span><label>Target</label><input class="q-ef" data-ef="target" value="${esc(d.target)}" placeholder="repo or agent"></span>
-              <span><label>Urgency</label><select class="q-ef" data-ef="urgency">${urgOpts}</select></span></div>
-            <div class="btnrow"><button data-act="editsave" data-id="${esc(n.id)}">Save</button>
-              <button class="secondary" data-act="editcancel" data-id="${esc(n.id)}">Cancel</button></div>
+            <label>${esc(t('Text'))}</label><textarea class="q-ef" data-ef="text" rows="3">${esc(d.text)}</textarea>
+            <div class="q-erow"><span><label>${esc(t('Target'))}</label><input class="q-ef" data-ef="target" value="${esc(d.target)}" placeholder="${esc(t('repo or agent'))}"></span>
+              <span><label>${esc(t('Urgency'))}</label><select class="q-ef" data-ef="urgency">${urgOpts}</select></span></div>
+            <div class="btnrow"><button data-act="editsave" data-id="${esc(n.id)}">${esc(t('Save'))}</button>
+              <button class="secondary" data-act="editcancel" data-id="${esc(n.id)}">${esc(t('Cancel'))}</button></div>
         </div>`;
     }
 
@@ -267,10 +271,10 @@
     function answerForm(n) {
         const d = answerDrafts[n.id] || '';
         return `<div class="q-answer">
-            <label>Your answer — sends this back into the pipeline</label>
-            <textarea class="q-af" data-af-id="${esc(n.id)}" rows="3" placeholder="Reply to unblock this…">${esc(d)}</textarea>
-            <div class="btnrow"><button data-act="answersend" data-id="${esc(n.id)}">Send answer</button>
-              <button class="secondary" data-act="answercancel" data-id="${esc(n.id)}">Cancel</button></div>
+            <label>${esc(t('Your answer — sends this back into the pipeline'))}</label>
+            <textarea class="q-af" data-af-id="${esc(n.id)}" rows="3" placeholder="${esc(t('Reply to unblock this…'))}">${esc(d)}</textarea>
+            <div class="btnrow"><button data-act="answersend" data-id="${esc(n.id)}">${esc(t('Send answer'))}</button>
+              <button class="secondary" data-act="answercancel" data-id="${esc(n.id)}">${esc(t('Cancel'))}</button></div>
         </div>`;
     }
 
@@ -301,33 +305,33 @@
         else {
             body = `${sourceLink(n)}
                 <div class="q-fulltext">${mdToHtml(n.text)}</div>
-                ${n.target ? `<div class="muted small">target: <strong>${esc(n.target)}</strong></div>` : ''}
+                ${n.target ? `<div class="muted small">${t('target: {target}', { target: '<strong>' + esc(n.target) + '</strong>' })}</div>` : ''}
                 ${delegationLink(n)}${outcomeBlock(n)}${routePicker(n)}${projectPicker(n)}
                 <div class="btnrow q-actions">
-                    ${n.status === 'blocked' ? `<button data-act="answer" data-id="${esc(n.id)}" title="Answer this — records your reply and sends it back into the pipeline">💬 Answer</button>` : ''}
-                    <button data-act="handoff" data-id="${esc(n.id)}" title="Open the responsible agent and type this into its terminal (not sent)">🔗 Hand to agent</button>
-                    ${!terminal ? `<button class="secondary" data-act="urg" data-id="${esc(n.id)}" title="Cycle urgency">⏫ Urgency</button>` : ''}
-                    ${!terminal ? `<button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>` : ''}
-                    ${!terminal ? `<button class="secondary" data-act="drop" data-id="${esc(n.id)}" title="Void this item (dropped). It can only be deleted once handled.">Drop</button>` : ''}
-                    ${terminal ? `<button class="secondary danger" data-act="remove" data-id="${esc(n.id)}" title="Delete permanently (only handled items can be deleted)">🗑 Delete</button>` : ''}
+                    ${n.status === 'blocked' ? `<button data-act="answer" data-id="${esc(n.id)}" title="${esc(t('Answer this — records your reply and sends it back into the pipeline'))}">💬 ${esc(t('Answer'))}</button>` : ''}
+                    <button data-act="handoff" data-id="${esc(n.id)}" title="${esc(t('Open the responsible agent and type this into its terminal (not sent)'))}">🔗 ${esc(t('Hand to agent'))}</button>
+                    ${!terminal ? `<button class="secondary" data-act="urg" data-id="${esc(n.id)}" title="${esc(t('Cycle urgency'))}">⏫ ${esc(t('Urgency'))}</button>` : ''}
+                    ${!terminal ? `<button class="secondary" data-act="edit" data-id="${esc(n.id)}">${esc(t('Edit'))}</button>` : ''}
+                    ${!terminal ? `<button class="secondary" data-act="drop" data-id="${esc(n.id)}" title="${esc(t('Void this item (dropped). It can only be deleted once handled.'))}">${esc(t('Drop'))}</button>` : ''}
+                    ${terminal ? `<button class="secondary danger" data-act="remove" data-id="${esc(n.id)}" title="${esc(t('Delete permanently (only handled items can be deleted)'))}">🗑 ${esc(t('Delete'))}</button>` : ''}
                 </div>
                 ${answering.has(n.id) ? answerForm(n) : ''}`;
         }
         return `<div class="q-card s-${n.status} ${n.pinned ? 'pinned' : ''} ${focusItem === n.id ? 'focus' : ''}${selected.has(n.id) ? ' sel' : ''}" data-id="${esc(n.id)}">
             <div class="q-row" data-toggle="${esc(n.id)}" ${itemCtx(n, open, terminal)}
-                title="${esc(window.AFCtx.hint('Click to open it'))}">
+                title="${esc(window.AFCtx.hint(t('Click to open it')))}">
                 ${window.AFBulk.cb(n.id, selected.has(n.id))}
                 <span class="q-caret">${open ? '▾' : '▸'}</span>
-                <span class="q-author" title="${n.author === 'user' ? 'your entry' : 'agent entry'}">${authorChip(n.author)}</span>
+                <span class="q-author" title="${esc(t(n.author === 'user' ? 'your entry' : 'agent entry'))}">${authorChip(n.author)}</span>
                 <!-- The item is TEXT and the row ellipsises it, so the hover has
                      to carry the WHOLE of it — the rich panel, never a native
                      title that stops where the platform pleases
                      (docs/CONVENTIONS.md → Hover). The wrapper takes the row's
                      flex share; the ellipsis stays on the span inside it. -->
                 ${window.AFTip.wrap(`<span class="q-text">${esc(n.text)}</span>`,
-                `${n.author === 'user' ? 'Your entry' : 'Agent entry'} · ${timeLabel(n.ts)}`
-                + `${n.target ? ` · for ${n.target}` : ''}`
-                + `${routeWords(n) ? ` · asks for ${routeWords(n)}` : ' · unclaimed'} · ${window.AFTip.sizeNote(n.text)}`,
+                `${t(n.author === 'user' ? 'Your entry' : 'Agent entry')} · ${timeLabel(n.ts)}`
+                + `${n.target ? ' · ' + t('for {target}', { target: n.target }) : ''}`
+                + ` · ${routeWords(n) ? t('asks for {route}', { route: routeWords(n) }) : t('unclaimed')} · ${window.AFTip.sizeNote(n.text)}`,
                 n.text)}
                 ${liveChip(n)}
                 ${urgencyBadge(n)}
@@ -335,10 +339,10 @@
                 ${routeChip(n)}
                 ${projectChip(n)}
                 ${tags ? `<span class="q-tags">${tags}</span>` : ''}
-                ${n.sourceNoticeId ? `<span class="q-badge src" title="From a ${esc(sourceKind(n).label.toLowerCase())}${n.sourceNoticeAgent ? ` · ${esc(n.sourceNoticeAgent)}` : ''}">${sourceKind(n).icon}</span>` : ''}
-                ${window.AFBulk.age(n.ts, n.author === 'user' ? 'Captured' : 'Delegated')}
-                ${window.AFBulk.x(n.id, terminal ? 'Delete this item for good'
-                    : 'Drop this item — it is voided (handled), and then it can be deleted')}
+                ${n.sourceNoticeId ? `<span class="q-badge src" title="${esc(t('From a {kind}', { kind: sourceKind(n).word }))}${n.sourceNoticeAgent ? ` · ${esc(n.sourceNoticeAgent)}` : ''}">${sourceKind(n).icon}</span>` : ''}
+                ${window.AFBulk.age(n.ts, t(n.author === 'user' ? 'Captured' : 'Delegated'))}
+                ${window.AFBulk.x(n.id, t(terminal ? 'Delete this item for good'
+                    : 'Drop this item — it is voided (handled), and then it can be deleted'))}
             </div>
             <div class="q-body" ${open ? '' : 'hidden'}>${body}</div>
         </div>`;
@@ -346,10 +350,11 @@
 
     function laneHtml(lane, items) {
         if (!items.length) { return ''; }
+        const name = t(lane.label);
         return `<div class="q-lane s-${lane.id}">
             <div class="q-lane-head"
-                ${window.AFCtx.row('afQueueLane', { lane: lane.id, laneLabel: lane.label, afDropShown: !!showDropped })}
-                title="${esc(window.AFCtx.hint(lane.label))}"><span class="q-lane-ico">${lane.icon}</span> ${esc(lane.label)} <span class="q-lane-n">${items.length}</span></div>
+                ${window.AFCtx.row('afQueueLane', { lane: lane.id, laneLabel: name, afDropShown: !!showDropped })}
+                title="${esc(window.AFCtx.hint(name))}"><span class="q-lane-ico">${lane.icon}</span> ${esc(name)} <span class="q-lane-n">${items.length}</span></div>
             ${items.filter(n => n.pinned).map(itemCard).join('')}${window.AFBulk.days(items.filter(n => !n.pinned), itemCard, DATA.now)}</div>`;
     }
 
@@ -374,7 +379,7 @@
         const live = DATA.live || {}, tally = {};
         for (const n of items) { const lv = live[n.id]; if (lv) { tally[lv.status] = (tally[lv.status] || 0) + 1; } }
         const order = ['running', 'queued', 'waiting-approval', 'waiting-user', 'paused', 'done', 'failed', 'cancelled'];
-        return order.filter(s => tally[s]).map(s => `${tally[s]} ${(LIVE_META[s] || ['', s])[1]}`).join(' · ');
+        return order.filter(s => tally[s]).map(s => `${tally[s]} ${t((LIVE_META[s] || ['', s])[1])}`).join(' · ');
     }
 
     // One top-level CATEGORY (author lane). `collapsible` categories fold their
@@ -423,7 +428,7 @@
         const at = `data-kind="${esc(kind)}" data-item="${esc(itemId || '')}"`;
         let h = `<span><select id="${prefix}-engine" data-route="engine" ${at}
             title="${esc(routeTitle('engine', eng ? window.AFEngine.label(eng) : ''))}">
-            ${opt('', '— engine —', eng, 'No engine asked for — the item runs on whatever its agent resolves to.')}${engines.map(e => opt(e.id, e.label, eng, e.detail || '')).join('')}</select></span>`;
+            ${opt('', t('— engine —'), eng, t('No engine asked for — the item runs on whatever its agent resolves to.'))}${engines.map(e => opt(e.id, e.label, eng, e.detail || '')).join('')}</select></span>`;
         /**
          * ‼️ X-254 (2/n) — THE FOURTH BOX, and it sits beside the engine for the
          * reason the launcher puts it there: an account belongs to ONE engine,
@@ -442,22 +447,22 @@
         if (eng && accounts.length) {
             h += `<span><select id="${prefix}-account" data-route="account" ${at}
                 title="${esc(routeTitle('account', accountWords(d.account || '')))}">
-                ${opt('', '— account —', d.account || '',
-                'No sign-in asked for — whoever takes the item spends whatever their own '
+                ${opt('', t('— account —'), d.account || '',
+                t('No sign-in asked for — whoever takes the item spends whatever their own '
                 + 'rotation resolves to. This is a real answer, and it is what "(none)" '
-                + 'filters for.')}${opt(window.AFAccount.MACHINE, window.AFAccount.MACHINE_ROW, d.account || '',
-                'The identity this machine itself is signed in as, asked for OUTRIGHT — '
-                + 'unlike the empty row above, this is a claim somebody made.')}${strayAccountOption(d.account || '', accounts, opt)}${window.AFAccount.grouped(enginePolicies(eng), accounts, d.account || '', C)}</select></span>`;
+                + 'filters for.'))}${opt(window.AFAccount.MACHINE, window.AFAccount.MACHINE_ROW, d.account || '',
+                t('The identity this machine itself is signed in as, asked for OUTRIGHT — '
+                + 'unlike the empty row above, this is a claim somebody made.'))}${strayAccountOption(d.account || '', accounts, opt)}${window.AFAccount.grouped(enginePolicies(eng), accounts, d.account || '', C)}</select></span>`;
         }
         if (eng && models.length) {
             h += `<span><select id="${prefix}-model" data-route="model" ${at}
                 title="${esc(routeTitle('model', d.model || ''))}">
-                ${opt('', '— model —', d.model || '', 'No model asked for — the engine picks its own.')}${models.map(m => opt(m.id, m.label || m.id, d.model || '', m.detail || (m.label && m.label !== m.id ? m.id : ''))).join('')}</select></span>`;
+                ${opt('', t('— model —'), d.model || '', t('No model asked for — the engine picks its own.'))}${models.map(m => opt(m.id, m.label || m.id, d.model || '', m.detail || (m.label && m.label !== m.id ? m.id : ''))).join('')}</select></span>`;
         }
         if (eng && efforts.length) {
             h += `<span><select id="${prefix}-effort" data-route="effort" ${at}
                 title="${esc(routeTitle('effort', d.effort || ''))}">
-                ${opt('', '— effort —', d.effort || '', 'No effort asked for — resolved at launch.')}${efforts.filter(e => e.id).map(e => opt(e.id, e.label || e.id, d.effort || '', e.detail || '')).join('')}</select></span>`;
+                ${opt('', t('— effort —'), d.effort || '', t('No effort asked for — resolved at launch.'))}${efforts.filter(e => e.id).map(e => opt(e.id, e.label || e.id, d.effort || '', e.detail || '')).join('')}</select></span>`;
         }
         return h;
     }
@@ -496,9 +501,9 @@
         if (!want || want === window.AFAccount.MACHINE) { return ''; }
         if (list.some(a => a.id === want)) { return ''; }
         return opt(want, '⚠ ' + want, want,
-            'This item asks for a sign-in that is not on this machine — it may have been '
+            t('This item asks for a sign-in that is not on this machine — it may have been '
             + 'forgotten, or it belongs to another engine. Nothing will refuse the item, '
-            + 'but whoever picks it up cannot honour it: pick a live one, or clear it.');
+            + 'but whoever picks it up cannot honour it: pick a live one, or clear it.'));
     }
 
     /**
@@ -545,20 +550,20 @@
             const hit = (all[k] || []).find(a => a && a.id === want);
             if (hit) { return hit.label || want; }
         }
-        return want + ' (not on this machine)';
+        return t('{id} (not on this machine)', { id: want });
     }
 
     /** MIRROR — a box narrow enough to cut its own text says its CURRENT value
      *  first, then what the box is for. */
     function routeTitle(axis, cur) {
-        const what = axis === 'engine'
+        const what = t(axis === 'engine'
             ? 'Which engine should take this item.'
             : axis === 'account' ? 'Whose plan should pay for it — a sign-in of that engine.'
-                : axis === 'model' ? 'Which model that engine should use.' : 'What effort it should run at.';
-        return `${cur ? axis + ': ' + cur : 'no ' + axis + ' asked for'}\n\n${what}\n\n`
-            + 'Optional. Nothing is started from here — the queue does not dispatch. '
+                : axis === 'model' ? 'Which model that engine should use.' : 'What effort it should run at.');
+        return `${cur ? t('{axis}: {v}', { axis: t(axis), v: cur }) : t('no {axis} asked for', { axis: t(axis) })}\n\n${what}\n\n`
+            + t('Optional. Nothing is started from here — the queue does not dispatch. '
             + 'It is what a task reads to pick out the work meant for it, so leaving it empty '
-            + 'is itself an answer: the item is unclaimed and anyone can take it.';
+            + 'is itself an answer: the item is unclaimed and anyone can take it.');
     }
 
     /** The route in words, for a line of prose. '' when nobody claimed it. */
@@ -587,12 +592,12 @@
         const acct = accountShort(n.account);
         const rest = [acct, n.model, n.effort].filter(Boolean).join(' · ');
         const figures = [
-            n.engine ? 'Engine: ' + window.AFEngine.label(n.engine) : 'Engine: any',
+            t('Engine: {engine}', { engine: n.engine ? window.AFEngine.label(n.engine) : t('any') }),
             // MIRROR — the long form of what the chip abbreviates, and the one
             // fact the queue's fourth axis exists for.
-            n.account ? 'Account: ' + accountWords(n.account) : 'Account: any',
-            n.model ? 'Model: ' + n.model : 'Model: any',
-            n.effort ? 'Effort: ' + n.effort : 'Effort: any'
+            t('Account: {account}', { account: n.account ? accountWords(n.account) : t('any') }),
+            t('Model: {model}', { model: n.model || t('any') }),
+            t('Effort: {effort}', { effort: n.effort || t('any') })
         ].join('\n');
         return `<span class="q-route" title="${esc(figures)}">`
             + `${n.engine ? window.AFEngine.badge(n.engine) : ''}`
@@ -605,46 +610,46 @@
         const boxes = routeBoxes('q-rt-' + n.id, n, 'row', n.id);
         if (!boxes) { return ''; }
         return `<div class="q-routerow" data-id="${esc(n.id)}">
-            <label class="muted small">Who takes it</label>${boxes}
+            <label class="muted small">${esc(t('Who takes it'))}</label>${boxes}
             ${(n.engine || n.account || n.model || n.effort)
                 ? `<button class="secondary" data-act="routeclear" data-id="${esc(n.id)}"
-                     title="Unclaim this item — it goes back to being work anyone can take">✕ unclaim</button>`
-                : '<span class="muted small">unclaimed — anyone can take it</span>'}
+                     title="${esc(t('Unclaim this item — it goes back to being work anyone can take'))}">✕ ${esc(t('unclaim'))}</button>`
+                : `<span class="muted small">${esc(t('unclaimed — anyone can take it'))}</span>`}
         </div>`;
     }
 
     function addForm() {
-        if (!addOpen) { return `<div class="q-addbar"><button data-add="open">＋ Add to queue</button></div>`; }
+        if (!addOpen) { return `<div class="q-addbar"><button data-add="open">${esc(lab('＋ Add to queue'))}</button></div>`; }
         const targets = (DATA.targets || []);
         const dl = targets.map(t => `<option value="${esc(t)}"></option>`).join('');
         const urgOpts = urgencyOpts(addDraft.urgency);
         return `<div class="q-add">
-            <textarea id="q-add-text" rows="2" placeholder="What needs doing? (one line is enough — friction-free)">${esc(addDraft.text)}</textarea>
+            <textarea id="q-add-text" rows="2" placeholder="${esc(t('What needs doing? (one line is enough — friction-free)'))}">${esc(addDraft.text)}</textarea>
             <div class="q-erow">
-                <span><input id="q-add-target" list="q-targets" value="${esc(addDraft.target)}" placeholder="Target (optional): a repo or agent"><datalist id="q-targets">${dl}</datalist></span>
+                <span><input id="q-add-target" list="q-targets" value="${esc(addDraft.target)}" placeholder="${esc(t('Target (optional): a repo or agent'))}"><datalist id="q-targets">${dl}</datalist></span>
                 ${routeBoxes('q-add', addDraft, 'add')}
                 <span><select id="q-add-urg">${urgOpts}</select></span>
-                <span><select id="q-add-project" title="Which project this is work for. It opens on the window's active project because that is what you are working on; change it here, or take it off later from the item's own row.">${window.AFProject.options(DATA.projects, addDraft.project, { anyLabel: '— no project' })}</select></span>
+                <span><select id="q-add-project" title="${esc(t('Which project this is work for. It opens on the window\'s active project because that is what you are working on; change it here, or take it off later from the item\'s own row.'))}">${window.AFProject.options(DATA.projects, addDraft.project, { anyLabel: t('— no project') })}</select></span>
             </div>
-            <div class="btnrow"><button data-add="save">Add</button><button class="secondary" data-add="cancel">Cancel</button>
-              <span class="muted small">An item can't be deleted until it's handled.</span></div>
+            <div class="btnrow"><button data-add="save">${esc(t('Add'))}</button><button class="secondary" data-add="cancel">${esc(t('Cancel'))}</button>
+              <span class="muted small">${esc(t('An item can\'t be deleted until it\'s handled.'))}</span></div>
         </div>`;
     }
 
     // The two multi-pick filters, described once so markup and wiring cannot drift.
     function filterPickers() {
         return [
-            { id: 'q-target', label: 'Targets', get: () => fTarget, set: v => { fTarget = v; },
-                title: 'Which targets to list — tick any combination',
+            { id: 'q-target', label: t('Targets'), get: () => fTarget, set: v => { fTarget = v; },
+                title: t('Which targets to list — tick any combination'),
                 options: (DATA.targets || []).slice() },
             // ‼️ X-49 — "Unclaimed" is an OPTION here for the same reason "No
             // project" is one below: without it, filtering to an engine makes
             // the items nobody asked anyone for vanish with nothing on screen
             // saying they exist — and those are exactly the ones somebody
             // looking for work to hand out is about to want.
-            { id: 'q-engine', label: 'Engines', get: () => fEngine, set: v => { fEngine = v; },
-                title: 'Which engine the item asks for — tick any combination. This is what it WANTS, not where it ran; the queue starts nothing.',
-                options: [{ v: NO_ENGINE, t: '— Unclaimed' }].concat(
+            { id: 'q-engine', label: t('Engines'), get: () => fEngine, set: v => { fEngine = v; },
+                title: t('Which engine the item asks for — tick any combination. This is what it WANTS, not where it ran; the queue starts nothing.'),
+                options: [{ v: NO_ENGINE, t: t('— Unclaimed') }].concat(
                     ((DATA.launch || {}).engines || []).map(e => ({ v: e.id, t: e.label }))) },
             /**
              * ‼️ X-254 (2/n) — AND WHOSE PLAN, which is the question the engine
@@ -659,58 +664,58 @@
              * the box above for that.
              */
             ...(allAccounts().length ? [{
-                id: 'q-account', label: 'Accounts', get: () => fAccount, set: v => { fAccount = v; },
-                title: 'Whose plan the item asks to be paid for by — tick any combination. '
-                    + 'This is what it WANTS: the queue starts nothing and spends nothing.',
-                options: [{ v: NO_ACCOUNT, t: '— Unclaimed' },
+                id: 'q-account', label: t('Accounts'), get: () => fAccount, set: v => { fAccount = v; },
+                title: t('Whose plan the item asks to be paid for by — tick any combination. '
+                    + 'This is what it WANTS: the queue starts nothing and spends nothing.'),
+                options: [{ v: NO_ACCOUNT, t: t('— Unclaimed') },
                     { v: window.AFAccount.MACHINE, t: window.AFAccount.MACHINE_ROW }]
                     .concat(allAccounts().map(a => ({ v: a.id, t: window.AFAccount.label(a) })))
             }] : []),
             // U-52 — "mine" is one option, so a click on its name already gives
             // you it. Its opposite — everything the fleet put here — is as many
             // options as there are agents and had no name at all.
-            { id: 'q-author', label: 'Authors', get: () => fAuthor, set: v => { fAuthor = v; },
-                title: 'Who wrote the item — tick any combination',
+            { id: 'q-author', label: t('Authors'), get: () => fAuthor, set: v => { fAuthor = v; },
+                title: t('Who wrote the item — tick any combination'),
                 presets: (DATA.agents || []).length > 1 ? [{
-                    id: 'agents', label: 'Agents', values: (DATA.agents || []).slice(),
-                    title: 'Everything the fleet put here — every agent, and nothing you wrote yourself.'
+                    id: 'agents', label: t('Agents'), values: (DATA.agents || []).slice(),
+                    title: t('Everything the fleet put here — every agent, and nothing you wrote yourself.')
                 }] : [],
-                options: [{ v: 'user', t: '🧑 mine' }].concat((DATA.agents || []).map(a => ({ v: a, t: '🤖 ' + a }))) },
+                options: [{ v: 'user', t: '🧑 ' + t('mine') }].concat((DATA.agents || []).map(a => ({ v: a, t: '🤖 ' + a }))) },
             // ‼️ "No project" is an OPTION, not the absence of one — without it
             // a project filter makes the unfiled items vanish with nothing on
             // screen saying they exist, and those are exactly the ones somebody
             // filtering by project is about to want to file.
-            { id: 'q-project', label: 'Projects', get: () => fProject, set: v => { fProject = v; },
-                title: 'Which project\'s items to list — manage them on the ◧ Projects page',
-                options: [{ v: window.AFProject.NONE, t: '— No project' }].concat(
+            { id: 'q-project', label: t('Projects'), get: () => fProject, set: v => { fProject = v; },
+                title: t('Which project\'s items to list — manage them on the ◧ Projects page'),
+                options: [{ v: window.AFProject.NONE, t: t('— No project') }].concat(
                     (DATA.projects || []).map(p => ({ v: p.id, t: (p.icon ? p.icon + ' ' : '') + p.name }))) }
         ];
     }
 
     /** N-11 — Notices' contract: the SELECTED rows, or every row shown when none is. */
     function bulkBar(items) {
-        const target = selected.size ? `${selected.size} selected` : `all ${items.length} shown`;
+        const target = selected.size ? t('{n} selected', { n: selected.size }) : t('all {n} shown', { n: items.length });
         return window.AFBulk.bar('q-selall', items.length && items.every(n => selected.has(n.id)), [
-            window.AFBulk.delBtn('Delete for good',
-                `Deletes the HANDLED items among ${target} (done · dropped).\n\n`
+            window.AFBulk.delBtn(t('Delete for good'),
+                t('Deletes the HANDLED items among {target} (done · dropped).\n\n'
                 + 'A live item is never deleted — the queue\'s rule is that nothing vanishes before it is handled. '
-                + 'Drop it first (✕ on its row), then delete it.'),
-            window.AFBulk.clearBtn('clearHandled', 'Clear handled', 'Clear what is already handled',
-                'Deletes every done and dropped item in the queue, whatever is filtered or shown.\n\n'
-                + '📌 Pinned and archived items are kept. Live items are never touched.')
+                + 'Drop it first (✕ on its row), then delete it.', { target })),
+            window.AFBulk.clearBtn('clearHandled', t('Clear handled'), t('Clear what is already handled'),
+                t('Deletes every done and dropped item in the queue, whatever is filtered or shown.\n\n'
+                + '📌 Pinned and archived items are kept. Live items are never touched.'))
         ]);
     }
 
     function controls(items) {
         return `<div class="q-controls">
-            <input id="q-search" type="search" placeholder="🔍 search" value="${esc(query)}"
-                title="${esc(window.AFQuery.tip('Searched against the item, its target, the engine/model/effort it asks for, its author, its resolution, its stamp and its tags.'))}">
+            <input id="q-search" type="search" placeholder="${esc(lab('🔍 search'))}" value="${esc(query)}"
+                title="${esc(window.AFQuery.tip(t('Searched against the item, its target, the engine/model/effort it asks for, its author, its resolution, its stamp and its tags.')))}">
             ${filterPickers().map(p => window.AFFilter.multi({
                 id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title,
                 presets: p.presets
             })).join('')}
-            <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> show dropped</label>
-            <button class="secondary" id="q-reset" title="Reset filters">↺</button>
+            <label class="q-drop"><input type="checkbox" id="q-showdropped" ${showDropped ? 'checked' : ''}> ${esc(t('show dropped'))}</label>
+            <button class="secondary" id="q-reset" title="${esc(t('Reset filters'))}">↺</button>
             ${bulkBar(items)}
         </div>`;
     }
@@ -839,24 +844,25 @@
         let body = '';
         if (blockedItems.length) { body += `<div class="q-cat cat-blocked">${laneHtml(LANE.blocked, blockedItems)}</div>`; }
         if (userItems.length) {
-            body += categoryHtml({ id: 'user', icon: '🧑', title: 'Your captures', items: userItems });
+            body += categoryHtml({ id: 'user', icon: '🧑', title: t('Your captures'), items: userItems });
         }
         if (agentItems.length) {
             body += categoryHtml({
-                id: 'agent', icon: '🤖', title: 'Agent-tracked delegations', items: agentItems,
+                id: 'agent', icon: '🤖', title: t('Agent-tracked delegations'), items: agentItems,
                 collapsible: true, open: agentLaneOpen,
-                sub: liveSummary(agentItems) || 'the manager\'s tracked work'
+                sub: liveSummary(agentItems) || t('the manager\'s tracked work')
             });
         }
         if (!body) {
-            body = '<p class="muted" style="margin-top:20px">📥 The queue is empty. Drop small fixes/tasks here — they won\'t be lost until handled. Command: <code>Agent Farm: Add to Queue</code> or the ＋ above.</p>';
+            body = '<p class="muted" style="margin-top:20px">📥 ' + t('The queue is empty. Drop small fixes/tasks here — they won\'t be lost until handled. Command: {cmd} or the ＋ above.', { cmd: '<code>Agent Farm: Add to Queue</code>' }) + '</p>';
         }
         const active = DATA.active || 0, blocked = DATA.blocked || 0;
         document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.tabs('queue')}
             ${window.AFHeader.html({
-                page: 'queue', title: '📥 Work Queue',
-                sub: `${(DATA.items || []).length} items · ${active} active${blocked ? ` · ${blocked} need you` : ''} · showing ${items.length} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
+                page: 'queue', title: esc(lab('📥 Work Queue')),
+                sub: [t('{n} items · {active} active', { n: (DATA.items || []).length, active })].concat(blocked ? [t('{blocked} need you', { blocked })] : [],
+                    [t('showing {n}', { n: items.length }), window.AFTime.clockUtc(DATA.generatedAt)]).join(' · '),
                 controls: controls(items)
             })}
             ${addForm()}

@@ -105,7 +105,8 @@
      * rest of the attribute, exactly as they do today.
      */
     function hint(text) {
-        return text ? text + ' — ' + HINT : HINT;
+        const h = window.AFI18n ? window.AFI18n.t(HINT) : HINT;
+        return text ? text + ' — ' + h : h;
     }
 
     /**

@@ -1080,6 +1080,10 @@ files, and `media/afTime.js` formats with `AFI18n.locale()`.
   passes through.
 - Translate where the text is DRAWN, not where it is declared: the header's
   `NAV` stays English and `navBtn` translates — one point for every button.
+- A shared component (`AFBulk`, `AFFilter`, `AFCtx.hint`) translates its OWN
+  words; a label, head or title a page hands it, the page translates first.
+  A key is one translation app-wide (every part merges into one table), so a
+  bare word such as `failed` gets its general sense, never one surface's.
 - A sentence the HOST composes for a row (`developer is waiting for
   permission`) is built with `said(template, values)` (`src/core/uiSentence.ts`):
   the English `title` stays whole for the bridge and the agents reading it,
