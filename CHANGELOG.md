@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.803.0 - Relay marks on the Live Timeline, and the two "waiting for you" switches side by side (2026-10-03)
+
+- **The Live Timeline shows a relay leg.** A session card that is a leg of a
+  baton relay carries the chain's ⑂ mark beside its id; click it to open
+  that chain on the Chains page, as you can from the Console, the Sessions
+  table and the Turns page.
+- **"… is waiting for you", your choice.** Both switches now sit together
+  under Settings › Live Monitoring & Alerts and say which is which: the
+  reminder on the Notices page (set its minutes to 0 to turn it off) and the
+  box in VS Code's bottom-right corner when a Console turn finishes. Both
+  stay on by default.
+- **More of the interface language.** With the interface language set to
+  Turkish, the sentence the Chains page shows after a press (stop, brake,
+  start now, continue, end), the hover on every search box, a project's
+  hover, and the Needs You lines for approvals and overdue posts are drawn
+  in it. English stays the default, and the bridge and the agents keep
+  reading English.
+
 ## 3.802.0 - The Work Queue and Notices in your language, and every relay mark opens its chain (2026-10-03)
 
 - **The Work Queue and Notices in Turkish.** With the interface language set
