@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.814.0 - One Model box on tasks and workflow steps too (2026-10-04)
+
+- **Tasks and workflow steps fold the same way.** On the New-task form and
+  on a workflow step, when the chosen route maps tiers, the route's tier box
+  is the Model box and the Anthropic model box steps aside. A model you had
+  already set on the task is kept, not erased; it simply does not override
+  the tier.
+
 ## 3.813.0 - On a route, one Model box (2026-10-04)
 
 - **The tier you pick on a route is the model the session gets.** Before,

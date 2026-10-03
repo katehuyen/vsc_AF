@@ -1881,7 +1881,13 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         const page = fs.readFileSync(at3('media', 'tasksPage.js'), 'utf8');
         const readList = page.slice(page.indexOf('function readStep()'),
             page.indexOf('function stepError('));
-        const undrawn = seeded.filter(k => !html().includes('id="nt-st-' + k + '"'));
+        // X-493 — on a route that maps tiers the tier box IS the model box, so `smodel` steps
+        // aside; its value stays on the draft because readStep skips a box that is not drawn.
+        const folded = html().includes('id="nt-st-stier"');
+        ok('X-493 — this step\'s route maps tiers, so its Model box gives way to the tier box',
+            folded && !html().includes('id="nt-st-smodel"')
+            && /const v = \(id\) => \{ const el = g\(id\); if \(el && el\.value != null\)/.test(page));
+        const undrawn = seeded.filter(k => !html().includes('id="nt-st-' + k + '"') && !(folded && k === 'smodel'));
         ok('‼️ X-228 — every dimension the host seeds a step with has a box on the card'
             + ' (missing: ' + JSON.stringify(undrawn) + ')', !undrawn.length);
         const unread = seeded.filter(k => !new RegExp("'" + k + "'").test(readList));

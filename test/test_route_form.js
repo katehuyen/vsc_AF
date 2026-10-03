@@ -182,5 +182,19 @@ const formOf = (h) => {
         /id="c-model"/.test(p) && /id="c-account"/.test(p) && /Which sign-in of this engine pays/.test(p));
 }
 
+{
+    // X-493 — the Tasks form folds the same way, and the hidden model is not lost
+    const tf = require(path.join(__dirname, 'fixtures', 'tasks.js'));
+    const v = tf.variants().find(x => x.id === 'tasks-route');
+    const r = runPage('tasksPage.js', v.data);
+    r.query('#nt-open')[0].click();
+    const before = r.html();
+    ok('the Tasks form draws its Model box while no route is picked', /id="nt-model"/.test(before));
+    v.act(r);
+    const h = r.html();
+    ok('…and on a route that maps tiers the tier box takes its place, labelled Model',
+        !/id="nt-model"/.test(h) && /<span>Model<\/span>\s*<select id="nt-tier">/.test(h));
+}
+
 console.log(`test_route_form: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

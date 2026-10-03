@@ -16,6 +16,7 @@
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     const C = window.AFCharts;
     let DATA = window.__DATA__;
     // X-456 - drawn on a phone by the remote host: what opens a file, an editor, a save dialog or another
@@ -1732,6 +1733,11 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         const f = all[engine || 'claude'];
         return (f && (f.providers || []).length) ? f : null;
     }
+    /** X-493 — on a Claude route that maps tiers the tier IS the model, so its box takes the Model box's place. */
+    function ntTierFolds(engine, providerId) {
+        const f = providerId && (engine || 'claude') === 'claude' ? ntRoutes(engine) : null;
+        return !!f && ((f.providers.find(p => p.id === providerId) || {}).tiers || []).length > 0;
+    }
     /**
      * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, held with the page for the same
      * reason the routes are: moving the engine box must redraw HERE rather than
@@ -1978,14 +1984,15 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             // sentence. The served model is the one fact this box exists to
             // establish, so it moves to the front of the hover, where nothing
             // clips it, and the label is the tier's own name.
-            .concat(tiers.map(t =>
-                C.option(t.id, t.label, {
-                    selected: t.id === tier,
-                    detail: (t.detail ? 'Served by: ' + t.detail + '\n\n' : '')
-                        + 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
+            .concat(tiers.map(row =>
+                C.option(row.id, row.label, {
+                    selected: row.id === tier,
+                    detail: (row.detail ? 'Served by: ' + row.detail + '\n\n' : '')
+                        + t('The same tier name is served by a different model on every route.')
                 })))
             .join('');
-        return row + `<label class="ntf" title="Which model this route serves for that name. A tier is not a model: &quot;opus&quot; is one model on one route and another on the next, which is why it is asked here and not in the model box."><span>Tier</span>
+        // X-493 — this box IS the run's model choice on a route that maps tiers; the Model box gives way to it
+        return row + `<label class="ntf" title="${C.esc(t('On a route the route decides the model: pick which of its tiers serves the run. Hover a tier for the model it reaches — the same name is a different model on every route.'))}"><span>${C.esc(t('Model'))}</span>
                     <select id="nt-${tierId}">${topts}</select></label>`;
     }
 
@@ -2345,10 +2352,10 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
      */
     function stepLaunchRows(s) {
         return ntEngineRow('st-sengine', s.sengine)
-            + choiceSel('st-smodel', 'Model', ntModels(s.sengine), s.smodel,
+            + (ntTierFolds(s.sengine, s.sproviderId) ? '' : choiceSel('st-smodel', 'Model', ntModels(s.sengine), s.smodel,
                 'Which model runs THIS step. ‼️ The list belongs to the Engine above: '
                 + ntModelNote(s.sengine) + ' Empty = the step states nothing and the chain\'s '
-                + 'run inherits, which is what every step written before this did.')
+                + 'run inherits, which is what every step written before this did.'))
             + choiceSel('st-seffort', 'Effort', ntEfforts(s.sengine, s.smodel), s.seffort,
                 'How much reasoning per turn, from the levels the chosen model actually supports. '
                 + 'A chain is where this is worth saying step by step: the link that plans and the '
@@ -3050,7 +3057,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     */ ''}
                 ${wantsRun ? `
                 ${engineSel(c.engine)}
-                ${choiceSel('model', 'Model', ntModels(c.engine), c.model,
+                ${ntTierFolds(c.engine, c.providerId) ? '' : choiceSel('model', 'Model', ntModels(c.engine), c.model,
             'Which model runs it. ‼️ The list belongs to the ENGINE above: '
             + ntModelNote(c.engine) + ' Beats the model-policy rules in Farm Settings.')}
                 ${choiceSel('effort', 'Effort', ntEfforts(c.engine, c.model), c.effort,
