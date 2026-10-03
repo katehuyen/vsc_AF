@@ -1,4 +1,5 @@
 import type { FleetWait } from './waits';
+import { Said, said } from './uiSentence';
 
 /** A step waiting on a person's answer: which kind of question, and its own words. */
 export interface HumanAsk {
@@ -27,13 +28,26 @@ export interface OpenHumanAsk {
  * describe the same question in three different ways.
  */
 export function humanAskSentence(a: HumanAsk): string {
+    return humanAskSaid(a).title;
+}
+
+/** U-189 — the same sentence with its template and values, for a page that draws it in the interface language. */
+export function humanAskSaid(a: HumanAsk): Said {
     const goal = String(a.goal ?? '').trim();
+    const v = { title: a.title, goal };
     switch (a.kind) {
-        case 'browser': return `browser step "${a.title}" wants to run — ${a.url ?? ''}${goal ? ` (${goal})` : ''}`;
-        case 'upload': return `send files from this computer to ${a.title}: ${goal}`;
-        case 'selection': return `pick assets for "${a.title}"${goal ? ` — ${goal}` : ''}`;
-        default: return `approve "${a.title}"${goal ? ` — ${goal}` : ''}`;
+        case 'browser': return said(goal ? 'browser step "{title}" wants to run — {url} ({goal})' : 'browser step "{title}" wants to run — {url}', { ...v, url: a.url ?? '' });
+        case 'upload': return said('send files from this computer to {title}: {goal}', { ...v });
+        case 'selection': return said(goal ? 'pick assets for "{title}" — {goal}' : 'pick assets for "{title}"', { ...v });
+        default: return said(goal ? 'approve "{title}" — {goal}' : 'approve "{title}"', { ...v });
     }
+}
+
+/** The Needs You row's detail: its line, and the whole text when the line had to be cut; a whole line carries its template (U-189). */
+export function humanAskDetail(a: HumanAsk, cut: (text: string) => { detail: string; body?: string }): { detail: string; body?: string; detailKey?: string; detailVars?: Record<string, string> } {
+    const s = humanAskSaid(a);
+    const c = cut(s.title);
+    return c.body ? c : { ...c, detailKey: s.titleKey, detailVars: s.titleVars };
 }
 
 /** The line a waiting task row carries. */

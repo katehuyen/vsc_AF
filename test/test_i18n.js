@@ -140,11 +140,21 @@ const TR = Object.assign({}, ...require(path.join(ROOT, 'media', 'afI18n.js')).f
     const q = N.buildNeedsQueue({ liveSessions: [{ sessionId: 's1', agentName: 'developer', status: 'waiting-permission', lastPrompt: 'Bash: npm test', lastEventTs: 1 }], approvals: [], insights: [] });
     ok('a Needs row keeps its English title and carries the template beside it', q[0].title === 'developer is waiting for permission' && q[0].titleKey === '{agent} is waiting for permission');
     // every quoted template between a said( and its values object
-    const keys = [...new Set(['needs.ts', 'consoleNeeds.ts', 'engineFaultWatch.ts', 'calendarSignals.ts'].flatMap(f => {
+    const keys = [...new Set(['needs.ts', 'consoleNeeds.ts', 'engineFaultWatch.ts', 'calendarSignals.ts', 'humanAsk.ts'].flatMap(f => {
         const src = read('src', 'core', f);
-        return [...src.matchAll(/said\(/g)].flatMap(m => [...src.slice(m.index, src.indexOf(', {', m.index)).matchAll(/'([^']*\{\w+\}[^']*)'/g)].map(x => x[1]));
+        return [...src.matchAll(/said(?:Detail)?\(/g)].flatMap(m => [...src.slice(m.index, src.indexOf(', {', m.index)).matchAll(/'([^']*\{\w+\}[^']*)'/g)].map(x => x[1]));
     }))];
-    ok('every title template the Needs sources compose is in the Türkçe catalog (' + keys.length + ')', keys.length >= 10 && keys.every(k => k in TR));
+    const untr = keys.filter(k => !(k in TR));
+    ok('every title and detail template the Needs sources compose is in the Türkçe catalog (' + keys.length + ')' + (untr.length ? ' — missing: ' + untr.join(' | ') : ''),
+        keys.length >= 22 && !untr.length);
+    // the two that carried an English value inside a translated template: an approval's line, an overdue post's age
+    const ap = N.buildNeedsQueue({ liveSessions: [], insights: [], approvals: [{ id: 'a1', kind: 'upload', title: 'Drive', goal: 'the cut', createdAt: 1 }] })[0];
+    ok('an approval\'s line keeps its English and carries its template', ap.detail === 'send files from this computer to Drive: the cut'
+        && ap.detailKey === 'send files from this computer to {title}: {goal}' && ap.detailVars.goal === 'the cut');
+    const C = require(path.join(ROOT, 'out', 'core', 'calendarSignals.js'));
+    const od = C.publishNeedItems([{ entry: { title: 'Reel', platform: 'IG', date: '2026-10-01', status: 'ready', file: 'x.md' }, lateMs: 3 * 3600000 }], 5)[0];
+    ok('an overdue post says its age as before, with the unit in the template', od.title === '"Reel" was due on IG 3 h ago' && od.titleKey === '"{title}" was due on {platform} {n} h ago'
+        && od.detail === '2026-10-01 · ready · no publish step names this note' && C.span(3 * 3600000) === '3 h' && C.span(20 * 60000) === '20 min' && C.span(72 * 3600000) === '3 days');
     const { runPage } = require('./lib_page_dom');
     const draw = (script, data, lang) => {
         const sb = runPage(script, data, lang ? { __AFUI__: { lang, locale: lang } } : undefined).sandbox;

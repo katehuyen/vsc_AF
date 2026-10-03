@@ -8,7 +8,7 @@
 import { type CalEntry, findEntry, whenOf } from './contentCalendar';
 import type { LivingSignal } from './living';
 import type { NeedItem } from './needs';
-import { said } from './uiSentence';
+import { said, saidDetail } from './uiSentence';
 
 export interface PublishView { upcoming: CalEntry[]; overdue: CalEntry[] }
 
@@ -18,10 +18,16 @@ export interface PublishStepRef { workflowId: string; workflowTitle: string; ste
 export interface OverduePublish { entry: CalEntry; lateMs: number; step?: PublishStepRef }
 
 export function span(ms: number): string {
+    const s = spanOf(ms);
+    return `${s.n} ${s.unit}`;
+}
+
+/** The figure and its unit apart, so a sentence carries the unit in its template (U-189) and the figure as a value. */
+function spanOf(ms: number): { n: number; unit: 'min' | 'h' | 'days' } {
     const h = Math.abs(ms) / 3_600_000;
-    if (h < 1) { return `${Math.max(1, Math.round(h * 60))} min`; }
-    if (h < 48) { return `${Math.round(h)} h`; }
-    return `${Math.round(h / 24)} days`;
+    if (h < 1) { return { n: Math.max(1, Math.round(h * 60)), unit: 'min' }; }
+    if (h < 48) { return { n: Math.round(h), unit: 'h' }; }
+    return { n: Math.round(h / 24), unit: 'days' };
 }
 
 const when = (e: CalEntry) => `${e.date}${e.startTime ? ` ${e.startTime}` : ''}`;
@@ -63,15 +69,23 @@ export function publishStepOf(e: CalEntry, workflows: readonly { id: string; tit
 }
 
 export function publishNeedItems(list: readonly OverduePublish[], urgency: number): NeedItem[] {
-    return list.map(({ entry: e, lateMs, step }) => ({
-        urgency, kind: 'publish-overdue' as const, agentName: 'calendar',
-        ...said('"{title}" was due on {platform} {late} ago', { title: e.title, platform: e.platform, late: span(lateMs) }),
-        detail: `${when(e)} · ${e.status} · ${step ? `published by "${step.workflowTitle}" step ${step.stepIndex + 1}` : 'no publish step names this note'}`,
-        ts: whenOf(e),
-        ref: { filePath: e.file, ...(step ? { workflowId: step.workflowId, stepIndex: step.stepIndex } : {}) },
-        actions: [
-            { id: 'open-note', label: 'Open the note' },
-            step ? { id: 'open-publish', label: 'Open its publish step' } : { id: 'open-tasks', label: 'Tasks' }
-        ]
-    }));
+    return list.map(({ entry: e, lateMs, step }) => {
+        const late = spanOf(lateMs);
+        const on = { when: when(e), status: e.status };
+        return {
+            urgency, kind: 'publish-overdue' as const, agentName: 'calendar',
+            ...said(late.unit === 'min' ? '"{title}" was due on {platform} {n} min ago'
+                : late.unit === 'h' ? '"{title}" was due on {platform} {n} h ago' : '"{title}" was due on {platform} {n} days ago', {
+                title: e.title, platform: e.platform, n: late.n
+            }),
+            ...(step ? saidDetail('{when} · {status} · published by "{workflow}" step {step}', { ...on, workflow: step.workflowTitle, step: step.stepIndex + 1 })
+                : saidDetail('{when} · {status} · no publish step names this note', on)),
+            ts: whenOf(e),
+            ref: { filePath: e.file, ...(step ? { workflowId: step.workflowId, stepIndex: step.stepIndex } : {}) },
+            actions: [
+                { id: 'open-note', label: 'Open the note' },
+                step ? { id: 'open-publish', label: 'Open its publish step' } : { id: 'open-tasks', label: 'Tasks' }
+            ]
+        };
+    });
 }

@@ -13,7 +13,7 @@
  * Pure data in, pure data out — the panel and the status bar both render here.
  */
 import { askActions, WorkflowQuestion } from './workflowAsk';
-import { humanAskSentence } from './humanAsk';
+import { humanAskDetail } from './humanAsk';
 import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
 import { type OverduePublish, publishNeedItems } from './calendarSignals';
 import { type FaultEpisode, faultNeedItems } from './engineFaultWatch';
@@ -340,7 +340,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             ...said(kind === 'approval' ? 'Approval needed — "{title}"'
                 : kind === 'upload' ? 'A media step wants to upload to {title}'
                     : 'Browser step "{title}" wants to run', { title: a.title }),
-            ...split(humanAskSentence({ kind, title: a.title, url: a.url, goal: a.goal })),
+            ...humanAskDetail({ kind, title: a.title, url: a.url, goal: a.goal }, split),
             ts: a.createdAt,
             ref: { approvalId: a.id },
             actions: [
