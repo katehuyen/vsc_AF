@@ -171,7 +171,7 @@ export class LegEndWatch {
         const brake = batonBrake(draft, all, chainMaxLegs(all, draft.chainId, this.deps.maxLegs ? this.deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
         if (brake) {
             const m = moveBaton(draft, 'stopped', `braked — ${brake.why}`, now);
-            const stopped = m.ok ? m.baton : draft;
+            const stopped: Baton = m.ok ? { ...m.baton, brake: brake.kind } : draft;
             this.deps.store.put(stopped);
             this.say(`Relay stopped — chain ${draft.chainId}`, `The ${engine ? 'mechanical pass' : 'failsafe'} would have rescued leg ${opener.hop + 1} (${why}), but ${brake.why}`,
                 `baton:${draft.id}:braked`, 2, 'warning');

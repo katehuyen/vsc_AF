@@ -122,6 +122,7 @@ export function batonView(b: Baton): Record<string, unknown> {
         ...(b.maxLegs !== undefined ? { maxLegs: b.maxLegs } : {}),
         ...(b.rescue ? { rescue: b.rescue } : {}),
         ...(b.fault ? { fault: b.fault } : {}),
+        ...(b.brake ? { brake: b.brake } : {}),
         ...(b.cause ? { cause: b.cause } : {}),
         ...(b.starved ? { starved: b.starved } : {}),
         ...(b.misplaced ? { misplaced: b.misplaced } : {}),
@@ -166,7 +167,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                     chainMaxLegs(deps.store.all(), accepted.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
                 if (brake) {
                     const moved = moveBaton(accepted, 'stopped', `braked — ${brake.why}`, now());
-                    const stopped = moved.ok ? moved.baton : accepted;
+                    const stopped: Baton = moved.ok ? { ...moved.baton, brake: brake.kind } : accepted;
                     deps.store.put(stopped, ...res.superseded);
                     deps.notify?.(
                         `Baton chain stopped — ${BRAKE_TITLE[brake.kind]} (${stopped.chainId})`,
@@ -203,7 +204,7 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
         },
         {
             op: 'baton.status',
-            describe: 'S-66 — THE BATONS: every live one (waiting for its session to end, or parked until a reset) and the chains they belong to, hop by hop — who passed, who was started (hop 0 is the seal of the leg that opened the chain, S-81), what each is waiting for, its wake time, the sentence of its last change. A chain\'s END is on record too (S-83): `done` (its last leg finished without passing, or the user ended it) or `failed` (a successor died on arrival — the crash-loop guard); a hop the failsafe opened for a leg that ended without passing carries `rescue` (why); a hop whose leg read its account at or past the handover line on its FIRST reading carries `misplaced` {slot, pct, wall, line, at, why} (X-474). args: chain? (one chain id), session? (batons passed by or started for that session), limit? (chains, default 20, newest first)',
+            describe: 'S-66 — THE BATONS: every live one (waiting for its session to end, or parked until a reset) and the chains they belong to, hop by hop — who passed, who was started (hop 0 is the seal of the leg that opened the chain, S-81), what each is waiting for, its wake time, the sentence of its last change. A chain\'s END is on record too (S-83): `done` (its last leg finished without passing, or the user ended it) or `failed` (a successor died on arrival — the crash-loop guard); a hop the failsafe opened for a leg that ended without passing carries `rescue` (why); a pass a brake stopped carries `brake` (ceiling · user · barren, S-120); a hop whose leg read its account at or past the handover line on its FIRST reading carries `misplaced` {slot, pct, wall, line, at, why} (X-474). args: chain? (one chain id), session? (batons passed by or started for that session), limit? (chains, default 20, newest first)',
             handler: (args) => {
                 const chain = optStr(args, 'chain');
                 const session = optStr(args, 'session');

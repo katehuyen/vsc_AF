@@ -3,12 +3,12 @@
  * finishes the work and passes nothing; these are the others. Two act on their
  * own (ceiling, barren); S-96 adds the user's (`lastLeg` on the running leg).
  */
-import { Baton, openerOf } from './baton';
+import { Baton, BrakeKind, openerOf } from './baton';
 import { headsLabel, headsRoots } from './legRoots';
 import { BARREN_REPAIR } from './batonRules';
 
 export interface BatonBrake {
-    kind: 'ceiling' | 'user' | 'barren';
+    kind: BrakeKind;
     why: string;
 }
 

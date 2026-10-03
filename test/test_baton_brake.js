@@ -104,6 +104,8 @@ ok('a setting is read as a whole number >= 0, the default for anything else',
         ok('a barren third leg: the pass is answered, not refused — the baton is kept as stopped',
             r.ok && r.result.braked === 'barren' && b.state === 'stopped' && b.hop === 3 && /^braked — barren chain/.test(b.why));
         ok('…and it is on disk with its HEAD', store.get(b.id).state === 'stopped' && store.get(b.id).head === H1);
+        ok('‼️ S-120 — the brake\'s kind is a field on the record and in the answer, not only a sentence',
+            store.get(b.id).brake === 'barren' && b.brake === 'barren');
         ok('…the runner is told to write a handover note instead',
             /^The chain stops here: barren chain/.test(r.result.sentence) && /write a handover note instead \(_REF\/handover\.md, section 4\)/.test(r.result.sentence));
         ok('…the person is told ONCE, with a key that cannot repeat for this baton',
@@ -117,6 +119,7 @@ ok('a setting is read as a whole number >= 0, the default for anything else',
         ok('the ceiling through the op: kept as stopped, named, told',
             r.ok && r.result.braked === 'ceiling' && r.result.baton.state === 'stopped'
             && /agentFarm\.batonMaxHops sets the ceiling \(0 = none\)/.test(notes[0].body));
+        ok('…recorded as brake ceiling', r.result.baton.brake === 'ceiling');
     }
     {
         const { r, store, notes } = await run({ headOf: async () => H2 });

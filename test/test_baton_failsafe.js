@@ -195,6 +195,7 @@ console.log('\n== the runner ==');
         const r = await t.runner.legEnded('s-leg2', 'end');
         ok('‼️ the rescue obeys the brakes: past the leg ceiling it opens nothing and is kept as stopped',
             r && r.state === 'stopped' && /leg ceiling/.test(r.why) && t.opened.length === 0);
+        ok('…and the record names the brake (S-120)', r && r.brake === 'ceiling');
     }
     {
         const t = mk([baton({ updatedAt: NOW - 5000 })], { error: 'auth' });

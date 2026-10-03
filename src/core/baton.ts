@@ -66,6 +66,9 @@ export interface BatonLastLeg {
 /** Why Agent Farm passed for a running leg: its conversation was flagged, or its account hit the plan limit. */
 export type BatonFault = 'flagged' | 'limit';
 
+/** S-78 — which brake refused a pass (batonBrake.ts): the leg ceiling, the user's last leg, or a barren chain. */
+export type BrakeKind = 'ceiling' | 'user' | 'barren';
+
 /** A mechanical pass's order: which fault, and the model the successor opens on when it is not the chain's own. */
 export interface EnginePassHow {
     fault: BatonFault;
@@ -109,6 +112,8 @@ export interface Baton {
     a2aNoteId?: string;
     /** S-96 — on the opener of a RUNNING leg only: the user made that leg the chain's last (batonLastLeg.ts) */
     lastLeg?: BatonLastLeg;
+    /** S-120 — on a pass a brake stopped: which one, so the chain board reads a field rather than the sentence */
+    brake?: BrakeKind;
     createdAt: number;
     updatedAt: number;
 }
