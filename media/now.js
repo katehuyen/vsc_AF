@@ -41,16 +41,17 @@
 
     // U-189 — a title the host composed travels as its template and values
     const said = o => (o.titleKey ? t(o.titleKey, o.titleVars) : o.title);
+    const saidD = o => (o.detailKey ? t(o.detailKey, o.detailVars) : o.detail);
 
     function waitingHtml(d) {
         const rows = d.waiting.map(w => tipped(
             `<div class="nw-row nw-go" data-nav="needs" tabindex="0">
                 <span class="nw-ic">${KIND[w.kind] || '•'}</span>
                 <span class="nw-main"><b>${esc(w.agentName)}</b> · ${esc(said(w))}
-                    <span class="nw-line muted">${esc(w.detail)}</span></span>
+                    <span class="nw-line muted">${esc(saidD(w))}</span></span>
                 <span class="nw-when muted">${esc(T.ago(w.ts))}</span>
             </div>`,
-            [`${w.agentName} · ${said(w)}`, T.tip(w.ts, 'Raised'), window.AFTip.GAP, w.detail || '']));
+            [`${w.agentName} · ${said(w)}`, T.tip(w.ts, 'Raised'), window.AFTip.GAP, saidD(w) || '']));
         const more = d.waitingMore ? `<div class="nw-more nw-go" data-nav="needs">${esc(t('+{n} more in Needs You', { n: d.waitingMore }))}</div>` : '';
         return section(t('Waiting for you'), d.waiting.length + d.waitingMore, 'needs',
             rows.join('') + more, '🎉 ' + t('Nothing is waiting for you.'));

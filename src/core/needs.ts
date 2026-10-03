@@ -17,7 +17,7 @@ import { humanAskSentence } from './humanAsk';
 import { ConsoleNeedAsk, consoleNeedItems } from './consoleNeeds';
 import { type OverduePublish, publishNeedItems } from './calendarSignals';
 import { type FaultEpisode, faultNeedItems } from './engineFaultWatch';
-import { said } from './uiSentence';
+import { said, saidDetail } from './uiSentence';
 
 export type NeedKind =
     | 'permission'        // a live session is blocked on a permission dialog
@@ -66,6 +66,8 @@ export interface NeedItem {
     /** U-189 — the title's English template and values; a page draws t(titleKey, titleVars), the bridge keeps `title` */
     titleKey?: string;
     titleVars?: Record<string, string>;
+    detailKey?: string;
+    detailVars?: Record<string, string>;
     /** ‼️ THE ROW'S LINE, and only that. It is cut to a row on purpose. */
     detail: string;
     /**
@@ -280,7 +282,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                 kind: 'stalled',
                 agentName,
                 ...said('{agent} looks stalled', { agent: agentName }),
-                detail: (s.currentTool ? `last tool: ${s.currentTool}` : s.lastPrompt ?? ''),
+                ...(s.currentTool ? saidDetail('last tool: {tool}', { tool: s.currentTool }) : { detail: s.lastPrompt ?? '' }),
                 // ‼️ A STALLED ROW SHOWS THE TOOL, so the prompt behind it is
                 // the thing the reader is missing — the body carries it either
                 // way, and with the tool on the line the whole prompt is new.
@@ -373,7 +375,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
             kind: 'interrupted',
             agentName: 'workflow',
             ...said('Run interrupted — "{workflow}"', { workflow: r.workflowTitle }),
-            detail: `cut at step ${r.stepIndex + 1} (${r.stepTitle}) when the window closed — Resume re-enters there with the previous handoff`,
+            ...saidDetail('cut at step {step} ({title}) when the window closed — Resume re-enters there with the previous handoff', { step: r.stepIndex + 1, title: r.stepTitle }),
             ts: 0,
             ref: { runId: r.runId },
             actions: [

@@ -153,6 +153,12 @@ const TR = require(path.join(ROOT, 'media', 'afI18n.tr.js'));
     const titles = [...draw('needs.js', needs, 'tr').matchAll(/class="need-title">([^<]*)/g)].map(m => m[1]);
     ok('the Needs page draws its titles in Türkçe (the right-click payload keeps the English for the host)',
         titles.some(x => x.includes('izin bekliyor')) && !titles.some(x => /is waiting for permission|looks stalled/.test(x)));
+    const ntr = draw('needs.js', needs, 'tr');
+    ok('…and its own words: heading, tags, toolbar, the row buttons and a host-built detail line',
+        ['Seni Bekleyenler', 'İZİN', 'TAKILDI', 'Tümünü temizle', 'İzin ver', 'Zaman çizelgesi', 'son araç: Bash', 'Sürdür'].every(s => ntr.includes(s))
+        && !/>(Clear all|Allow|Timeline)</.test(ntr.replace(/>[^<]*?(✅|⌨|🧹)\s*/g, '>')));
+    const nen = draw('needs.js', needs);
+    ok('…while English reads as it did', ['Needs You', 'PERMISSION', 'Clear all', 'Allow', 'last tool: Bash'].every(s => nen.includes(s)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

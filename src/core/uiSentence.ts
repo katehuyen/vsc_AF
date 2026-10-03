@@ -10,6 +10,12 @@ export interface Said {
     titleVars: Record<string, string>;
 }
 
+/** The same for a row's detail line: { detail, detailKey, detailVars }. */
+export function saidDetail(key: string, vars: Record<string, string | number>): { detail: string; detailKey: string; detailVars: Record<string, string> } {
+    const s = said(key, vars);
+    return { detail: s.title, detailKey: s.titleKey, detailVars: s.titleVars };
+}
+
 export function said(key: string, vars: Record<string, string | number>): Said {
     const v: Record<string, string> = {};
     for (const [k, x] of Object.entries(vars)) { v[k] = String(x); }

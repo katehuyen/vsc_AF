@@ -40,6 +40,7 @@ export interface NowWaiting {
     key: string; kind: string; agentName: string; title: string; detail: string; ts: number;
     /** U-189 — the title's template and values (needs.ts), drawn through the page's t() */
     titleKey?: string; titleVars?: Record<string, string>;
+    detailKey?: string; detailVars?: Record<string, string>;
 }
 
 export interface NowRunning {
@@ -94,7 +95,8 @@ export function buildNow(i: NowInput): NowData {
     return {
         waiting: blocking.slice(0, NOW_LIMITS.waiting).map(n => ({
             key: needKey(n), kind: n.kind, agentName: n.agentName, title: n.title, detail: n.detail, ts: n.ts,
-            ...(n.titleKey ? { titleKey: n.titleKey, titleVars: n.titleVars ?? {} } : {})
+            ...(n.titleKey ? { titleKey: n.titleKey, titleVars: n.titleVars ?? {} } : {}),
+            ...(n.detailKey ? { detailKey: n.detailKey, detailVars: n.detailVars ?? {} } : {})
         })),
         waitingMore: Math.max(0, blocking.length - NOW_LIMITS.waiting),
         running,

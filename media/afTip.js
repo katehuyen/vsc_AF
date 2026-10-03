@@ -59,7 +59,8 @@
      *  whatever identity the caller passes in front of it. */
     function sizeNote(text) {
         const n = String(text || '').length;
-        return n ? n.toLocaleString() + ' characters' : '';
+        if (!n) { return ''; }
+        return window.AFI18n ? window.AFI18n.t('{n} characters', { n: n.toLocaleString() }) : n.toLocaleString() + ' characters';
     }
 
     /** `title` names the thing under the pointer, between the head and the

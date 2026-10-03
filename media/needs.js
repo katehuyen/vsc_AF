@@ -6,6 +6,8 @@
     // U-189 — a title the host composed travels as its template and values (src/core/uiSentence.ts)
     const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     const said = o => (o.titleKey ? t(o.titleKey, o.titleVars) : o.title);
+    const lab = s => (window.AFI18n ? window.AFI18n.label(s) : s);
+    const saidD = o => (o.detailKey ? t(o.detailKey, o.detailVars) : o.detail);
     let DATA = window.__DATA__;
     const selected = new Set();   // checked row keys (bulk clear)
     /**
@@ -83,7 +85,7 @@
     function rowHint(item) {
         const ref = item.ref || {};
         return ref.transcriptPath || ref.sessionId
-            ? 'right-click: this blocker, and everything you can do to the session behind it'
+            ? t('right-click: this blocker, and everything you can do to the session behind it')
             : window.AFCtx.HINT;
     }
 
@@ -97,10 +99,10 @@
      * sentence or a page — MIRROR on a control that cuts its own text.
      */
     function rowTip(item) {
-        const full = item.body || item.detail || '';
+        const full = item.body || saidD(item) || '';
         if (!String(full).trim()) { return ''; }
         return window.AFTip.lines([
-            `${item.agentName} · ${(KIND_META[item.kind] || {}).label || item.kind}`,
+            `${item.agentName} · ${t((KIND_META[item.kind] || {}).label || item.kind)}`,
             window.AFTip.sizeNote(full),
             window.AFTip.GAP,
             full
@@ -114,15 +116,15 @@
             ? `<span title="${C.esc(window.AFTime.tip(item.ts, 'Raised'))}">${window.AFTime.clock(item.ts)}</span>`
             : '';
         const actions = item.actions.map(a =>
-            `<button data-i="${i}" data-action="${C.esc(a.id)}"${a.id === 'reject' ? ' class="secondary"' : ''}>${C.esc(a.label)}</button>`
+            `<button data-i="${i}" data-action="${C.esc(a.id)}"${a.id === 'reject' ? ' class="secondary"' : ''}>${C.esc(lab(a.label))}</button>`
         ).join(' ');
         // A row holding a live promise gets no checkbox and no ✕: hiding it
         // would leave the agent waiting with nowhere left to answer from.
         const box = item.clearable
-            ? `<input type="checkbox" class="nd-cb" data-cb="${C.esc(item.key)}" ${selected.has(item.key) ? 'checked' : ''} title="Select for bulk clear">`
-            : '<span class="nd-lock" title="Answer it — Approve or Reject settles the waiting agent">🔒</span>';
+            ? `<input type="checkbox" class="nd-cb" data-cb="${C.esc(item.key)}" ${selected.has(item.key) ? 'checked' : ''} title="${C.esc(t('Select for bulk clear'))}">`
+            : `<span class="nd-lock" title="${C.esc(t('Answer it — Approve or Reject settles the waiting agent'))}">🔒</span>`;
         const clear = item.clearable
-            ? `<button class="secondary nd-x" data-clear="${C.esc(item.key)}" title="Clear this row — it comes back if the same thing happens again">✕</button>`
+            ? `<button class="secondary nd-x" data-clear="${C.esc(item.key)}" title="${C.esc(t('Clear this row — it comes back if the same thing happens again'))}">✕</button>`
             : '';
         // ‼️ THE CARET IS DRAWN ONLY WHEN THERE IS SOMETHING BEHIND IT. A
         // triangle that opens onto the sentence already on the row teaches the
@@ -131,12 +133,12 @@
         const caret = item.body
             ? `<span class="nd-caret" data-open="${C.esc(item.key)}" role="button" tabindex="0"
                  aria-expanded="${open ? 'true' : 'false'}"
-                 title="${C.esc(open ? 'Close' : 'Open it — the whole text, selectable')}">${open ? '▾' : '▸'}</span>`
+                 title="${C.esc(t(open ? 'Close' : 'Open it — the whole text, selectable'))}">${open ? '▾' : '▸'}</span>`
             : '<span class="nd-caret nd-caret-off"></span>';
         const detail = item.detail
             ? window.AFTip.wrap(
-                `<div class="need-detail">${C.esc(item.detail)}</div>`,
-                `${item.agentName} · ${meta.label}`,
+                `<div class="need-detail">${C.esc(saidD(item))}</div>`,
+                `${item.agentName} · ${t(meta.label)}`,
                 rowTip(item), 'nd-tipw')
             : '';
         return `<div class="need-row ${meta.cls} ${selected.has(item.key) ? 'sel' : ''} ${open ? 'open' : ''}"
@@ -145,11 +147,11 @@
             ${caret}
             <div class="need-icon">${meta.icon}</div>
             <div class="need-main">
-                <div class="need-title">${C.esc(said(item))} <span class="tag">${meta.label}</span></div>
+                <div class="need-title">${C.esc(said(item))} <span class="tag">${C.esc(t(meta.label))}</span></div>
                 ${detail}
                 <div class="muted small">${C.esc(item.agentName)}${when ? ' · ' + when : ''}</div>
                 ${open && item.body ? `<div class="nd-body">
-                    <div class="nd-bodyhead muted small">${C.esc(window.AFTip.sizeNote(item.body))} · select to copy</div>
+                    <div class="nd-bodyhead muted small">${C.esc(window.AFTip.sizeNote(item.body))} · ${C.esc(t('select to copy'))}</div>
                     <pre class="nd-full">${C.esc(item.body)}</pre>
                 </div>` : ''}
             </div>
@@ -173,14 +175,14 @@
         // nothing are worse than no buttons.
         const readable = items.filter(x => x.body);
         const bar = items.length || hidden ? `<div class="nd-bar btnrow">
-            <label class="nd-selall" title="Select / deselect every clearable row"><input type="checkbox" id="nd-selall"> all</label>
-            <button class="secondary" data-bulk="sel" ${selected.size ? '' : 'disabled'}>🧹 Clear selected${selected.size ? ` (${selected.size})` : ''}</button>
-            <button class="secondary" data-bulk="all" ${clearable.length ? '' : 'disabled'}>🧹 Clear all</button>
+            <label class="nd-selall" title="${C.esc(t('Select / deselect every clearable row'))}"><input type="checkbox" id="nd-selall"> ${C.esc(t('all'))}</label>
+            <button class="secondary" data-bulk="sel" ${selected.size ? '' : 'disabled'}>${C.esc(lab('🧹 Clear selected'))}${selected.size ? ` (${selected.size})` : ''}</button>
+            <button class="secondary" data-bulk="all" ${clearable.length ? '' : 'disabled'}>${C.esc(lab('🧹 Clear all'))}</button>
             ${readable.length ? `<button class="secondary" data-bulk="expand"
-                title="Open every row that has more to show">▾ Expand all (${readable.length})</button>
+                title="${C.esc(t('Open every row that has more to show'))}">${C.esc(lab('▾ Expand all'))} (${readable.length})</button>
             <button class="secondary" data-bulk="collapse" ${opened.size ? '' : 'disabled'}
-                title="Close them again">▸ Collapse all</button>` : ''}
-            ${hidden ? `<button class="secondary" data-bulk="restore" title="Bring the cleared rows back">↩ Restore (${hidden})</button>` : ''}
+                title="${C.esc(t('Close them again'))}">${C.esc(lab('▸ Collapse all'))}</button>` : ''}
+            ${hidden ? `<button class="secondary" data-bulk="restore" title="${C.esc(t('Bring the cleared rows back'))}">${C.esc(lab('↩ Restore'))} (${hidden})</button>` : ''}
         </div>` : '';
 
         document.getElementById('app').innerHTML = `
@@ -229,15 +231,15 @@
             </style>
             ${window.AFHeader.html({
                 page: 'needs',
-                title: 'Needs You',
-                sub: `${items.length} item(s) · ${urgent} urgent${hidden ? ` · ${hidden} cleared` : ''}${selected.size ? ` · ${selected.size} selected` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
+                title: t('Needs You'),
+                sub: `${C.esc(t('{n} item(s) · {urgent} urgent', { n: items.length, urgent }))}${hidden ? ' · ' + C.esc(t('{n} cleared', { n: hidden })) : ''}${selected.size ? ' · ' + C.esc(t('{n} selected', { n: selected.size })) : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
                 guide: 'onay-kuyrugu'
             })}
             ${bar}
             ${items.length
                 ? items.map(rowHtml).join('')
-                : `<p class="muted" style="margin-top:24px">🎉 Nothing is blocking the farm right now.${hidden ? ' Cleared rows are still hidden — Restore brings them back.' : ''}</p>
-                   <p class="muted small">Budgets, instruction suggestions, parked tasks and idle sessions are news, not work — they are announced on <b>Notices</b>.</p>`}
+                : `<p class="muted" style="margin-top:24px">🎉 ${C.esc(t('Nothing is blocking the farm right now.'))}${hidden ? ' ' + C.esc(t('Cleared rows are still hidden — Restore brings them back.')) : ''}</p>
+                   <p class="muted small">${C.esc(t('Budgets, instruction suggestions, parked tasks and idle sessions are news, not work — they are announced on {page}.', { page: '\u0000' })).replace('\u0000', `<b>${C.esc(t('Notices'))}</b>`)}</p>`}
         `;
         window.AFHeader.wire(vscode);
 
