@@ -886,6 +886,7 @@ const intentOf = (o) => Object.assign({
         && /<span class="af-tipw axisw[^"]*" data-axis-name="Route"/.test(composer()));
     ok('…with no tier box, because a tier is a question about a route and none is picked',
         !/id="c-tier"/.test(composer()));
+    ok('…so the Model box stands as it always has', /id="c-model"/.test(composer()));
     ok('‼️ …and the hover carries what makes the box auditable: the scope, and WHY '
         + 'there is no variant control rather than silence about it',
         composer().includes('fixed for the whole session on this engine')
@@ -922,7 +923,9 @@ const intentOf = (o) => Object.assign({
         app()._writes > before && /value="kimi" selected/.test(composer()));
     ok('a picked route brings its tier box, in the adapter\'s own label',
         /<select id="c-tier">/.test(composer()) && composer().includes('>opus<'));
-    els['c-tier'].tagName = 'SELECT';
+    // X-493 — on a route that maps tiers the tier IS the model: one subject, one box
+    ok('‼️ …and the Model box steps aside for it rather than standing beside it',
+        !/id="c-model"/.test(composer()) && /Anthropic&#39;s own model list does not apply here|Anthropic's own model list does not apply here/.test(composer()));    els['c-tier'].tagName = 'SELECT';
     sandbox.document.activeElement = els['c-tier'];
     posted.length = 0;
     els['c-tier'].value = 'opus';

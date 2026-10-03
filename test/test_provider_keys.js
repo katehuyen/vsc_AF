@@ -134,13 +134,22 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     ok('nothing changes off a third-party route (first-party route, no route, no runtime)',
         routedModel('claude-opus-5-5', { spawnEnv: { ANTHROPIC_API_KEY: 'k' } }) === 'claude-opus-5-5'
         && routedModel('claude-opus-5-5', undefined) === 'claude-opus-5-5' && routedModel('', third) === '');
+    // X-493 — a tier picked on the route sets ANTHROPIC_MODEL, and the CLI ranks --model above it
+    const tiered = { spawnEnv: { ...third.spawnEnv, ANTHROPIC_MODEL: 'x/haiku' } };
+    ok('‼️ at a spawn the picked tier decides: a leftover model is not sent over it',
+        routedModel('opus', tiered) === '' && routedModel('claude-opus-5-5', tiered) === '' && routedModel('deepseek/deepseek-r1', tiered) === '');
+    ok('…while a live switch on that card still asks for what the person picks',
+        routedModel('opus', tiered, { live: true }) === 'opus' && routedModel('claude-sonnet-5', tiered, { live: true }) === '');
+    ok('…and a tier off a third-party route changes nothing',
+        routedModel('opus', { spawnEnv: { ANTHROPIC_MODEL: 'claude-opus-5-5' } }) === 'opus');
 
     const host = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
     const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
     ok('‼️ the Console asks with the runtime its environment is built from',
         /const args = hostArgs\(\{ \.\.\.init, model: routedModel\(init\.model, routeRt\),/.test(host)
         && /\[this\.accountLayer\?\.\(engine\.id, init\.account\)\], routeRt\)/.test(host));
-    ok('…and a live switch on a running card too', /const asked = routedModel\(model\.trim\(\), this\.engineRuntime\?\.\(h\.state\.agentId/.test(host)
+    ok('…and a live switch on a running card too, as a live one', /const asked = routedModel\(model\.trim\(\), this\.engineRuntime\?\.\(h\.state\.agentId/.test(host)
+        && /pinned: h\.state\.routePinned\s*\}\), \{ live: true \}\);/.test(host)
         && /controlLine\(requestId, 'set_model', \{ model: asked \}\)/.test(host));
     ok('tasks: the picked model and the policy\'s both, on both spawn shapes',
         /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(tasksTs)

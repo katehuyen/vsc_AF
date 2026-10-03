@@ -2645,7 +2645,7 @@ export class ConsoleHost {
         // and one the route maps no model for is not sent at all (it could only fail there).
         const asked = routedModel(model.trim(), this.engineRuntime?.(h.state.agentId, h.engine.id, {
             providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned
-        }));
+        }), { live: true });
         if (!asked) {
             this.mutate(id, s => ({
                 ...s, lastTs: Date.now(),

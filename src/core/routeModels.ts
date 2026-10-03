@@ -36,13 +36,21 @@ export function routeModelEnv(tiers: Record<string, string> | undefined): Record
  * rather than a model it cannot serve). Any other id — the route's own — passes
  * untouched, and so does everything on a run that is not routed elsewhere.
  * `rt` is the runtime the spawn's environment is built from.
+ *
+ * ‼️ X-493 — AT A SPAWN, THE TIER PICKED ON THE ROUTE IS THE ONE ANSWER. The CLI
+ * ranks `--model` above ANTHROPIC_MODEL (measured in the shipped binary), so a
+ * model left over from an agent default or the last launch silently overrode
+ * the tier a person picked for this route. A live switch (`live`) is a person
+ * choosing the model now, so there the model is still asked for.
  */
 export function routedModel(
-    model: string | undefined, rt: { spawnEnv?: Record<string, string> } | undefined
+    model: string | undefined, rt: { spawnEnv?: Record<string, string> } | undefined,
+    opts: { live?: boolean } = {}
 ): string {
     const m = String(model ?? '').trim();
     const env = rt?.spawnEnv;
     if (!m || !env?.ANTHROPIC_BASE_URL) { return m; }
+    if (!opts.live && env.ANTHROPIC_MODEL) { return ''; }
     const anthropic = /^claude-/i.test(m) || /^(opus|sonnet|haiku|fable)(\[1m\])?$/i.test(m);
     if (!anthropic) { return m; }
     const fam = /(opus|sonnet|haiku|fable)/i.exec(m)?.[1].toLowerCase() ?? '';

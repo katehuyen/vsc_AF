@@ -15,6 +15,7 @@
     'use strict';
 
     const vscode = acquireVsCodeApi();
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     const C = window.AFCharts;
     // The shell's own global (see htmlShell) — not AF_DATA, which nothing sets.
     let DATA = window.__DATA__ || { sessions: [], agents: [], resumable: [] };
@@ -4455,8 +4456,14 @@
             if (!tierAxisOn()) { return route; }
             const tcur = pick.tier || '';
             const trows = withCurrent(f.sub.choices || [], tcur);
+            // ‼️ X-493 — ONE SUBJECT: on a route that maps tiers the tier IS the model,
+            // so this box takes the Model box's place instead of standing beside it.
             return route + axisBox({
-                axis: f.sub.label, id: 'c-tier', list: trows, cur: tcur, standard: f.sub.note
+                axis: t('Model'), name: t('Model (the route\'s tiers)'), id: 'c-tier', list: trows, cur: tcur,
+                standard: window.AFTip.lines([
+                    f.sub.note,
+                    t('On a route the route decides the model: pick which of its tiers serves the session. Anthropic\'s own model list does not apply here.')
+                ])
             });
         };
         /**
@@ -4492,8 +4499,13 @@
             // and only the Console's two had grown the five-hour figure.
             // ‼️ X-326 — and the list itself is built once, in accountAxisSpec.
             const spec = accountAxisSpec(accountRows(), policyRows(), cur, ROOT_DETAIL);
+            // ‼️ X-493 — ON A ROUTE THE ROUTE'S KEY PAYS. The box still decides which Claude home
+            // (history, settings, memory) the session lives in, so it is explained, not hidden.
+            const routed = engineNow() === 'claude' && !!routePick().providerId;
             const tip = window.AFTip.lines([
-                'Which sign-in of this engine pays for the new session.',
+                routed
+                    ? t('A route is picked, so its key pays for this session — not this sign-in. The box only chooses which Claude home the session keeps its history, settings and memory in.')
+                    : 'Which sign-in of this engine pays for the new session.',
                 'A dot marks the standing choice made on the Engines page; the box opens on it. '
                 + 'Changing it here overrules that for THIS session only — what is picked in this '
                 + 'box is a state, not a preference, and is not carried into the next session.',
@@ -4776,7 +4788,7 @@
                 ${engineHintHtml(engineNow())}
                 ${routeBoxesHtml()}
                 ${accountBoxHtml()}
-                ${axisBox({
+                ${tierAxisOn() ? '' : axisBox({
                     axis: 'Model', id: 'c-model', cur: intent().model,
                     list: withCurrent(composerModels(engineNow()), intent().model),
                     standard: window.AFTip.lines([

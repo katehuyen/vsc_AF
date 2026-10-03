@@ -27385,10 +27385,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     detail: form.empty || routeSaid.note,
                     act: 'provider'
                 } as Row] : []),
+                // X-493 — on a route that maps tiers the tier IS the model: this row takes the Model row's place
                 ...(form.sub.kind === 'tier' ? [{
-                    label: '$(list-tree) ' + form.sub.label,
+                    label: '$(star-full) Model',
                     description: show(merged.tier),
-                    detail: form.sub.note, act: 'tier'
+                    detail: form.sub.note + ' — the route decides the model; Anthropic\'s own list does not apply', act: 'tier'
                 } as Row] : []),
                 /**
                  * ‼️ X-169 — WHOSE PLAN PAYS FOR IT, and it sits beside the route
@@ -27420,6 +27421,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             })
                             : undefined;
                         return (p ? (p.refusal || p.note) + ' — ' : '')
+                            // X-493 — on a route its key pays; the sign-in only picks the Claude home
+                            + (spec.id === 'claude' && merged.providerId
+                                ? 'a route is picked, so its key pays — this only chooses which Claude home (history, settings, memory) the session uses. '
+                                : '')
                             + 'which sign-in of this engine the session runs as — blank is the main '
                             + 'account. What you pick here is for this launch only and is not '
                             + 'remembered: an account is a state, not a preference. The standing '
@@ -27428,7 +27433,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     })(),
                     act: 'account'
                 } as Row] : []),
-                {
+                ...(form.sub.kind === 'tier' ? [] : [{
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
                     // ‼️ THE LIST IS THE PROVIDER'S WHEN THE ENGINE PUBLISHES ONE
                     // — that is what "capability-driven" buys: choosing a
@@ -27438,7 +27443,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? form.sub.note
                         : 'from your agentFarm.modelAliases list — --model',
                     act: 'model'
-                },
+                } as Row]),
                 ...(form.variants.length ? [{
                     label: '$(symbol-enum) Variant', description: show(merged.variant),
                     detail: 'the reasoning variant this model publishes — --variant', act: 'variant'

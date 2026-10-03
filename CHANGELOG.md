@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.813.0 - On a route, one Model box (2026-10-04)
+
+- **The tier you pick on a route is the model the session gets.** Before,
+  a model left over from the agent's default or the last launch could
+  silently override the tier you picked for the route. Now, when you pick a
+  tier, that tier decides. Switching the model on a running card still
+  works as before.
+- **One Model box instead of two.** In the Console and in the launcher,
+  when a route maps tiers, its tier picker takes the Model box's place; hover
+  a tier to see the model it reaches on that route. Anthropic's own model
+  list, which does not apply on a route, is no longer shown beside it.
+- **The Account box says what it does on a route.** With a route picked,
+  the route's key pays, not your sign-in. The Account box now says that it
+  only chooses which Claude home (history, settings, memory) the session
+  uses.
+
 ## 3.812.0 - Edit a route in place (2026-10-04)
 
 - **Edit a route from its card.** Engines ▸ Providers: each route has an

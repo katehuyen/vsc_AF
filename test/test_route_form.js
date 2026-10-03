@@ -126,6 +126,11 @@ const formOf = (h) => {
         /const w = edit\s*\? setProfile\(list, id, input, engines\)\s*: addProfile\(list, input, engines\);/.test(ext)
         && !/list\.some\(p => p\.id === id\)\s*\? setProfile/.test(ext));
     ok('…and the panel hands it the door', /msg\.mode === 'edit'\), true\);/.test(panel));
+    // X-493 — the launcher (QuickPick) folds the same way the Console composer does
+    ok('the launcher: on a route that maps tiers the tier row IS the Model row, and the model row is not drawn',
+        /label: '\$\(star-full\) Model',\s*description: show\(merged\.tier\)/.test(ext)
+        && /\.\.\.\(form\.sub\.kind === 'tier' \? \[\] : \[\{\s*label: '\$\(star-full\) Model', description: show\(merged\.model\)/.test(ext));
+    ok('…and its Account row says the route\'s key pays', /spec\.id === 'claude' && merged\.providerId\s*\? 'a route is picked, so its key pays/.test(ext));
     const P = require(path.join(ROOT, 'out', 'core', 'providerProfiles.js'));
     const list = [P.storedProfile({ id: 'kimi', providerId: 'kimi', baseUrl: 'https://api.moonshot.ai/anthropic', tiers: { opus: 'k2' } })];
     const again = P.addProfile(list, { id: 'kimi', providerId: 'kimi' }, ['claude']);
@@ -156,6 +161,25 @@ const formOf = (h) => {
     const choice = F.launchProviderForm(adapter).providers.find(c => c.id === 'or');
     ok('the launch picker row leads with the note and reads the kind (got ' + (choice && choice.detail) + ')',
         !!choice && choice.detail === 'night experiments · https://openrouter.ai/api · Bearer token · 1 model');
+}
+
+{
+    // X-493 — the Console composer on a route: the tier takes the Model box's place, and the
+    // Account box says the route's key pays (it still picks the Claude home, so it stays).
+    const cf = require(path.join(__dirname, 'fixtures', 'console.js'));
+    const v = cf.variants().find(x => /composer picks the route/.test(x.label));
+    const h = runPage('console.js', v.data).html();
+    ok('the routed composer draws the tier box and no Model box', /id="c-tier"/.test(h) && !/id="c-model"/.test(h));
+    ok('…and its Account box says the route\'s key pays, the box choosing only the Claude home',
+        /its key pays for this session — not this sign-in/.test(h) && !/Which sign-in of this engine pays/.test(h));
+    // the same composer with no route picked: the host publishes no sub-axis then
+    const plain = Object.assign({}, v.data, {
+        composerIntent: Object.assign({}, v.data.composerIntent, { providerId: '', tier: '' }),
+        composerForm: Object.assign({}, v.data.composerForm, { sub: { kind: 'none', label: '', note: '', choices: [] } })
+    });
+    const p = runPage('console.js', plain).html();
+    ok('…while an unrouted composer keeps its Model box and the sign-in sentence',
+        /id="c-model"/.test(p) && /id="c-account"/.test(p) && /Which sign-in of this engine pays/.test(p));
 }
 
 console.log(`test_route_form: ${pass} passed, ${fail} failed`);
