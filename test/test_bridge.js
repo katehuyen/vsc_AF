@@ -3347,6 +3347,14 @@ const { opencodeStatus, syncToOpencode } =
         ok('sessions.start takes the project the session is filed under',
             /project\? \(id or name/.test(startBlock)
             && /resolveLaunchProject\(args\.project\)/.test(startBlock));
+        // ‼️ S-126 — superpowers is a launch dimension on THIS door too, in three
+        // answers: false is a real "off", and only an absent key means the agent's default.
+        ok('sessions.start documents superpowers as true | false | omitted',
+            /superpowers\? \(true \| false/.test(startBlock) && /omit = the agent\\'s own default/.test(startBlock));
+        ok('…refuses anything but a boolean instead of guessing',
+            /need\(args\.superpowers === undefined \|\| typeof args\.superpowers === 'boolean'/.test(startBlock));
+        ok('…and carries false through to the launch rather than dropping it',
+            /args\.superpowers === undefined \? \{\} : \{ superpowers: args\.superpowers === true \}/.test(startBlock));
         // ‼️ THE WINDOW IS WIDENED WHEN THE OP GROWS, NEVER THE GUARANTEE.
         // 3000 → 5000 → 9000 → 13000: this op's own DESCRIPTION grows every time
         // a dimension is added to it (the engine axis, then the route), and a
