@@ -193,5 +193,32 @@ const TR = Object.assign({}, ...require(path.join(ROOT, 'media', 'afI18n.js')).f
         keys.length >= 80 && !missing.length);
 }
 
+// U-189 — the Notices page, in its own catalog part
+{
+    const { runPage } = require('./lib_page_dom');
+    const draw = (data, lang) => {
+        const sb = runPage('notices.js', data, lang ? { __AFUI__: { lang, locale: lang } } : undefined).sandbox;
+        return (sb.document || sb.window.document).getElementById('app').innerHTML;
+    };
+    const d = require('./fixtures/notices.js').data();
+    const ntr = draw(d, 'tr'), nen = draw(d);
+    ok('the Notices page draws in Türkçe: heading, chips, sort, filters, the action bar and the row buttons',
+        ['Bildirimler', ' toplam', 'Tümü (', 'Okunmamış (', 'Sırala: Önce en yeni', 'Tür: tümü', 'Tümünü aç', 'Okunanları temizle',
+            'Şuraya dosyala…', 'Geri al', 'Ajana devret', 'Açmak için tıkla — açmak onu okundu yapar'].every(s => ntr.includes(s))
+        && !/>\s*(Clear read|Expand all|Single-open|Mark read|Mark unread)\s*</.test(ntr));
+    ok('…while English reads as it did', ['Notices', ' total', 'All (', 'Unread (', 'Sort: Newest first', 'Type: all', 'Expand all',
+        'Clear read', 'File under…', 'Undo', 'Hand to agent'].every(s => nen.includes(s)) && !nen.includes('Bildirim'));
+    // the search box is sized for its English placeholder (min-width), so a translation longer than it is cut on the page
+    ok('the search box\'s Türkçe placeholder is no longer than the English one it is sized for',
+        TR['search (text or #tag)'].length <= 'search (text or #tag)'.length && TR['search'].length <= 'search'.length);
+    const src = read('media', 'notices.js');
+    const unq = s => s.replace(/\\'/g, '\'').replace(/\\n/g, '\n');
+    const keys = [...src.matchAll(/\btr\('((?:[^'\\]|\\.)*)'\s*[,)]/g)].map(m => unq(m[1]))
+        .concat([...src.matchAll(/\blab\('((?:[^'\\]|\\.)*)'\)/g)].map(m => unq(m[1]).replace(/^[^\p{L}\p{N}]*/u, '').trim()));
+    const missing = [...new Set(keys)].filter(k => !(k in TR));
+    ok('every word the Notices page hands tr() / lab() has its Türkçe (' + keys.length + ')' + (missing.length ? ' — missing: ' + missing.join(' | ') : ''),
+        keys.length >= 80 && !missing.length);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

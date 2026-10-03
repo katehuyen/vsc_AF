@@ -11,6 +11,10 @@
     const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
     const ON_THE_PC = 'That opens on the PC — open it from Agent Farm there.';
     let DATA = window.__DATA__;
+    // U-189 — every word below is English and drawn through tr() / lab() (`t` is a local name here); the catalog part is media/afI18n.tr.notices.js.
+    const tr = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const lab = s => (window.AFI18n ? window.AFI18n.label(s) : s);
+    const loc = () => (window.AFI18n && window.AFI18n.locale()) || undefined;
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Type / level / agent / status are multi-pick: null = all (no filter),
@@ -102,12 +106,12 @@
     function docSplit(id, label, path) {
         const def = docDefault();
         const menu = docMenu === id ? `<div class="nt-docmenu">
-            ${DOC_MODES.map(([m, l]) => `<button class="nt-docopt${m === def ? ' cur' : ''}" data-doc="open" data-id="${esc(id)}" data-mode="${m}">${l}${m === def ? ' <span class="muted small">· default</span>' : ''}</button>`).join('')}
-            <button class="nt-docopt cfg" data-doc="cfg" data-id="${esc(id)}">⚙ Configure default & custom app…</button>
+            ${DOC_MODES.map(([m, l]) => `<button class="nt-docopt${m === def ? ' cur' : ''}" data-doc="open" data-id="${esc(id)}" data-mode="${m}">${esc(lab(l))}${m === def ? ` <span class="muted small">${esc(tr('· default'))}</span>` : ''}</button>`).join('')}
+            <button class="nt-docopt cfg" data-doc="cfg" data-id="${esc(id)}">${esc(lab('⚙ Configure default & custom app…'))}</button>
           </div>` : '';
         return `<span class="nt-split">
             <button class="nt-docmain" data-doc="main" data-id="${esc(id)}" title="${esc(path)}">${label}</button>
-            <button class="nt-doccaret" data-doc="caret" data-id="${esc(id)}" title="Open with…" aria-expanded="${docMenu === id ? 'true' : 'false'}">▾</button>
+            <button class="nt-doccaret" data-doc="caret" data-id="${esc(id)}" title="${esc(tr('Open with…'))}" aria-expanded="${docMenu === id ? 'true' : 'false'}">▾</button>
             ${menu}</span>`;
     }
 
@@ -142,11 +146,11 @@
         const d = new Date(ts), n = new Date();
         const k = x => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
         const y = new Date(n); y.setDate(n.getDate() - 1);
-        if (k(d) === k(n)) { return 'Today'; }
-        if (k(d) === k(y)) { return 'Yesterday'; }
-        return d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+        if (k(d) === k(n)) { return tr('Today'); }
+        if (k(d) === k(y)) { return tr('Yesterday'); }
+        return d.toLocaleDateString(loc(), { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
     }
-    function timeLabel(ts) { return new Date(ts).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' }); }
+    function timeLabel(ts) { return new Date(ts).toLocaleString(loc(), { hour: '2-digit', minute: '2-digit' }); }
 
     function haystack(n) {
         return [n.title, n.body || '', (n.sections || []).map(s => s.title + ' ' + s.body).join(' '),
@@ -196,39 +200,39 @@
     function starsHtml(n) {
         const s = n.stars || 0;
         let out = `<span class="nt-stars" data-id="${esc(n.id)}">`;
-        for (let i = 1; i <= 3; i++) { out += `<span class="nt-star ${i <= s ? 'on' : ''}" data-star="${i}" title="${i} star(s)">${i <= s ? '★' : '☆'}</span>`; }
+        for (let i = 1; i <= 3; i++) { out += `<span class="nt-star ${i <= s ? 'on' : ''}" data-star="${i}" title="${esc(tr('{n} star(s)', { n: i }))}">${i <= s ? '★' : '☆'}</span>`; }
         return out + '</span>';
     }
     function statusBadge(n) {
         if (n.type !== 'question') { return ''; }
         const s = n.status || 'open';
-        if (s === 'answered') { return '<span class="nt-badge ok">✓ answered</span>'; }
-        if (s === 'declined') { return '<span class="nt-badge muted">✕ declined</span>'; }
-        return '<span class="nt-badge warn">waiting…</span>';
+        if (s === 'answered') { return `<span class="nt-badge ok">✓ ${esc(tr('answered'))}</span>`; }
+        if (s === 'declined') { return `<span class="nt-badge muted">✕ ${esc(tr('declined'))}</span>`; }
+        return `<span class="nt-badge warn">${esc(tr('waiting…'))}</span>`;
     }
 
     function questionBlock(n) {
         if (n.type !== 'question') { return ''; }
         const s = n.status || 'open';
-        if (s === 'answered') { return `<div class="nt-answer"><div class="muted small">Your answer${n.answeredAt ? ' · ' + esc(window.AFTime.full(n.answeredAt)) : ''}:</div><div class="nt-md">${mdToHtml(n.answer || '')}</div></div>`; }
-        if (s === 'declined') { return `<div class="muted small nt-answer">✕ You dismissed this question without answering. The agent will see it was passed over.</div>`; }
+        if (s === 'answered') { return `<div class="nt-answer"><div class="muted small">${esc(tr('Your answer'))}${n.answeredAt ? ' · ' + esc(window.AFTime.full(n.answeredAt)) : ''}:</div><div class="nt-md">${mdToHtml(n.answer || '')}</div></div>`; }
+        if (s === 'declined') { return `<div class="muted small nt-answer">✕ ${esc(tr('You dismissed this question without answering. The agent will see it was passed over.'))}</div>`; }
         const draft = drafts[n.id] != null ? drafts[n.id] : '';
         const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
         // Answering a question IS leaving a new task → the answer auto-becomes a
         // queue item; the notice is deleted by default (uncheck to keep it).
-        return `<div class="nt-qbox"><textarea class="nt-atext" data-id="${esc(n.id)}" rows="3" placeholder="Type your answer — it's auto-added to the work queue as a task…">${esc(draft)}</textarea>
-            <label class="nt-del"><input type="checkbox" class="nt-delcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> delete this message on send</label>
-            <div class="btnrow"><button data-act="answer" data-id="${esc(n.id)}">Send answer → queue</button>
-            <button class="secondary" data-act="decline" data-id="${esc(n.id)}">Dismiss (no answer)</button></div></div>`;
+        return `<div class="nt-qbox"><textarea class="nt-atext" data-id="${esc(n.id)}" rows="3" placeholder="${esc(tr('Type your answer — it\'s auto-added to the work queue as a task…'))}">${esc(draft)}</textarea>
+            <label class="nt-del"><input type="checkbox" class="nt-delcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> ${esc(tr('delete this message on send'))}</label>
+            <div class="btnrow"><button data-act="answer" data-id="${esc(n.id)}">${esc(tr('Send answer → queue'))}</button>
+            <button class="secondary" data-act="decline" data-id="${esc(n.id)}">${esc(tr('Dismiss (no answer)'))}</button></div></div>`;
     }
 
     // Queue items this notice spawned (the bi-directional link) — shown inside
     // the notice so "what did I turn this into, what did I write" stays visible.
     function spawnedHtml(n) {
         if (!n.spawnedItems || !n.spawnedItems.length) { return ''; }
-        const rows = n.spawnedItems.map(s => ON_PHONE_HOST ? `<li>📥 ${esc(s.text || '(item)')}</li>` :
-            `<li><a href="#" class="nt-openitem" data-id="${esc(s.itemId)}" title="Go to the queue item">📥 ${esc(s.text || '(item)')}</a></li>`).join('');
-        return `<div class="nt-spawned"><div class="muted small">🔁 Queue items spawned from this message:</div><ul>${rows}</ul></div>`;
+        const rows = n.spawnedItems.map(s => ON_PHONE_HOST ? `<li>📥 ${esc(s.text || tr('(item)'))}</li>` :
+            `<li><a href="#" class="nt-openitem" data-id="${esc(s.itemId)}" title="${esc(tr('Go to the queue item'))}">📥 ${esc(s.text || tr('(item)'))}</a></li>`).join('');
+        return `<div class="nt-spawned"><div class="muted small">🔁 ${esc(tr('Queue items spawned from this message:'))}</div><ul>${rows}</ul></div>`;
     }
 
     // The "Add to queue" inline box (low-friction convert; default-delete).
@@ -236,10 +240,10 @@
         if (!converting.has(n.id)) { return ''; }
         const draft = convertDrafts[n.id] != null ? convertDrafts[n.id] : '';
         const del = convertDelete[n.id] !== undefined ? convertDelete[n.id] : true;
-        return `<div class="nt-convert"><textarea class="nt-ctext" data-id="${esc(n.id)}" rows="2" placeholder="What should go to the queue? (your reply / elaboration)">${esc(draft)}</textarea>
-            <label class="nt-del"><input type="checkbox" class="nt-cdelcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> delete this message on send</label>
-            <div class="btnrow"><button data-act="convertsend" data-id="${esc(n.id)}">📥 Send to queue</button>
-            <button class="secondary" data-act="convertcancel" data-id="${esc(n.id)}">Cancel</button></div></div>`;
+        return `<div class="nt-convert"><textarea class="nt-ctext" data-id="${esc(n.id)}" rows="2" placeholder="${esc(tr('What should go to the queue? (your reply / elaboration)'))}">${esc(draft)}</textarea>
+            <label class="nt-del"><input type="checkbox" class="nt-cdelcb" data-id="${esc(n.id)}" ${del ? 'checked' : ''}> ${esc(tr('delete this message on send'))}</label>
+            <div class="btnrow"><button data-act="convertsend" data-id="${esc(n.id)}">📥 ${esc(tr('Send to queue'))}</button>
+            <button class="secondary" data-act="convertcancel" data-id="${esc(n.id)}">${esc(tr('Cancel'))}</button></div></div>`;
     }
 
     function sectionsHtml(n) {
@@ -255,7 +259,7 @@
     function originalBlock(n) {
         if (!showOrig.has(n.id) || !n.original) { return ''; }
         const o = n.original;
-        let h = `<div class="nt-orig"><div class="muted small">Original (before edits) — ${esc(TYPES[o.type] ? TYPES[o.type].label : o.type)} · L${o.level}${(o.tags || []).length ? ' · ' + o.tags.map(t => '#' + esc(t)).join(' ') : ''}</div>`;
+        let h = `<div class="nt-orig"><div class="muted small">${esc(tr('Original (before edits)'))} — ${esc(TYPES[o.type] ? tr(TYPES[o.type].label) : o.type)} · L${o.level}${(o.tags || []).length ? ' · ' + o.tags.map(t => '#' + esc(t)).join(' ') : ''}</div>`;
         h += `<div class="nt-md"><strong>${esc(o.title)}</strong></div>`;
         if (o.body) { h += `<div class="nt-md">${mdToHtml(o.body)}</div>`; }
         for (const s of (o.sections || [])) { h += `<div class="nt-md"><em>${esc(s.title)}</em><br>${mdToHtml(s.body || '')}</div>`; }
@@ -264,26 +268,26 @@
 
     function editForm(n) {
         const d = editDrafts[n.id];
-        const typeOpts = Object.keys(TYPES).map(k => C.option(k, TYPES[k].icon + ' ' + TYPES[k].label, {
+        const typeOpts = Object.keys(TYPES).map(k => C.option(k, TYPES[k].icon + ' ' + tr(TYPES[k].label), {
             selected: d.type === k, detail: TYPES[k].desc || TYPES[k].why || ''
         })).join('');
         // U-130 — L1…L4 is a SHORTHAND and the box cuts even that. What the
         // number actually changes is how loudly the notice arrives.
-        const lvlOpts = [1, 2, 3, 4].map(k => C.option(String(k), 'L' + k + ' · ' + LEVELS[k], {
-            selected: Number(d.level) === k, detail: LEVEL_WHY[k]
+        const lvlOpts = [1, 2, 3, 4].map(k => C.option(String(k), 'L' + k + ' · ' + tr(LEVELS[k]), {
+            selected: Number(d.level) === k, detail: tr(LEVEL_WHY[k])
         })).join('');
         const secs = (d.sections || []).map((s, i) => `<div class="nt-esec">
-            <input class="nt-ef" data-ef="sectitle" data-i="${i}" value="${esc(s.title)}" placeholder="Section title">
-            <textarea class="nt-ef" data-ef="secbody" data-i="${i}" rows="3" placeholder="Section body">${esc(s.body)}</textarea></div>`).join('');
+            <input class="nt-ef" data-ef="sectitle" data-i="${i}" value="${esc(s.title)}" placeholder="${esc(tr('Section title'))}">
+            <textarea class="nt-ef" data-ef="secbody" data-i="${i}" rows="3" placeholder="${esc(tr('Section body'))}">${esc(s.body)}</textarea></div>`).join('');
         return `<div class="nt-edit">
-            <label>Title</label><input class="nt-ef" data-ef="title" value="${esc(d.title)}">
-            <div class="nt-erow"><span><label>Type</label><select class="nt-ef" data-ef="type">${typeOpts}</select></span>
-              <span><label>Level</label><select class="nt-ef" data-ef="level">${lvlOpts}</select></span></div>
-            <label>Tags (comma-separated)</label><input class="nt-ef" data-ef="tags" value="${esc(d.tags)}">
-            <label>Body (markdown)</label><textarea class="nt-ef" data-ef="body" rows="4">${esc(d.body)}</textarea>
-            ${secs ? '<label>Sections</label>' + secs : ''}
-            <div class="btnrow"><button data-act="editsave" data-id="${esc(n.id)}">Save</button>
-              <button class="secondary" data-act="editcancel" data-id="${esc(n.id)}">Cancel</button></div>
+            <label>${esc(tr('Title'))}</label><input class="nt-ef" data-ef="title" value="${esc(d.title)}">
+            <div class="nt-erow"><span><label>${esc(tr('Type'))}</label><select class="nt-ef" data-ef="type">${typeOpts}</select></span>
+              <span><label>${esc(tr('Level'))}</label><select class="nt-ef" data-ef="level">${lvlOpts}</select></span></div>
+            <label>${esc(tr('Tags (comma-separated)'))}</label><input class="nt-ef" data-ef="tags" value="${esc(d.tags)}">
+            <label>${esc(tr('Body (markdown)'))}</label><textarea class="nt-ef" data-ef="body" rows="4">${esc(d.body)}</textarea>
+            ${secs ? `<label>${esc(tr('Sections'))}</label>` + secs : ''}
+            <div class="btnrow"><button data-act="editsave" data-id="${esc(n.id)}">${esc(tr('Save'))}</button>
+              <button class="secondary" data-act="editcancel" data-id="${esc(n.id)}">${esc(tr('Cancel'))}</button></div>
         </div>`;
     }
 
@@ -312,48 +316,48 @@
         const t = tmeta(n.type), open = expanded.has(n.id), L = lvl(n), isQ = n.type === 'question';
         const inEdit = editing.has(n.id);
         const tags = (n.tags || []).map(x => `<span class="tag">#${esc(x)}</span>`).join(' ');
-        const due = n.dueAt ? `<div class="muted small">⏰ due ${esc(window.AFTime.full(n.dueAt))}</div>` : '';
+        const due = n.dueAt ? `<div class="muted small">⏰ ${esc(tr('due {when}', { when: window.AFTime.full(n.dueAt) }))}</div>` : '';
         let body = '';
         if (inEdit) { body = editForm(n); }
         else {
             const reportBtn = !n.reportPath ? '' : ON_PHONE_HOST ? `<div class="nt-report">
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">📄 ${esc(reportBase(n.reportPath))}</span>
-                    <span class="muted small">· open it on the PC</span>
+                    <span class="muted small">· ${esc(tr('open it on the PC'))}</span>
                 </div>` : `<div class="nt-report">
-                    ${docSplit(n.id, '📄 Open full report', n.reportPath)}
+                    ${docSplit(n.id, esc(lab('📄 Open full report')), n.reportPath)}
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">${esc(reportBase(n.reportPath))}</span>
                 </div>`;
-            body = `<div class="muted small nt-sub">${esc(t.label)} · L${L} ${esc(LEVELS[L])}${n.edited ? ' · ✎ edited' + (n.editedAt ? ' ' + esc(window.AFTime.full(n.editedAt).toLocaleString()) : '') : ''}</div>
+            body = `<div class="muted small nt-sub">${esc(tr(t.label))} · L${L} ${esc(tr(LEVELS[L]))}${n.edited ? ' · ✎ ' + esc(tr('edited')) + (n.editedAt ? ' ' + esc(window.AFTime.full(n.editedAt).toLocaleString()) : '') : ''}</div>
                 ${due}
-                ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? '<div class="muted small">(no details)</div>' : '')}
+                ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? `<div class="muted small">${esc(tr('(no details)'))}</div>` : '')}
                 ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}${projectPicker(n)}
                 <div class="btnrow nt-actions">
-                    ${ON_PHONE_HOST ? '' : `<button data-act="handoffNotice" data-id="${esc(n.id)}" title="Open the responsible agent and type this message into its terminal (not sent)">🔗 Hand to agent</button>`}
-                    ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="Turn this message into a queue item">📥 Add to queue</button>` : ''}
-                    <button class="secondary" data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${n.read ? 'Mark unread' : 'Mark read'}</button>
-                    <button class="secondary" data-act="edit" data-id="${esc(n.id)}">Edit</button>
-                    ${n.edited ? `<button class="secondary" data-act="orig" data-id="${esc(n.id)}">${showOrig.has(n.id) ? 'Hide original' : 'Show original'}</button>` : ''}
-                    ${ON_PHONE_HOST ? '' : `<button class="secondary" data-act="exportone" data-id="${esc(n.id)}">Export MD</button>`}
-                    <button class="secondary" data-act="dismiss" data-id="${esc(n.id)}">${isQ ? 'Delete' : 'Dismiss'}</button>
+                    ${ON_PHONE_HOST ? '' : `<button data-act="handoffNotice" data-id="${esc(n.id)}" title="${esc(tr('Open the responsible agent and type this message into its terminal (not sent)'))}">🔗 ${esc(tr('Hand to agent'))}</button>`}
+                    ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="${esc(tr('Turn this message into a queue item'))}">📥 ${esc(tr('Add to queue'))}</button>` : ''}
+                    <button class="secondary" data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${esc(tr(n.read ? 'Mark unread' : 'Mark read'))}</button>
+                    <button class="secondary" data-act="edit" data-id="${esc(n.id)}">${esc(tr('Edit'))}</button>
+                    ${n.edited ? `<button class="secondary" data-act="orig" data-id="${esc(n.id)}">${esc(tr(showOrig.has(n.id) ? 'Hide original' : 'Show original'))}</button>` : ''}
+                    ${ON_PHONE_HOST ? '' : `<button class="secondary" data-act="exportone" data-id="${esc(n.id)}">${esc(tr('Export MD'))}</button>`}
+                    <button class="secondary" data-act="dismiss" data-id="${esc(n.id)}">${esc(tr(isQ ? 'Delete' : 'Dismiss'))}</button>
                 </div>`;
         }
         return `<div class="nt-card lvl-${L} ${n.read ? 'read' : 'unread'} ${n.pinned ? 'pinned' : ''} ${selected.has(n.id) ? 'sel' : ''}" data-id="${esc(n.id)}">
             <div class="nt-row" data-toggle="${esc(n.id)}" ${noticeCtx(n, open)}
-                title="${esc(window.AFCtx.hint('Click to open it — opening marks it read'))}">
-                <input type="checkbox" class="nt-cb" data-cb="${esc(n.id)}" ${selected.has(n.id) ? 'checked' : ''} title="Select for bulk actions">
+                title="${esc(window.AFCtx.hint(tr('Click to open it — opening marks it read')))}">
+                <input type="checkbox" class="nt-cb" data-cb="${esc(n.id)}" ${selected.has(n.id) ? 'checked' : ''} title="${esc(tr('Select for bulk actions'))}">
                 <span class="nt-caret">${open ? '▾' : '▸'}</span>
-                <span class="nt-ico" title="${esc(t.label)}">${t.icon}</span>
+                <span class="nt-ico" title="${esc(tr(t.label))}">${t.icon}</span>
                 <span class="nt-title" title="${esc(n.title)}">${esc(n.title)}</span>
-                <span class="nt-lb lb-${L}" title="Level ${L} · ${esc(LEVELS[L])}">L${L}</span>
-                ${n.reportPath ? '<span class="nt-badge rep" title="Full report attached — click to open inside">📄</span>' : ''}
+                <span class="nt-lb lb-${L}" title="${esc(tr('Level {n} · {name}', { n: L, name: tr(LEVELS[L]) }))}">L${L}</span>
+                ${n.reportPath ? `<span class="nt-badge rep" title="${esc(tr('Full report attached — click to open inside'))}">📄</span>` : ''}
                 ${statusBadge(n)}${n.edited ? '<span class="nt-badge muted">✎</span>' : ''}
                 ${tags ? `<span class="nt-tags">${tags}</span>` : ''}
                 ${projectChip(n)}${accountChip(n)}
                 ${starsHtml(n)}
-                <span class="nt-pin ${n.pinned ? 'on' : ''}" data-pinrow="${esc(n.id)}" data-pin="${n.pinned ? '0' : '1'}" title="${n.pinned ? 'Unpin' : 'Pin'}">📌</span>
+                <span class="nt-pin ${n.pinned ? 'on' : ''}" data-pinrow="${esc(n.id)}" data-pin="${n.pinned ? '0' : '1'}" title="${esc(tr(n.pinned ? 'Unpin' : 'Pin'))}">📌</span>
                 <span class="nt-meta muted small">${esc(n.agentName)} · ${esc(timeLabel(n.ts))}${n.read ? '' : ' <span class="nt-udot">●</span>'}</span>
                 <button class="secondary nt-x" data-row-dismiss="${esc(n.id)}"
-                    aria-label="Delete this notice" title="Delete this notice">✕</button>
+                    aria-label="${esc(tr('Delete this notice'))}" title="${esc(tr('Delete this notice'))}">✕</button>
             </div>
             <div class="nt-body" ${open ? '' : 'hidden'}>${body}</div>
         </div>`;
@@ -395,9 +399,9 @@
         return window.AFTip.wrap(
             '<span class="nt-acct">🔑 ' + esc(short) + '</span>',
             id,
-            'This message is about that sign-in. It is stamped as DATA rather than '
+            tr('This message is about that sign-in. It is stamped as DATA rather than '
             + 'written into the sentence, so the board can be narrowed to one account '
-            + 'and two failures of the same one read as one story — the Accounts filter.');
+            + 'and two failures of the same one read as one story — the Accounts filter.'));
     }
 
     /** The "file it under…" picker, in the open body. A select rather than a
@@ -406,13 +410,13 @@
     function projectPicker(n) {
         const cur = n.projectId || '';
         return `<div class="nt-projrow">
-            <label class="muted small" for="nt-pj-${esc(n.id)}">Project</label>
+            <label class="muted small" for="nt-pj-${esc(n.id)}">${esc(tr('Project'))}</label>
             <select class="nt-pjsel" id="nt-pj-${esc(n.id)}" data-id="${esc(n.id)}"
-                title="Which project this message is about. It shows on that project's Work tab and timeline; the empty option takes the stamp off again.">
-                ${window.AFProject.options(DATA.projects, cur, { anyLabel: '— none' })}
+                title="${esc(tr('Which project this message is about. It shows on that project\'s Work tab and timeline; the empty option takes the stamp off again.'))}">
+                ${window.AFProject.options(DATA.projects, cur, { anyLabel: tr('— none') })}
             </select>
-            ${cur && projOf(n) && !ON_PHONE_HOST ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="Open this project's page">◧ Open</button>` : ''}
-            ${cur && !projOf(n) ? '<span class="muted small" title="The project this was filed under no longer exists — pick another, or clear it">⚠ project gone</span>' : ''}
+            ${cur && projOf(n) && !ON_PHONE_HOST ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="${esc(tr('Open this project\'s page'))}">${esc(lab('◧ Open'))}</button>` : ''}
+            ${cur && !projOf(n) ? `<span class="muted small" title="${esc(tr('The project this was filed under no longer exists — pick another, or clear it'))}">${esc(lab('⚠ project gone'))}</span>` : ''}
         </div>`;
     }
 
@@ -422,47 +426,47 @@
     // can never drift apart.
     function filterPickers() {
         return [
-            { id: 'nt-type', label: 'Type', get: () => fType, set: v => { fType = v; },
-                title: 'Which notice types to list — tick any combination',
-                options: Object.keys(TYPES).map(k => ({ v: k, t: TYPES[k].icon + ' ' + TYPES[k].label })) },
+            { id: 'nt-type', label: tr('Type'), get: () => fType, set: v => { fType = v; },
+                title: tr('Which notice types to list — tick any combination'),
+                options: Object.keys(TYPES).map(k => ({ v: k, t: TYPES[k].icon + ' ' + tr(TYPES[k].label) })) },
             // U-52 — the subset a level axis is really for. Four levels, and the
             // question people actually bring to this page is "what matters",
             // which cost a Clear plus two ticks.
-            { id: 'nt-level', label: 'Level', get: () => fLevel, set: v => { fLevel = v; },
-                title: 'Which importance levels to list — tick any combination',
+            { id: 'nt-level', label: tr('Level'), get: () => fLevel, set: v => { fLevel = v; },
+                title: tr('Which importance levels to list — tick any combination'),
                 presets: [{
-                    id: 'urgent', label: 'Urgent', values: ['4', '3'],
-                    title: 'The top two — ' + LEVELS[4] + ' and ' + LEVELS[3] + '.'
+                    id: 'urgent', label: tr('Urgent'), values: ['4', '3'],
+                    title: tr('The top two — {a} and {b}.', { a: tr(LEVELS[4]), b: tr(LEVELS[3]) })
                 }],
-                options: [4, 3, 2, 1].map(k => ({ v: String(k), t: 'L' + k + ' · ' + LEVELS[k] })) },
-            { id: 'nt-agent', label: 'Agents', get: () => fAgent, set: v => { fAgent = v; },
-                title: 'Which agents\' notices to list — tick any combination',
+                options: [4, 3, 2, 1].map(k => ({ v: String(k), t: 'L' + k + ' · ' + tr(LEVELS[k]) })) },
+            { id: 'nt-agent', label: tr('Agents'), get: () => fAgent, set: v => { fAgent = v; },
+                title: tr('Which agents\' notices to list — tick any combination'),
                 options: (DATA.agents || []).slice() },
             // U-52 — "Waiting" is one option, so a click on its name already
             // gives you it; its opposite is TWO and had no name.
-            { id: 'nt-status', label: 'Status', get: () => fStatus, set: v => { fStatus = v; },
-                title: 'Question status — tick any combination',
+            { id: 'nt-status', label: tr('Status'), get: () => fStatus, set: v => { fStatus = v; },
+                title: tr('Question status — tick any combination'),
                 presets: [{
-                    id: 'settled', label: 'Settled', values: ['answered', 'declined'],
-                    title: 'Everything you have dealt with — answered and declined, nothing still waiting on you.'
+                    id: 'settled', label: tr('Settled'), values: ['answered', 'declined'],
+                    title: tr('Everything you have dealt with — answered and declined, nothing still waiting on you.')
                 }],
-                options: [{ v: 'open', t: '❓ Waiting' }, { v: 'answered', t: '✓ Answered' }, { v: 'declined', t: '✕ Declined' }] },
+                options: [{ v: 'open', t: lab('❓ Waiting') }, { v: 'answered', t: lab('✓ Answered') }, { v: 'declined', t: lab('✕ Declined') }] },
             // ‼️ "No project" is an OPTION, not the absence of one. Without it a
             // project filter would make the unfiled notices vanish with nothing
             // on screen saying they exist — which is exactly the group somebody
             // filtering by project is about to want to file.
-            { id: 'nt-project', label: 'Projects', get: () => fProject, set: v => { fProject = v; },
-                title: 'Which project\'s notices to list — manage them on the ◧ Projects page',
-                options: [{ v: window.AFProject.NONE, t: '— No project' }].concat(
+            { id: 'nt-project', label: tr('Projects'), get: () => fProject, set: v => { fProject = v; },
+                title: tr('Which project\'s notices to list — manage them on the ◧ Projects page'),
+                options: [{ v: window.AFProject.NONE, t: tr('— No project') }].concat(
                     (DATA.projects || []).map(p => ({ v: p.id, t: (p.icon ? p.icon + ' ' : '') + p.name }))) },
             // ‼️ X-257 — the sign-ins that are actually ON the board, derived
             // from the rows rather than shipped by the host: a slot nothing has
             // ever been said about is not a filter anybody can want, and a stamp
             // naming a slot that has since been removed must stay reachable —
             // otherwise its rows become the ones nobody can filter to.
-            { id: 'nt-account', label: 'Accounts', get: () => fAccount, set: v => { fAccount = v; },
-                title: 'Which sign-in the notices are about — the accounts named on this board',
-                options: [{ v: NO_ACCOUNT, t: '— No account' }].concat(
+            { id: 'nt-account', label: tr('Accounts'), get: () => fAccount, set: v => { fAccount = v; },
+                title: tr('Which sign-in the notices are about — the accounts named on this board'),
+                options: [{ v: NO_ACCOUNT, t: tr('— No account') }].concat(
                     Array.from(new Set((DATA.notices || []).map(n => n.account).filter(Boolean)))
                         .sort().map(a => ({ v: a, t: '🔑 ' + a }))) }
         ];
@@ -470,43 +474,43 @@
 
     function controls() {
         const total = (DATA.notices || []).length, unread = DATA.unread || 0, q = DATA.openQuestions || 0;
-        const sortOpts = SORTS.map(([k, l]) => C.option(k, 'Sort: ' + l, { selected: sortKey === k })).join('');
+        const sortOpts = SORTS.map(([k, l]) => C.option(k, tr('Sort: {how}', { how: tr(l) }), { selected: sortKey === k })).join('');
         return `<div class="nt-controls">
-            <input id="nt-search" type="search" placeholder="🔍 search (text or #tag)" value="${esc(query)}"
-                title="${esc(window.AFQuery.tip('Searched against the title, the body, every section, the tags and the agent. A query that STARTS with # searches the tags only.'))}">
-            ${chip('all', `All (${total})`, fMode === 'all')}
-            ${chip('unread', `Unread (${unread})`, fMode === 'unread')}
+            <input id="nt-search" type="search" placeholder="${esc(lab('🔍 search (text or #tag)'))}" value="${esc(query)}"
+                title="${esc(window.AFQuery.tip(tr('Searched against the title, the body, every section, the tags and the agent. A query that STARTS with # searches the tags only.')))}">
+            ${chip('all', tr('All ({n})', { n: total }), fMode === 'all')}
+            ${chip('unread', tr('Unread ({n})', { n: unread }), fMode === 'unread')}
             ${chip('questions', `❓ (${q})`, fMode === 'questions')}
             ${filterPickers().map(p => window.AFFilter.multi({
                 id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title,
                 presets: p.presets
             })).join('')}
             <select id="nt-sort">${sortOpts}</select>
-            <button class="secondary" id="nt-reset" title="Reset filters, search and sort">↺ Reset</button>
+            <button class="secondary" id="nt-reset" title="${esc(tr('Reset filters, search and sort'))}">${esc(lab('↺ Reset'))}</button>
         </div>`;
     }
     function actionsHtml() {
         const undo = DATA.undoable || 0;
         return `<span class="nt-break"></span><span class="nt-acts">
             <span class="nt-grp nt-bulk">
-                <label class="nt-selall" title="Select / deselect all shown"><input type="checkbox" id="nt-selall"> all</label>
-                <button data-hact="bulkRead" title="Mark selected read (or all shown if none selected)">✓ Read</button>
-                <button class="secondary" data-hact="bulkUnread" title="Mark selected unread (or all shown)">○ Unread</button>
-                <button class="secondary danger" data-hact="bulkDelete" title="Delete selected (or all shown if none selected)"><span class="nt-trashic">🗑</span> Delete</button>
+                <label class="nt-selall" title="${esc(tr('Select / deselect all shown'))}"><input type="checkbox" id="nt-selall"> ${esc(tr('all'))}</label>
+                <button data-hact="bulkRead" title="${esc(tr('Mark selected read (or all shown if none selected)'))}">✓ ${esc(tr('Read'))}</button>
+                <button class="secondary" data-hact="bulkUnread" title="${esc(tr('Mark selected unread (or all shown)'))}">○ ${esc(tr('Unread'))}</button>
+                <button class="secondary danger" data-hact="bulkDelete" title="${esc(tr('Delete selected (or all shown if none selected)'))}"><span class="nt-trashic">🗑</span> ${esc(tr('Delete'))}</button>
             </span>
             <span class="nt-grp">
-                <button class="secondary" data-hact="clearRead" title="Delete read notices — pinned, starred and unhandled questions are kept"><span class="nt-cleardot">●</span> Clear read</button>
+                <button class="secondary" data-hact="clearRead" title="${esc(tr('Delete read notices — pinned, starred and unhandled questions are kept'))}"><span class="nt-cleardot">●</span> ${esc(tr('Clear read'))}</button>
             </span>
             <span class="nt-grp">
-                <button class="secondary" data-hact="expandAll" title="Open every shown notice">⊕ Expand all</button>
-                <button class="secondary" data-hact="collapseAll" title="Close all">⊖ Collapse all</button>
-                <button class="secondary ${singleMode ? 'on' : ''}" data-hact="single" aria-pressed="${singleMode}" title="Only one notice open at a time: opening one folds the previous${singleMode ? ' — currently ON' : ''}">${singleMode ? '◉' : '◯'} Single-open</button>
+                <button class="secondary" data-hact="expandAll" title="${esc(tr('Open every shown notice'))}">⊕ ${esc(tr('Expand all'))}</button>
+                <button class="secondary" data-hact="collapseAll" title="${esc(tr('Close all'))}">⊖ ${esc(tr('Collapse all'))}</button>
+                <button class="secondary ${singleMode ? 'on' : ''}" data-hact="single" aria-pressed="${singleMode}" title="${esc(tr('Only one notice open at a time: opening one folds the previous'))}${singleMode ? ' — ' + esc(tr('currently ON')) : ''}">${singleMode ? '◉' : '◯'} ${esc(tr('Single-open'))}</button>
             </span>
             <span class="nt-grp">
-                <button class="secondary" data-hact="needs" title="Open the Needs You page">🙋 Needs You</button>
+                <button class="secondary" data-hact="needs" title="${esc(tr('Open the Needs You page'))}">🙋 ${esc(tr('Needs You'))}</button>
                 ${fileUnderHtml()}
-                ${ON_PHONE_HOST ? '' : '<button data-hact="export">⬇ Export MD</button>'}
-                <button class="secondary nt-undo" data-hact="undo" ${undo ? '' : 'disabled'} title="${undo ? 'Restore the ' + undo + ' notice(s) just deleted' : 'Nothing to undo'}">↶ Undo</button>
+                ${ON_PHONE_HOST ? '' : `<button data-hact="export">⬇ ${esc(tr('Export MD'))}</button>`}
+                <button class="secondary nt-undo" data-hact="undo" ${undo ? '' : 'disabled'} title="${esc(undo ? tr('Restore the {n} notice(s) just deleted', { n: undo }) : tr('Nothing to undo'))}">↶ ${esc(tr('Undo'))}</button>
             </span></span>`;
     }
 
@@ -533,20 +537,20 @@
     function fileUnderHtml() {
         const projects = DATA.projects || [];
         const trigger = `<select id="nt-bulkproj" class="nt-fileunder">
-                ${C.option('', 'File under…', { selected: true, detail: 'Nothing chosen yet — picking a project files every selected notice under it.' })}
-                ${C.option('__clear__', '— take out of any project', { detail: 'Unfiles the selected notices. They are not deleted; they simply name no project.' })}
+                ${C.option('', tr('File under…'), { selected: true, detail: tr('Nothing chosen yet — picking a project files every selected notice under it.') })}
+                ${C.option('__clear__', tr('— take out of any project'), { detail: tr('Unfiles the selected notices. They are not deleted; they simply name no project.') })}
                 ${projects.map(p => C.option(p.id, (p.icon ? p.icon + ' ' : '') + p.name, { detail: p.summary || '' })).join('')}
             </select>`;
         return window.AFTip.wrap(trigger,
-            `File under · ${projects.length} project${projects.length === 1 ? '' : 's'}`,
+            tr(projects.length === 1 ? 'File under · {n} project' : 'File under · {n} projects', { n: projects.length }),
             [
-                'Stamps the ticked notices with a project — or everything shown, when nothing is ticked.',
-                'The stamp is what puts a notice on that project\'s Work tab, in its timeline and behind its filters.',
-                '"— take out of any project" is the same move in reverse: it lifts the stamp off.',
+                tr('Stamps the ticked notices with a project — or everything shown, when nothing is ticked.'),
+                tr('The stamp is what puts a notice on that project\'s Work tab, in its timeline and behind its filters.'),
+                tr('"— take out of any project" is the same move in reverse: it lifts the stamp off.'),
                 window.AFTip.GAP,
                 projects.length
-                    ? 'Projects: ' + projects.map(p => (p.icon ? p.icon + ' ' : '') + p.name).join(' · ')
-                    : 'No projects declared yet — make one on the ◧ Projects page.'
+                    ? tr('Projects: {list}', { list: projects.map(p => (p.icon ? p.icon + ' ' : '') + p.name).join(' · ') })
+                    : tr('No projects declared yet — make one on the ◧ Projects page.')
             ].join('\n'));
     }
 
@@ -681,7 +685,7 @@
         const items = visible();
         let listHtml = '';
         if (!items.length) {
-            listHtml = '<p class="muted" style="margin-top:24px">🕊️ No notices match. Agents post updates, reports, reminders, suggestions, warnings and questions here — one line each; click to read.</p>';
+            listHtml = `<p class="muted" style="margin-top:24px">🕊️ ${esc(tr('No notices match. Agents post updates, reports, reminders, suggestions, warnings and questions here — one line each; click to read.'))}</p>`;
         } else if ((sortKey === 'newest' || sortKey === 'oldest') && !query) {
             let lastDay = '';
             for (const n of items) { const d = dayLabel(n.ts); if (d !== lastDay) { listHtml += `<div class="nt-day">${esc(d)}</div>`; lastDay = d; } listHtml += noticeCard(n); }
@@ -690,8 +694,10 @@
         document.getElementById('app').innerHTML = `${STYLE}
             ${window.AFHeader.tabs('notices')}
             ${window.AFHeader.html({
-                page: 'notices', title: '🔔 Notices',
-                sub: `${(DATA.notices || []).length} total · ${DATA.unread || 0} unread · ${DATA.openQuestions || 0} open question(s) · showing ${items.length}${selected.size ? ` · ${selected.size} selected` : ''} · ${window.AFTime.clockUtc(DATA.generatedAt)}`,
+                page: 'notices', title: esc(lab('🔔 Notices')),
+                sub: [tr('{n} total', { n: (DATA.notices || []).length }), tr('{n} unread', { n: DATA.unread || 0 }),
+                    tr('{n} open question(s)', { n: DATA.openQuestions || 0 }), tr('showing {n}', { n: items.length })]
+                    .concat(selected.size ? [tr('{n} selected', { n: selected.size })] : [], [window.AFTime.clockUtc(DATA.generatedAt)]).join(' · '),
                 controls: controls(), actions: actionsHtml()
             })}
             ${listHtml}`;
@@ -934,7 +940,7 @@
         const post = (m) => vscode.postMessage(m);
         const notice = () => (DATA.notices || []).find(n => n.id === id);
         if (ON_PHONE_HOST && (verb === 'ntHand' || verb === 'ntExport' || verb === 'ntReport')) {
-            window.AFCtx.toast(ON_THE_PC, true);
+            window.AFCtx.toast(tr(ON_THE_PC), true);
             return;
         }
 

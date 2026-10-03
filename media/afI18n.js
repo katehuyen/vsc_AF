@@ -24,7 +24,7 @@
     'use strict';
 
     /** Every language the interface can be set to; English is the source. `parts`: its catalog's further files, one per surface. */
-    const LANGS = [{ id: 'en', name: 'English' }, { id: 'tr', name: 'Türkçe', parts: ['needs', 'chains', 'queue'] }];
+    const LANGS = [{ id: 'en', name: 'English' }, { id: 'tr', name: 'Türkçe', parts: ['needs', 'chains', 'queue', 'notices'] }];
 
     /** The files a language's catalog is made of — every loader (shell, host, tests) reads this one list. */
     function files(id) {
