@@ -26,11 +26,16 @@
         if (Array.isArray(m.roles)) { args.roles = m.roles.filter(function (r) { return typeof r === 'string'; }); }
         return { type: 'afnav', to: 'session', args: args };
     }
+    // S-125 — a ⑂ mark's `chains:<id>` is the phone's Chains page told which chain (a page id has no colon)
+    function chainOf(m) {
+        var at = m && m.type === 'afnav' && typeof m.to === 'string' ? /^chains:(.+)$/.exec(m.to) : null;
+        return at ? { type: 'afnav', to: 'chains', args: { chain: at[1] } } : null;
+    }
     window.acquireVsCodeApi = function () {
         if (api) { return api; }
         api = {
             postMessage: function (m) {
-                var out = readOf(m) || m;
+                var out = readOf(m) || chainOf(m) || m;
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },
             getState: function () {

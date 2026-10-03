@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.804.0 - A stuck relay chain rings the bell, and the Chains page on the phone (2026-10-03)
+
+- **A relay chain that needs you now tells you.** When a chain's running
+  leg sits idle without passing the baton or closing the chain, or the next
+  leg keeps waiting for the previous session to end, a notice arrives on
+  the Notices page (and so on the phone) naming the chain, its agent and leg,
+  and the buttons the Chains page offers for it. It withdraws itself once
+  the chain moves again. How long counts as stuck is the same pair of
+  settings the Chains page uses (agentFarm.chainHangMinutes and
+  agentFarm.chainWaitMinutes). A cut chain, an engine fault and a brake
+  already had their own notice, so they do not get a second one. Chains that
+  were already stuck when you update are listed together in one notice.
+  The Living page also has a row for relay chains.
+- **The Chains page on the phone.** Open it from the phone's Menu, or tap a
+  chain's ⑂ mark on any page: it opens on that chain. Every button works
+  from a device with manage rights; the leg-ceiling menu and the "this leg
+  is still working, close it anyway?" question are asked on the phone, and
+  a leg's ↗ opens its transcript on the phone.
+
 ## 3.803.0 - Relay marks on the Live Timeline, and the two "waiting for you" switches side by side (2026-10-03)
 
 - **The Live Timeline shows a relay leg.** A session card that is a leg of a

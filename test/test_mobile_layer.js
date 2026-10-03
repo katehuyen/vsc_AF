@@ -137,6 +137,7 @@ try {
         phone.sent.length === 1 && phone.sent[0].type === 'afnav' && phone.sent[0].to === 'console');
     ok('Menu lists the other pages, not the four tabs',
         phone.menu.includes('notices') && phone.menu.includes('projects') && !phone.menu.includes('console') && !phone.menu.includes('now'));
+    ok('S-125 — …and the pages with no seat in the desktop\'s full header row (Chains)', phone.menu.includes('chains'));
     ok('a Menu entry goes there and the sheet closes',
         phone.afterMenu.sheet === false && phone.afterMenu.last.to === 'notices');
     ok('a long press reads the AFTip whole', phone.tip === true && /tam paket/.test(phone.tipText) && /PERMISSION/.test(phone.tipText));

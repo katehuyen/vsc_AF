@@ -178,7 +178,7 @@ const alive = setInterval(() => undefined, 1000);
 
     // ---------- the real page list ----------
     const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined, dashboard: () => undefined });
-    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices and the Dashboard pages', Object.keys(real).sort().join() === 'console,dashboard,needs,notices,now,session,sessions,tasks');
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard and the Chains pages', Object.keys(real).sort().join() === 'chains,console,dashboard,needs,notices,now,session,sessions,tasks');
     ok('Dashboard: the board, its table, a turn breakdown, the comparison and the plan usage are looks, pinning and stopping a session need manage, an agent\'s page, a new session or agent, the guide, settings, the Farm Status doors, a terminal and the status bar\'s engine stay on the PC',
         real.dashboard.open === 'read' && ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'].every(t => messageScope(real.dashboard, t) === 'read')
         && ['pinSession', 'interruptSession'].every(t => messageScope(real.dashboard, t) === 'manage')

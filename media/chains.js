@@ -260,10 +260,10 @@
             const a = el.dataset.act;
             note = null;
             if (a === 'continue' || a === 'end') { form = { chainId: id, kind: a, prompt: '', why: '', endSession: false }; render(); return; }
-            if (a === 'open') { post('open', { sessionId: el.dataset.session }); return; }
+            if (a === 'open') { post('openSession', { sessionId: el.dataset.session }); return; }
             post(a, { chainId: id, batonId: el.dataset.baton, sessionId: el.dataset.session, on: el.dataset.on === 'true' });
         }));
-        document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => post('open', { sessionId: el.dataset.open })));
+        document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => post('openSession', { sessionId: el.dataset.open })));
         const prompt = document.getElementById('ch-prompt');
         if (prompt) { prompt.addEventListener('input', () => { form.prompt = prompt.value; }); }
         const why = document.getElementById('ch-why');

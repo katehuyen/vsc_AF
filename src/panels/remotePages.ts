@@ -20,6 +20,8 @@ export interface RemotePageMakers {
     session(host: PanelHost, args?: Record<string, unknown>): boolean;
     notices(host: PanelHost): void;
     dashboard(host: PanelHost): void;
+    /** S-125 — `args.chain` names the chain a ⑂ link opened it on. */
+    chains(host: PanelHost, args?: Record<string, unknown>): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -121,6 +123,16 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
                 'openTimeline', 'openSearch', 'openFarmSettings', 'afnav', 'focusTerminal', 'manageProjects',
                 'setUsageEngine', 'statusAction'],
             make: host => make.dashboard(host)
+        },
+        // S-125 — the relay chains. The board and a chain's legs are looks; stop, start now, the last-leg
+        // brake, the leg ceiling, continue and end are manage, and the ceiling's menu and end's question
+        // are asked on the phone. A leg's transcript opens as the phone's own session page (afRemote.js).
+        chains: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'legs'],
+            answers: [],
+            pcOnly: ['openSession', 'afnav'],
+            make: (host, args) => make.chains(host, args)
         }
     };
 }

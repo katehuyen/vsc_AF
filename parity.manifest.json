@@ -1418,9 +1418,9 @@
       ]
     },
     {
-      "capability": "chainsPanel.ts#open",
+      "capability": "chainsPanel.ts#openSession",
       "ui": [
-        "page:chainsPanel.ts#open"
+        "page:chainsPanel.ts#openSession"
       ],
       "exempt": {
         "kind": "navigation",

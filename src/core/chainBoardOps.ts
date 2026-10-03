@@ -42,9 +42,12 @@ export interface ChainBoardOpsDeps {
     cancelRow?: SuccessorRowCancel;
     /** ask the runner to look at once, so a reopened leg whose session is already gone does not wait for the sweep */
     sweep?: () => void;
-    /** close a leg's session: at rest at once, working only if the person agrees */
-    closeLeg?: (sessionId: string, why: string) => Promise<LegClose>;
+    /** close a leg's session: at rest at once, working only if the person agrees — asked through `confirm` when given */
+    closeLeg?: (sessionId: string, why: string, confirm?: LegConfirm) => Promise<LegClose>;
 }
+
+/** S-125 — asks whoever pressed (a phone's view, a tab): true = the yes button was chosen. */
+export type LegConfirm = (question: string, yes: string) => Promise<boolean>;
 
 export function boardNow(deps: ChainBoardOpsDeps): ChainRow[] {
     const t = deps.thresholds();
@@ -73,7 +76,7 @@ export type EndOnBoard =
     | { ok: false; why: string; say?: SayPart[] };
 
 /** chains.end's body — the op and the Chains page's ■ alike. */
-export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean }): Promise<EndOnBoard> {
+export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean; confirm?: LegConfirm }): Promise<EndOnBoard> {
     const r = endChain(deps.store.all(), { chainId: q.chain, by: q.by || 'the user', why: q.why, now: deps.now() });
     if (!r.ok) { return r; }
     const stopped = r.stop.length ? stopBatons(deps.store, r.stop, r.why, deps.now(), deps.board, deps.cancelRow) : [];
@@ -81,7 +84,7 @@ export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; wh
         deps.store.put(r.braked, r.closing);
         deps.board?.closeChain(deps.store.chain(q.chain).map(b => b.a2aNoteId), deps.now());
     }
-    const session = q.endSession && r.sessionId && deps.closeLeg ? await deps.closeLeg(r.sessionId, r.why) : undefined;
+    const session = q.endSession && r.sessionId && deps.closeLeg ? await deps.closeLeg(r.sessionId, r.why, q.confirm) : undefined;
     return {
         ok: true, stopped, ...(r.closing ? { closing: r.closing } : {}), ...(r.sessionId ? { sessionId: r.sessionId } : {}),
         ...(session ? { session } : {}), sentence: r.sentence, ...(r.say ? { say: r.say } : {})

@@ -185,9 +185,11 @@
     ];
     // S-123 — a destination with no seat in the global row, which is full at 1200px (test_sound_header):
     // described once here and drawn as a page's `related` button (Tasks, Missions), never restated there.
+    // S-125 — the phone's Menu sheet has no width to fill, so it lists these too (pages()).
+    const N_ = s => s;
     const OFF_ROW = [
         {
-            id: 'chains',
+            id: 'chains', label: N_('⑂ Chains'),
             tip: 'Every baton relay in one table — where each chain stands, its legs, what it cost and what '
                 + 'the next leg opens on, with the controls to continue, brake or end it.'
         }
@@ -625,7 +627,7 @@
     }
 
     /** Every destination, for the phone's Menu sheet (media/afMobile.js). */
-    function pages() { return NAV.map(n => ({ id: n.id, label: tl(n.label), tip: t(n.tip) })); }
+    function pages() { return NAV.concat(OFF_ROW).map(n => ({ id: n.id, label: tl(n.label), tip: t(n.tip) })); }
 
     window.AFHeader = { html, wire, tabs, menu, wireMenu, counts, paintCounts, pages };
 })();

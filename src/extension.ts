@@ -366,7 +366,7 @@ import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLe
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
-import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, LegClose, registerChainBoardOps } from './core/chainBoardOps';
+import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
 import { legFactsSnapshot } from './core/chainLegFacts';
 import { chainLegLines, chainsPageData } from './core/chainsPage';
 import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
@@ -17904,13 +17904,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         cancelRow: cancelSuccessorRow,
         sweep: () => { batonRunner.sweep(); updateBatonBar(); },
         // the approved rule: a leg at rest is closed at once, a working one only if the person says so
-        closeLeg: async (sid: string, why: string): Promise<LegClose> => {
+        closeLeg: async (sid: string, why: string, confirm?: LegConfirm): Promise<LegClose> => {
             const card = consoleHost.list().find(c => c.sessionId === sid && c.status !== 'ended' && c.status !== 'error');
             if (!card) { return 'none'; }
             if (card.status !== 'idle') {
-                const pick = await vscode.window.showWarningMessage(
-                    `Session ${sid.slice(0, 8)} of this chain is still working. Close it anyway?`, { modal: true }, 'Close it');
-                if (pick !== 'Close it') { return 'kept'; }
+                // S-125 — asked of whoever pressed: a phone's view answers on the phone, the bridge on the PC
+                const question = `Session ${sid.slice(0, 8)} of this chain is still working. Close it anyway?`;
+                const yes = confirm ? await confirm(question, 'Close it')
+                    : await vscode.window.showWarningMessage(question, { modal: true }, 'Close it') === 'Close it';
+                if (!yes) { return 'kept'; }
             }
             consoleHost.close(card.id, { reason: why });
             ConsolePanel.refreshIfOpen();
@@ -31017,13 +31019,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const r = batonRunner.startNow(b, 'the user (Chains page)');
             return r.ok ? { ok: true } : { ok: false, why: r.why };
         },
-        ceiling: chainId => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n)),
+        ceiling: (chainId, on) => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n), { ask: on.ask, remote: on.remote }),
         cont: q => {
             const r = continueOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
             return r.ok ? { ok: true, text: r.sentence, say: r.say } : { ok: false, text: r.why, say: r.say };
         },
-        end: async q => {
-            const r = await endOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
+        end: async (q, on) => {
+            const confirm: LegConfirm = async (question, yes) => await on.ask.warn(question, { modal: true }, yes) === yes;
+            const r = await endOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)', confirm });
             if (!r.ok) { return { ok: false, text: r.why, say: r.say }; }
             const closed = r.session === 'closed' ? [say('Its session was closed.')] : r.session === 'kept' ? [say('Its session was working and keeps running.')] : [];
             return { ok: true, text: closed.length ? `${r.sentence} ${sayText(closed)}` : r.sentence, say: r.say && [...r.say, ...closed] };
@@ -31092,6 +31095,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             tasks: host => TasksPanel.openOn(host, tasksDeps),
             notices: host => NoticesPanel.openOn(host, noticesPageDeps()),
             dashboard: host => DashboardPanel.openOn(host, dashboardDeps),
+            chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

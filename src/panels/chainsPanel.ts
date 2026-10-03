@@ -28,12 +28,12 @@ export interface ChainsDeps {
     lastLeg(sessionId: string, on: boolean): { ok: true; sentence: string; say?: SayPart[] } | { ok: false; why: string; say?: SayPart[] };
     /** baton.now — start this waiting baton at once */
     startNow(batonId: string): { ok: true } | { ok: false; why: string; say?: SayPart[] };
-    /** baton.setLegs — the legs menu for this chain */
-    ceiling(chainId: string): Promise<void>;
+    /** baton.setLegs — the legs menu for this chain, asked on the surface that pressed (S-125: a phone answers it there) */
+    ceiling(chainId: string, on: Pick<PanelHost, 'ask' | 'remote'>): Promise<void>;
     /** chains.continue */
     cont(q: { chain: string; prompt?: string; why?: string }): ChainsAnswer;
-    /** chains.end */
-    end(q: { chain: string; why?: string; endSession: boolean }): Promise<ChainsAnswer>;
+    /** chains.end — closing a working leg is asked on the surface that pressed */
+    end(q: { chain: string; why?: string; endSession: boolean }, on: Pick<PanelHost, 'ask'>): Promise<ChainsAnswer>;
     /** Fired whenever what the page shows may have moved. */
     onDidChange: vscode.Event<void>;
 }
@@ -62,8 +62,9 @@ export class ChainsPanel {
         ChainsPanel.current = new ChainsPanel(desktopHost({ viewType: 'agentfarm.chains', title: 'Agent Farm — Chains' }), deps, focus);
     }
 
-    static openOn(host: PanelHost, deps: ChainsDeps): ChainsPanel {
-        return new ChainsPanel(host, deps);
+    /** S-125 — a phone's view; `focus` is the chain its ⑂ link named. */
+    static openOn(host: PanelHost, deps: ChainsDeps, focus?: string): ChainsPanel {
+        return new ChainsPanel(host, deps, focus);
     }
 
     private constructor(readonly host: PanelHost, private deps: ChainsDeps, focus?: string) {
@@ -97,7 +98,8 @@ export class ChainsPanel {
         switch (msg.type) {
             case 'refresh': this.refresh(); return;
             case 'afnav': handleAfNav(msg.to); return;
-            case 'open': {
+            // a phone never sends it: afRemote.js turns it into the phone's own session page
+            case 'openSession': {
                 const sid = str(msg.sessionId);
                 if (sid) { void vscode.commands.executeCommand('agentfarm.openSession', { sessionId: sid }); }
                 return;
@@ -133,7 +135,7 @@ export class ChainsPanel {
             }
             case 'ceiling': {
                 if (!chain) { return; }
-                await this.deps.ceiling(chain);
+                await this.deps.ceiling(chain, this.host);
                 this.refresh();
                 return;
             }
@@ -144,7 +146,7 @@ export class ChainsPanel {
             }
             case 'end': {
                 if (!chain) { return; }
-                this.said(chain, await this.deps.end({ chain, why: str(msg.why) || undefined, endSession: msg.endSession === true }));
+                this.said(chain, await this.deps.end({ chain, why: str(msg.why) || undefined, endSession: msg.endSession === true }, this.host));
                 return;
             }
         }
