@@ -17800,7 +17800,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!v) { batonBar.hide(); return; }
         batonBar.text = v.text;
         batonBar.tooltip = v.tooltip;
-        batonBar.command = { command: 'agentfarm.batonLegs', title: 'The chain\'s legs', arguments: [{ chainId: v.chainId }] };
+        batonBar.command = { command: 'agentfarm.openChains', title: 'Open the chain on the Chains page', arguments: [v.chainId] };
         batonBar.show();
     };
     // S-103 — a running chain's legs: baton.setLegs, the ⑂⊣ right-click, the status bar and the palette share applyChainLegs
@@ -40942,8 +40942,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             NowPanel.show(nowDeps);
         }),
 
-        vscode.commands.registerCommand('agentfarm.openChains', () => {
-            ChainsPanel.show(chainsDeps);
+        // S-123 — a chain id (or { chainId }) opens the page on that chain's row
+        vscode.commands.registerCommand('agentfarm.openChains', (arg?: unknown) => {
+            const id = typeof arg === 'string' ? arg : (arg && typeof (arg as { chainId?: unknown }).chainId === 'string' ? (arg as { chainId: string }).chainId : '');
+            ChainsPanel.show(chainsDeps, id.trim() || undefined);
         }),
 
         vscode.commands.registerCommand('agentfarm.openNotices', (arg?: unknown) => {

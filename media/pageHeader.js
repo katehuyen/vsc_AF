@@ -150,6 +150,7 @@
             tip: 'Dynamic orchestration — a lead agent plans round by round, delegates to the team under a '
                 + 'budget, and finishes with an honest verdict.'
         },
+
         {
             id: 'studio', label: '🎬 Studio',
             tip: 'Media production: productions and their scenes, the prompts and renders behind each one, '
@@ -180,6 +181,15 @@
         {
             id: 'sound', label: '🔊 Sound', icon: '🔊',
             tip: 'What rings on which event, whether the agent\'s name is said, quiet hours and your own sounds.'
+        }
+    ];
+    // S-123 — a destination with no seat in the global row, which is full at 1200px (test_sound_header):
+    // described once here and drawn as a page's `related` button (Tasks, Missions), never restated there.
+    const OFF_ROW = [
+        {
+            id: 'chains',
+            tip: 'Every baton relay in one table — where each chain stands, its legs, what it cost and what '
+                + 'the next leg opens on, with the controls to continue, brake or end it.'
         }
     ];
     // U-179 — the 🔊's state and its in-place repaint live with the other sound parts (afSoundCard.js).
@@ -430,7 +440,7 @@
             // A related entry pointing at a page the global row already knows
             // inherits its sentence rather than restating it — one description
             // per destination, wherever the button to it happens to sit.
-            const known = NAV.find(n => n.id === r.nav);
+            const known = NAV.find(n => n.id === r.nav) || OFF_ROW.find(n => n.id === r.nav);
             relatedInto.push(navBtn({
                 label: r.label, name: r.name, attrs: `data-afnav="${r.nav}"`,
                 tip: r.title || (known && known.tip) || ''

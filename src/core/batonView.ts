@@ -94,7 +94,7 @@ export function runningChains(list: readonly Baton[], alive: (sessionId: string)
  * ‼️ S-77 — THE ONE STATUS-BAR ITEM: the relay running right now, or nothing.
  * With several chains the newest speaks and `+N` counts the rest; each has its line.
  * M-63 — unless the Console has a session of one of them open (`focus`): then that
- * chain speaks, and a click opens ITS legs.
+ * chain speaks, and a click opens ITS row on the Chains page (S-123).
  */
 export function batonBarView(
     list: readonly Baton[], maxLegs: number, alive: (sessionId: string) => boolean, fmt: (t: number) => string = hhmm,
@@ -122,7 +122,7 @@ export function batonBarView(
             '',
             ...lines,
             '',
-            'Click: the chain\'s legs — one more, fewer, no ceiling, last leg.',
+            'Click: this chain on the Chains page — its legs, its ceiling and its controls.',
             'Brake: ⑂⊣ Last leg on the running card, ✕⑂ Stop chain while a successor waits.',
             maxLegs > 0 ? `A new chain starts at ${maxLegs} legs (agentFarm.batonMaxHops).` : 'A new chain starts with no leg ceiling (agentFarm.batonMaxHops = 0).'
         ].join('\n'),
@@ -170,7 +170,7 @@ export function batonCardView(list: readonly Baton[], sessionId: string, fallbac
     if (brake === 'locked') { lines.push('Last leg: braked by the user — the chain ended at this leg.'); }
     const max = fallbackMax === undefined ? undefined : chainMaxLegs(list, chainId, fallbackMax);
     if (max !== undefined) {
-        lines.push(`Ceiling: ${max > 0 ? `${max} legs` : 'none'} — change it: right-click ⑂⊣, or click ⑂ in the status bar.`);
+        lines.push(`Ceiling: ${max > 0 ? `${max} legs` : 'none'} — change it: right-click ⑂⊣, or the chain's row on the Chains page (⑂ in the status bar).`);
     }
     lines.push(stoppable
         ? 'Brake: ✕⑂ Stop chain on the card — recorded, never deleted.'

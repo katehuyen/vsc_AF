@@ -4336,7 +4336,9 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 page: 'tasks',
                 title: 'Tasks',
                 sub: `plan what runs · see what ran — updated ${window.AFTime.clockUtc(d.generatedAt)}`,
-                guide: 'tasks-sayfasi'
+                guide: 'tasks-sayfasi',
+                // S-123 — the relays a task opens live on their own page
+                related: [{ nav: 'chains', label: '⑂ Chains', name: 'Chains' }], relatedRow: true
             })}
             ${headerHtml(d)}
             ${tabsHtml(d)}

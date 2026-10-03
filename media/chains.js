@@ -13,10 +13,13 @@
     const legs = {};
     let form = null;
     let note = null;
+    // S-123 — the chain a ⑂ elsewhere opened this page on: shown whatever the chip, unfolded, scrolled to, marked once
+    let focus = '';
 
     const repaint = window.AFRepaint.guard(render);
     window.addEventListener('message', ev => {
         const m = ev.data || {};
+        if (m.type === 'focus' && m.chainId) { focusOn(String(m.chainId)); return; }
         if (m.type === 'data') { DATA = m.data; for (const id of open) { ask(id); } repaint(); }
         if (m.type === 'legs') { legs[m.chainId] = m.legs || []; repaint(); }
         if (m.type === 'done') { note = { ok: !!m.ok, text: m.text || '' }; if (m.ok) { form = null; } render(); }
@@ -32,6 +35,7 @@
     const post = (type, o) => vscode.postMessage(Object.assign({ type }, o));
     const ask = id => post('legs', { chainId: id });
     const line1 = s => String(s || '').split('\n').map(x => x.trim()).find(Boolean) || '';
+    function focusOn(id) { chip = ''; open.add(id); ask(id); focus = id; render(); }
 
     function liveWord(r) {
         if (r.state === 'parked' && r.wakeAt) { return t('wakes {time}', { time: T.clock(r.wakeAt) }); }
@@ -182,6 +186,7 @@
                 .ch-row { cursor:pointer; }
                 .ch-row:hover { background:var(--vscode-list-hoverBackground); }
                 .ch-row.open { background:var(--vscode-list-inactiveSelectionBackground); }
+                .ch-row.focus { box-shadow:inset 3px 0 0 var(--vscode-focusBorder, #007fd4); }
                 .ch-row.attn .ch-st { color:var(--vscode-editorWarning-foreground, orange); }
                 .ch-st { white-space:nowrap; }
                 .ch-warn { margin-right:3px; }
@@ -230,6 +235,11 @@
             ${table}`;
         window.AFHeader.wire(vscode);
         wire();
+        if (focus) {
+            const row = Array.from(document.querySelectorAll('tr.ch-row')).find(x => x.dataset.chain === focus);
+            if (row) { row.classList.add('focus'); if (row.scrollIntoView) { row.scrollIntoView({ block: 'center' }); } }
+            focus = '';
+        }
     }
 
     function wire() {
@@ -268,5 +278,5 @@
         if (cancel) { cancel.addEventListener('click', () => { form = null; render(); }); }
     }
 
-    render();
+    if (DATA.focusChain) { focusOn(String(DATA.focusChain)); } else { render(); }
 })();

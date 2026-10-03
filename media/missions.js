@@ -5494,7 +5494,9 @@
                 title: 'Missions',
                 sub: 'Dynamic orchestration: a lead agent plans round by round, delegates to the team, and finishes with an honest verdict. <a data-guide="missions">?</a>',
                 actions: `<button id="newmission">+ New Mission</button>`,
-                guide: 'missions'
+                guide: 'missions',
+                // S-123 — the other kind of orchestrated work, one press away
+                related: [{ nav: 'chains', label: '⑂ Chains', name: 'Chains' }], relatedRow: true
             })}
             ${sentryHtml()}
             ${formOpen ? formHtml() : ''}

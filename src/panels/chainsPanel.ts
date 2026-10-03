@@ -50,21 +50,23 @@ export class ChainsPanel {
     private timer: NodeJS.Timeout | undefined;
     private tick: NodeJS.Timeout;
 
-    static show(deps: ChainsDeps): void {
+    /** S-123 — `focus`: a chain id the page opens on (its row unfolded, scrolled to, marked once). */
+    static show(deps: ChainsDeps, focus?: string): void {
         if (ChainsPanel.current) {
             ChainsPanel.current.host.reveal();
             ChainsPanel.current.refresh();
+            if (focus) { void ChainsPanel.current.host.webview.postMessage({ type: 'focus', chainId: focus }); }
             return;
         }
-        ChainsPanel.current = new ChainsPanel(desktopHost({ viewType: 'agentfarm.chains', title: 'Agent Farm — Chains' }), deps);
+        ChainsPanel.current = new ChainsPanel(desktopHost({ viewType: 'agentfarm.chains', title: 'Agent Farm — Chains' }), deps, focus);
     }
 
     static openOn(host: PanelHost, deps: ChainsDeps): ChainsPanel {
         return new ChainsPanel(host, deps);
     }
 
-    private constructor(readonly host: PanelHost, private deps: ChainsDeps) {
-        host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Chains', this.data(), 'chains.js');
+    private constructor(readonly host: PanelHost, private deps: ChainsDeps, focus?: string) {
+        host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Chains', { ...this.data(), ...(focus ? { focusChain: focus } : {}) }, 'chains.js');
         host.onDidDispose(() => this.dispose(), null, this.disposables);
         host.webview.onDidReceiveMessage(msg => { void this.onMessage(msg); }, null, this.disposables);
         this.disposables.push(deps.onDidChange(() => this.soon()));

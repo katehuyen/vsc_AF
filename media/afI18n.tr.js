@@ -88,6 +88,9 @@
     'Started': 'Başladı',
     'Turn started': 'Tur başladı',
     'Posted': 'Gönderildi',
+    // the header's Chains destination (S-123)
+    'Every baton relay in one table — where each chain stands, its legs, what it cost and what the next leg opens on, with the controls to continue, brake or end it.':
+        'Her bayrak yarışı tek tabloda — her zincirin nerede durduğu, halkaları, maliyeti ve sıradaki halkanın neyle açılacağı; sürdürme, frenleme ve bitirme düğmeleriyle.',
     // the shared list hands (media/afBulk.js, media/afCtx.js, media/afFilters.js)
     'Filter': 'Süzgeç',
     'none': 'hiçbiri',

@@ -353,8 +353,12 @@ export function handleAfNav(to: unknown): void {
         // X-252 — the page was reachable from the Tasks page and from the
         // palette and from nowhere else, so a figure elsewhere had no way to
         // point at the breakdown that explains it.
-        analytics: 'agentfarm.openTaskAnalytics'
+        analytics: 'agentfarm.openTaskAnalytics',
+        chains: 'agentfarm.openChains'
     };
+    // S-123 — `chains:<chainId>` opens the Chains page on that chain: a ⑂ on any page that routes afnav reaches it.
+    const chainTo = /^chains:(.+)$/.exec(String(to));
+    if (chainTo) { void vscode.commands.executeCommand('agentfarm.openChains', chainTo[1]); return; }
     const cmd = commands[String(to)];
     if (cmd) { void vscode.commands.executeCommand(cmd); }
 }
