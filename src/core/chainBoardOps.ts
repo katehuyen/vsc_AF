@@ -91,6 +91,26 @@ export function endRecords(deps: ChainBoardOpsDeps, q: { chain: string; why?: st
     };
 }
 
+/** S-128 — the chains the record shows hanging that End can still reach: running, waiting or parked, with a hanging signal. */
+export function hangingNow(deps: ChainBoardOpsDeps): ChainRow[] {
+    return boardNow(deps).filter(r => (r.state === 'running' || r.state === 'waiting' || r.state === 'parked') && r.signals.some(s => s.kind === 'hanging'));
+}
+
+/**
+ * S-128 — END EVERY HANGING CHAIN AT ONCE (or those of `chains` still hanging when it runs), each through
+ * the same records End writes, and no session closed: a hanging leg is idle or gone, and its card is the user's.
+ */
+export function endHanging(deps: ChainBoardOpsDeps, q: { chains?: readonly string[]; by?: string; why?: string }): { ended: string[]; refused: { chain: string; why: string }[] } {
+    const asked = q.chains ? new Set(q.chains) : undefined;
+    const ended: string[] = [];
+    const refused: { chain: string; why: string }[] = [];
+    for (const r of hangingNow(deps).filter(x => !asked || asked.has(x.chainId))) {
+        const e = endRecords(deps, { chain: r.chainId, by: q.by || 'the user', why: q.why || 'hanging — ended together with the others' });
+        if (e.ok) { ended.push(r.chainId); } else { refused.push({ chain: r.chainId, why: e.why }); }
+    }
+    return { ended, refused };
+}
+
 /** chains.end's body — the op and the Chains page's ■ alike. */
 export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean; confirm?: LegConfirm }): Promise<EndOnBoard> {
     const r = endRecords(deps, q);
@@ -107,11 +127,12 @@ export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOp
             describe: 'S-120 — EVERY RELAY CHAIN IN ONE ROW, derived from the record (batons, the links the store keeps after dropping a finished baton, each leg\'s live facts, the engine-fault watch) — never from what a leg said. '
                 + 'Each row: chainId, state (running · waiting · parked · done · stopped · refused · failed) and bucket (the page\'s chips: running · waiting · parked · done · stopped), why + since (the newest record\'s sentence), title, agent, project, engine, leg / maxLegs (0 = none), lastLeg, the current leg\'s sessionId and live (working · idle · gone), startedAt / lastAt, wakeAt, next (the setup the next leg opens on), totals (legs, cost, tokens, ms), brake (ceiling · user · barren), rescue, trimmed (only links left), '
                 + 'and signals — the five things the record shows going wrong: hanging (the running leg idle, or its session gone, with no pass and no closing record, past agentFarm.chainHangMinutes), stuck-wait (a successor still waiting on its predecessor\'s end past agentFarm.chainWaitMinutes), cut (failed or refused), fault (the running leg\'s engine failed and the watch has not passed for it), brake (the ceiling or the barren brake refused a pass). '
-                + 'Answers { counts, chains, total, thresholds }. args: state? (a state or a chip), agent? (name or id), project? (id), attention? (true = only rows with a signal), limit? (default 50, newest activity first)',
+                + 'Answers { counts, chains, total, thresholds }. args: state? (a state or a chip), agent? (name or id), project? (id), attention? (true = only rows with a signal), reason? (hanging · stuck-wait · cut · fault · brake, or the brake that stopped it: ceiling · barren), limit? (default 50, newest activity first)',
             handler: (args) => {
                 const rows = boardNow(deps);
                 const picked = filterBoard(rows, {
-                    state: optStr(args, 'state'), agent: optStr(args, 'agent'), project: optStr(args, 'project'), attention: optBool(args, 'attention')
+                    state: optStr(args, 'state'), agent: optStr(args, 'agent'), project: optStr(args, 'project'), attention: optBool(args, 'attention'),
+                    reason: optStr(args, 'reason')
                 });
                 const t = deps.thresholds();
                 return {
@@ -148,6 +169,18 @@ export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOp
                     stopped: r.stopped.map(batonView), closing: r.closing ? batonView(r.closing) : null,
                     sessionId: r.sessionId ?? null, session: r.session ?? null, sentence: r.sentence
                 };
+            }
+        },
+        {
+            op: 'chains.endHanging',
+            describe: 'S-128 — END EVERY HANGING CHAIN AT ONCE: each chain chains.list shows with a hanging signal (its running leg idle or gone past agentFarm.chainHangMinutes, with no pass and no closing record) is ended exactly as chains.end ends it; no session is closed. '
+                + 'dryRun=true only names them. Answers { ended, refused, hanging }. args: chains? (chn_… ids, comma-separated or a list — only those of them still hanging), why? (a line, recorded), dryRun?, by? (who, default "the user")',
+            handler: (args) => {
+                const raw = args.chains;
+                const chains = Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' && raw.trim() ? raw.split(',').map(x => x.trim()).filter(Boolean) : undefined;
+                const hanging = hangingNow(deps).filter(r => !chains || chains.includes(r.chainId)).map(r => r.chainId);
+                if (optBool(args, 'dryRun')) { return { ended: [], refused: [], hanging }; }
+                return { ...endHanging(deps, { chains, by: optStr(args, 'by'), why: optStr(args, 'why') }), hanging };
             }
         }
     ]);

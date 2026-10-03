@@ -1391,6 +1391,15 @@
       ]
     },
     {
+      "capability": "chainsPanel.ts#endHanging",
+      "ui": [
+        "page:chainsPanel.ts#endHanging"
+      ],
+      "ops": [
+        "chains.endHanging"
+      ]
+    },
+    {
       "capability": "chainsPanel.ts#lastLeg",
       "ui": [
         "page:chainsPanel.ts#lastLeg"

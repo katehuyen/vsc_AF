@@ -264,15 +264,24 @@ export interface BoardFilter {
     agent?: string;
     project?: string;
     attention?: boolean;
+    /** S-128 — a signal kind (hanging · stuck-wait · cut · fault · brake) or the brake that stopped it (ceiling · barren) */
+    reason?: string;
+}
+
+/** S-128 — what a row can be filtered by as its reason: its signals' kinds and the brake that stopped it. */
+export function reasonsOf(r: Pick<ChainRow, 'signals' | 'brake'>): string[] {
+    return [...r.signals.map(s => s.kind as string), ...(r.brake === 'ceiling' || r.brake === 'barren' ? [r.brake] : [])];
 }
 
 export function filterBoard(rows: readonly ChainRow[], q: BoardFilter): ChainRow[] {
     const st = String(q.state ?? '').trim().toLowerCase();
     const ag = String(q.agent ?? '').trim().toLowerCase();
     const pj = String(q.project ?? '').trim();
+    const why = String(q.reason ?? '').trim().toLowerCase();
     return rows.filter(r =>
         (!st || r.state === st || r.bucket === st)
         && (!ag || String(r.agentName ?? '').toLowerCase() === ag || String(r.agentId ?? '').toLowerCase() === ag)
         && (!pj || r.projectId === pj)
-        && (!q.attention || r.signals.length > 0));
+        && (!q.attention || r.signals.length > 0)
+        && (!why || reasonsOf(r).includes(why)));
 }

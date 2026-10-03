@@ -34,6 +34,8 @@ export interface ChainsDeps {
     cont(q: { chain: string; prompt?: string; why?: string }): ChainsAnswer;
     /** chains.end — closing a working leg is asked on the surface that pressed */
     end(q: { chain: string; why?: string; endSession: boolean }, on: Pick<PanelHost, 'ask'>): Promise<ChainsAnswer>;
+    /** chains.endHanging — those of these chains still hanging are ended; no session is closed */
+    endHanging(chainIds: string[]): { ended: string[]; refused: { chain: string; why: string }[] };
     /** Fired whenever what the page shows may have moved. */
     onDidChange: vscode.Event<void>;
 }
@@ -142,6 +144,20 @@ export class ChainsPanel {
             case 'continue': {
                 if (!chain) { return; }
                 this.said(chain, this.deps.cont({ chain, prompt: str(msg.prompt) || undefined, why: str(msg.why) || undefined }));
+                return;
+            }
+            case 'endHanging': {
+                const ids = Array.isArray(msg.chainIds) ? msg.chainIds.map(String).filter(Boolean) : [];
+                if (!ids.length) { return; }
+                const yes = 'End them';
+                const asked = ids.length === 1 ? 'End the hanging chain? It gets its closing record; no session is closed, and it can be continued later.'
+                    : `End the ${ids.length} hanging chains? Each gets its closing record; no session is closed, and any of them can be continued later.`;
+                if (await this.host.ask.warn(asked, { modal: true }, yes) !== yes) { return; }
+                const r = this.deps.endHanging(ids);
+                const parts = [say('{n} hanging chain(s) ended — no session was closed; any of them can be continued.', { n: r.ended.length }),
+                    ...(r.refused.length ? [say('{n} could not be ended: {list}.', { n: r.refused.length, list: r.refused.map(x => `${x.chain} (${x.why})`).join('; ') })] : [])];
+                const s = saidSentence(...parts);
+                this.said('', { ok: r.ended.length > 0 && !r.refused.length, text: s.sentence, say: s.say });
                 return;
             }
             case 'end': {

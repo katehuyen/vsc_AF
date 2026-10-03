@@ -11,6 +11,7 @@
  */
 import { Baton, isLive } from './baton';
 import { BoardCounts, ChainRow, LegFacts, boardCounts, newerRecord } from './chainBoard';
+import { lastWords } from './chainControl';
 import type { ChainIndex } from './chainMembership';
 
 export interface ChainActs {
@@ -28,7 +29,8 @@ export interface ChainActs {
     end: boolean;
 }
 
-export interface ChainsRow extends ChainRow { acts: ChainActs }
+/** S-128 — `words`: the chain's newest handover words, so the page's search reaches them */
+export interface ChainsRow extends ChainRow { acts: ChainActs; words?: string }
 
 export interface ChainsData {
     generatedAt: number;
@@ -59,7 +61,10 @@ export function chainsPageData(rows: readonly ChainRow[], batons: readonly Baton
     return {
         generatedAt: now,
         counts: boardCounts(rows),
-        chains: rows.map(r => ({ ...r, acts: chainActs(r, batons) })),
+        chains: rows.map(r => {
+            const words = lastWords(batons, r.chainId);
+            return { ...r, acts: chainActs(r, batons), ...(words ? { words } : {}) };
+        }),
         hangMs: t.hangMs,
         waitMs: t.waitMs
     };

@@ -370,7 +370,7 @@ import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLe
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
-import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, endRecords, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
+import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endHanging, endOnBoard, endRecords, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
 import { legFactsSnapshot } from './core/chainLegFacts';
 import { chainLegLines, chainsPageData } from './core/chainsPage';
 import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
@@ -31123,6 +31123,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const closed = r.session === 'closed' ? [say('Its session was closed.')] : r.session === 'kept' ? [say('Its session was working and keeps running.')] : [];
             return { ok: true, text: closed.length ? `${r.sentence} ${sayText(closed)}` : r.sentence, say: r.say && [...r.say, ...closed] };
         },
+        endHanging: ids => endHanging(chainBoardDeps, { chains: ids, by: 'the user (Chains page)' }),
         onDidChange: chainsEmitter.event
     };
     bridge.register([{

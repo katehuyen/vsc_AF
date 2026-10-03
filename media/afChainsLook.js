@@ -44,6 +44,7 @@
         .ch-chip.warn b { color:var(--vscode-editorWarning-foreground, orange); }
         .ch-chip.on.warn b { color:inherit; }
         .ch-note { margin:4px 0 8px; font-size:12px; }
+        .ch-bulk { margin:0 0 8px; }
         .ch-note.bad { color:var(--vscode-errorForeground); }
         .ch-tab td { vertical-align:middle; }
         .ch-row { cursor:pointer; }

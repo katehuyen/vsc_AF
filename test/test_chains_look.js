@@ -48,7 +48,7 @@ ok('‼️ ⛔ is gone from the Chains page (it is the Tasks dependency mark)', 
 ok('‼️ Stop chain and Last leg wear the Console card\'s own symbols', L.SYM.stop === '✕⑂' && L.SYM.lastLeg === '⑂⊣'
     && consoleJs.includes('aria-label="Stop chain">✕⑂<') && /aria-label="Last leg"[^>]*>⑂⊣</.test(consoleJs));
 ok('End is no box that reads as a checkbox', L.SYM.end !== '■' && !/act\(r, 'end', '■'/.test(page) && !page.includes("'■ ' + t('End chain')"));
-ok('the page draws with the look, not a copy of it', page.includes('<style>${L.CSS}</style>') && !page.includes('.ch-chip {'));
+ok('the page draws with the look, not a copy of it', page.includes('<style>${L.CSS}') && !page.includes('.ch-chip {'));
 
 // ---------- the page ----------
 const fx = require('./fixtures/chains.js');

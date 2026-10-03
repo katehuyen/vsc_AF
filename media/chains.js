@@ -28,6 +28,10 @@
     // S-128 — colours, the relay symbols and the legs strip live in media/afChainsLook.js
     const L = window.AFChainsLook;
     const GLYPH = L.GLYPH;
+    // S-128 — sort, filters, search and Show N live in media/afChainsBar.js; the choice survives a reload
+    const B = window.AFChainsBar;
+    const q = Object.assign(B.fresh(), ((vscode.getState && vscode.getState()) || {}).chainsQ || {});
+    const keep = () => { if (vscode.setState) { vscode.setState(Object.assign({}, (vscode.getState && vscode.getState()) || {}, { chainsQ: q })); } };
     const CHIPS = [['', '⑂', 'All'], ['running', '▶', 'Running'], ['waiting', '⏳', 'Waiting'], ['parked', '🅿', 'Parked'],
         ['attention', '⚠', 'Needs attention'], ['done', '■', 'Done'], ['stopped', '✕', 'Stopped']];
     const SIGNAL = { hanging: 'Hanging', 'stuck-wait': 'Stuck wait', cut: 'Cut', fault: 'Engine fault', brake: 'Brake refused' };
@@ -154,6 +158,16 @@
             <button id="ch-cancel" class="secondary">${esc(t('Cancel'))}</button></div></td></tr>`;
     }
 
+    // S-128 — on the ⚠ chip, the hanging chains End can reach are ended together (chains.endHanging)
+    function hangBtn(rows) {
+        const list = chip === 'attention' ? rows.filter(r => r.acts.end && r.signals.some(s => s.kind === 'hanging')) : [];
+        if (!list.length) { return ''; }
+        const label = t('End hanging ({n})', { n: list.length });
+        return '<div class="ch-bulk">' + TIP.wrap(`<button id="ch-endhang" data-ids="${esc(list.map(r => r.chainId).join(','))}">🧹 ${esc(label)}</button>`,
+            label, TIP.lines([t('Ends each of these as End does; no session is closed, and any of them can be continued later.'), TIP.GAP,
+                ...list.map(r => `${r.title || r.chainId} — ${r.chainId}`)])) + '</div>';
+    }
+
     function rowsHtml(rows) {
         const projects = DATA.projects || [];
         return rows.map(r => {
@@ -167,10 +181,13 @@
 
     function render() {
         const d = DATA;
-        const rows = d.chains.filter(r => !chip || (chip === 'attention' ? r.signals.length > 0 : r.bucket === chip));
+        const byChip = d.chains.filter(r => !chip || (chip === 'attention' ? r.signals.length > 0 : r.bucket === chip));
+        const v = B.view(byChip, q);
+        const rows = v.rows;
         const n = d.counts;
         const table = !d.chains.length ? `<p class="muted">${esc(t('No relay chain on record yet.'))}</p>`
-            : !rows.length ? `<p class="muted">${esc(t('No chain in this state.'))} <a href="#" data-chip="">${esc(t('Show every chain'))}</a></p>`
+            : !byChip.length ? `<p class="muted">${esc(t('No chain in this state.'))} <a href="#" data-chip="">${esc(t('Show every chain'))}</a></p>`
+            : !rows.length ? `<p class="muted">${esc(t('No chain matches the filters.'))} <a href="#" data-reset>${esc(t('Reset filters'))}</a></p>`
                 : `<table class="ch-tab"><thead><tr>${th('State', 'Where the chain stands, from its newest record. ⚠ = something the record shows going wrong.')}
                     ${th('Chain', 'The first leg\'s title and the chain id.')}${th('Agent', 'The agent the chain runs as.', 'ch-wide')}
                     ${th('Leg', 'The legs as a strip: ● ran, the current one in its state, ○ still allowed under the ceiling (∞ = none). ⑂⊣ = this leg is the last.')}
@@ -178,15 +195,18 @@
                     <th class="ch-wide">${TIP.wrap(esc(t('Last move')), t('Last move'), t('When the chain\'s record last changed.'))}</th>
                     <th class="ch-wide num">${TIP.wrap(esc(t('Cost')), t('Cost'), t('All legs together; hover for tokens and time.'))}</th>
                     <th class="ch-wide">${TIP.wrap(esc(t('Next')), t('Next'), t('The account and model the next leg opens on.'))}</th><th></th></tr></thead>
-                    <tbody>${rowsHtml(rows)}</tbody></table>`;
+                    <tbody>${rowsHtml(rows)}</tbody></table>`
+                + (v.hidden ? `<p class="muted ch-more">${esc(t('{n} more finished chains are not listed.', { n: v.hidden }))} <a href="#" data-showall>${esc(t('Show all'))}</a></p>` : '');
         document.getElementById('app').innerHTML = `
-            <style>${L.CSS}</style>
+            <style>${L.CSS}${B.CSS}</style>
             ${window.AFHeader.html({
                 page: 'chains',
                 title: t('Chains'),
                 sub: `${esc(t('{running} running · {waiting} waiting · {attention} need attention', n))} · ${T.clockUtc(d.generatedAt)}`
             })}
             ${chipsHtml(n)}
+            ${d.chains.length ? B.html(d.chains, q, d.projects) : ''}
+            ${hangBtn(rows)}
             ${note ? `<div class="ch-note ${note.ok ? 'ok' : 'bad'}">${esc(note.say ? note.say.map(p => t(p.key, p.vars)).join(' ') : note.text)}</div>` : ''}
             ${table}`;
         window.AFHeader.wire(vscode);
@@ -199,6 +219,12 @@
     }
 
     function wire() {
+        const onQ = () => { keep(); render(); };
+        B.wire(q, onQ);
+        document.querySelectorAll('[data-reset]').forEach(el => el.addEventListener('click', ev => { ev.preventDefault(); Object.assign(q, B.fresh(), { sort: q.sort, show: q.show }); onQ(); }));
+        const hang = document.getElementById('ch-endhang');
+        if (hang) { hang.addEventListener('click', () => { note = null; post('endHanging', { chainIds: hang.dataset.ids.split(',') }); }); }
+        document.querySelectorAll('[data-showall]').forEach(el => el.addEventListener('click', ev => { ev.preventDefault(); q.show = 0; onQ(); }));
         document.querySelectorAll('[data-chip]').forEach(el => el.addEventListener('click', ev => {
             ev.preventDefault();
             const id = el.dataset.chip;
