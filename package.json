@@ -9128,6 +9128,18 @@
           "default": "",
           "description": "Baton relay: the model a successor opens on when the leg before it was ALSO opened by a flagged pass — the engine's own advice is a new session first, then another model. Empty = the chain keeps its own model. The chain carries on with whatever model its successor opened on."
         },
+        "agentFarm.chainHangMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "Chain board: a relay chain is flagged as needing attention ('hanging') when its running leg has been idle this many minutes — or its session ended this long ago — without passing the baton and without the chain being closed. Read from the record and the session itself, never from what the leg said."
+        },
+        "agentFarm.chainWaitMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "Chain board: a relay chain is flagged as needing attention ('stuck') when the next leg has been waiting this many minutes for the session that passed the baton to end."
+        },
         "agentFarm.defaultAccountCeiling": {
           "type": "number",
           "default": 70,

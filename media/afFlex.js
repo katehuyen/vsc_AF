@@ -345,6 +345,15 @@
             id: 'baton.flaggedModel', label: 'Relay — model after a second flag', type: 'text', default: '', remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.batonFlaggedModel', bridge: 'settings.set:agentFarm.batonFlaggedModel' } }
         },
+        // S-121 — the chain board's attention lines: a running leg idle or gone, and a successor waiting on its predecessor (src/core/chainBoardOps.ts)
+        {
+            id: 'chains.hangMinutes', label: 'Chains — a leg idle without passing is hanging after (minutes)', type: 'number', default: 30, min: 1, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.chainHangMinutes', bridge: 'settings.set:agentFarm.chainHangMinutes' } }
+        },
+        {
+            id: 'chains.waitMinutes', label: 'Chains — a successor still waiting is stuck after (minutes)', type: 'number', default: 30, min: 1, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.chainWaitMinutes', bridge: 'settings.set:agentFarm.chainWaitMinutes' } }
+        },
         // S-106 — a handover that is not the quota's stays on its account under this line (src/core/stayAccount.ts)
         {
             id: 'baton.stayAccountPct', label: 'Handover — stay on the account under (%)', type: 'number', default: 70, min: 0, max: 100, remembered: false,

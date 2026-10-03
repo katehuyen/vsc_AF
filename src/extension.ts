@@ -365,6 +365,8 @@ import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
+import { boardThresholds, LegClose, registerChainBoardOps } from './core/chainBoardOps';
+import { legFactsSnapshot } from './core/chainLegFacts';
 import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
@@ -17875,6 +17877,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         log: l => console.log(`[Agent Farm] ${l}`)
     });
     registerFaultOps(bridge, engineFaults, () => faultOpts(ownSetting));
+    // ‼️ S-121 — the chain board: every chain from the record, and continue / end (chainBoardOps.ts)
+    registerChainBoardOps(bridge, {
+        store: batonStore,
+        factsNow: () => legFactsSnapshot({
+            cards: consoleHost.list().map(c => ({
+                sessionId: c.sessionId, status: c.status, queued: c.queued?.length ?? 0,
+                asking: !!(c.pendingAsk || c.pendingPermission), turnEndedAt: c.lastTurn?.endedAt
+            })),
+            live: live.sessions().map(s => ({ sessionId: s.sessionId, status: s.status, lastEventTs: s.lastEventTs })),
+            registered: new Set(liveCliSessions().map(r => r.sessionId)),
+            sessions: index.allWithExternal()
+        }),
+        faults: () => engineFaults.list(),
+        maxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
+        thresholds: () => boardThresholds(ownSetting),
+        now: () => Date.now(),
+        board: batonBoard,
+        cancelRow: cancelSuccessorRow,
+        sweep: () => { batonRunner.sweep(); updateBatonBar(); },
+        // the approved rule: a leg at rest is closed at once, a working one only if the person says so
+        closeLeg: async (sid: string, why: string): Promise<LegClose> => {
+            const card = consoleHost.list().find(c => c.sessionId === sid && c.status !== 'ended' && c.status !== 'error');
+            if (!card) { return 'none'; }
+            if (card.status !== 'idle') {
+                const pick = await vscode.window.showWarningMessage(
+                    `Session ${sid.slice(0, 8)} of this chain is still working. Close it anyway?`, { modal: true }, 'Close it');
+                if (pick !== 'Close it') { return 'kept'; }
+            }
+            consoleHost.close(card.id, { reason: why });
+            ConsolePanel.refreshIfOpen();
+            return 'closed';
+        }
+    });
     context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }

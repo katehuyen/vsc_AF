@@ -119,9 +119,10 @@ export function bucketOf(s: ChainState): ChainBucket {
 }
 
 type Rec = Pick<Baton, 'hop' | 'state' | 'updatedAt'>;
-/** The newest record of a chain: the highest hop, a live one before a finished one on the same hop, then the latest change. */
-const newer = (a: Rec, b: Rec): number =>
-    b.hop - a.hop || Number(isLive(b)) - Number(isLive(a)) || b.updatedAt - a.updatedAt;
+/** The newest record of a chain, as a sort order: the highest hop, a live one before a finished one on the same hop, then the latest change. */
+export function newerRecord(a: Rec, b: Rec): number {
+    return b.hop - a.hop || Number(isLive(b)) - Number(isLive(a)) || b.updatedAt - a.updatedAt;
+}
 
 function signalsOf(row: ChainRow, top: Baton | undefined, f: LegFacts | undefined, input: BoardInput): ChainSignal[] {
     const out: ChainSignal[] = [];
@@ -173,8 +174,8 @@ export function chainBoard(input: BoardInput): ChainRow[] {
     const rows: ChainRow[] = [];
     for (const [chainId, chainLinks] of links) {
         const own = batons.get(chainId) ?? [];
-        const top = [...own].sort(newer)[0];
-        const link = [...chainLinks].sort(newer)[0];
+        const top = [...own].sort(newerRecord)[0];
+        const link = [...chainLinks].sort(newerRecord)[0];
         const state = chainStateOf(top?.state ?? link.state);
         const hop = top?.hop ?? link.hop;
         const running = state === 'running';
