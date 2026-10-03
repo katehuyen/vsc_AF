@@ -8,6 +8,7 @@
 import { BridgeRefusal, BridgeRegistry, optBool, optStr } from './bridge';
 import { BrakeState, brakeStateOf, runningLegOf, setLastLeg } from './batonLastLeg';
 import { BatonStore } from './batonStore';
+import { say, saidSentence } from './uiSentence';
 
 export interface LastLegDeps {
     store: BatonStore;
@@ -27,11 +28,16 @@ export function applyLastLeg(deps: LastLegDeps, sessionId: string, on: boolean, 
     const sid = String(sessionId).trim();
     const leg = r.baton.hop + 1;
     const chainId = r.baton.chainId;
-    const sentence = on
-        ? `Braked: leg ${leg} is the last of chain ${chainId}. At its handover line it is told to write the handover note instead of `
-            + 'passing, and if it passes anyway the pass opens nothing. Take it back (on=false) any time before it passes.'
-        : `Released: chain ${chainId} goes on as before — leg ${leg} passes the baton at its handover line.`;
+    const { sentence } = lastLegSaid(on, leg, chainId);
     return { ok: true, sessionId: sid, chainId, leg, on, changed: r.changed, brake: brakeStateOf(deps.store.all(), sid) ?? null, sentence };
+}
+
+/** The brake's sentence and its parts for a page; the bridge answer carries the sentence alone. */
+export function lastLegSaid(on: boolean, leg: number, chainId: string): ReturnType<typeof saidSentence> {
+    return saidSentence(on
+        ? say('Braked: leg {leg} is the last of chain {chain}. At its handover line it is told to write the handover note instead of '
+            + 'passing, and if it passes anyway the pass opens nothing. Take it back (on=false) any time before it passes.', { leg, chain: chainId })
+        : say('Released: chain {chain} goes on as before — leg {leg} passes the baton at its handover line.', { leg, chain: chainId }));
 }
 
 export function registerLastLegOp(bridge: BridgeRegistry, deps: LastLegDeps): void {

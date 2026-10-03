@@ -1089,6 +1089,14 @@ files, and `media/afTime.js` formats with `AFI18n.locale()`.
   the English `title` stays whole for the bridge and the agents reading it,
   `titleKey` + `titleVars` travel beside it, and the page draws
   `t(titleKey, titleVars)`. A page never re-parses an English sentence.
+- An ANSWER a producer gives a press (a refusal's `why`, a success's
+  `sentence`) carries `say: [{ key, vars }]` beside it — `saidWhy` /
+  `saidSentence(say(…), …)` in the same file. Parts, because an answer grows by
+  clauses (a ceiling tail, "Its session was closed."); the page draws each
+  part through `t()` and joins them with a space, which is exactly how
+  `sayText` builds the English. A bridge handler returns the fields it names,
+  so `say` stays off the bridge; one that returns the whole object takes the
+  sentence from a function the page's path calls too (`lastLegSaid`).
 - A language's catalog is the files its `LANGS` entry lists — `afI18n.<id>.js`
   plus one part per surface (`parts: ['needs', 'chains']` → `afI18n.<id>.needs.js`
   …); `files(id)` in `media/afI18n.js` is the one list the shell, the host and the

@@ -14,13 +14,14 @@
  */
 import { Baton, isLive, openerOf } from './baton';
 import { isSeal } from './batonSeal';
+import { SayPart, saidWhy } from './uiSentence';
 
 /** `off`/`on` can still be pressed · `passed` = a successor waits (✕⑂ Stop chain's turn) · `locked` = ended braked */
 export type BrakeState = 'off' | 'on' | 'passed' | 'locked';
 
 export type LastLegResult =
     | { ok: true; baton: Baton; on: boolean; changed: boolean }
-    | { ok: false; why: string };
+    | { ok: false; why: string; say?: SayPart[] };
 
 const short = (id: string): string => id.slice(0, 8);
 
@@ -53,18 +54,16 @@ export function runningLegOf(list: readonly Baton[], chainId: string): string | 
 /** Set (`on`) or release the brake on a session's running leg. The caller stores `baton` when `changed`. */
 export function setLastLeg(list: readonly Baton[], sessionId: string, on: boolean, by: string, now: number): LastLegResult {
     const sid = String(sessionId ?? '').trim();
-    if (!sid) { return { ok: false, why: 'no session named — pass session=<id>, or chain=<id> for the leg it is running' }; }
+    if (!sid) { return saidWhy('no session named — pass session=<id>, or chain=<id> for the leg it is running'); }
     const opener = openerOf(list, sid);
-    if (!opener) { return { ok: false, why: `session ${short(sid)} is not a leg of a baton relay — there is no chain to end` }; }
+    if (!opener) { return saidWhy('session {session} is not a leg of a baton relay — there is no chain to end', { session: short(sid) }); }
     const state = brakeStateOf(list, sid);
     if (state === 'passed') {
-        return {
-            ok: false,
-            why: `session ${short(sid)} has already passed the baton — its successor is waiting; ✕⑂ Stop chain (baton.stop chain=${opener.chainId}) stops that`
-        };
+        return saidWhy('session {session} has already passed the baton — its successor is waiting; ✕⑂ Stop chain (baton.stop chain={chain}) stops that',
+            { session: short(sid), chain: opener.chainId });
     }
     if (state !== 'on' && state !== 'off') {
-        return { ok: false, why: `leg ${opener.hop + 1} of chain ${opener.chainId} has already reached its end — the brake can no longer change it` };
+        return saidWhy('leg {leg} of chain {chain} has already reached its end — the brake can no longer change it', { leg: opener.hop + 1, chain: opener.chainId });
     }
     if (on === (state === 'on')) { return { ok: true, baton: opener, on, changed: false }; }
     if (on) { return { ok: true, baton: { ...opener, lastLeg: { at: now, by } }, on, changed: true }; }

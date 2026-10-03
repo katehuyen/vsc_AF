@@ -22,7 +22,7 @@
         if (m.type === 'focus' && m.chainId) { focusOn(String(m.chainId)); return; }
         if (m.type === 'data') { DATA = m.data; for (const id of open) { ask(id); } repaint(); }
         if (m.type === 'legs') { legs[m.chainId] = m.legs || []; repaint(); }
-        if (m.type === 'done') { note = { ok: !!m.ok, text: m.text || '' }; if (m.ok) { form = null; } render(); }
+        if (m.type === 'done') { note = { ok: !!m.ok, text: m.text || '', say: Array.isArray(m.say) && m.say.length ? m.say : null }; if (m.ok) { form = null; } render(); }
     });
 
     const GLYPH = { running: '▶', waiting: '⏳', parked: '🅿', done: '■', stopped: '✕', refused: '⊘', failed: '✖' };
@@ -231,7 +231,7 @@
                 sub: `${esc(t('{running} running · {waiting} waiting · {attention} need attention', n))} · ${T.clockUtc(d.generatedAt)}`
             })}
             ${chipsHtml(n)}
-            ${note ? `<div class="ch-note ${note.ok ? 'ok' : 'bad'}">${esc(note.text)}</div>` : ''}
+            ${note ? `<div class="ch-note ${note.ok ? 'ok' : 'bad'}">${esc(note.say ? note.say.map(p => t(p.key, p.vars)).join(' ') : note.text)}</div>` : ''}
             ${table}`;
         window.AFHeader.wire(vscode);
         wire();

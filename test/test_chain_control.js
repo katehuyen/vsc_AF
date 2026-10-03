@@ -165,6 +165,7 @@ const cont = (list, o) => K.continueChain(list, { chainId: 'chn_1', by: 'the use
     const again = await reg.dispatch('chains.continue', { chain: 'chn_1', why: 'one more' });
     ok('chains.continue after it: a new waiting baton on the store, the runner asked to look', again.ok && again.result.baton.state === 'waiting-end'
         && store.all().filter(b => b.state === 'waiting-end').length === 1 && swept.length === 1);
+    ok('U-189: the page\'s say parts never reach the bridge answers', !('say' in end.result) && !('say' in again.result));
     const ops = reg.catalog().map(o => o.op);
     ok('the three ops are in the catalog', ['chains.list', 'chains.continue', 'chains.end'].every(op => ops.includes(op)));
 

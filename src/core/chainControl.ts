@@ -15,6 +15,7 @@ import { chainMaxLegs, isSeal } from './batonSeal';
 import { closingRecord } from './batonFailsafe';
 import { setLastLeg } from './batonLastLeg';
 import { newerRecord } from './chainBoard';
+import { SayPart, say, saidSentence, saidWhy } from './uiSentence';
 
 /** The first line of a reopened leg's prompt, under the chain header the door puts on top. */
 export const REOPEN_HEADER = '=== CHAIN REOPENED BY THE USER ===';
@@ -48,8 +49,8 @@ export interface ContinueInput {
 }
 
 export type ContinueResult =
-    | { ok: true; baton: Baton; seal?: Baton; sentence: string }
-    | { ok: false; why: string };
+    | { ok: true; baton: Baton; seal?: Baton; sentence: string; say?: SayPart[] }
+    | { ok: false; why: string; say?: SayPart[] };
 
 /**
  * ‼️ CONTINUE: a waiting baton from the leg that ran last. A leg's pass carries
@@ -60,31 +61,31 @@ export type ContinueResult =
 export function continueChain(list: readonly Baton[], q: ContinueInput): ContinueResult {
     const chainId = String(q.chainId ?? '').trim();
     const top = chainOf(list, chainId).sort(newerRecord)[0];
-    if (!top) { return { ok: false, why: `no chain ${chainId || '(none named)'} with records left — chains.list shows what can be continued.` }; }
+    if (!top) { return saidWhy('no chain {chain} with records left — chains.list shows what can be continued.', { chain: chainId || '(none named)' }); }
     if (isLive(top)) {
-        return { ok: false, why: `chain ${chainId} already has a successor waiting (${top.state}) — baton.now starts it now.` };
+        return saidWhy('chain {chain} already has a successor waiting ({state}) — baton.now starts it now.', { chain: chainId, state: top.state });
     }
     let hop = top.hop;
     let fromSid = top.from.sessionId;
     if (top.state === 'started') {
         if (q.running !== 'idle' && q.running !== 'gone') {
-            return {
-                ok: false,
-                why: `leg ${top.hop + 1} of chain ${chainId} is ${q.running === 'working' ? 'working' : 'running (its state is not known)'} — it passes at its own line; continue a chain whose leg is idle, gone or ended.`
-            };
+            return saidWhy(q.running === 'working'
+                ? 'leg {leg} of chain {chain} is working — it passes at its own line; continue a chain whose leg is idle, gone or ended.'
+                : 'leg {leg} of chain {chain} is running (its state is not known) — it passes at its own line; continue a chain whose leg is idle, gone or ended.',
+            { leg: top.hop + 1, chain: chainId });
         }
         hop = top.hop + 1;
         fromSid = top.toSessionId ?? '';
-        if (!fromSid) { return { ok: false, why: `leg ${hop} of chain ${chainId} has not named its session yet — nothing to continue from.` }; }
+        if (!fromSid) { return saidWhy('leg {leg} of chain {chain} has not named its session yet — nothing to continue from.', { leg: hop, chain: chainId }); }
     }
     const words = String(q.prompt ?? '').trim() || lastWords(list, chainId);
-    if (!words) { return { ok: false, why: `chain ${chainId} has no handover words on record — say what the new leg starts from (prompt).` }; }
+    if (!words) { return saidWhy('chain {chain} has no handover words on record — say what the new leg starts from (prompt).', { chain: chainId }); }
     const next = hop + 1;
     const seal = list.find(b => b.chainId === chainId && isSeal(b));
     const asked = normalizeLegCeiling(q.maxLegs);
-    if (q.maxLegs !== undefined && asked === undefined) { return { ok: false, why: 'maxLegs is a whole number of legs — 0 for no ceiling.' }; }
+    if (q.maxLegs !== undefined && asked === undefined) { return saidWhy('maxLegs is a whole number of legs — 0 for no ceiling.'); }
     if (asked !== undefined && asked > 0 && asked < next) {
-        return { ok: false, why: `the reopened leg is leg ${next} — a ceiling of ${asked} would forbid it; give ${next} or more, or 0 for none.` };
+        return saidWhy('the reopened leg is leg {leg} — a ceiling of {asked} would forbid it; give {leg} or more, or 0 for none.', { leg: next, asked });
     }
     const max = chainMaxLegs(list, chainId, q.fallbackMax);
     const lift = asked !== undefined ? asked : (max > 0 && next > max ? next : undefined);
@@ -107,12 +108,14 @@ export function continueChain(list: readonly Baton[], q: ContinueInput): Continu
         updatedAt: q.now
     };
     const cap = raised ? raised.maxLegs! : (seal ? max : q.fallbackMax);
-    const tail = cap > 0 && next >= cap
-        ? ` Leg ${next} is the chain's last under its ceiling of ${cap}${seal ? '' : ' (the setting agentFarm.batonMaxHops — this chain has no ceiling of its own)'}; give maxLegs for more.`
-        : '';
+    const tail = !(cap > 0 && next >= cap) ? []
+        : [say(seal ? 'Leg {leg} is the chain\'s last under its ceiling of {cap}; give maxLegs for more.'
+            : 'Leg {leg} is the chain\'s last under its ceiling of {cap} (the setting agentFarm.batonMaxHops — this chain has no ceiling of its own); give maxLegs for more.',
+        { leg: next, cap })];
     return {
         ok: true, baton, ...(raised ? { seal: raised } : {}),
-        sentence: `Chain ${chainId} reopened: leg ${next} opens on its own setup once session ${short(fromSid)} has ended.${tail}`
+        ...saidSentence(say('Chain {chain} reopened: leg {leg} opens on its own setup once session {session} has ended.',
+            { chain: chainId, leg: next, session: short(fromSid) }), ...tail)
     };
 }
 
@@ -137,8 +140,9 @@ export type EndResult =
         /** the line recorded on every record this writes */
         why: string;
         sentence: string;
+        say?: SayPart[];
     }
-    | { ok: false; why: string };
+    | { ok: false; why: string; say?: SayPart[] };
 
 /**
  * ‼️ END: nothing live is left and the chain reads `done`. A waiting or parked
@@ -150,24 +154,32 @@ export function endChain(list: readonly Baton[], q: EndInput): EndResult {
     const chainId = String(q.chainId ?? '').trim();
     const chain = chainOf(list, chainId);
     const top = [...chain].sort(newerRecord)[0];
-    if (!top) { return { ok: false, why: `no chain ${chainId || '(none named)'} with records left — chains.list shows the chains.` }; }
-    const why = `ended by ${q.by}${q.why ? `: ${String(q.why).trim()}` : ''}`;
+    if (!top) { return saidWhy('no chain {chain} with records left — chains.list shows the chains.', { chain: chainId || '(none named)' }); }
+    const reason = q.why ? String(q.why).trim() : undefined;
+    const why = `ended by ${q.by}${reason !== undefined ? `: ${reason}` : ''}`;
+    const endVars = { chain: chainId, by: q.by, ...(reason !== undefined ? { reason } : {}) };
     const stop = chain.filter(isLive);
     if (stop.length) {
         return {
             ok: true, stop, sessionId: top.from.sessionId, why,
-            sentence: `Chain ${chainId} ended — its waiting successor was stopped (${why}). Session ${short(top.from.sessionId)} keeps running unless you close it.`
+            ...saidSentence(say(reason !== undefined
+                ? 'Chain {chain} ended — its waiting successor was stopped (ended by {by}: {reason}). Session {session} keeps running unless you close it.'
+                : 'Chain {chain} ended — its waiting successor was stopped (ended by {by}). Session {session} keeps running unless you close it.',
+            { ...endVars,session: short(top.from.sessionId) }))
         };
     }
     if (top.state !== 'started' || !top.toSessionId) {
-        return { ok: false, why: `chain ${chainId} has already ended (${top.state}: ${top.why}).` };
+        return saidWhy('chain {chain} has already ended ({state}: {why}).', { chain: chainId, state: top.state, why: top.why });
     }
     const sid = top.toSessionId;
     const brake = setLastLeg(list, sid, true, q.by, q.now);
-    if (!brake.ok) { return { ok: false, why: brake.why }; }
+    if (!brake.ok) { return brake; }
     const closing = closingRecord(brake.baton, sid, 'done', why, newBatonId(q.now, q.rnd ?? Math.random), q.now);
     return {
         ok: true, stop: [], braked: brake.baton, closing, sessionId: sid, why,
-        sentence: `Chain ${chainId} ended at leg ${top.hop + 1} (${why}) — its handover line now asks for the note, and no successor opens.`
+        ...saidSentence(say(reason !== undefined
+            ? 'Chain {chain} ended at leg {leg} (ended by {by}: {reason}) — its handover line now asks for the note, and no successor opens.'
+            : 'Chain {chain} ended at leg {leg} (ended by {by}) — its handover line now asks for the note, and no successor opens.',
+        { ...endVars,leg: top.hop + 1 }))
     };
 }

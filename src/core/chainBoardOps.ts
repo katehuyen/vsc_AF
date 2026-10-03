@@ -12,6 +12,7 @@ import { BoardThresholds, ChainRow, LegFacts, boardCounts, chainBoard, filterBoa
 import { ContinueResult, continueChain, endChain } from './chainControl';
 import type { FaultEpisode } from './engineFaultWatch';
 import { resolveFlex } from './flexResolve';
+import type { SayPart } from './uiSentence';
 
 /** `own(key)` = what the USER wrote for agentFarm.<key> (inspect, never get) — resolved on the flex chain. */
 export function boardThresholds(own: (key: string) => unknown): BoardThresholds & { sentences: Record<string, string> } {
@@ -68,8 +69,8 @@ export function continueOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; pro
 }
 
 export type EndOnBoard =
-    | { ok: true; stopped: Baton[]; closing?: Baton; sessionId?: string; session?: LegClose; sentence: string }
-    | { ok: false; why: string };
+    | { ok: true; stopped: Baton[]; closing?: Baton; sessionId?: string; session?: LegClose; sentence: string; say?: SayPart[] }
+    | { ok: false; why: string; say?: SayPart[] };
 
 /** chains.end's body — the op and the Chains page's ■ alike. */
 export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean }): Promise<EndOnBoard> {
@@ -83,7 +84,7 @@ export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; wh
     const session = q.endSession && r.sessionId && deps.closeLeg ? await deps.closeLeg(r.sessionId, r.why) : undefined;
     return {
         ok: true, stopped, ...(r.closing ? { closing: r.closing } : {}), ...(r.sessionId ? { sessionId: r.sessionId } : {}),
-        ...(session ? { session } : {}), sentence: r.sentence
+        ...(session ? { session } : {}), sentence: r.sentence, ...(r.say ? { say: r.say } : {})
     };
 }
 

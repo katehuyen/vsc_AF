@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { ChainLegLine, ChainsData } from '../core/chainsPage';
+import { SayPart, say, saidSentence } from '../core/uiSentence';
 import { handleAfNav, htmlShell } from './base';
 import type { ProjectRef } from './noticesPanel';
 import { desktopHost, type PanelHost } from './panelHost';
@@ -11,8 +12,8 @@ import { desktopHost, type PanelHost } from './panelHost';
  * the body that op runs and says what came of it on the page.
  */
 
-/** What a control came to: the sentence the page shows, and whether it worked. */
-export interface ChainsAnswer { ok: boolean; text: string }
+/** What a control came to: the sentence (its parts, U-189, drawn in the interface language) and whether it worked. */
+export interface ChainsAnswer { ok: boolean; text: string; say?: SayPart[] }
 
 export interface ChainsDeps {
     extensionUri: vscode.Uri;
@@ -24,9 +25,9 @@ export interface ChainsDeps {
     /** baton.stop — every waiting or parked baton of the chain; how many were stopped */
     stop(chainId: string): number;
     /** baton.lastLeg — brake (or release) the running leg of this session */
-    lastLeg(sessionId: string, on: boolean): { ok: true; sentence: string } | { ok: false; why: string };
+    lastLeg(sessionId: string, on: boolean): { ok: true; sentence: string; say?: SayPart[] } | { ok: false; why: string; say?: SayPart[] };
     /** baton.now — start this waiting baton at once */
-    startNow(batonId: string): { ok: true } | { ok: false; why: string };
+    startNow(batonId: string): { ok: true } | { ok: false; why: string; say?: SayPart[] };
     /** baton.setLegs — the legs menu for this chain */
     ceiling(chainId: string): Promise<void>;
     /** chains.continue */
@@ -87,7 +88,7 @@ export class ChainsPanel {
     }
 
     private said(chainId: string, a: ChainsAnswer): void {
-        void this.host.webview.postMessage({ type: 'done', chainId, ok: a.ok, text: a.text });
+        void this.host.webview.postMessage({ type: 'done', chainId, ok: a.ok, text: a.text, ...(a.say ? { say: a.say } : {}) });
         this.refresh();
     }
 
@@ -109,23 +110,25 @@ export class ChainsPanel {
             case 'stop': {
                 if (!chain) { return; }
                 const n = this.deps.stop(chain);
-                this.said(chain, n
-                    ? { ok: true, text: `Chain ${chain} stopped — ${n} waiting baton${n === 1 ? '' : 's'} recorded as stopped; no further leg opens.` }
-                    : { ok: false, text: `Nothing in chain ${chain} was still waiting — it had already moved on.` });
+                const s = saidSentence(n === 1 ? say('Chain {chain} stopped — {n} waiting baton recorded as stopped; no further leg opens.', { chain, n })
+                    : n ? say('Chain {chain} stopped — {n} waiting batons recorded as stopped; no further leg opens.', { chain, n })
+                        : say('Nothing in chain {chain} was still waiting — it had already moved on.', { chain }));
+                this.said(chain, { ok: n > 0, text: s.sentence, say: s.say });
                 return;
             }
             case 'lastLeg': {
                 const sid = str(msg.sessionId);
                 if (!chain || !sid) { return; }
                 const r = this.deps.lastLeg(sid, msg.on === true);
-                this.said(chain, r.ok ? { ok: true, text: r.sentence } : { ok: false, text: r.why });
+                this.said(chain, r.ok ? { ok: true, text: r.sentence, say: r.say } : { ok: false, text: r.why, say: r.say });
                 return;
             }
             case 'now': {
                 const id = str(msg.batonId);
                 if (!chain || !id) { return; }
                 const r = this.deps.startNow(id);
-                this.said(chain, r.ok ? { ok: true, text: `The next leg of chain ${chain} goes through the door now.` } : { ok: false, text: r.why });
+                const s = saidSentence(say('The next leg of chain {chain} goes through the door now.', { chain }));
+                this.said(chain, r.ok ? { ok: true, text: s.sentence, say: s.say } : { ok: false, text: r.why, say: r.say });
                 return;
             }
             case 'ceiling': {

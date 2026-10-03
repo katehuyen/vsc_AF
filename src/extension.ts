@@ -362,7 +362,8 @@ import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable, read
 import { registryMatch, whoami } from './core/whoami';
 import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
-import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
+import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
+import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
 import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, LegClose, registerChainBoardOps } from './core/chainBoardOps';
@@ -30984,23 +30985,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         legs: chainId => chainLegLines(chainIndexNow(), chainId, batonStore.all(), chainBoardDeps.factsNow()),
         stop: chainId => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Chains page', Date.now(), batonBoard, cancelSuccessorRow).length,
-        lastLeg: (sid, on) => applyLastLeg({ store: batonStore }, sid, on, 'the user (Chains page)'),
+        lastLeg: (sid, on) => {
+            const r = applyLastLeg({ store: batonStore }, sid, on, 'the user (Chains page)');
+            return r.ok ? { ok: true, ...lastLegSaid(r.on, r.leg, r.chainId) } : r;
+        },
         startNow: id => {
             const b = batonStore.get(id);
-            if (!b || !isLive(b)) { return { ok: false, why: `that baton is no longer waiting — the chain has moved on.` }; }
+            if (!b || !isLive(b)) { return saidWhy('that baton is no longer waiting — the chain has moved on.'); }
             const r = batonRunner.startNow(b, 'the user (Chains page)');
             return r.ok ? { ok: true } : { ok: false, why: r.why };
         },
         ceiling: chainId => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n)),
         cont: q => {
             const r = continueOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
-            return r.ok ? { ok: true, text: r.sentence } : { ok: false, text: r.why };
+            return r.ok ? { ok: true, text: r.sentence, say: r.say } : { ok: false, text: r.why, say: r.say };
         },
         end: async q => {
             const r = await endOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
-            if (!r.ok) { return { ok: false, text: r.why }; }
-            const closed = r.session === 'closed' ? ' Its session was closed.' : r.session === 'kept' ? ' Its session was working and keeps running.' : '';
-            return { ok: true, text: r.sentence + closed };
+            if (!r.ok) { return { ok: false, text: r.why, say: r.say }; }
+            const closed = r.session === 'closed' ? [say('Its session was closed.')] : r.session === 'kept' ? [say('Its session was working and keeps running.')] : [];
+            return { ok: true, text: closed.length ? `${r.sentence} ${sayText(closed)}` : r.sentence, say: r.say && [...r.say, ...closed] };
         },
         onDidChange: chainsEmitter.event
     };

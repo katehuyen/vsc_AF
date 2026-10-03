@@ -130,6 +130,11 @@ const acts = id => row(id).acts;
     const th = tr.html();
     ok('in Türkçe: title, chips, columns, states and buttons', ['Zincirler', 'İlgi istiyor', 'Halka', 'Son hareket', 'çalışıyor', 'Devam ettir', 'Zinciri kapat'].every(s => th.includes(s))
         && !/>Needs attention|>Last move</.test(th));
+    tr.send({ type: 'done', chainId: 'chn_done', ok: true, text: 'Chain chn_done reopened: leg 4 opens on its own setup once session L3 has ended. Its session was closed.',
+        say: [{ key: 'Chain {chain} reopened: leg {leg} opens on its own setup once session {session} has ended.', vars: { chain: 'chn_done', leg: '4', session: 'L3' } },
+            { key: 'Its session was closed.', vars: {} }] });
+    ok('U-189: what a press came to is drawn from its parts in Türkçe', tr.html().includes('chn_done zinciri yeniden açıldı: L3 oturumu kapanınca 4. halka kendi kurulumuyla açılır. Oturumu kapatıldı.')
+        && !tr.html().includes('reopened'));
 }
 
 // ---------- the panel ----------
@@ -161,7 +166,8 @@ const acts = id => row(id).acts;
     const say = async m => { for (const f of inbox) { await f(m); } await new Promise(res => setImmediate(res)); };
     ok('the page loads its script, with the projects in its data', host.webview.html.includes('chains.js') && host.webview.html.includes('Agent Farm'));
     await say({ type: 'stop', chainId: 'chn_wait' });
-    ok('stop runs the stop body and says how many', calls.at(-1)[0] === 'stop' && out.some(m => m.type === 'done' && m.ok && /1 waiting baton/.test(m.text)));
+    ok('stop runs the stop body and says how many', calls.at(-1)[0] === 'stop' && out.some(m => m.type === 'done' && m.ok && /1 waiting baton/.test(m.text)
+        && m.say[0].key === 'Chain {chain} stopped — {n} waiting baton recorded as stopped; no further leg opens.' && m.say[0].vars.n === '1'));
     await say({ type: 'stop', chainId: 'chn_done' });
     ok('…and nothing left to stop is said as not done', out.at(-2).type === 'done' && out.at(-2).ok === false);
     await say({ type: 'lastLeg', chainId: 'chn_night', sessionId: 'n13', on: true });
