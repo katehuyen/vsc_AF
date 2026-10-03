@@ -3917,7 +3917,7 @@
                 // decorative. Public — it is an ordinary setting; the credential
                 // is not here and has no field to arrive in.
                 r.baseUrl ? 'Endpoint: ' + r.baseUrl : '',
-                r.authKind ? 'Auth: ' + r.authKind : '',
+                r.authKind ? 'Auth: ' + (r.authLabel || r.authKind) : '',
                 r.scopeNote ? '\n' + r.scopeNote : ''
             ]),
             'rtw');

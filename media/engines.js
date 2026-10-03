@@ -49,12 +49,9 @@
         const m = ev.data;
         if (m.type === 'data') { DATA = m.data; testing.clear(); repaint(); return; }
         if (m.type === 'eng-testing') { testing.add(m.id); draw(); return; }
-        if (m.type === 'prov-msg') {
-            provMsg = String(m.text || '');
-            if (m.saved === true) { clearBoxes(['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers', 'po-desc']); }
-            draw();
-            return;
-        }
+        // X-494 — the route form's own save is answered in its card; a copy or a remove here.
+        if (window.AFRouteForm.onMessage(m)) { draw(); return; }
+        if (m.type === 'prov-msg') { provMsg = String(m.text || ''); draw(); return; }
         if (m.type === 'acc-msg') {
             acctMsg = String(m.text || '');
             // An empty answer is an account write that went through (the
@@ -353,6 +350,9 @@
                 + 'its key is replaced. Never on a rename. A launch records the revision it ran on, so a '
                 + 'route edited afterwards cannot silently rewrite what a past session was served by.')
             + '<span class="grow"></span>'
+            + (window.AFRouteForm.editingId() === p.id ? '' : '<button class="secondary small" data-poedit="' + esc(p.id) + '" title="'
+                + esc(t('Change this route\'s label, provider, endpoint, key kind, tiers or note. The id and the key stay.')) + '">'
+                + esc(t('Edit')) + '</button>')
             + '<button class="secondary small" data-pokey="' + esc(p.id) + '" data-polabel="' + esc(p.label) + '" title="'
             + esc(t('Type a key for this route, or pick one you already keep in Farm Secrets.')) + '">'
             + esc(p.hasSecret || p.secretRef || p.keyHeldFor ? t('Change key') : t('Add key')) + '</button>'
@@ -366,7 +366,7 @@
             + (p.description ? '<div class="pobody small">' + esc(p.description) + '</div>' : '')
             + '<div class="pobody muted small">'
             + esc(p.providerId) + (p.baseUrl ? ' · ' + esc(p.baseUrl) : ' · first-party endpoint')
-            + (p.authKind ? ' · ' + esc(p.authKind) : '')
+            + (p.authKind ? ' · ' + esc(window.AFRouteForm.authLabel(p.authKind, DATA)) : '')
             + (tiers.length
                 ? ' · ' + tiers.map(t => esc(t) + ' → ' + esc(p.tiers[t])).join(', ')
                 : ' · the route\'s own defaults')
@@ -553,8 +553,17 @@
 
     function providersHtml() {
         const profiles = DATA.profiles || [];
+        const R = window.AFRouteForm;
+        // a push that no longer carries the route being edited closes its form
+        R.sync(profiles);
         return '<div class="posec">'
+            + '<div class="posech">'
             + '<h3 class="potitle">Providers</h3>'
+            + '<span class="grow"></span>'
+            + (R.isNew() ? '' : '<button class="small" data-ponew="1" title="'
+                + esc(t('A new Anthropic-compatible endpoint for Claude Code. Its key is added on its card afterwards.')) + '">'
+                + esc(t('+ Add route')) + '</button>')
+            + '</div>'
             + '<p class="englede">Which engine is the authority for which piece of provider data — and '
                 + 'the routes Agent Farm holds itself. <b>The split is the design, not an omission:</b> a '
                 + 'Claude route is something Agent Farm assembles and nobody else on this machine knows '
@@ -564,59 +573,15 @@
                 + '<b>No credential is on this page in either direction</b> — a route says only whether it '
                 + 'has one, and typing a key happens outside the page.</p>'
             + ownershipHtml()
-            + '<div class="poform">'
-            + field('po-id', 'id (kimi)', 'The permanent handle',
-                '2–40 lowercase letters, digits and hyphens. It is also the key the credential is stored '
-                + 'under, so no dot, no space, no slash — and it cannot be changed afterwards.')
-            + field('po-label', 'label (Kimi)', 'What a picker shows',
-                'Free to change at any time. Renaming does not bump the revision, because the revision is '
-                + 'a statement about the route rather than a count of edits.')
-            + field('po-provider', 'providerId (kimi)', 'Which provider this routes to',
-                'anthropic · anthropic-api · kimi · minimax, or one you name yourself.')
-            + field('po-url', 'https://api.moonshot.ai/anthropic', 'The Anthropic-compatible endpoint',
-                'Empty = first-party. Must be https, or http on this machine (localhost / 127.0.0.1): a '
-                + 'key sent over plain http to another host travels in clear, and that is refused rather '
-                + 'than warned about.')
-            + field('po-tiers', 'opus=kimi-k2-thinking, sonnet=kimi-k2',
-                'Which model each tier resolves to',
-                'Comma-separated tier=model pairs. Empty = the route\'s own defaults. Changing one bumps '
-                + 'the revision, because it changes what a session is actually served by.')
-            + field('po-desc', t('note (whose key, what for)'), t('Your own note'),
-                t('Shown on the route\'s card — which account the key belongs to, what the route is for. Never sent anywhere.'))
-            + '<button class="small" id="po-add">Add route</button>'
-            + '</div>'
+            + (R.isNew() ? R.html(DATA) : '')
             + '<div class="pomsg" id="po-msg">' + esc(provMsg) + '</div>'
+            // X-494 — a route's form opens under that route's card (docs/CONVENTIONS.md, one row)
             + (profiles.length
-                ? profiles.map(profileHtml).join('')
+                ? profiles.map(p => profileHtml(p) + (R.editingId() === p.id ? R.html(DATA) : '')).join('')
                 : '<div class="muted small">No routes yet. Claude Code runs first-party without one; '
                 + 'a route is how you point it at an Anthropic-compatible endpoint instead.</div>')
             + healthHtml()
             + '</div>';
-    }
-
-    /**
-     * One box of the form, with its explanation on an AFTip rather than in a
-     * label beside it. A placeholder is a shape, not a rule — "id (kimi)" cannot
-     * say that the id is permanent because a credential is filed under it, and
-     * that is exactly the sentence somebody needs BEFORE they type, not in the
-     * refusal afterwards.
-     */
-    function field(id, placeholder, head, body) {
-        return window.AFTip.wrap(
-            '<input id="' + esc(id) + '" placeholder="' + esc(placeholder) + '">', head, body, 'pofield');
-    }
-
-    /** `opus=a, sonnet=b` → an object. A pair with no `=` is dropped rather than
-     *  guessed at: a tier nobody named is not a tier. */
-    function parseTiers(text) {
-        const out = {};
-        for (const part of String(text || '').split(',')) {
-            const at = part.indexOf('=');
-            if (at < 1) { continue; }
-            const tier = part.slice(0, at).trim(), model = part.slice(at + 1).trim();
-            if (tier && model) { out[tier] = model; }
-        }
-        return out;
     }
 
     function render() {
@@ -781,22 +746,17 @@
         document.querySelectorAll('[data-engdocs]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'engineDocs', url: b.dataset.engdocs })));
         /* ---- X-100 — the routes. Every button hands over an ID, never a value. */
-        const val = (id) => (document.getElementById(id) || {}).value || '';
-        const add = document.getElementById('po-add');
-        if (add) {
-            add.addEventListener('click', () => post({
-                type: 'providerSave',
-                // ‼️ A FORM, NOT A RECORD. What the host stores goes through
-                // `storedProfile`'s allow-list, so nothing this page can put in
-                // the message survives except the fields named there — which is
-                // why the page is allowed to be the naive side of this wall.
-                profile: {
-                    id: val('po-id'), label: val('po-label'), engine: 'claude',
-                    providerId: val('po-provider'), baseUrl: val('po-url'),
-                    tiers: parseTiers(val('po-tiers')), description: val('po-desc')
-                }
+        // X-494 — one form, two doors. What the host stores still goes through
+        // `storedProfile`'s allow-list, so the page may be the naive side of that wall.
+        const R = window.AFRouteForm;
+        document.querySelectorAll('[data-ponew]').forEach(b =>
+            b.addEventListener('click', () => { R.open(null, DATA); draw(); }));
+        document.querySelectorAll('[data-poedit]').forEach(b =>
+            b.addEventListener('click', () => {
+                R.open((DATA.profiles || []).find(p => p.id === b.dataset.poedit), DATA);
+                draw();
             }));
-        }
+        R.wire(post, () => draw());
         window.AFAccounts.wire(accountsCtx());
         document.querySelectorAll('[data-pokey]').forEach(b =>
             b.addEventListener('click', () => post({

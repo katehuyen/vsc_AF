@@ -42,6 +42,7 @@ import { LaunchChoice } from './launch';
 import { ProviderAdapter, ProviderSelection } from './providerAdapter';
 import { CatalogModelRow, ProviderCatalogRead } from './providerCatalog';
 import { ProviderScope } from './providerIdentity';
+import { authKindLabel } from './routeAuth';
 
 /** What a person has picked on the provider axis so far. */
 export interface ProviderPick {
@@ -174,9 +175,10 @@ function runnableProviders(adapter: ProviderAdapter, cat: ProviderCatalogRead): 
         if (!id) { continue; }
         if (!adapter.normalizeSelection({ engine: adapter.engine, providerId: id })) { continue; }
         const bits: string[] = [];
+        if (p.note) { bits.push(p.note); }
         if (p.route?.baseUrl) { bits.push(p.route.baseUrl); }
         else if (p.route) { bits.push("the engine's own endpoint"); }
-        if (p.route?.authKind) { bits.push(p.route.authKind); }
+        if (p.route?.authKind) { bits.push(authKindLabel(p.route.authKind)); }
         const models = (p.models || []).filter(Boolean);
         if (models.length) { bits.push(`${models.length} model${models.length === 1 ? '' : 's'}`); }
         out.push({ id, label: p.providerLabel || id, detail: bits.join(' · ') || id });

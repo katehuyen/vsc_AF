@@ -77,6 +77,9 @@ const contract = (engine, gaps, repairs, promotions) => {
  * (`rules`) are the scene's own, because those are the objects the form makes.
  */
 const { BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, resolvePolicy } = require('../../out/core/accountPolicy.js');
+// X-494 — the route form's vocabulary, from the code the host sends it from
+const { ROUTE_AUTH_KINDS } = require('../../out/core/routeAuth.js');
+const { ROUTE_TIERS } = require('../../out/core/routeModels.js');
 const policiesFor = (accounts, rules) => {
     const engines = [...new Set(accounts.map(a => a.engine))];
     const usage = accounts.map(a => ({
@@ -476,6 +479,7 @@ const data = () => {
         // ‼️ AND BOTH KEY STATES, side by side: a route that can run and one
         // that cannot yet. "no key" is the step you are ON, not a failure, and
         // it has to be possible to see that the two are not drawn as verdicts.
+        routeForm: { authKinds: ROUTE_AUTH_KINDS, tiers: ROUTE_TIERS },
         profiles: [
             {
                 id: 'kimi', label: 'Kimi (Moonshot)', engine: 'claude', providerId: 'kimi',
@@ -492,7 +496,7 @@ const data = () => {
             {
                 id: 'openrouter-r1', label: 'OpenRouter R1', engine: 'claude', providerId: 'openrouter',
                 baseUrl: 'https://openrouter.ai/api', authKind: 'oauth',
-                tiers: { opus: 'deepseek/deepseek-r1' }, revision: 4, hasSecret: true,
+                tiers: { opus: 'deepseek/deepseek-r1', reasoner: 'deepseek/deepseek-r1-0528' }, revision: 4, hasSecret: true,
                 description: 'Ahmet\'s OpenRouter account — night experiments',
                 secretRef: 'OpenRouter-ahmetseymen4444', keyHint: 'sk-or-…4444'
             },
@@ -916,6 +920,16 @@ module.exports = {
         { id: 'enginesautooff', label: 'Engines panel — the background quota beat switched OFF (X-241)', data: autoOffData() },
         { id: 'enginesonerule', label: 'Engines panel — one account rule of the user\'s own', data: oneRuleData() },
         { id: 'enginesrules', label: 'Engines panel — four rules: a chain, a walled one, one stepping through another, an emptiest one over three slots', data: rulesData() },
+        {
+            id: 'enginesrouteedit', label: 'Engines panel — Edit on openrouter-r1: its form under its card, bearer key, a tier outside the four (X-494)',
+            data: data(),
+            act: (r) => { r.query('[data-poedit="openrouter-r1"]')[0].click(); }
+        },
+        {
+            id: 'enginesroutenew', label: 'Engines panel — + Add route: the empty form at the top of Providers (X-494)',
+            data: data(),
+            act: (r) => { r.query('[data-ponew]')[0].click(); }
+        },
         {
             id: 'enginesruleform', label: 'Engines panel — the rule form open on @Gece_Nobeti, a step open in the nested editor',
             data: rulesData(),

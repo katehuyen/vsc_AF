@@ -94,6 +94,8 @@ const SHARED = [
     // Engines page verbatim so the Accounts page draws the same section.
     // Loaded after afAccounts.js, whose section frame it borrows.
     'afPolicies.js',
+    // afRouteForm.js — the route form (X-494): a new route and a route's Edit, one form on AFForm.
+    'afRouteForm.js',
     // afTelegram.js was the sixteenth — the Telegram bridge card (U-84).
     // Shared the moment the item asked for it in two places: the fact it draws
     // is "can your phone reach the farm", and a card invented per page is a

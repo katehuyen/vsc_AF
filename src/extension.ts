@@ -219,6 +219,7 @@ import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, publicProfile, se
 import { ProviderKeys } from './core/providerKeys';
 import { keyHint, keyPickItems, routeKeyFor } from './core/routeKey';
 import { routedModel } from './core/routeModels';
+import { authKindLabel } from './core/routeAuth';
 import {
     describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
     ProviderTransport, pruneProviderPick
@@ -24321,7 +24322,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             noun: form.noun,
             ...((tier ?? '').trim() ? { tier } : {}),
             ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
-            ...(profile?.authKind ? { authKind: profile.authKind } : {}),
+            ...(profile?.authKind ? { authKind: profile.authKind, authLabel: authKindLabel(profile.authKind) } : {}),
             scopeNote: form.scopeNote
         };
     };
@@ -24552,11 +24553,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         savePolicy: async (rule: AccountPolicy): Promise<string> => (await savePolicy(rule)).refusal,
         deletePolicy: async (name: string): Promise<string> => (await deletePolicy(name)).refusal,
         ownership: () => ownershipTable(),
-        saveProfile: async (input: Record<string, unknown>): Promise<string[]> => {
+        saveProfile: async (input: Record<string, unknown>, edit: boolean): Promise<string[]> => {
             const list = providerProfiles();
             const id = String(input.id ?? '').trim().toLowerCase();
             const engines = Object.keys(ENGINES);
-            const w = list.some(p => p.id === id)
+            // X-494 — a NEW route naming an id that exists is refused, never turned into an overwrite.
+            const w = edit
                 ? setProfile(list, id, input, engines)
                 : addProfile(list, input, engines);
             if (w.refusal.length) { return w.refusal; }

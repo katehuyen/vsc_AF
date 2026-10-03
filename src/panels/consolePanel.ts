@@ -133,6 +133,8 @@ export interface ConsoleRoute {
     /** where it points. Public, and the one line that makes the mark checkable */
     baseUrl?: string;
     authKind?: string;
+    /** X-494 — the header that kind becomes, as a person reads it (`oauth` → Bearer token) */
+    authLabel?: string;
     /** how long the pick lasts, in the adapter's own words */
     scopeNote: string;
     /**

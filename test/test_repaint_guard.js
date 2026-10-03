@@ -367,8 +367,12 @@ const AFRepaint = sandbox.window.AFRepaint;
         /const draw = window\.AFRepaint\.keeping\(render\);\s*const repaint = window\.AFRepaint\.guard\(draw\);/.test(src));
     ok('…every answer redraws through it too, never a bare render',
         !/m\.type === '(eng-testing|prov-msg|acc-msg|eng-msg)'[^\n]*\brender\(\)/.test(src) && /AFPolicies\.onMessage\(m\)\) \{ draw\(\);/.test(src));
-    ok('a saved route empties the route form, and only a saved one',
-        /if \(m\.saved === true\) \{ clearBoxes\(\['po-id', 'po-label', 'po-provider', 'po-url', 'po-tiers', 'po-desc'\]\); \}/.test(src));
+    // X-494 — the route form keeps its draft in media/afRouteForm.js; its save's answer is its own.
+    const routeForm = fs.readFileSync(path.join(ROOT, 'media', 'afRouteForm.js'), 'utf8');
+    ok('a saved route closes the route form, and only a saved one',
+        /if \(window\.AFRouteForm\.onMessage\(m\)\) \{ draw\(\); return; \}/.test(src)
+        && /if \(m\.saved === true\) \{ close\(\); \}/.test(routeForm)
+        && /m\.type !== 'prov-msg' \|\| !pending/.test(routeForm));
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'enginesPanel.ts'), 'utf8');
     ok('the host says saved only for the route form\'s own save',
         /saveProfile\([\s\S]{0,160}\), true\);/.test(panel) && /\.\.\.\(saved \? \{ saved: true \} : \{\}\)/.test(panel)

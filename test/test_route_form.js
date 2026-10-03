@@ -1,0 +1,162 @@
+'use strict';
+// X-494 — the route form: one form for "+ Add route" and a route's Edit.
+//
+// The defect it closes: the form posted every box and the host turned a known
+// id into an overwrite, so "Add route" with an existing id wiped the endpoint,
+// the tiers and the note it never showed. Now the page says which door it came
+// through and the host never upgrades a NEW route into an edit.
+const fs = require('fs');
+const path = require('path');
+const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
+
+let pass = 0, fail = 0;
+const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+const ROOT = path.join(__dirname, '..');
+
+const fixture = require(path.join(__dirname, 'fixtures', 'enginespanel.js'));
+const DATA = fixture.data();
+const setBox = (r, key, value) => {
+    const el = r.query('[data-af="' + key + '"]')[0];
+    el.value = value;
+    el.fire(el.tagName === 'SELECT' ? 'change' : 'input');
+};
+const formOf = (h) => {
+    const at = h.indexOf('id="poform"');
+    return at < 0 ? '' : h.slice(at, h.indexOf('data-afact="submit"', at) + 200);
+};
+
+{
+    const r = runPage('engines.js', DATA);
+    const h = r.html();
+    ok('closed by default: no form, "+ Add route" on the section head', !/id="poform"/.test(h) && /data-ponew="1"/.test(h));
+    ok('every route card has its Edit', (h.match(/data-poedit="/g) || []).length === DATA.profiles.length);
+    ok('the card reads oauth as the header it becomes', /openrouter\.ai\/api · Bearer token/.test(h) && !/ · oauth/.test(h));
+    ok('…and api-key as API key', /api\.moonshot\.ai\/anthropic · API key/.test(h));
+}
+
+{
+    const r = runPage('engines.js', DATA);
+    r.query('[data-poedit="openrouter-r1"]')[0].click();
+    const h = r.html();
+    const f = formOf(h);
+    ok('Edit opens the form', /Edit OpenRouter R1/.test(f));
+    ok('…under that route\'s card, not at the top', h.indexOf('data-pokey="openrouter-r1"') < h.indexOf('id="poform"')
+        && h.indexOf('id="poform"') < h.indexOf('data-pokey="groq"'));
+    ok('…its own Edit button is gone while it is open', !/data-poedit="openrouter-r1"/.test(h));
+    ok('the id is shown, not offered for typing', !/data-af="id"/.test(f) && /affstat">openrouter-r1</.test(f));
+    ok('every box is filled with what is stored', /data-af="label"[^>]*value="OpenRouter R1"/.test(f)
+        && /data-af="providerId"[^>]*value="openrouter"/.test(f)
+        && /data-af="baseUrl"[^>]*value="https:\/\/openrouter\.ai\/api"/.test(f)
+        && /data-af="description"[^>]*value="Ahmet&#39;s OpenRouter account/.test(f));
+    ok('one box per CLI tier, the mapped one filled', /data-af="tier_opus"[^>]*value="deepseek\/deepseek-r1"/.test(f)
+        && /data-af="tier_sonnet"[^>]*value=""/.test(f) && /data-af="tier_haiku"/.test(f) && /data-af="tier_fable"/.test(f));
+    ok('a tier outside the four rides in Other tiers', /data-af="more"[^>]*value="reasoner=deepseek\/deepseek-r1-0528"/.test(f));
+    ok('the key kind is a picker on the stored value, with words for both kinds',
+        /<option value="oauth"[^>]*selected[^>]*>Bearer token</.test(f) && /<option value="api-key"[^>]*>API key</.test(f));
+    ok('…and every option says what it means', /title="[^"]*Authorization: Bearer/.test(f) && /title="[^"]*x-api-key/.test(f));
+
+    setBox(r, 'tier_sonnet', 'deepseek/deepseek-chat');
+    setBox(r, 'tier_opus', '');
+    setBox(r, 'authKind', 'api-key');
+    r.query('[data-afact="submit"]')[0].click();
+    const m = r.last();
+    ok('Save posts an EDIT of that id', m.type === 'providerSave' && m.mode === 'edit' && m.profile.id === 'openrouter-r1');
+    ok('…every field the form showed, so an emptied box is a deliberate clear',
+        m.profile.baseUrl === 'https://openrouter.ai/api' && m.profile.description.startsWith('Ahmet')
+        && JSON.stringify(m.profile.tiers) === JSON.stringify({ reasoner: 'deepseek/deepseek-r1-0528', sonnet: 'deepseek/deepseek-chat' })
+        && m.profile.authKind === 'api-key');
+
+    r.send({ type: 'prov-msg', text: 'base URL must be https' });
+    const refused = r.html();
+    ok('a refusal is shown in the form, which stays open with the draft', /id="poform"/.test(refused)
+        && /affmsg warn">base URL must be https</.test(refused) && /data-af="tier_sonnet"[^>]*value="deepseek\/deepseek-chat"/.test(refused));
+    ok('…and not in the section\'s own line', /id="po-msg"><\/div>/.test(refused));
+
+    r.query('[data-afact="submit"]')[0].click();
+    r.send({ type: 'prov-msg', text: '', saved: true });
+    ok('a saved edit closes the form', !/id="poform"/.test(r.html()));
+
+    r.send({ type: 'prov-msg', text: 'no profile with the id "x"' });
+    ok('an answer the form did not ask for (a copy, a remove) lands in the section line', /id="po-msg">no profile/.test(r.html()));
+}
+
+{
+    const r = runPage('engines.js', DATA);
+    r.query('[data-ponew]')[0].click();
+    const h = r.html();
+    ok('+ Add route opens the empty form at the top', /New route/.test(h) && h.indexOf('id="poform"') < h.indexOf('class="pocard"'));
+    ok('…with the id to type and API key as the kind', /data-af="id"/.test(h) && /<option value="api-key"[^>]*selected/.test(h));
+    ok('…and the head button hides while it is open', !/data-ponew="1"/.test(h));
+    setBox(r, 'id', 'kimi');
+    setBox(r, 'providerId', 'kimi');
+    r.query('[data-afact="submit"]')[0].click();
+    ok('a NEW route is posted as new — the host refuses an id that exists instead of overwriting it',
+        r.last().mode === 'new' && r.last().profile.id === 'kimi');
+    r.query('[data-afact="cancel"]')[0].click();
+    ok('Cancel closes it', !/id="poform"/.test(r.html()));
+}
+
+{
+    // A route written by hand with no kind — or one this build has no words for — keeps it on Save.
+    const d = fixture.data();
+    d.profiles = [Object.assign({}, d.profiles[1], { authKind: undefined }), Object.assign({}, d.profiles[0], { id: 'k2', authKind: 'subscription' })];
+    const r = runPage('engines.js', d);
+    r.query('[data-poedit="minimax"]')[0].click();
+    ok('an unstated kind is drawn as itself, not as the first row', /<option value=""[^>]*selected[^>]*>not stated</.test(r.html()));
+    r.query('[data-afact="submit"]')[0].click();
+    ok('…and saved unchanged', r.last().profile.authKind === '');
+    r.query('[data-poedit="k2"]')[0].click();
+    ok('a kind with no words here is offered as written', /<option value="subscription"[^>]*selected/.test(r.html()));
+}
+
+{
+    const r = runPage('engines.js', DATA);
+    r.query('[data-poedit="groq"]')[0].click();
+    const d = fixture.data();
+    d.profiles = d.profiles.filter(p => p.id !== 'groq');
+    r.send({ type: 'data', data: d });
+    ok('a push that no longer carries the route being edited closes its form', !/id="poform"/.test(r.html()));
+}
+
+{
+    // The host half: a new route never becomes an edit, whatever id it names.
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'enginesPanel.ts'), 'utf8');
+    ok('the host picks add or set by the door, not by whether the id exists',
+        /const w = edit\s*\? setProfile\(list, id, input, engines\)\s*: addProfile\(list, input, engines\);/.test(ext)
+        && !/list\.some\(p => p\.id === id\)\s*\? setProfile/.test(ext));
+    ok('…and the panel hands it the door', /msg\.mode === 'edit'\), true\);/.test(panel));
+    const P = require(path.join(ROOT, 'out', 'core', 'providerProfiles.js'));
+    const list = [P.storedProfile({ id: 'kimi', providerId: 'kimi', baseUrl: 'https://api.moonshot.ai/anthropic', tiers: { opus: 'k2' } })];
+    const again = P.addProfile(list, { id: 'kimi', providerId: 'kimi' }, ['claude']);
+    ok('addProfile refuses an id that exists and points at Edit', again.refusal.some(x => /already exists/.test(x) && /Edit on its card/.test(x))
+        && again.list === list);
+}
+
+{
+    // The note and the readable kind reach the launch pickers.
+    const { profilesAsRoutes } = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
+    const { readClaudeRouteCatalog } = require(path.join(ROOT, 'out', 'core', 'providerCatalog.js'));
+    const { authKindLabel } = require(path.join(ROOT, 'out', 'core', 'routeAuth.js'));
+    const cat = readClaudeRouteCatalog(profilesAsRoutes([{
+        id: 'or', label: 'OpenRouter', engine: 'claude', providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
+        authKind: 'oauth', tiers: { opus: 'x/y' }, revision: 1, description: 'night experiments'
+    }]));
+    const row = cat.providers.find(p => p.providerId === 'or');
+    ok('a profile\'s note travels into the catalog row', row && row.note === 'night experiments');
+    ok('authKindLabel: oauth → Bearer token, api-key → API key, an unknown kind as written',
+        authKindLabel('oauth') === 'Bearer token' && authKindLabel('api-key') === 'API key' && authKindLabel('subscription') === 'subscription');
+    const G = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
+    const F = require(path.join(ROOT, 'out', 'core', 'launchProvider.js'));
+    const adapter = G.adapterFor('claude', {
+        profiles: [{ id: 'or', label: 'OpenRouter', engine: 'claude', providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
+            authKind: 'oauth', tiers: { opus: 'x/y' }, revision: 1, description: 'night experiments' }],
+        secretFor: () => 'sk-test', inheritedEnv: {}
+    });
+    const choice = F.launchProviderForm(adapter).providers.find(c => c.id === 'or');
+    ok('the launch picker row leads with the note and reads the kind (got ' + (choice && choice.detail) + ')',
+        !!choice && choice.detail === 'night experiments · https://openrouter.ai/api · Bearer token · 1 model');
+}
+
+console.log(`test_route_form: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -7,6 +7,8 @@ import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
 import { ProviderHealthReport, ProviderTestRecord } from '../core/providerHealth';
 import { OwnershipRow, PublicProviderProfile } from '../core/providerOwnership';
+import { ROUTE_AUTH_KINDS } from '../core/routeAuth';
+import { ROUTE_TIERS } from '../core/routeModels';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -278,7 +280,8 @@ export interface EnginesPanelDeps {
      *  and it is only met if a person can SEE it */
     ownership(): OwnershipRow[];
     /** every write answers with its refusals, or an empty list */
-    saveProfile(input: Record<string, unknown>): Promise<string[]>;
+    /** `edit` = the form was opened on that route; a new one never overwrites an id that exists. */
+    saveProfile(input: Record<string, unknown>, edit: boolean): Promise<string[]>;
     removeProfile(id: string): Promise<string[]>;
     copyProfile(id: string): Promise<string[]>;
     profileKey(id: string, label: string): void;
@@ -306,6 +309,8 @@ function buildData(
          * "this route has no key yet", which is the only thing a reader needs.
          */
         profiles: deps.profiles(),
+        // X-494 — the route form's vocabulary, from the code that acts on it
+        routeForm: { authKinds: ROUTE_AUTH_KINDS, tiers: ROUTE_TIERS },
         // ‼️ X-172 — the sign-ins, for the chip on each engine's own card. The
         // empty list is the ordinary answer on a machine that has captured
         // none, and nothing is drawn for it.
@@ -478,7 +483,7 @@ export class EnginesPanel {
                 // dropped rather than stored.
                 await this.write(await this.deps.saveProfile(
                     (msg.profile && typeof msg.profile === 'object'
-                        ? msg.profile : {}) as Record<string, unknown>), true);
+                        ? msg.profile : {}) as Record<string, unknown>, msg.mode === 'edit'), true);
                 break;
             case 'providerRemove':
                 await this.write(await this.deps.removeProfile(String(msg.id ?? '')));

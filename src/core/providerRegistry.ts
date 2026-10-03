@@ -88,6 +88,7 @@ export function profilesAsRoutes(profiles: readonly StoredProviderProfile[]): Cl
             providerLabel: p.label || p.id,
             ...(p.baseUrl ? { baseUrl: p.baseUrl } : {}),
             ...(p.authKind ? { authKind: p.authKind } : {}),
+            ...(p.description ? { note: p.description } : {}),
             tiers: { ...p.tiers },
             // A route somebody had to describe by hand is not first-party. The
             // one exception is the route that points at nothing: with no base

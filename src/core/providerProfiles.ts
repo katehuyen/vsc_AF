@@ -139,7 +139,7 @@ export function profileRefusal(
     if (!PROFILE_ID.test(p.id)) { out.push(PROFILE_ID_REFUSAL); }
     if (opts.takenIds?.includes(p.id)) {
         out.push(`a profile with the id "${p.id}" already exists — ids are permanent because the `
-            + 'credential is filed under one; rename the label instead, or copy it to a new id.');
+            + 'credential is filed under one; change it with Edit on its card (providers.set), or copy it to a new id.');
     }
     if (opts.engines?.length && !opts.engines.includes(p.engine)) {
         out.push(`engine "${p.engine}" is not one of: ${opts.engines.join(', ')}`);

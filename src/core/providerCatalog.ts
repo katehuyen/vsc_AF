@@ -72,6 +72,8 @@ export interface ClaudeRouteTemplate {
     tiers: Record<string, string>;
     /** Where a person reads about this route, when it is not first-party. */
     docs?: string;
+    /** X-494 — the owner's own note, from the profile this route was built from. */
+    note?: string;
     /** ‼️ Is this route's own cost figure a real bill? On a third-party
      *  Anthropic-compatible endpoint Claude still writes an Anthropic-priced
      *  `total_cost_usd` and `modelUsage.provider: "firstParty"` — measured — so
@@ -360,6 +362,7 @@ export interface ClaudeRouteInput {
     tier?: string;
     tiers?: Record<string, string>;
     docs?: string;
+    note?: string;
     engineCostIsAuthoritative?: boolean;
     [k: string]: unknown;
 }
@@ -391,6 +394,7 @@ export function readClaudeRouteCatalog(userRoutes?: ClaudeRouteInput[]): Provide
             route,
             tiers,
             ...(str(raw.docs) ? { docs: str(raw.docs) } : {}),
+            ...(str(raw.note) ? { note: str(raw.note) } : {}),
             // An unstated answer is the cautious one: a route somebody had to
             // describe by hand is not first-party.
             engineCostIsAuthoritative: raw.engineCostIsAuthoritative === true
@@ -403,7 +407,8 @@ export function readClaudeRouteCatalog(userRoutes?: ClaudeRouteInput[]): Provide
             providerId: t.providerId,
             providerLabel: t.providerLabel,
             models: Object.values(t.tiers),
-            route: t.route
+            route: t.route,
+            ...(t.note ? { note: t.note } : {})
         })),
         source: 'agent-farm-profile',
         rows: [],

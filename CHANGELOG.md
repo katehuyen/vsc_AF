@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.812.0 - Edit a route in place (2026-10-04)
+
+- **Edit a route from its card.** Engines ▸ Providers: each route has an
+  Edit button that opens its form right under the card, filled with what is
+  stored. Change the label, provider, endpoint, key kind, tiers or note; the
+  id and the key stay.
+- **Adding a route can no longer overwrite one.** "+ Add route" opens an
+  empty form. Typing an id that already exists is refused with a pointer to
+  that route's Edit, instead of silently replacing its endpoint, tiers and
+  note with empty boxes.
+- **Choose how the key is sent.** A "Key sent as" box offers API key
+  (x-api-key header) or Bearer token (Authorization header, what OpenRouter
+  and most gateways take). Cards and session hovers now say "Bearer token"
+  instead of the raw `oauth`.
+- **One box per tier.** opus, sonnet, haiku and fable each get their own box;
+  any other tier goes in "Other tiers" as name=model.
+- **The route's note shows in the pickers.** When you start a session, the
+  route list shows each route's note first, so two routes to the same
+  provider are easy to tell apart.
+
 ## 3.811.0 - A route gets a model it can serve (2026-10-03)
 
 - **Picking an Anthropic model on a route no longer breaks the session.**

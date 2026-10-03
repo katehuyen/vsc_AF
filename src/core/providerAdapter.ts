@@ -62,6 +62,8 @@ export interface ProviderCatalogEntry {
     /** Reasoning variants, only where the engine really offers them. */
     variants?: string[];
     route?: RedactedRoute;
+    /** X-494 — the owner's own note on a route (whose key, what for), shown under it in every picker. */
+    note?: string;
 }
 
 export interface ProviderCatalog {

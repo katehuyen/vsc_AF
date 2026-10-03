@@ -13,6 +13,9 @@ const TIER_ENV: Record<string, string> = {
     fable: 'ANTHROPIC_DEFAULT_FABLE_MODEL'
 };
 
+/** The tiers the CLI has an alias for — the boxes a route form offers one each. */
+export const ROUTE_TIERS: readonly string[] = Object.keys(TIER_ENV);
+
 export function routeModelEnv(tiers: Record<string, string> | undefined): Record<string, string> {
     const out: Record<string, string> = {};
     for (const [name, model] of Object.entries(tiers ?? {})) {
