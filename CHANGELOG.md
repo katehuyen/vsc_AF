@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.801.0 - Needs You and the Now page's waiting rows speak your language (2026-10-03)
+
+- **Needs You in Turkish.** With the interface language set to Turkish (or
+  VS Code's display language when it is on `auto`), the Needs You page is
+  drawn in it: its heading, the kind tags, the toolbar, the row buttons
+  (Allow, Reject, Resume, …) and the sentences Agent Farm writes about each
+  waiting item — "developer is waiting for permission", "the engine is still
+  down", "cut at step 3 …". The bridge and the agents keep reading the same
+  English text as before.
+- **The Now page follows.** Its "Waiting for you" rows and each notice's
+  type (update, report, result, …) are drawn in the interface language too.
+- Hover text that counts characters is translated on every page.
+
 ## 3.800.0 - The Chains page: every relay chain, its legs and its controls (2026-10-03)
 
 - **A page for your relay chains.** "Agent Farm: Open Chains" shows every
