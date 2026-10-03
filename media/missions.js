@@ -6,6 +6,7 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     let DATA = window.__DATA__;
 
     let formOpen = !!DATA.newForm;
@@ -462,6 +463,13 @@
     const routeNoun = (engine) => String((routesFor(engine) || {}).noun || 'Route');
     const tiersOf = (engine, providerId) =>
         ((routeRowsFor(engine).find(p => p.id === (providerId || '')) || {}).tiers || []);
+    /** X-493 — why a member's route decides its model ('' where the Model box still means something). */
+    const routeModelSays = (engine, providerId) => {
+        const row = providerId ? routeRowsFor(engine).find(p => p.id === providerId) : null;
+        if (!row) { return ''; }
+        return row.modelByRoute
+            || ((row.tiers || []).length ? t('This route maps tiers, so the tier on this row decides the model.') : '');
+    };
     /**
      * ‼️ U-97 — MODEL IS A SELECT HERE, NOT FREE TEXT OVER A DATALIST.
      *
@@ -1105,7 +1113,11 @@
                         + ' through this agent\'s own default for the engine it lands on and then the fleet\'s.'
                         + ' Changing it re-reads that engine\'s models and efforts into the two boxes on this row.'))}"
                     ${inRow ? '' : 'disabled'}>${engineOpts(form.engines[a.id] || '', '— inherit —')}</select>
-                <select id="md-${i}" class="mdl${ovr(form.models[a.id])}" data-model="${C.esc(a.id)}"
+                ${/* X-493 — on a route that decides the model (tiers, or its own base URL) the cell says so; the
+                     draft model stays on the form, and the spawn sends none over a picked tier (routedModel). */''}
+                ${routeModelSays(eng, form.routes[a.id])
+                    ? `<span class="tmnone" data-axis="model" title="${C.esc(routeModelSays(eng, form.routes[a.id]))}">—</span>`
+                    : `<select id="md-${i}" class="mdl${ovr(form.models[a.id])}" data-model="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'model',
                         (modelKnown(eng, form.models[a.id] || '') ? ''
                             : '⚠ ' + engLabel + ' does not publish this model. It was kept because it was already'
@@ -1113,7 +1125,7 @@
                         + 'Model for this member\'s delegations. The list is ' + engLabel + '\'s own catalog as this'
                         + ' window last read it; change the engine beside it and a model that catalog does not carry'
                         + ' is dropped rather than launched.'))}"
-                    ${inRow ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>
+                    ${inRow ? '' : 'disabled'}>${modelOptsFor(eng, form.models[a.id] || '')}</select>`}
                 <select id="ef-${i}" class="mdl${ovr(form.efforts[a.id])}" data-effort="${C.esc(a.id)}"
                     title="${C.esc(noEffort
                         ? engLabel + ' has no effort setting — this member runs at whatever that CLI thinks is normal, and a launch given an effort here would be refused.'
@@ -1273,13 +1285,16 @@
                     + ' that cannot do what it looks like it does.\n\nA DELEGATION is a separate axis and can'
                     + ' be on any engine — each member row says which.')}">Planner engine
                     <span class="fixedval">Claude Code <span class="muted small">· fixed</span></span></label>
-                <label>Model override
+                ${routeModelSays('claude', form.plannerProviderId)
+                    ? `<label class="fixedfield" title="${C.esc(routeModelSays('claude', form.plannerProviderId))}">${C.esc(t('Model override'))}
+                    <span class="fixedval">${C.esc(t('set by the route'))}</span></label>`
+                    : `<label>${C.esc(t('Model override'))}
                     <select id="f-planner" title="${C.esc(plannerMirror('model',
                         'Model for the LEAD\'s planning calls only; a delegate keeps its own. The planner always'
                         + ' runs on Claude Code, so this list is Claude\'s catalog.'
                         + '\n\nLeft empty this is not "the default" — it is whatever that agent\'s own Claude'
                         + ' settings resolve to, and if nothing does, the CLI\'s own choice.'))}"
-                        >${modelOptsFor('claude', form.plannerModel, '— ' + plannerValue('model', 'CLI chooses') + ' —')}</select></label>
+                        >${modelOptsFor('claude', form.plannerModel, '— ' + plannerValue('model', 'CLI chooses') + ' —')}</select></label>`}
                 <label>Effort override
                     <select id="f-planner-effort" title="${C.esc(plannerMirror('effort',
                         'How hard the orchestrator thinks per planning turn. Mission-wide and planner-only: a'

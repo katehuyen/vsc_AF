@@ -4141,6 +4141,10 @@
         return !!(routeAxisOn() && f.sub && f.sub.kind === 'tier'
             && (f.sub.choices || []).some(c => c.id));
     }
+    /** X-493 — the picked route has its own base URL, so it decides the model and no Anthropic Model box is drawn. */
+    function modelByRouteOn() {
+        return routeAxisOn() && !!composerForm().modelByRoute;
+    }
     /**
      * ‼️ X-105 — ON AN ENGINE WHOSE SUB-AXIS IS THE MODEL, THE MODEL BOX IS
      * THAT AXIS — so the route narrows the box that is already there instead of
@@ -4437,6 +4441,7 @@
                 + 'process really talks to, which the engine badge does not say. Default leaves '
                 + 'this window\'s own environment alone.',
                 f.scopeNote || '',
+                tierAxisOn() ? '' : (f.modelByRoute || ''),
                 f.variantsWhy || '',
                 f.empty || '',
                 // ‼️ X-113 - the adapter\'s own refusal, where the pick is made.
@@ -4788,7 +4793,7 @@
                 ${engineHintHtml(engineNow())}
                 ${routeBoxesHtml()}
                 ${accountBoxHtml()}
-                ${tierAxisOn() ? '' : axisBox({
+                ${tierAxisOn() || modelByRouteOn() ? '' : axisBox({
                     axis: 'Model', id: 'c-model', cur: intent().model,
                     list: withCurrent(composerModels(engineNow()), intent().model),
                     standard: window.AFTip.lines([

@@ -40,7 +40,8 @@ const AXES = [
     { name: 'agent', re: /<input type="checkbox" id="tm-/ },
     { name: 'role', re: /id="rl-/ },
     { name: 'engine', re: /id="en-/ },
-    { name: 'model', re: /id="md-/ },
+    // X-493 — on a route that decides the model the cell is a placeholder naming its axis
+    { name: 'model', re: /id="md-|data-axis="model"/ },
     { name: 'effort', re: /id="ef-/ },
     { name: 'permissions', re: /id="pm-/ },
     { name: 'account', re: /id="ac-|data-axis="account"/ },
@@ -78,7 +79,7 @@ function teamRows(html) {
     return out;
 }
 
-let rowsSeen = 0, accountless = 0, routeless = 0, tiered = 0;
+let rowsSeen = 0, accountless = 0, routeless = 0, tiered = 0, routedModel = 0;
 const findings = [];
 for (const v of fixture.variants()) {
     let html;
@@ -94,6 +95,7 @@ for (const v of fixture.variants()) {
         if (/data-axis="account"/.test(row)) { accountless++; }
         if (/data-axis="route"/.test(row)) { routeless++; }
         if (/id="tr-/.test(row)) { tiered++; }
+        if (/data-axis="model"/.test(row)) { routedModel++; }
     }
 }
 
@@ -111,6 +113,9 @@ ok('‼️ X-107 — …and one on an engine with no routes, so THAT placeholder
 ok('…and one on a route that serves tiers, so the tier box is really drawn'
     + ` and not only its placeholder (${tiered} of ${rowsSeen})`,
     tiered > 0);
+ok('X-493 — …and on that route the Model cell is the placeholder, so it holds its column too'
+    + ` (${routedModel} of ${rowsSeen})`,
+    routedModel > 0);
 
 // The placeholder holds the column only if it is given the select's own flex
 // slot; a bare <span> would collapse and put the rows back out of line.

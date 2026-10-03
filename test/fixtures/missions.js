@@ -979,12 +979,15 @@ const data = (over) => Object.assign({
             providers: [
                 {
                     id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
+                    modelByRoute: 'Kimi (work) decides the model: pick one of its tiers. Anthropic\'s own model list does not apply here.',
                     tiers: [
                         { id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' },
                         { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }
                     ]
                 },
-                { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [] }
+                // X-493 — a route with its own base URL decides the model (`routeModelNote`)
+                { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [],
+                    modelByRoute: 'MiniMax (lab) maps no tiers, so there is no model to choose here — the route answers with what it serves for whatever Claude Code asks. Give it tiers (Providers page, Edit) to choose one.' }
             ]
         }
     },

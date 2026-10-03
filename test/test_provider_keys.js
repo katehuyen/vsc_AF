@@ -140,8 +140,17 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
         routedModel('opus', tiered) === '' && routedModel('claude-opus-5-5', tiered) === '' && routedModel('deepseek/deepseek-r1', tiered) === '');
     ok('…while a live switch on that card still asks for what the person picks',
         routedModel('opus', tiered, { live: true }) === 'opus' && routedModel('claude-sonnet-5', tiered, { live: true }) === '');
-    ok('…and a tier off a third-party route changes nothing',
-        routedModel('opus', { spawnEnv: { ANTHROPIC_MODEL: 'claude-opus-5-5' } }) === 'opus');
+    ok('‼️ …and the same on a route with no base URL that maps tiers: the picked tier is the answer there too',
+        routedModel('opus', { spawnEnv: { ANTHROPIC_MODEL: 'claude-opus-4-1' } }) === ''
+        && routedModel('claude-opus-5-5', { spawnEnv: { ANTHROPIC_API_KEY: 'k', ANTHROPIC_MODEL: 'claude-opus-4-1' } }) === '');
+    ok('…a live switch there is still asked as picked',
+        routedModel('claude-opus-5-5', { spawnEnv: { ANTHROPIC_MODEL: 'claude-opus-4-1' } }, { live: true }) === 'claude-opus-5-5');
+    const { routeModelNote } = require(path.join(OUT, 'routeModels.js'));
+    ok('X-493 — routeModelNote: no sentence without a base URL of its own (the Model box still means something)',
+        routeModelNote(undefined) === undefined && routeModelNote({ label: 'Anthropic key', tiers: ['opus'] }) === undefined);
+    ok('…on a third-party route with tiers it points at them, with none it says there is nothing to choose and how to give it some',
+        /^Kimi decides the model: pick one of its tiers\./.test(routeModelNote({ label: 'Kimi', baseUrl: 'https://k', tiers: ['opus'] }))
+        && /^MiniMax maps no tiers, so there is no model to choose here.*Providers page, Edit/.test(routeModelNote({ label: 'MiniMax', baseUrl: 'https://m', tiers: [] })));
 
     const host = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
     const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');

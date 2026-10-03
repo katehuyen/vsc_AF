@@ -43,6 +43,7 @@ import { ProviderAdapter, ProviderSelection } from './providerAdapter';
 import { CatalogModelRow, ProviderCatalogRead } from './providerCatalog';
 import { ProviderScope } from './providerIdentity';
 import { authKindLabel } from './routeAuth';
+import { routeModelNote } from './routeModels';
 
 /** What a person has picked on the provider axis so far. */
 export interface ProviderPick {
@@ -123,9 +124,11 @@ export interface ProviderForm {
      * quiet. Absent when there is nothing to say.
      */
     refusals?: string[];
+    /** ‼️ X-493 — the picked Claude route decides the model (`routeModelNote`): no Anthropic Model box is drawn, and this says why. */
+    modelByRoute?: string;
 }
 
-const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+const str =(v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
 /** The row that means "do not decide this here". Every axis has exactly one. */
 const leaveAlone = (detail: string): LaunchChoice => ({ id: '', label: 'Default', detail });
@@ -225,6 +228,11 @@ function tierAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxis
     };
 }
 
+function routeNoteFor(cat: ProviderCatalogRead, providerId: string): string | undefined {
+    const t = providerId ? (cat.templates || []).find(x => x.providerId === providerId) : undefined;
+    return t && routeModelNote({ label: t.providerLabel || providerId, baseUrl: t.route?.baseUrl, tiers: Object.keys(t.tiers ?? {}) });
+}
+
 /** The model row: the engine's own wire refs, narrowed to the chosen provider. */
 function modelAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxis {
     const rows = (cat.rows || []).filter(r => !providerId || r.providerId === providerId);
@@ -284,6 +292,7 @@ export function launchProviderForm(
         ? 'the engine may change this at a turn boundary, and records it as a new turn identity'
         : 'fixed for the session — a different route is a different program, so a resume across one forks';
     const sub = claude ? tierAxis(cat, providerId) : modelAxis(cat, providerId);
+    const byRoute = claude ? routeNoteFor(cat, providerId) : undefined;
     return {
         engine, applies: true, noun,
         scope: adapter.providerScope,
@@ -296,6 +305,7 @@ export function launchProviderForm(
         ],
         ...(providers.length ? {} : { empty: emptyWhy(adapter, cat) }),
         sub,
+        ...(byRoute ? { modelByRoute: byRoute } : {}),
         ...variantRow(cat, claude, str(pick.model), transport),
         ...refusalRow(adapter, pick)
     };

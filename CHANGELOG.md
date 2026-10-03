@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.815.0 - On a route, the route decides the model (2026-10-04)
+
+- **No more Model box that does nothing.** On a route with its own endpoint
+  that maps no tiers, an Anthropic model picked in the Model box was never
+  sent — the route answers with what it serves. That box now steps aside in
+  the Console, the launcher, the Tasks form, workflow steps and missions, and
+  the route's hover says why and how to give the route tiers.
+- **Missions fold too.** A team member or the orchestrator on a route that
+  decides the model shows the route's tier (or why there is none) instead of
+  an Anthropic Model box, and the team columns stay in line.
+- **A picked tier wins on every route.** On a route that uses Anthropic's own
+  endpoint and maps tiers, a leftover model could still override the tier you
+  picked; now the tier decides there too.
+
 ## 3.814.0 - One Model box on tasks and workflow steps too (2026-10-04)
 
 - **Tasks and workflow steps fold the same way.** On the New-task form and

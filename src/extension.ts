@@ -24154,11 +24154,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const engineRouteMatrix = (): Record<string, {
         noun: string;
-        providers: { id: string; label: string; detail: string; tiers: LaunchChoice[] }[];
+        providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; modelByRoute?: string }[];
     }> => {
         const out: Record<string, {
             noun: string;
-            providers: { id: string; label: string; detail: string; tiers: LaunchChoice[] }[];
+            providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; modelByRoute?: string }[];
         }> = {};
         for (const id of Object.keys(ENGINES)) {
             // ‼️ `run` is the transport: a task is spawned headless. Asking as
@@ -24169,17 +24169,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!form.applies || !providers.length) { continue; }
             out[id] = {
                 noun: form.noun,
-                providers: providers.map(p => ({
-                    id: p.id, label: p.label, detail: p.detail ?? '',
-                    // Only a TIER axis becomes a second box. Where the sub-axis
-                    // is the MODEL (OpenCode names a model `provider/model`) the
-                    // model box on this same form already IS that axis, and two
-                    // controls for one subject is what ONE SUBJECT forbids.
-                    tiers: (() => {
-                        const sub = providerFormFor(id, { providerId: p.id }, 'run').sub;
-                        return sub.kind === 'tier' ? sub.choices.filter(c => c.id) : [];
-                    })()
-                }))
+                providers: providers.map(p => {
+                    const picked = providerFormFor(id, { providerId: p.id }, 'run');
+                    return {
+                        id: p.id, label: p.label, detail: p.detail ?? '',
+                        // Only a TIER axis becomes a second box. Where the sub-axis
+                        // is the MODEL (OpenCode names a model `provider/model`) the
+                        // model box on this same form already IS that axis, and two
+                        // controls for one subject is what ONE SUBJECT forbids.
+                        tiers: picked.sub.kind === 'tier' ? picked.sub.choices.filter(c => c.id) : [],
+                        ...(picked.modelByRoute ? { modelByRoute: picked.modelByRoute } : {})
+                    };
+                })
             };
         }
         return out;
@@ -27382,7 +27383,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // ‼️ THE NOTE SAYS WHAT "none" REALLY MEANS. It is not
                     // "Anthropic" — it is inheritance, and the window may
                     // already carry somebody else's endpoint.
-                    detail: form.empty || routeSaid.note,
+                    detail: form.empty || [routeSaid.note, form.sub.kind === 'tier' ? '' : form.modelByRoute].filter(Boolean).join(' — '),
                     act: 'provider'
                 } as Row] : []),
                 // X-493 — on a route that maps tiers the tier IS the model: this row takes the Model row's place
@@ -27433,7 +27434,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     })(),
                     act: 'account'
                 } as Row] : []),
-                ...(form.sub.kind === 'tier' ? [] : [{
+                ...(form.sub.kind === 'tier' || form.modelByRoute ? [] : [{
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
                     // ‼️ THE LIST IS THE PROVIDER'S WHEN THE ENGINE PUBLISHES ONE
                     // — that is what "capability-driven" buys: choosing a

@@ -41,7 +41,9 @@ export function routeModelEnv(tiers: Record<string, string> | undefined): Record
  * ranks `--model` above ANTHROPIC_MODEL (measured in the shipped binary), so a
  * model left over from an agent default or the last launch silently overrode
  * the tier a person picked for this route. A live switch (`live`) is a person
- * choosing the model now, so there the model is still asked for.
+ * choosing the model now, so there the model is still asked for. Only a route
+ * writes ANTHROPIC_MODEL into `spawnEnv`, so this holds on a route with no base
+ * URL of its own too — the surfaces fold the Model box into the tier on both.
  */
 export function routedModel(
     model: string | undefined, rt: { spawnEnv?: Record<string, string> } | undefined,
@@ -49,10 +51,27 @@ export function routedModel(
 ): string {
     const m = String(model ?? '').trim();
     const env = rt?.spawnEnv;
+    if (m && !opts.live && env?.ANTHROPIC_MODEL) { return ''; }
     if (!m || !env?.ANTHROPIC_BASE_URL) { return m; }
-    if (!opts.live && env.ANTHROPIC_MODEL) { return ''; }
     const anthropic = /^claude-/i.test(m) || /^(opus|sonnet|haiku|fable)(\[1m\])?$/i.test(m);
     if (!anthropic) { return m; }
     const fam = /(opus|sonnet|haiku|fable)/i.exec(m)?.[1].toLowerCase() ?? '';
     return fam && env[TIER_ENV[fam]] ? fam : '';
+}
+
+/**
+ * ‼️ X-493 — ON A ROUTE WITH ITS OWN BASE URL THE ROUTE DECIDES THE MODEL, so a
+ * surface draws no Anthropic Model box there (routedModel never sends one the
+ * route does not map); this is the sentence that stands in its place. Undefined
+ * where that box still means something: no route, or a route with no base URL —
+ * Anthropic's own endpoint, which serves the model it is asked for.
+ */
+export function routeModelNote(
+    route: { label: string; baseUrl?: string; tiers: readonly string[] } | undefined
+): string | undefined {
+    if (!route?.baseUrl) { return undefined; }
+    return route.tiers.length
+        ? `${route.label} decides the model: pick one of its tiers. Anthropic's own model list does not apply here.`
+        : `${route.label} maps no tiers, so there is no model to choose here — the route answers with what it serves `
+            + 'for whatever Claude Code asks. Give it tiers (Providers page, Edit) to choose one.';
 }

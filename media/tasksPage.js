@@ -1733,10 +1733,11 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
         const f = all[engine || 'claude'];
         return (f && (f.providers || []).length) ? f : null;
     }
-    /** X-493 — on a Claude route that maps tiers the tier IS the model, so its box takes the Model box's place. */
+    /** X-493 — on a Claude route that maps tiers, or serves from its own base URL, the route decides the model: the Model box gives way. */
     function ntTierFolds(engine, providerId) {
         const f = providerId && (engine || 'claude') === 'claude' ? ntRoutes(engine) : null;
-        return !!f && ((f.providers.find(p => p.id === providerId) || {}).tiers || []).length > 0;
+        const p = f ? (f.providers.find(x => x.id === providerId) || {}) : null;
+        return !!p && ((p.tiers || []).length > 0 || !!p.modelByRoute);
     }
     /**
      * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, held with the page for the same
@@ -1967,14 +1968,16 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             .concat(routeForm.providers.map(p =>
                 C.option(p.id, p.label, { selected: p.id === providerId, detail: p.detail || p.baseUrl || '' })))
             .join('');
+        const picked = routeForm.providers.find(p => p.id === providerId) || {};
+        const tiers = picked.tiers || [];
         const row = `<label class="ntf" title="${C.esc(noun
             + ': the endpoint this run really talks to, which the engine itself never says. '
             + 'An automation fires with nobody watching, so a run that names none takes '
             + 'whichever route the agent happens to be set to when it fires. '
             + 'None = nothing injected and nothing cleared, which is what every run written '
-            + 'before this did.')}"><span>${C.esc(noun)}</span>
+            + 'before this did.'
+            + (picked.modelByRoute && !tiers.length ? '\n\n' + picked.modelByRoute : ''))}"><span>${C.esc(noun)}</span>
                     <select id="nt-${routeId}">${opts}</select></label>`;
-        const tiers = (routeForm.providers.find(p => p.id === providerId) || {}).tiers || [];
         if (!tiers.length) { return row; }
         const topts = [C.option('', '— the route\'s own choice —', { selected: !tier, detail: 'No tier named, so the route serves whatever it serves by default.' })]
             // ‼️ audit B-07.2 — the tier was the same defect with a worse

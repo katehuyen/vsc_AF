@@ -127,7 +127,8 @@ const DATA = {
             providers: [
                 { id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
                     tiers: [{ id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' }, { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }] },
-                { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [] }
+                { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [],
+                    modelByRoute: 'MiniMax (lab) maps no tiers, so there is no model to choose here.' }
             ]
         }
     },
@@ -602,6 +603,17 @@ getEl('f-planner-route').value = 'kimi-work';
 getEl('f-planner-route').listeners.change();
 ok('…and one that does, does',
     html().includes('id="f-planner-tier"'));
+// X-493 — a route that decides the model: the member's Model cell and the planner's Model box give way
+ok('‼️ X-493 — a member on a route that maps tiers draws no Model box; the cell says the tier decides',
+    !html().includes('id="md-1"') && /data-axis="model" title="This route maps tiers, so the tier on this row decides the model\."/.test(html()));
+ok('…and the planner on such a route shows its Model as set by the route, not as a box',
+    !html().includes('<select id="f-planner"') && /fixedval">set by the route</.test(html()));
+getEl('f-planner-route').value = 'minimax-lab';
+getEl('f-planner-route').listeners.change();
+ok('…a route with its own base URL and no tiers says why there is nothing to choose',
+    !html().includes('<select id="f-planner"') && /title="MiniMax \(lab\) maps no tiers, so there is no model to choose here\.">Model override/.test(html()));
+getEl('f-planner-route').value = 'kimi-work';
+getEl('f-planner-route').listeners.change();
 getEl('f-planner-tier').value = 'sonnet';
 getEl('f-approval').value = 'each-round';
 getEl('f-start').listeners.click();
@@ -644,6 +656,9 @@ ok('‼️ X-107 — …and the member\'s own route and tier, on its own row',
     // profile's engine cannot take refuses the press by design (X-123).
     getEl('pr-1').value = '';
     getEl('pr-1').listeners.change();
+    // …and the planner too: on a route its Model box gives way (X-493), and the tests below read that box
+    getEl('f-planner-route').value = '';
+    getEl('f-planner-route').listeners.change();
 }
 /**
  * ‼️ X-94 — THE PROJECT IS A THREE-WAY ANSWER AND IT IS POSTED AS THREE.

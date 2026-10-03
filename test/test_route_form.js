@@ -129,7 +129,9 @@ const formOf = (h) => {
     // X-493 — the launcher (QuickPick) folds the same way the Console composer does
     ok('the launcher: on a route that maps tiers the tier row IS the Model row, and the model row is not drawn',
         /label: '\$\(star-full\) Model',\s*description: show\(merged\.tier\)/.test(ext)
-        && /\.\.\.\(form\.sub\.kind === 'tier' \? \[\] : \[\{\s*label: '\$\(star-full\) Model', description: show\(merged\.model\)/.test(ext));
+        && /\.\.\.\(form\.sub\.kind === 'tier' \|\| form\.modelByRoute \? \[\] : \[\{\s*label: '\$\(star-full\) Model', description: show\(merged\.model\)/.test(ext));
+    ok('…a route that decides the model with no tiers draws no Model row either, and its Route row says why',
+        /detail: form\.empty \|\| \[routeSaid\.note, form\.sub\.kind === 'tier' \? '' : form\.modelByRoute\]\.filter\(Boolean\)\.join\(' — '\)/.test(ext));
     ok('…and its Account row says the route\'s key pays', /spec\.id === 'claude' && merged\.providerId\s*\? 'a route is picked, so its key pays/.test(ext));
     const P = require(path.join(ROOT, 'out', 'core', 'providerProfiles.js'));
     const list = [P.storedProfile({ id: 'kimi', providerId: 'kimi', baseUrl: 'https://api.moonshot.ai/anthropic', tiers: { opus: 'k2' } })];
@@ -194,6 +196,49 @@ const formOf = (h) => {
     const h = r.html();
     ok('…and on a route that maps tiers the tier box takes its place, labelled Model',
         !/id="nt-model"/.test(h) && /<span>Model<\/span>\s*<select id="nt-tier">/.test(h));
+}
+
+{
+    // X-493 — a route with its own base URL and no tiers: nothing to choose, and every surface says why
+    const NOTE = 'MiniMax maps no tiers, so there is no model to choose here.';
+    const G = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
+    const F = require(path.join(ROOT, 'out', 'core', 'launchProvider.js'));
+    const adapter = G.adapterFor('claude', {
+        profiles: [
+            { id: 'mm', label: 'MiniMax', engine: 'claude', providerId: 'minimax', baseUrl: 'https://api.minimax.io/anthropic', tiers: {}, revision: 1 },
+            { id: 'key2', label: 'Second key', engine: 'claude', providerId: 'anthropic-api', authKind: 'api-key', tiers: {}, revision: 1 }
+        ],
+        secretFor: () => 'sk-test', inheritedEnv: {}
+    });
+    ok('the form names a route with its own base URL as deciding the model',
+        /^MiniMax maps no tiers/.test(F.launchProviderForm(adapter, { providerId: 'mm' }).modelByRoute || ''));
+    ok('…and not a route on Anthropic\'s own endpoint, nor no route at all (the Model box means something there)',
+        F.launchProviderForm(adapter, { providerId: 'key2' }).modelByRoute === undefined
+        && F.launchProviderForm(adapter).modelByRoute === undefined);
+
+    const cf = require(path.join(__dirname, 'fixtures', 'console.js'));
+    const v = cf.variants().find(x => /composer picks the route/.test(x.label));
+    const routed = (form) => Object.assign({}, v.data, {
+        composerIntent: Object.assign({}, v.data.composerIntent, { tier: '' }),
+        composerForm: Object.assign({}, v.data.composerForm, { sub: { kind: 'none', label: '', note: '', choices: [] } }, form)
+    });
+    const h = runPage('console.js', routed({ modelByRoute: NOTE })).html();
+    ok('the composer on such a route draws neither a Model nor a tier box', !/id="c-model"/.test(h) && !/id="c-tier"/.test(h));
+    ok('…and the route box\'s hover says why', h.includes(NOTE));
+    const k = runPage('console.js', routed({})).html();
+    ok('…while a route on Anthropic\'s own endpoint keeps its Model box', /id="c-model"/.test(k) && !k.includes(NOTE));
+
+    const tf = require(path.join(__dirname, 'fixtures', 'tasks.js'));
+    const d = tf.data();
+    d.launch.routes.claude.providers = [{ id: 'mm', label: 'MiniMax', detail: '', tiers: [], modelByRoute: NOTE }];
+    const r = runPage('tasksPage.js', d);
+    r.query('#nt-open')[0].click();
+    const sel = r.query('#nt-route')[0];
+    sel.value = 'mm';
+    sel.fire('change');
+    const th = r.html();
+    ok('the Tasks form on such a route draws no Model box and no tier box', !/id="nt-model"/.test(th) && !/id="nt-tier"/.test(th));
+    ok('…and its Route box\'s hover says why', th.includes(NOTE));
 }
 
 console.log(`test_route_form: ${pass} passed, ${fail} failed`);
