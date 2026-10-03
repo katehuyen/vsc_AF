@@ -365,8 +365,10 @@ import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, registerLastLegOp } from './core/batonLastLegOp';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
-import { boardThresholds, LegClose, registerChainBoardOps } from './core/chainBoardOps';
+import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endOnBoard, LegClose, registerChainBoardOps } from './core/chainBoardOps';
 import { legFactsSnapshot } from './core/chainLegFacts';
+import { chainLegLines, chainsPageData } from './core/chainsPage';
+import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
 import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
@@ -17878,7 +17880,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     registerFaultOps(bridge, engineFaults, () => faultOpts(ownSetting));
     // ‼️ S-121 — the chain board: every chain from the record, and continue / end (chainBoardOps.ts)
-    registerChainBoardOps(bridge, {
+    const chainBoardDeps: ChainBoardOpsDeps = {
         store: batonStore,
         factsNow: () => legFactsSnapshot({
             cards: consoleHost.list().map(c => ({
@@ -17909,7 +17911,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ConsolePanel.refreshIfOpen();
             return 'closed';
         }
-    });
+    };
+    registerChainBoardOps(bridge, chainBoardDeps);
     context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
@@ -30969,6 +30972,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         onDidChange: nowEmitter.event
     };
+    // S-122 — the Chains page: chains.list's rows; every control runs the body of the op of the same name
+    const chainsEmitter = new vscode.EventEmitter<void>();
+    context.subscriptions.push(chainsEmitter, batonStore.onDidChange(() => chainsEmitter.fire()),
+        consoleHost.onChange(() => chainsEmitter.fire()),
+        live.onEvent(e => { if (e.kind === 'start' || e.kind === 'end') { chainsEmitter.fire(); } }));
+    const chainsDeps: ChainsDeps = {
+        extensionUri: context.extensionUri,
+        build: () => chainsPageData(boardNow(chainBoardDeps), batonStore.all(), chainBoardDeps.thresholds(), Date.now()),
+        projects: () => projectRefs({ all: true }),
+        legs: chainId => chainLegLines(chainIndexNow(), chainId, batonStore.all(), chainBoardDeps.factsNow()),
+        stop: chainId => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
+            'stopped by the user — ✕ on the Chains page', Date.now(), batonBoard, cancelSuccessorRow).length,
+        lastLeg: (sid, on) => applyLastLeg({ store: batonStore }, sid, on, 'the user (Chains page)'),
+        startNow: id => {
+            const b = batonStore.get(id);
+            if (!b || !isLive(b)) { return { ok: false, why: `that baton is no longer waiting — the chain has moved on.` }; }
+            const r = batonRunner.startNow(b, 'the user (Chains page)');
+            return r.ok ? { ok: true } : { ok: false, why: r.why };
+        },
+        ceiling: chainId => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n)),
+        cont: q => {
+            const r = continueOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
+            return r.ok ? { ok: true, text: r.sentence } : { ok: false, text: r.why };
+        },
+        end: async q => {
+            const r = await endOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
+            if (!r.ok) { return { ok: false, text: r.why }; }
+            const closed = r.session === 'closed' ? ' Its session was closed.' : r.session === 'kept' ? ' Its session was working and keeps running.' : '';
+            return { ok: true, text: r.sentence + closed };
+        },
+        onDidChange: chainsEmitter.event
+    };
     bridge.register([{
         op: 'now.get',
         describe: 'The Now page\'s snapshot: blocking Needs You rows (capped, with waitingMore), running Console '
@@ -40905,6 +40940,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openNow', () => {
             NowPanel.show(nowDeps);
+        }),
+
+        vscode.commands.registerCommand('agentfarm.openChains', () => {
+            ChainsPanel.show(chainsDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openNotices', (arg?: unknown) => {

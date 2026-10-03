@@ -1454,6 +1454,12 @@
         "icon": "$(pulse)"
       },
       {
+        "command": "agentfarm.openChains",
+        "title": "Open Chains (every relay chain, its legs and controls)",
+        "category": "Agent Farm",
+        "icon": "$(git-merge)"
+      },
+      {
         "command": "agentfarm.openNeeds",
         "title": "Open Needs You (Approval Queue)",
         "category": "Agent Farm",

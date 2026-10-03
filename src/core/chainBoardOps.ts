@@ -3,12 +3,13 @@
  * Each handler hands the store to the pure core (chainBoard.ts, chainControl.ts)
  * and applies what it answers; nothing is decided here.
  */
+import { Baton } from './baton';
 import { BridgeRefusal, BridgeRegistry, argStr, optBool, optNum, optStr } from './bridge';
 import { BatonBoard } from './batonBoard';
 import { SuccessorRowCancel, batonView, stopBatons } from './batonBridge';
 import { BatonStore } from './batonStore';
 import { BoardThresholds, ChainRow, LegFacts, boardCounts, chainBoard, filterBoard } from './chainBoard';
-import { continueChain, endChain } from './chainControl';
+import { ContinueResult, continueChain, endChain } from './chainControl';
 import type { FaultEpisode } from './engineFaultWatch';
 import { resolveFlex } from './flexResolve';
 
@@ -52,6 +53,40 @@ export function boardNow(deps: ChainBoardOpsDeps): ChainRow[] {
     });
 }
 
+/** chains.continue's body — the op and the Chains page's ↻ alike. */
+export function continueOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; prompt?: string; why?: string; by?: string; maxLegs?: unknown }): ContinueResult {
+    const row = boardNow(deps).find(r => r.chainId === q.chain);
+    const r = continueChain(deps.store.all(), {
+        chainId: q.chain, prompt: q.prompt, why: q.why, by: q.by || 'the user',
+        maxLegs: q.maxLegs, running: row?.state === 'running' ? row.live : undefined,
+        fallbackMax: deps.maxLegs(), now: deps.now()
+    });
+    if (!r.ok) { return r; }
+    deps.store.put(r.baton, ...(r.seal ? [r.seal] : []));
+    try { deps.sweep?.(); } catch { /* the minute sweep follows anyway */ }
+    return r;
+}
+
+export type EndOnBoard =
+    | { ok: true; stopped: Baton[]; closing?: Baton; sessionId?: string; session?: LegClose; sentence: string }
+    | { ok: false; why: string };
+
+/** chains.end's body — the op and the Chains page's ■ alike. */
+export async function endOnBoard(deps: ChainBoardOpsDeps, q: { chain: string; why?: string; by?: string; endSession?: boolean }): Promise<EndOnBoard> {
+    const r = endChain(deps.store.all(), { chainId: q.chain, by: q.by || 'the user', why: q.why, now: deps.now() });
+    if (!r.ok) { return r; }
+    const stopped = r.stop.length ? stopBatons(deps.store, r.stop, r.why, deps.now(), deps.board, deps.cancelRow) : [];
+    if (r.braked && r.closing) {
+        deps.store.put(r.braked, r.closing);
+        deps.board?.closeChain(deps.store.chain(q.chain).map(b => b.a2aNoteId), deps.now());
+    }
+    const session = q.endSession && r.sessionId && deps.closeLeg ? await deps.closeLeg(r.sessionId, r.why) : undefined;
+    return {
+        ok: true, stopped, ...(r.closing ? { closing: r.closing } : {}), ...(r.sessionId ? { sessionId: r.sessionId } : {}),
+        ...(session ? { session } : {}), sentence: r.sentence
+    };
+}
+
 export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOpsDeps): void {
     bridge.register([
         {
@@ -82,15 +117,8 @@ export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOp
                 + 'args: chain (chn_… id), prompt? (the words the leg starts from), why? (a line, recorded), maxLegs? (the chain\'s ceiling, this leg included; 0 = none), by? (who, default "the user")',
             handler: (args) => {
                 const chainId = argStr(args, 'chain');
-                const row = boardNow(deps).find(r => r.chainId === chainId);
-                const r = continueChain(deps.store.all(), {
-                    chainId, prompt: optStr(args, 'prompt'), why: optStr(args, 'why'), by: optStr(args, 'by') || 'the user',
-                    maxLegs: args.maxLegs, running: row?.state === 'running' ? row.live : undefined,
-                    fallbackMax: deps.maxLegs(), now: deps.now()
-                });
+                const r = continueOnBoard(deps, { chain: chainId, prompt: optStr(args, 'prompt'), why: optStr(args, 'why'), by: optStr(args, 'by'), maxLegs: args.maxLegs });
                 if (!r.ok) { throw new BridgeRefusal(r.why, { step: 'continue', chain: chainId }); }
-                deps.store.put(r.baton, ...(r.seal ? [r.seal] : []));
-                try { deps.sweep?.(); } catch { /* the minute sweep follows anyway */ }
                 return { baton: batonView(r.baton), sentence: r.sentence, ...(r.seal ? { maxLegs: r.seal.maxLegs } : {}) };
             }
         },
@@ -101,19 +129,11 @@ export function registerChainBoardOps(bridge: BridgeRegistry, deps: ChainBoardOp
                 + 'args: chain (chn_… id), why? (a line, recorded), endSession? (default false), by? (who, default "the user")',
             handler: async (args) => {
                 const chainId = argStr(args, 'chain');
-                const by = optStr(args, 'by') || 'the user';
-                const r = endChain(deps.store.all(), { chainId, by, why: optStr(args, 'why'), now: deps.now() });
+                const r = await endOnBoard(deps, { chain: chainId, why: optStr(args, 'why'), by: optStr(args, 'by'), endSession: optBool(args, 'endSession') });
                 if (!r.ok) { throw new BridgeRefusal(r.why, { step: 'end', chain: chainId }); }
-                const stopped = r.stop.length ? stopBatons(deps.store, r.stop, r.why, deps.now(), deps.board, deps.cancelRow) : [];
-                if (r.braked && r.closing) {
-                    deps.store.put(r.braked, r.closing);
-                    deps.board?.closeChain(deps.store.chain(chainId).map(b => b.a2aNoteId), deps.now());
-                }
-                const session = optBool(args, 'endSession') && r.sessionId && deps.closeLeg
-                    ? await deps.closeLeg(r.sessionId, r.why) : undefined;
                 return {
-                    stopped: stopped.map(batonView), closing: r.closing ? batonView(r.closing) : null,
-                    sessionId: r.sessionId ?? null, session: session ?? null, sentence: r.sentence
+                    stopped: r.stopped.map(batonView), closing: r.closing ? batonView(r.closing) : null,
+                    sessionId: r.sessionId ?? null, session: r.session ?? null, sentence: r.sentence
                 };
             }
         }

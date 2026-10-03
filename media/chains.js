@@ -1,0 +1,272 @@
+// Agent Farm — "Chains" page script: every relay chain in one table, its legs strip and its controls (S-122).
+(function () {
+    'use strict';
+    const vscode = acquireVsCodeApi();
+    const C = window.AFCharts;
+    const T = window.AFTime;
+    const TIP = window.AFTip;
+    // U-189 — every word on this page is drawn in the interface language (media/afI18n.js)
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    let DATA = window.__DATA__;
+    let chip = '';
+    const open = new Set();
+    const legs = {};
+    let form = null;
+    let note = null;
+
+    const repaint = window.AFRepaint.guard(render);
+    window.addEventListener('message', ev => {
+        const m = ev.data || {};
+        if (m.type === 'data') { DATA = m.data; for (const id of open) { ask(id); } repaint(); }
+        if (m.type === 'legs') { legs[m.chainId] = m.legs || []; repaint(); }
+        if (m.type === 'done') { note = { ok: !!m.ok, text: m.text || '' }; if (m.ok) { form = null; } render(); }
+    });
+
+    const GLYPH = { running: '▶', waiting: '⏳', parked: '🅿', done: '■', stopped: '✕', refused: '⊘', failed: '✖' };
+    const CHIPS = [['', '⑂', 'All'], ['running', '▶', 'Running'], ['waiting', '⏳', 'Waiting'], ['parked', '🅿', 'Parked'],
+        ['attention', '⚠', 'Needs attention'], ['done', '■', 'Done'], ['stopped', '✕', 'Stopped']];
+    const SIGNAL = { hanging: 'Hanging', 'stuck-wait': 'Stuck wait', cut: 'Cut', fault: 'Engine fault', brake: 'Brake refused' };
+    const esc = s => C.esc(String(s === undefined || s === null ? '' : s));
+    const short = id => String(id || '').slice(0, 8);
+    const money = n => C.fmtUSD(Number(n) || 0);
+    const post = (type, o) => vscode.postMessage(Object.assign({ type }, o));
+    const ask = id => post('legs', { chainId: id });
+    const line1 = s => String(s || '').split('\n').map(x => x.trim()).find(Boolean) || '';
+
+    function liveWord(r) {
+        if (r.state === 'parked' && r.wakeAt) { return t('wakes {time}', { time: T.clock(r.wakeAt) }); }
+        if (r.state === 'waiting') { return t('waits for leg {n} to end', { n: r.leg - 1 }); }
+        if (r.state !== 'running') { return ''; }
+        return r.live ? t(r.live) : t('not known');
+    }
+
+    function chipsHtml(n) {
+        return '<div class="ch-chips">' + CHIPS.map(([id, g, label]) => {
+            const count = id ? n[id] : n.total;
+            const on = chip === id;
+            return `<button class="ch-chip${on ? ' on' : ''}${id === 'attention' && count ? ' warn' : ''}" data-chip="${id}" aria-pressed="${on}"
+                title="${esc(id && on ? t('Click again to show every chain') : t('{n} chains', { n: count }))}">${g} ${esc(t(label))} <b>${count}</b></button>`;
+        }).join('') + '</div>';
+    }
+
+    function th(label, def, cls) { return `<th${cls ? ` class="${cls}"` : ''}>${TIP.wrap(esc(t(label)), t(label), t(def))}</th>`; }
+
+    function stateCell(r) {
+        const warn = r.signals.length ? '<span class="ch-warn">⚠</span>' : '';
+        const lines = [t('Why: {why}', { why: r.why }), T.tip(r.since, 'Since'),
+            ...(r.signals.length ? [TIP.GAP, ...r.signals.map(s => `⚠ ${t(SIGNAL[s.kind] || s.kind)}: ${s.why}`)] : [])];
+        return TIP.cell('ch-st', '', `${warn}<span class="ch-g">${GLYPH[r.state] || '·'}</span> <span class="ch-sw">${esc(t(r.state))}</span>`,
+            `${GLYPH[r.state] || ''} ${t(r.state)}`, TIP.lines(lines));
+    }
+
+    function chainCell(r, proj) {
+        const lines = [t('Chain: {id}', { id: r.chainId }), t('Agent: {agent}', { agent: r.agentName || '—' }),
+            t('Project: {project}', { project: proj ? proj.name : '—' }), r.engine ? t('Engine: {engine}', { engine: r.engine }) : '',
+            T.tip(r.startedAt, 'Started'), T.tip(r.lastAt, 'Last move'), r.trimmed ? t('Only its links are left on record.') : ''];
+        return TIP.cell('ch-name', '', `<span class="ch-title">${esc(r.title || r.chainId)}</span><span class="ch-id muted">${esc(r.chainId)}</span>`,
+            r.title || r.chainId, TIP.lines(lines));
+    }
+
+    function legCell(r) {
+        const max = r.maxLegs ? String(r.maxLegs) : '∞';
+        const lines = [t('Leg: {leg} of {max}', { leg: r.leg, max }), r.lastLeg ? t('Last leg: braked — it writes the handover note instead of passing') : '',
+            r.brake ? t('Brake: {brake}', { brake: r.brake }) : ''];
+        return TIP.cell('num', '', `${r.leg} / ${max}${r.lastLeg ? ' ⛔' : ''}`, t('Leg {leg} of {max}', { leg: r.leg, max }), TIP.lines(lines));
+    }
+
+    function nowCell(r) {
+        const w = liveWord(r);
+        const lines = [r.sessionId ? t('Session: {id}', { id: r.sessionId }) : '', w ? t('State: {state}', { state: w }) : ''];
+        return TIP.cell('ch-live ' + (r.state === 'running' ? esc(r.live || '') : ''), '', esc(w || '—'), w || t(r.state), TIP.lines(lines));
+    }
+
+    function totalsCell(r) {
+        const x = r.totals;
+        const lines = [t('Legs: {n}', { n: x.legs }), t('Cost: {cost}', { cost: money(x.cost) }), t('Tokens: {n}', { n: C.fmtTok(x.tokens) }),
+            x.ms ? t('Time: {time}', { time: C.fmtDur(x.ms) }) : '', x.legs > 1 ? t('Per leg: {cost}', { cost: money(x.cost / x.legs) }) : ''];
+        return TIP.cell('num ch-wide', '', x.cost || x.tokens ? money(x.cost) : '—', t('{n} legs', { n: x.legs }), TIP.lines(lines));
+    }
+
+    function nextCell(r) {
+        const n = r.next;
+        if (!n) { return '<td class="ch-wide muted">—</td>'; }
+        const lines = [t('Account: {account}', { account: n.account }), t('Surface: {surface}', { surface: n.surface }),
+            n.model ? t('Model: {model}', { model: n.model }) : '', n.effort ? t('Effort: {effort}', { effort: n.effort }) : ''];
+        return TIP.cell('ch-wide', '', `${esc(n.account)} · ${esc(n.model || '—')}`, t('The next leg opens on'), TIP.lines(lines));
+    }
+
+    function act(r, type, glyph, label, why, attrs) {
+        return TIP.wrap(`<button class="ch-act" data-act="${type}" data-chain="${esc(r.chainId)}" ${attrs || ''} aria-label="${esc(t(label))}">${glyph}</button>`, t(label), t(why), 'ch-actw');
+    }
+
+    function actsCell(r) {
+        const a = r.acts;
+        return '<td class="ch-acts">' + [
+            a.now ? act(r, 'now', '⏭', 'Start now', 'The waiting leg goes through the door now instead of waiting.', `data-baton="${esc(a.now)}"`) : '',
+            a.stop ? act(r, 'stop', '✕', 'Stop chain', 'Stops the waiting or parked baton; no further leg opens. Nothing is deleted.') : '',
+            a.lastLeg ? act(r, 'lastLeg', '⛔', r.lastLeg ? 'Release last leg' : 'Last leg',
+                r.lastLeg ? 'Braked now. Press to let the leg pass the baton at its handover line again.' : 'The running leg writes the handover note instead of passing.',
+                `data-session="${esc(r.sessionId)}" data-on="${!r.lastLeg}" aria-pressed="${!!r.lastLeg}"`) : '',
+            a.legs ? act(r, 'ceiling', '⇕', 'Leg ceiling', 'How many legs this chain may run.') : '',
+            a.cont ? act(r, 'continue', '↻', 'Continue', 'Opens a new leg from the last handover words, or from what you write.') : '',
+            a.end ? act(r, 'end', '■', 'End chain', 'Marks the chain finished on purpose; the current leg writes its note instead of passing.') : '',
+            r.sessionId ? act(r, 'open', '↗', 'Open session', 'The current leg\'s transcript.', `data-session="${esc(r.sessionId)}"`) : ''
+        ].join('') + '</td>';
+    }
+
+    function legsRow(r) {
+        const list = legs[r.chainId];
+        const body = !list ? `<span class="muted">${esc(t('Loading the legs…'))}</span>` : !list.length ? `<span class="muted">${esc(t('No legs on record.'))}</span>`
+            : '<table class="ch-legs">' + list.map(l => {
+                const ran = l.firstTs && l.lastTs ? C.fmtDur(Math.max(0, l.lastTs - l.firstTs)) : '';
+                const title = l.title || short(l.sessionId);
+                const lines = [t('Session: {id}', { id: l.sessionId }), l.agentName ? t('Agent: {agent}', { agent: l.agentName }) : '',
+                    l.opened ? T.tip(l.opened, 'Opened') : '', l.passed ? T.tip(l.passed, 'Passed') : '', ran ? t('Ran: {time}', { time: ran }) : '',
+                    l.cost !== undefined ? t('Cost: {cost}', { cost: money(l.cost) }) : '', l.tokens ? t('Tokens: {n}', { n: C.fmtTok(l.tokens) }) : '',
+                    l.words ? TIP.GAP : '', l.words || ''];
+                return `<tr class="ch-leg" data-open="${esc(l.sessionId)}" tabindex="0"><td class="num muted">${l.leg}</td>
+                    ${TIP.cell('ch-lt', '', esc(title), t('Leg {leg}: {title}', { leg: l.leg, title }), TIP.lines(lines))}
+                    <td class="ch-lw muted">${esc(line1(l.words) || (l.passed ? '' : t('no pass on record')))}</td>
+                    <td class="num muted ch-wide">${esc(ran)}</td><td class="num">${l.cost !== undefined ? money(l.cost) : ''}</td>
+                    <td class="ch-live ${esc(l.live || '')}">${esc(l.live ? t(l.live) : '')}</td></tr>`;
+            }).join('') + '</table>';
+        return `<tr class="ch-sub"><td colspan="9">${body}</td></tr>`;
+    }
+
+    function formRow(r) {
+        if (!form || form.chainId !== r.chainId) { return ''; }
+        const cont = form.kind === 'continue';
+        return `<tr class="ch-sub"><td colspan="9"><div class="ch-form">
+            ${cont ? `<textarea id="ch-prompt" rows="3" placeholder="${esc(t('Empty: the new leg starts from the chain\'s last handover words'))}">${esc(form.prompt)}</textarea>` : ''}
+            <input id="ch-why" type="text" value="${esc(form.why)}" placeholder="${esc(t('Why (recorded on the chain)'))}">
+            ${cont ? '' : `<label class="ch-chk"><input id="ch-close" type="checkbox"${form.endSession ? ' checked' : ''}> ${esc(t('Also close the current leg\'s session (asks first if it is working)'))}</label>`}
+            <button id="ch-go">${esc(cont ? '↻ ' + t('Continue') : '■ ' + t('End chain'))}</button>
+            <button id="ch-cancel" class="secondary">${esc(t('Cancel'))}</button></div></td></tr>`;
+    }
+
+    function rowsHtml(rows) {
+        const projects = DATA.projects || [];
+        return rows.map(r => {
+            const isOpen = open.has(r.chainId);
+            return `<tr class="ch-row${r.signals.length ? ' attn' : ''}${isOpen ? ' open' : ''}" data-chain="${esc(r.chainId)}">
+                ${stateCell(r)}${chainCell(r, window.AFProject.find(projects, r.projectId))}<td class="ch-wide">${esc(r.agentName || '—')}</td>
+                ${legCell(r)}${nowCell(r)}${TIP.cell('ch-wide muted', '', esc(T.ago(r.lastAt)), t('Last move'), TIP.lines([T.tip(r.lastAt, 'Last move'), T.tip(r.startedAt, 'Started')]))}
+                ${totalsCell(r)}${nextCell(r)}${actsCell(r)}</tr>${formRow(r)}${isOpen ? legsRow(r) : ''}`;
+        }).join('');
+    }
+
+    function render() {
+        const d = DATA;
+        const rows = d.chains.filter(r => !chip || (chip === 'attention' ? r.signals.length > 0 : r.bucket === chip));
+        const n = d.counts;
+        const table = !d.chains.length ? `<p class="muted">${esc(t('No relay chain on record yet.'))}</p>`
+            : !rows.length ? `<p class="muted">${esc(t('No chain in this state.'))} <a href="#" data-chip="">${esc(t('Show every chain'))}</a></p>`
+                : `<table class="ch-tab"><thead><tr>${th('State', 'Where the chain stands, from its newest record. ⚠ = something the record shows going wrong.')}
+                    ${th('Chain', 'The first leg\'s title and the chain id.')}${th('Agent', 'The agent the chain runs as.', 'ch-wide')}
+                    ${th('Leg', 'The current leg and the chain\'s ceiling (∞ = none). ⛔ = braked as the last leg.', 'num')}
+                    ${th('Now', 'The current leg: working, idle, gone — or what the next one waits for.')}
+                    <th class="ch-wide">${TIP.wrap(esc(t('Last move')), t('Last move'), t('When the chain\'s record last changed.'))}</th>
+                    <th class="ch-wide num">${TIP.wrap(esc(t('Cost')), t('Cost'), t('All legs together; hover for tokens and time.'))}</th>
+                    <th class="ch-wide">${TIP.wrap(esc(t('Next')), t('Next'), t('The account and model the next leg opens on.'))}</th><th></th></tr></thead>
+                    <tbody>${rowsHtml(rows)}</tbody></table>`;
+        document.getElementById('app').innerHTML = `
+            <style>
+                .ch-chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+                .ch-chip { min-height:28px; padding:2px 10px; border-radius:14px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); cursor:pointer; }
+                .ch-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
+                .ch-chip.warn b { color:var(--vscode-editorWarning-foreground, orange); }
+                .ch-chip.on.warn b { color:inherit; }
+                .ch-note { margin:4px 0 8px; font-size:12px; }
+                .ch-note.bad { color:var(--vscode-errorForeground); }
+                .ch-tab td { vertical-align:middle; }
+                .ch-row { cursor:pointer; }
+                .ch-row:hover { background:var(--vscode-list-hoverBackground); }
+                .ch-row.open { background:var(--vscode-list-inactiveSelectionBackground); }
+                .ch-row.attn .ch-st { color:var(--vscode-editorWarning-foreground, orange); }
+                .ch-st { white-space:nowrap; }
+                .ch-warn { margin-right:3px; }
+                .ch-name { max-width:340px; min-width:120px; }
+                .ch-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .ch-id { display:block; font-size:11px; }
+                .ch-live.working { color:var(--vscode-charts-green, #3a3); }
+                .ch-live.gone { opacity:.7; }
+                .ch-acts { white-space:nowrap; text-align:right; }
+                .ch-actw { display:inline-block; }
+                .ch-act { min-width:28px; min-height:28px; padding:0 4px; margin-left:2px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); border-radius:4px; cursor:pointer; }
+                .ch-act:hover { background:var(--vscode-toolbar-hoverBackground, #8883); }
+                .ch-act[aria-pressed=true] { background:var(--vscode-inputValidation-warningBackground, #a606); border-color:var(--vscode-editorWarning-foreground, orange); }
+                .ch-sub > td { padding:4px 8px 8px 24px; background:var(--vscode-editorWidget-background, transparent); }
+                .ch-legs { table-layout:fixed; }
+                .ch-legs td { padding:3px 8px 3px 0; }
+                .ch-legs td:nth-child(1) { width:28px; }
+                .ch-legs td:nth-child(2) { width:32%; }
+                .ch-legs td:nth-child(4), .ch-legs td:nth-child(5), .ch-legs td:nth-child(6) { width:90px; }
+                .ch-leg { cursor:pointer; }
+                .ch-leg:hover { background:var(--vscode-list-hoverBackground); }
+                .ch-lt, .ch-lw { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .ch-form { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+                .ch-form textarea { flex:1 1 100%; min-height:56px; font:inherit; resize:vertical; }
+                .ch-form input[type=text] { flex:1 1 260px; min-height:28px; }
+                .ch-chk { flex:1 1 100%; font-size:12px; }
+                @media (max-width:520px) {
+                    .ch-wide, .ch-sw { display:none; }
+                    .ch-tab td, .ch-tab th { padding:4px 4px 4px 0; }
+                    .ch-tab td.num { white-space:nowrap; }
+                    .ch-name { max-width:120px; min-width:0; }
+                    .ch-acts { white-space:normal; width:96px; }
+                    .ch-act { margin:1px; }
+                    .ch-legs td:nth-child(2) { width:auto; }
+                    .ch-legs .ch-lw, .ch-legs .ch-live { display:none; }
+                    .ch-sub > td { padding-left:8px; }
+                }
+            </style>
+            ${window.AFHeader.html({
+                page: 'chains',
+                title: t('Chains'),
+                sub: `${esc(t('{running} running · {waiting} waiting · {attention} need attention', n))} · ${T.clockUtc(d.generatedAt)}`
+            })}
+            ${chipsHtml(n)}
+            ${note ? `<div class="ch-note ${note.ok ? 'ok' : 'bad'}">${esc(note.text)}</div>` : ''}
+            ${table}`;
+        window.AFHeader.wire(vscode);
+        wire();
+    }
+
+    function wire() {
+        document.querySelectorAll('[data-chip]').forEach(el => el.addEventListener('click', ev => {
+            ev.preventDefault();
+            const id = el.dataset.chip;
+            chip = chip === id ? '' : id;
+            render();
+        }));
+        document.querySelectorAll('.ch-row').forEach(el => el.addEventListener('click', () => {
+            const id = el.dataset.chain;
+            if (open.has(id)) { open.delete(id); } else { open.add(id); ask(id); }
+            render();
+        }));
+        document.querySelectorAll('[data-act]').forEach(el => el.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const id = el.dataset.chain;
+            const a = el.dataset.act;
+            note = null;
+            if (a === 'continue' || a === 'end') { form = { chainId: id, kind: a, prompt: '', why: '', endSession: false }; render(); return; }
+            if (a === 'open') { post('open', { sessionId: el.dataset.session }); return; }
+            post(a, { chainId: id, batonId: el.dataset.baton, sessionId: el.dataset.session, on: el.dataset.on === 'true' });
+        }));
+        document.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', () => post('open', { sessionId: el.dataset.open })));
+        const prompt = document.getElementById('ch-prompt');
+        if (prompt) { prompt.addEventListener('input', () => { form.prompt = prompt.value; }); }
+        const why = document.getElementById('ch-why');
+        if (why) { why.addEventListener('input', () => { form.why = why.value; }); }
+        const close = document.getElementById('ch-close');
+        if (close) { close.addEventListener('change', () => { form.endSession = close.checked; }); }
+        const go = document.getElementById('ch-go');
+        if (go) {
+            go.addEventListener('click', () => post(form.kind, { chainId: form.chainId, prompt: form.prompt, why: form.why, endSession: form.endSession }));
+        }
+        const cancel = document.getElementById('ch-cancel');
+        if (cancel) { cancel.addEventListener('click', () => { form = null; render(); }); }
+    }
+
+    render();
+})();

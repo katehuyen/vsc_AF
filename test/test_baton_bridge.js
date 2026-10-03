@@ -187,7 +187,7 @@ function setup(o = {}) {
             // S-121 — chains.end closes the chain's cards too, so it is the third holder
             ok('…and every part of the relay that ends a chain gets it — the pass, the runner and chains.end',
                 (ext.match(/board: batonBoard/g) || []).length === 3
-                && /registerChainBoardOps\(bridge, \{[^]*?board: batonBoard,/.test(ext)
+                && /const chainBoardDeps: ChainBoardOpsDeps = \{[^]*?board: batonBoard,[^]*?registerChainBoardOps\(bridge, chainBoardDeps\)/.test(ext)
                 && /batonStopChain[^]*?Date\.now\(\), batonBoard, cancelSuccessorRow\)/.test(ext));
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });

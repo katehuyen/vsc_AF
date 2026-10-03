@@ -1354,6 +1354,98 @@
       }
     },
     {
+      "capability": "chainsPanel.ts#afnav",
+      "ui": [
+        "page:chainsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "chainsPanel.ts#ceiling",
+      "ui": [
+        "page:chainsPanel.ts#ceiling"
+      ],
+      "ops": [
+        "baton.setLegs"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#continue",
+      "ui": [
+        "page:chainsPanel.ts#continue"
+      ],
+      "ops": [
+        "chains.continue"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#end",
+      "ui": [
+        "page:chainsPanel.ts#end"
+      ],
+      "ops": [
+        "chains.end"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#lastLeg",
+      "ui": [
+        "page:chainsPanel.ts#lastLeg"
+      ],
+      "ops": [
+        "baton.lastLeg"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#legs",
+      "ui": [
+        "page:chainsPanel.ts#legs"
+      ],
+      "ops": [
+        "baton.legs"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#now",
+      "ui": [
+        "page:chainsPanel.ts#now"
+      ],
+      "ops": [
+        "baton.now"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#open",
+      "ui": [
+        "page:chainsPanel.ts#open"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "chainsPanel.ts#refresh",
+      "ui": [
+        "page:chainsPanel.ts#refresh"
+      ],
+      "ops": [
+        "chains.list"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#stop",
+      "ui": [
+        "page:chainsPanel.ts#stop"
+      ],
+      "ops": [
+        "baton.stop"
+      ]
+    },
+    {
       "capability": "cleanupStuck",
       "ui": [
         "cmd:agentfarm.cleanupStuck"
@@ -3889,6 +3981,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openChains",
+      "ui": [
+        "cmd:agentfarm.openChains"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
       }
     },
     {
