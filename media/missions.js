@@ -1006,7 +1006,8 @@
         };
         const tierOpts = (engine, route, sel) => [C.option('', '— the route’s own choice —', {
             selected: !sel,
-            detail: 'No tier named, so the route serves whatever it serves by default.'
+            detail: (routeRowsFor(engine).find(p => p.id === route) || {}).tierDefault
+                || 'No tier named, so the route serves whatever it serves by default.'
         })].concat(tiersOf(engine, route).map(t =>
             C.option(t.id, t.label, {
                 selected: t.id === sel,

@@ -37,7 +37,7 @@
 
 import { RedactedRoute } from './providerIdentity';
 import { StoredProviderProfile } from './providerProfiles';
-import { routeModelEnv } from './routeModels';
+import { routeDefaultEnv, routeModelEnv } from './routeModels';
 
 /**
  * ‼️ MEANING, NOT MEMBERSHIP. A closed list of `CLAUDE_*` names goes stale
@@ -194,7 +194,7 @@ export function claudeRouteRuntime(
         // one: the wrong model on the right route answers, bills and is wrong.
         const model = profile.tiers?.[t];
         if (model) { spawnEnv.ANTHROPIC_MODEL = model; }
-    }
+    } else { Object.assign(spawnEnv, routeDefaultEnv(profile.baseUrl, profile.tiers)); }
 
     return { spawnEnv, clearEnv: inheritedRouteEnv(inheritedEnv), route };
 }

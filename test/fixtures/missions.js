@@ -980,6 +980,7 @@ const data = (over) => Object.assign({
                 {
                     id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
                     modelByRoute: 'Kimi (work) decides the model: pick one of its tiers. Anthropic\'s own model list does not apply here.',
+                    tierDefault: 'no tier named: a model this launch sends picks its own family\'s tier, otherwise opus — kimi-k2-thinking',
                     tiers: [
                         { id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' },
                         { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }

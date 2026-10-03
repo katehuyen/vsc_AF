@@ -227,12 +227,17 @@ const data = () => ({
                 providers: [
                     {
                         id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
+                        // X-493 / X-496 — what the host publishes for a route with its own base URL
+                        modelByRoute: 'Kimi (work) decides the model: pick one of its tiers. Anthropic\'s own model list does not apply here.',
+                        tierDefault: 'no tier named: a model this launch sends picks its own family\'s tier, otherwise opus — kimi-k2-thinking',
                         tiers: [
                             { id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' },
                             { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }
                         ]
                     },
-                    { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [{ id: 'opus', label: 'opus', detail: 'MiniMax-M2' }] }
+                    { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [{ id: 'opus', label: 'opus', detail: 'MiniMax-M2' }],
+                        modelByRoute: 'MiniMax (lab) decides the model: pick one of its tiers. Anthropic\'s own model list does not apply here.',
+                        tierDefault: 'no tier named: a model this launch sends picks its own family\'s tier, otherwise opus — MiniMax-M2' }
                 ]
             }
         },

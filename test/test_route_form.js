@@ -239,6 +239,18 @@ const formOf = (h) => {
     const th = r.html();
     ok('the Tasks form on such a route draws no Model box and no tier box', !/id="nt-model"/.test(th) && !/id="nt-tier"/.test(th));
     ok('…and its Route box\'s hover says why', th.includes(NOTE));
+
+    // X-496 — the "no tier" row says what it really serves, in the host's own words
+    const SAYS = 'no tier named: a model this launch sends picks its own family\'s tier, otherwise sonnet — x/sonnet';
+    const d2 = tf.data();
+    d2.launch.routes.claude.providers = [{ id: 'or', label: 'OR', detail: '', tierDefault: SAYS,
+        tiers: [{ id: 'sonnet', label: 'sonnet', detail: 'x/sonnet' }] }];
+    const r2 = runPage('tasksPage.js', d2);
+    r2.query('#nt-open')[0].click();
+    const s2 = r2.query('#nt-route')[0];
+    s2.value = 'or';
+    s2.fire('change');
+    ok('X-496 — the Tasks form\'s "no tier" option carries the route\'s own default', r2.html().includes(SAYS));
 }
 
 console.log(`test_route_form: ${pass} passed, ${fail} failed`);

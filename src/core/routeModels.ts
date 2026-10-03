@@ -51,12 +51,33 @@ export function routedModel(
 ): string {
     const m = String(model ?? '').trim();
     const env = rt?.spawnEnv;
-    if (m && !opts.live && env?.ANTHROPIC_MODEL) { return ''; }
+    // An ALIAS there is the route's default (routeDefaultEnv), not a picked tier: a model sent still wins over it.
+    if (m && !opts.live && env?.ANTHROPIC_MODEL && !ROUTE_TIERS.includes(env.ANTHROPIC_MODEL)) { return ''; }
     if (!m || !env?.ANTHROPIC_BASE_URL) { return m; }
     const anthropic = /^claude-/i.test(m) || /^(opus|sonnet|haiku|fable)(\[1m\])?$/i.test(m);
     if (!anthropic) { return m; }
     const fam = /(opus|sonnet|haiku|fable)/i.exec(m)?.[1].toLowerCase() ?? '';
     return fam && env[TIER_ENV[fam]] ? fam : '';
+}
+
+/**
+ * ‼️ X-496 — WITH NO TIER PICKED, A THIRD-PARTY ROUTE STILL ANSWERS WITH ONE OF
+ * ITS OWN TIERS. Measured (Claude Code 2.1.280, local fake endpoint): with no
+ * --model and no ANTHROPIC_MODEL the CLI falls back to a settings.json /
+ * settings.local.json `model` and sends a full Anthropic id there raw, and sends
+ * its own default raw when the route maps no opus — both refused by the route.
+ * So the first tier the route maps (ROUTE_TIERS order) is named by its ALIAS:
+ * the CLI ranks ANTHROPIC_MODEL above the settings files and below --model, and
+ * resolves the alias through the route's own mapping — a model this launch does
+ * send still wins (routedModel), and nothing on disk reaches the route raw.
+ */
+export function routeDefaultTier(baseUrl: string | undefined, tiers: Record<string, string> | undefined): string {
+    return baseUrl ? (ROUTE_TIERS.find(n => tiers?.[n]) ?? '') : '';
+}
+
+export function routeDefaultEnv(baseUrl: string | undefined, tiers: Record<string, string> | undefined): Record<string, string> {
+    const alias = routeDefaultTier(baseUrl, tiers);
+    return alias ? { ANTHROPIC_MODEL: alias } : {};
 }
 
 /**

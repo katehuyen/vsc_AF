@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.816.0 - A route with no tier picked still answers with its own model (2026-10-04)
+
+- **No more raw Anthropic model ids sent to a third-party route.** When you
+  left the tier on "the route's own choice", a model saved in Claude's own
+  settings files (for example the one a new agent is created with) could
+  reach the route unchanged and be refused. Now, with no tier picked, the
+  session runs on the route's first tier — unless the model it was started
+  with maps to another of the route's tiers, which still wins.
+- **The "no tier" row says what you get.** Its hover now names the tier and
+  model the route will actually answer with, in the Console, the launcher,
+  the Tasks form and missions.
+
 ## 3.815.0 - On a route, the route decides the model (2026-10-04)
 
 - **No more Model box that does nothing.** On a route with its own endpoint

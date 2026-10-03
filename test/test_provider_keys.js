@@ -45,7 +45,8 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     ok('an unmapped alias and an unknown tier name nothing', env.ANTHROPIC_DEFAULT_SONNET_MODEL === undefined && Object.keys(env).length === 3);
     const run = R.claudeRouteRuntime({ id: 'r', label: 'R', engine: 'claude', providerId: 'anthropic', baseUrl: 'https://openrouter.ai/api',
         authKind: 'oauth', tiers: { opus: 'm/opus', sonnet: 'm/sonnet' }, revision: 1 }, 'tok', {}, '');
-    ok('a run with no tier chosen still stays on the route for every alias', run.spawnEnv.ANTHROPIC_MODEL === undefined
+    // X-496 — and names the route's first tier by its ALIAS, so no settings-file model reaches the route raw
+    ok('a run with no tier chosen still stays on the route for every alias', run.spawnEnv.ANTHROPIC_MODEL === 'opus'
         && run.spawnEnv.ANTHROPIC_DEFAULT_OPUS_MODEL === 'm/opus' && run.spawnEnv.ANTHROPIC_DEFAULT_SONNET_MODEL === 'm/sonnet'
         && run.spawnEnv.ANTHROPIC_AUTH_TOKEN === 'tok');
 
@@ -145,6 +146,34 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
         && routedModel('claude-opus-5-5', { spawnEnv: { ANTHROPIC_API_KEY: 'k', ANTHROPIC_MODEL: 'claude-opus-4-1' } }) === '');
     ok('…a live switch there is still asked as picked',
         routedModel('claude-opus-5-5', { spawnEnv: { ANTHROPIC_MODEL: 'claude-opus-4-1' } }, { live: true }) === 'claude-opus-5-5');
+    // X-496 — with no tier picked a third-party route names its first tier by ALIAS (measured: CLI 2.1.280
+    // ranks ANTHROPIC_MODEL over settings.json / settings.local.json `model`, below --model, and resolves the alias)
+    const { routeDefaultTier, routeDefaultEnv } = require(path.join(OUT, 'routeModels.js'));
+    ok('X-496 — the default is the first tier the route maps, in the CLI\'s alias order',
+        routeDefaultTier('https://r', { sonnet: 'a', opus: 'b' }) === 'opus' && routeDefaultTier('https://r', { haiku: 'h', sonnet: 's' }) === 'sonnet'
+        && JSON.stringify(routeDefaultEnv('https://r', { sonnet: 's' })) === '{"ANTHROPIC_MODEL":"sonnet"}');
+    ok('…none without a base URL of its own, none on a route that maps no tiers',
+        routeDefaultTier(undefined, { opus: 'b' }) === '' && routeDefaultTier('https://r', {}) === ''
+        && JSON.stringify(routeDefaultEnv('https://r', undefined)) === '{}');
+    const byDefault = { spawnEnv: { ...third.spawnEnv, ANTHROPIC_MODEL: 'opus' } };
+    ok('‼️ …and a model the launch sends still wins over that default, mapped as without it',
+        routedModel('claude-opus-5-5', byDefault) === 'opus' && routedModel('claude-sonnet-5', byDefault) === ''
+        && routedModel('deepseek/deepseek-r1', byDefault) === 'deepseek/deepseek-r1');
+    const RT = require(path.join(OUT, 'providerRuntime.js'));
+    const prof = { id: 'or', label: 'OR', engine: 'claude', providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
+        authKind: 'oauth', tiers: { sonnet: 'x/sonnet', haiku: 'x/haiku' }, revision: 1 };
+    ok('‼️ the runtime: no tier picked → the default alias; a picked tier → its model; an unmapped pick → none',
+        RT.claudeRouteRuntime(prof, 'k', {}, '').spawnEnv.ANTHROPIC_MODEL === 'sonnet'
+        && RT.claudeRouteRuntime(prof, 'k', {}, 'haiku').spawnEnv.ANTHROPIC_MODEL === 'x/haiku'
+        && RT.claudeRouteRuntime(prof, 'k', {}, 'opus').spawnEnv.ANTHROPIC_MODEL === undefined);
+    ok('…and nothing on a route with no base URL (Anthropic\'s own endpoint serves what it is asked)',
+        RT.claudeRouteRuntime(Object.assign({}, prof, { baseUrl: undefined }), 'k', {}, '').spawnEnv.ANTHROPIC_MODEL === undefined);
+    const G2 = require(path.join(OUT, 'providerRegistry.js'));
+    const F2 = require(path.join(OUT, 'launchProvider.js'));
+    const dflt = F2.launchProviderForm(G2.adapterFor('claude', { profiles: [prof], secretFor: () => 'k', inheritedEnv: {} }),
+        { providerId: 'or' }).sub.choices.find(c => !c.id);
+    ok('…and the tier picker\'s "no tier" row says what it really serves (got ' + (dflt && dflt.detail) + ')',
+        !!dflt && /otherwise sonnet — x\/sonnet$/.test(dflt.detail));
     const { routeModelNote } = require(path.join(OUT, 'routeModels.js'));
     ok('X-493 — routeModelNote: no sentence without a base URL of its own (the Model box still means something)',
         routeModelNote(undefined) === undefined && routeModelNote({ label: 'Anthropic key', tiers: ['opus'] }) === undefined);

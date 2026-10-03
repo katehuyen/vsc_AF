@@ -1979,7 +1979,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             + (picked.modelByRoute && !tiers.length ? '\n\n' + picked.modelByRoute : ''))}"><span>${C.esc(noun)}</span>
                     <select id="nt-${routeId}">${opts}</select></label>`;
         if (!tiers.length) { return row; }
-        const topts = [C.option('', '— the route\'s own choice —', { selected: !tier, detail: 'No tier named, so the route serves whatever it serves by default.' })]
+        const topts = [C.option('', '— the route\'s own choice —', { selected: !tier, detail: picked.tierDefault || 'No tier named, so the route serves whatever it serves by default.' })]
             // ‼️ audit B-07.2 — the tier was the same defect with a worse
             // ending: the model this name is served by rode in the LABEL
             // (`opus — kimi-k2-thinking`, 143px in a 124px box, so the box read

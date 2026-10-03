@@ -126,6 +126,7 @@ const DATA = {
             noun: 'Route',
             providers: [
                 { id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
+                    tierDefault: 'no tier named: a model this launch sends picks its own family\'s tier, otherwise opus — kimi-k2-thinking',
                     tiers: [{ id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' }, { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }] },
                 { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [],
                     modelByRoute: 'MiniMax (lab) maps no tiers, so there is no model to choose here.' }
@@ -593,6 +594,8 @@ getEl('pr-1').value = 'kimi-work';
 getEl('pr-1').listeners.change();
 ok('naming the route draws the tier box under it, offering that route\'s own tiers',
     html().includes('id="tr-1"') && /kimi-k2-thinking/.test(html()));
+ok('X-496 — …and its "no tier" option says what the route really serves then',
+    html().includes('otherwise opus — kimi-k2-thinking'));
 getEl('tr-1').value = 'opus';
 getEl('tr-1').listeners.change();
 getEl('f-planner-route').value = 'minimax-lab';

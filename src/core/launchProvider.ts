@@ -43,7 +43,7 @@ import { ProviderAdapter, ProviderSelection } from './providerAdapter';
 import { CatalogModelRow, ProviderCatalogRead } from './providerCatalog';
 import { ProviderScope } from './providerIdentity';
 import { authKindLabel } from './routeAuth';
-import { routeModelNote } from './routeModels';
+import { routeDefaultTier, routeModelNote } from './routeModels';
 
 /** What a person has picked on the provider axis so far. */
 export interface ProviderPick {
@@ -215,6 +215,7 @@ function tierAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxis
     const t = (cat.templates || []).find(x => x.providerId === providerId);
     const tiers = Object.keys(t?.tiers ?? {});
     if (!providerId || !tiers.length) { return emptyAxis; }
+    const def = routeDefaultTier(t?.route?.baseUrl, t?.tiers);
     return {
         kind: 'tier',
         label: 'Tier',
@@ -222,7 +223,9 @@ function tierAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxis
         // ROUTE decides which model each tier is.
         note: `which model "${t?.providerLabel || providerId}" serves — the route decides, not the name`,
         choices: [
-            leaveAlone(`the route's own choice (${t?.providerLabel || providerId} maps: ${tiers.join(', ')})`),
+            leaveAlone(def // X-496 — routeDefaultEnv
+                ? `no tier named: a model this launch sends picks its own family's tier, otherwise ${def} — ${t?.tiers[def]}`
+                : `the route's own choice (${t?.providerLabel || providerId} maps: ${tiers.join(', ')})`),
             ...tiers.map(id => ({ id, label: id, detail: `${providerId} serves ${t?.tiers[id]} for "${id}"` }))
         ]
     };

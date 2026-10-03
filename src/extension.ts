@@ -24154,11 +24154,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const engineRouteMatrix = (): Record<string, {
         noun: string;
-        providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; modelByRoute?: string }[];
+        providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; tierDefault?: string; modelByRoute?: string }[];
     }> => {
         const out: Record<string, {
             noun: string;
-            providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; modelByRoute?: string }[];
+            providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; tierDefault?: string; modelByRoute?: string }[];
         }> = {};
         for (const id of Object.keys(ENGINES)) {
             // ‼️ `run` is the transport: a task is spawned headless. Asking as
@@ -24178,6 +24178,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // model box on this same form already IS that axis, and two
                         // controls for one subject is what ONE SUBJECT forbids.
                         tiers: picked.sub.kind === 'tier' ? picked.sub.choices.filter(c => c.id) : [],
+                        // X-496 — what "no tier" really serves, said once by the form
+                        ...(picked.sub.kind === 'tier' ? { tierDefault: picked.sub.choices.find(c => !c.id)?.detail ?? '' } : {}),
                         ...(picked.modelByRoute ? { modelByRoute: picked.modelByRoute } : {})
                     };
                 })
