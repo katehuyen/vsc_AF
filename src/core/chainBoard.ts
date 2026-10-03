@@ -22,7 +22,8 @@ export const CHAIN_BUCKETS: readonly ChainBucket[] = ['running', 'waiting', 'par
 
 /**
  * hanging — the running leg is idle (or its session is gone, or known nowhere) with no pass and no closing record;
- * stuck-wait — a successor still waits for its predecessor's session to end;
+ * stuck-wait — a successor still waits for its predecessor's session to end, or (S-129) its row is on
+ *   the board and has not started — held by a ceiling, or past the reset it was parked for;
  * cut — the chain ended abnormally (the crash-loop guard, or the door refused the next leg);
  * fault — the running leg's engine failed and the fault watch has not passed for it;
  * brake — the leg ceiling or the barren-chain brake refused a pass.
@@ -154,6 +155,14 @@ function signalsOf(row: ChainRow, top: Baton | undefined, f: LegFacts | undefine
         out.push({
             kind: 'stuck-wait', since: row.since, sessionId: sid,
             why: `the next leg still waits for session ${short(sid)} to end — ${row.why}`
+        });
+    }
+    // S-129 — a reset park waits for its reset; anything else parked that long is a row nobody started
+    const heldFrom = Math.max(row.since, row.wakeAt ?? 0);
+    if (row.state === 'parked' && now - heldFrom >= t.waitMs) {
+        out.push({
+            kind: 'stuck-wait', since: heldFrom, sessionId: sid,
+            why: `the next leg's task row is on the board and has not started — ${row.why}`
         });
     }
     if (row.state === 'failed' || row.state === 'refused') {

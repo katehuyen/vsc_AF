@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.805.0 - Two relay chains in one agent no longer hold each other up (2026-10-03)
+
+- **A relay chain waits only for itself.** With two relay chains running in
+  the same agent, the next leg of one could wait "agent busy" behind the
+  other chain's leg for as long as that leg's Console card stayed open, and
+  nothing said so. Now a chain's next leg waits only for its own previous
+  leg: another chain's leg, or a task of the same agent outside any chain,
+  never holds it. Sessions you open yourself in the Console never counted
+  and still do not. The fleet-wide limit (agentFarm.maxConcurrentTasks)
+  still applies.
+- **A held next leg says who holds it, and rings the bell.** An "agent busy"
+  wait now names the task that holds the agent's seat, and a chain whose
+  next leg is still not started after agentFarm.chainWaitMinutes gets the
+  same "stuck waiting" notice as a chain waiting for its previous session.
+
 ## 3.804.0 - A stuck relay chain rings the bell, and the Chains page on the phone (2026-10-03)
 
 - **A relay chain that needs you now tells you.** When a chain's running

@@ -1488,7 +1488,7 @@ Sık kullandığın görevleri şablonlaştır: görev üzerinde sağ tık → *
 
 ### Eşzamanlılık ve Kota Bekçisi
 
-0.8.0'dan itibaren kuyruk gerçek bir kuyruk: aynı anda koşan görev sayısı sınırlıdır (`maxConcurrentTasks` varsayılan 2, `maxConcurrentPerAgent` varsayılan 1). Sınıra takılan başlatma **iptal edilmez** — "deferred" rozetiyle bekler ve kapasite açılınca kendiliğinden koşar.
+0.8.0'dan itibaren kuyruk gerçek bir kuyruk: aynı anda koşan görev sayısı sınırlıdır (`maxConcurrentTasks` varsayılan 2, `maxConcurrentPerAgent` varsayılan 1). Sınıra takılan başlatma **iptal edilmez** — "deferred" rozetiyle bekler ve kapasite açılınca kendiliğinden koşar. **Bayrak ardılını yalnız kendi zinciri bekletir (3.805.0, S-129):** ajan başına tavan yalnız o zincirin satırlarını ve selefin kendi satırını sayar — aynı ajandaki başka bir zincirin etabı ya da zincir dışı bir görev onu asla tutmaz (Console'da kendinizin açtığı oturumlar görev satırı değildir, hiç sayılmaz). Filo tavanı geçerliliğini korur. Bekleme gerekçesi tutan satırı adıyla söyler; `agentFarm.chainWaitMinutes` geçtiği halde başlamamış ardıl zincir zilini çalar.
 
 **Kota bekçisi:** `windowTokenLimit` tanımlıysa ve `quotaGuardPercent` (örn. 85) ayarlıysa, 5 saatlik pencere o doluluğa ulaştığında **otomatik** işler ertelenir — bir gece fabrikası sabah kotanı yemiş olmaz. Pencere gevşeyince ertelenenler sırayla başlar.
 

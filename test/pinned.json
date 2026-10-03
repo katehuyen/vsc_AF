@@ -203,6 +203,34 @@
       "hash": "f4444f5ca241",
       "incident": "X-480 (2026-10-02 20:00:05 UTC): a revived relay leg's nudge turn ended 'interrupted' two seconds in, the leg sat idle, and no record could say whether a surface had asked for the stop or the engine ended it itself",
       "why": "a new door to the stop cannot arrive unnamed"
+    },
+    {
+      "file": "test_relay_seat.js",
+      "title": "‼️ chain B's successor starts beside it — another chain's leg does not hold it",
+      "hash": "4fa92571949d",
+      "incident": "S-129 (2026-10-03): two relay chains in one agent — the older successor took the one seat and the other waited \"agent busy\" behind a stay-open Console leg, silently and with no end",
+      "why": "replays the incident: two chains, one seat"
+    },
+    {
+      "file": "test_relay_seat.js",
+      "title": "‼️ a Console task outside the chain does not hold a successor",
+      "hash": "71dd9a0d80cf",
+      "incident": "S-129 (2026-10-03): two relay chains in one agent — the older successor took the one seat and the other waited \"agent busy\" behind a stay-open Console leg, silently and with no end",
+      "why": "the same stall behind a non-chain Console task"
+    },
+    {
+      "file": "test_relay_seat.js",
+      "title": "‼️ never the first-leg fields: the seal reads `baton` and would seal a successor as a new chain",
+      "hash": "7a3f526db542",
+      "incident": "S-129 (2026-10-03): two relay chains in one agent — the older successor took the one seat and the other waited \"agent busy\" behind a stay-open Console leg, silently and with no end",
+      "why": "reusing baton/batonChainId would seal every successor as a new chain"
+    },
+    {
+      "file": "test_relay_seat.js",
+      "title": "‼️ held past the wait threshold: stuck-wait, carrying the hold's own reason",
+      "hash": "3caffebd7873",
+      "incident": "S-129 (2026-10-03): two relay chains in one agent — the older successor took the one seat and the other waited \"agent busy\" behind a stay-open Console leg, silently and with no end",
+      "why": "the silence: a held successor must ring the chain bell"
     }
   ]
 }

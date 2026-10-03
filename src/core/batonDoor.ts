@@ -18,6 +18,7 @@ import { emergencyPrompt } from './batonFailsafe';
 import { InteractiveClose, InteractiveTarget } from './launch';
 import { normPath } from './util';
 import { RELAY_RULES, withRelayRules } from './batonRules';
+import type { RelayMark } from './relaySeat';
 
 export interface DoorRow {
     title: string;
@@ -42,6 +43,8 @@ export interface DoorRow {
         interactiveTarget?: InteractiveTarget;
         interactiveClose?: InteractiveClose;
         workDir?: string;
+        /** S-129 — the row continues this chain; only its own chain holds its agent's seat (relaySeat.ts) */
+        relayOf: RelayMark;
     };
 }
 
@@ -67,6 +70,8 @@ export interface DoorContext {
     emergencyTemplate?: string;
     /** S-106 — this leg alone opens on this slot (stayAccount.ts); the baton keeps the chain's pool for the next pass */
     account?: string;
+    /** S-129 — the task row the predecessor ran on, when it had one (a first leg's row carries no chain mark) */
+    after?: string;
 }
 
 /** The variables a handover template may name (agentFarm.batonHandoverTemplate). */
@@ -163,6 +168,8 @@ const same = (a: string | undefined, b: string | undefined): boolean =>
  * closes, so on every leg it meets the per-agent lock for a second or two.
  * That is the door working, not news: the relay speaks for its rows (S-77 —
  * a park, a brake), so the generic "Task parked" line stays quiet for it.
+ * S-129: a successor is held by its own chain only (relaySeat.ts), and a hold
+ * that lasts is said by the chain board's stuck-wait (chainBoard.ts).
  */
 export function relayHandoffHold(t: { id: string; deferredCode?: string }, batons: readonly Baton[]): boolean {
     return String(t.deferredCode ?? '').startsWith('concurrency:agent:') && batons.some(b => b.taskId === t.id);
@@ -185,7 +192,8 @@ export function successorRow(b: Baton, ctx: DoorContext = {}): DoorRow {
         account: String(ctx.account ?? '').trim() || b.want.account,
         // X-473 — a leg kept on its slot carries the chain's pool: if the slot fills before it starts, it goes back there
         ...(String(ctx.account ?? '').trim() && isPolicyId(b.want.account) ? { accountPool: b.want.account } : {}),
-        ...(b.from.cwd && !same(b.from.cwd, ctx.agentDir) ? { workDir: b.from.cwd } : {})
+        ...(b.from.cwd && !same(b.from.cwd, ctx.agentDir) ? { workDir: b.from.cwd } : {}),
+        relayOf: { chainId: b.chainId, ...(String(ctx.after ?? '').trim() ? { after: String(ctx.after).trim() } : {}) }
     };
     const park = ctx.park && ctx.park.resetsAt > 0 ? ctx.park : undefined;
     const wakeAt = park ? wakeMoment(park) : undefined;

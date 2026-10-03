@@ -17669,8 +17669,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             })));
             // X-475 — the predecessor's slot, the measured cause, the stay and the park (accountPlacement.ts)
             const { stay, park } = successorPlacement(b, agent.id);
+            // S-129 — the predecessor's own row still holds the seat for the beat it takes to close
+            const after = taskManager.tasks.find(t => t.status === 'running' && successorSessionOf(t) === b.from.sessionId)?.id;
             const row = successorRow(b, {
-                agentName: agent.name, agentDir: agent.dir, ...(park ? { park } : {}),
+                agentName: agent.name, agentDir: agent.dir, ...(park ? { park } : {}), ...(after ? { after } : {}),
                 // S-82 — the chain's own ceiling ("hop n/N"), and the user's header and standing rule
                 maxHops: chainMaxLegs(batonStore.all(), b.chainId, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))),
                 template: cfg().get<string>('batonHandoverTemplate', ''),

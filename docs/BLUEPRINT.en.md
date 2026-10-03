@@ -1439,7 +1439,7 @@ Templatize your frequently-used tasks: right-click a task → **Save as Template
 
 ### Concurrency and the Quota Guard
 
-From 0.8.0 the queue is a real queue: the number of concurrently running tasks is limited (`maxConcurrentTasks` default 2, `maxConcurrentPerAgent` default 1). A start that hits the limit is **not cancelled** — it waits with a "deferred" badge and runs by itself when capacity opens up.
+From 0.8.0 the queue is a real queue: the number of concurrently running tasks is limited (`maxConcurrentTasks` default 2, `maxConcurrentPerAgent` default 1). A start that hits the limit is **not cancelled** — it waits with a "deferred" badge and runs by itself when capacity opens up. **A relay successor is held by its own chain only (3.805.0, S-129):** the per-agent cap counts only the rows of that chain and the predecessor's own row — another chain's leg or a task outside any chain in the same agent never holds it (Console sessions you open yourself are not task rows and never counted). The fleet cap still applies. A hold names the row that holds it, and a successor still not started after `agentFarm.chainWaitMinutes` rings the chain bell.
 
 **Quota guard:** if `windowTokenLimit` is defined and `quotaGuardPercent` (e.g. 85) is set, when the 5-hour window reaches that fullness, automatic jobs are **deferred** — an overnight factory won't have eaten your morning quota. When the window loosens, the deferred ones start in order.
 

@@ -88,7 +88,9 @@ Module._load = origLoad;
     ok('…and the asking run\'s own weight is part of the sum',
         /this\.runningWeight\(\) \+ mine > maxGlobal/.test(tasks));
     ok('the PER-AGENT limit stays a plain count, and says why',
-        /runningCount\(task\.agentId\) >= maxAgent/.test(tasks)
+        // S-129: the rows counted are the agent's running rows that hold this one (relaySeat.ts) — still rows, never weight
+        /seatHolders\(task, this\.tasks\.filter\(t => t\.status === 'running' && t\.agentId === task\.agentId\)\)/.test(tasks)
+        && /holders\.length >= maxAgent/.test(tasks)
         && /not about memory/.test(tasks));
     ok('the hold sentence explains a number the user cannot see',
         /slots, \$\{this\.runningWeight\(\)\} in use/.test(tasks));

@@ -147,7 +147,8 @@ const kinds = (r) => r.signals.map(s => s.kind).join(',');
 // ---------- chips and filters ----------
 {
     const c2 = (id, state, extra) => ({ ...mk(id, 1, state, 'X' + id, state === 'started' ? 'Y' + id : undefined, extra), chainId: 'chn_' + id });
-    const rows = board([seal, b1, c2('a', 'parked'), c2('b', 'failed'), c2('c', 'done', { from: { ...from('Xc'), agentId: 'D:/agents/ops', projectId: 'prj_2' } })], { L2: { alive: true } });
+    // a reset park (S-129: a park with no reset to wait for, held that long, is stuck — test_relay_seat)
+    const rows = board([seal, b1, c2('a', 'parked', { wakeAt: NOW + 30 * MIN }), c2('b', 'failed'), c2('c', 'done', { from: { ...from('Xc'), agentId: 'D:/agents/ops', projectId: 'prj_2' } })], { L2: { alive: true } });
     const n = C.boardCounts(rows);
     ok('the chips count each bucket and attention across them', n.total === 4 && n.running === 1 && n.parked === 1 && n.stopped === 1 && n.done === 1 && n.attention === 1);
     ok('filter by bucket (failed is in stopped) or by exact state', C.filterBoard(rows, { state: 'stopped' }).length === 1 && C.filterBoard(rows, { state: 'failed' }).length === 1);

@@ -54,6 +54,7 @@ import {
 } from './automation';
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import { engineConcurrencyWeight } from './engines';
+import { agentBusyReason, RelayMark, seatHolders } from './relaySeat';
 import {
     claudeNewSessionArgs, claudeResumeArgs, engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
     enginePermissionSetting, headlessEffortRefusal, headlessResumeRefusal, runArgs, tuiArgs
@@ -318,6 +319,13 @@ export interface FarmTask {
     batonChainId?: string;
     /** S-82 — that chain's own leg ceiling (0 = none); absent = agentFarm.batonMaxHops. */
     batonMaxHops?: number;
+    /**
+     * ‼️ S-129 — this row CONTINUES a relay chain: the door wrote it for a
+     * successor (core/batonDoor.ts). Not `baton`/`batonChainId`, which mean the
+     * run OPENS a chain and are what the first-leg seal reads. Only its own chain
+     * holds its agent's seat against it (core/relaySeat.ts).
+     */
+    relayOf?: RelayMark;
     /**
      * ‼️ M-26 — WHERE THIS INTERACTIVE RUN OPENS, and what it does once the
      * agent has answered. Both are ignored on a headless run, and both are
@@ -3380,7 +3388,8 @@ export class TaskManager implements vscode.Disposable {
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
-            | 'sentryWhy' | 'account' | 'accountHandover' | 'accountPool' | 'baton' | 'batonChainId' | 'batonMaxHops'>>
+            | 'sentryWhy' | 'account' | 'accountHandover' | 'accountPool' | 'baton' | 'batonChainId' | 'batonMaxHops'
+            | 'relayOf'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -3617,11 +3626,15 @@ export class TaskManager implements vscode.Disposable {
                     : `concurrency: ${maxGlobal} running`
             };
         }
-        if (maxAgent > 0 && this.runningCount(task.agentId) >= maxAgent) {
-            return {
-                code: `concurrency:agent:${task.agentId}`,
-                reason: `agent busy (${task.agentName})`
-            };
+        if (maxAgent > 0) {
+            // S-129 — a relay successor is held by its own chain only (core/relaySeat.ts)
+            const holders = seatHolders(task, this.tasks.filter(t => t.status === 'running' && t.agentId === task.agentId));
+            if (holders.length >= maxAgent) {
+                return {
+                    code: `concurrency:agent:${task.agentId}`,
+                    reason: agentBusyReason(task.agentName, holders)
+                };
+            }
         }
         // S-72 — the row is handed over: a row that states an account is judged
         // by THAT account's window, not the machine's (core/quotaBrake.ts).
@@ -6297,6 +6310,8 @@ export class TaskManager implements vscode.Disposable {
             });
         copy.attempt = attempt;
         copy.outputContract = task.outputContract;
+        // S-129 — a revive is the same relay leg picked up again; a retry or a rerun is not
+        if (revive && task.relayOf) { copy.relayOf = task.relayOf; }
         // X-169 - and on the account the original ran on. A retry that moved to
         // whichever account happens to be active now would bill a different
         // plan for the same work and say nothing about it.
