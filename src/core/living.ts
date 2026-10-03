@@ -116,6 +116,8 @@ export interface LivingInput {
     projects?: { name: string; warnings: string[] }[];
     /** M-61 — the content calendar's upcoming and overdue publishes (src/core/calendarSignals.ts) */
     publishes?: PublishView;
+    /** loops a module outside this file checks, its rows built there (S-124: chainSignals.ts) */
+    extra?: LivingSignal[];
     preconditionDeps?: PreconditionDeps;
 }
 
@@ -447,6 +449,7 @@ export function buildLivingReport(input: LivingInput): LivingReport {
         ...spendSignal(input),
         ...projectSignals(input),
         ...publishSignals(input.publishes, now),
+        ...(input.extra ?? []),
         ...checkSignals(input)
     ].sort((a, b) => b.weight - a.weight || a.label.localeCompare(b.label));
 

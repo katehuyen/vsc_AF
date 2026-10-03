@@ -704,6 +704,7 @@ import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchP
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
 import { sessionChainOf } from './core/sessionChain';
+import { chainLivingSignals } from './core/chainSignals';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
 import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
@@ -25290,6 +25291,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             noticeStaleHours: cfg().get<number>('noticeStaleHours', 24),
             // M-61 — the content calendar's upcoming (7 days) and overdue publishes
             publishes: calendarView(readCalendar(contentCalendarDir()), Date.now()),
+            // S-124 — the relay chains' attention signals, from the very rows chains.list answers
+            extra: chainLivingSignals(boardNow(chainBoardDeps), Date.now()),
             // ‼️ The SAME sentences the project page prints, not a second
             // opinion computed here — a folder-exists check written twice is
             // two answers that will disagree within a week. Closed projects are
