@@ -55,6 +55,18 @@ const permSession = (id, ts) => ({
     ok('same session, different problem, different key', needKey(stall) !== needKey(q(1)));
 }
 
+// ---------- N-13: notifyStuck off = no stalled row; the rest of the queue stays ----------
+{
+    const stalled = { sessionId: 's1', agentName: 'dev', status: 'stalled', lastEventTs: 5, transcriptPath: '' };
+    const on = buildNeedsQueue({ ...base, liveSessions: [stalled, permSession('s2', 2)] });
+    const off = buildNeedsQueue({ ...base, stalledRows: false, liveSessions: [stalled, permSession('s2', 2)] });
+    ok('‼️ N-13: with notifyStuck off a stalled session gets no Needs You row', !off.some(i => i.kind === 'stalled'));
+    ok('…a permission still does', off.length === 1 && off[0].kind === 'permission');
+    ok('on (and unsaid, as before) the stalled row is there', on.some(i => i.kind === 'stalled') && buildNeedsQueue({ ...base, liveSessions: [stalled] }).length === 1);
+    const ext = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('the window hands notifyStuck to the queue', /approvals: approvalQueue\.list\(\),\s*stalledRows: cfg\(\)\.get<boolean>\('notifyStuck', true\),/.test(ext));
+}
+
 // ---------- clearability ----------
 {
     const items = buildNeedsQueue({

@@ -170,6 +170,8 @@ export interface NeedsInput {
         transcriptPath?: string;
     }[];
     approvals: PendingApproval[];
+    /** N-13 — agentFarm.notifyStuck: false = a stalled session's card says so, and Needs You stays quiet */
+    stalledRows?: boolean;
     /** Only `antigravity` warnings are read — every other insight is news, and
      *  news is posted to Notices by the host (see the admission test above). */
     insights: {
@@ -276,7 +278,7 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
                     { id: 'open-timeline', label: 'Timeline' }
                 ]
             });
-        } else if (s.status === 'stalled') {
+        } else if (s.status === 'stalled' && input.stalledRows !== false) {
             items.push({
                 urgency: URGENCY.stalled,
                 kind: 'stalled',

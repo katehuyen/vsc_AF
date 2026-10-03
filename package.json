@@ -9191,7 +9191,7 @@
           "type": "number",
           "default": 240,
           "minimum": 0,
-          "description": "Stuck warning — WHEN: a working session with no hook events for this many seconds is marked STALLED (its card says so and Needs You gets a row, whether or not notifyStuck is on). A session waiting on its own work is not: a wait the Console shows in purple, or a command still inside the time limit it was given. Any value you like; 0 = never: no session is ever marked stalled, so notifyStuck has nothing to announce."
+          "description": "Stuck warning — WHEN: a working session with no hook events for this many seconds is marked STALLED (its card says so; with notifyStuck on, Needs You gets a row and a notification pops up). A session waiting on its own work is not: a wait the Console shows in purple, or a command still inside the time limit it was given. Any value you like; 0 = never: no session is ever marked stalled, so notifyStuck has nothing to announce."
         },
         "agentFarm.quotaStyle.percent": {
           "type": "string",
@@ -9216,7 +9216,7 @@
         "agentFarm.notifyStuck": {
           "type": "boolean",
           "default": true,
-          "description": "Stuck warning — HOW: also pop up a notification when a session is marked stalled. Off, the stalled mark and the Needs You row still appear, without the pop-up. Nothing to announce while stuckThresholdSeconds is 0."
+          "description": "Stuck warning — WHETHER you are told: when a session is marked stalled, give it a Needs You row and pop up a notification. Off, only its card says STALLED — no Needs You row, no pop-up. Nothing to announce while stuckThresholdSeconds is 0."
         },
         "agentFarm.notifyTurnEnd": {
           "type": "boolean",

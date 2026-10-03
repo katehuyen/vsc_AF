@@ -20168,6 +20168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // waiting sessions of the same agent stay tellable apart in the queue.
         liveSessions: live.sessions().map(s => ({ ...s, agentName: live.labelOf(s) })),
         approvals: approvalQueue.list(),
+        stalledRows: cfg().get<boolean>('notifyStuck', true),
         insights,
         // F1: cut runs live in the queue too — the startup toast is easy to miss.
         interruptedRuns: taskManager.interruptedRuns(),

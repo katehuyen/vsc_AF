@@ -2198,7 +2198,7 @@
         if (!mine.length) { return ''; }
         return `<div class="setgroup" id="stuck-warning">
                 <h3 class="setgrouph">Stuck warning</h3>
-                <div class="setgroupwhy">Two different things. The <b>number</b> says WHEN: a working session silent for that many seconds is marked stalled — its card says so and Needs You gets a row, whatever the box says. 0 turns the warning off — nothing is ever marked stalled, so the box has nothing to announce. The <b>box</b> only says whether a pop-up notification comes on top of that mark; unticked, the mark and the Needs You row still come, silently.</div>
+                <div class="setgroupwhy">Two different things. The <b>number</b> says WHEN: a working session silent for that many seconds is marked stalled and its card says so. 0 turns the warning off — nothing is ever marked stalled, so the box has nothing to announce. The <b>box</b> says whether you are told: ticked, the stalled session gets a Needs You row and a pop-up notification; unticked, only its card shows the mark.</div>
                 ${mine.map(itemHtml).join('')}
             </div>`;
     }

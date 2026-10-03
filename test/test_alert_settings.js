@@ -52,10 +52,10 @@ const byAttr = (p, attr, key) =>
         && html.indexOf('data-item="agentFarm.stuckThresholdSeconds"') > g && html.indexOf('data-item="agentFarm.notifyStuck"') > g);
     ok('…drawn once each, and it says 0 turns the warning off', (html.match(/data-item="agentFarm\.stuckThresholdSeconds"/g) || []).length === 1
         && /0 turns the warning off/.test(html));
-    // U-161 — the user read the number and the box as one switch twice over; they are WHEN and HOW
-    ok('U-161: the group says the number decides when and the box only adds the pop-up',
-        /The <b>number<\/b> says WHEN/.test(html) && /The <b>box<\/b> only says whether a pop-up notification comes/.test(html)
-        && /whatever the box says/.test(html) && !/the alert plays if it is on/.test(html));
+    // U-161 — the user read the number and the box as one switch twice over; N-13 — the box is whether you are told at all
+    ok('U-161/N-13: the number decides when, the box whether Needs You and the pop-up tell you',
+        /The <b>number<\/b> says WHEN/.test(html) && /The <b>box<\/b> says whether you are told/.test(html)
+        && /unticked, only its card shows the mark/.test(html) && !/whatever the box says/.test(html) && !/the alert plays if it is on/.test(html));
     ok('…after the alert sounds card, as the threshold always was', html.indexOf('🔔 Alert sounds') < g);
     const plain = open(Object.assign(fx.inUse(), { alerts: undefined })).html();
     ok('…also on a build that sends no alerts card', /id="stuck-warning"/.test(plain) && (plain.match(/data-item="agentFarm\.notifyStuck"/g) || []).length === 1);
