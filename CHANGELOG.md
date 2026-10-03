@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.802.0 - The Work Queue and Notices in your language, and every relay mark opens its chain (2026-10-03)
+
+- **The Work Queue and Notices in Turkish.** With the interface language set
+  to Turkish (or VS Code's display language when it is on `auto`), the Work
+  Queue and Notices pages are drawn in it: headings, filters, the bulk bar,
+  right-click menus, buttons and hover text. The bridge and the agents keep
+  reading the same English text as before.
+- **The Chains page opens on a chain.** The relay counter in the status bar
+  opens the Chains page with its chain unfolded and its legs listed. So does
+  a relay's mark everywhere it appears: on a Console card, in the Sessions
+  table and on the Turns page.
+- **A Chains button on Tasks and Missions.** Both pages carry a button that
+  opens the Chains page beside their other related pages.
+
 ## 3.801.0 - Needs You and the Now page's waiting rows speak your language (2026-10-03)
 
 - **Needs You in Turkish.** With the interface language set to Turkish (or
