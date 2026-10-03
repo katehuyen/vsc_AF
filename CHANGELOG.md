@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.800.0 - The Chains page: every relay chain, its legs and its controls (2026-10-03)
+
+- **A page for your relay chains.** "Agent Farm: Open Chains" shows every
+  relay chain in one table: where it stands (running, waiting, parked, done,
+  stopped), which leg it is on and its ceiling, whether the current leg is
+  working, idle or gone — or what the next one waits for — when it last
+  moved, what all its legs cost together, and the account and model the next
+  leg opens on. Chips across the top filter by state; "Needs attention" shows
+  only the chains with a problem, and pressing a chip again shows them all.
+  Hover any cell for the details.
+- **Each chain's legs.** Click a row to open its legs: every leg's session,
+  how long it ran, what it cost, and the first line of the handover words it
+  passed on (the whole text on hover). Click a leg to open its transcript.
+- **The controls, on the row.** Start a waiting leg now, stop a waiting or
+  parked chain, brake the running leg as the last one (or release it), change
+  the leg ceiling, continue a finished or stopped chain — from its last
+  handover words or from words you write — and end a chain on purpose,
+  optionally closing the current leg's session (it asks first if that session
+  is working). Each control does exactly what the bridge operation of the same
+  name does, and the page says what came of it. A control is shown only where
+  it can work.
+- **A chain nothing can see no longer hides in the running count.** A running
+  chain whose current leg's session is known nowhere — no card, no process,
+  no transcript — is now flagged as hanging once its record has not moved for
+  the hang time (`agentFarm.chainHangMinutes`).
+- The page is drawn in the interface language, Turkish included.
+
 ## 3.799.0 - Relay chains can be listed, continued and ended; the Now page speaks Turkish (2026-10-03)
 
 - **Every relay chain in one list.** The new bridge operation `chains.list`
