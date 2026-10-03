@@ -703,6 +703,7 @@ import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
+import { sessionChainOf } from './core/sessionChain';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
 import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
@@ -2070,6 +2071,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // had not. Declared later in activate() and reached through this
             // closure, which only runs when the page is opened.
             accountFor: sessionAccountOf,
+            // S-123 — a relay leg's ⑂ on its card, the Sessions table's verdict; same closure, same reason
+            chainsNow: () => sessionChainOf(batonStore.all(), chainIndexNow()),
             // X-110 — and which provider served it, from the reader the resume
             // gate asks; same closure, same reason.
             identityFor: (sessionId: string) => sessionIdentityOf(sessionId),

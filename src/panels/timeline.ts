@@ -4,6 +4,7 @@ import { totalTokens } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { TaskManager } from '../core/tasks';
 import { RunIdentity } from '../core/turnRuntime';
+import type { BatonCardView } from '../core/batonView';
 import {
     SessionAlertPrefs, SESSION_ALERT_EVENTS, TurnAlertAction, TurnAlertBranch, TURN_ALERT_ACTIONS
 } from '../core/turnAlerts';
@@ -36,6 +37,8 @@ export interface TimelineDeps {
      *  asks (`sessionIdentityOf`), so a card and the gate cannot describe one
      *  run two ways. */
     identityFor?: (sessionId: string) => RunIdentity | undefined;
+    /** S-123 — a run's leg of a baton relay, the Sessions table's verdict (core/sessionChain.ts); one snapshot per draw */
+    chainsNow?: () => (sessionId: string) => BatonCardView | undefined;
     /** Sessions a live CLI process owns right now (the CLI's own registry). */
     liveOwners: () => { sessionId: string; pid: number; entrypoint?: string; status?: string }[];
     /** Is that registry readable at all? Without it, "no process" means nothing. */
@@ -116,6 +119,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
     const owners = deps.liveOwners();
     const ownersKnown = deps.ownersKnown();
     const hosted = new Set(deps.hostedIds());
+    const chainOf = deps.chainsNow?.();
     return {
         now: Date.now(),
         stuckMs: deps.stuckMs(),
@@ -182,6 +186,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 // slot id is what a spawn needs, and this page spawns nothing.
                 account: deps.accountFor?.(s.sessionId)?.label ?? '',
                 identity: deps.identityFor?.(s.sessionId) ?? null,
+                chain: chainOf?.(s.sessionId) ?? null,
                 // From the transcript (absent until the session's first turn lands).
                 title: row?.title ?? '',
                 firstPrompt: s.firstPrompt || row?.firstPrompt || '',

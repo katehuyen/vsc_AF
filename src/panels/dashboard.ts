@@ -18,8 +18,8 @@ import { billingReader, describeDrift, runDrift, sessionIdentity, turnRuntimes }
 import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
 import { Baton } from '../core/baton';
-import { batonCardView } from '../core/batonView';
-import { chainIndexNow, chainPlace, placeCardView } from '../core/chainMembership';
+import { chainIndexNow } from '../core/chainMembership';
+import { sessionChainOf } from '../core/sessionChain';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -318,10 +318,7 @@ export function sessionRowPool(
             breaks: v.breaks
         };
     };
-    const batons = (() => { try { return batonSource?.() ?? []; } catch { return []; } })();
-    const relayIds = new Set<string>();
-    const chains = chainIndexNow();
-    for (const b of batons) { relayIds.add(b.from.sessionId); if (b.toSessionId) { relayIds.add(b.toSessionId); } }
+    const chainOf = sessionChainOf((() => { try { return batonSource?.() ?? []; } catch { return []; } })(), chainIndexNow());
     const rows = sessions.map(s => ({
         ...spanFields(s),
         file: s.file,
@@ -373,9 +370,7 @@ export function sessionRowPool(
         mission: sessionMission(s) ?? null,
         // S-77 — this run's leg of a baton relay (the card's own view); null off a relay
         // U-168 - and a chain whose batons the store dropped still has its legs
-        chain: s.sessionId
-            ? ((relayIds.has(s.sessionId) ? batonCardView(batons, s.sessionId) : undefined) ?? placeCardView(chainPlace(chains, s.sessionId), s.sessionId) ?? null)
-            : null,
+        chain: chainOf(s.sessionId) ?? null,
         // shelf marks: pinned rows sort first and survive every top-N cut
         pinned: s.pinned === true,
         tags: s.tags ?? [],

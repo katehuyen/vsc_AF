@@ -37,6 +37,9 @@ const sessions = () => ([
         sessionId: '407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60',
         agentName: 'developer', resolved: true, label: 'developer',
         source: undefined,                 // a Claude transcript states no engine
+        // S-123 — a relay leg: its card carries the ⑂ that opens its chain (the host's sessionChainOf view)
+        chain: { chainId: 'chn_muqmf6q7001io2', leg: 15, chip: '⑂ 15', head: 'Baton relay — leg 15',
+            lines: ['Chain: chn_muqmf6q7001io2 — leg 15 of 15.', 'Predecessor: session 99c635e7 (leg 14).', 'Successor: none yet.'], stoppable: false },
         // ‼️ X-251 — WHOSE PLAN THIS CARD IS SPENDING. Drawn on ONE of the
         // cards on purpose: the panel must be readable both when a sign-in was
         // recorded and when nothing was, and the second case is the ordinary

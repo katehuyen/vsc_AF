@@ -622,6 +622,13 @@
         };
     }
 
+    /** S-123 — a relay leg's ⑂ (the host's verdict, s.chain); a press opens its chain on the Chains page. */
+    const chainMark = s => {
+        const m = window.AFChainNav ? window.AFChainNav.markOf(s.chain) : null;
+        return m ? ' ' + window.AFTip.wrap(m.trigger, m.head, m.lines.join('\n')) : '';
+    };
+    if (window.AFChainNav) { window.AFChainNav.wireOpen(vscode); }
+
     /** THE ID ITSELF — where else this exact string turns up. */
     function idTip(s) {
         return {
@@ -1637,7 +1644,7 @@
                      sessionId: s.sessionId, title: s.title || '', agentName: s.agentName || '', cwd: s.cwd || ''
                  })}>
                 <div class="spread">
-                    <h3 style="margin:0">${tip(`<span${open}>${C.esc(s.label || s.agentName)}</span>`, nameTip(s))} ${tip(`<span class="sid">(${C.esc(shortId(s.sessionId))})</span>`, idTip(s))} ${engineBadge(s)}${providerChip(s)}</h3>
+                    <h3 style="margin:0">${tip(`<span${open}>${C.esc(s.label || s.agentName)}</span>`, nameTip(s))} ${tip(`<span class="sid">(${C.esc(shortId(s.sessionId))})</span>`, idTip(s))}${chainMark(s)} ${engineBadge(s)}${providerChip(s)}</h3>
                     ${tip(`<span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>`, statusTip(s, meta, gone))}
                 </div>
                 ${s.title ? `<div class="sub tip-host card-open" style="margin-top:3px">${tip(`<span${open}>${C.esc(s.title)}</span>`, titleTip(s))}</div>` : ''}

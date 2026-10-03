@@ -217,5 +217,15 @@
         document.addEventListener('keydown', ev => { if (ev.key === 'Enter') { go(ev); } }, true);
     }
 
-    window.AFChainNav = { html, chip, menuHtml, wire, closeMenu, options, openAttr, wireOpen, OPEN_HINT };
+    /** S-123 — a run's ⑂ that opens its chain, from the host's view of its leg ({ chainId, chip, head, lines }): the trigger and its hover, for the page's own tip. */
+    function markOf(v) {
+        if (!v || !v.chip) { return null; }
+        const open = openAttr(v.chainId);
+        return {
+            trigger: `<span class="afchain-badge afbaton"${open ? ' ' + open : ''}>${esc(v.chip)}</span>`,
+            head: v.head || '', lines: [...(v.lines || []), ...(open ? ['', OPEN_HINT] : [])]
+        };
+    }
+
+    window.AFChainNav = { html, chip, menuHtml, wire, closeMenu, options, openAttr, wireOpen, markOf, OPEN_HINT };
 })();

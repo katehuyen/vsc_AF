@@ -82,7 +82,8 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
     ok('a press anywhere else is left alone', posted.length === 1 && stopped === 1);
     for (const [file, re] of [['console.js', /class="batonsig"\$\{open \? ' ' \+ open : ''\}/],
         ['sessionsTable.js', /window\.AFTip\.cell\('chaincell', window\.AFChainNav \? window\.AFChainNav\.openAttr\(r\.chain\.chainId\)/],
-        ['turns.js', /nav \? nav\.openAttr\(r\.chainId\) : ''/]]) {
+        ['turns.js', /nav \? nav\.openAttr\(r\.chainId\) : ''/],
+        ['timeline.js', /window\.AFChainNav\.markOf\(s\.chain\)/]]) {
         const src = read('media', file);
         ok(`${file}: its ⑂ carries the chain, and the page wires the one listener`, re.test(src) && /window\.AFChainNav\.wireOpen\(vscode\)/.test(src));
     }
@@ -91,6 +92,32 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
     ok('Turns draws a relay leg\'s ⑂ as a way into its chain, and only that one',
         (turns.match(/data-chainopen="/g) || []).length >= 1 && /data-chainopen="chn_muqmf6q7001io2"/.test(turns)
         && !/data-chainopen=""/.test(turns));
+}
+
+// the Live Timeline: a relay leg's card carries its ⑂ — the Sessions table's own verdict, asked once per draw
+{
+    const { sessionChainOf } = require(path.join(ROOT, 'out', 'core', 'sessionChain.js'));
+    const { chainIndex } = require(path.join(ROOT, 'out', 'core', 'chainMembership.js'));
+    const NOW = 1790000000000;
+    const from = sid => ({ sessionId: sid, agentId: 'D:/agents/dev', engine: 'claude', cwd: 'D:\\repo', projectId: 'prj_1', launchId: 'lch_' + sid });
+    const mk = (id, hop, state, sid, to) => ({ id, chainId: 'chn_tl', hop, state, prompt: 'words', why: 'w', from: from(sid),
+        inherit: { surface: 'console', model: 'opus' }, want: { surface: 'inherit', account: '@pool' }, ...(to ? { toSessionId: to } : {}), createdAt: NOW, updatedAt: NOW });
+    const of = sessionChainOf([mk('s0', 0, 'started', 'L1', 'L1'), mk('b1', 1, 'started', 'L1', 'L2')], chainIndex([]));
+    const v = of('L2');
+    ok('sessionChainOf: a leg the store still names gets the baton\'s own view', !!v && v.chainId === 'chn_tl' && /⑂/.test(v.chip));
+    ok('…a session no chain names gets nothing, and no id asks nothing', of('L9') === undefined && of('') === undefined);
+    ok('the Sessions table and the Timeline ask that one function', /chain: chainOf\(s\.sessionId\) \?\? null/.test(read('src', 'panels', 'dashboard.ts'))
+        && /const chainOf = deps\.chainsNow\?\.\(\);/.test(read('src', 'panels', 'timeline.ts'))
+        && /chain: chainOf\?\.\(s\.sessionId\) \?\? null/.test(read('src', 'panels', 'timeline.ts'))
+        && /chainsNow: \(\) => sessionChainOf\(batonStore\.all\(\), chainIndexNow\(\)\)/.test(read('src', 'extension.ts')));
+    const { runPage } = require('./lib_page_dom');
+    const fx = require('./fixtures/timeline.js');
+    const d = fx.data();
+    d.sessions = d.sessions.map((s, i) => (i === 0 ? Object.assign({}, s, { chain: v }) : s));
+    const p = runPage('timeline.js', d);
+    const h = p.html();
+    ok('a relay leg\'s card draws its ⑂ as a way into its chain, and only that card', (h.match(/data-chainopen="/g) || []).length === 1
+        && new RegExp('<span class="afchain-badge afbaton" data-chainopen="chn_tl"[^>]*>' + v.chip.replace(/[⑂ ]/g, '.') + '</span>').test(h));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
