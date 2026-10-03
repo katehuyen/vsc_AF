@@ -1348,8 +1348,9 @@ const intentOf = (o) => Object.assign({
     ok('…and the press names the chain to the host — nothing else',
         posted.length === 1 && posted[0].type === 'batonStopChain' && posted[0].chainId === 'chn_muq2k1');
     push(data(CONVO.slice(), { batonView: relay(false) }));
+    // S-123 — the chip also opens its chain on the Chains page (data-chainopen)
     ok('‼️ a chain with nothing left to open keeps its chip and draws no brake',
-        /class="batonsig">⑂ 2</.test(status()) && !/id="c-baton-stop"/.test(status()));
+        /class="batonsig" data-chainopen="chn_muq2k1"[^>]*>⑂ 2</.test(status()) && !/id="c-baton-stop"/.test(status()));
     push(data(CONVO.slice(), { batonView: null }));
     ok('‼️ a run no baton touched has neither', !/batonsig|c-baton-stop/.test(status()));
 
@@ -1412,7 +1413,7 @@ const intentOf = (o) => Object.assign({
     const line2 = () => { const m = /<div class="h2">([\s\S]*?)<span class="hb">/.exec(cards()); return m ? m[1] : ''; };
     push(data(CONVO.slice(), { batonView: relay(false), accountAxis: true, accountLabel: 'work@studio' }));
     ok('S-91: a relay card wears ⑂ 2 on line 2, AFTER the sign-in pill',
-        /class="batonsig">⑂ 2</.test(line2())
+        /class="batonsig"[^>]*>⑂ 2</.test(line2())
         && line2().indexOf('class="af-acct') > -1
         && line2().indexOf('class="af-acct') < line2().indexOf('class="batonsig"'));
     ok('…and its panel is the chain, in the host\'s words',

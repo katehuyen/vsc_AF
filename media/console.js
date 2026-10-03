@@ -1626,12 +1626,16 @@
             window.AFTip.lines(q.lines || []), 'tip-quota', '5-hour quota signal')} `;
     };
     /** S-77 — this run's leg of a baton relay: `⑂ 3`, the chain in its panel. The words are the host's. */
+    // S-123 — and a press on it opens that chain on the Chains page (AFChainNav.wireOpen, wired once below)
     const batonPill = (s, cls) => {
         const v = s.batonView;
         if (!v || !v.chip) { return ''; }
-        return cardTip(`<span class="batonsig">${C.esc(v.chip)}</span>`, v.head,
-            window.AFTip.lines(v.lines || []), cls, 'Baton relay chain');
+        const nav = window.AFChainNav;
+        const open = nav && v.chainId ? nav.openAttr(v.chainId) : '';
+        return cardTip(`<span class="batonsig"${open ? ' ' + open : ''}>${C.esc(v.chip)}</span>`, v.head,
+            window.AFTip.lines([...(v.lines || []), ...(open ? ['', nav.OPEN_HINT] : [])]), cls, 'Baton relay chain');
     };
+    if (window.AFChainNav) { window.AFChainNav.wireOpen(vscode); }
     const batonChip = (s) => { const p = batonPill(s, 'tip-baton'); return p ? p + ' · ' : ''; };
     /**
      * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this

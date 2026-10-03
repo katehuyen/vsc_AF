@@ -59,5 +59,39 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
         /data-afnav="chains"/.test(html) && html.indexOf('Every baton relay in one table') >= 0);
 }
 
+// ---------- a ⑂ mark opens its chain: one listener per page, capture phase, the row under it does not open too ----------
+{
+    const vm = require('vm');
+    const listeners = [];
+    const posted = [];
+    const win = {};
+    vm.runInNewContext(read('media', 'afChainNav.js'), { window: win, document: { addEventListener: (type, fn, cap) => listeners.push({ type, fn, cap }) } });
+    const N = win.AFChainNav;
+    ok('a mark carries its chain id and is reachable by keyboard; no chain, no attributes',
+        N.openAttr('chn_a') === 'data-chainopen="chn_a" role="link" tabindex="0"' && N.openAttr('') === '');
+    N.wireOpen({ postMessage: m => posted.push(m) });
+    N.wireOpen({ postMessage: m => posted.push(m) });
+    ok('one listener per page however often the page wires it, in the capture phase',
+        listeners.filter(l => l.type === 'click').length === 1 && listeners.every(l => l.cap === true));
+    const click = listeners.find(l => l.type === 'click').fn;
+    let stopped = 0;
+    click({ target: { closest: () => ({ dataset: { chainopen: 'chn_a' } }) }, preventDefault() { }, stopPropagation() { stopped++; } });
+    ok('a press posts the shared nav to that chain and goes no further', posted.length === 1 && posted[0].type === 'afnav'
+        && posted[0].to === 'chains:chn_a' && stopped === 1);
+    click({ target: { closest: () => null }, preventDefault() { }, stopPropagation() { stopped++; } });
+    ok('a press anywhere else is left alone', posted.length === 1 && stopped === 1);
+    for (const [file, re] of [['console.js', /class="batonsig"\$\{open \? ' ' \+ open : ''\}/],
+        ['sessionsTable.js', /window\.AFTip\.cell\('chaincell', window\.AFChainNav \? window\.AFChainNav\.openAttr\(r\.chain\.chainId\)/],
+        ['turns.js', /nav \? nav\.openAttr\(r\.chainId\) : ''/]]) {
+        const src = read('media', file);
+        ok(`${file}: its ⑂ carries the chain, and the page wires the one listener`, re.test(src) && /window\.AFChainNav\.wireOpen\(vscode\)/.test(src));
+    }
+    const { runPage } = require('./lib_page_dom');
+    const turns = runPage('turns.js', require('./fixtures/turns.js').data()).html();
+    ok('Turns draws a relay leg\'s ⑂ as a way into its chain, and only that one',
+        (turns.match(/data-chainopen="/g) || []).length >= 1 && /data-chainopen="chn_muqmf6q7001io2"/.test(turns)
+        && !/data-chainopen=""/.test(turns));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

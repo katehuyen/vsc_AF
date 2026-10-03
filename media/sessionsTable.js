@@ -356,6 +356,7 @@
         .chaincell { width:34px; text-align:center; font-size:11px; white-space:nowrap; cursor:default;
             font-weight:600; color:var(--vscode-textLink-foreground); }
         th.chaincell { color:inherit; }
+        td.chaincell[data-chainopen] { cursor:pointer; }
         /* Pin: the shelf. One narrow always-present column — an outlined star
            on every row (click to shelve), filled on the ones you keep. */
         .pincell { width:20px; text-align:center; }
@@ -1317,8 +1318,10 @@
                 return `<td class="origcell ${o.id}${moon ? ' hless' : ''}" title="${tipOf(TIP.origin(r))}">${o.glyph}${moon}</td>`;
             },
             // S-77 — the host's own view of the leg (batonCardView), drawn only on a relay row
+            // S-123 — the ⑂ opens its chain on the Chains page (AFChainNav.wireOpen in wire())
             chain: r => (r.chain && r.chain.chip
-                ? window.AFTip.cell('chaincell', '', C.esc(r.chain.chip), r.chain.head, window.AFTip.lines(r.chain.lines || []))
+                ? window.AFTip.cell('chaincell', window.AFChainNav ? window.AFChainNav.openAttr(r.chain.chainId) : '', C.esc(r.chain.chip), r.chain.head,
+                    window.AFTip.lines([...(r.chain.lines || []), ...(window.AFChainNav && r.chain.chainId ? ['', window.AFChainNav.OPEN_HINT] : [])]))
                 : '<td class="chaincell"></td>'),
             agent: r => `<td title="${tipOf(TIP.agent(r))}"><span class="cellline">${dot(r)}<span class="ctext">${C.esc(r.agent)}</span>${subBadge(r)}${termBtn(r)}${stopBtn(r)}</span></td>`,
             // ‼️ X-110 — TWO AXES, TWO MARKS, ONE CELL. The engine is the CLI
@@ -1621,6 +1624,7 @@
         }
 
         function wire(root) {
+            if (window.AFChainNav) { window.AFChainNav.wireOpen(vscode); }
             root.querySelector('.af-sort').addEventListener('change', e => {
                 sort = e.target.value;
                 saveState();

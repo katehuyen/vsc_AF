@@ -190,5 +190,32 @@
         return out.sort((a, b) => b.ts - a.ts).map(x => ({ v: x.v, t: `${x.v} · ${x.n} leg${x.n === 1 ? '' : 's'}` }));
     }
 
-    window.AFChainNav = { html, chip, menuHtml, wire, closeMenu, options };
+    /** S-123 — the line a ⑂ mark's hover ends with when the mark opens its chain. */
+    const OPEN_HINT = 'Click: this chain on the Chains page.';
+
+    /** S-123 — the attributes that make a ⑂ mark open its chain on the Chains page (wireOpen does the rest). */
+    function openAttr(chainId) {
+        return chainId ? `data-chainopen="${esc(chainId)}" role="link" tabindex="0"` : '';
+    }
+
+    /**
+     * S-123 — ONE listener per page, on the document in the capture phase: a press on a ⑂ mark opens
+     * its chain (afnav `chains:<id>`, routed by handleAfNav) and goes no further, so the row the mark
+     * sits in does not open as well — and a mark drawn by a later repaint needs no wiring of its own.
+     */
+    function wireOpen(vscode) {
+        if (window.__afChainOpenWired || typeof document.addEventListener !== 'function') { return; }
+        window.__afChainOpenWired = true;
+        const go = ev => {
+            const t = ev.target && ev.target.closest ? ev.target.closest('[data-chainopen]') : null;
+            if (!t) { return; }
+            ev.preventDefault();
+            ev.stopPropagation();
+            vscode.postMessage({ type: 'afnav', to: 'chains:' + t.dataset.chainopen });
+        };
+        document.addEventListener('click', go, true);
+        document.addEventListener('keydown', ev => { if (ev.key === 'Enter') { go(ev); } }, true);
+    }
+
+    window.AFChainNav = { html, chip, menuHtml, wire, closeMenu, options, openAttr, wireOpen, OPEN_HINT };
 })();

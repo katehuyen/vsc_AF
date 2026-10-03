@@ -9,6 +9,7 @@
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
+    if (window.AFChainNav) { window.AFChainNav.wireOpen(vscode); }
     const C = window.AFCharts;
     let DATA = window.__DATA__;
 
@@ -563,16 +564,19 @@
             const o = RC.meta(RC.of(r));
             // S-35 — the moon rides on the glyph: one fact about one run
             const moon = RC.isHeadless(r) && o.id !== 'mission' ? `<span class="hgl">${RC.glyph()}</span>` : '';
-            return cell(`origcell ${o.id}${moon ? ' hless' : ''}`, o.glyph + moon,
-                `${o.glyph} ${o.label}`, [
+            // S-123 — a relay leg's ⑂ opens its chain on the Chains page (AFChainNav.wireOpen, wired once below)
+            const nav = r.chainId && window.AFChainNav ? window.AFChainNav : null;
+            return window.AFTip.cell(`origcell ${o.id}${moon ? ' hless' : ''}`, nav ? nav.openAttr(r.chainId) : '',
+                `<span class="tcut">${o.glyph + moon}</span>`, `${o.glyph} ${o.label}`, [
                 r.mission ? line('Mission', r.mission.title) : '',
                 r.chainId ? line('Chain', `${r.chainId} · leg ${r.chainLeg}`) : '',
                 RC.isHeadless(r) ? line('Terminal', 'none (headless)') : '',
                 line('Agent', r.agent),
                 line('Session', r.session),
                 r.project ? line('Project', r.project) : '',
-                line('Turn', `${r.n} of ${r.of}`)
-            ]);
+                line('Turn', `${r.n} of ${r.of}`),
+                nav ? '\n' + nav.OPEN_HINT : ''
+            ].filter(Boolean).join('\n'));
         },
         agent: r => cell('', `${dot(r)}${C.esc(r.agent)}${subBadge(r)}${termBtn(r)}`,
             (r.agent || '—') + (r.sidechain ? ' · sub-agent' : '') + (r.active ? ' · active now' : ''), [
