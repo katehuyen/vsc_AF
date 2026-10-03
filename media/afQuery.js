@@ -515,10 +515,13 @@
      * that exists on exactly one page. Deriving it is the only version of "say
      * it once" that a future edit cannot undo by accident.
      */
-    const SYNTAX = SYNTAX_ROWS
-        .map(r => r.sym + '  —  ' + r.what + '  ·  ' + r.example)
-        .concat([BARE_WORD_NOTE])
+    const syntaxIn = say => SYNTAX_ROWS
+        .map(r => r.sym + '  —  ' + say(r.what) + '  ·  ' + r.example)
+        .concat([say(BARE_WORD_NOTE)])
         .join('\n');
+    const SYNTAX = syntaxIn(s => s);
+    // U-189 — a shared hand translates its OWN words, when the hover is asked for: a page has AFI18n, Node keeps the English
+    const tr = s => (typeof window !== 'undefined' && window.AFI18n ? window.AFI18n.t(s) : s);
 
     /** What the whole-word mode changes, in one line, for the box that is in it. */
     const WHOLE_WORD_ON = 'Whole word is ON: a bare word must match a whole word '
@@ -532,7 +535,7 @@
     function tip(subject, opts) {
         const o = opts || {};
         return (subject ? String(subject).trim() + '\n\n' : '')
-            + (o.wholeWord ? WHOLE_WORD_ON + '\n\n' : '') + SYNTAX;
+            + (o.wholeWord ? tr(WHOLE_WORD_ON) + '\n\n' : '') + syntaxIn(tr);
     }
 
     return {

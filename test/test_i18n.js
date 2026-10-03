@@ -220,5 +220,35 @@ const TR = Object.assign({}, ...require(path.join(ROOT, 'media', 'afI18n.js')).f
         keys.length >= 80 && !missing.length);
 }
 
+// U-189 — the search grammar's hover (AFQuery.tip) and a project's hover and picker rows (AFProject) translate their own words
+{
+    const charts = { option: (v, l, o) => '<option title="' + o.detail + '">' + l + '</option>' };
+    const w = { AFCharts: charts };
+    const ctx = { window: w };
+    vm.runInNewContext(read('media', 'afI18n.js'), ctx);
+    w.AFI18n.add('tr', TR);
+    w.AFI18n.setLanguage('tr');
+    vm.runInNewContext(read('media', 'afQuery.js'), ctx);
+    vm.runInNewContext(read('media', 'afProject.js'), ctx);
+    const q = w.AFQuery.tip('Searched here.', { wholeWord: true });
+    ok('AFQuery.tip draws its grammar in Türkçe; the subject (the page\'s to translate) and the examples stay as handed',
+        q.startsWith('Searched here.') && ['iki terim de geçmeli', 'Tam sözcük AÇIK', '"tırnak"', 'codex OR gemini'].every(s => q.includes(s))
+        && !/both terms|Whole word is ON/.test(q));
+    const Q = require(path.join(ROOT, 'media', 'afQuery.js'));
+    const lines = Q.SYNTAX_ROWS.map(r => r.what).concat([Q.BARE_WORD_NOTE, Q.WHOLE_WORD_ON]);
+    ok('…every line of the grammar has its Türkçe', lines.every(s => typeof TR[s] === 'string'));
+    ok('…while Node (and a page without a catalog) reads it as it did', Q.tip('x', { wholeWord: true }) === 'x\n\n' + Q.WHOLE_WORD_ON + '\n\n' + Q.SYNTAX);
+    const p = w.AFProject.tip({ name: 'AF', status: 'active', kind: 'product', folder: 'D:/docs', repos: ['D:/r'], budgetUSD: 5, tags: ['a', 'b'] });
+    ok('AFProject.tip: the head and the labels in Türkçe, the values as they are', p.head === 'Proje · AF'
+        && p.body === ['Durum: active · product', 'Belgeler: D:/docs', 'Kod: D:/r', 'Bütçe: $5/gün', 'Etiketler: a, b'].join('\n'));
+    ok('…a row with no project says so', w.AFProject.tip(undefined).head === 'Proje yok' && w.AFProject.tip(undefined).body === 'Bunu kimse bir projeye bağlamadı.');
+    const o = w.AFProject.options([], '', { withNone: true });
+    ok('…and so do the picker\'s own rows', ['Herhangi bir proje', 'Proje yok', 'Yalnızca hiçbir proje belirtmeyen satırlar.'].every(s => o.includes(s)));
+    const we = { AFCharts: charts };
+    vm.runInNewContext(read('media', 'afProject.js'), { window: we });
+    const pe = we.AFProject.tip({ name: 'AF', status: 'active', budgetUSD: 5 });
+    ok('…while without a catalog it reads as it did', pe.head === 'Project · AF' && pe.body === 'Status: active\nBudget: $5/day');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

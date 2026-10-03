@@ -20,6 +20,8 @@
      *  `NO_PROJECT` in core/notices.ts and core/workqueue.ts — the page sends
      *  this string and the host filters on it. */
     const NONE = '(none)';
+    // U-189 — the component translates its own words (media/afI18n.js); a page hands it labels it has translated
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     function esc(s) {
         return String(s === undefined || s === null ? '' : s)
@@ -68,9 +70,9 @@
      * The definition of the column belongs on its heading; this is the readout.
      */
     function tip(p) {
-        if (!p) { return { head: 'No project', body: 'Nothing has filed this under a project.' }; }
+        if (!p) { return { head: t('No project'), body: t('Nothing has filed this under a project.') }; }
         const line = function (k, v) {
-            return (v === undefined || v === null || v === '') ? '' : k + ': ' + v;
+            return (v === undefined || v === null || v === '') ? '' : t(k) + ': ' + v;
         };
         const body = [
             p.summary || '',
@@ -78,10 +80,10 @@
             line('Status', p.status + (p.kind ? ' · ' + p.kind : '')),
             line('Docs', p.folder || ''),
             line('Code', (p.repos || []).join(' · ')),
-            line('Budget', p.budgetUSD ? '$' + p.budgetUSD + '/day' : ''),
+            line('Budget', p.budgetUSD ? t('{usd}/day', { usd: '$' + p.budgetUSD }) : ''),
             line('Tags', (p.tags || []).join(', '))
         ].filter(function (x) { return x !== null && x !== ''; }).join('\n');
-        return { head: 'Project · ' + p.name, body: body || p.name };
+        return { head: t('Project · {name}', { name: p.name }), body: body || p.name };
     }
 
     /**
@@ -101,14 +103,14 @@
         // readout the row's hover carries (`tip`), so a project is described
         // one way everywhere — which is why this lives in the component.
         const C = window.AFCharts;
-        const out = [C.option('', o.anyLabel || 'Any project', {
+        const out = [C.option('', o.anyLabel || t('Any project'), {
             selected: !selected,
-            detail: o.anyDetail || 'Every row, whichever project it is filed under — and the unfiled ones too.'
+            detail: o.anyDetail || t('Every row, whichever project it is filed under — and the unfiled ones too.')
         })];
         if (o.withNone) {
-            out.push(C.option(NONE, o.noneLabel || 'No project', {
+            out.push(C.option(NONE, o.noneLabel || t('No project'), {
                 selected: selected === NONE,
-                detail: o.noneDetail || 'Only the rows that name no project at all.'
+                detail: o.noneDetail || t('Only the rows that name no project at all.')
             }));
         }
         (projects || []).forEach(function (p) {

@@ -112,6 +112,30 @@
     'Delete': 'Sil',
     'Yesterday': 'Dün',
     'right-click for more': 'daha fazlası için sağ tıkla',
+    // the search grammar every box's hover carries (media/afQuery.js tip)
+    'both terms must appear; their order does not matter': 'iki terim de geçmeli; sıraları önemli değil',
+    'either side may appear (OR must be uppercase)': 'iki taraftan biri geçebilir (OR büyük harfle yazılmalı)',
+    'exclude records containing this term': 'bu terimi içeren kayıtları dışarıda bırak',
+    'keep a combined choice together': 'birleşik bir seçimi bir arada tut',
+    'find these words together, as a whole phrase': 'bu sözcükleri birlikte, bütün bir ifade olarak bul',
+    'accept any continuation inside this term': 'bu terimin içinde her türlü devamı kabul et',
+    'combine a phrase with unfinished words': 'bir ifadeyi yarım sözcüklerle birleştir',
+    'A plain word also matches inside a longer word; put it in "quotes" when it has to stand on its own.':
+        'Yalın bir sözcük daha uzun bir sözcüğün içinde de eşleşir; tek başına durması gerekiyorsa "tırnak" içine al.',
+    'Whole word is ON: a bare word must match a whole word ("log" no longer matches "dialogue"). A * still opens the end it is written on.':
+        'Tam sözcük AÇIK: yalın bir sözcük bütün bir sözcükle eşleşmeli ("log" artık "dialogue" ile eşleşmez). * yine yazıldığı ucu açar.',
+    // which project (media/afProject.js): its hover and its picker's own rows
+    'No project': 'Proje yok',
+    'Nothing has filed this under a project.': 'Bunu kimse bir projeye bağlamadı.',
+    'Docs': 'Belgeler',
+    'Code': 'Kod',
+    'Budget': 'Bütçe',
+    'Tags': 'Etiketler',
+    '{usd}/day': '{usd}/gün',
+    'Project · {name}': 'Proje · {name}',
+    'Any project': 'Herhangi bir proje',
+    'Every row, whichever project it is filed under — and the unfiled ones too.': 'Hangi projeye bağlı olursa olsun her satır — hiçbir projeye bağlı olmayanlar da.',
+    'Only the rows that name no project at all.': 'Yalnızca hiçbir proje belirtmeyen satırlar.',
     // the Now page (media/now.js)
     '{waiting} waiting · {running} running · {cost} today': '{waiting} bekliyor · {running} çalışıyor · bugün {cost}',
     'Waiting for you': 'Seni bekleyenler',
