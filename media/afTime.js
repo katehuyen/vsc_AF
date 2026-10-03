@@ -47,11 +47,20 @@
 
     const p2 = (n) => (n < 10 ? '0' : '') + n;
 
-    /** U-189 — the locale of the interface language (media/afI18n.js; in Node the same file). */
-    function loc() {
-        const i18n = typeof window !== 'undefined' ? window.AFI18n
+    /** U-189 — the interface language (media/afI18n.js; in Node the same file). */
+    function i18n() {
+        return typeof window !== 'undefined' ? window.AFI18n
             : (typeof require === 'function' ? require('./afI18n.js') : null);
-        return (i18n && i18n.locale()) || undefined;
+    }
+    function loc() {
+        const x = i18n();
+        return (x && x.locale()) || undefined;
+    }
+    /** A string drawn in the interface language; English (filled) when no catalog is loaded. */
+    function t(text, vars) {
+        const x = i18n();
+        if (x) { return x.t(text, vars); }
+        return vars ? text.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : text;
     }
 
     /** `UTC+03:00` — this machine's offset at THAT moment, not today's. The
@@ -124,10 +133,10 @@
     function tip(ts, label) {
         const d = at(ts);
         if (!d) { return label ? String(label) : ''; }
-        const head = label ? String(label).trim() + ': ' : '';
+        const head = label ? t(String(label).trim()) + ': ' : '';
         return head + stamp(ts, { seconds: true })
             + '\n' + utc(ts, { seconds: true })
-            + '\n' + offset(ts) + ' on this machine';
+            + '\n' + t('{offset} on this machine', { offset: offset(ts) });
     }
 
     /** `3d ago` / `4h ago` / `12m ago` / `just now` — several pages had their
@@ -136,11 +145,11 @@
         const d = at(ts);
         if (!d) { return ''; }
         const m = Math.round((Date.now() - d.getTime()) / 60000);
-        if (m < 1) { return 'just now'; }
-        if (m < 60) { return m + 'm ago'; }
+        if (m < 1) { return t('just now'); }
+        if (m < 60) { return t('{n}m ago', { n: m }); }
         const h = Math.round(m / 60);
-        if (h < 24) { return h + 'h ago'; }
-        return Math.round(h / 24) + 'd ago';
+        if (h < 24) { return t('{n}h ago', { n: h }); }
+        return t('{n}d ago', { n: Math.round(h / 24) });
     }
 
     return { at, clock, utc, utcClock, clockUtc, stamp, full, tip, ago, offset };

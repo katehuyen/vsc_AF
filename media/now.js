@@ -4,6 +4,8 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     const T = window.AFTime;
+    // U-189 — every word on this page is drawn in the interface language (media/afI18n.js)
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     let DATA = window.__DATA__;
     // The box outlives every redraw: a push while typing must not cost the words.
     let draft = '';
@@ -15,7 +17,7 @@
         const m = ev.data || {};
         if (m.type === 'data') { DATA = m.data; repaint(); }
         if (m.type === 'sent') {
-            note = m.ok ? { ok: true, text: 'Sent.' } : { ok: false, text: m.error || 'Not sent.' };
+            note = m.ok ? { ok: true, text: t('Sent.') } : { ok: false, text: m.error || t('Not sent.') };
             if (m.ok) { draft = ''; }
             render();
         }
@@ -31,6 +33,7 @@
     const esc = s => C.esc(String(s === undefined || s === null ? '' : s));
     const nav = to => vscode.postMessage({ type: 'afnav', to });
     const money = n => '$' + (Number(n) || 0).toFixed(2);
+    const stateOf = s => (s.waits ? t('waits for you') : t(s.status));
 
     function tipped(inner, lines) {
         return window.AFTip.wrap(inner, lines[0], window.AFTip.lines(lines.slice(1)), 'nw-tipw');
@@ -45,9 +48,9 @@
                 <span class="nw-when muted">${esc(T.ago(w.ts))}</span>
             </div>`,
             [`${w.agentName} · ${w.title}`, T.tip(w.ts, 'Raised'), window.AFTip.GAP, w.detail || '']));
-        const more = d.waitingMore ? `<div class="nw-more nw-go" data-nav="needs">+${d.waitingMore} more in Needs You</div>` : '';
-        return section('Waiting for you', d.waiting.length + d.waitingMore, 'needs',
-            rows.join('') + more, '🎉 Nothing is waiting for you.');
+        const more = d.waitingMore ? `<div class="nw-more nw-go" data-nav="needs">${esc(t('+{n} more in Needs You', { n: d.waitingMore }))}</div>` : '';
+        return section(t('Waiting for you'), d.waiting.length + d.waitingMore, 'needs',
+            rows.join('') + more, '🎉 ' + t('Nothing is waiting for you.'));
     }
 
     function runningHtml(d) {
@@ -56,33 +59,36 @@
             return tipped(`<div class="nw-row nw-pick${sel}" data-pick="${esc(s.id)}" tabindex="0" aria-pressed="${sel ? 'true' : 'false'}">
                 <span class="nw-ic">${s.waits ? '✋' : s.status === 'working' ? '▶' : '·'}</span>
                 <span class="nw-main"><b>${esc(s.agentName)}</b> ${window.AFEngine.badge(s.engine)}
-                    <span class="nw-st ${esc(STATUS[s.status] || 'other')}">${s.waits ? 'waits for you' : esc(s.status)}</span>
+                    <span class="nw-st ${esc(STATUS[s.status] || 'other')}">${esc(stateOf(s))}</span>
                     <span class="nw-line muted">${esc(s.doing || '—')}</span></span>
                 <span class="nw-when muted" title="${esc(T.tip(s.since, s.status === 'working' ? 'Turn started' : 'Started'))}">${esc(T.ago(s.since))}<br>${money(s.costUSD)}</span>
                 ${sel ? '<span class="nw-check" aria-hidden="true">✓</span>' : ''}
             </div>`,
             [`${s.agentName} · ${window.AFEngine.label(s.engine)}`,
-                `Status: ${s.waits ? 'waits for you' : s.status}`,
+                t('Status: {state}', { state: stateOf(s) }),
                 T.tip(s.since, s.status === 'working' ? 'Turn started' : 'Started'),
-                `Cost: ${money(s.costUSD)}`,
-                window.AFTip.GAP, s.doing || 'Nothing said yet.', window.AFTip.GAP,
-                'Click: the box below speaks to this session']);
+                t('Cost: {cost}', { cost: money(s.costUSD) }),
+                window.AFTip.GAP, s.doing || t('Nothing said yet.'), window.AFTip.GAP,
+                t('Click: the box below speaks to this session')]);
         });
-        return section('Running', d.running.length, 'console', rows.join(''), 'No session is running.');
+        return section(t('Running'), d.running.length, 'console', rows.join(''), t('No session is running.'));
     }
 
     function todayHtml(d) {
         const bars = d.today.quotas.map(q => {
             const p = Math.max(0, Math.min(100, Number(q.percent) || 0));
             const hot = p >= 90 ? ' hot' : p >= 70 ? ' warm' : '';
-            return `<div class="nw-q" title="${esc(`Account: ${q.account}\nEngine: ${q.engine}\nFive-hour window: ${Math.round(p)}%` + (q.resetsAt ? `\nResets: ${T.clock(q.resetsAt)}` : ''))}">
+            const lines = [t('Account: {account}', { account: q.account }), t('Engine: {engine}', { engine: q.engine }),
+                t('Five-hour window: {pct}%', { pct: Math.round(p) })];
+            if (q.resetsAt) { lines.push(t('Resets: {time}', { time: T.clock(q.resetsAt) })); }
+            return `<div class="nw-q" title="${esc(lines.join('\n'))}">
                 <span class="nw-qn">${esc(q.account)}</span>
                 <span class="nw-qb"><span class="nw-qf${hot}" style="width:${p}%"></span></span>
-                <span class="nw-qp">${Math.round(p)}% 5h</span>
+                <span class="nw-qp">${esc(t('{pct}% 5h', { pct: Math.round(p) }))}</span>
             </div>`;
         });
-        return section('Today', null, null,
-            `<div class="nw-cost">${money(d.today.cost)} <span class="muted small">spent today</span></div>${bars.join('')}`, '');
+        return section(t('Today'), null, null,
+            `<div class="nw-cost">${money(d.today.cost)} <span class="muted small">${esc(t('spent today'))}</span></div>${bars.join('')}`, '');
     }
 
     function noticesHtml(d) {
@@ -91,7 +97,7 @@
                 <span class="nw-main">${esc(n.title)}<span class="nw-line muted">${esc(n.agentName)} · ${esc(n.type)}</span></span>
                 <span class="nw-when muted" title="${esc(T.tip(n.ts, 'Posted'))}">${esc(T.ago(n.ts))}</span>
             </div>`);
-        return section('Notices', null, 'notices', rows.join(''), 'No notices yet.');
+        return section(t('Notices'), null, 'notices', rows.join(''), t('No notices yet.'));
     }
 
     function section(title, count, to, body, empty) {
@@ -106,15 +112,17 @@
     }
 
     function composerHtml(d) {
-        const opts = d.running.map(s => `<option value="${esc(s.id)}"${s.id === target ? ' selected' : ''} title="${esc(`Agent: ${s.agentName}\nEngine: ${window.AFEngine.label(s.engine)}\nStatus: ${s.waits ? 'waits for you' : s.status}\nCost: ${money(s.costUSD)}`)}">${esc(s.agentName)} · ${s.waits ? 'waits for you' : esc(s.status)}</option>`).join('');
+        const opts = d.running.map(s => `<option value="${esc(s.id)}"${s.id === target ? ' selected' : ''} title="${esc([t('Agent: {agent}', { agent: s.agentName }),
+            t('Engine: {engine}', { engine: window.AFEngine.label(s.engine) }), t('Status: {state}', { state: stateOf(s) }),
+            t('Cost: {cost}', { cost: money(s.costUSD) })].join('\n'))}">${esc(s.agentName)} · ${esc(stateOf(s))}</option>`).join('');
         const picked = d.running.find(s => s.id === target);
         return `<div class="nw-box">
             ${note ? `<div class="nw-note ${note.ok ? 'ok' : 'bad'}">${esc(note.text)}</div>` : ''}
             <div class="nw-boxrow">
-                ${d.running.length ? `<select id="nw-to" title="${esc(picked ? `Session: ${picked.agentName}\nStatus: ${picked.status}` : '')}">${opts}</select>` : ''}
-                <textarea id="nw-text" rows="1" placeholder="${d.running.length ? 'Say something to this session…' : 'No running session — start one'}" ${d.running.length ? '' : 'disabled'}>${esc(draft)}</textarea>
-                <button id="nw-send" ${d.running.length && draft.trim() ? '' : 'disabled'}>Send</button>
-                <button id="nw-new" class="secondary" title="Open the Console to start a session">＋ New</button>
+                ${d.running.length ? `<select id="nw-to" title="${esc(picked ? [t('Session: {agent}', { agent: picked.agentName }), t('Status: {state}', { state: stateOf(picked) })].join('\n') : '')}">${opts}</select>` : ''}
+                <textarea id="nw-text" rows="1" placeholder="${esc(d.running.length ? t('Say something to this session…') : t('No running session — start one'))}" ${d.running.length ? '' : 'disabled'}>${esc(draft)}</textarea>
+                <button id="nw-send" ${d.running.length && draft.trim() ? '' : 'disabled'}>${esc(t('Send'))}</button>
+                <button id="nw-new" class="secondary" title="${esc(t('Open the Console to start a session'))}">${esc(window.AFI18n ? window.AFI18n.label('＋ New') : '＋ New')}</button>
             </div>
         </div>`;
     }
@@ -172,8 +180,8 @@
             </style>
             ${window.AFHeader.html({
                 page: 'now',
-                title: 'Now',
-                sub: `${busy} waiting · ${d.running.length} running · ${money(d.today.cost)} today · ${T.clockUtc(d.generatedAt)}`
+                title: t('Now'),
+                sub: `${esc(t('{waiting} waiting · {running} running · {cost} today', { waiting: busy, running: d.running.length, cost: money(d.today.cost) }))} · ${T.clockUtc(d.generatedAt)}`
             })}
             <div class="nw-grid">
                 ${waitingHtml(d)}

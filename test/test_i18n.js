@@ -51,6 +51,34 @@ const TR = require(path.join(ROOT, 'media', 'afI18n.tr.js'));
         /title="Çalışma"/.test(w.AFHeader.html({ page: 'x', title: 'y', related: [{ label: '⚙ Çalışma', nav: 'z' }] })));
 }
 
+// U-189 second slice — the Now page draws in the interface language, from the real snapshot builder
+{
+    const { runPage } = require('./lib_page_dom');
+    const fx = require('./fixtures/now.js');
+    const html = (lang, data) => {
+        const sb = runPage('now.js', data, lang ? { __AFUI__: { lang, locale: lang } } : undefined).sandbox;
+        return (sb.document || sb.window.document).getElementById('app').innerHTML;
+    };
+    const tr = html('tr', fx.data());
+    ok('the Now page\'s sections, states, box and header line are drawn in Türkçe',
+        ['Seni bekleyenler', 'Çalışanlar', 'Bugün', 'bugün harcandı', 'Bildirimler', 'Gönder', 'Yeni', 'seni bekliyor', ' bekliyor · ']
+            .every(s => tr.indexOf(s) >= 0) && !/>Waiting for you|>Running|>Send</.test(tr));
+    ok('…and its relative times through the clock', /\d+ (dk|sa|gün) önce|az önce/.test(tr) && !/\d+[mhd] ago|just now/.test(tr));
+    const quiet = html('tr', fx.data({ needs: [], sessions: [], notices: [], quotas: [], todayCost: 0 }));
+    ok('…the quiet farm too', ['Seni bekleyen bir şey yok.', 'Çalışan oturum yok.', 'Henüz bildirim yok.', 'Çalışan oturum yok — bir tane başlat'].every(s => quiet.indexOf(s) >= 0));
+    const en = html('', fx.data());
+    ok('in English the page reads as it did', ['Waiting for you', 'Running', 'spent today', '>Send<', 'waits for you'].every(s => en.indexOf(s) >= 0));
+    // the visual gate tells the truth: a phone shot of a --lang render carries that language into the phone layer
+    const { withPhoneLayer } = require('./phone_frame');
+    const phoneTr = withPhoneLayer('<html lang="tr"><body>x</body></html>', 'now');
+    ok('a phone shot of a Türkçe render loads the catalog and the language before the phone layer',
+        phoneTr.indexOf('window.__AFUI__={"lang":"tr","locale":"tr"}') >= 0 && phoneTr.indexOf('\'Sessions\': \'Oturumlar\'') > 0
+        && phoneTr.indexOf('__AFUI__={') < phoneTr.indexOf('AFMobile'));
+    ok('…and an English one loads none', withPhoneLayer('<html><body>x</body></html>', 'now').indexOf('window.__AFUI__={') < 0);
+    ok('the render names its language on <html>, and the scene label stays English', /<html\$\{lang \? ` lang="\$\{lang\}"` : ''\}>/.test(read('test', 'render_page.js'))
+        && /class="rndr-h" lang="en"/.test(read('test', 'render_page.js')));
+}
+
 {
     const i18n = require(path.join(ROOT, 'out', 'core', 'i18n.js'));
     const r = (s, d) => JSON.stringify(i18n.resolveUiLanguage(s, d));
@@ -68,6 +96,17 @@ const TR = require(path.join(ROOT, 'media', 'afI18n.tr.js'));
     const sys = T.clock(at);
     ok('the clock follows the chosen language — and the system with none chosen',
         tr === '20:14' && /^0?8:14\sPM$/.test(en) && sys === new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }));
+    // U-189 second slice — ago() and every clock's hover speak the chosen language too
+    const AT = require(path.join(ROOT, 'media', 'afTime.js'));
+    const back = (ms) => AT.ago(Date.now() - ms);
+    i18n.applyUiLanguage({ lang: 'tr', locale: 'tr' });
+    const trAgo = [back(0), back(5 * 60000), back(3 * 3600000), back(2 * 86400000)].join('|');
+    const trTip = AT.tip(at, 'Started');
+    i18n.applyUiLanguage({ lang: 'en', locale: 'en' });
+    ok('ago() speaks the chosen language', trAgo === 'az önce|5 dk önce|3 sa önce|2 gün önce');
+    ok('…and reads exactly as before in English', [back(0), back(5 * 60000), back(3 * 3600000), back(2 * 86400000)].join('|') === 'just now|5m ago|3h ago|2d ago');
+    ok('a clock\'s hover translates its label and the machine line', /^Başladı: /.test(trTip) && /\nbu makinede UTC[+-]\d\d:\d\d$/.test(trTip));
+    ok('…and is unchanged in English', /^Started: /.test(AT.tip(at, 'Started')) && /\nUTC[+-]\d\d:\d\d on this machine$/.test(AT.tip(at, 'Started')));
     ok('every language listed has a catalog file', i18n.LANGUAGES.every(l => l.id === 'en' || fs.existsSync(path.join(ROOT, 'media', `afI18n.${l.id}.js`))));
     const pkg = JSON.parse(read('package.json')).contributes.configuration;
     const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties || {}));

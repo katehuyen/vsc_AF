@@ -37,8 +37,12 @@ function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;
  * so the phone layer is run here, on the laid-out page, as it runs on a phone.
  */
 function withPhoneLayer(html, page) {
-    // afI18n.js first, as the shell loads it: the phone layer draws its words through it (U-189).
-    const js = ['afI18n.js', 'afMobile.js'].map(f => fs.readFileSync(path.join(__dirname, '..', 'media', f), 'utf8'))
+    // afI18n.js first, as the shell loads it: the phone layer draws its words through it (U-189) —
+    // in the language the render was drawn in (`<html lang>`, render_page --lang), with its catalog.
+    const lang = (/<html\b[^>]*\blang="([a-z]+)"/i.exec(String(html)) || [])[1] || '';
+    const catalog = lang && lang !== 'en' && fs.existsSync(path.join(__dirname, '..', 'media', `afI18n.${lang}.js`)) ? [`afI18n.${lang}.js`] : [];
+    const ui = catalog.length ? `window.__AFUI__=${JSON.stringify({ lang, locale: lang })};\n` : '';
+    const js = ui + ['afI18n.js', ...catalog, 'afMobile.js'].map(f => fs.readFileSync(path.join(__dirname, '..', 'media', f), 'utf8'))
         .join('\n').replace(/<\/script/gi, '<\\/script');
     const run = `<script>${js}</script><script>window.AFMobile&&window.AFMobile.page(${JSON.stringify(page || '')});</script>`;
     const marked = String(html).replace(/<html\b/i, '<html data-af-phone="1"');

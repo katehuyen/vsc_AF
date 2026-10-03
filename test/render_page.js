@@ -349,7 +349,8 @@ function main() {
         // at the full window instead, and every picture of it was of a layout the
         // user cannot produce. A width argued about off a render is a width
         // measured on the wrong page.
-        const section = `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div>${loose}</div>`;
+        // the scene's own label is English: under a --lang page it must not take that language's capitals
+        const section = `<h1 class="rndr-h" lang="en">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div>${loose}</div>`;
         // ‼️ A SCENE THAT SAYS "PANEL OPEN" OPENS IT ITSELF (B-02.2). `--tip` is
         // a flag somebody has to remember, and `history` — whose whole label is
         // "the recorded history strip, panel open" — had no `act`, so every
@@ -385,7 +386,7 @@ function main() {
     const withMenus = mIdx < 0 ? opened : openMenus(opened, menuId, '--menu');
 
     const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>${name} — ${theme}</title>
+<html${lang ? ` lang="${lang}"` : ''}><head><meta charset="utf-8"><title>${name} — ${theme}</title>
 <style>
 ${themeCss(theme)}
 ${css}
