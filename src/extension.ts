@@ -303,6 +303,8 @@ import { mergeMissing, PortableMap } from './core/portableState';
 import { realDirOf, reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { migrationGate } from './core/migrationGate';
 import { measureAgentRepo } from './service/agentRepo';
+import { captureCpuProfile } from './service/cpuProfiler';
+import { summarizeCpuProfile } from './core/cpuProfile';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import { changedSince, fingerprint, watchedFiles, watchedStamps } from './core/slotWatch';
 import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
@@ -12342,6 +12344,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const top = typeof args?.top === 'number' && args.top > 0 ? Math.floor(args.top) : 25;
                 if (args?.reset === true) { live.profile.reset(); }
                 return { since: localStamp(r.since), sites: r.sites.slice(0, top), total: r.sites.length };
+            }
+        },
+        {
+            op: 'farm.cpuProfile',
+            describe: 'X-482 — a sampling CPU profile of the extension host (every extension on it), taken in-process with no port opened: which FUNCTION the thread\'s time went to — self (where it stood) and inclusive (what was on the stack), each with file:line, ms and % of the busy time; ours marks this extension\'s code. The full .cpuprofile is saved in the work area (file). args: seconds (default 10, max 120 — past 15 pass af.js --timeout), top (default 25).',
+            handler: async (args: Record<string, unknown>) => {
+                const seconds = Math.min(120, Math.max(1, typeof args?.seconds === 'number' ? args.seconds : 10));
+                const top = typeof args?.top === 'number' && args.top > 0 ? Math.floor(args.top) : 25;
+                const profile = await captureCpuProfile(seconds * 1000);
+                let file = '';
+                if (ensureWorkArea()) {
+                    file = path.join(workArea.path, `cpu-${new Date().toISOString().replace(/[:.]/g, '-')}.cpuprofile`);
+                    try { fs.writeFileSync(file, JSON.stringify(profile), 'utf8'); } catch { file = ''; }
+                }
+                return { ...summarizeCpuProfile(profile, context.extensionPath, top), file };
             }
         },
         {

@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.829.0 - Which function the time goes to (2026-10-04)
+
+- **A CPU profile of the extension host, from the bridge.** `live.profile`
+  names the listener that is slow; it cannot say which call inside it is.
+  The new op `farm.cpuProfile` samples the extension host for a few seconds
+  in-process (no port is opened) and answers with two lists per function —
+  where the thread stood (self) and what was on the stack (inclusive) — each
+  with its file and line, milliseconds and share of the busy time, with this
+  extension's own code marked. The whole `.cpuprofile` is saved in the work
+  area, so it can be opened in VS Code's profile viewer.
+
 ## 3.828.0 - Where a live event's time goes (2026-10-04)
 
 - **A measurement for the "extension host unresponsive" days.** Every
