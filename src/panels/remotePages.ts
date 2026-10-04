@@ -21,6 +21,7 @@ export interface RemotePageMakers {
     notices(host: PanelHost): void;
     dashboard(host: PanelHost): void;
     missions(host: PanelHost): void;
+    queue(host: PanelHost): void;
     /** S-125 — `args.chain` names the chain a ⑂ link opened it on. */
     chains(host: PanelHost, args?: Record<string, unknown>): void;
 }
@@ -138,6 +139,17 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             pcOnly: ['pickFolder', 'openFile', 'missionSessions', 'openSession', 'openAgent', 'consoleAgent',
                 'openGuide', 'afnav'],
             make: host => make.missions(host)
+        },
+        // X-466 — the work queue. Answering a blocked item is an answer; capturing, editing, routing,
+        // filing, the urgency, dropping and deleting are manage. A source notice, a report or answer
+        // file and its open-with setting, a project's page, a link and the terminal hand-off belong
+        // to the PC (a mission or task mark reaches the phone's own page as afnav).
+        queue: {
+            open: 'read', act: 'manage',
+            looks: ['refresh'],
+            answers: ['answer'],
+            pcOnly: ['openNotice', 'openFile', 'configureDocOpen', 'openProject', 'openExternal', 'handoff', 'afnav'],
+            make: host => make.queue(host)
         },
         // S-125 — the relay chains. The board and a chain's legs are looks; stop, start now, the last-leg
         // brake, the leg ceiling, continue and end are manage, and the ceiling's menu and end's question

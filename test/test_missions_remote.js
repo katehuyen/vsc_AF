@@ -220,6 +220,7 @@ const alive = setInterval(() => undefined, 1000);
     MissionsPanel.refreshIfOpen();
     await settle();
     ok('a closed phone view is refreshed no more', toR.length === n1);
+    ok('‼️ and the page lets go of it — a phone opening and closing the page all day leaks nothing', MissionsPanel.phones.size === 0);
 
     // ---------- the host ----------
     const ext = src('src/extension.ts');

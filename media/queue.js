@@ -10,6 +10,9 @@
     // U-189 — every word below is English and drawn through t() / lab(); the catalog part is media/afI18n.tr.queue.js.
     const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     const lab = s => (window.AFI18n ? window.AFI18n.label(s) : s);
+    // X-466 — on a phone's view the source notice, a file, a project's page and the terminal hand-off are the PC's.
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
+    const pcFile = (icon, path) => `<span class="muted small q-pcfile" title="${esc(path)}">${icon} ${esc(fileBase(path))} · ${esc(t('open it on the PC'))}</span>`;
 
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Target / author are multi-pick: null = all (no filter), an array = exactly
@@ -167,7 +170,7 @@
                 title="${esc(t('Which project this item is work for. It shows on that project\'s Work tab and timeline; the empty option takes the stamp off again.'))}">
                 ${window.AFProject.options(DATA.projects, cur, { anyLabel: t('— none') })}
             </select>
-            ${cur && projOf(n) ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="${esc(t('Open this project\'s page'))}">${esc(lab('◧ Open'))}</button>` : ''}
+            ${cur && projOf(n) && !ON_PHONE_HOST ? `<button class="secondary" data-act="openproj" data-project="${esc(cur)}" title="${esc(t('Open this project\'s page'))}">${esc(lab('◧ Open'))}</button>` : ''}
             ${cur && !projOf(n) ? `<span class="muted small" title="${esc(t('The project this was filed under no longer exists — pick another, or clear it'))}">${esc(lab('⚠ project gone'))}</span>` : ''}
         </div>`;
     }
@@ -193,12 +196,16 @@
         const has = !!(n.sourceNoticeBody || secs.length || n.sourceNoticeReportPath);
         const open = has && srcOpen.has(n.id);
         const toggle = has ? ` <button class="secondary q-srctoggle" data-act="srcfull" data-id="${esc(n.id)}" title="${esc(t(open ? 'Hide the notice as it read when it became this item' : 'Show the notice as it read when it became this item'))}">${open ? '▾' : '▸'} ${esc(t('Original'))}</button>` : '';
-        let h = `<div class="q-src">${k.icon} ${esc(k.label)}: <a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="${esc(t('Go to the source notice'))}">${title}</a>${from}${toggle}</div>`;
+        const link = ON_PHONE_HOST ? `<b>${title}</b>`
+            : `<a href="#" class="q-openNotice" data-id="${esc(n.sourceNoticeId)}" title="${esc(t('Go to the source notice'))}">${title}</a>`;
+        let h = `<div class="q-src">${k.icon} ${esc(k.label)}: ${link}${from}${toggle}</div>`;
         if (!open) { return h; }
         h += '<div class="q-srcfull">';
         if (n.sourceNoticeBody) { h += `<div class="q-md">${mdToHtml(n.sourceNoticeBody)}</div>`; }
         for (const s of secs) { h += `<div class="q-srcsec"><div class="q-srcsec-h">${esc(s.title || '')}</div><div class="q-md">${mdToHtml(s.body || '')}</div></div>`; }
-        if (n.sourceNoticeReportPath) {
+        if (n.sourceNoticeReportPath && ON_PHONE_HOST) {
+            h += `<div>${pcFile('📄', n.sourceNoticeReportPath)}</div>`;
+        } else if (n.sourceNoticeReportPath) {
             h += `<button class="secondary" data-act="srcreport" data-id="${esc(n.id)}" title="${esc(n.sourceNoticeReportPath)}">📄 ${esc(t('Open the notice\'s report ({file})', { file: fileBase(n.sourceNoticeReportPath) }))}</button>`;
         }
         return h + '</div>';
@@ -236,8 +243,13 @@
         if (n.userReply) { h += `<div class="q-reply"><span class="q-reply-h">💬 ${esc(t('your reply'))}</span><div class="q-md">${mdToHtml(n.userReply)}</div></div>`; }
         if (n.resolution) { h += `<div class="q-md">${mdToHtml(n.resolution)}</div>`; }
         const files = [];
-        if (n.answerPath) { files.push(docSplit('answer', n.id, `📝 ${esc(t('Open answer ({file})', { file: fileBase(n.answerPath) }))}`, n.answerPath)); }
-        if (n.reportPath) { files.push(docSplit('report', n.id, `📄 ${esc(t('Open report ({file})', { file: fileBase(n.reportPath) }))}`, n.reportPath)); }
+        if (ON_PHONE_HOST) {
+            if (n.answerPath) { files.push(pcFile('📝', n.answerPath)); }
+            if (n.reportPath) { files.push(pcFile('📄', n.reportPath)); }
+        } else {
+            if (n.answerPath) { files.push(docSplit('answer', n.id, `📝 ${esc(t('Open answer ({file})', { file: fileBase(n.answerPath) }))}`, n.answerPath)); }
+            if (n.reportPath) { files.push(docSplit('report', n.id, `📄 ${esc(t('Open report ({file})', { file: fileBase(n.reportPath) }))}`, n.reportPath)); }
+        }
         if (files.length) { h += `<div class="q-files">${files.join(' ')}</div>`; }
         if (n.handledAt) { h += `<div class="muted small">${esc(t('handled: {when}', { when: window.AFTime.full(n.handledAt) }))}</div>`; }
         return h + '</div>';
@@ -309,7 +321,7 @@
                 ${delegationLink(n)}${outcomeBlock(n)}${routePicker(n)}${projectPicker(n)}
                 <div class="btnrow q-actions">
                     ${n.status === 'blocked' ? `<button data-act="answer" data-id="${esc(n.id)}" title="${esc(t('Answer this — records your reply and sends it back into the pipeline'))}">💬 ${esc(t('Answer'))}</button>` : ''}
-                    <button data-act="handoff" data-id="${esc(n.id)}" title="${esc(t('Open the responsible agent and type this into its terminal (not sent)'))}">🔗 ${esc(t('Hand to agent'))}</button>
+                    ${ON_PHONE_HOST ? '' : `<button data-act="handoff" data-id="${esc(n.id)}" title="${esc(t('Open the responsible agent and type this into its terminal (not sent)'))}">🔗 ${esc(t('Hand to agent'))}</button>`}
                     ${!terminal ? `<button class="secondary" data-act="urg" data-id="${esc(n.id)}" title="${esc(t('Cycle urgency'))}">⏫ ${esc(t('Urgency'))}</button>` : ''}
                     ${!terminal ? `<button class="secondary" data-act="edit" data-id="${esc(n.id)}">${esc(t('Edit'))}</button>` : ''}
                     ${!terminal ? `<button class="secondary" data-act="drop" data-id="${esc(n.id)}" title="${esc(t('Void this item (dropped). It can only be deleted once handled.'))}">${esc(t('Drop'))}</button>` : ''}
@@ -1020,14 +1032,17 @@
             e.stopPropagation();
             vscode.postMessage({ type: 'setProject', id: sel.dataset.id, project: sel.value });
         }));
-        document.querySelectorAll('[data-openproj]').forEach(el => el.addEventListener('click', e => {
-            e.stopPropagation();
-            vscode.postMessage({ type: 'openProject', project: el.dataset.openproj });
-        }));
-        document.querySelectorAll('[data-act="openproj"]').forEach(el => el.addEventListener('click', e => {
-            e.stopPropagation();
-            vscode.postMessage({ type: 'openProject', project: el.dataset.project });
-        }));
+        // A project's page opens on the PC; on a phone a tap on the mark opens the row like any other part of it.
+        if (!ON_PHONE_HOST) {
+            document.querySelectorAll('[data-openproj]').forEach(el => el.addEventListener('click', e => {
+                e.stopPropagation();
+                vscode.postMessage({ type: 'openProject', project: el.dataset.openproj });
+            }));
+            document.querySelectorAll('[data-act="openproj"]').forEach(el => el.addEventListener('click', e => {
+                e.stopPropagation();
+                vscode.postMessage({ type: 'openProject', project: el.dataset.project });
+            }));
+        }
 
         const shown = visible();
         window.AFBulk.wire({
@@ -1121,7 +1136,9 @@
             ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'afnav', to: a.dataset.to });
         }));
         document.querySelectorAll('.q-link').forEach(a => a.addEventListener('click', ev => {
-            ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
+            ev.preventDefault(); ev.stopPropagation();
+            if (ON_PHONE_HOST) { window.AFCtx.copy(a.dataset.href); return; }
+            vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
         }));
     }
 
@@ -1141,6 +1158,10 @@
         // ‼️ Written out, not assembled: these are the row buttons' messages,
         // key for key, and a helper that put `id` first would not be.
         const post = (m) => vscode.postMessage(m);
+        if (ON_PHONE_HOST && (verb === 'qNotice' || verb === 'qFile' || verb === 'qHand')) {
+            window.AFCtx.toast(t('That opens on the PC — open it from Agent Farm there.'), true);
+            return;
+        }
 
         switch (verb) {
             case 'qOpen': expanded.add(id); render(); return;

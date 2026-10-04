@@ -247,4 +247,8 @@
     'No session event rings yet.': 'Henüz hiçbir oturum olayı çalmıyor.',
     'Most people start with two:': 'Çoğu kişi şu ikisiyle başlar:',
     'A farm-wide event has no session to rehearse in. The ▶ beside its tone under When something happens plays it.': 'Çiftlik geneli bir olayın prova edileceği bir oturum yok. When something happens altındaki tonunun yanındaki ▶ onu çalar.',
+    // a mission run as a phone card (media/missions.js)
+    'Lead + team': 'Lider + ekip',
+    'Rounds': 'Turlar',
+    'Tokens': 'Token',
 });

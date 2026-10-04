@@ -694,6 +694,7 @@ import { NowPanel, type NowDeps } from './panels/nowPanel';
 import { buildNow, NOW_LIMITS } from './core/nowPage';
 import { NoticesPanel, type NoticesDeps } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
+import type { QueueDeps } from './panels/queueDeps';
 import { A2ANotesPanel } from './panels/a2aNotesPanel';
 import { A2ATasksPanel } from './panels/a2aTasksPanel';
 import { WikiPanel } from './panels/wikiPanel';
@@ -18562,7 +18563,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openQueueItem: (itemId) => showQueuePanel(itemId),
         onChange: a2aChanged
     }, focusId);
-    const showQueuePanel = (focusItem?: string): void => QueuePanel.show({
+    // X-466 — one deps object for the desktop tab and the phone's view
+    const queuePageDeps = (): QueueDeps => ({
         extensionUri: context.extensionUri,
         store: workQueueStore,
         targets: queueTargets,
@@ -18604,7 +18606,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openDoc,
         docOpenConfig,
         configureDocOpen: () => { void configureDocOpen(); }
-    }, focusItem);
+    });
+    const showQueuePanel = (focusItem?: string): void => QueuePanel.show(queuePageDeps(), focusItem);
 
     // X-456 — one deps object for the desktop tab and the phone's view
     const noticesPageDeps = (): NoticesDeps => ({
@@ -31308,6 +31311,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             notices: host => NoticesPanel.openOn(host, noticesPageDeps()),
             dashboard: host => DashboardPanel.openOn(host, dashboardDeps),
             missions: host => MissionsPanel.openOn(host, missionsPanelDeps),
+            queue: host => QueuePanel.openOn(host, queuePageDeps()),
             chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());

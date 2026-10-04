@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
-import { WorkItem, WorkQueueStore } from '../core/workqueue';
+import { desktopHost, type PanelHost } from './panelHost';
+import type { WorkItem } from '../core/workqueue';
 import { clearHandled, removeMany } from '../core/queueHygiene';
-import { ProjectRef } from './noticesPanel';
+import type { QueueDeps } from './queueDeps';
 
 /**
  * Work Queue page — the user→agent async work queue (see core/workqueue.ts),
@@ -11,78 +12,6 @@ import { ProjectRef } from './noticesPanel';
  * Self-contained: it touches only its own store, plus injected callbacks for the
  * two cross-boundary actions (open a source notice; hand an item to an agent).
  */
-
-export interface QueueDeps {
-    extensionUri: vscode.Uri;
-    store: WorkQueueStore;
-    /** Known routing targets (products / agent names) for the filter + add form. */
-    targets: () => string[];
-    agentNames: () => string[];
-    /**
-     * ‼️ X-49 — the engines an item can ASK FOR, and what each one offers.
-     *
-     * The queue does not start anything, so this is a vocabulary and not a
-     * launcher: it is here so the three little boxes on a row offer the models
-     * that engine actually has instead of a free-text field where `sonet` and
-     * `sonnet` are the same amount of true. Same shape the Tasks form is given
-     * (`launch` in tasksPanel), because two surfaces disagreeing about what
-     * `codex` can run is the bug S-20 was filed for.
-     */
-    engineChoices?: () => { id: string; label: string; takesEffort?: boolean }[];
-    engineModels?: () => Record<string, { models: { id: string; label: string }[]; efforts: Record<string, { id: string; label: string }[]>; defaultEffort?: Record<string, string>; note?: string }>;
-    efforts?: () => { id: string; label: string }[];
-    /**
-     * ‼️ X-254 (2/n) — WHICH SIGN-INS EACH ENGINE HAS, so the fourth box on a
-     * row is a picker and not a text field.
-     *
-     * The core half shipped the axis in 3.430.0 and the page could not draw it,
-     * because the page was never handed the accounts at all. Same shape the
-     * Tasks form is given (`engineAccounts` in tasksPanel) for the same reason
-     * the engines are: two surfaces disagreeing about which sign-ins exist is a
-     * row offering a plan that cannot pay.
-     *
-     * ‼️ AND THE QUEUE STILL STARTS NOTHING. This is a vocabulary, exactly as
-     * `engineChoices` is: what an item ASKS for, which a runner filters on. The
-     * five-hour figure travels with each row because that is the fact the
-     * choice turns on, but nothing here spends it.
-     */
-    engineAccounts?: () => Record<string, { id: string; label: string; health: string; active: boolean; percent?: number; resetsAt?: number }[]>;
-    /**
-     * ‼️ X-305 — …AND THE RULES, which is the answer an item in a QUEUE usually
-     * wants. An item waits, sometimes for hours, and a slot named today is the
-     * one fact about it most likely to be stale when somebody takes it; a rule
-     * is re-decided at that moment. `picks` / `refusal` describe RIGHT NOW and
-     * `detail` is the standing description — MIRROR wants them apart.
-     */
-    enginePolicies?: () => Record<string, {
-        id: string; label: string; detail: string;
-        picks: string; note: string; refusal: string;
-    }[]>;
-    /** Open projects, for the capture box, the row picker and the filter. */
-    projects: () => ProjectRef[];
-    /** The window's active project — what a capture made here is stamped with. */
-    activeProjectId: () => string;
-    /** Open a project's page, from an item's project mark. */
-    openProject?: (id: string) => void;
-    onChange?: () => void;
-    /** Cross-link back to Notices, focused on the source notice. */
-    openNotice?: (noticeId: string) => void;
-    /** "Hand to agent": open the item's target agent terminal, prefilled with the
-     *  item text (typed, NOT sent — the user reviews and presses Enter). */
-    handoff?: (item: WorkItem) => void;
-    // --- Feature A: live status mirror for agent-tracked (delegated) items ---
-    /** Current status/title of the mission run an item was delegated into. */
-    missionStatus?: (missionId: string) => { status: string; title?: string } | undefined;
-    /** Current status/title of the task an item was delegated into. */
-    taskStatus?: (taskId: string) => { status: string; title?: string } | undefined;
-    // --- Feature B: shared "open with" for report/answer .md links ---
-    /** Open a resolved report/answer file with a mode (default when omitted). */
-    openDoc?: (filePath: string, mode?: string) => void;
-    /** Current doc-open default, for the split-button UI. */
-    docOpenConfig?: () => { mode: string; hasCustom: boolean };
-    /** Launch the host-side "configure default + custom app" flow. */
-    configureDocOpen?: () => void;
-}
 
 /** Live status of every agent-tracked item that carries a mission/task link —
  *  the mirror shown in the Agent-tracked lane (running → done/failed), read
@@ -140,20 +69,25 @@ export class QueuePanel {
         if (QueuePanel.current) {
             QueuePanel.current.deps = deps;
             QueuePanel.current.focusItem = focusItem;
-            QueuePanel.current.panel.reveal();
+            QueuePanel.current.host.reveal();
             QueuePanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.queue',
-            'Agent Farm — Work Queue',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        QueuePanel.current = new QueuePanel(panel, deps, focusItem);
+        QueuePanel.current = new QueuePanel(
+            desktopHost({ viewType: 'agentfarm.queue', title: 'Agent Farm — Work Queue' }), deps, focusItem);
     }
 
-    static refreshIfOpen(): void { QueuePanel.current?.refresh(); }
+    /** X-466 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<QueuePanel>();
+
+    static openOn(host: PanelHost, deps: QueueDeps): void {
+        QueuePanel.phones.add(new QueuePanel(host, deps));
+    }
+
+    static refreshIfOpen(): void {
+        QueuePanel.current?.refresh();
+        for (const p of QueuePanel.phones) { p.refresh(); }
+    }
 
     /**
      * Put the page's own capture box up, seeded — U-14.
@@ -164,19 +98,19 @@ export class QueuePanel {
      * after whatever opened the page — it acts on the panel that is there.
      */
     static composeCurrent(text?: string): void {
-        void QueuePanel.current?.panel.webview.postMessage({ type: 'q-compose', text: text ?? '' });
+        void QueuePanel.current?.host.webview.postMessage({ type: 'q-compose', text: text ?? '' });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: QueueDeps, focusItem?: string) {
+    private constructor(readonly host: PanelHost, private deps: QueueDeps, focusItem?: string) {
         this.focusItem = focusItem;
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
     private render(): void {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             'Agent Farm Work Queue',
             buildData(this.deps, this.focusItem),
@@ -186,12 +120,13 @@ export class QueuePanel {
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focusItem) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focusItem) });
         this.focusItem = undefined;
     }
 
     private mutated(): void {
-        this.refresh();
+        // A phone's change shows on the PC's tab and the other way round.
+        QueuePanel.refreshIfOpen();
         try { this.deps.onChange?.(); } catch { /* badge best-effort */ }
     }
 
@@ -278,7 +213,7 @@ export class QueuePanel {
                 if (typeof msg.id === 'string') {
                     const r = s.remove(msg.id);
                     if (!r.ok) {
-                        void vscode.window.showWarningMessage(
+                        void this.host.ask.warn(
                             r.reason === 'not-handled'
                                 ? "Agent Farm: this item isn't handled yet — drop or finish it first (it can't be deleted before it's handled)."
                                 : 'Agent Farm: item not found.');
@@ -291,7 +226,7 @@ export class QueuePanel {
                 if (!ids.length) { break; }
                 const r = removeMany(s, ids);
                 if (r.live.length) {
-                    void vscode.window.showWarningMessage(
+                    void this.host.ask.warn(
                         `Agent Farm: ${r.live.length} item(s) kept — not handled yet. Drop or finish them first; only handled items can be deleted.`);
                 }
                 if (r.deleted) { this.mutated(); }
@@ -343,7 +278,9 @@ export class QueuePanel {
     }
 
     private dispose(): void {
-        QueuePanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (QueuePanel.current === this) { QueuePanel.current = undefined; }
+        QueuePanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

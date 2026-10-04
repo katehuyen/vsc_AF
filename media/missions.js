@@ -3475,22 +3475,24 @@
             // a non-success verdict deserves its own glanceable chip next to "done"
             const verdict = r.result && r.result.verdict !== 'success'
                 ? ` <span class="mchip ${r.result.verdict === 'failed' ? 'bad' : 'wait'}">${C.esc(r.result.verdict)}</span>` : '';
-            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" ${runCtx(r, open)}
+            // X-466 — on a phone a run is a card (media/afMobile.js, table[data-afcards]): every figure kept, labelled.
+            const lb = (s) => `data-label="${C.esc(t(s))}"`;
+            return `<tr class="mrow${open ? ' sel' : ''}" data-run="${C.esc(r.id)}" data-afcard ${runCtx(r, open)}
                 title="${C.esc(runTooltip(r, sp) + '\n— ' + window.AFCtx.HINT)}">
-                <td class="stoggle">${open ? '▾' : '▸'}</td>
-                <td>${C.esc(sp.title)}${sp.mode === 'adaptive'
+                <td class="stoggle" data-first>${open ? '▾' : '▸'}</td>
+                <td data-lead>${C.esc(sp.title)}${sp.mode === 'adaptive'
                     ? ' <span class="mchip adpt">ADPT</span>' : ''}</td>
-                <td>${C.esc(sp.leadAgentName)} <span class="muted small">+${sp.team.length}</span></td>
+                <td ${lb('Lead + team')}>${C.esc(sp.leadAgentName)} <span class="muted small">+${sp.team.length}</span></td>
                 <td>${chip(r.status)}${verdict}</td>
-                <td>R${r.rounds.length}/${capN(sp.limits.maxRounds)}</td>
-                <td>${st.total ? `${st.total}${st.failed ? ` <span class="mchip bad">${st.failed}✕</span>` : ''}` : '—'}</td>
-                <td class="num">${tok ? C.fmtTok(tok) : '—'}</td>
-                <td class="num">${runUsd(r)}</td>
-                <td class="muted small">${fmtTime(r.startedAt)}</td>
-            </tr>` + (open ? `<tr class="rundetail"><td colspan="9">${detailHtml(r)}</td></tr>` : '');
+                <td ${lb('Rounds')}>R${r.rounds.length}/${capN(sp.limits.maxRounds)}</td>
+                <td ${lb('Tasks')}>${st.total ? `${st.total}${st.failed ? ` <span class="mchip bad">${st.failed}✕</span>` : ''}` : '—'}</td>
+                <td class="num" ${lb('Tokens')}>${tok ? C.fmtTok(tok) : '—'}</td>
+                <td class="num" ${lb('Cost')}>${runUsd(r)}</td>
+                <td class="muted small" ${lb('Started')}>${fmtTime(r.startedAt)}</td>
+            </tr>` + (open ? `<tr class="rundetail" data-afcardmore><td colspan="9">${detailHtml(r)}</td></tr>` : '');
         }).join('');
-        return outcomeStripHtml() + runCtlHtml(pool.length) + `<table class="mtable" id="mlist"><thead>
-            <tr><th></th><th>Mission</th><th>Lead + team</th><th>Status</th><th>Rounds</th><th>Tasks</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
+        return outcomeStripHtml() + runCtlHtml(pool.length) + `<table class="mtable" id="mlist" data-afcards><thead>
+            <tr data-afcardhead><th></th><th>Mission</th><th>Lead + team</th><th>Status</th><th>Rounds</th><th>Tasks</th><th class="num">Tokens</th><th class="num">Cost</th><th>Started</th></tr>
         </thead><tbody>${rows || `<tr><td colspan="9" class="muted">No runs match the filters.</td></tr>`}</tbody></table>`;
     }
 
@@ -5232,21 +5234,9 @@
                 .mtable { width:100%; border-collapse:collapse; margin-top:8px; }
                 .mtable th { text-align:left; font-size:11px; opacity:.7; padding:4px 8px; }
                 .mtable td { padding:4px 8px; border-top:1px solid var(--vscode-widget-border, #3333); font-size:12px; }
-                /* X-466 - a 360px phone: the run list keeps its mark, mission, status and cost (the rest
-                   is in the run's own detail), a sentry condition's controls wrap, the history strip
+                /* X-466 - a 360px phone: a run is a card (table[data-afcards], media/afMobile.js), an open
+                   run's inner tables scroll in place, a sentry condition's controls wrap, the history strip
                    wraps, and the guide link steps aside */
-                html.af-phone #mlist > thead > tr > th:nth-child(3), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(3),
-                html.af-phone #mlist > thead > tr > th:nth-child(5), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(5),
-                html.af-phone #mlist > thead > tr > th:nth-child(6), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(6),
-                html.af-phone #mlist > thead > tr > th:nth-child(7), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(7),
-                html.af-phone #mlist > thead > tr > th:nth-child(9), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(9) { display:none; }
-                html.af-phone #mlist, html.af-phone #mlist > tbody, html.af-phone #mlist > tbody > tr.rundetail,
-                html.af-phone #mlist > tbody > tr.rundetail > td { display:block; width:auto; }
-                html.af-phone #mlist > thead { display:none; }
-                html.af-phone #mlist > tbody > tr.mrow { display:flex; flex-wrap:wrap; align-items:baseline; column-gap:8px;
-                    border-top:1px solid var(--vscode-widget-border, #3333); padding:4px 0; }
-                html.af-phone #mlist > tbody > tr.mrow > td { border-top:0; padding:2px 4px; }
-                html.af-phone #mlist > tbody > tr.mrow > td:nth-child(2) { flex:1 1 60%; min-width:0; }
                 html.af-phone .mtable td { overflow-wrap:anywhere; }
                 html.af-phone #mlist .rundetail table { display:block; overflow-x:auto; max-width:100%; }
                 html.af-phone #mlist .rundetail .turnlabel { white-space:normal; }
