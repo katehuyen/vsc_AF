@@ -25,7 +25,7 @@ function svgGroups(cls) {
         out.push({
             dataset: {
                 session: pick('data-session'), action: pick('data-action'),
-                disabled: pick('data-disabled'), agent: pick('data-agent')
+                disabled: pick('data-disabled'), agent: pick('data-agent'), sound: pick('data-sound')
             },
             checked: pick('aria-checked') === 'true'
         });
@@ -96,7 +96,7 @@ const sandbox = {
             // ‼️ Keyed by SESSION: S1 alerts, S2 does not, and they are the same
             // agent. That is the whole shape the old agent-keyed map could not
             // express.
-            sessionAlerts: { S1: ['sound'] },
+            sessionAlerts: { S1: ['sound', 'focus'] },
             alertActions: ['sound', 'focus', 'modal', 'toast']
         },
         addEventListener() { }
@@ -300,27 +300,35 @@ ok('cards show start time', /started \d{2}:\d{2}/.test(lastHtml));
         const g = gutter.find(x => x.dataset.session === sid && x.dataset.action === act);
         return g && g.checked;
     };
-    ok('S1 shows sound on', state('S1', 'sound') === true);
-    ok('‼️ S2 — the same agent — does NOT inherit it', state('S2', 'sound') === false);
+    // U-211 — ♪ is the session's three-way choice (Always here), ◎ ▣ ▭ stay switches
+    const soundOf = sid => (gutter.find(x => x.dataset.session === sid && x.dataset.action === 'sound') || { dataset: {} }).dataset.sound;
+    ok('S1 shows its sound as Always and Focus on', soundOf('S1') === 'always' && state('S1', 'focus') === true);
+    ok('‼️ S2 — the same agent — does NOT inherit either', soundOf('S2') === 'like-all' && state('S2', 'focus') === false);
     ok('the card carries no second copy of the controls',
         lastHtml.indexOf('alert on your turn:') === -1
         && lastHtml.indexOf('(agent default)') === -1
         && lastHtml.indexOf('af-reset') === -1);
 }
 
-// ---- clicking S2's sound asks the host for S2 alone ----
+// ---- clicking S2's focus asks the host for S2 alone ----
 posted = [];
-chipEls.find(e => e.dataset.session === 'S2' && e.dataset.action === 'sound')._click();
+chipEls.find(e => e.dataset.session === 'S2' && e.dataset.action === 'focus')._click();
 ok('one click, one message', posted.length === 1 && posted[0].type === 'setTurnAlert');
 ok('it names S2 and asks to turn it ON',
-    posted[0].sessionId === 'S2' && posted[0].action === 'sound' && posted[0].enabled === true);
+    posted[0].sessionId === 'S2' && posted[0].action === 'focus' && posted[0].enabled === true);
 ok('the whole map is never sent back', posted[0].map === undefined);
 
 // ---- and S1's own control still asks for S1 ----
 posted = [];
-chipEls.find(e => e.dataset.session === 'S1' && e.dataset.action === 'sound')._click();
-ok('S1 asks to turn its own sound OFF',
+chipEls.find(e => e.dataset.session === 'S1' && e.dataset.action === 'focus')._click();
+ok('S1 asks to turn its own focus OFF',
     posted[0].sessionId === 'S1' && posted[0].enabled === false);
+
+// ---- U-211: ♪ no longer flips a switch — it opens THAT row's session panel ----
+posted = [];
+chipEls.find(e => e.dataset.session === 'S2' && e.dataset.action === 'sound')._click();
+ok('S2\'s ♪ writes no switch, and asks only for S2\'s panel',
+    posted.length === 1 && posted.every(m => m.type === 'alertSessionOpen' && m.sessionId === 'S2'));
 
 // ---- range buttons: no gaps a user has to jump over ----
 {

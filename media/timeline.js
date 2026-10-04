@@ -29,6 +29,13 @@
     ];
     const ACTION_BY_ID = {};
     TURN_ACTIONS.forEach(a => { ACTION_BY_ID[a.id] = a; });
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    /** U-211 — a session's sound is one of three choices (core/soundSession.ts soundOf): Silent wins, then Always. */
+    const SOUND_STATE = { 'like-all': t('Like all'), always: t('Always'), silent: t('Silent') };
+    function soundStateOf(sid) {
+        const g = DATA.alertGate || {};
+        return (g.mutedSessions || []).indexOf(sid) >= 0 ? 'silent' : actionsFor(sid).indexOf('sound') >= 0 ? 'always' : 'like-all';
+    }
     function actionsFor(sessionId) {
         return (DATA.sessionAlerts && DATA.sessionAlerts[sessionId]) || [];
     }
@@ -55,7 +62,7 @@
      * the second event, then whatever was passed over on the way — and only
      * then what the control does.
      */
-    function soundTip(sid, on) {
+    function soundTip(sid, state) {
         const events = DATA.sessionAlertEvents || ['turn-ready', 'question'];
         const name = eventName;
         const said = [];
@@ -87,13 +94,12 @@
         return window.AFTip.lines([
             shut.length ? '⚠ NOTHING PLAYS RIGHT NOW — ' + shut.join(' · ') + '\n' : '',
             said.join('\n'),
-            on
-                ? '\nThis row is armed: the tone above plays when this session reaches that edge.'
-                : '\nThe box is OFF, so nothing plays from here — the tone above is what it WOULD '
-                    + 'play. A fleet-wide switch (the Sound page) can still ring it.',
-            '\nRight-click this row → Sound: This Session… to give this conversation a tone of '
-                + 'its own. Clearing that is not silence: it hands the answer back to your setting '
-                + 'for everybody, and then to the built-in default.',
+            '\n' + (state === 'always'
+                ? t('Always: this session rings on these events even when the fleet switch is off.')
+                : state === 'silent'
+                    ? t('Silent: this session never makes a sound; the tone above is what it would play.')
+                    : t('Like all: the fleet switches on the Sound page decide whether the tone above plays.')),
+            '\n' + t('Click to open this session\'s sound panel: Like all, Always or Silent, its own tones, the voice that says who, and reading aloud.'),
             skipped.length ? '\nPassed over on the way:\n' + skipped.join('\n') : ''
         ]);
     }
@@ -1287,10 +1293,13 @@
             // coordinate. The box carries the row's click and its right-click
             // too — one element answering for the label rather than two that
             // can disagree about which session they mean.
+            // U-211 — while THIS row's answer is read aloud, a ■ beside the name stops it (the name gives up 3 characters)
+            const readingHere = !!sid && DATA.sessionReading === sid;
+            const nameMax = readingHere ? 10 : 13;
             out += `<g class="lanelabel">` +
                 `<circle class="${C.esc(window.AFEngine.cls(laneEng))}" cx="7.5" cy="${y + 10}" r="3.5"` +
                 ` fill="var(--af-engc, currentColor)" opacity="0.95"/>` +
-                `<text x="16" y="${y + 13}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > 13 ? name.slice(0, 12) + '…' : name)}</text>` +
+                `<text x="16" y="${y + 13}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > nameMax ? name.slice(0, nameMax - 1) + '…' : name)}</text>` +
                 (sidLine
                     ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" opacity="0.55">${C.esc(sidLine)}</text>`
                     : '') + '</g>';
@@ -1302,6 +1311,16 @@
                     ctx: laneCtx(primary && primary.id, lane.agent, 'afTimelineAgent'),
                     label: lane.name + ' — what this row is'
                 }));
+            if (readingHere) {
+                // Pushed after the label's box so it sits above it and takes the press.
+                hots.push(hotHtml(
+                    { left: (84 / W) * 100, width: (14 / W) * 100, top: ((y + 2) / H) * 100, height: (14 / H) * 100 },
+                    { head: t('Reading aloud now'), body: t('This session\'s answer is being read aloud. Click to stop it; reading stays on for its next answer.') },
+                    { file: '', ts: 0, cursor: 'pointer', trigCls: 'af-readstop', trigAttrs: 'data-aftipact="1"', role: 'button', label: t('Stop reading aloud') }));
+                out += `<g class="af-readstop" style="pointer-events:none">`
+                    + `<rect x="84" y="${y + 2}" width="14" height="14" rx="3" fill="var(--vscode-charts-blue, #3794ff)" opacity="0.95"/>`
+                    + `<rect x="88" y="${y + 6}" width="6" height="6" fill="var(--vscode-editor-background, #fff)"/></g>`;
+            }
             // ‼️ THE CONTROLS BELONG TO THIS ROW'S SESSION AND TO NOTHING ELSE
             // (U-66). They used to carry `data-agent`, so an agent with three
             // concurrent rows showed one setting three times and a click on any
@@ -1323,7 +1342,13 @@
             TURN_ACTIONS.forEach((a, ai) => {
                 const gx = 4 + ai * 18;
                 const on = selected.indexOf(a.id) !== -1;
-                const tip = armable
+                // U-211 — ♪ is the session's three-way choice and opens its panel; the other three stay switches
+                const state = a.id === 'sound' && armable ? soundStateOf(sid) : '';
+                // Silent may keep the ring switch underneath (soundPlan); the drawing follows the choice, not the switch
+                const lit = state ? state === 'always' : on;
+                const tip = state
+                    ? `${a.label} — ${SOUND_STATE[state]}\n\n${t('Click to open this session\'s sound panel: Like all, Always or Silent, its own tones, the voice that says who, and reading aloud.')}`
+                    : armable
                     ? `${a.label} — fires when THIS session (${sid.slice(0, 8)}) has Turn finished or is Asking you.`
                         + `\nCurrently: ${on ? 'ON' : 'off'}.`
                         + `\n\nEvery row on this page is one session and carries its own four choices; nothing here is shared with the agent's other sessions.`
@@ -1336,7 +1361,7 @@
                 // answered in HTML, exactly as the gutter's label already is —
                 // and the box IS the control, so the two cannot disagree about
                 // which session was clicked.
-                const body = a.id === 'sound' && armable ? soundTip(sid, on) : '';
+                const body = state ? soundTip(sid, state) : '';
                 if (body) {
                     hots.push(hotHtml(
                         {
@@ -1344,7 +1369,7 @@
                             top: ((ty - 1) / H) * 100, height: (17 / H) * 100
                         },
                         {
-                            head: `${a.label} — ${lane.who || lane.agent} (#${sid.slice(0, 8)}) · ${on ? 'ON' : 'off'}`,
+                            head: `${a.label} — ${lane.who || lane.agent} (#${sid.slice(0, 8)}) · ${SOUND_STATE[state]}`,
                             body
                         },
                         {
@@ -1364,17 +1389,21 @@
                             label: ''
                         }));
                 }
-                out += `<g class="af-toggle" role="checkbox" aria-checked="${on ? 'true' : 'false'}"`
-                    + ` aria-label="${C.esc(a.label + ' — ' + (lane.who || lane.agent))}"`
+                out += `<g class="af-toggle"${state
+                    ? ` role="button" aria-haspopup="dialog" data-sound="${state}"`
+                    : ` role="checkbox" aria-checked="${on ? 'true' : 'false'}"`}`
+                    + ` aria-label="${C.esc(a.label + ' — ' + (lane.who || lane.agent) + (state ? ': ' + SOUND_STATE[state] : ''))}"`
                     + ` data-session="${C.esc(sid)}" data-action="${a.id}"`
                     + `${armable ? '' : ' data-disabled="1"'}`
                     + ` style="cursor:${armable ? 'pointer' : 'not-allowed'};opacity:${armable ? '1' : '0.32'}">` +
-                    `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="${on ? 'var(--vscode-charts-blue, #3794ff)' : 'currentColor'}" stroke-opacity="${on ? '1' : '0.45'}" opacity="${on ? '0.95' : '1'}"/>` +
-                    `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${on ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${on ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
+                    `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${lit ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="${lit ? 'var(--vscode-charts-blue, #3794ff)' : 'currentColor'}" stroke-opacity="${lit ? '1' : '0.45'}" opacity="${lit ? '0.95' : '1'}"/>` +
+                    `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${lit ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${lit ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
                     // ‼️ SELECTED IS NOT ONLY A FILL. A hover leaves a fill
                     // behind on some themes and the row then lies about what is
                     // armed, so a checked control also wears a tick of its own.
-                    (on ? `<path d="M${gx + 11.2} ${ty + 1.6} l1.5 1.6 l2.6 -2.9" fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"/>` : '') +
+                    (lit ? `<path d="M${gx + 11.2} ${ty + 1.6} l1.5 1.6 l2.6 -2.9" fill="none" stroke="var(--vscode-charts-green, #4caf50)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"/>` : '') +
+                    // Silent is struck through — the U-185 word drawn, not a colour alone
+                    (state === 'silent' ? `<line class="snd-silent" x1="${gx + 1.5}" y1="${ty + 13.5}" x2="${gx + 13.5}" y2="${ty + 1.5}" stroke="var(--vscode-errorForeground, #f14c4c)" stroke-width="1.6" stroke-linecap="round" style="pointer-events:none"/>` : '') +
                     // The AFTip box above answers for ♪; a native title left
                     // underneath it would be a second, shorter, staler answer to
                     // the same hover.
@@ -1805,7 +1834,7 @@
             ${emptyHint}
             ${density || !laneCount ? `<h2>${density ? 'Activity density' : 'Swim lanes'}</h2>`
                 : `<h2 class="lanes-h">Swim lanes<span class="lanes-ctl">⏱ tests as ${testEventSelect()}</span></h2>`}
-            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> has <b>Turn finished</b> or is <b>Asking you</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label).join(' · ')}; <b>⏱</b> tries them in 3 seconds. Each row is one session with its own choices, firing even while this panel is closed (history-only rows have them disabled). <b>Hover</b> a name for its figures, a dot or bar for that moment; click opens the transcript there, right-click for <b>Copy Corpus</b> and the session's actions.</div>`}
+            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> has <b>Turn finished</b> or is <b>Asking you</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label).join(' · ')} (${C.esc(t('♪ is the session\'s sound, Like all, Always or Silent: a click opens its panel'))}); <b>⏱</b> tries them in 3 seconds. Each row is one session with its own choices, firing even while this panel is closed (history-only rows have them disabled). <b>Hover</b> a name for its figures, a dot or bar for that moment; click opens the transcript there, right-click for <b>Copy Corpus</b> and the session's actions.</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}
@@ -1877,6 +1906,11 @@
                 const sid = el.dataset.session;
                 const act = el.dataset.action;
                 if (!sid || !act) { return; }
+                // U-211 — ♪ opens the session's sound panel beside the row rather than flipping one switch
+                if (act === 'sound') {
+                    if (window.AFSoundPop) { window.AFSoundPop.open(sid, el.getBoundingClientRect ? el.getBoundingClientRect() : null); }
+                    return;
+                }
                 vscode.postMessage({
                     type: 'setTurnAlert', sessionId: sid, action: act,
                     enabled: actionsFor(sid).indexOf(act) === -1
@@ -1891,6 +1925,8 @@
                 sel.addEventListener('change', () => { testEvent = sel.value; render(); });
             }
         }
+        document.querySelectorAll('.af-readstop').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({ type: 'alertReadStop' })));
         document.querySelectorAll('.af-alerttest').forEach(el =>
             el.addEventListener('click', () => {
                 if (el.dataset.disabled) { return; }

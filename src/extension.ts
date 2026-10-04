@@ -2001,7 +2001,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (soundRepaintTimer) { return; }
         soundRepaintTimer = setTimeout(() => {
             soundRepaintTimer = undefined;
-            ConsolePanel.refreshIfOpen(); SoundPanel.refreshIfOpen();
+            ConsolePanel.refreshIfOpen(); SoundPanel.refreshIfOpen(); TimelinePanel.refreshIfOpen();
         }, 50);
     };
     const turnAlerts = new TurnAlertStore({
@@ -2079,6 +2079,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             extensionUri: context.extensionUri, live, tasks: taskManager, index,
             // U-180 — declared later in activate(); reached only once the page is open.
             sound: () => soundDeps,
+            readingNow: () => readingNow.current,
             // ‼️ X-251 — THE SAME ONE READER THE SESSION PAGE ASKS. A card that
             // resolved the sign-in itself would be a second answer to a
             // question with one witness (the launch manifest), and the two

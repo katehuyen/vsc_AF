@@ -26,7 +26,7 @@ function groups(html, cls) {
             raw: m[0],
             dataset: {
                 session: pick('data-session'), action: pick('data-action'),
-                disabled: pick('data-disabled'), agent: pick('data-agent')
+                disabled: pick('data-disabled'), agent: pick('data-agent'), sound: pick('data-sound')
             },
             aria: pick('aria-checked')
         });
@@ -146,20 +146,23 @@ const on = (sid, action) => {
     const g = gs.find(x => x.dataset.session === sid && x.dataset.action === action);
     return !!g && g.aria === 'true';
 };
-ok('session 1 shows sound ON and the rest off',
-    on('S1aaaaaa-1111', 'sound') && !on('S1aaaaaa-1111', 'focus') && !on('S1aaaaaa-1111', 'modal'));
+// U-211 — ♪ draws the session's three-way choice (data-sound); ◎ ▣ ▭ stay checkboxes
+const sound = sid => (gs.find(x => x.dataset.session === sid && x.dataset.action === 'sound') || { dataset: {} }).dataset.sound;
+ok('session 1 shows its sound as Always and the rest off',
+    sound('S1aaaaaa-1111') === 'always' && !on('S1aaaaaa-1111', 'focus') && !on('S1aaaaaa-1111', 'modal'));
 ok('session 2 shows focus+modal ON', on('S2bbbbbb-2222', 'focus') && on('S2bbbbbb-2222', 'modal'));
-ok('session 2 does NOT inherit session 1\'s sound', !on('S2bbbbbb-2222', 'sound'));
+ok('session 2 does NOT inherit session 1\'s sound', sound('S2bbbbbb-2222') === 'like-all');
 ok('session 3 shows nothing on — there is no agent default behind it',
-    ['sound', 'focus', 'modal', 'toast'].every(a => !on('S3cccccc-3333', a)));
+    sound('S3cccccc-3333') === 'like-all' && ['focus', 'modal', 'toast'].every(a => !on('S3cccccc-3333', a)));
 
 // A selected control is not a fill alone: it carries a tick and an aria state,
 // because a hover fill left behind on some themes made the row lie.
-const soundOn = gs.find(g => g.dataset.session === 'S1aaaaaa-1111' && g.dataset.action === 'sound');
-ok('a checked control announces itself to a screen reader', soundOn.aria === 'true');
+const focusOn = gs.find(g => g.dataset.session === 'S2bbbbbb-2222' && g.dataset.action === 'focus');
+ok('a checked control announces itself to a screen reader', focusOn.aria === 'true');
 ok('a checked control also wears a tick', /stroke="var\(--vscode-charts-green/.test(three.html));
-ok('every control is a checkbox with a label',
-    (three.html.match(/role="checkbox"/g) || []).length === 12
+ok('every switch is a checkbox with a label, and every ♪ a button that opens a panel',
+    (three.html.match(/role="checkbox"/g) || []).length === 9
+    && (three.html.match(/role="button" aria-haspopup="dialog" data-sound="/g) || []).length === 3
     && (three.html.match(/aria-label="/g) || []).length >= 12);
 
 // ---- clicking row 3 touches row 3 and nothing else ----
@@ -195,7 +198,8 @@ const isOn = (sid, a) => {
 };
 ok('the redraw follows the host, not the click', isOn('S3cccccc-3333', 'toast')
     && isOn('S2bbbbbb-2222', 'modal') && !isOn('S2bbbbbb-2222', 'focus'));
-ok('and session 1 is still untouched by any of it', isOn('S1aaaaaa-1111', 'sound'));
+ok('and session 1 is still untouched by any of it',
+    (after.find(x => x.dataset.session === 'S1aaaaaa-1111' && x.dataset.action === 'sound') || { dataset: {} }).dataset.sound === 'always');
 
 // ---------------------------------------------------------------------------
 // The second control surface is GONE (ONE SUBJECT): the setting lives in the
@@ -318,8 +322,8 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
         /Asking you: Ask — two knocks/.test(mine.html));
     ok('a step that was passed over is named WITH ITS REASON, not dropped',
         /Passed over on the way/.test(mine.html) && /the file is gone/.test(mine.html));
-    ok('the panel points at the surface that changes it',
-        /Sound: This Session…/.test(mine.html));
+    ok('the panel points at the surface that changes it — a click opens the session\'s sound panel (U-211)',
+        /Click to open this session(&#039;|')s sound panel/.test(mine.html));
     ok('‼️ the ♪ hover is an AFTip, and the box IS the control',
         /class="lane-hot mark af-toggle"[^>]*data-session="V1aaaaaa-1111"[^>]*data-action="sound"/.test(mine.html));
     ok('a press mutes the panel instead of sitting over what was clicked (U-74)',

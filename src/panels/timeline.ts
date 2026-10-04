@@ -89,6 +89,8 @@ export interface TimelineDeps {
         /** Session ids muted on their own. */
         mutedSessions: string[];
     };
+    /** U-211 — the session whose answer is being read aloud right now ('' = none), for the row's ■. */
+    readingNow?: () => string;
     /** Run one session's selected alerts on purpose, after a countdown — for
      *  the event the page asked for (A-23), `turn-ready` when it names none. */
     testSessionAlert: (sessionId: string, delayMs: number, event?: AlertEvent) => Promise<{
@@ -247,7 +249,8 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
         sessionAlertEvents: [...SESSION_ALERT_EVENTS],
         // A-22 — one object for the whole page: the gate is fleet-wide except
         // for the list of sessions that silenced themselves.
-        alertGate: deps.alertGate()
+        alertGate: deps.alertGate(),
+        sessionReading: deps.readingNow?.() ?? ''
     };
 }
 

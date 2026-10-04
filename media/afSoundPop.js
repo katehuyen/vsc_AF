@@ -104,6 +104,7 @@
         if (!current || !alerts) { root.innerHTML = ''; return; }
         style();
         root.innerHTML = html(current, alerts);
+        place(root.querySelector('.sp-pop'));
         const id = current.sessionId;
         const apply = patch => vscode.postMessage({ type: 'alertSessionApply', sessionId: id, patch });
         const on = (sel, ev, fn) => root.querySelectorAll(sel).forEach(el => el.addEventListener(ev, () => fn(el)));
@@ -121,9 +122,20 @@
         on('[data-spclose]', 'click', close);
     }
 
-    /** Open the panel for one session — the right-click relay, or a page's own button. */
-    function open(sessionId) {
+    // U-211 — opened from a control (the Timeline's ♪), the panel sits beside it, kept inside the window
+    let anchor = null;
+    function place(pop) {
+        if (!pop || !anchor || !pop.style) { return; }
+        const w = Math.min(440, (window.innerWidth || 800) - 32);
+        const left = Math.max(16, Math.min(anchor.right + 8, (window.innerWidth || 800) - w - 16));
+        const top = Math.max(16, Math.min(anchor.top, (window.innerHeight || 600) - 360));
+        pop.style.left = `${left}px`; pop.style.right = 'auto'; pop.style.top = `${top}px`;
+    }
+
+    /** Open the panel for one session — the right-click relay, or a page's own button (`at`: its box). */
+    function open(sessionId, at) {
         if (!vscode || !sessionId) { return; }
+        anchor = at && typeof at.right === 'number' ? { right: at.right, top: at.top } : null;
         error = '';
         asked = String(sessionId);
         vscode.postMessage({ type: 'alertSessionOpen', sessionId: String(sessionId) });

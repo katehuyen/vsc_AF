@@ -431,6 +431,8 @@ const variants = () => ([
         })
     },
     { id: 'timeline', label: 'Live Timeline — every engine at once', data: base() },
+    // U-211 — #1 rings Always and is being read aloud (■ beside its name), #2 is Silent, the rest Like all
+    { id: 'timeline-reading', label: 'Live Timeline — a row read aloud: its stop beside the name, the note in its three states (U-211)', data: Object.assign(base(), { sessionReading: '407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60' }) },
     // U-153 — ONE visit first (a run's first checkpoint), then every badge, a mechanical visit and live settings
     { id: 'timeline-supervisor-one', label: 'Live Timeline — a workflow run whose supervisor was asked once (U-153)', data: Object.assign(base(), { sessions: sessions().slice(0, 1), events: [], workflowRuns: svRuns(1) }) },
     { id: 'timeline-supervisor', label: 'Live Timeline — the supervisor strip: every decision badge, a mechanical visit, live settings (U-153)', data: Object.assign(base(), { sessions: sessions().slice(0, 1), events: [], workflowRuns: svRuns(7) }) },

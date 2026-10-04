@@ -209,5 +209,14 @@
     'Notification': 'Bildirim',
     'Bring this session to the front when its turn ends.': 'Turu bitince bu oturumu öne getirir.',
     'A pop-up you have to close.': 'Kapatman gereken bir açılır pencere.',
-    'A VS Code notification.': 'Bir VS Code bildirimi.'
+    'A VS Code notification.': 'Bir VS Code bildirimi.',
+    // U-211 — the Live Timeline's ♪ and its reading stop
+    'Always: this session rings on these events even when the fleet switch is off.': 'Always: bu oturum filo anahtarı kapalıyken de bu olaylarda çalar.',
+    'Silent: this session never makes a sound; the tone above is what it would play.': 'Silent: bu oturum hiç ses çıkarmaz; yukarıdaki ton çalacağı tondur.',
+    'Like all: the fleet switches on the Sound page decide whether the tone above plays.': 'Like all: yukarıdaki tonun çalıp çalmayacağına Sound sayfasındaki filo anahtarları karar verir.',
+    'Click to open this session\'s sound panel: Like all, Always or Silent, its own tones, the voice that says who, and reading aloud.': 'Bu oturumun ses panelini açmak için tıkla: Like all, Always ya da Silent, kendi tonları, kimin konuştuğunu söyleyen ses ve sesli okuma.',
+    'Reading aloud now': 'Şimdi sesli okunuyor',
+    'This session\'s answer is being read aloud. Click to stop it; reading stays on for its next answer.': 'Bu oturumun cevabı sesli okunuyor. Durdurmak için tıkla; sesli okuma sonraki cevabı için açık kalır.',
+    'Stop reading aloud': 'Sesli okumayı durdur',
+    '♪ is the session\'s sound, Like all, Always or Silent: a click opens its panel': '♪ oturumun sesidir, Like all, Always ya da Silent: tıklayınca paneli açılır'
 });
