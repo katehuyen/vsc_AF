@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.822.0 - The Timeline's note speaks the three sound choices, with a stop while reading (2026-10-04)
+
+- **The note on each Timeline row shows the session's sound choice.**
+  Filled means Always, an outline means Like all, struck through means
+  Silent. Clicking it opens that session's sound panel right beside the row
+  instead of flipping a switch: choose Like all, Always or Silent, its own
+  tones, the voice and reading aloud there. Focus, Pop-up and Notification
+  stay one-click switches.
+- **A stop button while a row is being read aloud.** While a session's
+  answer is read, a small stop button sits beside its name on the Timeline.
+  Click it to cut the reading short; reading stays on for the next answer.
+- **The Sound page's Sessions table labels its extras.** The Also column
+  shows Focus, Pop-up and Notification as named chips; hover one for what
+  it is set to and what it does.
+- **Clearer words about the three choices.** Every sound surface now says
+  what you actually pick per session (Like all, Always or Silent), and that
+  Silent wins over every fleet switch.
+
 ## 3.821.0 - Reading aloud hears the question; the Sound page shows phone, Telegram and webhook (2026-10-04)
 
 - **Read aloud now reads the question too.** When a conversation you have
