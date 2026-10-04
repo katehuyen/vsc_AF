@@ -122,10 +122,8 @@
             ${ses ? `<span class="alertgatebar"></span><span class="alertmuteseswrap">${window.AFTip.wrap(
                 '<span class="alertmuteseslbl">Silent on their own</span>',
                 `${(g.mutedSessions || []).length} session${(g.mutedSessions || []).length === 1 ? '' : 's'} set to Silent`,
-                'These stay quiet whatever the two switches to the left say — a session\'s own Silent '
-                + 'is the only authority that can subtract from what the fleet switch and the row\'s '
-                + '♪ box ADD UP to.\n\nNothing they chose was cleared; ✕ puts each one back exactly '
-                + 'as it was.')}${ses}</span>` : ''}
+                t('These stay quiet whatever the switches to the left say: each session chooses Like all, Always or Silent, and Silent wins over every fleet switch.')
+                + '\n\n' + t('Nothing they chose was cleared; ✕ puts each one back exactly as it was.'))}${ses}</span>` : ''}
         </div>${err}`;
     }
 

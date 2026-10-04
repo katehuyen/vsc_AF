@@ -14,9 +14,10 @@
     let tab = 'sessions';   // U-187 — 'agents' draws the agent step of the tone chain
     let last = null;    // the page data the table was drawn from
     const SOUND = [['like-all', 'Like all'], ['always', 'Always'], ['silent', 'Silent']];
-    const ALSO = [['focus', '◎', 'Focus', 'Bring this session to the front when its turn ends.'],
-        ['modal', '▣', 'Pop-up', 'A pop-up you have to close.'],
-        ['toast', '▭', 'Notification', 'A VS Code notification.']];
+    const N_ = s => s;
+    const ALSO = [['focus', '◎', N_('Focus'), N_('Bring this session to the front when its turn ends.')],
+        ['modal', '▣', N_('Pop-up'), N_('A pop-up you have to close.')],
+        ['toast', '▭', N_('Notification'), N_('A VS Code notification.')]];
     const ORIGIN = { session: 'this session\'s own choice', agent: 'its agent\'s choice', settings: 'the fleet\'s choice', default: 'the built-in default' };
 
     const evName = e => ((S().EVENT_TEXT || {})[e] || [e])[0];
@@ -27,6 +28,14 @@
         const lines = (r.tones || []).map(t => `${evName(t.event)}: ${S().voiceName(al, t.voice)} — ${ORIGIN[t.origin] || t.origin}${t.rings ? ' · rings' : ' · does not ring'}`);
         return T().lines(lines.concat([`Say who in: ${r.speechVoice || 'the fleet\'s voice'}`, T().GAP,
             window.AFSessionCtx ? window.AFSessionCtx.HINT : '']));
+    }
+
+    // U-211 — each branch is a labelled chip, its hover opening on what it is set to (MIRROR)
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    function alsoChip(sid, k, g, l, tip, on) {
+        return T().wrap(
+            `<button class="${['secondary', 'small', 'ssalsob', on ? 'on' : ''].join(' ').trim()}" data-ssalso="${sid}|${k}" aria-pressed="${on ? 'true' : 'false'}">${g} ${C.esc(t(l))}</button>`,
+            `${t(l)}: ${on ? t('on') : t('off')}`, t(tip));
     }
 
     function row(r, al) {
@@ -42,7 +51,7 @@
             <td>${r.speechVoice ? C.esc(r.speechVoice) : '<span class="muted">all\'s</span>'}</td>
             <td class="ssread"><input type="checkbox" data-ssread="${sid}" ${r.read ? 'checked' : ''} title="Read each finished answer of this session aloud">${r.reading
                 ? ' <button class="secondary small" data-ssreadstop title="Cut short the answer being read now">■</button>' : ''}</td>
-            <td class="ssalso">${ALSO.map(([k, g, l, tip]) => `<button class="secondary small ssalsob${(r.also || {})[k] ? ' on' : ''}" data-ssalso="${sid}|${k}" aria-pressed="${(r.also || {})[k] ? 'true' : 'false'}" title="${C.esc(`${l}: ${(r.also || {})[k] ? 'on' : 'off'} — ${tip}`)}">${g}</button>`).join('')}</td>
+            <td class="ssalso">${ALSO.map(([k, g, l, tip]) => alsoChip(sid, k, g, l, tip, !!(r.also || {})[k])).join('')}</td>
             <td><button class="secondary small" data-sspop="${sid}" title="Everything about this session's sound, with a test">⋯</button></td>
         </tr>`;
     }
@@ -78,7 +87,7 @@
             .sshead #ssfilter { flex:0 1 200px; min-width:120px; }
             .sstbl td, .sstbl th { padding:2px 8px 2px 0; white-space:nowrap; vertical-align:middle; }
             .sstbl select { min-width:0; padding:0 4px; height:22px; }
-            .ssalsob { padding:0 5px; min-width:0; opacity:.45; }
+            .ssalsob { padding:0 5px; min-width:0; opacity:.45; border-radius:10px; margin-right:3px; }
             .ssalsob.on, .sstab.on { opacity:1; border-color:var(--vscode-focusBorder, #4448); }
             .sstab { opacity:.6; }
             .ssread input { margin:0; width:auto; }

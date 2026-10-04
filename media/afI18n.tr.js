@@ -198,5 +198,16 @@
     'The paired Agent Farm phone app receives these events: a turn finished, a question or a permission ask, a notice, a quota warning. What it plays is set on the phone.': 'Eşlenmiş Agent Farm telefon uygulaması şu olayları alır: biten tur, soru ya da izin isteği, bildirim, kota uyarısı. Ne çalacağı telefonda ayarlanır.',
     'A Telegram chat talks to your agents. When a Console turn ends or an agent stops to ask, the chat gets a card; which conversations is its digest setting.': 'Bir Telegram sohbeti ajanlarınla konuşur. Bir Console turu bitince ya da bir ajan sormak için durunca sohbete bir kart gider; hangi konuşmaların gideceği digest ayarıdır.',
     'Farm notifications are posted as JSON to your webhook URL, only the events it lists.': 'Çiftlik bildirimleri webhook URL\'ine JSON olarak gönderilir; yalnız listelediği olaylar.',
-    'Press to open its own setting; the choice lives there, not on this page.': 'Kendi ayarını açmak için bas; seçim orada durur, bu sayfada değil.'
+    'Press to open its own setting; the choice lives there, not on this page.': 'Kendi ayarını açmak için bas; seçim orada durur, bu sayfada değil.',
+    // U-211 — the three session choices, in the sound card's words
+    'this conversation\'s own tone, from its sound panel': 'bu konuşmanın kendi tonu, ses panelinden',
+    'Off here. A session set to Always still rings on this event, and one set to Silent never does; each session chooses Like all, Always or Silent in its sound panel (the ♪ or a right-click on its row).': 'Burada kapalı. Always\'e ayarlı bir oturum bu olayda yine çalar, Silent\'e ayarlı olan hiç çalmaz; her oturum Like all, Always ya da Silent seçimini kendi ses panelinde yapar (satırındaki ♪ ya da sağ tık).',
+    'These stay quiet whatever the switches to the left say: each session chooses Like all, Always or Silent, and Silent wins over every fleet switch.': 'Soldaki anahtarlar ne derse desin bunlar sessiz kalır: her oturum Like all, Always ya da Silent seçer ve Silent bütün filo anahtarlarını yener.',
+    'Nothing they chose was cleared; ✕ puts each one back exactly as it was.': 'Seçtikleri hiçbir şey silinmedi; ✕ her birini tam eski hâline döndürür.',
+    'Focus': 'Öne getir',
+    'Pop-up': 'Açılır pencere',
+    'Notification': 'Bildirim',
+    'Bring this session to the front when its turn ends.': 'Turu bitince bu oturumu öne getirir.',
+    'A pop-up you have to close.': 'Kapatman gereken bir açılır pencere.',
+    'A VS Code notification.': 'Bir VS Code bildirimi.'
 });

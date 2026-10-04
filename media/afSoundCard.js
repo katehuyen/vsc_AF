@@ -32,8 +32,9 @@
         error: ['Error',
             'A critical error. Nothing emits this edge yet — the voice is settable so it is ready when something does.']
     };
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     const ALERT_ORIGIN_TEXT = {
-        session: 'this conversation\'s own ♪ choice',
+        session: t('this conversation\'s own tone, from its sound panel'),
         agent: 'this agent\'s choice',
         settings: 'your choice here',
         default: 'the built-in default'
@@ -126,7 +127,7 @@
             row.on
                 ? 'The tone plays on every session, whatever each one has selected for itself.'
                 : armed
-                    ? 'Off here, but a single session can still ring on its own from the ♪ in its Live Timeline row — the two ADD, they do not gate each other.'
+                    ? t('Off here. A session set to Always still rings on this event, and one set to Silent never does; each session chooses Like all, Always or Silent in its sound panel (the ♪ or a right-click on its row).')
                     : 'Nothing rings for this event. It has no per-session control either, so this switch is the only way to hear it.');
         const wrong = row.chosen && row.chosen !== row.voice;
         const silent = row.on && !row.playable;
