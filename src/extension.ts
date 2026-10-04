@@ -12335,6 +12335,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'live.profile',
+            describe: 'X-482 — where a live event\'s time goes on the extension host: every live listener (onDidUpdate / onEvent) timed under the place it subscribed from (the running build\'s file:line), plus handle() as a whole, heaviest first — calls, totalMs, avgMs, maxMs since the build started or the last reset. args: top (default 25), reset:true (clears after reading).',
+            handler: (args: Record<string, unknown>) => {
+                const r = live.profile.report();
+                const top = typeof args?.top === 'number' && args.top > 0 ? Math.floor(args.top) : 25;
+                if (args?.reset === true) { live.profile.reset(); }
+                return { since: localStamp(r.since), sites: r.sites.slice(0, top), total: r.sites.length };
+            }
+        },
+        {
             op: 'live.alerts.get',
             describe: '‼️ WHICH SESSION ALERTS YOU WHEN IT IS YOUR TURN — the four controls in each Live Timeline swim lane, read back. The key is the SESSION and nothing else: three concurrent runs of one agent are three independent settings, and an id with no record alerts on nothing (there is no agent-wide default behind it). Each row carries sessionId, label, agentName, engine, status, `actions` (any of '
                 + TURN_ALERT_ACTIONS.join('|')

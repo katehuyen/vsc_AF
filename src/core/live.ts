@@ -8,6 +8,8 @@ import { truncate } from './util';
 import type { AlertEvent } from './alertVoices';
 import { HostedWait, settleWait } from './liveWait';
 import { CallLimit, callLimitOf, stallVerdict } from './stallJudge';
+import { performance } from 'perf_hooks';
+import { ListenerProfile } from './listenerProfile';
 
 export type LiveStatus =
     | 'working'            // processing a prompt
@@ -503,8 +505,10 @@ export class LiveMonitor implements vscode.Disposable {
     private sessionsMap = new Map<string, LiveSession>();
     private eventLog: LiveEvent[] = [];
     private stuckTimer: NodeJS.Timeout;
+    /** X-482 — every live listener and the whole of handle(), timed (bridge op live.profile). */
+    readonly profile = new ListenerProfile(() => performance.now(), /(^|[\\/])live\.[jt]s$/);
     private readonly onDidUpdateEmitter = new vscode.EventEmitter<void>();
-    readonly onDidUpdate = this.onDidUpdateEmitter.event;
+    readonly onDidUpdate: vscode.Event<void> = this.profile.wrap('update', this.onDidUpdateEmitter.event);
     /**
      * A session was CLEARED off the page on purpose (`dismiss(…, purge)`), or
      * re-keyed onto its real id (`adopt`). Anything that keeps its own record
@@ -517,7 +521,7 @@ export class LiveMonitor implements vscode.Disposable {
     readonly onDidRekey = this.onDidRekeyEmitter.event;
     private readonly onEventEmitter = new vscode.EventEmitter<LiveEvent>();
     /** Fires for every individual live event (used by hook triggers). */
-    readonly onEvent = this.onEventEmitter.event;
+    readonly onEvent: vscode.Event<LiveEvent> = this.profile.wrap('event', this.onEventEmitter.event);
     listenerState: ListenerState = 'disabled';
     activePort = 0;
 
@@ -1024,6 +1028,10 @@ export class LiveMonitor implements vscode.Disposable {
     }
 
     handle(payload: HookPayload): void {
+        this.profile.time('handle (whole, listeners included)', () => this.handleNow(payload));
+    }
+
+    private handleNow(payload: HookPayload): void {
         const cfg = this.getConfig();
         const s = this.session(payload);
         // ‼️ X-265 — recorded before anything else is decided: a mirror always
