@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.825.0 - A question that answers itself warns you first (2026-10-04)
+
+- **A reminder before the timer decides.** When a Console question is about
+  to be answered with its recommended option because nobody answered in time,
+  the reminder tone plays first, by default two minutes before. With Say who
+  on for Asking you, a short sentence follows — "developer's question answers
+  itself in 2 minutes" — in the voice's own language.
+- **Once per question.** Answer it, press Stop timer or close the card first
+  and nothing rings. Mute all and quiet hours hold it; a session set to Silent
+  does not, because the choice is still yours either way.
+- **Your setting.** *Agent Farm › Console › Auto Answer: Remind Seconds* sets
+  how long before; 0 turns it off.
+
 ## 3.824.0 - The farm-wide news makes a sound too (2026-10-04)
 
 - **Five new rows on the Sound page.** Under "When something happens", a new
