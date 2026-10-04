@@ -21,6 +21,10 @@ export interface SpeechPhrases {
     jsonList: (items: number) => string;
     fileLine: (file: string, line: number, end?: number) => string;
     id: string;
+    asks: (who: string) => string;
+    options: string;
+    wantsToRun: (who: string) => string;
+    wantsToUse: (who: string, tool: string) => string;
     link: string;
     image: string;
     path: string;
@@ -39,6 +43,8 @@ export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
         jsonList: n => (n === 1 ? 'a JSON list of one item' : `a JSON list of ${n} items`),
         fileLine: (f, a, b) => (b === undefined ? `${f}, line ${a}` : `${f}, lines ${a} to ${b}`),
         id: 'an id',
+        asks: w => `${w} asks`, options: 'Options',
+        wantsToRun: w => `${w} wants to run`, wantsToUse: (w, t) => `${w} wants to use ${t}`,
         link: 'a link', image: 'an image', path: 'a path', more: 'There is more.', anAgent: 'an agent',
         events: { 'turn-ready': 'turn finished', question: 'asking you', stalled: 'stalled', ended: 'session ended', error: 'error' }
     },
@@ -51,6 +57,8 @@ export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
         jsonList: n => (n === 1 ? 'tek öğeli bir JSON listesi' : `${n} öğeli bir JSON listesi`),
         fileLine: (f, a, b) => (b === undefined ? `${f}, satır ${a}` : `${f}, satır ${a} ile ${b} arası`),
         id: 'bir kimlik',
+        asks: w => `${w} soruyor`, options: 'Seçenekler',
+        wantsToRun: w => `${w} şunu çalıştırmak istiyor`, wantsToUse: (w, t) => `${w} ${t} aracını kullanmak istiyor`,
         link: 'bir bağlantı', image: 'bir görsel', path: 'bir dosya yolu', more: 'Devamı var.', anAgent: 'bir ajan',
         events: { 'turn-ready': 'tur bitti', question: 'sana soruyor', stalled: 'takıldı', ended: 'oturum bitti', error: 'hata' }
     }

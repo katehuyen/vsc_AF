@@ -63,6 +63,7 @@ import { LivingCheck, LivingInput, wireDuties } from './core/living';
 import { LivingPanel } from './panels/livingPanel';
 import { currentUiLanguage, installUiLanguage } from './panels/uiLanguage';
 import { autoVoices, chooseSpeechVoice, phrasesFor } from './core/speechLang';
+import { askFrom, askSense, askSpoken } from './core/askSpoken';
 import { TaskAnalyticsPanel } from './panels/taskAnalyticsPanel';
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
@@ -3114,22 +3115,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /**
      * ‼️ A-26 — READ THIS SESSION'S ANSWER OUT LOUD, if it asked to be read.
      *
-     * `turn-ready` ONLY, and the two edges beside it are excluded for a reason
-     * each. `question` is a turn that has NOT ended — it parked on an
-     * `AskUserQuestion` mid-turn, so its text is half an answer and the sound
-     * that matters there is the alert telling you to come back. `ended` is the
-     * session closing, and the last thing it said was already read when that
+     * `turn-ready` reads the answer. ‼️ U-208 — `question` reads the QUESTION,
+     * never the half answer before it: the parked `AskUserQuestion` with its
+     * options, or the tool waiting for permission ("developer wants to run:
+     * npm test") — the moment somebody across the room most needs to hear.
+     * `ended` is excluded: the last thing it said was already read when that
      * turn finished; reading it again would repeat the whole answer at the
      * moment the conversation disappears.
      */
     function readTurnAloud(s: LiveSession, event: AlertEvent, said?: string): void {
-        if (event !== 'turn-ready') { return; }
+        if (event !== 'turn-ready' && event !== 'question') { return; }
         if (!turnAlerts.readAloudFor(s.sessionId)) { return; }
+        const ask = event === 'question' ? askOfSession(s) : undefined;
+        const sense = ask ? askSense(ask) : said ?? '';
         // Nothing speakable is not a failure: a turn that ended in a tool
         // result or a diff has no sentence in it, and the alert already rang.
-        if (!sanitizeForSpeech(said ?? '')) { return; }
+        if (ask ? !askSpoken(live.labelOf(s), ask, phrasesFor('en')) : !sanitizeForSpeech(said ?? '')) { return; }
         // One turn = one reading, on the reader's OWN key (see `readDedupe`).
-        if (!readDedupe.shouldFire(s.sessionId, `read:${s.prompts}:${s.toolCalls}`)) { return; }
+        if (!readDedupe.shouldFire(s.sessionId, `read:${event}:${s.prompts}:${s.toolCalls}`)) { return; }
         // ‼️ THE SAME VOICE CHAIN THE ANNOUNCEMENT USES — the session answers
         // first, and having no opinion falls through to the fleet rather than
         // to silence. The fleet's `on` and `events` are NOT consulted: those
@@ -3137,8 +3140,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // was thrown on this conversation by hand.
         const fleet = speakCfg();
         const own = turnAlerts.speechVoiceFor(s.sessionId);
-        void speechFor(own || fleet.voice, said ?? '').then(how =>
-            readingNow.start(s.sessionId, dialogue.speak(sanitizeForSpeech(said ?? '', undefined, how.words), { ...fleet, voice: how.voice })));
+        void speechFor(own || fleet.voice, sense).then(how => {
+            const text = ask ? askSpoken(live.labelOf(s), ask, how.words) : said ?? '';
+            readingNow.start(s.sessionId, dialogue.speak(sanitizeForSpeech(text, undefined, how.words), { ...fleet, voice: how.voice }));
+        });
+    }
+
+    /** U-208 — what the session is stopped on: the Console's pending card names
+     *  it exactly; a hook-watched session's is the tool it last started. */
+    function askOfSession(s: LiveSession) {
+        const card = consoleHostRef?.list().find(r => r.sessionId === s.sessionId && r.pendingAsk)?.pendingAsk;
+        if (card) { return askFrom(card); }
+        const start = live.events(30 * 60_000).filter(e => e.sessionId === s.sessionId && e.kind === 'toolStart').pop();
+        return start ? askFrom(undefined, start.tool, start.detail) : askFrom(undefined, s.currentTool);
     }
 
     // J2: tail relay feed files from other machines into the live monitor.
@@ -12459,7 +12473,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.read',
-            describe: 'CANLI DİYALOG OKUYUCU — read ONE conversation\'s answers out loud as each turn ends. A tone says news arrived and the announcement says whose; this says WHAT, so a user across the room hears the answer instead of walking back to read it. ‼️ PER SESSION AND ONLY PER SESSION: there is no fleet-wide "read everything", because eight agents reading over each other is a crowd, not a cockpit. `sessionId` with no `on` TOGGLES. ‼️ IT IS NOT PART OF `alerts.on` OR THE ♪ BOXES — a session with every box unticked still reads when you ask it to, and a muted fleet does not silence it: this switch was thrown on this conversation BY HAND, and the mute exists to stop noise nobody chose. It reads the `turn-ready` edge only — a turn parked on a question has not finished its answer, and a session ending would repeat the turn already read. Markdown, code fences and links are stripped first (`sanitizeForSpeech`), and the text is cut at the same 1200 characters the timeline quotes, with "There is more." spoken when it did not fit. The voice is this session\'s own (`alerts.speak { sessionId, voice }`) and falls through to the fleet\'s, never to silence. ‼️ ONE READER FOR THE WINDOW: a newer answer cuts short an older one still being read, on purpose. args: sessionId? (full id or 8-char prefix; required unless `stop`), on? (default: toggle), stop? (cut the reading happening RIGHT NOW short and change no setting — the panic button, and it needs no sessionId because there is only ever one reading)',
+            describe: 'CANLI DİYALOG OKUYUCU — read ONE conversation\'s answers out loud as each turn ends. A tone says news arrived and the announcement says whose; this says WHAT, so a user across the room hears the answer instead of walking back to read it. ‼️ PER SESSION AND ONLY PER SESSION: there is no fleet-wide "read everything", because eight agents reading over each other is a crowd, not a cockpit. `sessionId` with no `on` TOGGLES. ‼️ IT IS NOT PART OF `alerts.on` OR THE ♪ BOXES — a session with every box unticked still reads when you ask it to, and a muted fleet does not silence it: this switch was thrown on this conversation BY HAND, and the mute exists to stop noise nobody chose. It reads the `turn-ready` edge (the answer) and the `question` edge — there it reads the QUESTION, never the half answer: the parked AskUserQuestion with its options ("developer asks: … Options: …"), or the tool waiting for permission ("developer wants to run: npm test"); a session ending would repeat the turn already read. Markdown, code fences and links are stripped first (`sanitizeForSpeech`), and the text is cut at the same 1200 characters the timeline quotes, with "There is more." spoken when it did not fit. The voice is this session\'s own (`alerts.speak { sessionId, voice }`) and falls through to the fleet\'s, never to silence. ‼️ ONE READER FOR THE WINDOW: a newer answer cuts short an older one still being read, on purpose. args: sessionId? (full id or 8-char prefix; required unless `stop`), on? (default: toggle), stop? (cut the reading happening RIGHT NOW short and change no setting — the panic button, and it needs no sessionId because there is only ever one reading)',
             handler: async (args) => {
                 if ((args as { stop?: unknown }).stop) {
                     const was = alertsStopReading();
@@ -37597,7 +37611,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     void vscode.window.setStatusBarMessage(
                         wasReading
                             ? `Agent Farm: ${who} is no longer read aloud`
-                            : `Agent Farm: ${who} will be read aloud as each turn ends`,
+                            : `Agent Farm: ${who} will be read aloud as each turn ends and when it asks you`,
                         6000);
                     return;
                 }
