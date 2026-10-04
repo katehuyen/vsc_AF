@@ -125,8 +125,9 @@ ok('the phone is warned at the handover line', R.QUOTA_WARN_PCT === 90);
 
 // ---------- Notices ----------
 const ne = R.noticeEvent({ id: 'n1', title: 'Report ready', level: 2, agentName: 'dev', extra: 'no' });
-ok('a notice is notice.posted with id, title, level, agent only',
-    ne.type === 'notice.posted' && JSON.stringify(ne.data) === JSON.stringify({ id: 'n1', title: 'Report ready', level: 2, agent: 'dev' }));
+ok('a notice is notice.posted with id, title, level, agent and its reading only',
+    ne.type === 'notice.posted' && JSON.stringify(ne.data) === JSON.stringify({ id: 'n1', title: 'Report ready', level: 2, agent: 'dev',
+        spoken: { text: 'Report ready.', lang: 'en' } }));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

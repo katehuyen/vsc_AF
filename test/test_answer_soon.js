@@ -64,7 +64,8 @@ ok('‼️ it rides the reminder\'s sweep, no clock of its own',
 const tick = ext.slice(ext.indexOf('answerSoonTick = () => {'), ext.indexOf('answerSoonTick = () => {') + 900);
 ok('the cards come from the Console host\'s own auto-answer view, the lead from the setting',
     /consoleHost\.autoAnswerView\(c\.id\)/.test(tick) && /answerSoonSeconds\(cfg\(\)\.get\('console\.autoAnswer\.remindSeconds'\)\)/.test(tick));
-ok('the phone is told when one is listening', /if \(remoteLive\) \{ remoteEmit\(\[answerSoonEvent\(d\)\]\); \}/.test(tick));
+ok('the phone is told when one is listening, with the reading in the interface\'s language (U-217)',
+    /if \(remoteLive\) \{ remoteEmit\(\[answerSoonEvent\(d, currentUiLanguage\(\)\.lang\)\]\); \}/.test(tick));
 const ring = ext.slice(ext.indexOf('const remindAnswerSoon = '), ext.indexOf('const remindAnswerSoon = ') + 1400);
 ok('‼️ Mute all and quiet hours hold it, a session\'s Silent does not (the gate asked with no session)', /if \(alertSilence\(\)\.silent\) \{ return; \}/.test(ring));
 ok('the reminder\'s own tone, through the one queue', /n\.voice && v\.playable/.test(ring) && /alertArbiter\.submit\(`answer-soon:\$\{d\.cardId\}:\$\{d\.requestId\}`, 'question'/.test(ring));

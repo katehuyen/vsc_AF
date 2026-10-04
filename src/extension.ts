@@ -31332,24 +31332,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let remoteLive = false;
     let remoteConsoleMemo = EMPTY_CONSOLE_MEMO, remoteNeedsMemo = EMPTY_NEEDS_MEMO, remoteQuotaMemo = EMPTY_QUOTA_MEMO;
     let remoteNeedsTimer: NodeJS.Timeout | undefined;
+    // U-217 - a permission is read as the PC reads it: the Console card, else the last tool start
+    const remoteAskOf = (sid: string) => { const s = live.sessions().find(x => x.sessionId === sid); return s ? askOfSession(s) : undefined; };
     const remoteNeedsSoon = () => {
         if (!remoteLive || remoteNeedsTimer) { return; }
         remoteNeedsTimer = setTimeout(() => {
             remoteNeedsTimer = undefined;
-            const r = needsEvents(remoteNeedsMemo, buildNeeds());
+            const r = needsEvents(remoteNeedsMemo, buildNeeds(), currentUiLanguage().lang, remoteAskOf);
             remoteNeedsMemo = r.memo;
             remoteEmit(r.events);
         }, 400);
     };
     context.subscriptions.push(consoleHost.onChange(id => {
         if (!remoteLive) { return; }
-        const r = consoleEvents(remoteConsoleMemo, id, consoleHost.get(id), consoleHost.list().map(x => x.id));
+        const r = consoleEvents(remoteConsoleMemo, id, consoleHost.get(id), consoleHost.list().map(x => x.id), currentUiLanguage().lang);
         remoteConsoleMemo = r.memo;
         remoteEmit(r.events);
         remoteNeedsSoon();
     }));
     context.subscriptions.push(needsEmitter.event(remoteNeedsSoon), live.onDidUpdate(remoteNeedsSoon));
-    noticesStore.onAdd = n => { if (remoteLive) { remoteEmit([noticeEvent(n)]); } noticeRing(n); };
+    noticesStore.onAdd = n => { if (remoteLive) { remoteEmit([noticeEvent(n, currentUiLanguage().lang)]); } noticeRing(n); };
     // U-214 — a Console question about to answer itself is said first, once, on the reminder's sweep
     const answerSoon = new AnswerSoonMemo();
     answerSoonTick = () => {
@@ -31359,7 +31361,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 state: v.state, dueAt: v.dueAt, timeoutSeconds: v.timeoutSeconds }] : [];
         });
         for (const d of answerSoon.due(Date.now(), cards, answerSoonSeconds(cfg().get('console.autoAnswer.remindSeconds')))) {
-            if (remoteLive) { remoteEmit([answerSoonEvent(d)]); }
+            if (remoteLive) { remoteEmit([answerSoonEvent(d, currentUiLanguage().lang)]); }
             remindAnswerSoon(d);
         }
     };

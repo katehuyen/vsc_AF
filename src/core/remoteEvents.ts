@@ -11,9 +11,15 @@
  * A wait that ends — answered at the desk, on Telegram or on the phone, or
  * withdrawn — is said too (ask.closed / permission.closed), so its alert
  * leaves every phone rather than only the one that answered it.
+ *
+ * U-217 — what a phone reads aloud rides on the event (`spoken`, from
+ * `remoteSpoken.ts`); `ui` is the interface's language, for a text with no sign
+ * of its own.
  */
+import { askFrom, type SpokenAsk } from './askSpoken';
 import type { ConsoleSessionState } from './consoleproto';
 import { blockingCount, needKey, type NeedItem } from './needs';
+import { askSpokenOf, noticeSpoken, turnSpoken, withSpoken } from './remoteSpoken';
 import { digestEvents, EMPTY_MEMO, forgetMemo, turnText, turnTitle, type DigestMemo } from './telegramDigest';
 
 export interface RemoteEvent { type: string; data: Record<string, unknown> }
@@ -32,7 +38,7 @@ function summaryOf(state: ConsoleSessionState): string {
 }
 
 /** A Console card changed (`state`) or went away (`undefined`). */
-export function consoleEvents(memo: ConsoleMemo, id: string, state: ConsoleSessionState | undefined, liveIds: string[]
+export function consoleEvents(memo: ConsoleMemo, id: string, state: ConsoleSessionState | undefined, liveIds: string[], ui = ''
 ): { memo: ConsoleMemo; events: RemoteEvent[] } {
     if (!state) {
         const agent = memo.agent[id];
@@ -54,8 +60,11 @@ export function consoleEvents(memo: ConsoleMemo, id: string, state: ConsoleSessi
     }
     for (const e of r.events) {
         if (e === 'turn') {
+            // the PC reads what the turn ENDED with, not every step before it
+            const said = turnText(state).pop() ?? '';
             events.push({ type: 'turn.finished', data: {
-                session: id, agent: state.agentName, title: turnTitle(state) || state.agentName, summary: summaryOf(state)
+                session: id, agent: state.agentName, title: turnTitle(state) || state.agentName, summary: summaryOf(state),
+                ...withSpoken(turnSpoken(said, ui))
             } });
         }
         const ask = state.pendingAsk;
@@ -64,7 +73,8 @@ export function consoleEvents(memo: ConsoleMemo, id: string, state: ConsoleSessi
             events.push({ type: 'ask.opened', data: {
                 session: id, agent: state.agentName, askId: ask.requestId, question: q.question,
                 // a many-question ask cannot be answered by one tap: the phone opens the app
-                options: ask.questions.length === 1 ? q.options.map(o => ({ label: o.label })) : []
+                options: ask.questions.length === 1 ? q.options.map(o => ({ label: o.label })) : [],
+                ...withSpoken(askSpokenOf('ask.opened', state.agentName, askFrom(ask), ui))
             } });
             asks[id] = ask.requestId;
         }
@@ -82,7 +92,12 @@ function permissionTool(detail: string): string {
     return /\bto use ([\w.:-]+)/i.exec(detail)?.[1] ?? /^([\w.-]+)[:(]/.exec(detail)?.[1] ?? '';
 }
 
-export function needsEvents(memo: NeedsMemo, items: NeedItem[]): { memo: NeedsMemo; events: RemoteEvent[] } {
+/**
+ * `askOf`: what the session is stopped on, as the PC's reader knows it (the
+ * Console card, else its last tool start) — the row itself names only the tool.
+ */
+export function needsEvents(memo: NeedsMemo, items: NeedItem[], ui = '', askOf?: (sessionId: string) => SpokenAsk | undefined
+): { memo: NeedsMemo; events: RemoteEvent[] } {
     const events: RemoteEvent[] = [];
     const count = blockingCount(items);
     const perms = items.filter(i => i.kind === 'permission');
@@ -94,9 +109,13 @@ export function needsEvents(memo: NeedsMemo, items: NeedItem[]): { memo: NeedsMe
     for (const p of perms) {
         const key = needKey(p);
         if (key in memo.perms) { continue; }
+        const session = p.ref.sessionId ?? '';
+        const tool = permissionTool(p.detail ?? '');
+        const seen = session ? askOf?.(session) : undefined;
+        const ask = seen && (seen.questions.length || seen.tool) ? seen : askFrom(undefined, tool);
         events.push({ type: 'permission.opened', data: {
-            session: p.ref.sessionId ?? '', agent: p.agentName ?? '', permId: key,
-            tool: permissionTool(p.detail ?? ''), summary: p.detail || p.title, key
+            session, agent: p.agentName ?? '', permId: key, tool, summary: p.detail || p.title, key,
+            ...withSpoken(askSpokenOf('permission.opened', p.agentName ?? '', ask, ui))
         } });
     }
     if (count !== memo.count) {
@@ -132,6 +151,8 @@ export function quotaEvents(memo: QuotaMemo, reading: { slotId: string; engine: 
 /** The five-hour line a phone is warned at: the handover default, where work stops. */
 export const QUOTA_WARN_PCT = 90;
 
-export function noticeEvent(n: { id: string; title: string; level: number; agentName: string }): RemoteEvent {
-    return { type: 'notice.posted', data: { id: n.id, title: n.title, level: n.level, agent: n.agentName } };
+export function noticeEvent(n: { id: string; title: string; level: number; agentName: string }, ui = ''): RemoteEvent {
+    return { type: 'notice.posted', data: {
+        id: n.id, title: n.title, level: n.level, agent: n.agentName, ...withSpoken(noticeSpoken(n.title, ui))
+    } };
 }

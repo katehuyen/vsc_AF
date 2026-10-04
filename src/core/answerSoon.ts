@@ -15,6 +15,7 @@
  * Pure (no vscode import): the host hands it the cards and the time.
  */
 import type { RemoteEvent } from './remoteEvents';
+import { answersSoonSpoken, withSpoken } from './remoteSpoken';
 
 export const ANSWER_SOON_KEY = 'agentFarm.console.autoAnswer.remindSeconds';
 export const ANSWER_SOON_DEFAULT_SECONDS = 120;
@@ -74,10 +75,12 @@ export function minutesLeft(remainingMs: number): number {
     return Math.max(1, Math.round(remainingMs / 60_000));
 }
 
-/** The same moment for the phone; an older phone ignores a type it does not know. */
-export function answerSoonEvent(d: AnswerSoonDue): RemoteEvent {
+/** The same moment for the phone, with the sentence it reads (U-217); an older phone ignores a type it does not know. */
+export function answerSoonEvent(d: AnswerSoonDue, ui = ''): RemoteEvent {
+    const minutes = minutesLeft(d.remainingMs);
     return {
         type: 'ask.answersSoon',
-        data: { session: d.cardId, agent: d.agentName, askId: d.requestId, dueAt: d.dueAt, minutes: minutesLeft(d.remainingMs) }
+        data: { session: d.cardId, agent: d.agentName, askId: d.requestId, dueAt: d.dueAt, minutes,
+            ...withSpoken(answersSoonSpoken(d.agentName, minutes, ui)) }
     };
 }

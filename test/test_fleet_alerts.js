@@ -71,7 +71,7 @@ ok('the header names farm-wide events after the session ones, in the table\'s or
 // ---- the host wiring ----
 const ext = src('src/extension.ts');
 ok('every new notice reaches the ring, after the phone',
-    /noticesStore\.onAdd = n => \{ if \(remoteLive\) \{ remoteEmit\(\[noticeEvent\(n\)\]\); \} noticeRing\(n\); \};/.test(ext));
+    /noticesStore\.onAdd = n => \{ if \(remoteLive\) \{ remoteEmit\(\[noticeEvent\(n, currentUiLanguage\(\)\.lang\)\]\); \} noticeRing\(n\); \};/.test(ext));
 ok('a question card rings as notice-question, any other notice as notice, named by its agent',
     /fleetAlert\(n\.type === 'question' \? 'notice-question' : 'notice', n\.agentName, `notice:\$\{n\.id\}`\)/.test(ext));
 ok('a workflow asking rings as gate, named by its title',
