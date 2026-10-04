@@ -177,5 +177,26 @@
     'Auto — match the answer\'s language': 'Otomatik — cevabın diline uy',
     'No name is written into the setting: each answer and announcement is read by an installed voice of its own language, and by the system voice where none is installed. A voice chosen below always wins.': 'Ayara bir ad yazılmaz: her cevap ve anons kendi dilindeki kurulu bir sesle okunur, o dilde ses yoksa sistemin sesiyle. Aşağıdan seçilen bir ses her zaman kazanır.',
     'No {language} voice is installed, so Auto reads {language} with the system voice. Add one free: Settings ▸ Time & language ▸ Speech ▸ Add voices, then ↻.': '{language} bir ses kurulu değil, bu yüzden Otomatik {language} metni sistemin sesiyle okur. Ücretsiz ekle: Ayarlar ▸ Saat ve dil ▸ Konuşma ▸ Ses ekle, sonra ↻.',
-    'Auto — {voice}': 'Otomatik — {voice}'
+    'Auto — {voice}': 'Otomatik — {voice}',
+    // U-215 — the Sound page's channel strip
+    'Also sent to': 'Ayrıca gider',
+    'Phone': 'Telefon',
+    'Telegram': 'Telegram',
+    'Webhook': 'Webhook',
+    'on': 'açık',
+    'off': 'kapalı',
+    'this machine only': 'yalnız bu makine',
+    'your network': 'yerel ağın',
+    'Tailscale': 'Tailscale',
+    'no phone can reach this farm': 'hiçbir telefon bu çiftliğe ulaşamaz',
+    'turn cards of the focused conversation': 'odaklanılan konuşmanın tur kartları',
+    'every conversation\'s turn cards': 'her konuşmanın tur kartları',
+    'no turn cards': 'tur kartı yok',
+    'no chat is connected': 'bağlı sohbet yok',
+    'no events chosen': 'olay seçilmemiş',
+    'no URL set': 'URL girilmemiş',
+    'The paired Agent Farm phone app receives these events: a turn finished, a question or a permission ask, a notice, a quota warning. What it plays is set on the phone.': 'Eşlenmiş Agent Farm telefon uygulaması şu olayları alır: biten tur, soru ya da izin isteği, bildirim, kota uyarısı. Ne çalacağı telefonda ayarlanır.',
+    'A Telegram chat talks to your agents. When a Console turn ends or an agent stops to ask, the chat gets a card; which conversations is its digest setting.': 'Bir Telegram sohbeti ajanlarınla konuşur. Bir Console turu bitince ya da bir ajan sormak için durunca sohbete bir kart gider; hangi konuşmaların gideceği digest ayarıdır.',
+    'Farm notifications are posted as JSON to your webhook URL, only the events it lists.': 'Çiftlik bildirimleri webhook URL\'ine JSON olarak gönderilir; yalnız listelediği olaylar.',
+    'Press to open its own setting; the choice lives there, not on this page.': 'Kendi ayarını açmak için bas; seçim orada durur, bu sayfada değil.'
 });

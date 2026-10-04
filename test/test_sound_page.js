@@ -697,7 +697,7 @@ const byAttr = (p, attr, key) =>
     ok('agentfarm.openSound opens the page with the SAME host acts Settings is given',
         /registerCommand\('agentfarm\.openSound'[\s\S]{0,200}SoundPanel\.show\(\{[^}]*\.\.\.soundDeps/.test(ext)
         && /\.\.\.soundDeps,/.test(ext) && (ext.match(/const soundDeps: AlertMessageDeps = \{/g) || []).length === 1);
-    ok('alerts.status answers the page\'s own model', /op: 'alerts\.status'[\s\S]{0,2000}handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\), agents: soundAgentRows\(\) \}\)/.test(ext));
+    ok('alerts.status answers the page\'s own model', /op: 'alerts\.status'[\s\S]{0,2000}handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\), agents: soundAgentRows\(\), channels: soundChannels\(\) \}\)/.test(ext));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     ok('the command is contributed, titled from the vocabulary', pkg.contributes.commands
         .some(c => c.command === 'agentfarm.openSound' && c.title === 'Sound: Open'));

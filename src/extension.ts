@@ -715,7 +715,7 @@ import { sessionChainOf } from './core/sessionChain';
 import { chainLivingSignals, chainSignalNotices } from './core/chainSignals';
 import { FarmSettingsPanel } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
-import { NOTIFY_KEYS, notifyState } from './panels/soundModel';
+import { channelState, NOTIFY_KEYS, notifyState } from './panels/soundModel';
 import { AgentSoundRow, agentSoundRows, AgentVoices, withAgentVoice } from './core/soundAgents';
 import { soundHeader } from './core/soundHeader';
 import { parseSessionPatch, SESSION_ALSO, SessionSoundPatch, soundOf, soundPlan } from './core/soundSession';
@@ -12689,8 +12689,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.status',
-            describe: 'U-178 — THE SOUND PAGE\'S WHOLE MODEL IN ONE CALL: what the 🔊 Sound page draws. `alerts`: the gate (fleet mute, quiet hours, the sessions muted on their own, the nudge), every event row with the tone it would ACTUALLY play and which step of the chain chose it, the announcement (voice it really reaches, template, which events are spoken), and the library (built-ins and your own sounds, with whether each can be played here). `notify`: each event\'s VS Code notification switch (turn-ready = notifyTurnEnd, question = notifyPermission, stalled = notifyStuck; ended and error have none). `sessions` (U-183): every live session\'s sound as the Sessions table shows it — Like all / Always / Silent, its own tones with whether each event would ring, its voice, Read aloud (and whether it is being read now), Focus / Pop-up / Notification, its engine. Reads only. args: none',
-            handler: () => ({ alerts: alertsPage(), notify: soundNotify(), sessions: soundSessionRows(), agents: soundAgentRows() })
+            describe: 'U-178 — THE SOUND PAGE\'S WHOLE MODEL IN ONE CALL: what the 🔊 Sound page draws. `alerts`: the gate (fleet mute, quiet hours, the sessions muted on their own, the nudge), every event row with the tone it would ACTUALLY play and which step of the chain chose it, the announcement (voice it really reaches, template, which events are spoken), and the library (built-ins and your own sounds, with whether each can be played here). `notify`: each event\'s VS Code notification switch (turn-ready = notifyTurnEnd, question = notifyPermission, stalled = notifyStuck; ended and error have none). `sessions` (U-183): every live session\'s sound as the Sessions table shows it — Like all / Always / Silent, its own tones with whether each event would ring, its voice, Read aloud (and whether it is being read now), Focus / Pop-up / Notification, its engine. `channels` (U-215): phone · telegram · webhook, each { on, value (listen mode / digest / forwarded events — never the webhook URL), key (its own setting) }. Reads only. args: none',
+            handler: () => ({ alerts: alertsPage(), notify: soundNotify(), sessions: soundSessionRows(), agents: soundAgentRows(), channels: soundChannels() })
         },
         {
             op: 'alerts.session',
@@ -28405,6 +28405,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         alertsStopReading: async () => { alertsStopReading(); }
     };
     const soundNotify = () => notifyState(k => vscode.workspace.getConfiguration().get<boolean>(k) === true);
+    const soundChannels = () => channelState(k => vscode.workspace.getConfiguration().get(k));
 
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
@@ -40825,7 +40826,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.openSound', () => {
             SoundPanel.show({
                 extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows,
-                agents: soundAgentRows, alertsSetAgentVoice
+                agents: soundAgentRows, alertsSetAgentVoice, channels: soundChannels
             });
         }),
         // U-185 — "Sound: Stop Reading", the same stop as `alerts.read stop` and the ■

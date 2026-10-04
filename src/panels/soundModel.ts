@@ -118,6 +118,41 @@ export function notifyState(get: (key: string) => boolean): Record<string, boole
     return out;
 }
 
+/**
+ * U-215 — THE OTHER PLACES AN EVENT REACHES YOU, read from their own settings.
+ * The Sound page shows each one's state and opens its setting; nothing is copied,
+ * so the page cannot disagree with the place the choice lives. A webhook's URL
+ * is never carried — it can hold a token — only whether one is set and its events.
+ */
+export const CHANNEL_KEYS = {
+    phone: 'agentFarm.remote.listen',
+    telegram: 'agentFarm.telegram.enabled',
+    webhook: 'agentFarm.notifyWebhookUrl'
+} as const;
+
+export interface SoundChannel {
+    id: keyof typeof CHANNEL_KEYS;
+    on: boolean;
+    /** phone: the listen mode · telegram: its digest · webhook: the events it forwards */
+    value: string;
+    key: string;
+}
+
+export function channelState(get: (key: string) => unknown): SoundChannel[] {
+    const listen = typeof get(CHANNEL_KEYS.phone) === 'string' ? String(get(CHANNEL_KEYS.phone)) : 'off';
+    const digest = get('agentFarm.telegram.digest');
+    const url = get(CHANNEL_KEYS.webhook);
+    const events = get('agentFarm.notifyWebhookEvents');
+    return [
+        { id: 'phone', key: CHANNEL_KEYS.phone, on: listen !== 'off', value: listen },
+        { id: 'telegram', key: CHANNEL_KEYS.telegram, on: get(CHANNEL_KEYS.telegram) === true, value: typeof digest === 'string' ? digest : 'focused' },
+        {
+            id: 'webhook', key: CHANNEL_KEYS.webhook, on: typeof url === 'string' && url.trim() !== '',
+            value: Array.isArray(events) ? events.filter(e => typeof e === 'string').join(', ') : ''
+        }
+    ];
+}
+
 /** U-183 — one live session's sound, as the Sessions table draws it: the
  *  `alerts.session` profile plus its engine, whether it is read now, and
  *  whether each event would ring. */
@@ -142,4 +177,6 @@ export interface SoundPage {
     sessions: SessionSoundRow[];
     /** U-187 — every agent's own tones (core/soundAgents.ts) */
     agents: AgentSoundRow[];
+    /** U-215 — phone · Telegram · webhook, each from its own setting */
+    channels: SoundChannel[];
 }

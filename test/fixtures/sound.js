@@ -11,7 +11,14 @@
 const A = require('./alertsettings.js');
 
 const NOTIFY = { 'turn-ready': false, 'console:turn-ready': true, question: true, stalled: true };
-const of = (d, notify) => ({ alerts: d.alerts, notify: notify || NOTIFY });
+// U-215 — the channels built by the host's own channelState: phone on the home network, Telegram off, a webhook with two events
+const CHANNELS = require('path').join(__dirname, '..', '..', 'out', 'panels', 'soundModel.js');
+const CHANNEL_SETTINGS = {
+    'agentFarm.remote.listen': 'lan', 'agentFarm.telegram.enabled': false, 'agentFarm.telegram.digest': 'focused',
+    'agentFarm.notifyWebhookUrl': 'https://hooks.example/x', 'agentFarm.notifyWebhookEvents': ['permission', 'stalled']
+};
+const channelsOf = () => require(CHANNELS).channelState(k => CHANNEL_SETTINGS[k]);
+const of = (d, notify) => ({ alerts: d.alerts, notify: notify || NOTIFY, channels: channelsOf() });
 
 const empty = () => of(A.fresh());
 // U-182 — one conversation is being read aloud now, another reads its answers
@@ -84,7 +91,8 @@ const variants = () => ([
     { id: 'sound-empty', label: 'Sound — the first opening: nothing rings yet', data: empty() },
     { id: 'sound-voice-auto', label: 'Sound — the voice left on Auto on a machine with no Turkish voice: the gap and the free fix are said under it (U-203)', data: autoGap() },
     { id: 'sound-gated', label: 'Sound — ‼️ armed, configured and silent: muted · quiet hours · two sessions', data: gated() },
-    { id: 'sound-broken', label: 'Sound — ‼️ armed tones whose sound cannot be played', data: broken() }
+    { id: 'sound-broken', label: 'Sound — ‼️ armed tones whose sound cannot be played', data: broken() },
+    { id: 'sound-channels-tip', label: 'Sound — the Phone chip\'s hover: its state first, what the phone receives, and that its setting lives elsewhere (U-215)', data: inUse(), tip: 'sndchans' }
 ]);
 
 module.exports = { script: 'sound.js', data: inUse, variants, empty, inUse, gated, broken, autoGap };

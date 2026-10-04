@@ -6811,6 +6811,16 @@
       ]
     },
     {
+      "capability": "soundPanel.ts#openSettings",
+      "ui": [
+        "page:soundPanel.ts#openSettings"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "A channel chip opens Settings on that channel's own setting (phone, Telegram, webhook). It moves the eye and changes nothing; alerts.status reads the same states."
+      }
+    },
+    {
       "capability": "soundPanel.ts#refresh",
       "ui": [
         "page:soundPanel.ts#refresh"

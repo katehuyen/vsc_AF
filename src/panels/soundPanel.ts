@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 import { AlertMessageDeps, ALERT_ERROR_KEY, handleAlertMessage } from './alertMessages';
-import { NOTIFY_KEYS, SessionSoundRow, SoundPage } from './soundModel';
+import { CHANNEL_KEYS, NOTIFY_KEYS, SessionSoundRow, SoundChannel, SoundPage } from './soundModel';
 import type { AgentSoundRow } from '../core/soundAgents';
 
 /**
@@ -26,7 +26,12 @@ export interface SoundDeps extends AlertMessageDeps {
     /** U-187 — every agent's own tones, and the write `alerts.voice.set scope=agent` runs */
     agents?(): AgentSoundRow[];
     alertsSetAgentVoice?(agent: string, event: string, voice: string): Promise<void>;
+    /** U-215 — phone · Telegram · webhook, read from their own settings */
+    channels?(): SoundChannel[];
 }
+
+/** The channel settings, plus what their tooltips name, redraw the page when they change. */
+const CHANNEL_WATCH = [...Object.values(CHANNEL_KEYS), 'agentFarm.telegram.digest', 'agentFarm.notifyWebhookEvents'];
 
 export class SoundPanel {
     private static current: SoundPanel | undefined;
@@ -50,7 +55,7 @@ export class SoundPanel {
         host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         // A sound setting written anywhere — the status bar, a Timeline ♪, the
         // bridge, settings.json — redraws the page that shows it.
-        const keys = ['agentFarm.alerts', ...Object.values(NOTIFY_KEYS)];
+        const keys = ['agentFarm.alerts', ...Object.values(NOTIFY_KEYS), ...CHANNEL_WATCH];
         vscode.workspace.onDidChangeConfiguration(e => {
             if (keys.some(k => e.affectsConfiguration(k))) { this.refresh(); }
         }, null, this.disposables);
@@ -59,7 +64,8 @@ export class SoundPanel {
     private data(): SoundPage {
         return {
             alerts: this.deps.alerts?.() ?? null, notify: this.deps.notify(),
-            sessions: this.deps.sessions?.() ?? [], agents: this.deps.agents?.() ?? []
+            sessions: this.deps.sessions?.() ?? [], agents: this.deps.agents?.() ?? [],
+            channels: this.deps.channels?.() ?? []
         };
     }
 
@@ -70,6 +76,12 @@ export class SoundPanel {
     private async onMessage(msg: { type: string;[k: string]: unknown }): Promise<void> {
         if (msg.type === 'refresh') { this.refresh(); return; }
         if (msg.type === 'afnav') { handleAfNav(msg.to); return; }
+        // U-215 — a channel chip opens Settings on that channel's own setting, and only those
+        if (msg.type === 'openSettings') {
+            const focus = Object.values(CHANNEL_KEYS).find(k => k === msg.focus);
+            if (focus) { void vscode.commands.executeCommand('agentfarm.openFarmSettings', { focus }); }
+            return;
+        }
         const error = (e: string): void => void this.host.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error: e });
         if (msg.type === 'alertAgentVoice') {
             // U-187 — the agent step; the page redraws from the setting change it causes

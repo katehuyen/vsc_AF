@@ -1,7 +1,8 @@
 // Agent Farm — THE SOUND CARD (U-178). What was Settings ▸ Alert sounds, shared:
 // the Sound page draws it, Settings draws its one-line summary. Every gesture is
 // posted to the host, which runs the function the matching alerts.* op runs.
-// This file: the gate strip (mute, quiet hours, reminder) and the voice strip (Say who).
+// This file: the gate strip (mute, quiet hours, reminder), the voice strip (Say who)
+// and the channel strip (phone · Telegram · webhook).
 (function () {
     const C = window.AFCharts;
     const alertVoiceName = (al, id) => window.AFSoundCard.voiceName(al, id);
@@ -129,5 +130,47 @@
     }
 
 
-    window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { gate: alertGateStrip });
+    /**
+     * U-215 — WHERE ELSE AN EVENT REACHES YOU: phone · Telegram · webhook, one
+     * chip each with its state, opening that channel's own setting. Nothing is
+     * copied here — "why was my phone silent?" is answered by the setting
+     * itself, one press away.
+     */
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const N_ = s => s;
+    const LISTEN = { local: N_('this machine only'), lan: N_('your network'), tailscale: N_('Tailscale') };
+    const DIGEST = { focused: N_('turn cards of the focused conversation'), all: N_('every conversation\'s turn cards'), off: N_('no turn cards') };
+    const CHANNELS = {
+        phone: {
+            icon: '📱', name: N_('Phone'), on: v => t(LISTEN[v] || v), off: () => t('no phone can reach this farm'),
+            about: N_('The paired Agent Farm phone app receives these events: a turn finished, a question or a permission ask, a notice, a quota warning. What it plays is set on the phone.')
+        },
+        telegram: {
+            icon: '💬', name: N_('Telegram'), on: v => t(DIGEST[v] || v), off: () => t('no chat is connected'),
+            about: N_('A Telegram chat talks to your agents. When a Console turn ends or an agent stops to ask, the chat gets a card; which conversations is its digest setting.')
+        },
+        webhook: {
+            icon: '🔗', name: N_('Webhook'), on: v => v || t('no events chosen'), off: () => t('no URL set'),
+            about: N_('Farm notifications are posted as JSON to your webhook URL, only the events it lists.')
+        }
+    };
+    function alertChannelStrip(channels) {
+        const chip = c => {
+            const m = CHANNELS[c.id];
+            if (!m) { return ''; }
+            const state = c.on ? t('on') : t('off');
+            return window.AFTip.wrap(
+                `<button class="${['secondary', 'small', 'sndchan', c.on ? 'on' : 'off'].join(' ')}" data-alertchan="${C.esc(c.key)}">${m.icon} ${C.esc(t(m.name))} · ${C.esc(state)}</button>`,
+                `${t(m.name)}: ${state} — ${c.on ? m.on(c.value) : m.off(c.value)}`,
+                `${t(m.about)}\n\n${t('Press to open its own setting; the choice lives there, not on this page.')}`);
+        };
+        const list = (Array.isArray(channels) ? channels : []).map(chip).filter(Boolean);
+        return list.length ? `<div class="sndchans"><span class="sndchanslbl">${C.esc(t('Also sent to'))}</span>${list.join('')}</div>` : '';
+    }
+    function wireChannels(vscode) {
+        document.querySelectorAll('[data-alertchan]').forEach(b => b.addEventListener('click', () =>
+            vscode.postMessage({ type: 'openSettings', focus: b.dataset.alertchan })));
+    }
+
+    window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { gate: alertGateStrip, channels: alertChannelStrip, wireChannels });
 })();

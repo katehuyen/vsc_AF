@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.821.0 - Reading aloud hears the question; the Sound page shows phone, Telegram and webhook (2026-10-04)
+
+- **Read aloud now reads the question too.** When a conversation you have
+  set to be read aloud stops to ask you something, its question is read
+  with its options ("developer asks: Which database? Options: Postgres,
+  SQLite."), and a permission ask says what it wants to run ("developer
+  wants to run: npm test") — in the voice and language of the answer.
+- **Where else an event reaches you, on the Sound page.** Under "When
+  something happens", one row shows Phone · Telegram · Webhook, each with
+  its state. Hover a chip for what that channel receives; press it to open
+  its own setting.
+
 ## 3.820.0 - Reading aloud: each answer in its own language, and no more spelling (2026-10-04)
 
 - **Answers are read in their own language.** With no voice chosen

@@ -92,7 +92,7 @@ ok('the Sound page model carries the sessions', /sessions: this\.deps\.sessions\
 ok('‼️ …and the page surface answers the session panel (post), so ⋯ opens it here', /post: m => void this\.host\.webview\.postMessage\(m\)/.test(panel));
 ok('each row is alertsSessionView plus engine, reading and whether each event rings',
     /const soundSessionRows = \(\) => live\.sessions\(\)\.map\(s => \{/.test(ext) && /rings: !muted && alertPlan\(t\.event as AlertEvent, actions, on\)\.actions\.includes\('sound'\)/.test(ext));
-ok('‼️ alerts.status answers the whole page, sessions included', /handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\), agents: soundAgentRows\(\) \}\)/.test(ext));
+ok('‼️ alerts.status answers the whole page, sessions included', /handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\), agents: soundAgentRows\(\), channels: soundChannels\(\) \}\)/.test(ext));
 ok('the right-click "Sound for This Session…" opens the panel on the Sound page too', /\/\^\(console\|timeline\|sound\)#\/\.test\(from\)/.test(ext));
 ok('the table follows sessions coming and going', /soundLiveKey/.test(ext));
 
