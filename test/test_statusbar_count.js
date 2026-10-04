@@ -53,6 +53,29 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         !index.activeSessions(now).some(s => s.sessionId === 's4'));
     ok('‼️ …and a session with no registered agent counts: it burns the same quota',
         index.activeSessions(now).some(s => s.sessionId === 's5'));
+
+    // X-482 — the threshold is a whole-configuration read: measured at ~1300
+    // reads per bar update (one per session), 160 ms on every live event.
+    let reads = 0;
+    const counted = new SessionIndex('/nowhere', () => [], {}, () => [], () => false, () => { reads++; return 60000; });
+    const many = Array.from({ length: 500 }, (_, i) => ({
+        file: 'f' + i, sessionId: 'x' + i, agentId: i % 2 ? 'dev' : undefined, mtime: now - (i % 3 ? 1000 : 3600_000)
+    }));
+    Object.defineProperty(counted, 'sessions', { value: new Map(many.map(r => [r.file, r])), writable: true });
+    reads = 0;
+    const act = counted.activeSessions(now).length;
+    ok('‼️ activeSessions reads the threshold ONCE, not once per session', reads === 1 && act === 333);
+    reads = 0;
+    const agentsOn = counted.activeAgentIds(now);
+    ok('…activeAgentIds too', reads === 1 && agentsOn.size === 1 && agentsOn.has('dev'));
+    reads = 0;
+    ok('…and isAgentActive', counted.isAgentActive('dev', now) === true && reads === 1);
+    reads = 0;
+    ok('a single question still reads the setting itself', counted.isSessionActive(many[1], now) === true && reads === 1);
+    reads = 0;
+    ok('a limit handed in is the one used, unread',
+        counted.isSessionActive({ mtime: now - 5000 }, now, 4000) === false
+        && counted.isSessionActive({ mtime: now - 5000 }, now, 6000) === true && reads === 0);
 }
 
 // ---------- the bar asks the session question ----------

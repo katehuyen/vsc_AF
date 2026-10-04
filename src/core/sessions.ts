@@ -2465,8 +2465,9 @@ export class SessionIndex implements vscode.Disposable {
         return this.externalList.filter(s => s.agentId === agentId);
     }
 
-    isSessionActive(s: SessionInfo, now = Date.now()): boolean {
-        return now - s.mtime < this.activeThresholdMs();
+    /** `limitMs` is read once per walk by the callers below: each read is a whole-configuration lookup (X-482). */
+    isSessionActive(s: SessionInfo, now = Date.now(), limitMs = this.activeThresholdMs()): boolean {
+        return now - s.mtime < limitMs;
     }
 
     /**
@@ -2487,13 +2488,15 @@ export class SessionIndex implements vscode.Disposable {
      * callers, which is how the two halves drifted apart in the first place.
      */
     isAgentActive(agentId: string, now = Date.now()): boolean {
-        return this.forAgentWithExternal(agentId).some(s => this.isSessionActive(s, now));
+        const limit = this.activeThresholdMs();
+        return this.forAgentWithExternal(agentId).some(s => this.isSessionActive(s, now, limit));
     }
 
     activeAgentIds(now = Date.now()): Set<string> {
         const ids = new Set<string>();
+        const limit = this.activeThresholdMs();
         for (const s of this.allWithExternal()) {
-            if (s.agentId && this.isSessionActive(s, now)) { ids.add(s.agentId); }
+            if (s.agentId && this.isSessionActive(s, now, limit)) { ids.add(s.agentId); }
         }
         return ids;
     }
@@ -2522,7 +2525,8 @@ export class SessionIndex implements vscode.Disposable {
      * Claude-only and says so.
      */
     activeSessions(now = Date.now()): SessionInfo[] {
-        return this.allWithExternal().filter(s => this.isSessionActive(s, now));
+        const limit = this.activeThresholdMs();
+        return this.allWithExternal().filter(s => this.isSessionActive(s, now, limit));
     }
 
     latestSessionForAgent(agentId: string): SessionInfo | undefined {

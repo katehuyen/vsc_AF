@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.830.0 - The status bar stops reading a setting once per session (2026-10-04)
+
+- **The extension host no longer spends a third of its time asking how long
+  "active" lasts.** Measured with the new CPU profile: the status bar
+  counted the active sessions by asking, for every session in the index
+  (well over a thousand on a farm in use), how long a session stays active — and every such question is a
+  lookup through the whole VS Code configuration. The bar is redrawn on every
+  live event, every transcript change and every change to the Needs You
+  list, so this alone held the host for about 160 ms each time, twice per
+  live event, and was 35% of the host's busy time. The counts now read the
+  setting once per count; the figures are the same.
+
 ## 3.829.0 - Which function the time goes to (2026-10-04)
 
 - **A CPU profile of the extension host, from the bridge.** `live.profile`
