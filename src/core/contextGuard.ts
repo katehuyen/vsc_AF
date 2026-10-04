@@ -34,6 +34,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { BackgroundFile } from './backgroundFile';
 import { ContextSample, contextPercent } from './consoleproto';
 import { parseHandoverName, shortSessionId } from './sessionDiagnosis';
 import type { BatonRelay } from './baton';
@@ -326,8 +327,10 @@ const STORE_CAP = 400;
 export class ContextGuard {
     private records = new Map<string, ContextSignalRecord>();
     private saveTimer: NodeJS.Timeout | undefined;
+    private readonly store: BackgroundFile | undefined;
 
     constructor(private readonly deps: ContextGuardDeps) {
+        this.store = deps.storeFile ? new BackgroundFile(deps.storeFile) : undefined;
         this.load();
     }
 
@@ -534,17 +537,17 @@ export class ContextGuard {
         } catch { /* a torn store is an empty one */ }
     }
 
+    private storeText(): string {
+        return JSON.stringify({ records: this.all().slice(0, STORE_CAP) }, null, 1);
+    }
+
     private save(): void {
-        const f = this.deps.storeFile;
-        if (!f) { return; }
+        const store = this.store;
+        if (!store) { return; }
         if (this.saveTimer) { return; }
         this.saveTimer = setTimeout(() => {
             this.saveTimer = undefined;
-            try {
-                const records = this.all().slice(0, STORE_CAP);
-                fs.mkdirSync(path.dirname(f), { recursive: true });
-                fs.writeFileSync(f, JSON.stringify({ records }, null, 1), 'utf8');
-            } catch { /* the next event writes again */ }
+            store.write(this.storeText());
         }, 250);
         // A test that never yields must not hold the process open.
         if (typeof this.saveTimer.unref === 'function') { this.saveTimer.unref(); }
@@ -553,13 +556,11 @@ export class ContextGuard {
     /** Write now, for a host that is shutting down. */
     flush(): void {
         if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
-        const f = this.deps.storeFile;
-        if (!f) { return; }
-        try {
-            fs.mkdirSync(path.dirname(f), { recursive: true });
-            fs.writeFileSync(f, JSON.stringify({ records: this.all().slice(0, STORE_CAP) }, null, 1), 'utf8');
-        } catch { /* nothing to do */ }
+        this.store?.flushSync(this.storeText());
     }
+
+    /** Settles once the store's background write has landed (tests, and a caller that must read it back). */
+    stored(): Promise<void> { return this.store?.idle() ?? Promise.resolve(); }
 }
 
 export type ContextSignalState = 'quiet' | 'delivered' | 'undelivered';

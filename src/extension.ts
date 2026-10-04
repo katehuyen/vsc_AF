@@ -304,6 +304,7 @@ import { realDirOf, reproduceSlotSettings, slotSettingsGaps } from './core/slotS
 import { migrationGate } from './core/migrationGate';
 import { measureAgentRepo } from './service/agentRepo';
 import { captureCpuProfile } from './service/cpuProfiler';
+import { BackgroundFile } from './core/backgroundFile';
 import { summarizeCpuProfile } from './core/cpuProfile';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import { changedSince, fingerprint, watchedFiles, watchedStamps } from './core/slotWatch';
@@ -5854,9 +5855,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---------- H4: headless service coordination ----------
     // Heartbeat: while VS Code runs, the service stays idle (fresh = <90s).
     const heartbeatFile = path.join(context.globalStorageUri.fsPath, 'live.heartbeat');
-    const writeHeartbeat = () => {
-        try { fs.writeFileSync(heartbeatFile, String(Date.now()), 'utf8'); } catch { /* best-effort */ }
-    };
+    const heartbeatWriter = new BackgroundFile(heartbeatFile);
+    const writeHeartbeat = () => heartbeatWriter.write(String(Date.now()));
     writeHeartbeat();
     const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(heartbeatTimer) });
@@ -30994,6 +30994,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // re-derives anything, so it cannot disagree with the panel — and it says
     // out loud when what it shows has stopped being live.
     const snapshotFile = path.join(context.globalStorageUri.fsPath, 'web-snapshot.json');
+    const snapshotWriter = new BackgroundFile(snapshotFile);
     let webServer: RunningWebServer | undefined;
     const webCfg = () => ({
         enabled: cfg().get<boolean>('web.enabled', false),
@@ -31066,10 +31067,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 costToday: p.todayCost, cost: p.cost
             }))
         }, now);
-        try {
-            fs.mkdirSync(path.dirname(snapshotFile), { recursive: true });
-            fs.writeFileSync(snapshotFile, JSON.stringify(snapshot), 'utf8');
-        } catch { /* storage unavailable — the page will show its own staleness */ }
+        snapshotWriter.write(JSON.stringify(snapshot));
     };
 
     /**

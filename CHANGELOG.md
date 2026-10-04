@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.831.0 - A slow disk no longer freezes the extension host (2026-10-04)
+
+- **The files Agent Farm writes on a beat are written in the background.**
+  Measured with the CPU profile on a farm whose storage sits on a slow hard
+  disk: one ordinary write of the context-signal store held the extension
+  host for 20 seconds, and one write of the web view's snapshot for nearly 4
+  — the same writes normally take half a millisecond. While a write like
+  that waits on the disk, every extension in the window stands still, which
+  is what VS Code reports as "extension host unresponsive". The
+  context-signal store, the web snapshot and the heartbeat the headless
+  service watches are now written off the host's thread: the newest content
+  wins, in order, a reader never sees half a file, and the context-signal
+  store is still written in full before the window closes.
+
 ## 3.830.0 - The status bar stops reading a setting once per session (2026-10-04)
 
 - **The extension host no longer spends a third of its time asking how long
