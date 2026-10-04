@@ -114,7 +114,7 @@ const frame = (id, result) => ({ kind: 'result', id, ok: true, result });
         const m8 = new CallMemory(path.join(blocker, 'calls.json'), { log: l => lines.push(l) });
         const stuck = await m8.answer('dev_a', 'w1', async () => frame('w1', { fine: true }), true).result;
         ok('an unwritable file does not stop the call', stuck.result.fine === true);
-        ok('…the host is told the memory is in RAM only', lines.some(l => /call memory not written/.test(l) && /in memory only/.test(l)));
+        ok('…the host is told the memory is in RAM only', lines.some(l => /calls\.json not written/.test(l) && /in memory only/.test(l)));
         ok('…and RAM still answers a resend', m8.answer('dev_a', 'w1', async () => frame('w1', {}), true).duplicate === true);
 
         fs.writeFileSync(fileOf('torn.json'), '{"v":1,"calls":[{"key":', 'utf8');

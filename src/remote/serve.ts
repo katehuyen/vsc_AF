@@ -47,7 +47,7 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt, log?: Audi
         : (res ? resourcePage(res, url) : null);
     const server = createRemoteServer({
         farm, cert, devices,
-        events: new EventLog(path.join(dir, 'events.json')),
+        events: new EventLog(path.join(dir, 'events.json'), undefined, undefined, line => port.log(line)),
         calls: new CallMemory(path.join(dir, 'calls.json'), { log: line => port.log(line) }),
         callOp: auditedCalls(scopeGated((op, args, caller) => port.callOp(op, args, caller)), audit),
         features: () => featureMap(f => port.can(f)),

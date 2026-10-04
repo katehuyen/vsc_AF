@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.833.0 - The phone host's event log no longer writes on the host's thread (2026-10-04)
+
+- **Every event sent to the phone was a full rewrite of a quarter-megabyte
+  file on the extension host's thread.** The phone host keeps the last 500
+  events so a phone that reconnects gets what it missed, and it rewrote that
+  file — about 245 KB on a farm in use — synchronously each time something
+  happened. On a slow disk one such write held the extension host for many
+  seconds (the same failure 3.831.0 removed for the context-signal store).
+  The event log and the phone's call memory now share one writer that works
+  off the host's thread: one write at a time, the newest content wins, a
+  reader never sees half a file, and a write that fails is logged instead of
+  breaking the event that caused it. Because the last events before a window
+  reload may not have reached the disk, a reloaded log now numbers its events
+  from no lower than the current time, so no number is ever handed out twice
+  and a reconnecting phone still gets everything the log holds.
+
 ## 3.832.0 - A phone's resent call no longer runs twice after a reload (2026-10-04)
 
 - **What the phone sends runs once, also when VS Code reloads in between.**
