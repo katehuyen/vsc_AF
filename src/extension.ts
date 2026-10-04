@@ -20056,13 +20056,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Both go through the commands the sidebar tree uses — they own the
         // confirmation wording and the "only a finished run can be deleted"
         // rule, and a second copy of either would eventually disagree.
-        rerun: (runId: string) => {
+        rerun: (runId: string, ask?: PanelAsk) => {
             const run = missionStore.run(runId);
-            if (run) { void vscode.commands.executeCommand('agentfarm.missionRerun', { kind: 'run', run }); }
+            if (run) { void vscode.commands.executeCommand('agentfarm.missionRerun', { kind: 'run', run, ask }); }
         },
-        remove: (runId: string) => {
+        remove: (runId: string, ask?: PanelAsk) => {
             const run = missionStore.run(runId);
-            if (run) { void vscode.commands.executeCommand('agentfarm.missionDelete', { kind: 'run', run }); }
+            if (run) { void vscode.commands.executeCommand('agentfarm.missionDelete', { kind: 'run', run, ask }); }
         },
         answer: (runId: string, text: string) => { void answerMissionQuestion(runId, text); },
         // ‼️ U-64 — steering an objective from its own detail, through the SAME
@@ -20257,21 +20257,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 { modal: true }, 'Cancel mission');
             if (pick === 'Cancel mission') { cancelMission(run.id); }
         }),
-        vscode.commands.registerCommand('agentfarm.missionRerun', async (node?: MissionNode) => {
+        vscode.commands.registerCommand('agentfarm.missionRerun', async (node?: MissionNode & { ask?: PanelAsk }) => {
             const run = missionNodeRun(node);
             const spec = run ? missionStore.spec(run.specId) : undefined;
             if (!run || !spec) { return; }
-            const pick = await vscode.window.showWarningMessage(
+            const pick = await (node?.ask ?? desktopAsk()).warn(
                 `Run mission "${spec.title}" again? Same goal, team and limits (max ${spec.limits.maxCostUSD > 0 ? '$' + spec.limits.maxCostUSD : 'cost: no ceiling'}).`,
                 { modal: true }, 'Run again');
             if (pick !== 'Run again') { return; }
             rerunMissionRun(run);
         }),
-        vscode.commands.registerCommand('agentfarm.missionDelete', async (node?: MissionNode) => {
+        vscode.commands.registerCommand('agentfarm.missionDelete', async (node?: MissionNode & { ask?: PanelAsk }) => {
             const run = missionNodeRun(node);
             if (!run || (run.status !== 'done' && run.status !== 'failed' && run.status !== 'cancelled')) { return; }
             const spec = missionStore.spec(run.specId);
-            const pick = await vscode.window.showWarningMessage(
+            const pick = await (node?.ask ?? desktopAsk()).warn(
                 `Delete mission run "${spec?.title ?? run.id}" from the history? Archived task outputs stay.`,
                 { modal: true }, 'Delete');
             if (pick !== 'Delete') { return; }
@@ -31307,6 +31307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             tasks: host => TasksPanel.openOn(host, tasksDeps),
             notices: host => NoticesPanel.openOn(host, noticesPageDeps()),
             dashboard: host => DashboardPanel.openOn(host, dashboardDeps),
+            missions: host => MissionsPanel.openOn(host, missionsPanelDeps),
             chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());

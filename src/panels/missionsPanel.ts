@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import type { PanelAsk } from './panelAsk';
 import { desktopHost, type PanelHost } from './panelHost';
 
 /** Everything the Missions page needs from the extension host. The panel is a
@@ -20,9 +21,10 @@ export interface MissionsDeps {
     control(action: 'pause' | 'unpause' | 'resume' | 'cancel', runId: string): void;
     /** Run the same spec again / drop a finished run from the history. Both
      *  confirm; both are the sidebar tree's commands, called with a node built
-     *  from the store — the page has no way to build one. */
-    rerun(runId: string): void;
-    remove(runId: string): void;
+     *  from the store — the page has no way to build one. `ask` is the view's
+     *  own, so a phone's press is confirmed on the phone (X-466). */
+    rerun(runId: string, ask?: PanelAsk): void;
+    remove(runId: string, ask?: PanelAsk): void;
     answer(runId: string, text: string): void;
     /** ‼️ M-16/U-64 — one-off steer for the next planner boundary. Answers with
      *  the sentence that says WHEN it lands, or why it was refused; the page
@@ -246,10 +248,10 @@ export class MissionsPanel {
             // Reachable only from a row's right-click menu: both ask before
             // they act, and neither belongs on the row as a button.
             case 'rerun':
-                if (typeof msg.runId === 'string' && msg.runId) { this.deps.rerun(msg.runId); }
+                if (typeof msg.runId === 'string' && msg.runId) { this.deps.rerun(msg.runId, this.host.ask); }
                 break;
             case 'delete':
-                if (typeof msg.runId === 'string' && msg.runId) { this.deps.remove(msg.runId); }
+                if (typeof msg.runId === 'string' && msg.runId) { this.deps.remove(msg.runId, this.host.ask); }
                 break;
             case 'openAgent':
                 if (typeof msg.agentId === 'string' && msg.agentId) {

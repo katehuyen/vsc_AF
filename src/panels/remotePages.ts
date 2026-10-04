@@ -20,6 +20,7 @@ export interface RemotePageMakers {
     session(host: PanelHost, args?: Record<string, unknown>): boolean;
     notices(host: PanelHost): void;
     dashboard(host: PanelHost): void;
+    missions(host: PanelHost): void;
     /** S-125 — `args.chain` names the chain a ⑂ link opened it on. */
     chains(host: PanelHost, args?: Record<string, unknown>): void;
 }
@@ -123,6 +124,20 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
                 'openTimeline', 'openSearch', 'openFarmSettings', 'afnav', 'focusTerminal', 'manageProjects',
                 'setUsageEngine', 'statusAction'],
             make: host => make.dashboard(host)
+        },
+        // X-466 — the missions. The runs, a draft's resolved launch, a sentry draft's probe and a
+        // step's output tail are looks; a question, an approval and a rejection are answers; starting,
+        // steering, pausing, cancelling, running again and deleting a mission and the sentry's switch
+        // are manage, their confirmations asked on the phone. The folder picker, a file, a run's
+        // sessions page, an agent's page or Console, the guide and a link belong to the PC (a
+        // transcript reaches the phone as afnav).
+        missions: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'preview', 'sentryProbe', 'tail'],
+            answers: ['answer', 'approve', 'reject'],
+            pcOnly: ['pickFolder', 'openFile', 'missionSessions', 'openSession', 'openAgent', 'consoleAgent',
+                'openGuide', 'afnav'],
+            make: host => make.missions(host)
         },
         // S-125 — the relay chains. The board and a chain's legs are looks; stop, start now, the last-leg
         // brake, the leg ceiling, continue and end are manage, and the ceiling's menu and end's question

@@ -7,6 +7,9 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    // X-466 — drawn on a phone's view: what opens a picker, a file, an agent's page or Console, the
+    // guide or the run's Sessions page on the PC is not drawn; a menu item for one says where it opens.
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
     let DATA = window.__DATA__;
 
     let formOpen = !!DATA.newForm;
@@ -1542,7 +1545,7 @@
                         : `all ${DATA.agents.length} in`}</span>`
                 : 'Team <span class="req">at least one</span>'}${profileTool}</span>${narrowStrip}${teamRows}</div>
             <div class="frow"><label>Workdir <input type="text" id="f-workdir" placeholder="(optional) target repo/folder — delegations run inside it" value="${C.esc(form.workdir)}"></label>
-                <button class="secondary small" id="f-browse">Browse…</button>
+                ${ON_PHONE_HOST ? '' : '<button class="secondary small" id="f-browse">Browse…</button>'}
                 <span class="muted small">With a workdir set, two writers never run in parallel.</span></div>
             ${projectRow}
             <div class="frow limrow">
@@ -1809,7 +1812,7 @@
             <pre class="sdpre">${C.esc(s.prompt)}</pre>
             ${s.outputFile ? `
             <div class="sdlabel">${running ? '<span class="nowdot small"></span> Output — live tail, updates every 3s' : 'Output — last part'}
-                · <a data-openfile="${C.esc(s.outputFile)}" title="Open the full archived output">open full file</a></div>
+                ${ON_PHONE_HOST ? '' : `· <a data-openfile="${C.esc(s.outputFile)}" title="Open the full archived output">open full file</a>`}</div>
             <pre class="sdpre tailpre" id="tailbox">${C.esc(body)}</pre>`
             : `<p class="muted small">No output file yet${s.status === 'queued' ? ' — the task has not started' : ''}.</p>`}
         </td></tr>`;
@@ -2080,7 +2083,7 @@
                 title="${C.esc('Open this delegation\'s own session in the viewer — the raw transcript, its tool calls and its turns.'
                     + (s.runSessionId ? '\n\nSession: ' + s.runSessionId : ''))}">session</a>`);
         }
-        if (s.outputFile) {
+        if (s.outputFile && !ON_PHONE_HOST) {
             links.push(`<a data-openfile="${C.esc(s.outputFile)}" title="Open the archived output this delegation wrote">output</a>`);
         }
         if (links.length) { return links.join(' <span class="muted">·</span> '); }
@@ -2903,7 +2906,7 @@
         }).join(' ');
         const links = [
             m.transcript ? `<a data-opensession="${C.esc(m.transcript)}" title="Open the speaker's own session — everything it read and wrote for this turn">session</a>` : '',
-            m.outputFile ? `<a data-openfile="${C.esc(m.outputFile)}" title="Open the archived output this turn produced">output</a>` : ''
+            m.outputFile && !ON_PHONE_HOST ? `<a data-openfile="${C.esc(m.outputFile)}" title="Open the archived output this turn produced">output</a>` : ''
         ].filter(Boolean).join(' · ');
         const head = `${m.id} — ${who}${toNames.length ? ' → ' + toNames.join(', ') : ' → everyone'}`;
         const tipBody = window.AFTip.lines([
@@ -3165,8 +3168,8 @@
                      Mission sessions are hidden from that page by default, which
                      is exactly why the button exists: it is the route to rows
                      nobody would otherwise find. -->
-                <button class="secondary" id="d-sessions-${C.esc(run.id)}"
-                    title="Open the Sessions page showing ONLY this mission's sessions — its planner's own lane and every delegation it opened. They are kept out of the general log by default.">🎯 Sessions</button>
+                ${ON_PHONE_HOST ? '' : `<button class="secondary" id="d-sessions-${C.esc(run.id)}"
+                    title="Open the Sessions page showing ONLY this mission's sessions — its planner's own lane and every delegation it opened. They are kept out of the general log by default.">🎯 Sessions</button>`}
                 ${pauseBtn}
                 ${canResume ? `<button id="d-resume-${C.esc(run.id)}">Resume</button>` : ''}
                 ${active ? `<button class="secondary" id="d-cancel-${C.esc(run.id)}" title="Cancel the mission and its running delegations">Cancel</button>` : ''}
@@ -5034,8 +5037,10 @@
             }
             render();
         }));
-        document.querySelectorAll('[data-sround]').forEach(el => el.addEventListener('click', () =>
-            vscode.postMessage({ type: 'consoleAgent', agentId: (DATA.sentry.campaign || {}).agent })));
+        if (!ON_PHONE_HOST) {
+            document.querySelectorAll('[data-sround]').forEach(el => el.addEventListener('click', () =>
+                vscode.postMessage({ type: 'consoleAgent', agentId: (DATA.sentry.campaign || {}).agent })));
+        }
     }
 
     function render() {
@@ -5227,6 +5232,30 @@
                 .mtable { width:100%; border-collapse:collapse; margin-top:8px; }
                 .mtable th { text-align:left; font-size:11px; opacity:.7; padding:4px 8px; }
                 .mtable td { padding:4px 8px; border-top:1px solid var(--vscode-widget-border, #3333); font-size:12px; }
+                /* X-466 - a 360px phone: the run list keeps its mark, mission, status and cost (the rest
+                   is in the run's own detail), a sentry condition's controls wrap, the history strip
+                   wraps, and the guide link steps aside */
+                html.af-phone #mlist > thead > tr > th:nth-child(3), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(3),
+                html.af-phone #mlist > thead > tr > th:nth-child(5), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(5),
+                html.af-phone #mlist > thead > tr > th:nth-child(6), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(6),
+                html.af-phone #mlist > thead > tr > th:nth-child(7), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(7),
+                html.af-phone #mlist > thead > tr > th:nth-child(9), html.af-phone #mlist > tbody > tr.mrow > td:nth-child(9) { display:none; }
+                html.af-phone #mlist, html.af-phone #mlist > tbody, html.af-phone #mlist > tbody > tr.rundetail,
+                html.af-phone #mlist > tbody > tr.rundetail > td { display:block; width:auto; }
+                html.af-phone #mlist > thead { display:none; }
+                html.af-phone #mlist > tbody > tr.mrow { display:flex; flex-wrap:wrap; align-items:baseline; column-gap:8px;
+                    border-top:1px solid var(--vscode-widget-border, #3333); padding:4px 0; }
+                html.af-phone #mlist > tbody > tr.mrow > td { border-top:0; padding:2px 4px; }
+                html.af-phone #mlist > tbody > tr.mrow > td:nth-child(2) { flex:1 1 60%; min-width:0; }
+                html.af-phone .mtable td { overflow-wrap:anywhere; }
+                html.af-phone #mlist .rundetail table { display:block; overflow-x:auto; max-width:100%; }
+                html.af-phone #mlist .rundetail .turnlabel { white-space:normal; }
+                html.af-phone .turnhdr { flex-wrap:wrap; }
+                html.af-phone #mlist .rundetail .turnstats { white-space:normal; }
+                html.af-phone .scond { display:flex; flex-wrap:wrap; }
+                html.af-phone .scond > select { flex:1 1 40%; }
+                html.af-phone .histtrig { display:flex; flex-wrap:wrap; }
+                html.af-phone [data-guide] { display:none; }
                 .mrow { cursor:pointer; }
                 .mrow:hover td { background:var(--vscode-list-hoverBackground); }
                 .mrow.sel td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 12%, transparent); }
@@ -5533,8 +5562,10 @@
             const el = document.getElementById(id);
             if (el) { el.addEventListener('click', fn); }
         };
-        document.querySelectorAll('[data-guide]').forEach(el =>
-            el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
+        if (!ON_PHONE_HOST) {
+            document.querySelectorAll('[data-guide]').forEach(el =>
+                el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
+        }
         const nm = document.getElementById('newmission');
         if (nm) { nm.addEventListener('click', () => { formOpen = true; render(); }); }
         const fm = document.getElementById('firstmission');
@@ -6005,6 +6036,10 @@
             openRuns.add(runId);
         };
 
+        if (ON_PHONE_HOST && (verb === 'mstOut' || verb === 'mstAgent' || verb === 'mtOpen' || verb === 'mtTalk')) {
+            window.AFCtx.toast(t('That opens on the PC — open it from Agent Farm there.'), true);
+            return;
+        }
         switch (verb) {
             // ---- a mission run ----
             case 'msOpen': open(); render(); return;
