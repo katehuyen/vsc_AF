@@ -54,8 +54,16 @@ ok('autoVoices names every table language, a missing one without a voice', gaps.
 
 // --- the table is complete ---
 const EVENTS = Object.keys(P.EN_PHRASES.events);
-ok('every language in the table has its phrases, every event included',
-    L.SPEECH_LANGS.every(l => { const w = P.SPEECH_PHRASES[l.tag]; return w && EVENTS.every(e => w.events[e]) && w.more && w.link && w.codeBlock(3) && w.table(2); }));
+const KEYS = Object.keys(P.EN_PHRASES);
+ok('every language in the table has every phrase English has, every event included',
+    L.SPEECH_LANGS.every(l => {
+        const w = P.SPEECH_PHRASES[l.tag];
+        return w && EVENTS.every(e => w.events[e]) && KEYS.every(k => typeof w[k] === typeof P.EN_PHRASES[k]
+            && (typeof w[k] === 'function' ? String(w[k](2, 2, 3)).trim() : typeof w[k] !== 'string' || w[k].trim()));
+    }));
+ok('U-204 — the shapes are said in the voice\'s language too',
+    S.sanitizeForSpeech('Bak:\n\n    npm test\n\nve extension.ts:12 ile b408c739.', 0, P.SPEECH_PHRASES.tr)
+        === 'Bak: tek satırlık bir kod bloğu. ve extension.ts, satır 12 ile bir kimlik.');
 ok('an unknown language falls back to English', L.phrasesFor('xx') === P.EN_PHRASES && L.phrasesFor(undefined) === P.EN_PHRASES);
 
 // --- the cleaner speaks the voice's language ---

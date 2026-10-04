@@ -354,9 +354,9 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
                 'Here: a 2-line code block.');
 
             eq('a table becomes its size; read cell by cell with no columns it'
-                + ' is noise in the shape of data',
+                + ' is noise in the shape of data — ‼️ in DATA rows: the header is not a row (U-204)',
                 say('Results:\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n\nDone.'),
-                'Results: a table of 3 rows. Done.');
+                'Results: a table of 2 rows. Done.');
 
             // ‼️ THE SYMBOL IS KEPT AND THE PATH IN FRONT OF IT IS NOT. A
             // camel-cased name is a phrase a voice says perfectly well and it
@@ -406,6 +406,52 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
             const oneLong = 'x'.repeat(40) + ' ' + 'y'.repeat(40);
             ok('…and with no sentence end in reach it lands on a word boundary',
                 !/\sy*$/.test(S.cutForSpeech(oneLong, 50).replace(' ' + S.DIALOGUE_MORE, '')));
+        }
+
+        // U-204 — WHAT WAS STILL SPELLED OUT (measured): indented code, JSON in a
+        // sentence, ids and hashes, stack traces, log runs, file:line. Each is said
+        // as its size, its name or "an id".
+        {
+            const say = t => S.sanitizeForSpeech(t);
+            eq('indented code is said like a fenced block, by its size',
+                say('Run this:\n\n    npm install\n    npm test\n    node x.js --flag 1\n\nDone.'),
+                'Run this: a 3-line code block. Done.');
+            eq('…but the indented body of a list item is the item\'s own words',
+                say('- first step\n\n    keep this paragraph\n\nDone.'),
+                'first step. keep this paragraph. Done.');
+            eq('a one-key JSON is a phrase; more is data, said by its keys',
+                say('Send `{ "op": "farm.ops" }` and it returns {"ok":true,"result":{"x":1}} now.'),
+                'Send op: farm.ops and it returns a JSON object with 2 keys now.');
+            eq('…a list of objects by its length', say('Rows: [{"a":1},{"a":2},{"a":3}].'), 'Rows: a JSON list of 3 items.');
+            eq('…a pretty-printed block like the code block it is',
+                say('Result:\n{\n  "ok": true,\n  "n": 2\n}\nThat is all.'), 'Result: a 4-line code block. That is all.');
+            eq('…and a brace in prose, or JSON that does not parse, is left alone',
+                say('Use {name} or [1, 2] or { a: 1 } here.'), 'Use name or 1, 2 or a: 1 here.');
+            eq('ids and hashes are "an id" — a UUID, a commit, an Agent Farm id',
+                say('Session 3f2a9c1e-1aa5-41f1-a9cb-76b125781147, commit b408c739 and chain chn_muqmf6q7001io2 ended.'),
+                'Session an id, commit an id and chain an id ended.');
+            eq('…but a number, a word and a short hex are not',
+                say('In 2026 the deadbeef build 1234567 used #ff00aa.'), 'In 2026 the deadbeef build 1234567 used ff00aa.');
+            eq('a file:line reference is a file and a line, a column dropped, a range said as one',
+                say('See extension.ts:2703, src/core/speech.ts:509:12 and `a.js:10-20`.'),
+                'See extension.ts, line 2703, speech.ts, line 509 and a.js, lines 10 to 20.');
+            eq('…and a host with its port is not a file', say('It listens on api.example.com:443 now.'), 'It listens on api.example.com:443 now.');
+            eq('a stack trace is said as its length; the error itself is still read',
+                say('Error: boom\n    at foo (/x/a.js:1:2)\n    at bar (/x/b.js:3:4)\n\nThen it stopped.'),
+                'Error: boom. an error trace of 2 lines. Then it stopped.');
+            eq('…a Python traceback too, keeping its last line',
+                say('Traceback (most recent call last):\n  File "x.py", line 3, in <module>\n    foo()\nNameError: name foo is not defined'),
+                'an error trace of 3 lines. NameError: name foo is not defined.');
+            eq('…but an indented prose line beginning with "at" is not a trace',
+                say('Meet me\n    at the corner (by the shop)\nlater.'), 'Meet me at the corner (by the shop) later.');
+            eq('a run of log lines is said as its length',
+                say('2026-10-04 06:40:12 [INFO] start\n2026-10-04 06:40:13 [ERROR] failed\n\nThat is the log.'),
+                'a log of 2 lines. That is the log.');
+            eq('a header with no data is an empty table; a table with no header counts every row',
+                say('| a | b |\n| --- | --- |\n\nand\n\n| 1 | 2 |\n| 3 | 4 |'), 'an empty table. and. a table of 2 rows.');
+            eq('‼️ snake_case names keep their words — an underscore inside a word is not emphasis',
+                say('The keys last_launch_record and read_now_flag are set, and _this_ is emphasis.'),
+                'The keys last launch record and read now flag are set, and this is emphasis.');
         }
 
         // ------------------------------------------------------------------

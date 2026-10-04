@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.820.0 - Reading aloud: each answer in its own language, and no more spelling (2026-10-04)
+
+- **Answers are read in their own language.** With no voice chosen
+  (the new **Auto — match the answer's language** row on the Sound page),
+  a Turkish answer is read by an installed Turkish voice and an English one
+  by an English voice. A voice you choose by hand always wins.
+- **The words a reading adds are in the voice's language.** "A 3-line code
+  block", "There is more.", "a link" and the announcement's event ("asking
+  you") are said in the language of the voice that speaks — no English
+  phrase in the middle of a Turkish answer.
+- **A missing language voice is named, with the free fix.** If no voice is
+  installed for a language, the Sound page says so under the voice box:
+  Windows Settings → Time & language → Speech → Add voices, then rescan.
+- **Less is spelled out.** Indented code, stack traces and runs of log
+  lines are said by their length; JSON by its keys (a single key is read as
+  "key: value"); commit hashes, UUIDs and session ids as "an id";
+  `extension.ts:2703` as "extension.ts, line 2703". A table's size no longer
+  counts its header row, and names like `last_launch_record` keep their
+  words instead of being run together.
+
 ## 3.819.0 - Chains: why each leg handed over, and where it ran (2026-10-04)
 
 - **Each leg says why it ended.** In an opened chain, the leg number

@@ -26,6 +26,7 @@
 import { EVENT_LABEL, type AlertEvent } from './alertVoices';
 import type { PlayerCandidate } from './turnAlerts';
 import { EN_PHRASES, type SpeechPhrases } from './speechPhrases';
+import { sayBlocks, sayJson, sayRefs, tableRows } from './speechShapes';
 
 export interface SpeakConfig {
     on: boolean;
@@ -497,6 +498,9 @@ export const DIALOGUE_MORE = EN_PHRASES.more;
  *   a synthesiser reads many of them out by name.
  * - **Every block ends in a full stop**, because a heading with no punctuation
  *   runs into the paragraph under it and the listener hears one long sentence.
+ * - **U-204:** indented code, stack traces, log runs and JSON are said by their
+ *   size, hashes and ids as "an id", `file:line` as "file, line N"
+ *   (`speechShapes.ts`).
  *
  * Pure, so all of that is measurable without a voice, a machine or a shell —
  * which is the point: this is the half of the feature that can be wrong in a
@@ -527,13 +531,14 @@ export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX, w
     //    there is only ever one unclosed tail: it swallows everything after it.
     s = s.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*)$/m,
         (_m: string, _fence: string, body: string) => codeBlockSaid(body, words));
+    // U-204 — stack traces, log runs and indented code: each said as its size.
+    s = sayBlocks(s, words);
 
-    // 2. Tables — a run of pipe rows, however long, is one fact: its size.
-    s = s.replace(/(?:^[ \t]*\|.*\|[ \t]*$\n?){2,}/gm, (block: string) => {
-        const rows = block.trim().split('\n')
-            .filter(l => !/^[ \t]*\|[\s|:-]*\|[ \t]*$/.test(l)).length;
-        return `\n${words.table(rows)}.\n`;
-    });
+    // 2. Tables — a run of pipe rows, however long, is one fact: its size
+    //    in DATA rows (U-204: the header is not a row).
+    s = s.replace(/(?:^[ \t]*\|.*\|[ \t]*$\n?){2,}/gm, (block: string) => `\n${words.table(tableRows(block))}.\n`);
+    // U-204 — JSON, before links: a URL inside a JSON string would cut it apart.
+    s = sayJson(s, words);
 
     // 3. Images before links: an image is a link whose label is its alt text.
     s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m: string, alt: string) => alt.trim() || words.image);
@@ -563,8 +568,13 @@ export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX, w
     }).join('\n');
 
     // 6. Emphasis, then the bare paths prose carries outside backticks.
-    s = s.replace(/(\*\*|__|~~|\*|_)(?=\S)([\s\S]*?\S)\1/g, '$2');
+    //    ‼️ An underscore INSIDE a word is not emphasis (U-204, measured: two
+    //    snake_case names in one answer were joined into one word each).
+    s = s.replace(/(\*\*|~~|\*)(?=\S)([\s\S]*?\S)\1/g, '$2');
+    s = s.replace(/(?<![\p{L}\p{N}_])(__|_)(?=\S)([\s\S]*?\S)\1(?![\p{L}\p{N}_])/gu, '$2');
     s = s.replace(/[\w.-]*[/\\][\w./\\-]+/g, (m: string) => sayableToken(m, words));
+    // U-204 — after paths are cut to file names: "file, line N" and "an id".
+    s = sayRefs(s, words);
     // ‼️ A RULE THAT WAS NOT ALONE ON ITS LINE. Hyphens survive step 7 because
     // words are hyphenated; a RUN of them is a divider and is read out dash by
     // dash. Same for the leftovers of an emphasis marker nothing closed.
