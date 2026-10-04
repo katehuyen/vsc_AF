@@ -656,6 +656,7 @@ import {
 } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import { registerWikiCategoryOps } from './core/wikiCategory';
+import { parseToneVolume, toneVolumeOf } from './core/toneVolume';
 import {
     alertPlan, installedSpeechVoices, playTurnSound, RateLimit, runTurnAlerts,
     SessionAlertPrefs, SESSION_ALERT_EVENTS, soundCandidates, SoundResult, speakAnnouncement,
@@ -2197,6 +2198,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  than window state on purpose: a farm is muted for the person, not for
      *  one VS Code window, and every window has to see it change. */
     const alertsMuted = (): boolean => cfg().get<boolean>('alerts.muted', false) === true;
+    // U-212 — every tone (an event's, a reminder's, a run's own, a ▶) plays at the one level
+    const toneVolume = (): number => toneVolumeOf(cfg().get('alerts.toneVolume'));
+    const playTone = (file: string, volume?: number) => playTurnSound(file, { volume: volume ?? toneVolume() });
     const alertSilence = (sessionId?: string): Silence => silence({
         muted: alertsMuted(),
         sessionMuted: sessionId ? turnAlerts.mutedFor(sessionId) : false,
@@ -2383,7 +2387,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const own = s ? turnAlerts.speechVoiceFor(s.sessionId) : '';
         const spk = own ? { ...fleet, voice: own } : fleet;
         const ticket = await alertArbiter.submit(key, event, async () => {
-            const tone = await playTurnSound(file);
+            const tone = await playTone(file);
             if (!speaks(spk, event)) { return tone; }
             const how = await speechFor(spk.voice, spk.template.replace(/\{\w+\}/g, ' '));
             const said = announcement(spk, {
@@ -2559,7 +2563,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // `sent` is part of the key so the second reminder is not collapsed
             // into the first as a duplicate.
             void alertArbiter.submit(
-                `nudge:${e.sessionId}:${e.sent}`, 'question', () => playTurnSound(file));
+                `nudge:${e.sessionId}:${e.sent}`, 'question', () => playTone(file));
         }
         return played;
     };
@@ -2675,12 +2679,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     /** Play one voice, right now, by name — the ▶ next to a row. Nothing about
      *  the chain: this is "what does THIS one sound like". */
-    const alertsPlayVoice = async (id: string): Promise<SoundResult & { voice: string }> => {
+    const alertsPlayVoice = async (id: string, volume?: unknown): Promise<SoundResult & { voice: string; volume: number }> => {
         const hit = alertVoiceRows().find(v => v.id === id);
         if (!hit) { throw new Error(`there is no sound called "${id}" — try alerts.voices`); }
         if (!hit.exists) { throw new Error(`${id} has no file at ${hit.file}`); }
         if (!hit.playable) { throw new Error(`nothing on this machine plays ${hit.file}`); }
-        return { ...(await playTurnSound(hit.file)), voice: hit.id };
+        // U-212 — a trial level is played and never saved
+        const level = volume === undefined ? { ok: true as const, value: toneVolume() } : parseToneVolume(volume);
+        if (!level.ok) { throw new Error(level.error); }
+        return { ...(await playTone(hit.file, level.value)), voice: hit.id, volume: level.value };
+    };
+    const alertsSetToneVolume = async (volume: unknown): Promise<number> => {
+        const level = parseToneVolume(volume);
+        if (!level.ok) { throw new Error(level.error); }
+        await cfg().update('alerts.toneVolume', level.value, vscode.ConfigurationTarget.Global);
+        FarmSettingsPanel.refreshIfOpen();
+        return level.value;
     };
     /**
      * The picker, then the name — in that order on purpose. The file is the
@@ -2760,6 +2774,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             limit: CUSTOM_LIMIT,
             formats: [...new Set(voiceDeps().backends.flatMap(b => [...b.formats]))].sort(),
             sessionEvents: [...SESSION_ALERT_EVENTS],
+            toneVolume: toneVolume(),
             /**
              * ‼️ A-25 — THE ANNOUNCEMENT, ON THE CARD THAT ALREADY SAYS WHICH
              * TONE. `agentFarm.alerts.speak` was a raw JSON box: seven fields,
@@ -12393,8 +12408,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.play',
-            describe: '‼️ WHAT DOES THIS ONE SOUND LIKE — plays a voice by id, right now, and says nothing about the chain. That is the difference from `alerts.test`, which fires a SESSION\'S configured alert with all its branches: this is the ▶ next to a row in Settings, for choosing between ten tones. A voice with no file, or one no backend here can open, is refused by name rather than played as silence. args: voice (required — a built-in id or a `u-…`)',
-            handler: (args) => alertsPlayVoice(argStr(args, 'voice').trim())
+            describe: '‼️ WHAT DOES THIS ONE SOUND LIKE — plays a voice by id, right now, and says nothing about the chain. That is the difference from `alerts.test`, which fires a SESSION\'S configured alert with all its branches: this is the ▶ next to a row in Settings, for choosing between ten tones. A voice with no file, or one no backend here can open, is refused by name rather than played as silence. It plays at the tones\' level (`alerts.volume`). args: voice (required — a built-in id or a `u-…`), volume? (0–100 — try a level once without saving it)',
+            handler: (args) => alertsPlayVoice(argStr(args, 'voice').trim(), (args as { volume?: unknown }).volume)
+        },
+        {
+            op: 'alerts.volume',
+            describe: 'U-212 — THE TONES\' LEVEL (`agentFarm.alerts.toneVolume`, 0–100, default 100 = as loud as they always played). Every tone plays at it: an event\'s, a reminder\'s, a run\'s own tone at its end, and the ▶ / Hear it. Separate from the announcement\'s own volume (`alerts.speak volume`). On Windows the level reaches MediaPlayer, so below 100 a `.wav` is played through it too; ffplay, afplay, paplay and pw-play get their own flag. A player with no level of its own (SoundPlayer on a Windows without WPF, aplay) is kept only as the last resort and plays at full volume. Read it with no args. args: volume? (0–100, sets it), play? (true — play Turn finished\'s tone at the level afterwards)',
+            handler: async (args) => {
+                const raw = args as { volume?: unknown; play?: unknown };
+                const volume = raw.volume === undefined ? toneVolume() : await alertsSetToneVolume(raw.volume);
+                return {
+                    volume, changed: raw.volume !== undefined, default: 100,
+                    played: raw.play === true || raw.play === 'true'
+                        ? await alertsPlayVoice(resolveAlertVoice('turn-ready').voice, volume) : null
+                };
+            }
         },
         {
             op: 'alerts.resolve',
@@ -28341,7 +28369,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await alertsSetSessionMuted(sessionId, false);
             muteBar.update();
         },
-        alertsPlayVoice: async (voice) => { await alertsPlayVoice(voice); },
+        alertsPlayVoice: async (voice, volume) => { await alertsPlayVoice(voice, volume); },
+        alertsSetToneVolume: async (volume) => { await alertsSetToneVolume(volume); },
         // A-25 — the announcement strip. Same four host functions
         // as the `alerts.speak` op and the ♪ right-click, so the
         // card cannot drift from what the bridge does.

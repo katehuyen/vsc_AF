@@ -26,7 +26,8 @@ import { SuperpowersHealth } from '../core/superpowers';
 import {
     handleAfNav, htmlShell, TelegramBridgeHost, telegramCardData, telegramCardMessage
 } from './base';
-import { AlertMessageDeps, ALERT_ERROR_KEY, handleAlertMessage } from './alertMessages';
+import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
+import { ALERT_ERROR_KEY } from './alertSurface';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
 export interface AgentFolderReport {

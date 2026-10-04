@@ -34,6 +34,7 @@ import {
     parseVoiceList, speakCandidates, voiceListCandidate,
     type InstalledVoice, type SpeakConfig
 } from './speech';
+import { withToneVolume } from './toneVolume';
 
 export const TURN_ALERT_ACTIONS = ['sound', 'focus', 'modal', 'toast'] as const;
 export type TurnAlertAction = (typeof TURN_ALERT_ACTIONS)[number];
@@ -903,6 +904,8 @@ const MEDIAPLAYER_SCRIPT =
     + 'if (-not $p.NaturalDuration.HasTimeSpan) { exit 3 };'
     + '$ms = [int]$p.NaturalDuration.TimeSpan.TotalMilliseconds;'
     + 'if ($ms -gt 10000) { $ms = 10000 };'
+    // U-212 — the tone level, per mille (toneVolume.ts); unset leaves MediaPlayer's own 0.5
+    + 'if ($env:AF_TURN_VOLUME) { $p.Volume = [int]$env:AF_TURN_VOLUME / 1000 };'
     + '$p.Play();'
     + 'Start-Sleep -m ($ms + 120);'
     + '$p.Close()';
@@ -994,6 +997,8 @@ export interface PlaySoundDeps {
     ) => unknown;
     now?: () => number;
     timeoutMs?: number;
+    /** U-212 — the tone level, 0–100 (`agentFarm.alerts.toneVolume`); unset = 100 = as it always played */
+    volume?: number;
 }
 
 /**
@@ -1025,7 +1030,7 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
     const execFile = (deps.execFile
         ?? (require('child_process') as typeof import('child_process')).execFile
     ) as NonNullable<PlaySoundDeps['execFile']>;
-    const candidates = soundCandidates(platform, asset);
+    const candidates = withToneVolume(soundCandidates(platform, asset), deps.volume, asset);
     if (!candidates.length) {
         return { ...base('none'), error: `no sound backend known for platform ${platform}` };
     }

@@ -109,7 +109,7 @@
                 ${box.html}
                 <button class="secondary small" id="alertspeakrescan" title="Ask Windows again — for a language pack installed a minute ago (Settings ▸ Time & language ▸ Speech ▸ Add voices).">↻</button>
                 ${slider('alertspeakrate', 'Speed', -10, 10, rate, `Speed: ${rate === 0 ? '0 — the voice\'s own normal speed' : rate}\n\n−10 slow to 10 fast. A sentence heard a hundred times can be read faster.`)}
-                ${slider('alertspeakvol', 'Volume', 0, 100, vol, `Volume: ${vol} of 100\n\nThe sentence's own volume, separate from the tone's — that one is the system mixer's.`)}
+                ${slider('alertspeakvol', 'Volume', 0, 100, vol, `Volume: ${vol} of 100\n\n${t('The sentence\'s own volume, separate from the tones\' level: that one is Tone volume, under When something happens.')}`)}
             </span></div>
             ${sp.voicesError ? `<div class="seterr">⚠ the voice list could not be read — ${C.esc(sp.voicesError)}</div>` : ''}
             ${autoGap(sp).map(a => `<div class="svgap muted">${C.esc(t('No {language} voice is installed, so Auto reads {language} with the system voice. Add one free: Settings ▸ Time & language ▸ Speech ▸ Add voices, then ↻.', { language: t(a.name) }))}</div>`).join('')}

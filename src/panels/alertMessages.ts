@@ -14,6 +14,7 @@
 import { AlertsPage, NOTIFY_KEYS } from './soundModel';
 import { ALERT_EVENTS } from '../core/alertVoices';
 import { parseSessionPatch, SessionSoundPatch } from '../core/soundSession';
+import type { AlertSurface } from './alertSurface';
 
 /** The host acts the sound controls need — each one the function an op runs. */
 export interface AlertMessageDeps {
@@ -46,7 +47,9 @@ export interface AlertMessageDeps {
     /** Play one voice by id — "what does this one sound like". Named after the
      *  host function it is wired to, so the parity gate can SEE that the ▶ and
      *  `alerts.play` are the same act rather than two implementations. */
-    alertsPlayVoice?(voice: string): Promise<void>;
+    alertsPlayVoice?(voice: string, volume?: number): Promise<void>;
+    /** U-212 — the tones' level, 0–100: the function `alerts.volume` writes through */
+    alertsSetToneVolume?(volume: unknown): Promise<void>;
     /** Add / rename / drop one of the user's own sounds. `add` opens the file
      *  picker itself: the host owns the dialog, the page owns the gesture. */
     alertsVoiceAdd?(): Promise<void>;
@@ -82,30 +85,6 @@ export interface AlertMessageDeps {
     alertsSessionTest?(sessionId: string, event: string, real?: boolean): Promise<unknown>;
     /** U-181 — cut the reading happening now short (`alerts.read stop`) */
     alertsStopReading?(): Promise<void>;
-}
-
-/** Where a refusal lands on a page — the key its error line is drawn under. */
-export const ALERT_ERROR_KEY = 'agentFarm.alerts.voices';
-
-/** What differs per page. */
-export interface AlertSurface {
-    /** show a refusal against the controls (`{ type: 'error', key: ALERT_ERROR_KEY }`) */
-    error(text: string): void;
-    /** redraw the page from its data */
-    refresh(): void;
-    /** U-180 — answer the session panel directly (pages that draw it) */
-    post?(msg: object): void;
-}
-
-/** U-180 — the surface of a page that draws only the session panel (Console,
- *  Live Timeline): refusals and profiles go straight back to the panel. */
-export function soundSurface(webview: { postMessage(m: unknown): Thenable<boolean> | Promise<boolean> | boolean }): AlertSurface {
-    const post = (m: object) => { void Promise.resolve(webview.postMessage(m)).then(undefined, () => undefined); };
-    return {
-        error: error => post({ type: 'soundPopError', sessionId: '', error }),
-        refresh: () => undefined,
-        post
-    };
 }
 
 /**
@@ -211,8 +190,12 @@ export async function handleAlertMessage(
         // redraw under the hand would close the picker the reader just
         // opened to compare two tones.
         case 'alertPlay':
-            try { await deps.alertsPlayVoice?.(String(msg.voice ?? '')); }
+            // U-212 — `volume`: Hear it at the slider's level, before it is saved
+            try { await deps.alertsPlayVoice?.(String(msg.voice ?? ''), msg.volume === undefined ? undefined : Number(msg.volume)); }
             catch (e) { alertError(String((e as Error).message)); }
+            return true;
+        case 'alertToneVolume':
+            await alertAct(() => deps.alertsSetToneVolume?.(msg.volume));
             return true;
         case 'alertVoiceAdd':
             await alertAct(() => deps.alertsVoiceAdd?.());

@@ -86,6 +86,8 @@ export interface AlertsPage {
     formats: string[];
     /** the events a Timeline row's own ♪ can arm without this page */
     sessionEvents: string[];
+    /** U-212 — the tones' level, 0–100 */
+    toneVolume: number;
     voices: {
         id: string; label: string; file: string; builtin: boolean;
         exists: boolean; playable: boolean; backend: string | null;

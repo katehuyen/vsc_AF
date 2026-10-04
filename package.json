@@ -9277,6 +9277,13 @@
           "default": false,
           "description": "Mute every alert SOUND, across the whole farm. This is the 🔇 in the status bar — one click, and the setting is here so it survives a restart and every VS Code window sees it. It clears nothing: the events you armed and the tones you chose stay exactly as they are, so unmuting brings back the setup rather than the defaults. Sounds only — the notifications, the modal and the focus jump are separate switches and keep working. A single session can also be muted on its own from its Live Timeline row."
         },
+        "agentFarm.alerts.toneVolume": {
+          "type": "number",
+          "default": 100,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "How loud the alert tones play, 0–100. 100 is as loud as they have always played. Every tone uses it: an event's, a reminder's, a run's own tone at its end, and Hear it. The announcement that says who has its own volume (Sound page ▸ Voice). A player that cannot lower its level (Windows SoundPlayer on a machine without WPF, Linux aplay) is used only as the last resort, at full volume."
+        },
         "agentFarm.alerts.quietHours": {
           "type": "object",
           "description": "The hours the farm makes no noise in. The window WRAPS MIDNIGHT — 23:00 to 08:00 means quiet from 23:00 through 07:59 the next morning, which is the only shape anybody actually sets. A time that is not HH:MM leaves quiet hours OFF and says so on the Settings card, rather than silencing the fleet on a guess; a start equal to the end is an empty window, never all day. Sounds only, exactly like the mute above.",

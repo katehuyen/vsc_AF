@@ -29,6 +29,8 @@
     if (typeof window !== 'undefined') { window.AFFlex = api; }
 })(function (RECIPES) {
     'use strict';
+    // U-189 — a label declared here and translated where it is drawn
+    const N_ = s => s;
 
     /** Lowest to highest precedence — the order a value is resolved in. */
     const LEVELS = ['builtin', 'settings', 'agent', 'project', 'workflow', 'step', 'run', 'live'];
@@ -373,6 +375,11 @@
         {
             id: 'accounts.defaultWeeklyCeiling', label: 'Account policies — weekly wall (%)', type: 'number', default: 95, min: 1, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.defaultAccountWeeklyCeiling', bridge: 'settings.set:agentFarm.defaultAccountWeeklyCeiling' } }
+        },
+        // U-212 — the tones' level (src/core/toneVolume.ts); the Sound page's slider writes the setting
+        {
+            id: 'alerts.toneVolume', label: N_('Sound — tone volume (0–100)'), type: 'number', default: 100, min: 0, max: 100, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.alerts.toneVolume', bridge: 'settings.set:agentFarm.alerts.toneVolume' } }
         },
         // B-30 — the agents' scratch folder (src/core/workArea.ts)
         {

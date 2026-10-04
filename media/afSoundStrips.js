@@ -170,5 +170,29 @@
             vscode.postMessage({ type: 'openSettings', focus: b.dataset.alertchan })));
     }
 
-    window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { gate: alertGateStrip, channels: alertChannelStrip, wireChannels });
+    // U-212 — the tones' own level: the slider writes it on release, Hear it plays at the slider's level unsaved
+    function alertToneStrip(al) {
+        const v = Number.isFinite(Number(al.toneVolume)) ? Number(al.toneVolume) : 100;
+        const turn = (al.events || []).find(e => e.event === 'turn-ready') || {};
+        const slider = window.AFTip.wrap(
+            `<input type="range" id="alerttonevol" min="0" max="100" step="1" value="${v}" aria-label="${C.esc(t('Tone volume'))}">`,
+            t('Tone volume: {v} of 100', { v }),
+            t('Every tone plays at this level: each event, the reminder and a run\'s own tone at its end. 100 is as loud as they always played. The voice that says who has its own volume, under Voice.'));
+        return `<div class="sndchans sndtone"><span class="sndchanslbl">${C.esc(t('Tone volume'))}</span>${slider}
+            <span class="sndtoneval" id="alerttonevolval">${v}</span>
+            <button class="secondary small" id="alerttonehear" data-tonevoice="${C.esc(turn.voice || '')}" title="${C.esc(t('Play the Turn finished tone at this level, without saving it.'))}">▶ ${C.esc(t('Hear it'))}</button></div>`;
+    }
+    function wireTone(vscode) {
+        const el = document.getElementById('alerttonevol');
+        if (!el) { return; }
+        const out = document.getElementById('alerttonevolval');
+        el.addEventListener('input', () => { if (out) { out.textContent = el.value; } });
+        el.addEventListener('change', () => vscode.postMessage({ type: 'alertToneVolume', volume: Number(el.value) }));
+        const hear = document.getElementById('alerttonehear');
+        if (hear) {
+            hear.addEventListener('click', () => vscode.postMessage({ type: 'alertPlay', voice: hear.dataset.tonevoice, volume: Number(el.value) }));
+        }
+    }
+
+    window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { gate: alertGateStrip, channels: alertChannelStrip, wireChannels, tone: alertToneStrip, wireTone });
 })();

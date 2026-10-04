@@ -103,6 +103,7 @@
             ${starter(al)}
             <h3 class="sndh">When something happens</h3>
             ${S().events(al, DATA.notify || {})}
+            ${S().tone(al)}
             ${S().channels(DATA.channels)}
             <h3 class="sndh">Voice</h3>
             ${S().voice(al)}
@@ -136,12 +137,15 @@
                 .sndchan { border-radius:10px; white-space:nowrap; }
                 .sndchan.off { opacity:.7; }
                 .sndchan.on { border-color:var(--vscode-testing-iconPassed, #3a3); }
+                .sndtone input[type=range] { width:180px; margin:0; }
+                .sndtoneval { min-width:3ch; text-align:right; font-variant-numeric:tabular-nums; opacity:.85; }
             </style>
             ${window.AFHeader.html({ page: 'sound', title: 'Sound', sub: 'What rings, on which event, and what is said' })}
             <div class="sndwrap">${al ? body(al) : '<p class="muted">The sound system is not available in this window.</p>'}</div>`;
         window.AFHeader.wire(vscode);
         S().wire(vscode, () => DATA);
         S().wireChannels(vscode);
+        S().wireTone(vscode);
         S().wireVoice(vscode);
         S().wireSessions(vscode, render);
         S().wireWhy(vscode);

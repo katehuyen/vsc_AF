@@ -218,5 +218,13 @@
     'Reading aloud now': 'Şimdi sesli okunuyor',
     'This session\'s answer is being read aloud. Click to stop it; reading stays on for its next answer.': 'Bu oturumun cevabı sesli okunuyor. Durdurmak için tıkla; sesli okuma sonraki cevabı için açık kalır.',
     'Stop reading aloud': 'Sesli okumayı durdur',
-    '♪ is the session\'s sound, Like all, Always or Silent: a click opens its panel': '♪ oturumun sesidir, Like all, Always ya da Silent: tıklayınca paneli açılır'
+    '♪ is the session\'s sound, Like all, Always or Silent: a click opens its panel': '♪ oturumun sesidir, Like all, Always ya da Silent: tıklayınca paneli açılır',
+    // U-212 — the tones' level on the Sound page
+    'Tone volume': 'Ton düzeyi',
+    'Tone volume: {v} of 100': 'Ton düzeyi: 100 üzerinden {v}',
+    'Every tone plays at this level: each event, the reminder and a run\'s own tone at its end. 100 is as loud as they always played. The voice that says who has its own volume, under Voice.': 'Her ton bu düzeyde çalar: her olay, hatırlatma ve bir çalıştırmanın sonundaki kendi tonu. 100, tonların hep çaldığı yükseklik. Kimin olduğunu söyleyen sesin kendi düzeyi var, Voice altında.',
+    'Play the Turn finished tone at this level, without saving it.': 'Turn finished tonunu bu düzeyde çal, kaydetmeden.',
+    'Hear it': 'Dinle',
+    'tones at {v} of 100': 'tonlar 100 üzerinden {v}',
+    'The sentence\'s own volume, separate from the tones\' level: that one is Tone volume, under When something happens.': 'Cümlenin kendi düzeyi, tonların düzeyinden ayrı: o, When something happens altındaki Ton düzeyi.'
 });

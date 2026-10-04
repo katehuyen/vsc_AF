@@ -10,7 +10,8 @@ import {
 } from '../core/turnAlerts';
 import { AlertEvent, ALERT_EVENTS, EVENT_LABEL, VoiceOrigin } from '../core/alertVoices';
 import { handleAfNav, htmlShell } from './base';
-import { AlertMessageDeps, handleAlertMessage, soundSurface } from './alertMessages';
+import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
+import { soundSurface } from './alertSurface';
 
 export interface TimelineDeps {
     extensionUri: vscode.Uri;

@@ -1006,6 +1006,15 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#alertToneVolume",
+      "ui": [
+        "page:alertMessages.ts#alertToneVolume"
+      ],
+      "ops": [
+        "alerts.volume"
+      ]
+    },
+    {
       "capability": "alertMessages.ts#alertUnmuteSession",
       "ui": [
         "page:alertMessages.ts#alertUnmuteSession"

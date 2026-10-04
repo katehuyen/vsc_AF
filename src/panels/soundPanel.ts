@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
-import { AlertMessageDeps, ALERT_ERROR_KEY, handleAlertMessage } from './alertMessages';
+import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
+import { ALERT_ERROR_KEY } from './alertSurface';
 import { CHANNEL_KEYS, NOTIFY_KEYS, SessionSoundRow, SoundChannel, SoundPage } from './soundModel';
 import type { AgentSoundRow } from '../core/soundAgents';
 
