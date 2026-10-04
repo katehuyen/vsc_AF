@@ -8,7 +8,9 @@ import * as crypto from 'crypto';
 import { CONTRACT_VERSION, checkFrame, signedText } from '../contract';
 import type { FeatureAnswer } from '../features';
 import type { FarmIdentity, OpResult, RemoteCaller, RemoteViewsPort } from '../port';
+import { looksOnly } from '../scopes';
 import type { Auditor } from './auditLog';
+import type { CallMemory } from './callMemory';
 import type { DeviceBook } from './devices';
 import type { EventFrame, EventLog } from './eventLog';
 
@@ -30,22 +32,6 @@ export interface SessionDeps {
     views: ViewSink | null;
     helloTimeoutMs: number;
     audit?: Auditor;
-}
-
-/** Answers already given, per device and call id, so a resend returns the same answer instead of running twice. */
-export class CallMemory {
-    private done = new Map<string, Promise<Record<string, unknown>>>();
-    constructor(private readonly keep = 1000) { }
-    /** The answer for this call: a known one (also while it is still running), or `run`'s — started once. */
-    answer(device: string, id: string, run: () => Promise<Record<string, unknown>>): { result: Promise<Record<string, unknown>>; duplicate: boolean } {
-        const key = device + '|' + id;
-        const known = this.done.get(key);
-        if (known) { return { result: known, duplicate: true }; }
-        const result = run();
-        this.done.set(key, result);
-        if (this.done.size > this.keep) { this.done.delete(this.done.keys().next().value as string); }
-        return { result, duplicate: false };
-    }
 }
 
 export class RemoteSession {
@@ -135,7 +121,7 @@ export class RemoteSession {
             let r: OpResult;
             try { r = await this.d.callOp(op, args, caller); } catch (e) { r = { ok: false, error: String((e as Error)?.message ?? e) }; }
             return r.ok ? { kind: 'result', id, ok: true, result: r.result } : { kind: 'result', id, ok: false, error: r.error };
-        });
+        }, !looksOnly(op));
         const out = await result;
         this.frame(duplicate ? { ...out, duplicate: true } : out);
     }

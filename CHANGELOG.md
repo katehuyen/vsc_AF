@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.832.0 - A phone's resent call no longer runs twice after a reload (2026-10-04)
+
+- **What the phone sends runs once, also when VS Code reloads in between.**
+  The phone keeps every call it has no answer for and sends it again after
+  each reconnect, for up to six hours, trusting the farm to recognise it by
+  its id. The farm did — but it remembered those ids only in memory, so a
+  window reload between running a call and the phone receiving its answer
+  made the resend run it a second time: a message reached the conversation
+  twice, an answer was given twice. Calls that change something (a message,
+  an answer, a task) are now written down before they run and again with
+  their answer, in the phone host's own folder; a resend after a reload gets
+  the answer it already had. A call the farm was still running when it
+  stopped is not run again — the phone is told it was interrupted and to
+  check first. Calls that only look, including the phone's once-a-minute
+  look at the running sessions, are not written at all, and the writing
+  happens off the extension host's thread.
+
 ## 3.831.0 - A slow disk no longer freezes the extension host (2026-10-04)
 
 - **The files Agent Farm writes on a beat are written in the background.**

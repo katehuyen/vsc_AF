@@ -39,6 +39,14 @@ export function requiredScope(op: string): Scope {
     return 'manage';
 }
 
+/** Looks whose verb is not a looking verb; the phone polls this one every minute. Scope is not changed by it. */
+const LOOK_OPS = new Set(['console.sessions']);
+
+/** True when the op only looks, so running it twice changes nothing (callMemory.ts keeps the others on disk). */
+export function looksOnly(op: string): boolean {
+    return OPEN_FARM_OPS.has(op) || LOOK_OPS.has(op) || READ_VERBS.has(op.slice(op.lastIndexOf('.') + 1));
+}
+
 /** Whether a device paired at `scope` may call `op`. An unknown scope may call nothing. */
 export function scopeAllows(scope: string, op: string): boolean {
     const have = SCOPES.indexOf(scope);

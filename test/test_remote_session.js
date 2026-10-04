@@ -13,7 +13,8 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const out = p => require(path.join(ROOT, 'out', 'remote', ...p));
-const { RemoteSession, CallMemory } = out(['server', 'session.js']);
+const { RemoteSession } = out(['server', 'session.js']);
+const { CallMemory } = out(['server', 'callMemory.js']);
 const { DeviceBook } = out(['server', 'devices.js']);
 const { EventLog } = out(['server', 'eventLog.js']);
 const K = out(['contract', 'index.js']);

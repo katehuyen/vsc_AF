@@ -14,7 +14,7 @@ import { DeviceBook } from './server/devices';
 import { resourcePage } from './server/resources';
 import { EventLog } from './server/eventLog';
 import { createRemoteServer, type RemoteServer } from './server/host';
-import { CallMemory } from './server/session';
+import { CallMemory } from './server/callMemory';
 
 export const AUDIT_FILE = 'audit.jsonl';
 
@@ -48,7 +48,7 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt, log?: Audi
     const server = createRemoteServer({
         farm, cert, devices,
         events: new EventLog(path.join(dir, 'events.json')),
-        calls: new CallMemory(),
+        calls: new CallMemory(path.join(dir, 'calls.json'), { log: line => port.log(line) }),
         callOp: auditedCalls(scopeGated((op, args, caller) => port.callOp(op, args, caller)), audit),
         features: () => featureMap(f => port.can(f)),
         views,

@@ -19,7 +19,7 @@ const { createRemoteServer } = out(['server', 'host.js']);
 const { makeHostCert } = out(['server', 'cert.js']);
 const { DeviceBook } = out(['server', 'devices.js']);
 const { EventLog } = out(['server', 'eventLog.js']);
-const { CallMemory } = out(['server', 'session.js']);
+const { CallMemory } = out(['server', 'callMemory.js']);
 const K = out(['contract', 'index.js']);
 
 /** One TLS connection that must present `fp`; resolves with the raw socket. */
