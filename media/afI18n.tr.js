@@ -168,5 +168,14 @@
     'New': 'Yeni',
     'Open the Console to start a session': 'Bir oturum başlatmak için Konsol\'u aç',
     'Sent.': 'Gönderildi.',
-    'Not sent.': 'Gönderilmedi.'
+    'Not sent.': 'Gönderilmedi.',
+    'English': 'İngilizce',
+    'Turkish': 'Türkçe',
+    '{language}: {voice}': '{language}: {voice}',
+    '{language}: no voice installed — the system voice reads it': '{language}: kurulu ses yok — sistemin sesi okur',
+    'Auto — each reading is voiced in its own language': 'Otomatik — her okuma kendi dilindeki sesle',
+    'Auto — match the answer\'s language': 'Otomatik — cevabın diline uy',
+    'No name is written into the setting: each answer and announcement is read by an installed voice of its own language, and by the system voice where none is installed. A voice chosen below always wins.': 'Ayara bir ad yazılmaz: her cevap ve anons kendi dilindeki kurulu bir sesle okunur, o dilde ses yoksa sistemin sesiyle. Aşağıdan seçilen bir ses her zaman kazanır.',
+    'No {language} voice is installed, so Auto reads {language} with the system voice. Add one free: Settings ▸ Time & language ▸ Speech ▸ Add voices, then ↻.': '{language} bir ses kurulu değil, bu yüzden Otomatik {language} metni sistemin sesiyle okur. Ücretsiz ekle: Ayarlar ▸ Saat ve dil ▸ Konuşma ▸ Ses ekle, sonra ↻.',
+    'Auto — {voice}': 'Otomatik — {voice}'
 });

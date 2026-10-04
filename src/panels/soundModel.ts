@@ -68,6 +68,10 @@ export interface AlertsSpeak {
     /** the matched voice's full name — what the picker's option is keyed on,
      *  because `Tolga` is a legal setting and no option is called that */
     resolvedName: string;
+    /** U-203 — what Auto (no voice chosen) reads each language of the speech table with; '' = none installed */
+    auto?: { tag: string; name: string; voice: string }[];
+    /** U-203 — the voice Auto picks for the sentence as it stands now ('' when a voice is chosen, or none matches) */
+    autoNow?: string;
     sessions: { sessionId: string; label: string; voice: string }[];
     /** U-182 — the conversations whose answers are read aloud, and which one is being read now */
     readers: { sessionId: string; label: string; reading: boolean }[];

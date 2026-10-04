@@ -61,7 +61,8 @@ import {
 } from './core/automation';
 import { LivingCheck, LivingInput, wireDuties } from './core/living';
 import { LivingPanel } from './panels/livingPanel';
-import { installUiLanguage } from './panels/uiLanguage';
+import { currentUiLanguage, installUiLanguage } from './panels/uiLanguage';
+import { autoVoices, chooseSpeechVoice, phrasesFor } from './core/speechLang';
 import { TaskAnalyticsPanel } from './panels/taskAnalyticsPanel';
 import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
@@ -2297,6 +2298,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         speechVoices = { ...got, at: Date.now() };
         return speechVoices;
     };
+    // U-203 — the voice and the inserted words for one thing to be said: a chosen voice wins, Auto ('') matches the text's language
+    const speechFor = async (want: string, text: string) => {
+        const pick = chooseSpeechVoice(want, text, (await alertsSpeechVoices()).voices, currentUiLanguage().lang);
+        return { voice: pick.voice, words: phrasesFor(pick.lang) };
+    };
     /**
      * ‼️ A TEST SPEAKS EVEN WHEN THE ANNOUNCEMENT IS OFF, and says which
      * backend did it. "Does this machine talk at all?" and "is the feature
@@ -2305,11 +2311,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const alertsSpeakTest = async (text?: string) => {
         const now = speakCfg();
-        const said = String(text ?? '').trim()
+        const typed = String(text ?? '').trim();
+        const how = await speechFor(now.voice, typed || now.template.replace(/\{\w+\}/g, ' '));
+        const said = typed
             || announcement(now, {
                 event: now.events[0] ?? 'question', agent: 'developer', session: 'sess-1'
-            });
-        return speakAnnouncement(said.slice(0, SPEAK_MAX), now);
+            }, how.words);
+        return speakAnnouncement(said.slice(0, SPEAK_MAX), { ...now, voice: how.voice });
     };
     /** ‼️ "STILL WAITING ON THE SAME THING", as one string. Any of the three
      *  moving means the conversation moved on, and a reminder about a question
@@ -2375,10 +2383,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const ticket = await alertArbiter.submit(key, event, async () => {
             const tone = await playTurnSound(file);
             if (!speaks(spk, event)) { return tone; }
+            const how = await speechFor(spk.voice, spk.template.replace(/\{\w+\}/g, ' '));
             const said = announcement(spk, {
                 event, agent: s?.agentName, session: s?.sessionId
-            });
-            const spoken = await speakAnnouncement(said, spk);
+            }, how.words);
+            const spoken = await speakAnnouncement(said, { ...spk, voice: how.voice });
             return {
                 ...tone,
                 spoke: said,
@@ -2762,6 +2771,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const s = speakCfg();
                 const known = speechVoices?.voices ?? [];
                 const hit = matchVoice(known, s.voice);
+                const pick = chooseSpeechVoice(s.voice, s.template.replace(/\{\w+\}/g, ' '), known, currentUiLanguage().lang);
                 return {
                     ...s,
                     defaults: SPEAK_DEFAULT,
@@ -2771,7 +2781,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // read back, not to imagine.
                     preview: announcement(s, {
                         event: s.events[0] ?? 'question', agent: 'developer', session: 'sess-1'
-                    }),
+                    }, phrasesFor(pick.lang)),
+                    // U-203 — what Auto (no voice chosen) reads each language with, a missing one included
+                    auto: autoVoices(known).map(a => ({ tag: a.tag, name: a.name, voice: a.voice ? voiceLabel(a.voice) : '' })),
+                    autoNow: pick.how === 'auto' && pick.match ? voiceLabel(pick.match) : '',
                     voices: known.map(v => ({ ...v, label: voiceLabel(v) })),
                     // ‼️ NOT LOADED IS NOT "NO VOICES". The list costs a shell,
                     // so it is fetched once on request; a card that drew an
@@ -3112,10 +3125,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     function readTurnAloud(s: LiveSession, event: AlertEvent, said?: string): void {
         if (event !== 'turn-ready') { return; }
         if (!turnAlerts.readAloudFor(s.sessionId)) { return; }
-        const text = sanitizeForSpeech(said ?? '');
         // Nothing speakable is not a failure: a turn that ended in a tool
         // result or a diff has no sentence in it, and the alert already rang.
-        if (!text) { return; }
+        if (!sanitizeForSpeech(said ?? '')) { return; }
         // One turn = one reading, on the reader's OWN key (see `readDedupe`).
         if (!readDedupe.shouldFire(s.sessionId, `read:${s.prompts}:${s.toolCalls}`)) { return; }
         // ‼️ THE SAME VOICE CHAIN THE ANNOUNCEMENT USES — the session answers
@@ -3125,7 +3137,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // was thrown on this conversation by hand.
         const fleet = speakCfg();
         const own = turnAlerts.speechVoiceFor(s.sessionId);
-        readingNow.start(s.sessionId, dialogue.speak(text, own ? { ...fleet, voice: own } : fleet));
+        void speechFor(own || fleet.voice, said ?? '').then(how =>
+            readingNow.start(s.sessionId, dialogue.speak(sanitizeForSpeech(said ?? '', undefined, how.words), { ...fleet, voice: how.voice })));
     }
 
     // J2: tail relay feed files from other machines into the live monitor.
@@ -12493,7 +12506,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.speak',
-            describe: 'SESLİ ANONS — the fleet says WHICH agent out loud (`agentFarm.alerts.speak`). A tone answers "what kind of news is this?" and nothing else; with eight lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Local and free: Windows `System.Speech`, macOS `say`, Linux `spd-say` — no network, no account, no model. It rides BEHIND the tone in the same queue ticket, so nothing plays between a chime and the sentence explaining it, and it goes through the same mute, quiet hours and session mute. Ships OFF, and out of the box announces only `question` — the one event where an agent is STOPPED. Read it with no args and the answer also lists the voices this machine actually has: a Turkish sentence read by an en-US voice is unintelligible, and the language packs are free (Windows ▸ Settings ▸ Time & language ▸ Speech ▸ Add voices). args: on? · events? (subset of turn-ready/question/stalled/ended/error) · template? ({agent}, {event}, {session}; anything else is spoken as typed, so a mistyped placeholder is HEARD rather than swallowed) · rate? (−10…10) · volume? (0…100) · voice? (a voice NAME matched loosely — "Tolga" finds "Microsoft Tolga - Turkish (Turkey)" — or a token registry id; empty = system default. ‼️ BOTH of Windows’ voice registries are searched, so a language pack installed from Settings, which `System.Speech` cannot even list, is selectable here) · sessionId? (‼️ with one, `voice` is written on THAT CONVERSATION and beats the fleet setting — so the agent whose questions are in Turkish can be announced in Turkish while the rest are not. Passing it alone READS that session’s own choice; an empty voice CLEARS it back to the fleet, which is not silence) · say? (a text to speak RIGHT NOW as a test, gate and queue bypassed)',
+            describe: 'SESLİ ANONS — the fleet says WHICH agent out loud (`agentFarm.alerts.speak`). A tone answers "what kind of news is this?" and nothing else; with eight lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Local and free: Windows `System.Speech`, macOS `say`, Linux `spd-say` — no network, no account, no model. It rides BEHIND the tone in the same queue ticket, so nothing plays between a chime and the sentence explaining it, and it goes through the same mute, quiet hours and session mute. Ships OFF, and out of the box announces only `question` — the one event where an agent is STOPPED. Read it with no args and the answer also lists the voices this machine actually has: a Turkish sentence read by an en-US voice is unintelligible, and the language packs are free (Windows ▸ Settings ▸ Time & language ▸ Speech ▸ Add voices). args: on? · events? (subset of turn-ready/question/stalled/ended/error) · template? ({agent}, {event}, {session}; anything else is spoken as typed, so a mistyped placeholder is HEARD rather than swallowed) · rate? (−10…10) · volume? (0…100) · voice? (a voice NAME matched loosely — "Tolga" finds "Microsoft Tolga - Turkish (Turkey)" — or a token registry id; empty = Auto: each announcement and reading is voiced by an installed voice of its own language (U-203), the system voice where none is installed, and the inserted words follow the language of that voice. ‼️ BOTH of Windows’ voice registries are searched, so a language pack installed from Settings, which `System.Speech` cannot even list, is selectable here) · sessionId? (‼️ with one, `voice` is written on THAT CONVERSATION and beats the fleet setting — so the agent whose questions are in Turkish can be announced in Turkish while the rest are not. Passing it alone READS that session’s own choice; an empty voice CLEARS it back to the fleet, which is not silence) · say? (a text to speak RIGHT NOW as a test, gate and queue bypassed)',
             handler: async (args) => {
                 const raw = args as {
                     on?: unknown; events?: unknown; template?: unknown;

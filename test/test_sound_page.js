@@ -459,8 +459,8 @@ const byAttr = (p, attr, key) =>
     ok('…and every row carries the LANGUAGE, which is what the choice is made on',
         /tr-TR · onecore/.test(html) && /en-US · sapi5/.test(html));
     ok('what will actually be SAID is on the strip, filled in — a template is a'
-        + ' thing to read back, not to imagine',
-        /developer, asking you/.test(html));
+        + ' thing to read back, not to imagine — in the chosen voice\'s language (U-203: Tolga says it in Turkish)',
+        /developer, sana soruyor/.test(html) && !/developer, asking you/.test(html));
     ok('MIRROR — the switch and the numbers show what they are set to',
         byId(p, 'alertspeakon').checked === true
         && byId(p, 'alertspeakrate').value === '1'

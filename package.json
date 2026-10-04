@@ -9354,7 +9354,7 @@
             "voice": {
               "type": "string",
               "default": "",
-              "description": "An installed voice by name, e.g. 'Microsoft Zira Desktop'. Empty means the system default. `alerts.speak` with no arguments lists what this player can select — the SAPI 5 set, which is not everything the machine has."
+              "description": "An installed voice by name, e.g. 'Microsoft Zira Desktop'. Empty means Auto: each announcement and reading is voiced by an installed voice of its own language, the system voice where none is installed. `alerts.speak` with no arguments lists what this player can select — the SAPI 5 set, which is not everything the machine has."
             }
           }
         },

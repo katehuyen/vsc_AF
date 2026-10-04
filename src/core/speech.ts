@@ -25,6 +25,7 @@
 
 import { EVENT_LABEL, type AlertEvent } from './alertVoices';
 import type { PlayerCandidate } from './turnAlerts';
+import { EN_PHRASES, type SpeechPhrases } from './speechPhrases';
 
 export interface SpeakConfig {
     on: boolean;
@@ -132,10 +133,11 @@ export interface SpeakFacts {
  * mistyped `{agnet}` is HEARD as "agnet" rather than vanishing: a placeholder
  * that silently disappears is a bug with no symptom at all.
  */
-export function announcement(cfg: SpeakConfig, facts: SpeakFacts): string {
+export function announcement(cfg: SpeakConfig, facts: SpeakFacts, words: SpeechPhrases = EN_PHRASES): string {
+    // U-203 — the words filled in are in the language of the voice that says them; the template is said as typed
     const fill: Record<string, string> = {
-        '{agent}': String(facts.agent ?? '').trim() || 'an agent',
-        '{event}': (EVENT_LABEL[facts.event] ?? String(facts.event)).toLowerCase(),
+        '{agent}': String(facts.agent ?? '').trim() || words.anAgent,
+        '{event}': words.events[facts.event] ?? (EVENT_LABEL[facts.event] ?? String(facts.event)).toLowerCase(),
         '{session}': String(facts.session ?? '').trim()
     };
     let out = cfg.template;
@@ -463,7 +465,7 @@ export const DIALOGUE_MAX = 1200;
 
 /** What a reading says when the ceiling cut it short. A silent truncation is
  *  the one outcome the listener cannot tell from "that was the whole answer". */
-export const DIALOGUE_MORE = 'There is more.';
+export const DIALOGUE_MORE = EN_PHRASES.more;
 
 /**
  * ‼️ A-26 — WHAT AN AGENT'S ANSWER SOUNDS LIKE WHEN IT IS READ ALOUD.
@@ -500,11 +502,11 @@ export const DIALOGUE_MORE = 'There is more.';
  * which is the point: this is the half of the feature that can be wrong in a
  * way nobody would ever debug by ear.
  *
- * ‼️ THE INSERTED WORDS ARE ENGLISH, like `SPEAK_DEFAULT.template` and the
- * "an agent" `announcement` falls back to. One language for the spoken side; a
- * reading that mixed two would be worse than either on its own.
+ * ‼️ U-203 — THE INSERTED WORDS ARE IN THE LANGUAGE OF THE VOICE THAT READS
+ * (`words`, from `speechPhrases.ts`; English when the caller names none). One
+ * language for the spoken side; a reading that mixed two is worse than either.
  */
-export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX): string {
+export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX, words: SpeechPhrases = EN_PHRASES): string {
     let s = String(text ?? '').replace(/\r\n?/g, '\n');
     if (!s.trim()) { return ''; }
 
@@ -518,33 +520,33 @@ export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX): 
     //    Closed blocks and the unclosed tail are two different questions and
     //    they are asked separately.
     s = s.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^[ \t]*\1[^\n]*$/gm,
-        (_m: string, _fence: string, body: string) => codeBlockSaid(body));
+        (_m: string, _fence: string, body: string) => codeBlockSaid(body, words));
     //    …and a fence that is never closed runs to the end of the text, which
     //    is exactly what a half-streamed turn looks like.
     //    `m` so the fence is found wherever the line begins, and NO `g` because
     //    there is only ever one unclosed tail: it swallows everything after it.
     s = s.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*)$/m,
-        (_m: string, _fence: string, body: string) => codeBlockSaid(body));
+        (_m: string, _fence: string, body: string) => codeBlockSaid(body, words));
 
     // 2. Tables — a run of pipe rows, however long, is one fact: its size.
     s = s.replace(/(?:^[ \t]*\|.*\|[ \t]*$\n?){2,}/gm, (block: string) => {
         const rows = block.trim().split('\n')
             .filter(l => !/^[ \t]*\|[\s|:-]*\|[ \t]*$/.test(l)).length;
-        return `\na table of ${rows} row${rows === 1 ? '' : 's'}.\n`;
+        return `\n${words.table(rows)}.\n`;
     });
 
     // 3. Images before links: an image is a link whose label is its alt text.
-    s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m: string, alt: string) => alt.trim() || 'an image');
-    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, (_m: string, label: string) => label.trim() || 'a link');
-    s = s.replace(/<https?:\/\/[^>\s]+>/gi, 'a link');
-    s = s.replace(/https?:\/\/\S+/gi, 'a link');
+    s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m: string, alt: string) => alt.trim() || words.image);
+    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, (_m: string, label: string) => label.trim() || words.link);
+    s = s.replace(/<https?:\/\/[^>\s]+>/gi, words.link);
+    s = s.replace(/https?:\/\/\S+/gi, words.link);
     s = s.replace(/<[^>\n]{1,120}>/g, ' ');
 
     // 4. Inline code. ‼️ THE CONTENT IS KEPT, NOT THE TICKS: a camel-cased
     //    symbol is a phrase a voice says perfectly well, and dropping it would
     //    remove the subject of the sentence around it. Only the part that is
     //    unsayable — the directories in front of a file name — goes.
-    s = s.replace(/`+([^`\n]+)`+/g, (_m: string, code: string) => sayableToken(code));
+    s = s.replace(/`+([^`\n]+)`+/g, (_m: string, code: string) => sayableToken(code, words));
 
     // 5. Line-level markup, each one leaving a sentence rather than a fragment.
     s = s.split('\n').map(line => {
@@ -562,7 +564,7 @@ export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX): 
 
     // 6. Emphasis, then the bare paths prose carries outside backticks.
     s = s.replace(/(\*\*|__|~~|\*|_)(?=\S)([\s\S]*?\S)\1/g, '$2');
-    s = s.replace(/[\w.-]*[/\\][\w./\\-]+/g, (m: string) => sayableToken(m));
+    s = s.replace(/[\w.-]*[/\\][\w./\\-]+/g, (m: string) => sayableToken(m, words));
     // ‼️ A RULE THAT WAS NOT ALONE ON ITS LINE. Hyphens survive step 7 because
     // words are hyphenated; a RUN of them is a divider and is read out dash by
     // dash. Same for the leftovers of an emphasis marker nothing closed.
@@ -580,24 +582,24 @@ export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX): 
         .map(b => sentence(b.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ')))
         .filter(Boolean);
     const out = blocks.join(' ').replace(/\s{2,}/g, ' ').trim();
-    return limit > 0 ? cutForSpeech(out, limit) : out;
+    return limit > 0 ? cutForSpeech(out, limit, words.more) : out;
 }
 
 /** How a fenced block is said: its SIZE, which is all a listener can use —
  *  they will look at the screen for the code itself. */
-function codeBlockSaid(body: string): string {
+function codeBlockSaid(body: string, words: SpeechPhrases): string {
     const lines = String(body ?? '').replace(/\n+$/, '').split('\n').length;
-    return `\n${lines === 1 ? 'a one-line code block' : `a ${lines}-line code block`}.\n`;
+    return `\n${words.codeBlock(lines)}.\n`;
 }
 
 /** A token an ear can use: a path keeps its last segment, because the segments
  *  in front of it are separators read out one by one and nobody says them. */
-function sayableToken(raw: string): string {
+function sayableToken(raw: string, words: SpeechPhrases): string {
     const t = String(raw).trim();
     if (!t) { return ''; }
     if (!/[/\\]/.test(t)) { return t; }
     const last = t.split(/[/\\]+/).filter(Boolean).pop() ?? '';
-    return last || 'a path';
+    return last || words.path;
 }
 
 /** End a run of text as a sentence — a heading with no stop runs into the
@@ -617,7 +619,7 @@ function sentence(raw: string): string {
  * thing a listener would want to know — is there more on the screen — is the
  * one thing silence cannot tell them.
  */
-export function cutForSpeech(text: string, limit: number): string {
+export function cutForSpeech(text: string, limit: number, more: string = DIALOGUE_MORE): string {
     const s = String(text ?? '').trim();
     if (limit <= 0 || s.length <= limit) { return s; }
     const head = s.slice(0, limit);
@@ -625,5 +627,5 @@ export function cutForSpeech(text: string, limit: number): string {
     // Only when the sentence end is somewhere useful — a stop in the first
     // tenth would throw away almost everything to gain a tidier pause.
     const cut = stop > limit * 0.4 ? head.slice(0, stop + 1) : head.replace(/\s+\S*$/, '');
-    return `${sentence(cut.trim())} ${DIALOGUE_MORE}`.trim();
+    return `${sentence(cut.trim())} ${more}`.trim();
 }

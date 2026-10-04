@@ -68,6 +68,12 @@ function agentsOf(d) {
         })
     }));
 }
+// U-203 — no voice chosen (Auto) on a machine with no Turkish voice: the page names the gap and the free fix
+const autoGap = () => {
+    const d = inUse();
+    d.alerts.speak = { ...A.speakOf({ on: true }, A.SPEECH_VOICES.filter(v => !/^tr/i.test(v.culture))), readers: READERS };
+    return d;
+};
 const gated = () => of(A.gated());
 const broken = () => of(A.broken());
 
@@ -76,8 +82,9 @@ const variants = () => ([
     { id: 'sound-agents', label: 'Sound — Sessions › Agents pressed: two agents with tones of their own', data: inUse(),
         act: r => r.query('#sstab-agents')[0].click() },
     { id: 'sound-empty', label: 'Sound — the first opening: nothing rings yet', data: empty() },
+    { id: 'sound-voice-auto', label: 'Sound — the voice left on Auto on a machine with no Turkish voice: the gap and the free fix are said under it (U-203)', data: autoGap() },
     { id: 'sound-gated', label: 'Sound — ‼️ armed, configured and silent: muted · quiet hours · two sessions', data: gated() },
     { id: 'sound-broken', label: 'Sound — ‼️ armed tones whose sound cannot be played', data: broken() }
 ]);
 
-module.exports = { script: 'sound.js', data: inUse, variants, empty, inUse, gated, broken };
+module.exports = { script: 'sound.js', data: inUse, variants, empty, inUse, gated, broken, autoGap };

@@ -111,6 +111,7 @@ const MINE = 'D:\\zone\\media\\sounds';
 const V = require('../../out/core/alertVoices.js');
 const T = require('../../out/core/turnAlerts.js');
 const S = require('../../out/core/speech.js');
+const L = require('../../out/core/speechLang.js');
 
 const BUILTIN = V.builtinVoices(SOUNDS.replace(/\\/g, '/')).map(v => ({
     ...v, file: v.file.replace(/\//g, '\\'),
@@ -175,13 +176,17 @@ const speakOf = (over, voices, sessions) => {
     // answer has arrived, which is NOT the same as having no voices.
     const known = voices === undefined ? SPEECH_VOICES : (voices || []);
     const hit = S.matchVoice(known, cfg.voice);
+    // U-203 — the host's own choice: the interface language (English here) when the sentence gives no sign
+    const pick = L.chooseSpeechVoice(cfg.voice, cfg.template.replace(/\{\w+\}/g, ' '), known, 'en');
     return {
         ...cfg,
         defaults: S.SPEAK_DEFAULT,
         max: S.SPEAK_MAX,
         preview: S.announcement(cfg, {
             event: cfg.events[0] || 'question', agent: 'developer', session: 'sess-1'
-        }),
+        }, L.phrasesFor(pick.lang)),
+        auto: L.autoVoices(known).map(a => ({ tag: a.tag, name: a.name, voice: a.voice ? S.voiceLabel(a.voice) : '' })),
+        autoNow: pick.how === 'auto' && pick.match ? S.voiceLabel(pick.match) : '',
         voices: known.map(v => ({ ...v, label: S.voiceLabel(v) })),
         voicesLoaded: voices !== null,
         voicesError: '',
@@ -347,4 +352,4 @@ const variants = () => ([
     }
 ]);
 
-module.exports = { script: 'settings.js', data, variants, fresh, inUse, broken, gated };
+module.exports = { script: 'settings.js', data, variants, fresh, inUse, broken, gated, speakOf, SPEECH_VOICES };

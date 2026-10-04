@@ -8,6 +8,12 @@
 (function () {
     const C = window.AFCharts;
     const T = () => window.AFTip;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    // U-203 — with no voice chosen, each reading is voiced in its own language: what Auto uses per language, a missing one named
+    const autoLines = sp => (sp.auto || []).map(a => (a.voice
+        ? t('{language}: {voice}', { language: t(a.name), voice: a.voice })
+        : t('{language}: no voice installed — the system voice reads it', { language: t(a.name) })));
+    const autoGap = sp => (sp.voice || !sp.voicesLoaded || sp.voicesError ? [] : (sp.auto || []).filter(a => !a.voice));
     const CHIPS = [['{agent}', 'agent', 'The agent\'s name — developer, psikolog…'],
         ['{event}', 'event', 'What happened, in words — asking you, turn finished…'],
         ['{session}', 'session', 'The session\'s own name, when two of one agent are running.']];
@@ -15,6 +21,7 @@
     const style = () => `<style id="sv-style">
         .svrow { display:grid; grid-template-columns:92px 1fr; gap:8px; align-items:center; margin:6px 0; }
         .svlbl { opacity:.75; white-space:nowrap; }
+        .svgap { margin:0 0 6px 100px; font-size:12px; }
         .svline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; min-width:0; }
         .svline label { display:flex; gap:4px; align-items:center; white-space:nowrap; cursor:pointer; }
         .svline input[type=checkbox] { margin:0; width:auto; }
@@ -57,12 +64,12 @@
             ? (sp.resolved ? `Set to "${chosen}" — which reaches ${sp.resolved}`
                 : bad ? `Set to "${chosen}" — nothing on this machine answers to that`
                     : `Set to "${chosen}" — this platform cannot list its voices`)
-            : 'Not set — whichever voice the system reads with')
+            : [t('Auto — each reading is voiced in its own language'), ...autoLines(sp)].join('\n'))
             + '\n\nA voice reading a language it does not know is unintelligible, so the language of each voice is on its row.'
             + (sp.voicesNote ? '\n\n' + sp.voicesNote : '');
         return { bad, html: `<select id="alertspeakvoice" title="${C.esc(tip)}">
-            ${C.option('', 'System default — whichever voice Windows reads with', { selected: !chosen,
-        detail: 'No name is written into the setting, so whatever this machine reads with speaks.' })}
+            ${C.option('', t('Auto — match the answer\'s language'), { selected: !chosen,
+        detail: [t('No name is written into the setting: each answer and announcement is read by an installed voice of its own language, and by the system voice where none is installed. A voice chosen below always wins.'), ...autoLines(sp)].join('\n') })}
             ${unknown}${(sp.voices || []).map(opt).join('')}</select>` };
     }
 
@@ -105,6 +112,7 @@
                 ${slider('alertspeakvol', 'Volume', 0, 100, vol, `Volume: ${vol} of 100\n\nThe sentence's own volume, separate from the tone's — that one is the system mixer's.`)}
             </span></div>
             ${sp.voicesError ? `<div class="seterr">⚠ the voice list could not be read — ${C.esc(sp.voicesError)}</div>` : ''}
+            ${autoGap(sp).map(a => `<div class="svgap muted">${C.esc(t('No {language} voice is installed, so Auto reads {language} with the system voice. Add one free: Settings ▸ Time & language ▸ Speech ▸ Add voices, then ↻.', { language: t(a.name) }))}</div>`).join('')}
             <div class="svrow"><span class="svlbl">Sentence</span><span class="svline">
                 <input type="text" id="alertspeaktpl" maxlength="${Number(sp.max) || 160}" value="${C.esc(String(sp.template || ''))}" data-alertsp="${C.esc(String(sp.template || ''))}"
                     title="${C.esc(`Says: ${sp.template || ''}\n\n{agent}, {event} and {session} are filled in; everything else is spoken exactly as typed.`)}">
@@ -112,7 +120,7 @@
                 <button class="secondary small" id="alertspeaktest" title="Say it now. It speaks even when Say who is off and inside quiet hours — this asks whether the machine can talk at all.">▶ Hear it</button>
                 ${T().wrap(`<span class="alertgatestate ${sp.on && !box.bad ? 'on' : 'off'}">${C.esc(state)}</span>`,
                     sp.on ? `Next: “${sp.preview || ''}”` : 'Nothing is said',
-                    T().lines([`Spoken by: ${sp.resolved || (box.bad ? 'nothing — the name matches no voice here' : sp.voice || 'the system default voice')}`,
+                    T().lines([`Spoken by: ${sp.resolved || (box.bad ? 'nothing — the name matches no voice here' : sp.voice || (sp.autoNow ? t('Auto — {voice}', { voice: sp.autoNow }) : 'the system default voice'))}`,
                         `At most ${sp.max || 160} characters: a sentence holds every alert queued behind it while it is read.`]))}
             </span></div>
             <div class="svrow"><span class="svlbl">Read aloud</span><span class="svline">${readers(sp)}</span></div>
