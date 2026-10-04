@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.827.0 - Missions and the Work Queue on the phone (2026-10-04)
+
+- **Missions on the phone.** The phone's menu now opens the real Missions
+  page. A reading device follows the runs, a draft's resolved launch, a
+  sentry draft's check and a step's output as it grows; an answering device
+  answers a mission's question and approves or rejects; a managing device
+  starts, steers, pauses, cancels, runs again and deletes a mission and
+  switches the sentry. Every "are you sure?" is asked on the phone that
+  pressed the button, not left waiting on the PC. On a narrow screen the runs
+  become cards and an open run's tables scroll in place.
+- **The Work Queue on the phone.** The Queue tab opens the real page: read
+  the lanes, answer an item that needs you and, from a managing device,
+  capture, edit, route, file, re-urge, drop and delete. "This item isn't
+  handled yet" is told on the phone. A change made on the phone shows on the
+  PC's tab at once, and the other way round.
+- **What stays on the PC.** The folder picker, files (a step's output, an
+  answer or a report are named with "open it on the PC"), a run's Sessions
+  page, an agent's page or Console, the guide, the source notice, a project's
+  page and the hand-off to an agent's terminal open on the PC. On the phone
+  the right-click menu says so, and a link is copied instead of opened.
+
 ## 3.826.0 - The phone reads what the PC reads (2026-10-04)
 
 - **One reading on both sides.** When the phone app reads a finished answer,
