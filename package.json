@@ -8708,6 +8708,13 @@
           "maximum": 7200,
           "markdownDescription": "How long a **Console** question waits for you before `#agentFarm.console.autoAnswer.enabled#` chooses the recommended option — in seconds, measured from when the question was asked (reopening the window does not restart it). Default 300 (5 minutes); values outside 5–7200 are clamped. Changing it re-arms questions that are already waiting."
         },
+        "agentFarm.console.autoAnswer.remindSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 0,
+          "maximum": 1800,
+          "markdownDescription": "How many seconds before a **Console** question answers itself (`#agentFarm.console.autoAnswer.enabled#`) the reminder rings: the reminder's tone, then — with Say who on for Asking you — a short sentence naming whose question it is and how long is left. Once per question; a question answered or stopped first stays quiet. Mute all and quiet hours hold it; a session set to Silent does not. Nothing rings when the whole wait is not longer than this. `0` = off."
+        },
         "agentFarm.console.autoAnswer.filter": {
           "type": "string",
           "enum": [

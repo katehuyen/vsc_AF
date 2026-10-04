@@ -491,6 +491,7 @@ import {
     consoleEvents, EMPTY_CONSOLE_MEMO, EMPTY_NEEDS_MEMO, EMPTY_QUOTA_MEMO, needsEvents, noticeEvent, quotaEvents,
     QUOTA_WARN_PCT, type QuotaMemo, type RemoteEvent
 } from './core/remoteEvents';
+import { AnswerSoonDue, AnswerSoonMemo, answerSoonEvent, answerSoonSeconds, minutesLeft } from './core/answerSoon';
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
 import { CARD_AUDIT_KINDS, CARD_AUDIT_ROWS } from './core/remoteCard';
@@ -2586,6 +2587,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `nudge:${e.sessionId}:${e.sent}`, 'question', () => playTone(file));
         }
         return played;
+    };
+    /** U-214 — the reminder's tone, then "<agent>'s question answers itself in N minutes" when Say who is on for Asking you.
+     *  Mute all and quiet hours hold it; a session's Silent does not — the decision is the person's either way. */
+    const remindAnswerSoon = (d: AnswerSoonDue): void => {
+        if (alertSilence().silent) { return; }
+        const n = nudgeCfg();
+        const s = d.sessionId ? live.sessions().find(x => x.sessionId === d.sessionId) : undefined;
+        const rows = alertVoiceRows();
+        const pick = rows.find(v => v.id === n.voice && v.playable) ?? rows.find(v => v.id === resolveAlertVoice('question', s).voice);
+        const own = d.sessionId ? turnAlerts.speechVoiceFor(d.sessionId) : '';
+        const spk = own ? { ...speakCfg(), voice: own } : speakCfg();
+        void alertArbiter.submit(`answer-soon:${d.cardId}:${d.requestId}`, 'question', async () => {
+            const tone = await playTone(pick?.file || turnSoundAsset);
+            if (!speaks(spk, 'question')) { return tone; }
+            const how = await speechFor(spk.voice, spk.template.replace(/\{\w+\}/g, ' '));
+            await speakAnnouncement(how.words.answersSoon(d.agentName, minutesLeft(d.remainingMs)), { ...spk, voice: how.voice });
+            return tone;
+        });
     };
     /** Silence ONE conversation. The only authority that can subtract from the
      *  union `alertPlan` builds — see `SessionAlertPrefs.muted`. */
@@ -20491,7 +20510,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // rather than by an edge somebody has to remember to wire — every edge that
     // could be missed is one reminder at 3 am about a question answered hours
     // ago.
-    const nudgeTimer = setInterval(() => { void nudgeSweep(); }, 30_000);
+    // U-214 — set once the Console host and the phone exist (far below); until then a tick says nothing
+    let answerSoonTick = (): void => undefined;
+    const nudgeTimer = setInterval(() => { void nudgeSweep(); answerSoonTick(); }, 30_000);
     context.subscriptions.push({ dispose: () => clearInterval(nudgeTimer) });
 
     // Plan usage — the subscription limits Anthropic itself reports (what
@@ -31329,6 +31350,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }));
     context.subscriptions.push(needsEmitter.event(remoteNeedsSoon), live.onDidUpdate(remoteNeedsSoon));
     noticesStore.onAdd = n => { if (remoteLive) { remoteEmit([noticeEvent(n)]); } noticeRing(n); };
+    // U-214 — a Console question about to answer itself is said first, once, on the reminder's sweep
+    const answerSoon = new AnswerSoonMemo();
+    answerSoonTick = () => {
+        const cards = consoleHost.list().flatMap(c => {
+            const v = consoleHost.autoAnswerView(c.id);
+            return v ? [{ cardId: c.id, requestId: v.requestId, agentName: c.agentName, sessionId: c.sessionId,
+                state: v.state, dueAt: v.dueAt, timeoutSeconds: v.timeoutSeconds }] : [];
+        });
+        for (const d of answerSoon.due(Date.now(), cards, answerSoonSeconds(cfg().get('console.autoAnswer.remindSeconds')))) {
+            if (remoteLive) { remoteEmit([answerSoonEvent(d)]); }
+            remindAnswerSoon(d);
+        }
+    };
     // U-213 — the first reading is the baseline, so a window reload does not ring for a climb it never saw
     let pcQuotaMemo: QuotaMemo | undefined;
     usageRead.push(usage => {

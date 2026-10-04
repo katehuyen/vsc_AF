@@ -31,6 +31,8 @@ export interface SpeechPhrases {
     more: string;
     anAgent: string;
     events: Record<AlertEvent, string>;
+    /** U-214 — a Console question that will answer itself */
+    answersSoon: (who: string, minutes: number) => string;
 }
 
 export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
@@ -46,6 +48,7 @@ export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
         asks: w => `${w} asks`, options: 'Options',
         wantsToRun: w => `${w} wants to run`, wantsToUse: (w, t) => `${w} wants to use ${t}`,
         link: 'a link', image: 'an image', path: 'a path', more: 'There is more.', anAgent: 'an agent',
+        answersSoon: (w, n) => `${w}'s question answers itself in ${n === 1 ? 'a minute' : `${n} minutes`}`,
         events: { 'turn-ready': 'turn finished', question: 'asking you', stalled: 'stalled', ended: 'session ended', error: 'error', notice: 'new notice', 'notice-question': 'a question card for you', gate: 'a workflow is asking you', quota: 'quota running out', mission: 'mission ended' }
     },
     tr: {
@@ -60,6 +63,7 @@ export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
         asks: w => `${w} soruyor`, options: 'Seçenekler',
         wantsToRun: w => `${w} şunu çalıştırmak istiyor`, wantsToUse: (w, t) => `${w} ${t} aracını kullanmak istiyor`,
         link: 'bir bağlantı', image: 'bir görsel', path: 'bir dosya yolu', more: 'Devamı var.', anAgent: 'bir ajan',
+        answersSoon: (w, n) => `${w}: soru ${n} dakika içinde kendiliğinden cevaplanacak`,
         events: { 'turn-ready': 'tur bitti', question: 'sana soruyor', stalled: 'takıldı', ended: 'oturum bitti', error: 'hata', notice: 'yeni bildirim', 'notice-question': 'sana bir soru kartı var', gate: 'bir iş akışı sana soruyor', quota: 'kota dolmak üzere', mission: 'misyon bitti' }
     }
 };

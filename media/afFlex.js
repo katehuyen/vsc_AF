@@ -204,6 +204,8 @@
         // K-45 — which questions the Console's timer leaves for a person: the user's, never built in
         setting('console.autoAnswer.filter', 'Question timer filter', 'enum', 'recommended', 'agentFarm.console.autoAnswer.filter',
             { options: ['off', 'recommended', 'all', 'strict'] }),
+        // U-214 — how long before a Console question answers itself the reminder rings (src/core/answerSoon.ts)
+        setting('console.autoAnswer.remindSeconds', N_('Question timer reminder (seconds before)'), 'number', 120, 'agentFarm.console.autoAnswer.remindSeconds', { min: 0, max: 1800 }),
         setting('console.autoAnswer.words', 'Question timer words', 'list', [
             'delete', 'deleting', 'deletion', 'drop table', 'drop the table', 'drop database', 'drop schema', 'drop index',
             'force push', 'force-push', 'push --force', '--force-with-lease', 'reset --hard', 'rm -rf',
