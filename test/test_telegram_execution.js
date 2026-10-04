@@ -70,6 +70,15 @@ ok('a confirmed destructive sentence goes in',
     v({ text: 'now git reset --hard HEAD~3', waived: 'risk' }).do === 'send');
 ok('‼️ money is checked BEFORE the command — the cheaper question is not skipped',
     v({ ledger: broke, text: 'rm -rf build' }).why === 'budget');
+// ‼️ each yes is KEPT — with one slot the risk yes forgot the budget yes and the two questions took turns for ever
+const afterBudget = v({ ledger: broke, text: 'rm -rf build', waived: X.addWaiver(undefined, 'budget') });
+ok('over budget AND destructive: after the budget yes the risk is asked', afterBudget.do === 'confirm' && afterBudget.why === 'risk');
+ok('…and after the risk yes on top of it, it goes in — never round to the budget again',
+    v({ ledger: broke, text: 'rm -rf build', waived: X.addWaiver(['budget'], afterBudget.why) }).do === 'send');
+ok('a single saved yes (older state) still reads',
+    X.waives('risk', 'risk') && !X.waives('risk', 'budget') && !X.waives(undefined, 'risk'));
+ok('a yes is added once, after the earlier ones',
+    X.addWaiver(['budget'], 'budget').join() === 'budget' && X.addWaiver('budget', 'risk').join() === 'budget,risk');
 
 // ---- gate 4: a turn that is running ----
 ok('busy queues by default', v({ status: 'working' }).do === 'hold');
@@ -158,6 +167,10 @@ ok('a turn ending runs the same decision the tests above pin',
     /const chatTurnEnded = async/.test(ext) && /turnEnded\(st, id, costUSD, dayKey\(Date\.now\(\)\)\)/.test(ext));
 ok('the released message goes back through the gates',
     /chatSay\(r\.release\.chat, id, r\.release\.text, 'button', r\.release\.waived\)/.test(ext));
+ok('the confirm tap ADDS its yes to the ones the message already had',
+    /chatSay\(msg\.chatId, tap\.id, p\.text, 'button', addWaiver\(p\.waived, p\.why\)\)/.test(ext));
+ok('…which the gate saved with the message it stopped',
+    /why: v\.why, at: Date\.now\(\), \.\.\.\(waived \? \{ waived: waiverList\(waived\) \} : \{\}\)/.test(ext));
 ok('the turn-end edge fires on a card seen idle for the first time too',
     /if \(!busy && wasBusy !== false\)/.test(ext));
 ok('the setting is read where the verdict is taken', /whenBusy: c\.whenBusy/.test(ext));

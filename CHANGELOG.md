@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.834.0 - The phone app and Telegram share one remote gate (2026-10-05)
+
+- **A message sent from the phone app now meets the same gate as one typed
+  in Telegram.** Until now the app's messages went straight into a
+  conversation: no daily budget, no question before a command that cannot be
+  undone, and a busy turn was steered into instead of waited for. They now
+  pass Telegram's four gates in the same order — the conversation is still
+  there, today's remote budget, what the sentence would do, whether a turn is
+  running — against the same ledger and the same cap
+  (`agentFarm.telegram.maxDailyUSD`), so the remote budget is one setting and
+  one sum, whichever channel spent it. A message for a busy conversation
+  waits in the same saved queue as Telegram's and goes in when the turn ends.
+  When a gate stops a message, the app shows the reason and asks for the
+  owner's fingerprint or screen lock before sending it again with the yes;
+  the yes is honoured only for the device that was asked, the same
+  conversation and the same words, and only for a short while. (The Agent
+  Farm app 0.2.5 has the button; an older app shows the reason only.)
+- **A message stopped by two gates no longer asks for ever.** A Telegram
+  message that was both over today's budget and carrying a command like
+  `rm -rf` asked about the budget, then the risk — and confirming the risk
+  forgot the budget answer, so the two questions took turns without end.
+  Every yes given for a message is now kept with it, so it is asked twice and
+  then goes in, as intended. Older saved queues still read.
+- `telegram.inbox` names a phone's waiting messages and questions by device
+  instead of a chat.
+- **An account slot's own command history could pass as shared.** The slot
+  check asks whether the slot's `history.jsonl` and the pool's are one file
+  by comparing their file ids, read as plain numbers. On NTFS those ids are
+  larger than a number holds exactly, so two different files could read the
+  same id: a slot typing into a history of its own was reported healthy and
+  never repaired. The ids are now read exactly.
+
 ## 3.833.0 - The phone host's event log no longer writes on the host's thread (2026-10-04)
 
 - **Every event sent to the phone was a full rewrite of a quarter-megabyte

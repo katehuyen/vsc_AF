@@ -504,13 +504,14 @@ import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePo
 import { RemoteViews } from './panels/remoteViews';
 import { remotePages, sessionPageTarget } from './panels/remotePages';
 import {
-    chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
-    PendingSends, queueInbound, turnEnded
+    addWaiver, chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
+    PendingSends, queueInbound, turnEnded, Waived, waiverList
 } from './core/telegramExecution';
 import {
     agentsText, cancelTarget, farmStatusText, sessionsKeyboard, splitAgentPrompt
 } from './core/telegramCommands';
 import { phoneLaunchVerdict, phoneOpenedText } from './core/telegramLaunch';
+import { phoneOfKey, remoteSay, RemoteSayResult } from './core/remoteSay';
 import { changesSummary, changesText, commitsAfter, headCommit } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
@@ -31345,9 +31346,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         })
     });
+    // X-446 — the phone's console.send meets Telegram's gate (core/remoteSay.ts); set once the chat state below exists
+    let phoneSay: ((device: string, args: Record<string, unknown>, waived?: Waived) => Promise<RemoteSayResult>) | undefined;
     const remotePort: RemotePort = {
         farm: () => (remoteFarm ??= farmIdentity(remoteDir, os.hostname())),
-        callOp: async (op, args) => {
+        callOp: async (op, args, caller) => {
+            if (op === 'console.send') { return phoneSay ? phoneSay(caller.device, args) : { ok: false, error: 'Agent Farm is still starting - send it again in a moment' }; }
             const r = await bridge.dispatch(op, args);
             return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error ?? `${op} failed` };
         },
@@ -31702,12 +31706,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /**
      * ‼️ U-115 — A SENTENCE FROM A PHONE MEETS FOUR GATES BEFORE IT REACHES A
      * CONVERSATION (`telegramExecution.ts` holds the decision; this is the
-     * wiring). `waived` is the gate the reader has already answered yes to on
-     * a confirm card — one gate at a time, so a message that is both over
-     * budget and destructive is asked about twice, which is the honest number.
+     * wiring). `waived` holds the gates the reader has already answered yes to
+     * on confirm cards — one gate at a time, each yes kept, so a message that is
+     * both over budget and destructive is asked about twice, which is the honest number.
      */
     const chatSay = async (
-        chatId: number, sessionId: string, text: string, why: RouteWhy, waived?: 'budget' | 'risk'
+        chatId: number, sessionId: string, text: string, why: RouteWhy, waived?: Waived
     ) => {
         const s = consoleHost.get(sessionId);
         const st = chatState();
@@ -31725,7 +31729,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (v.do === 'confirm') {
             await saveChatState({
                 ...st,
-                pending: { ...st.pending, [chatId]: { session: sessionId, text, why: v.why, at: Date.now() } }
+                pending: { ...st.pending, [chatId]: { session: sessionId, text, why: v.why, at: Date.now(), ...(waived ? { waived: waiverList(waived) } : {}) } }
             });
             await chatSend(chatId, v.note, sessionId, confirmKeyboard(sessionId));
             return;
@@ -31740,6 +31744,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         await chatInject(chatId, sessionId, text, `→ ${where} (${why})`);
     };
+    phoneSay = (device, args, waived) => remoteSay({
+        live: id => consoleHost.get(id), steerable: e => engineOf(e).liveControls, label: chatLabel,
+        state: chatState, save: saveChatState, cfg: chatCfg, day: dayKey, now: Date.now,
+        send: (id, text) => { const r = consoleHost.send(id, text); if (r && !r.refused) { ConsolePanel.refreshIfOpen(); } return r; }
+    }, device, args, waived);
 
     /** Run one chat message as a headless task and answer in the same thread. */
     const chatRunPrompt = async (chatId: number, prompt: string, agentName: string) => {
@@ -31966,8 +31975,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return;
                 }
                 await ack('Running it.');
-                // the gate the reader just answered is waived; any OTHER gate still stops it
-                await chatSay(msg.chatId, tap.id, p.text, 'button', p.why);
+                // the gate the reader just answered is waived on top of the earlier yeses; any OTHER gate still stops it
+                await chatSay(msg.chatId, tap.id, p.text, 'button', addWaiver(p.waived, p.why));
                 return;
             }
             case 'permission': {
@@ -32018,7 +32027,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const st = chatState();
         const r = turnEnded(st, id, costUSD, dayKey(Date.now()));
         if (r.state !== st) { await saveChatState(r.state); }
-        if (r.release) { await chatSay(r.release.chat, id, r.release.text, 'button', r.release.waived); }
+        if (r.release?.device) {
+            const said = await phoneSay?.(r.release.device, { id, text: r.release.text }, r.release.waived);
+            if (said && (!said.ok || said.result.sent === false)) { console.log(`Agent Farm remote: a parked phone message to ${id} did not go in - ${said.ok ? 'it waits for a confirmation' : said.error}`); }
+        } else if (r.release) { await chatSay(r.release.chat, id, r.release.text, 'button', r.release.waived); }
     };
     context.subscriptions.push(consoleHost.onChange(id => {
         const s = consoleHost.get(id);
@@ -44313,7 +44325,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'lost on a window reload, while this is part of the saved chat state and survives one — which is '
                 + 'the promise made to somebody who sent a message from a bus stop. Also reports `pending`: '
                 + 'messages stopped at a gate (over today\'s cap, or a destructive command like `git reset --hard`) '
-                + 'waiting for the reader to tap Run it. args: id? (a Console id — one conversation\'s queue; '
+                + 'waiting for the reader to tap Run it. The phone app\'s console.send meets the same gates against '
+                + 'the same cap (X-446): its messages carry `device` instead of a chat, and its pending entries '
+                + '`device` and the gates already confirmed (`waived`). args: id? (a Console id — one conversation\'s queue; '
                 + 'omitted, every conversation with something waiting), action? (list | drop, default list; drop '
                 + 'needs id and clears that conversation\'s queue — it does NOT cancel a turn)',
             handler: async (args) => {
@@ -44337,11 +44351,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     budget: { capUSD: c.maxDailyUSD, spentUSD: st.ledger.day === day ? st.ledger.usd : 0, day },
                     waiting: ids.map(sid => ({
                         id: sid, label: chatLabel(sid), status: consoleHost.get(sid)?.status ?? 'gone',
-                        messages: (st.inbox[sid] ?? []).map(m => ({ chat: m.chat, text: m.text, at: m.at, waived: m.waived }))
+                        messages: (st.inbox[sid] ?? []).map(m => ({ chat: m.chat, text: m.text, at: m.at, waived: m.waived, ...(m.device ? { device: m.device } : {}) }))
                     })),
-                    pending: Object.entries(st.pending).map(([chat, p]) => ({
-                        chat: Number(chat), id: p.session, label: chatLabel(p.session), why: p.why, text: p.text, at: p.at
-                    }))
+                    pending: Object.entries(st.pending).map(([key, p]) => {
+                        const device = phoneOfKey(key);
+                        return {
+                            ...(device ? { device } : { chat: Number(key) }), id: p.session, label: chatLabel(p.session),
+                            why: p.why, text: p.text, at: p.at, ...(p.waived?.length ? { waived: p.waived } : {})
+                        };
+                    })
                 };
             }
         }

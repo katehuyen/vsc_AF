@@ -32,13 +32,36 @@ import { fmtUSD } from './util';
  * again when the message is finally let in, or confirming a destructive
  * command on a busy conversation would cost two taps instead of one.
  */
-export interface InboxItem { chat: number; text: string; at: number; waived?: ConfirmWhy }
+/** `device` = sent from the phone app (X-446, core/remoteSay.ts): released into the conversation, not to a chat (`chat` is 0). */
+export interface InboxItem { chat: number; text: string; at: number; waived?: Waived; device?: string }
 /** session id → the messages waiting for it, oldest first */
 export type Inbox = Record<string, InboxItem[]>;
 
 export type ConfirmWhy = 'budget' | 'risk';
-/** A message stopped at a gate, waiting for the reader to say yes. */
-export interface PendingSend { session: string; text: string; why: ConfirmWhy; at: number }
+/**
+ * Every gate the reader said yes to for ONE message. A yes is added to the
+ * earlier ones, never put in their place: a message both over budget and
+ * destructive is asked twice and then goes in — with one slot, confirming the
+ * second gate forgot the first and the two questions took turns for ever.
+ * A single value is what older saved state holds; it still reads.
+ */
+export type Waived = ConfirmWhy | readonly ConfirmWhy[];
+
+export function waives(w: Waived | undefined, why: ConfirmWhy): boolean {
+    return typeof w === 'string' ? w === why : !!w && w.includes(why);
+}
+
+export function waiverList(w: Waived | undefined): ConfirmWhy[] {
+    return w === undefined ? [] : typeof w === 'string' ? [w] : [...w];
+}
+
+export function addWaiver(w: Waived | undefined, why: ConfirmWhy): ConfirmWhy[] {
+    const all = waiverList(w);
+    return all.includes(why) ? all : [...all, why];
+}
+
+/** A message stopped at a gate, waiting for the reader to say yes. `waived` = the yeses it already had. */
+export interface PendingSend { session: string; text: string; why: ConfirmWhy; at: number; waived?: ConfirmWhy[] }
 /** chat id → the one message that chat has waiting on a yes */
 export type PendingSends = Record<string, PendingSend>;
 
@@ -88,21 +111,21 @@ export interface VerdictInput {
     ledger: SpendLedger;
     capUSD: number;
     day: string;
-    /** the gate the reader has already answered yes to */
-    waived?: ConfirmWhy;
+    /** the gates the reader has already answered yes to */
+    waived?: Waived;
 }
 
 export function inboundVerdict(a: VerdictInput): Verdict {
     if (!a.status || a.status === 'ended' || a.status === 'error') { return { do: 'gone' }; }
     const spent = a.ledger.day === a.day ? a.ledger.usd : 0;
-    if (a.waived !== 'budget' && !withinBudget(a.ledger, a.capUSD, a.day)) {
+    if (!waives(a.waived, 'budget') && !withinBudget(a.ledger, a.capUSD, a.day)) {
         return {
             do: 'confirm', why: 'budget',
             note: `💸 Today's phone budget is used up — ${fmtUSD(spent)} of ${fmtUSD(a.capUSD)}.\n`
                 + `Run this turn anyway on ${a.label}?`
         };
     }
-    const risk = a.waived === 'risk' ? undefined : riskyIntent(a.text);
+    const risk = waives(a.waived, 'risk') ? undefined : riskyIntent(a.text);
     if (risk) {
         return {
             do: 'confirm', why: 'risk',

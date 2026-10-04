@@ -103,8 +103,11 @@ export interface SlotCompletenessFs extends SlotSettingsFs {
      * links report the same value and a separate file a different one), and
      * `linkSync` to make one. Optional, because a stand-in that does not
      * implement them should read "cannot tell" rather than throw.
+     * ‼️ `ino` is asked for as a bigint: NTFS file ids sit above 2^53 here, and
+     * as a Number two different files can read the same value (measured: ids
+     * …138 and …139 both read …140), which made a separate history look shared.
      */
-    statSync?: (p: string) => { ino: number | bigint; nlink: number; size: number };
+    statSync?: (p: string, o: { bigint: true }) => { ino: number | bigint; nlink: number | bigint; size: number | bigint };
     linkSync?: (from: string, to: string) => void;
     renameSync?: (from: string, to: string) => void;
 }
@@ -343,7 +346,7 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
         const mineOf = (ctx: SlotContext) => path.join(ctx.dir, name);
         const inoOf = (ctx: SlotContext, p: string): string | undefined => {
             if (!ctx.fs.statSync) { return undefined; }
-            try { return String(ctx.fs.statSync(p).ino); } catch { return undefined; }
+            try { return String(ctx.fs.statSync(p, { bigint: true }).ino); } catch { return undefined; }
         };
         out.push({
             id: `link:${name}`, kind: 'link', owner: 'fleet',

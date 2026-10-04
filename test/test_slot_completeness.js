@@ -462,7 +462,7 @@ try {
             clause.repair(ctx, true).wrote === false && !fs.existsSync(mine));
         ok('‼️ …and the repair makes ONE FILE under two names',
             clause.repair(ctx, false).wrote === true
-            && String(fs.statSync(mine).ino) === String(fs.statSync(pool).ino));
+            && fs.statSync(mine, { bigint: true }).ino === fs.statSync(pool, { bigint: true }).ino);
         ok('…which the clause then reads as whole', clause.read(ctx).ok === true);
         // The point of the whole item: typing in one place is typing in both.
         fs.appendFileSync(mine, '{"display":"git status"}\n', 'utf8');
@@ -482,8 +482,8 @@ try {
             clause.repair(ctx2, false).wrote === true
             && /typed inside the slot/.test(fs.readFileSync(path.join(home2, claudeA.liveDir, 'history.jsonl'), 'utf8')));
         ok('…and the two names are one file afterwards',
-            String(fs.statSync(path.join(dir2, 'history.jsonl')).ino)
-            === String(fs.statSync(path.join(home2, claudeA.liveDir, 'history.jsonl')).ino));
+            fs.statSync(path.join(dir2, 'history.jsonl'), { bigint: true }).ino
+            === fs.statSync(path.join(home2, claudeA.liveDir, 'history.jsonl'), { bigint: true }).ino);
 
         // ---- both exist and differ: the pool wins and the slot's copy is KEPT ----
         const dir3 = path.join(tmp, 'slot3');
@@ -495,6 +495,15 @@ try {
         const ctx3 = ctxOf(home3, dir3);
         ok('two separate files under one name is a gap',
             clause.read(ctx3).ok === false && /history of its own/.test(clause.read(ctx3).detail));
+        // ‼️ NTFS ids sit above 2^53: as a Number two different files can read the same ino
+        // (measured on this machine: …138 and …139 both read …140), so the clause asks for a bigint
+        const lossy = {
+            ...fs, statSync: (p, o) => o && o.bigint
+                ? { ino: p.startsWith(dir3) ? 38843546788357139n : 38843546788357138n, nlink: 1n, size: 1n }
+                : { ino: 38843546788357140, nlink: 1, size: 1 }
+        };
+        ok('‼️ …also where the two ids read the same as a Number',
+            clause.read({ ...ctx3, fs: lossy }).ok === false);
         ok('‼️ …and the slot\'s copy is set ASIDE, never deleted',
             clause.repair(ctx3, false).wrote === true
             && fs.existsSync(path.join(dir3, 'history.jsonl.slot-copy'))
