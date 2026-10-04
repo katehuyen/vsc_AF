@@ -12,8 +12,14 @@ import { SCOPES } from '../contract';
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_SCOPE = 'manage';
-/** A farm has one user today; the field is there so a team licence needs no migration. */
+/**
+ * A farm has one user today; devices and the event stream carry the field so a
+ * team licence needs no migration, and a record from before it is the owner's.
+ * Spelled here AND in core/farmUser.ts (Notices) because src/remote imports
+ * nothing outside itself (X-448); test_record_user.js holds the two equal.
+ */
 export const OWNER = 'owner';
+export const userOf = (v: unknown): string => (typeof v === 'string' && v ? v : OWNER);
 
 export interface Device {
     id: string;
@@ -118,7 +124,7 @@ function read(file: string): Device[] {
         const j = JSON.parse(fs.readFileSync(file, 'utf8'));
         return Array.isArray(j)
             ? j.filter((d: Device) => typeof d?.id === 'string' && typeof d.publicKey === 'string')
-                .map((d: Device) => ({ ...d, user: typeof d.user === 'string' && d.user ? d.user : OWNER }))
+                .map((d: Device) => ({ ...d, user: userOf(d.user) }))
             : [];
     } catch {
         return [];

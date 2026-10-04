@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { deliverDocument, exportStamp } from './exportDoc';
+import { OWNER, userOf } from './farmUser';
 import type { NoticeSource } from './noticeToQueue';
 
 /**
@@ -54,6 +55,8 @@ export interface NoticeSpawnedRef {
 export interface Notice {
     id: string;
     ts: number;
+    /** X-489 — whose board it is on (`farmUser.ts`); a notice from before the field is the owner's */
+    user?: string;
     agentName: string;
     type: NoticeType;
     level: NoticeLevel;
@@ -245,6 +248,7 @@ export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
     const n: Notice = {
         id: newNoticeId(),
         ts: now,
+        user: OWNER,
         agentName,
         type,
         level: coerceLevel(input.level),
@@ -372,7 +376,8 @@ export class NoticesStore {
         try {
             const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as { notices?: Notice[] } | Notice[];
             const arr = Array.isArray(raw) ? raw : raw?.notices;
-            this.notices = Array.isArray(arr) ? arr.filter(n => n && typeof n.id === 'string') : [];
+            this.notices = Array.isArray(arr)
+                ? arr.filter(n => n && typeof n.id === 'string').map(n => ({ ...n, user: userOf(n.user) })) : [];
         } catch { this.notices = []; }
     }
 

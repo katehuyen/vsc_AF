@@ -49,8 +49,8 @@
     },
     "event": {
       "from": "host",
-      "fields": { "seq": "number", "type": "string", "ts": "number", "data": "object" },
-      "example": { "kind": "event", "seq": 58, "type": "ask.opened", "ts": 1790760000000, "data": { "session": "4f567a07", "agent": "developer", "askId": "q1", "question": "Hangisi?", "options": [{ "label": "A" }, { "label": "B" }] } }
+      "fields": { "seq": "number", "type": "string", "ts": "number", "user": "string?", "data": "object" },
+      "example": { "kind": "event", "seq": 58, "type": "ask.opened", "ts": 1790760000000, "user": "owner", "data": { "session": "4f567a07", "agent": "developer", "askId": "q1", "question": "Hangisi?", "options": [{ "label": "A" }, { "label": "B" }] } }
     },
     "gap": {
       "from": "host",

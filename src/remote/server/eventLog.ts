@@ -11,12 +11,15 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { OWNER, userOf } from './devices';
 
 export interface EventFrame {
     kind: 'event';
     seq: number;
     type: string;
     ts: number;
+    /** X-489 — whose event it is (`devices.ts` OWNER) */
+    user: string;
     data: Record<string, unknown>;
 }
 
@@ -38,8 +41,8 @@ export class EventLog {
 
     get lastSeq(): number { return this.seq; }
 
-    append(type: string, data: Record<string, unknown>): EventFrame {
-        const ev: EventFrame = { kind: 'event', seq: ++this.seq, type, ts: this.now(), data };
+    append(type: string, data: Record<string, unknown>, user = OWNER): EventFrame {
+        const ev: EventFrame = { kind: 'event', seq: ++this.seq, type, ts: this.now(), user, data };
         this.events.push(ev);
         if (this.events.length > this.keep) { this.events.splice(0, this.events.length - this.keep); }
         this.save();
@@ -67,7 +70,8 @@ function read(file: string): { seq: number; events: EventFrame[] } | null {
     try {
         const j = JSON.parse(fs.readFileSync(file, 'utf8'));
         if (!Number.isInteger(j.seq) || !Array.isArray(j.events)) { return null; }
-        return { seq: j.seq, events: j.events.filter((e: EventFrame) => Number.isInteger(e?.seq) && e.seq <= j.seq) };
+        return { seq: j.seq, events: j.events.filter((e: EventFrame) => Number.isInteger(e?.seq) && e.seq <= j.seq)
+            .map((e: EventFrame) => ({ ...e, user: userOf(e.user) })) };
     } catch {
         return null;
     }
