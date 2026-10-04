@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.823.0 - The alert tones get their own volume (2026-10-04)
+
+- **Tone volume on the Sound page.** Under "When something happens", a
+  Tone volume slider (0–100) sets how loud every alert tone plays: each
+  event's, the reminder's and a run's own tone at its end. 100 is as loud as
+  the tones have always played, so nothing changes until you move it.
+  **▶ Hear it** plays the Turn finished tone at the slider's level before you
+  let go of it.
+- **Separate from the voice.** The announcement that says who keeps its own
+  Volume under Voice; the two no longer share a level.
+- **Works with every player.** On Windows a lower level plays `.wav` tones
+  through the media player too, which can set a level; on macOS and Linux
+  the player's own volume option is used. If only a player with no volume
+  control is available, the tone still plays, at full volume.
+- **Settings shows it.** The Sound summary on the Settings page names the
+  level when it is below 100.
+
 ## 3.822.0 - The Timeline's note speaks the three sound choices, with a stop while reading (2026-10-04)
 
 - **The note on each Timeline row shows the session's sound choice.**
