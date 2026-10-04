@@ -28,7 +28,7 @@ const { parseSessionFile } = require(path.join(__dirname, '..', 'out', 'core', '
 const { memoryUsage, memoryLastUsed } = require(path.join(__dirname, '..', 'out', 'core', 'memusage.js'));
 const { buildTurnRows, registerTurnsOps } = require(path.join(__dirname, '..', 'out', 'core', 'turns.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
-const { buildTurnsMarkdown } = require(path.join(__dirname, '..', 'out', 'panels', 'turnsPanel.js'));
+const { buildTurnsMarkdown } = require(path.join(__dirname, '..', 'out', 'panels', 'turnsExport.js'));
 Module._load = origLoad;
 
 // ---------- fixture transcript: 2 turns + sidechain noise ----------

@@ -209,6 +209,9 @@
         .tmsg.err .ttext { color:var(--vscode-charts-red, #f14c4c); }
         .tmsg.tool .ttext { opacity:.8; font-family:var(--vscode-editor-font-family, monospace); font-size:11px; }
         .tmsg.assistant .trole { color:var(--vscode-textLink-foreground); opacity:.9; }
+        /* U-176 — on a phone a row is a card (media/afMobile.js): a figure sits beside its label */
+        html.af-phone table.turnstable tr[data-afcard] > td > .af-tipw { display:inline-block; vertical-align:baseline; max-width:100%; }
+        html.af-phone table.turnstable tr[data-afcard] > td.num { text-align:left; }
     </style>`;
 
     function relTime(ts) {
@@ -503,6 +506,14 @@
      */
     const th = (cls, label, name, def) =>
         `<th${cls ? ` class="${cls}"` : ''}>${window.AFTip.wrap(C.esc(label), name, def, 'tip-block')}</th>`;
+    /** U-176 — a cell carries its column and, for a figure, the heading's own short label, so a phone
+     *  draws the row as a card (media/afMobile.js, table[data-afcards]); the column is still defined once, here. */
+    const UNLABELLED = { origin: 1, agent: 1, engine: 1, label: 1 };
+    function tagCell(html, col) {
+        const shown = /<span class="af-tipw[^"]*"[^>]*>([^<]*)</.exec(HEAD[col] || '');
+        const label = UNLABELLED[col] || !shown ? '' : shown[1].replace(/&[#\w]+;/g, '').trim();
+        return String(html).replace(/^(\s*<td\b[^>]*)>/, `$1 data-col="${col}"${col === 'label' ? ' data-lead' : ''}${label ? ` data-label="${label.replace(/"/g, '')}"` : ''}>`);
+    }
     const HEAD = {
         origin: th('origcell', 'By', 'Category', 'What opened the session this turn belongs to — the Sessions table\'s categories: '
             + '🧑 you · ⑂ a baton relay leg · 🤖 automation · 🎯 a mission. 🌙 on the glyph: no terminal behind it.'),
@@ -745,11 +756,11 @@
             // its own, and a native tooltip on the row underneath shows on top
             // of it — two hovers over one cell. The hint belongs where the
             // sessions table already keeps it: once, in the caption.
-            return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}"
+            return `<tr class="click turnrow${o ? ' open' : ''}" data-turn="${C.esc(r.file)}" data-ts="${r.ts || 0}" data-afcard
                 ${window.AFSessionCtx.row(r, { webviewSection: 'afTurnRow', turnKey: k, turnN: r.n, turnTs: r.ts || 0 })}>
-                <td class="foldcell"><button class="fold" data-fold="${C.esc(k)}" title="${o ? 'Hide' : 'Show'} this turn's content">${o ? '▾' : '▸'}</button></td>
-                ${COLUMNS.map(c => CELL[c](r)).join('')}
-            </tr>` + (o ? `<tr class="turnbody"><td></td><td colspan="${COLUMNS.length}">${turnBodyHtml(r)}</td></tr>` : '');
+                <td class="foldcell" data-first><button class="fold" data-fold="${C.esc(k)}" title="${o ? 'Hide' : 'Show'} this turn's content">${o ? '▾' : '▸'}</button></td>
+                ${COLUMNS.map(c => tagCell(CELL[c](r), c)).join('')}
+            </tr>` + (o ? `<tr class="turnbody" data-afcardmore><td data-first></td><td colspan="${COLUMNS.length}">${turnBodyHtml(r)}</td></tr>` : '');
         }).join('');
 
         return `
@@ -770,9 +781,9 @@
         </div>
         ${contentChipsHtml()}
         ${filterPanelHtml()}
-        <div class="tablewrap"><table class="turnstable">
+        <div class="tablewrap"><table class="turnstable" data-afcards>
             ${colgroupHtml(COLUMNS)}
-            <tr><th></th>${COLUMNS.map(c => HEAD[c]).join('')}</tr>
+            <tr data-afcardhead><th></th>${COLUMNS.map(c => HEAD[c]).join('')}</tr>
             ${rowsHtml || `<tr><td colspan="${COLUMNS.length + 1}" class="muted">${rows.length ? 'No turns match the filters.' : 'No turns yet.'}</td></tr>`}
         </table></div>`;
     }

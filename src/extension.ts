@@ -683,7 +683,8 @@ import {
     QuietHours, quietHours, QuietVerdict, quietLine, QUIET_HOURS_DEFAULT,
     Silence, silence
 } from './core/alertGate';
-import { buildTurnsMarkdown, TurnsDeps, TurnsPanel } from './panels/turnsPanel';
+import { TurnsDeps, TurnsPanel } from './panels/turnsPanel';
+import { buildTurnsMarkdown } from './panels/turnsExport';
 import { SessionsPanel, type SessionsPageDeps, type SessionsPageScope } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
 import { MemoryGraphPanel } from './panels/memoryGraph';
@@ -31339,6 +31340,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             missions: host => MissionsPanel.openOn(host, missionsPanelDeps),
             queue: host => QueuePanel.openOn(host, queuePageDeps()),
             chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
+            turns: host => TurnsPanel.openOn(host, turnsPageDeps()),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

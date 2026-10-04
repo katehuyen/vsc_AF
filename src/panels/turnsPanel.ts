@@ -4,16 +4,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
-import { buildTurnRows, TurnRow } from '../core/turns';
+import { buildTurnRows } from '../core/turns';
 import { chainIndexNow } from '../core/chainMembership';
 import { LaunchManifest } from '../core/launchManifest';
-import { RunIdentity, sessionIdentity } from '../core/turnRuntime';
-import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
-import { fmtDuration, fmtStepPair } from '../core/util';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarkMessage } from './base';
-import { buildData as buildViewerData } from './sessionViewer';
-import { full as afFull } from '../core/aftime';
 import { afConfig } from '../core/settingsDoor';
+import { desktopHost, type PanelHost } from './panelHost';
+import { buildTurnsMarkdown, identityOf, turnMessages } from './turnsExport';
 
 /**
  * Turns page: the whole farm unrolled to one row per user turn — the Sessions
@@ -40,17 +37,6 @@ export interface TurnsDeps {
  *  much finer unit than a session, so the page opens deep by default. */
 export const TURNS_TABLE_N = 200;
 
-interface TurnMsg {
-    role: string; text: string; tool: string; input: string;
-    isError: boolean; sidechain: boolean; model: string;
-}
-
-/** The manifests are read ONCE per build, not once per session row. */
-function identityOf(deps: TurnsDeps): (s: SessionInfo) => RunIdentity | undefined {
-    const manifests = deps.launchManifests?.();
-    return s => sessionIdentity(s, manifests);
-}
-
 function buildData(deps: TurnsDeps): Record<string, unknown> {
     const now = Date.now();
     return {
@@ -61,150 +47,9 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
         rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps), chainIndexNow(), deps.projectOf),
+            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.()), chainIndexNow(), deps.projectOf),
         tableN: TURNS_TABLE_N
     };
-}
-
-/** One turn's messages. clip/cap keep the on-screen fold light; export passes
- *  generous limits so the Markdown is complete. */
-function turnMessages(file: string, n: number, deps: TurnsDeps, clip = 1500, cap = 150): TurnMsg[] {
-    const data = buildViewerData(file, {
-        extensionUri: deps.extensionUri,
-        getPricing: () => deps.getPricing(),
-        maxMessages: () => Number.MAX_SAFE_INTEGER,
-        contextLimitFor: () => 0
-    });
-    const msgs = (data.messages as {
-        role: string; text?: string; tool?: string; input?: string;
-        isError?: boolean; sidechain?: boolean; model?: string; turn?: number;
-    }[]).filter(m => m.turn === n);
-    const out: TurnMsg[] = msgs.slice(0, cap).map(m => ({
-        role: m.role,
-        text: (m.text ?? '').slice(0, clip),
-        tool: m.tool ?? '',
-        input: (m.input ?? '').slice(0, clip),
-        isError: !!m.isError,
-        sidechain: !!m.sidechain,
-        model: m.model ?? ''
-    }));
-    if (msgs.length > cap) {
-        out.push({
-            role: 'system', text: `… ${msgs.length - cap} more messages — open the transcript for the rest`,
-            tool: '', input: '', isError: false, sidechain: false, model: ''
-        });
-    }
-    return out;
-}
-
-/** The webview's content-Show chips, mirrored so export honors the same filter. */
-function msgMatchesRoles(m: TurnMsg, roles: string[]): boolean {
-    if (m.role === 'system') { return true; }      // our own "… N more" note
-    if (!roles.length) { return true; }            // empty = show everything
-    return roles.some(r =>
-        r === 'error' ? m.isError
-            : r === 'user' ? m.role === 'user'
-                : r === 'assistant' ? m.role === 'assistant'
-                    : r === 'tool' ? m.role === 'tool'
-                        : r === 'toolResult' ? m.role === 'toolResult'
-                            : false);
-}
-
-const mdFence = (s: string) => s.includes('```') ? '````' : '```';
-
-/**
- * Build the Turns-page Markdown. `shown` is the exact ordered list the webview
- * lists (post filter/sort/Show), `open` the unfolded ones, `roles` the content
- * Show selection. view=false exports every listed turn's full content; view=true
- * exports open turns' content (roles-filtered) and, per foldedTitles, either a
- * header-only line for folded turns or nothing.
- */
-export function buildTurnsMarkdown(
-    deps: TurnsDeps,
-    shown: { file: string; n: number }[],
-    openKeys: Set<string>,
-    roles: string[],
-    opts: { view: boolean; foldedTitles: boolean }
-): string {
-    const rowByKey = new Map<string, TurnRow>();
-    const now = Date.now();
-    // ‼️ THE SAME POOL THE TABLE WAS BUILT FROM (X-35). `buildData` widened to
-    // `allWithExternal`, so a Codex turn reaches the page — and then every
-    // downstream step here still looked it up in the claude-only list, where it
-    // is not. The export silently dropped those rows and the header lookup below
-    // fell through to a bare "turn N". A LOG surface reads the log list, once.
-    for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-        afConfig().get<number>('contextWindowTokens', 0), identityOf(deps))) {
-        rowByKey.set(r.file + '#' + r.n, r);
-    }
-    const sc = afConfig();
-    const speakerCfg = normalizeSpeakerConfig({
-        template: sc.get('speakerLabelTemplate'),
-        casing: sc.get('speakerLabelCase'),
-        fallback: sc.get('speakerLabelFallback')
-    });
-    const lines: string[] = ['# Agent Farm — Turns export', ''];
-    lines.push(`- Generated: ${afFull(Date.now())}`);
-    lines.push(opts.view
-        ? `- Export: current view · ${shown.length} listed turn(s) · open turns' content shown${roles.length ? ` (show: ${roles.join(', ')})` : ''} · folded turns ${opts.foldedTitles ? 'as titles only' : 'omitted'}`
-        : `- Export: everything · ${shown.length} listed turn(s), each with its full content`);
-    lines.push('', '---');
-
-    let emitted = 0;
-    for (const ref of shown) {
-        const key = ref.file + '#' + ref.n;
-        const r = rowByKey.get(key);
-        if (!r) { continue; }
-        const isOpen = openKeys.has(key);
-        // In view mode, a folded turn is either a title line or skipped.
-        if (opts.view && !isOpen && !opts.foldedTitles) { continue; }
-        emitted++;
-
-        // The same figures the table shows, in the same words — an export that
-        // describes a turn differently from the row it came from is a second,
-        // quieter answer to the same question.
-        const meta = [
-            r.models.map(m => m.replace(/^claude-/, '')).join(', '),
-            // ‼️ X-110 — AND WHO SERVED IT, which a model name does not say. An
-            // export naming only the model is the same burial the pages were
-            // doing: `claude-opus-5` was served by Anthropic or by a gateway and
-            // the file cannot be asked which, for ever.
-            r.providerIds.length ? `via ${r.providerIds.join(', ')}` : '',
-            r.steps || r.apiCalls ? fmtStepPair(r.apiCalls, r.steps) : '',
-            r.ms ? `took ${fmtDuration(r.ms)}` : '',
-            r.tokens ? `${r.tokens} tok` : '',
-            r.endCtx ? `ctx ${r.endCtx}` : '',
-            r.cost ? `$${r.cost.toFixed(r.cost >= 1 ? 2 : 4)}` : '',
-            r.tools ? `${r.tools} tools` : '',
-            r.errors ? `${r.errors} err` : '',
-            r.ts ? afFull(r.ts) : ''
-        ].filter(Boolean).join(' · ');
-        lines.push('', `## ${r.agentName || '?'} · turn ${r.n}/${r.of} — ${r.label || '(no prompt)'}`);
-        lines.push(`*session: ${r.session}${meta ? ' · ' + meta : ''}*`);
-
-        const wantContent = opts.view ? isOpen : true;
-        if (!wantContent) { continue; }
-        const msgs = turnMessages(ref.file, ref.n, deps, 4000, 400)
-            .filter(m => opts.view ? msgMatchesRoles(m, roles) : true);
-        for (const m of msgs) {
-            const bits = [m.model ? m.model.replace(/^claude-/, '') : '', m.sidechain ? 'subagent' : '', m.isError ? '⚠ ERROR' : ''].filter(Boolean).join(' · ');
-            if (m.role === 'tool') {
-                const f = mdFence(m.input || '');
-                lines.push('', `**TOOL CALL — ${m.tool || '?'}**${bits ? ' (' + bits + ')' : ''}`, '', f + 'json', m.input || '', f);
-            } else if (m.role === 'toolResult') {
-                const f = mdFence(m.text || '');
-                lines.push('', `**TOOL RESULT**${bits ? ' (' + bits + ')' : ''}`, '', f, m.text || '(empty result)', f);
-            } else {
-                const roleLabel = m.role === 'assistant'
-                    ? renderSpeaker(m.model, true, speakerCfg)
-                    : ({ user: 'USER', system: 'NOTE' } as Record<string, string>)[m.role] || m.role.toUpperCase();
-                lines.push('', `**${roleLabel}**${bits ? ' (' + bits + ')' : ''}`, '', m.text || '');
-            }
-        }
-    }
-    if (!emitted) { lines.push('', '_No turns matched the export selection._'); }
-    lines.push('');
-    return lines.join('\n');
 }
 
 export class TurnsPanel {
@@ -216,29 +61,28 @@ export class TurnsPanel {
 
     static show(deps: TurnsDeps): void {
         if (TurnsPanel.current) {
-            TurnsPanel.current.panel.reveal();
+            TurnsPanel.current.host.reveal();
             TurnsPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.turns',
-            'Agent Farm — Turns',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        TurnsPanel.current = new TurnsPanel(panel, deps);
+        TurnsPanel.current = new TurnsPanel(desktopHost({ viewType: 'agentfarm.turns', title: 'Agent Farm — Turns' }), deps);
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: TurnsDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview,
+    /** X-456 — a phone's view of the same page; never the desktop's tab. */
+    static openOn(host: PanelHost, deps: TurnsDeps): TurnsPanel {
+        return new TurnsPanel(host, deps);
+    }
+
+    private constructor(readonly host: PanelHost, private deps: TurnsDeps) {
+        host.webview.html = htmlShell(
+            host.webview,
             deps.extensionUri,
             'Agent Farm Turns',
             buildData(deps),
             'turns.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.deps.index.onDidUpdate(() => this.refresh(), null, this.disposables);
         // The speaker-label config lives in the HTML shell (window.__AFUI__), so a
         // settings change needs a re-render, not just a data refresh.
@@ -246,20 +90,20 @@ export class TurnsPanel {
             if (e.affectsConfiguration('agentFarm.speakerLabelTemplate')
                 || e.affectsConfiguration('agentFarm.speakerLabelCase')
                 || e.affectsConfiguration('agentFarm.speakerLabelFallback')) {
-                this.panel.webview.html = htmlShell(
-                    this.panel.webview, this.deps.extensionUri, 'Agent Farm Turns',
+                this.host.webview.html = htmlShell(
+                    this.host.webview, this.deps.extensionUri, 'Agent Farm Turns',
                     buildData(this.deps), 'turns.js');
             }
         }, null, this.disposables);
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps) });
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
         // The wiki tagger answers for itself, on every page that opens it (K-26).
-        if (wikiMarkMessage(this.panel.webview, msg)) { return; }
+        if (wikiMarkMessage(this.host.webview, msg)) { return; }
         switch (msg.type) {
             case 'refresh':
                 this.refresh();
@@ -291,7 +135,7 @@ export class TurnsPanel {
                 if (!file || !(n > 0) || !this.deps.index.allWithExternal().some(s => s.file === file)) { break; }
                 let msgs: unknown[] = [];
                 try { msgs = turnMessages(file, n, this.deps); } catch { /* fail-soft: empty panel */ }
-                void this.panel.webview.postMessage({ type: 'turnDetail', file, n, msgs });
+                void this.host.webview.postMessage({ type: 'turnDetail', file, n, msgs });
                 break;
             }
             case 'exportChoose':
@@ -350,7 +194,7 @@ export class TurnsPanel {
     }
 
     private dispose(): void {
-        TurnsPanel.current = undefined;
+        if (TurnsPanel.current === this) { TurnsPanel.current = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

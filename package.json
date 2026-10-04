@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.834.0",
+  "version": "3.835.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8408,7 +8408,7 @@
         "agentFarm.telegram.maxDailyUSD": {
           "type": "number",
           "default": 1,
-          "description": "Ceiling on what chat-started runs may cost per day (API-equivalent). 0 = no runs from chat at all; commands like /status keep working."
+          "description": "Ceiling on what remote work may cost per day (API-equivalent), shared by Telegram and the Agent Farm phone app: one total, whichever spent it. Past it a new run from chat is refused and a message into a live conversation asks for a yes first. 0 = every remote message asks and no run starts from chat; commands like /status keep working."
         },
         "agentFarm.telegram.defaultAgent": {
           "type": "string",

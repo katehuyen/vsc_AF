@@ -36,7 +36,7 @@ const ITEMS = (o) => ([
     {
         key: 'agentFarm.telegram.maxDailyUSD', type: 'number', default: 1,
         value: o.maxDailyUSD === undefined ? 1 : o.maxDailyUSD, modified: false,
-        description: 'Ceiling on what chat-started runs may cost per day (API-equivalent). 0 = no runs from chat at all; commands like /status keep working.'
+        description: 'Ceiling on what remote work may cost per day (API-equivalent), shared by Telegram and the Agent Farm phone app: one total, whichever spent it. Past it a new run from chat is refused and a message into a live conversation asks for a yes first. 0 = every remote message asks and no run starts from chat; commands like /status keep working.'
     },
     {
         key: 'agentFarm.telegram.defaultAgent', type: 'string', default: '',

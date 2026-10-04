@@ -24,6 +24,7 @@ export interface RemotePageMakers {
     queue(host: PanelHost): void;
     /** S-125 — `args.chain` names the chain a ⑂ link opened it on. */
     chains(host: PanelHost, args?: Record<string, unknown>): void;
+    turns(host: PanelHost): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -160,6 +161,16 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             answers: [],
             pcOnly: ['openSession', 'afnav'],
             make: (host, args) => make.chains(host, args)
+        },
+        // X-456 — every turn of the farm. The table, a turn folded open and the wiki tagger's question
+        // are looks; keeping a turn for the wiki is manage. A transcript tab, a terminal, the guide and
+        // the export's save dialog belong to the PC (a row's transcript reaches the phone as afnav).
+        turns: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'turnDetail', 'wikiAsk'],
+            answers: [],
+            pcOnly: ['openSession', 'focusTerminal', 'openGuide', 'exportChoose', 'afnav'],
+            make: host => make.turns(host)
         }
     };
 }

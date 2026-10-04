@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.835.0 - The Turns page opens on the phone (2026-10-05)
+
+- **Every turn of the farm, on the phone.** The Turns page — the whole farm
+  unrolled to one row per turn — now opens in the Agent Farm phone app
+  instead of answering "unavailable". On a phone each turn is a card: the
+  prompt on top, then the agent and engine, and every figure (session, turn
+  number, model, steps, tokens, context, when, took, duration, tools, errors,
+  cost) under its own column name; nothing is dropped. Folding a turn open
+  shows its messages there, and tapping a turn opens that conversation on the
+  phone at that turn. A device that may only read can read everything;
+  keeping a turn for the wiki needs a device that may manage. The export, a
+  terminal and the guide stay on the PC.
+- The remote budget setting (`agentFarm.telegram.maxDailyUSD`) now says what
+  it has done since 3.834.0: it is one daily total shared by Telegram and
+  the phone app; past it a new run from chat is refused and a message into a
+  live conversation asks for a yes first.
+
 ## 3.834.0 - The phone app and Telegram share one remote gate (2026-10-05)
 
 - **A message sent from the phone app now meets the same gate as one typed
