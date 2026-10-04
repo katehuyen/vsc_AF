@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.826.0 - The phone reads what the PC reads (2026-10-04)
+
+- **One reading on both sides.** When the phone app reads a finished answer,
+  a question, a permission ask, a new notice or the "answers itself soon"
+  reminder aloud, the farm now sends it the sentence ready to say, made by the
+  same reader the PC uses: code said by its size rather than read out, links
+  and ids said in a word, the inserted words in the answer's own language, and
+  the language named so the phone picks a voice that speaks it. A phone that
+  does not know the new field reads as before; the phone app's next build reads
+  it.
+- **Ready for more than one person.** Every event sent to a phone and every
+  notice now records whose it is, like paired devices and the remote audit log
+  already did — the farm's one user today. Nothing changes on screen.
+
 ## 3.825.0 - A question that answers itself warns you first (2026-10-04)
 
 - **A reminder before the timer decides.** When a Console question is about
