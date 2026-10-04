@@ -13,7 +13,9 @@ export type WhyReason = 'fleet' | 'session' | 'quiet-hours';
 
 /** The events by the names every surface uses (the Sound vocabulary). */
 export const WHY_EVENT_NAME: Record<string, string> = {
-    'turn-ready': 'Turn finished', question: 'Asking you', stalled: 'Stalled', ended: 'Session ended', error: 'Error'
+    'turn-ready': 'Turn finished', question: 'Asking you', stalled: 'Stalled', ended: 'Session ended', error: 'Error',
+    notice: 'New notice', 'notice-question': 'Question card', gate: 'Workflow asks you',
+    quota: 'Quota running out', mission: 'Mission ended'
 };
 /** The plan's other branches, by the same names. */
 export const WHY_BRANCH_NAME: Record<string, string> = { focus: 'Focus', modal: 'Pop-up', toast: 'Notification' };
@@ -35,6 +37,8 @@ export interface WhyInput {
     sayWho: { on: boolean; spoken: boolean; voice: string };
     /** the plan's other branches, by their names */
     also: string[];
+    /** U-213 — an event across the farm: no session, so no session line */
+    fleet?: boolean;
 }
 
 export interface WhyLine { ok: boolean | null; text: string }
@@ -56,7 +60,7 @@ export function soundWhy(i: WhyInput): WhyAnswer {
             ? { ok: true, text: `Rings on ${i.eventName}: ${i.fleetOn ? 'its fleet switch is on' : 'this session is set to Always'}` }
             : { ok: false, text: `Nothing rings on ${i.eventName}: its fleet switch is off${i.sessionEvent ? ' and this session is not set to Always' : ''}` },
         gate('fleet') ? { ok: false, text: 'Mute all is on' } : { ok: true, text: 'Mute all: off' },
-        gate('session') ? { ok: false, text: 'This session is Silent' } : { ok: true, text: 'This session: not Silent' },
+        ...(i.fleet ? [] : [gate('session') ? { ok: false, text: 'This session is Silent' } : { ok: true, text: 'This session: not Silent' }]),
         gate('quiet-hours')
             ? { ok: false, text: `Quiet hours: now${i.quietLine ? ` (${i.quietLine})` : ''}` }
             : { ok: true, text: 'Quiet hours: not now' },

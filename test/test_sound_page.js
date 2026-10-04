@@ -24,6 +24,8 @@ const LABEL = id => (VOICES.builtinVoices('x').find(v => v.id === id) || {}).lab
 const fx = require(path.join(__dirname, 'fixtures', 'sound.js'));
 
 const open = (data) => runPage(fx.script, data);
+// U-213 — every switch off, the two farm-wide events shipped on as well
+const allOff = d => { d.alerts.events.forEach(e => { e.on = false; }); return d; };
 const sent = (p) => p.posted;
 const last = (p) => p.last();
 const byId = (p, id) => p.sandbox.document.getElementById(id);
@@ -38,7 +40,7 @@ const byAttr = (p, attr, key) =>
     const html = p.html();
     const at = s => html.indexOf(s);
     ok('A — the state line leads: what rings, whether the name is said',
-        /Rings on 2 of 5 events/.test(html) && /Say who: on/.test(html) && at('class="sndhead"') < at('class="alertgate"'));
+        /Rings on 4 of 10 events/.test(html) && /Say who: on/.test(html) && at('class="sndhead"') < at('class="alertgate"'));
     ok('…then B (the event table), C (Voice), E (Library) — in that order',
         at('class="alertgate"') < at('<table class="settbl alerttbl">')
         && at('<table class="settbl alerttbl">') < at('class="svwrap"')
@@ -81,14 +83,17 @@ const byAttr = (p, attr, key) =>
         && /optgroup label="Built in — earlier set"/.test(html));
     ok('…and every built-in voice really is offered somewhere in it',
         VOICES.builtinVoices('x').every(v => html.indexOf('>' + v.label) >= 0));
+    // U-213 — the first opening already rings on the two farm-wide events a person waits on, and still offers the sessions' two
+    ok('U-213: the first opening rings on the question card and the workflow asking, and still offers the two session events',
+        /Rings on 2 of 10 events/.test(html) && /class="sndstart"/.test(html));
     ok('nothing armed says so rather than showing a count of zero',
-        /Sound is off — no event rings yet/.test(html));
+        /Sound is off — no event rings yet/.test(open(allOff(fx.empty())).html()));
 
     const q = open(fx.inUse());
     ok('a chosen sound is what the row reports playing',
         /Kapı zili/.test(q.html()));
     ok('…and it says the choice was yours', /your choice here/.test(q.html()));
-    ok('the armed count is on the badge', /Rings on 2 of 5 events/.test(q.html()));
+    ok('the armed count is on the badge', /Rings on 4 of 10 events/.test(q.html()));
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +359,7 @@ const byAttr = (p, attr, key) =>
     // sound nobody armed; a badge is cheap and the surprise is not.
     ok('…and the card head says the nudge is on, beside the armed count rather'
         + ' than instead of it', /reminder 4m ×3 · 2 waiting/.test(html)
-        && /Rings on 2 of 5 events/.test(html));
+        && /Rings on 4 of 10 events/.test(html));
     ok('what is waiting RIGHT NOW is on the strip — the figure that turns a'
         + ' policy into something visibly working', /2 waiting/.test(html));
 
@@ -595,7 +600,7 @@ const byAttr = (p, attr, key) =>
         && byAttr(p, 'alertnotify', 'stalled').checked === false);
     ok('…Session ended and Error have none, and say so with a dash rather than a dead box',
         !byAttr(p, 'alertnotify', 'ended') && !byAttr(p, 'alertnotify', 'error')
-        && (html.match(/class="alertnone"/g) || []).length === 2);
+        && (html.match(/class="alertnone"/g) || []).length === 2 + VOICES.FLEET_EVENTS.length);
     const box = byAttr(p, 'alertnotify', 'stalled');
     box.checked = true;
     box.dispatchEvent(new p.sandbox.Event('change'));
@@ -654,7 +659,7 @@ const byAttr = (p, attr, key) =>
 // U-178 — the first opening: two switches and one press
 // ---------------------------------------------------------------------------
 {
-    const p = open(fx.empty());
+    const p = open(allOff(fx.empty()));
     const html = p.html();
     ok('nothing rings → the page offers the two most people start with',
         /Sound is off\.<\/b> Most people start with two/.test(html)
@@ -684,7 +689,7 @@ const byAttr = (p, attr, key) =>
     ok('muted reads 🔇, on reads 🔊, nothing armed reads 🔈',
         /class="sndicon">🔇/.test(open(fx.gated()).html())
         && /class="sndicon">🔊/.test(open(fx.inUse()).html())
-        && /class="sndicon">🔈/.test(open(fx.empty()).html()));
+        && /class="sndicon">🔈/.test(open(allOff(fx.empty())).html()));
     ok('the library lists every built-in with its own ▶',
         VOICES.builtinVoices('x').every(v => !!byAttr(open(fx.inUse()), 'alertplay', v.id)));
 }

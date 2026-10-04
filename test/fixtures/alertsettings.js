@@ -214,17 +214,32 @@ const rowOf = (voices, on, chosen, event, skipped) => {
     };
 };
 
-const page = (on, chosen, voices, skips, gate, speak) => ({
-    gate: gate || GATE_OPEN,
-    speak: speak || speakOf(),
-    folder: 'c:\\Users\\rotam\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\sounds',
-    limit: 10,
-    formats: FORMATS,
-    sessionEvents: ['turn-ready', 'question'],
-    voices,
-    events: ['turn-ready', 'question', 'stalled', 'ended', 'error']
-        .map(e => rowOf(voices, on, chosen, e, (skips || {})[e]))
-});
+const W = require('../../out/core/soundWhy.js');
+/** U-213 — the farm-wide events' "why", built the way soundWhyFor builds it with no session. */
+const fleetWhyOf = (rows, voices, g) => Object.fromEntries(rows.filter(r => V.FLEET_EVENTS.includes(r.event)).map(r => [r.event, W.soundWhy({
+    eventName: W.WHY_EVENT_NAME[r.event], fleet: true, sessionEvent: false, fleetOn: r.on, sessionRings: false,
+    reasons: ((g.silence || {}).reasons || []).filter(x => x !== 'session'), quietLine: '',
+    tone: (voiceOf(voices, r.voice) || {}).label || r.voice, origin: r.origin, playable: r.playable, skipped: [],
+    sayWho: { on: false, spoken: false, voice: '' }, also: []
+})]));
+const page = (on, chosen, voices, skips, gate, speak) => {
+    // U-213 — the host lays the stored switches over the shipped defaults (ALERT_ON_DEFAULT)
+    const lit = { ...V.ALERT_ON_DEFAULT, ...on };
+    const g = gate || GATE_OPEN;
+    const events = [...V.LANE_EVENTS, ...V.FLEET_EVENTS].map(e => rowOf(voices, lit, chosen, e, (skips || {})[e]));
+    return {
+        gate: g,
+        speak: speak || speakOf(),
+        folder: 'c:\\Users\\rotam\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\sounds',
+        limit: 10,
+        formats: FORMATS,
+        sessionEvents: ['turn-ready', 'question'],
+        fleetEvents: [...V.FLEET_EVENTS],
+        voices,
+        events,
+        fleetWhy: fleetWhyOf(events, voices, g)
+    };
+};
 
 const base = (on, chosen, voices, skips, gate, speak) => ({
     focus: '', profiles: [], prompts: null, docOpen: null, folders: null,

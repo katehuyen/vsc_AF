@@ -489,7 +489,7 @@ import {
 } from './core/telegramDigest';
 import {
     consoleEvents, EMPTY_CONSOLE_MEMO, EMPTY_NEEDS_MEMO, EMPTY_QUOTA_MEMO, needsEvents, noticeEvent, quotaEvents,
-    QUOTA_WARN_PCT, type RemoteEvent
+    QUOTA_WARN_PCT, type QuotaMemo, type RemoteEvent
 } from './core/remoteEvents';
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
@@ -668,7 +668,7 @@ import {
     SPEECH_ONECORE_NOTE, voiceLabel, sanitizeForSpeech, type InstalledVoice, type SpeakConfig
 } from './core/speech';
 import {
-    addCustomVoice, AlertEvent, ALERT_EVENTS, AlertVoice, builtinVoices, CustomVoice,
+    addCustomVoice, AlertEvent, ALERT_EVENTS, ALERT_ON_DEFAULT, AlertVoice, builtinVoices, CustomVoice, FLEET_EVENTS, LANE_EVENTS,
     CUSTOM_LIMIT, DEFAULT_VOICE, EVENT_LABEL, FINISH_SOUND_SILENT, normalizeFinishSound,
     ORIGIN_LABEL, playableOn, removeCustomVoice,
     renameCustomVoice, ResolveDeps, ResolvedVoice, resolveVoice
@@ -1272,6 +1272,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // M-46 — a workflow supervisor's question on three doors: the window, Needs You, the phone
     const workflowAsks = new WorkflowAsks({
         changed: () => needsEmitter.fire(),
+        // U-213 — declared further down; reached only when a workflow asks, long after activation
+        ring: q => fleetAlert('gate', q.workflowTitle, `gate:${q.id}`),
         phone: q => {
             const c = chatCfg();
             if (!c.enabled) { return; }
@@ -2338,7 +2340,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
     const alertSound = async (
-        event: AlertEvent, s?: LiveSession, queueKey?: string
+        // U-213 — `who`: the agent a fleet event (no session) names in the announcement
+        event: AlertEvent, s?: LiveSession, queueKey?: string, who?: string
     ): Promise<SoundResult> => {
         // ‼️ SILENCE WITH A REASON, NEVER SILENCE. The branch comes back as
         // `skipped` carrying the sentence — a muted farm reported as a failed
@@ -2391,7 +2394,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!speaks(spk, event)) { return tone; }
             const how = await speechFor(spk.voice, spk.template.replace(/\{\w+\}/g, ' '));
             const said = announcement(spk, {
-                event, agent: s?.agentName, session: s?.sessionId
+                event, agent: s?.agentName ?? who, session: s?.sessionId
             }, how.words);
             const spoken = await speakAnnouncement(said, { ...spk, voice: how.voice });
             return {
@@ -2419,6 +2422,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? { ...r, queuedMs: ticket.waitedMs, ahead: ticket.ahead }
             : r;
     };
+    /** U-213 — news across the farm, tied to no session: its fleet switch alone arms it; gate and queue as for any tone. */
+    const fleetAlert = (event: AlertEvent, who: string, key: string): void => {
+        if (alertsOn()[event] !== true) { return; }
+        void alertSound(event, undefined, key, who).then(r => {
+            if (!r.ok && !r.skipped && soundFailureLimit.allow()) {
+                void vscode.window.showWarningMessage(`Agent Farm: the ${EVENT_LABEL[event]} sound did not play — ${r.error ?? (r.stderr || 'no detail')}`);
+            }
+        }, () => undefined);
+    };
+    const noticeRing = (n: { id: string; type?: string; agentName: string }): void =>
+        fleetAlert(n.type === 'question' ? 'notice-question' : 'notice', n.agentName, `notice:${n.id}`);
     /** What the modal and the toast SAY. The four alert branches used to state
      *  one fact ("your turn") because there was one edge; a permission ask
      *  announced as "your turn" is the misreport A-18 exists to end. */
@@ -2427,12 +2441,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         question: l => `${l} — waiting for your answer`,
         stalled: l => `${l} — looks stalled`,
         ended: l => `${l} — session ended`,
-        error: l => `${l} — error`
+        error: l => `${l} — error`,
+        notice: l => `${l} — new notice`,
+        'notice-question': l => `${l} — a question card for you`,
+        gate: l => `${l} — a workflow is asking you`,
+        quota: l => `${l} — quota running out`,
+        mission: l => `${l} — mission ended`
     };
     /** `agentFarm.alerts.on` — the global "play the sound on this kind of
-     *  event" switch, every entry off out of the box. */
+     *  event" switch, off out of the box except what U-213 ships on (ALERT_ON_DEFAULT). */
     const alertsOn = (): Partial<Record<AlertEvent, boolean>> =>
-        cfg().get<Partial<Record<AlertEvent, boolean>>>('alerts.on', {}) ?? {};
+        ({ ...ALERT_ON_DEFAULT, ...(cfg().get<Partial<Record<AlertEvent, boolean>>>('alerts.on', {}) ?? {}) });
     /**
      * ‼️ A-21 — ONE SET OF FUNCTIONS, TWO DOORS.
      *
@@ -2469,7 +2488,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
     };
     const alertsSetOn = async (event: AlertEvent, enabled: boolean): Promise<void> => {
-        await cfg().update('alerts.on', { ...alertsOn(), [event]: enabled },
+        // the stored object only: a default nobody touched stays a default
+        await cfg().update('alerts.on', { ...(cfg().get<Partial<Record<AlertEvent, boolean>>>('alerts.on', {}) ?? {}), [event]: enabled },
             vscode.ConfigurationTarget.Global);
     };
     /**
@@ -2605,15 +2625,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!name || (!agents.some(a => a.name === name) && !agentVoicesCfg()[name])) {
             throw new Error(`there is no agent called "${name}" — ${agents.map(a => a.name).join(', ')}`);
         }
-        if (!(ALERT_EVENTS as readonly string[]).includes(event)) {
-            throw new Error(`"${event}" is not an alert event — ${ALERT_EVENTS.join(' · ')}`);
+        if (!(LANE_EVENTS as readonly string[]).includes(event)) {
+            throw new Error(`"${event}" is not an event in an agent's sessions — ${LANE_EVENTS.join(' · ')}`);
         }
         const next = withAgentVoice(agentVoicesCfg(), name, event, usableVoice(voice));
         await cfg().update('alerts.agentVoices', next, vscode.ConfigurationTarget.Global);
     };
     const soundAgentRows = (): AgentSoundRow[] => {
         const deps = voiceDeps();
-        return agentSoundRows(agents.map(a => a.name), ALERT_EVENTS, agentVoicesCfg(),
+        return agentSoundRows(agents.map(a => a.name), LANE_EVENTS, agentVoicesCfg(),
             (event, agentName) => resolveVoice(event as AlertEvent, deps, { agentName }));
     };
     /**
@@ -2774,6 +2794,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             limit: CUSTOM_LIMIT,
             formats: [...new Set(voiceDeps().backends.flatMap(b => [...b.formats]))].sort(),
             sessionEvents: [...SESSION_ALERT_EVENTS],
+            fleetEvents: [...FLEET_EVENTS],
+            fleetWhy: Object.fromEntries(FLEET_EVENTS.map(event => [event, soundWhy(soundWhyFor(undefined, event))])),
             toneVolume: toneVolume(),
             /**
              * ‼️ A-25 — THE ANNOUNCEMENT, ON THE CARD THAT ALREADY SAYS WHICH
@@ -2862,6 +2884,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             throw new Error(`"${raw}" is not an alert event — ${ALERT_EVENTS.join(' · ')}`);
         }
         return raw as AlertEvent;
+    };
+    /** U-213 — a session's test is for what happens IN a session; a fleet event is refused by name */
+    const wantLaneEvent = (args: Record<string, unknown>): AlertEvent => {
+        const e = wantEvent(args);
+        if (!(LANE_EVENTS as readonly string[]).includes(e)) {
+            throw new Error(`"${e}" happens across the farm, not in a session — ${LANE_EVENTS.join(' · ')}`);
+        }
+        return e;
     };
     /**
      * ‼️ THE ONE FUNCTION EVERY DOOR GOES THROUGH — the live turn edge, the
@@ -2965,9 +2995,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * fireAttention takes them: alertPlan (does it ring at all), alertSilence
      * (is the gate open), resolveAlertVoice (which tone, and can it play).
      */
-    const soundWhyFor = (s: LiveSession, event: AlertEvent): WhyInput => {
-        const id = s.sessionId;
-        const actions = turnAlerts.actionsFor(id);
+    // U-213 — no session = a fleet event: its own switch and the fleet gate alone
+    const soundWhyFor = (s: LiveSession | undefined, event: AlertEvent): WhyInput => {
+        const id = s?.sessionId;
+        const actions = id ? turnAlerts.actionsFor(id) : [];
         const on = alertsOn();
         const sil = alertSilence(id);
         const voices = alertVoiceRows();
@@ -2983,8 +3014,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             quietLine: quietLine(alertQuiet()),
             tone: name(r.voice), origin: r.origin, playable: r.playable,
             skipped: r.skipped.map(k => ({ origin: k.origin, voice: name(k.voice), why: k.why })),
-            sayWho: { on: sp.on, spoken: sp.events.includes(event), voice: turnAlerts.speechVoiceFor(id) || sp.voice },
-            also: alertPlan(event, actions, on).actions.filter(a => a !== 'sound').map(a => WHY_BRANCH_NAME[a] ?? a)
+            sayWho: { on: sp.on, spoken: sp.events.includes(event), voice: (id && turnAlerts.speechVoiceFor(id)) || sp.voice },
+            also: id ? alertPlan(event, actions, on).actions.filter(a => a !== 'sound').map(a => WHY_BRANCH_NAME[a] ?? a) : [],
+            ...(id ? {} : { fleet: true })
         };
     };
     const soundSessionRows = () => live.sessions().map(s => {
@@ -3002,7 +3034,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             tones: v.tones.map(t => ({
                 ...t, rings: !muted && alertPlan(t.event as AlertEvent, actions, on).actions.includes('sound')
             })),
-            why: Object.fromEntries(ALERT_EVENTS.map(event => [event, soundWhy(soundWhyFor(s, event))]))
+            why: Object.fromEntries(LANE_EVENTS.map(event => [event, soundWhy(soundWhyFor(s, event))]))
         };
     });
     /** Each field through the function its own op / the Timeline control uses. */
@@ -7371,6 +7403,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }).finally(() => {
             missionEngines.delete(run.id);
             missionChanged();
+            if ((run.status === 'done' || run.status === 'failed') && !run.parentRunId) {
+                fleetAlert('mission', spec.title, `mission:${run.id}`);
+            }
             // ‼️ A-17 — the run is over, so what it DID is now observation.
             // Walking every terminal run rather than recording this one alone:
             // a run that ended in another window, or whose verdict was
@@ -12345,7 +12380,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'live.alerts.test',
             describe: '‼️ RUN A SESSION\'S SELECTED ALERTS ON PURPOSE AND SAY WHAT EACH ONE DID — the same "test in 3 seconds" the swim lane offers. Every branch is reported separately as ok|failed|skipped, so a dead branch cannot hide behind a working one; the sound branch also carries its backend, exit code, stderr, duration and whether it was killed on the timeout. ‼️ `exit 0` means THE PLAYER ACCEPTED THE FILE — that a human heard it is not something any of this can claim, and the result says so. A session with nothing selected is refused rather than reported as a silent success. ‼️ `event` picks WHICH KIND of alert to rehearse and the result names the voice it resolved and where that choice came from (`voice.origin`), so "your turn" and "it is asking you something" can be told apart from the next room before either has really happened. args: sessionId (required, full id or 8-char prefix of a live session), delayMs? (0-30000, default 3000 — the countdown exists so you can switch windows and watch focus work), event? ('
-                + ALERT_EVENTS.join('|') + ', default turn-ready), real?: true rehearses what the event would REALLY do for this session — the fleet switch (alerts.on) added to its own selection, as a real event is — instead of the session\'s own selection alone',
+                + LANE_EVENTS.join('|') + ', default turn-ready), real?: true rehearses what the event would REALLY do for this session — the fleet switch (alerts.on) added to its own selection, as a real event is — instead of the session\'s own selection alone',
             handler: async (args) => {
                 const raw = argStr(args, 'sessionId').trim();
                 const s = live.sessions().find(x =>
@@ -12353,7 +12388,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!s) { throw new Error(`no live session matches "${raw}"`); }
                 const delay = (args as { delayMs?: unknown }).delayMs;
                 const result = await testSessionAlert(s.sessionId,
-                    typeof delay === 'number' ? delay : 3000, wantEvent(args), (args as { real?: unknown }).real === true);
+                    typeof delay === 'number' ? delay : 3000, wantLaneEvent(args), (args as { real?: unknown }).real === true);
                 if (!result.ok) { throw new Error(result.error ?? 'refused'); }
                 return result;
             }
@@ -12450,7 +12485,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.on',
-            describe: '‼️ WHICH EVENTS PLAY A SOUND, FOR EVERY SESSION (`agentFarm.alerts.on`) — read it with no args, set one with `event` + `enabled`. Every entry is off out of the box. ‼️ This ADDS to a session\'s own ♪ selection, it does not gate it: a gate defaulting to off would have silenced the turn-ready sound every install has had for months, on upgrade, with nothing on any page saying why. It arms the SOUND and nothing else — nobody turning on a setting called "alert sounds" is asking for modal dialogs across the whole fleet. Not the same switch as notifyTurnEnd/notifyPermission, which are VS Code notifications. args: event? ('
+            describe: '‼️ WHICH EVENTS PLAY A SOUND, FOR EVERY SESSION (`agentFarm.alerts.on`) — read it with no args, set one with `event` + `enabled`. Every entry is off out of the box except notice-question and gate (U-213: the fleet events a person is waited on). The fleet events (notice, notice-question, gate, quota = an account\'s five-hour window crossing the phone\'s warning line, mission = a mission that ran to its end) are tied to no session and ring by this switch alone, through Mute all and quiet hours. ‼️ This ADDS to a session\'s own ♪ selection, it does not gate it: a gate defaulting to off would have silenced the turn-ready sound every install has had for months, on upgrade, with nothing on any page saying why. It arms the SOUND and nothing else — nobody turning on a setting called "alert sounds" is asking for modal dialogs across the whole fleet. Not the same switch as notifyTurnEnd/notifyPermission, which are VS Code notifications. args: event? ('
                 + ALERT_EVENTS.join('|') + '), enabled? (default true)',
             handler: async (args) => {
                 const raw = optStr(args, 'event')?.trim();
@@ -12724,12 +12759,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'alerts.session',
             describe: 'U-180 — ONE SESSION\'S SOUND, READ AND WRITTEN IN ONE CALL: what the shared session sound panel shows. Read: give only sessionId. Write any of: sound (like-all = whatever the fleet settings say · always = rings even when the fleet switch is off · silent = never a sound; it maps onto the session\'s own ♪ and its mute and changes nothing else), voices ({event: tone id} for THIS session, "" hands it back to the chain below; events '
-                + ALERT_EVENTS.join('|') + '), speechVoice (the voice that says who, "" = the fleet\'s), read (read its finished answers aloud), focus / modal / toast (the other three branches). Every field goes through the function its own op or the Timeline control uses, with the same refusals; the answer is the profile after the write. args: sessionId (required, full id or 8-char prefix of a live session), sound?, voices?, speechVoice?, read?, focus?, modal?, toast?',
+                + LANE_EVENTS.join('|') + '), speechVoice (the voice that says who, "" = the fleet\'s), read (read its finished answers aloud), focus / modal / toast (the other three branches). Every field goes through the function its own op or the Timeline control uses, with the same refusals; the answer is the profile after the write. args: sessionId (required, full id or 8-char prefix of a live session), sound?, voices?, speechVoice?, read?, focus?, modal?, toast?',
             handler: async (args) => {
                 const raw = argStr(args, 'sessionId').trim();
                 const s = live.sessions().find(x => x.sessionId === raw || x.sessionId.startsWith(raw));
                 if (!s) { throw new Error(`no live session matches "${raw}"`); }
-                const p = parseSessionPatch(args, ALERT_EVENTS);
+                const p = parseSessionPatch(args, LANE_EVENTS);
                 if (!p.ok) { throw new Error(p.error); }
                 return Object.keys(p.patch).length ? alertsSessionApply(s.sessionId, p.patch) : alertsSessionView(s);
             }
@@ -28423,7 +28458,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         alertsSessionApply: (sessionId, patch) => alertsSessionApply(sessionId, patch),
         alertsSessionTest: async (sessionId, event, real) => {
             const r = await testSessionAlert(sessionId, 3000,
-                (ALERT_EVENTS as readonly string[]).includes(event) ? event as AlertEvent : 'turn-ready', real === true);
+                (LANE_EVENTS as readonly string[]).includes(event) ? event as AlertEvent : 'turn-ready', real === true);
             if (!r.ok) {
                 throw new Error(r.error !== 'nothing selected' ? (r.error ?? 'refused')
                     : real ? 'nothing rings or shows on this event for this session'
@@ -31293,7 +31328,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         remoteNeedsSoon();
     }));
     context.subscriptions.push(needsEmitter.event(remoteNeedsSoon), live.onDidUpdate(remoteNeedsSoon));
-    noticesStore.onAdd = n => { if (remoteLive) { remoteEmit([noticeEvent(n)]); } };
+    noticesStore.onAdd = n => { if (remoteLive) { remoteEmit([noticeEvent(n)]); } noticeRing(n); };
+    // U-213 — the first reading is the baseline, so a window reload does not ring for a climb it never saw
+    let pcQuotaMemo: QuotaMemo | undefined;
+    usageRead.push(usage => {
+        let memo = pcQuotaMemo ?? EMPTY_QUOTA_MEMO;
+        for (const u of usage) {
+            const r = quotaEvents(memo, { slotId: u.slotId, engine: u.engine, percent: fiveHourOf(u)?.percent, window: '5h' }, QUOTA_WARN_PCT);
+            memo = r.memo;
+            if (pcQuotaMemo && r.events.length) { fleetAlert('quota', u.slotId, `quota:${u.slotId}`); }
+        }
+        pcQuotaMemo = memo;
+    });
     usageRead.push(usage => {
         if (!remoteLive) { return; }
         for (const u of usage) {
@@ -37609,7 +37655,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         read: true
                     },
                     { label: 'A tone for one event', kind: vscode.QuickPickItemKind.Separator },
-                    ...ALERT_EVENTS.map<EventItem>(event => {
+                    ...LANE_EVENTS.map<EventItem>(event => {
                         const r = resolveAlertVoice(event, s);
                         const label = alertVoiceRows().find(v => v.id === r.voice)?.label ?? r.voice;
                         return {

@@ -225,7 +225,9 @@ export function silence(input: SilenceInput): Silence {
  * the Timeline either way.
  */
 export const EVENT_PRIORITY: Record<string, number> = {
-    question: 0, error: 1, stalled: 2, ended: 3, 'turn-ready': 4
+    question: 0, error: 1, stalled: 2, ended: 3, 'turn-ready': 4,
+    // U-213 — a card or a workflow waiting on the person ranks with a question; a plain notice last
+    'notice-question': 0, gate: 0, quota: 2, mission: 3, notice: 5
 };
 
 /** Between the END of one sound and the START of the next. Measured from the

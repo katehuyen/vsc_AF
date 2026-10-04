@@ -70,7 +70,7 @@ ok('a refused test is shown in the section, not as a page error', /✗ Test: not
 
 // ---- the host half ----
 const ext = src('src/extension.ts');
-ok('each session row carries its answer per event', /why: Object\.fromEntries\(ALERT_EVENTS\.map\(event => \[event, soundWhy\(/.test(ext));
+ok('each session row carries its answer per event', /why: Object\.fromEntries\(LANE_EVENTS\.map\(event => \[event, soundWhy\(soundWhyFor\(s, event\)/.test(ext));
 ok('‼️ the answer is built from the engine\'s own pieces: alertPlan, alertSilence, resolveAlertVoice',
     /const soundWhyFor = [\s\S]{0,1200}alertSilence\(id\)[\s\S]{0,600}resolveAlertVoice\(event, s\)/.test(ext));
 ok('‼️ the real rehearsal adds the fleet switch the way fireAttention does',

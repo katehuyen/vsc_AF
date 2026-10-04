@@ -14,6 +14,7 @@
     let error = '';
 
     const plural = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s);
 
     /** A — the line that answers "will I hear it?", above the gate's own controls. */
     function head(al) {
@@ -51,12 +52,13 @@
     }
 
     /**
-     * ‼️ THE FIRST OPENING IS NOT A TABLE OF TEN SWITCHES. Every event is off
-     * out of the box; most people want exactly two, so the page offers those
+     * ‼️ THE FIRST OPENING IS NOT A TABLE OF TEN SWITCHES. Every session event is
+     * off out of the box; most people want exactly two, so the page offers those
      * two with their tones and one press — and the table below for the rest.
      */
     function starter(al) {
-        if ((al.events || []).some(e => e.on)) { return ''; }
+        // U-213 — the farm-wide events ship partly on; the offer is about the sessions' own two
+        if ((al.events || []).some(e => e.on && (al.fleetEvents || []).indexOf(e.event) < 0)) { return ''; }
         const row = (event, why) => {
             const r = (al.events || []).find(e => e.event === event);
             if (!r) { return ''; }
@@ -67,7 +69,9 @@
                 <span class="muted">(${C.esc(why)})</span></label>`;
         };
         return `<div class="sndstart">
-            <div><b>Sound is off.</b> Most people start with two:</div>
+            <div>${(al.events || []).some(e => e.on)
+        ? `<b>${C.esc(t('No session event rings yet.'))}</b> ${C.esc(t('Most people start with two:'))}`
+        : '<b>Sound is off.</b> Most people start with two:'}</div>
             ${row('question', 'an agent has stopped and waits for you')}
             ${row('turn-ready', 'a turn is done, your move')}
             <div class="btnrow"><button id="sndstart">Turn these two on</button>

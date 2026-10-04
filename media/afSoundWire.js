@@ -15,7 +15,7 @@
                 .alerttbl th:nth-child(1), .alerttbl td:nth-child(1) { width:150px; }
                 .alerttbl th:nth-child(2), .alerttbl th:nth-child(4) { width:56px; text-align:center; }
                 .alerttbl th:nth-child(5) { width:132px; text-align:center; }
-                .alerttbl td { vertical-align:middle; } .alerttbl td.alertck { text-align:center; }
+                .alerttbl td { vertical-align:middle; } .alerttbl td.alertck { text-align:center; } .alerttbl tr.alertgrp td { width:auto; padding-top:10px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; opacity:.75; }
                 .alerttbl td.alertck .alertonlbl { justify-content:center; }
                 .alerttonebox { display:flex; gap:4px; align-items:center; }
                 .alerttonebox select { flex:1 1 auto; min-width:0; }

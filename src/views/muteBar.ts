@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { fmtGap, QuietVerdict, Silence } from '../core/alertGate';
+import { SOUND_EVENT_LABEL } from '../core/soundHeader';
 
 /**
  * A-22 — 🔇, ONE CLICK, THE WHOLE FARM.
@@ -10,8 +11,8 @@ import { fmtGap, QuietVerdict, Silence } from '../core/alertGate';
  * finishing turns, and the answer has to be one gesture from wherever the eye
  * already is. That is the status bar, and nothing else in this extension is.
  *
- * ‼️ IT APPEARS WHEN THERE IS SOMETHING TO SILENCE. The whole alert family
- * ships off; an icon that sits there for months on a fleet that has never made
+ * ‼️ IT APPEARS WHEN THERE IS SOMETHING TO SILENCE. The alert family ships
+ * off but for the question card and a workflow asking you; an icon that sits there for months on a fleet that has never made
  * a noise is clutter, and clutter is what makes a status bar unreadable at the
  * moment it matters. It shows up the first time anything is armed — and stays
  * up while the farm is muted, because a control that hides itself once pressed
@@ -84,7 +85,7 @@ export class MuteStatusBar implements vscode.Disposable {
                 : `Quiet hours ${quiet.from}–${quiet.to} — next in ${fmtGap(quiet.inMinutes)}.\n\n`);
         }
         md.appendMarkdown(armed.length
-            ? `Rings for every session on: ${armed.join(' · ')}.\n\n`
+            ? `Rings on: ${armed.map(e => SOUND_EVENT_LABEL[e] ?? e).join(' · ')}.\n\n`
             : 'No event rings fleet-wide.\n\n');
         if (armedSessions) {
             md.appendMarkdown(`${armedSessions} live session${armedSessions === 1 ? '' : 's'} set to Always.\n\n`);

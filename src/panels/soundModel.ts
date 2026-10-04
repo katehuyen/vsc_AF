@@ -88,6 +88,10 @@ export interface AlertsPage {
     sessionEvents: string[];
     /** U-212 — the tones' level, 0–100 */
     toneVolume: number;
+    /** U-213 — the events that happen across the farm, tied to no session */
+    fleetEvents: string[];
+    /** U-213 — "why didn't I hear it?" for each of them, from core/soundWhy.ts */
+    fleetWhy?: Record<string, { heard: boolean; lines: { ok: boolean | null; text: string }[] }>;
     voices: {
         id: string; label: string; file: string; builtin: boolean;
         exists: boolean; playable: boolean; backend: string | null;

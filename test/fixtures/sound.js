@@ -3,8 +3,8 @@
  * The rows are the Alert-sounds fixture's own (one resolver, one set of voices);
  * the page adds the Notification column, read from the notify* settings.
  *
- *   sound         — two events ring, tones picked, your own library
- *   sound-empty   — the first opening: nothing rings, the two-switch start
+ *   sound         — the two session events ring with the two farm-wide ones shipped on, tones picked, your own library
+ *   sound-empty   — the first opening: only the question card and the workflow ring, the two session events offered
  *   sound-gated   — armed and configured, and silent: muted, quiet hours, two sessions
  *   sound-broken  — an armed tone whose file is gone, one nothing here can play
  */
@@ -46,8 +46,10 @@ const SESSIONS = [
 // U-184 — each row's "why" is the engine's own answer (core/soundWhy.ts), built
 // from the row and the page's fleet switches the way soundWhyFor builds it
 const W = require('../../out/core/soundWhy.js');
+// U-213 — the farm-wide rows have no session: the host builds these from LANE_EVENTS
+const laneRows = d => (d.alerts.events || []).filter(e => (d.alerts.fleetEvents || []).indexOf(e.event) < 0);
 const withWhy = (d) => d.sessions.map(r => Object.assign(r, {
-    why: Object.fromEntries((d.alerts.events || []).map(e => [e.event, W.soundWhy({
+    why: Object.fromEntries(laneRows(d).map(e => [e.event, W.soundWhy({
         eventName: W.WHY_EVENT_NAME[e.event] || e.event,
         sessionEvent: e.event === 'turn-ready' || e.event === 'question',
         fleetOn: e.on, sessionRings: r.sound === 'always', reasons: r.sound === 'silent' ? ['session'] : [],
@@ -69,7 +71,7 @@ function agentsOf(d) {
     const own = { developer: { question: id('Zen bowl'), stalled: id('Marimba') }, 'sürüm-notları-yazarı': { 'turn-ready': id('Pop') } };
     return ['asistan', 'developer', 'psikolog', 'sürüm-notları-yazarı'].map(name => ({
         name,
-        tones: (d.alerts.events || []).map(e => {
+        tones: laneRows(d).map(e => {
             const chosen = (own[name] || {})[e.event] || '';
             return { event: e.event, chosen, voice: chosen || e.voice, origin: chosen ? 'agent' : e.origin };
         })
@@ -85,10 +87,10 @@ const gated = () => of(A.gated());
 const broken = () => of(A.broken());
 
 const variants = () => ([
-    { id: 'sound', label: 'Sound — in use: two events ring, your own library', data: inUse() },
+    { id: 'sound', label: 'Sound — in use: the two session events ring, and the two farm-wide ones shipped on (U-213), your own library', data: inUse() },
     { id: 'sound-agents', label: 'Sound — Sessions › Agents pressed: two agents with tones of their own', data: inUse(),
         act: r => r.query('#sstab-agents')[0].click() },
-    { id: 'sound-empty', label: 'Sound — the first opening: nothing rings yet', data: empty() },
+    { id: 'sound-empty', label: 'Sound — the first opening: only the question card and the workflow ring (U-213), the two session events offered', data: empty() },
     { id: 'sound-voice-auto', label: 'Sound — the voice left on Auto on a machine with no Turkish voice: the gap and the free fix are said under it (U-203)', data: autoGap() },
     { id: 'sound-gated', label: 'Sound — ‼️ armed, configured and silent: muted · quiet hours · two sessions', data: gated() },
     { id: 'sound-broken', label: 'Sound — ‼️ armed tones whose sound cannot be played', data: broken() },

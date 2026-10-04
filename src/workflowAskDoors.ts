@@ -11,7 +11,8 @@ import { newQuestion, WorkflowQuestion } from './core/workflowAsk';
 export class WorkflowAsks {
     private open = new Map<string, { q: WorkflowQuestion; resolve: (a: string | undefined) => void }>();
 
-    constructor(private readonly deps: { changed: () => void; phone: (q: WorkflowQuestion) => void }) { }
+    // U-213 — `ring`: the PC's own sound for it (the gate fleet event)
+    constructor(private readonly deps: { changed: () => void; phone: (q: WorkflowQuestion) => void; ring?: (q: WorkflowQuestion) => void }) { }
 
     list(): WorkflowQuestion[] { return [...this.open.values()].map(x => x.q); }
 
@@ -23,6 +24,7 @@ export class WorkflowAsks {
             this.open.set(q.id, { q, resolve });
             this.deps.changed();
             try { this.deps.phone(q); } catch { /* the phone is one door of three */ }
+            try { this.deps.ring?.(q); } catch { /* a sound is a tap on the shoulder, not a door */ }
             void vscode.window.showInformationMessage(`Agent Farm: workflow "${workflowTitle}" — its supervisor asks: ${q.question}`, 'Answer…', 'Open Needs You')
                 .then(async c => {
                     if (!this.open.has(q.id)) { return; }

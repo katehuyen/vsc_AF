@@ -30,8 +30,15 @@
             'The session was working and has said nothing for longer than stuckThresholdSeconds.'],
         ended: ['Session ended', 'The session closed.'],
         error: ['Error',
-            'A critical error. Nothing emits this edge yet — the voice is settable so it is ready when something does.']
+            'A critical error. Nothing emits this edge yet — the voice is settable so it is ready when something does.'],
+        // U-213 — across the farm, tied to no session; the third entry is whose name Say who speaks
+        notice: [N_('New notice'), N_('A notice on the Notices board that is not a question: a report, a warning, a relay that finished.'), N_('the agent that posted it')],
+        'notice-question': [N_('Question card'), N_('A question card on the Notices board. An agent waits for your answer, and some cards answer themselves when their time runs out.'), N_('the agent that asks')],
+        gate: [N_('Workflow asks you'), N_('A workflow stopped at a step that needs a person and waits for your answer.'), N_('the workflow')],
+        quota: [N_('Quota running out'), N_('An account\'s five-hour window crossed the line the phone is warned at. Once per climb; falling back under it re-arms it.'), N_('the account')],
+        mission: [N_('Mission ended'), N_('A mission ran to its end, done or failed. One you cancelled stays quiet, and so does a mission another mission started.'), N_('the mission')]
     };
+    function N_(s) { return s; }
     const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
     const ALERT_ORIGIN_TEXT = {
         session: t('this conversation\'s own tone, from its sound panel'),
@@ -117,14 +124,20 @@
      * warning; an armed event nothing can play is SILENCE).
      */
     function alertEventRow(al, row, notify) {
-        const text = ALERT_EVENT_TEXT[row.event] || [row.event, ''];
+        const raw = ALERT_EVENT_TEXT[row.event] || [row.event, ''];
+        const text = [t(raw[0]), raw[1], raw[2]];
         const armed = (al.sessionEvents || []).indexOf(row.event) >= 0;
+        const fleet = (al.fleetEvents || []).indexOf(row.event) >= 0;
+        const why = fleet && ((al.fleetWhy || {})[row.event] || {}).lines;
         const name = window.AFTip.wrap(`<span class="alertev">${C.esc(text[0])}</span>`,
-            `${text[0]} — rings ${row.on ? 'on every session' : 'nowhere yet'}`, text[1]);
+            `${text[0]} — rings ${row.on ? (fleet ? t('when it happens') : 'on every session') : 'nowhere yet'}`,
+            (fleet ? t(text[1]) : text[1]) + (why ? '\n\n' + why.map(l => (l.ok === true ? '✓ ' : l.ok === false ? '✗ ' : '· ') + l.text).join('\n') : ''));
         const ring = window.AFTip.wrap(
             `<label class="alertonlbl"><input type="checkbox" data-alerton="${C.esc(row.event)}" ${row.on ? 'checked' : ''}></label>`,
-            `Ring: ${row.on ? 'on, for every session' : 'off'}`,
-            row.on
+            `Ring: ${row.on ? (fleet ? t('on') : 'on, for every session') : 'off'}`,
+            fleet ? (row.on ? t('The tone plays whenever this happens, anywhere in the farm. Mute all and quiet hours still hold it; a session\'s Silent does not.')
+                : t('Nothing rings for this event. It happens across the farm, not in a session, so this switch is the only way to hear it.'))
+            : row.on
                 ? 'The tone plays on every session, whatever each one has selected for itself.'
                 : armed
                     ? t('Off here. A session set to Always still rings on this event, and one set to Silent never does; each session chooses Like all, Always or Silent in its sound panel (the ♪ or a right-click on its row).')
@@ -149,7 +162,8 @@
         const said = (sp.events || []).indexOf(row.event) >= 0;
         const say = window.AFTip.wrap(
             `<label class="alertonlbl"><input type="checkbox" data-alertsay="${C.esc(row.event)}" ${said ? 'checked' : ''}></label>`,
-            `Say who: ${said ? 'the agent\'s name is spoken after the tone' : 'tone only, no name'}`,
+            fleet && said ? t('Say who: {who}, spoken after the tone', { who: t(text[2]) })
+                : `Say who: ${said ? 'the agent\'s name is spoken after the tone' : 'tone only, no name'}`,
             'A tone answers "what kind of news is this?"; with several lanes running, the question from the next room is WHICH ONE, and no palette can carry a name.'
             + (sp.on ? '' : '\n\n‼️ Saying who is switched OFF above, so nothing is spoken on any event yet — this decides what happens once it is on.')
             + '\n\nThe tone and the sentence are ONE queue ticket, in that order: no other lane\'s chime can land in the middle of this one\'s sentence.');
@@ -181,6 +195,7 @@
     /** B — "What happens, and what do I hear?" Every event, every output. */
     function alertEvents(al, notify) {
         const th = (label, tip) => `<th class="setth" title="${C.esc(tip)}">${label}</th>`;
+        const isFleet = e => (al.fleetEvents || []).indexOf(e.event) >= 0;
         return `<table class="settbl alerttbl">
             <thead><tr>
                 ${th('Event', 'What happened.')}
@@ -189,7 +204,9 @@
                 ${th('Say who', 'Also say WHICH AGENT, out loud, after the tone.')}
                 ${th('Notification', 'A VS Code notification for the same event — the notify settings, shown here too. Turn finished has two: every session, and a Console turn you are not watching. Session ended and Error have none.')}
             </tr></thead>
-            <tbody>${(al.events || []).map(e => alertEventRow(al, e, notify)).join('')}</tbody>
+            <tbody>${(al.events || []).filter(e => !isFleet(e)).map(e => alertEventRow(al, e, notify)).join('')}
+                ${(al.events || []).some(isFleet) ? `<tr class="alertgrp"><td colspan="5" title="${C.esc(t('These happen across the farm, tied to no session: only the Ring switch here arms them, and a session\'s sound panel has no say.'))}">${C.esc(t('Across the farm'))}</td></tr>` : ''}
+                ${(al.events || []).filter(isFleet).map(e => alertEventRow(al, e, notify)).join('')}</tbody>
         </table>`;
     }
 

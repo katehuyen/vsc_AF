@@ -8,7 +8,7 @@ import type { BatonCardView } from '../core/batonView';
 import {
     SessionAlertPrefs, SESSION_ALERT_EVENTS, TurnAlertAction, TurnAlertBranch, TURN_ALERT_ACTIONS
 } from '../core/turnAlerts';
-import { AlertEvent, ALERT_EVENTS, EVENT_LABEL, VoiceOrigin } from '../core/alertVoices';
+import { AlertEvent, EVENT_LABEL, LANE_EVENTS, VoiceOrigin } from '../core/alertVoices';
 import { handleAfNav, htmlShell } from './base';
 import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
 import { soundSurface } from './alertSurface';
@@ -246,7 +246,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 }];
             }))
         ])),
-        alertEvents: ALERT_EVENTS.map(e => ({ event: e, label: EVENT_LABEL[e] })),
+        alertEvents: LANE_EVENTS.map(e => ({ event: e, label: EVENT_LABEL[e] })),
         sessionAlertEvents: [...SESSION_ALERT_EVENTS],
         // A-22 — one object for the whole page: the gate is fleet-wide except
         // for the list of sessions that silenced themselves.
@@ -427,7 +427,7 @@ export class TimelinePanel {
                 // rather than passed on — the host refuses it by name, and a
                 // stale webview must not turn a test into an error dialog.
                 const raw = typeof msg.event === 'string' ? msg.event : '';
-                const event = (ALERT_EVENTS as readonly string[]).includes(raw)
+                const event = (LANE_EVENTS as readonly string[]).includes(raw)
                     ? raw as AlertEvent : undefined;
                 // The countdown runs in the HOST, so the user can leave this
                 // window entirely and still see whether focus really came back.

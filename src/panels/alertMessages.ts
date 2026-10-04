@@ -12,7 +12,7 @@
  * formats play.
  */
 import { AlertsPage, NOTIFY_KEYS } from './soundModel';
-import { ALERT_EVENTS } from '../core/alertVoices';
+import { LANE_EVENTS } from '../core/alertVoices';
 import { parseSessionPatch, SessionSoundPatch } from '../core/soundSession';
 import type { AlertSurface } from './alertSurface';
 
@@ -263,7 +263,7 @@ export async function handleAlertMessage(
             await sessionAnswer(() => deps.alertsSessionView?.(sid()));
             return true;
         case 'alertSessionApply': {
-            const p = parseSessionPatch(msg.patch, ALERT_EVENTS);
+            const p = parseSessionPatch(msg.patch, LANE_EVENTS);
             if (!p.ok) { sessionFail(new Error(p.error)); return true; }
             await sessionAnswer(() => deps.alertsSessionApply?.(sid(), p.patch));
             return true;

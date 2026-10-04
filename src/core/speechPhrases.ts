@@ -46,7 +46,7 @@ export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
         asks: w => `${w} asks`, options: 'Options',
         wantsToRun: w => `${w} wants to run`, wantsToUse: (w, t) => `${w} wants to use ${t}`,
         link: 'a link', image: 'an image', path: 'a path', more: 'There is more.', anAgent: 'an agent',
-        events: { 'turn-ready': 'turn finished', question: 'asking you', stalled: 'stalled', ended: 'session ended', error: 'error' }
+        events: { 'turn-ready': 'turn finished', question: 'asking you', stalled: 'stalled', ended: 'session ended', error: 'error', notice: 'new notice', 'notice-question': 'a question card for you', gate: 'a workflow is asking you', quota: 'quota running out', mission: 'mission ended' }
     },
     tr: {
         codeBlock: n => (n === 1 ? 'tek satırlık bir kod bloğu' : `${n} satırlık bir kod bloğu`),
@@ -60,7 +60,7 @@ export const SPEECH_PHRASES: Readonly<Record<string, SpeechPhrases>> = {
         asks: w => `${w} soruyor`, options: 'Seçenekler',
         wantsToRun: w => `${w} şunu çalıştırmak istiyor`, wantsToUse: (w, t) => `${w} ${t} aracını kullanmak istiyor`,
         link: 'bir bağlantı', image: 'bir görsel', path: 'bir dosya yolu', more: 'Devamı var.', anAgent: 'bir ajan',
-        events: { 'turn-ready': 'tur bitti', question: 'sana soruyor', stalled: 'takıldı', ended: 'oturum bitti', error: 'hata' }
+        events: { 'turn-ready': 'tur bitti', question: 'sana soruyor', stalled: 'takıldı', ended: 'oturum bitti', error: 'hata', notice: 'yeni bildirim', 'notice-question': 'sana bir soru kartı var', gate: 'bir iş akışı sana soruyor', quota: 'kota dolmak üzere', mission: 'misyon bitti' }
     }
 };
 

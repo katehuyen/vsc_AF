@@ -14,7 +14,12 @@
     let result = null;   // { sessionId, event, pending?, error?, result? }
     let last = null;
     let api = null;
-    const evName = e => ((S().EVENT_TEXT || {})[e] || [e])[0];
+    const evName = e => t(((S().EVENT_TEXT || {})[e] || [e])[0]);
+    const REHEARSE = 'Rehearse what this event would really do for this session — the fleet switch included — in 3 seconds, and write each branch\'s result here';
+    const t = (x, v) => (window.AFI18n ? window.AFI18n.t(x, v) : x);
+    // U-213 — the farm-wide events: no session to pick, the answer is the fleet's own (alerts.fleetWhy)
+    const fleetOf = d => ((d && d.alerts) || {}).fleetEvents || [];
+    const lineHtml = l => `<div class="wyl ${cls(l.ok)}"><span class="wym">${mark(l.ok)}</span> ${C.esc(l.text)}</div>`;
     const mark = ok => (ok === true ? '✓' : ok === false ? '✗' : '·');
     const cls = ok => (ok === true ? 'ok' : ok === false ? 'no' : 'info');
 
@@ -27,12 +32,16 @@
     }
 
     function body(d) {
+        if (fleetOf(d).indexOf(ev) >= 0) {
+            const fw = (((d.alerts || {}).fleetWhy) || {})[ev];
+            return fw ? fw.lines.map(lineHtml).join('') : '';
+        }
         const rows = d.sessions || [];
         const r = rows.find(x => x.sessionId === sid) || rows[0];
         if (!r) { return '<p class="muted">No live session is being watched — the question needs one.</p>'; }
         sid = r.sessionId;
         const w = (r.why || {})[ev];
-        const lines = w ? w.lines.map(l => `<div class="wyl ${cls(l.ok)}"><span class="wym">${mark(l.ok)}</span> ${C.esc(l.text)}</div>`).join('') : '';
+        const lines = w ? w.lines.map(lineHtml).join('') : '';
         return lines + testHtml();
     }
 
@@ -51,8 +60,8 @@
             .wytest { margin-top:6px; }
         </style>
         <div class="wyhead">Session <select id="wysession" title="Which session">${rows.map(x => C.option(x.sessionId, x.label, { selected: x.sessionId === sid })).join('')}</select>
-            Event <select id="wyevent" title="Which event">${EVENTS.map(e => C.option(e, evName(e), { selected: e === ev })).join('')}</select>
-            <button class="secondary small" id="wytest" ${rows.length ? '' : 'disabled'} title="Rehearse what this event would really do for this session — the fleet switch included — in 3 seconds, and write each branch's result here">▶ Test now</button></div>
+            Event <select id="wyevent" title="Which event">${EVENTS.map(e => C.option(e, evName(e), { selected: e === ev })).join('')}${fleetOf(d).length ? `<optgroup label="${C.esc(t('Across the farm'))}">${fleetOf(d).map(e => C.option(e, evName(e), { selected: e === ev })).join('')}</optgroup>` : ''}</select>
+            <button class="secondary small" id="wytest" ${rows.length && fleetOf(d).indexOf(ev) < 0 ? '' : 'disabled'} title="${C.esc(fleetOf(d).indexOf(ev) >= 0 ? t('A farm-wide event has no session to rehearse in. The ▶ beside its tone under When something happens plays it.') : REHEARSE)}">▶ ${t('Test now')}</button></div>
         <div id="wybody">${body(d)}</div>`;
     }
 
@@ -61,12 +70,21 @@
         if (el && last) { el.innerHTML = body(last); }
     }
 
+    function syncTest() {
+        const b = document.getElementById('wytest');
+        if (!b || !last) { return; }
+        const farm = fleetOf(last).indexOf(ev) >= 0;
+        b.disabled = farm || !(last.sessions || []).length;
+        b.title = farm ? t('A farm-wide event has no session to rehearse in. The ▶ beside its tone under When something happens plays it.')
+            : REHEARSE;
+    }
+
     function wireWhy(vscode) {
         api = vscode;
         const s = document.getElementById('wysession');
         if (s) { s.addEventListener('change', () => { sid = s.value; redraw(); }); }
         const e = document.getElementById('wyevent');
-        if (e) { e.addEventListener('change', () => { ev = e.value; redraw(); }); }
+        if (e) { e.addEventListener('change', () => { ev = e.value; redraw(); syncTest(); }); }
         const t = document.getElementById('wytest');
         if (t) {
             t.addEventListener('click', () => {

@@ -9247,7 +9247,7 @@
         },
         "agentFarm.alerts.on": {
           "type": "object",
-          "description": "Play the alert SOUND on these events, for every session. This is not the same switch as notifyTurnEnd / notifyPermission above: those are VS Code notifications, these are sounds — a sound you turned off here would still leave a notification arriving, and the two are kept apart so that complaint cannot happen. Every entry is off out of the box; a single session can also be armed on its own from the ♪ control in its Live Timeline row, and the two add up rather than overriding each other.",
+          "description": "Play the alert SOUND on these events, for every session. This is not the same switch as notifyTurnEnd / notifyPermission above: those are VS Code notifications, these are sounds — a sound you turned off here would still leave a notification arriving, and the two are kept apart so that complaint cannot happen. Every entry is off out of the box except Question card and Workflow asks you, the two where a person is waited on. A session set to Always still rings and one set to Silent never does; each session chooses in its sound panel (the ♪ on its Live Timeline row).",
           "default": {},
           "properties": {
             "turn-ready": {
@@ -9269,6 +9269,26 @@
             "error": {
               "type": "boolean",
               "description": "A critical error. Nothing emits this edge yet; the voice is settable so it is ready when something does."
+            },
+            "notice": {
+              "type": "boolean",
+              "description": "A new notice on the Notices board that is not a question. Tied to no session."
+            },
+            "notice-question": {
+              "type": "boolean",
+              "description": "A question card on the Notices board: an agent waits for your answer, and some cards answer themselves when their time runs out. On out of the box."
+            },
+            "gate": {
+              "type": "boolean",
+              "description": "A workflow stopped to ask you something and waits for your answer. On out of the box."
+            },
+            "quota": {
+              "type": "boolean",
+              "description": "An account's five-hour window crossed the line the phone is warned at. Rings once per climb; falling back under it re-arms it. The name said is the account's."
+            },
+            "mission": {
+              "type": "boolean",
+              "description": "A mission ran to its end, done or failed. A mission you cancelled does not ring, and neither does a mission another mission started. The name said is the mission's title."
             }
           }
         },
@@ -9335,7 +9355,12 @@
                   "question",
                   "stalled",
                   "ended",
-                  "error"
+                  "error",
+                  "notice",
+                  "notice-question",
+                  "gate",
+                  "quota",
+                  "mission"
                 ]
               },
               "default": [
@@ -9417,6 +9442,31 @@
               "type": "string",
               "default": "af_bell_urgent",
               "description": "Voice for a critical error. Default: af_bell_urgent — three strikes that accelerate and rise. The tempo carries the urgency, so it does not have to be a buzzer people learn to hate and then switch off."
+            },
+            "notice": {
+              "type": "string",
+              "default": "af_zen_chime",
+              "description": "Voice for a new notice that is not a question. Default: af_zen_chime — soft, for news nobody is waiting on."
+            },
+            "notice-question": {
+              "type": "string",
+              "default": "af_pulse_start",
+              "description": "Voice for a question card on the Notices board. Default: af_pulse_start."
+            },
+            "gate": {
+              "type": "string",
+              "default": "af_pop_advance",
+              "description": "Voice for a workflow asking you. Default: af_pop_advance."
+            },
+            "quota": {
+              "type": "string",
+              "default": "af_subtle_alert",
+              "description": "Voice for an account's quota running out. Default: af_subtle_alert."
+            },
+            "mission": {
+              "type": "string",
+              "default": "af_lullaby_sleep",
+              "description": "Voice for a mission that ended. Default: af_lullaby_sleep."
             }
           }
         },

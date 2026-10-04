@@ -22,8 +22,20 @@
 
 /** What happened. The first two are what A-18 was opened for; the other three
  *  ride the same mechanism for free and ship switched off. */
-export const ALERT_EVENTS = ['turn-ready', 'question', 'stalled', 'ended', 'error'] as const;
+export const LANE_EVENTS = ['turn-ready', 'question', 'stalled', 'ended', 'error'] as const;
+/** U-213 — what happens across the farm, tied to no session: a new Notice, a question card, a workflow
+ *  asking you, an account's five-hour window crossing the phone's warning line, a mission ending. */
+export const FLEET_EVENTS = ['notice', 'notice-question', 'gate', 'quota', 'mission'] as const;
+export const ALERT_EVENTS = [...LANE_EVENTS, ...FLEET_EVENTS] as const;
 export type AlertEvent = (typeof ALERT_EVENTS)[number];
+export type LaneEvent = (typeof LANE_EVENTS)[number];
+/** U-213 — the fleet events a person is waiting on ring out of the box; every other entry ships off. */
+export const ALERT_ON_DEFAULT: Partial<Record<AlertEvent, boolean>> = { 'notice-question': true, gate: true };
+/** U-213 — the phone's name for the same news (src/core/remoteEvents.ts), one dictionary for both ends. */
+export const ALERT_REMOTE: Partial<Record<AlertEvent, string>> = {
+    'turn-ready': 'turn.finished', question: 'ask.opened', ended: 'session.ended',
+    notice: 'notice.posted', 'notice-question': 'notice.posted', quota: 'quota.warn'
+};
 
 /**
  * ‼️ A-23 — WHAT AN EVENT IS CALLED WHERE THERE IS NO ROOM TO EXPLAIN IT.
@@ -40,7 +52,12 @@ export const EVENT_LABEL: Record<AlertEvent, string> = {
     question: 'Asking you',
     stalled: 'Stalled',
     ended: 'Session ended',
-    error: 'Error'
+    error: 'Error',
+    notice: 'New notice',
+    'notice-question': 'Question card',
+    gate: 'Workflow asks you',
+    quota: 'Quota running out',
+    mission: 'Mission ended'
 };
 
 export interface AlertVoice {
@@ -140,7 +157,12 @@ export const DEFAULT_VOICE: Record<AlertEvent, string> = {
     question: 'af_intercom_knock',
     stalled: 'af_deep_sonar',
     ended: 'af_marimba_success',
-    error: 'af_bell_urgent'
+    error: 'af_bell_urgent',
+    notice: 'af_zen_chime',
+    'notice-question': 'af_pulse_start',
+    gate: 'af_pop_advance',
+    quota: 'af_subtle_alert',
+    mission: 'af_lullaby_sleep'
 };
 
 /** `join` without `path`, so this module stays free of node built-ins. */

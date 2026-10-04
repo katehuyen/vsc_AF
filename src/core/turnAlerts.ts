@@ -29,7 +29,7 @@
  *   session, so the same turn is one alert however many events announce it.
  */
 
-import { ALERT_EVENTS, extensionOf, type AlertEvent } from './alertVoices';
+import { ALERT_EVENTS, extensionOf, LANE_EVENTS, type AlertEvent } from './alertVoices';
 import {
     parseVoiceList, speakCandidates, voiceListCandidate,
     type InstalledVoice, type SpeakConfig
@@ -378,10 +378,11 @@ export class TurnAlertStore {
     setVoice(sessionId: string, event: unknown, voice: unknown): AlertSetResult {
         const id = String(sessionId ?? '').trim();
         if (!id) { return { ok: false, error: 'sessionId is required' }; }
-        if (typeof event !== 'string' || !(ALERT_EVENTS as readonly string[]).includes(event)) {
+        // U-213 — a session's own tone is for what happens IN it; the fleet events have no session
+        if (typeof event !== 'string' || !(LANE_EVENTS as readonly string[]).includes(event)) {
             return {
                 ok: false,
-                error: `unknown event ${JSON.stringify(event)} — one of ${ALERT_EVENTS.join('|')}`
+                error: `unknown event ${JSON.stringify(event)} — one of ${LANE_EVENTS.join('|')}`
             };
         }
         const want = typeof voice === 'string' ? voice.trim() : '';

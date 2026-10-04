@@ -36,7 +36,12 @@ export const SOUND_EVENT_LABEL: Record<string, string> = {
     'turn-ready': 'Turn finished',
     stalled: 'Stalled',
     ended: 'Session ended',
-    error: 'Error'
+    error: 'Error',
+    'notice-question': 'Question card',
+    gate: 'Workflow asks you',
+    notice: 'New notice',
+    quota: 'Quota running out',
+    mission: 'Mission ended'
 };
 
 const ICON: Record<SoundState, string> = { on: '🔊', muted: '🔇', quiet: '🌙', off: '🔈' };

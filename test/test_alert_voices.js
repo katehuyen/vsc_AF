@@ -111,8 +111,15 @@ const base = (over) => Object.assign({
         V.DEFAULT_VOICE['turn-ready'] !== V.DEFAULT_VOICE.question);
     ok('…and every default names a voice that really exists',
         V.ALERT_EVENTS.every(e => V.BUILTIN_IDS.indexOf(V.DEFAULT_VOICE[e]) >= 0));
-    ok('the five events are the ones the design named',
-        V.ALERT_EVENTS.join(',') === 'turn-ready,question,stalled,ended,error');
+    ok('the five session events are the ones the design named',
+        V.LANE_EVENTS.join(',') === 'turn-ready,question,stalled,ended,error');
+    // U-213 — the farm-wide events follow them in one dictionary
+    ok('U-213: the farm-wide events are notice, question card, workflow gate, quota, mission — after the session ones',
+        V.FLEET_EVENTS.join(',') === 'notice,notice-question,gate,quota,mission'
+        && V.ALERT_EVENTS.join(',') === [...V.LANE_EVENTS, ...V.FLEET_EVENTS].join(','));
+    ok('U-213: only the two a person waits on ring out of the box',
+        Object.keys(V.ALERT_ON_DEFAULT).sort().join(',') === 'gate,notice-question'
+        && V.FLEET_EVENTS.every(e => typeof V.EVENT_LABEL[e] === 'string' && V.EVENT_LABEL[e].length > 0));
 }
 
 // ---------------------------------------------------------------------------
