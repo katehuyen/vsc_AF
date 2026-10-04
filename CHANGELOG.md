@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.828.0 - Where a live event's time goes (2026-10-04)
+
+- **A measurement for the "extension host unresponsive" days.** Every
+  listener that runs when a session event arrives is now timed under the
+  place in the code that subscribed it, and the handling of the whole event
+  as one figure. The bridge op `live.profile` reads it heaviest first —
+  calls, total, average and worst milliseconds — so the slow one is named by
+  a measurement rather than a guess; `reset:true` starts the count again.
+
 ## 3.827.0 - Missions and the Work Queue on the phone (2026-10-04)
 
 - **Missions on the phone.** The phone's menu now opens the real Missions
