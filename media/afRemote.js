@@ -17,6 +17,10 @@
     var api = null;
     var READS = { openSession: true, 'open-transcript': true, chainGo: true };
     function readOf(m) {
+        // a project timeline row's link to a transcript is the same read
+        if (m && m.type === 'openLink' && m.link && m.link.to === 'session') {
+            m = { type: 'openSession', sessionId: m.link.sessionId, file: m.link.file, ts: m.link.ts };
+        }
         if (!m || READS[m.type] !== true) { return null; }
         var args = {};
         if (typeof m.sessionId === 'string' && m.sessionId) { args.sessionId = m.sessionId; }

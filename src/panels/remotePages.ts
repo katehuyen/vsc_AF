@@ -25,6 +25,7 @@ export interface RemotePageMakers {
     /** S-125 — `args.chain` names the chain a ⑂ link opened it on. */
     chains(host: PanelHost, args?: Record<string, unknown>): void;
     turns(host: PanelHost): void;
+    projects(host: PanelHost): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -171,6 +172,21 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             answers: [],
             pcOnly: ['openSession', 'focusTerminal', 'openGuide', 'exportChoose', 'afnav'],
             make: host => make.turns(host)
+        },
+        // X-456 — the projects. The list, a project's tab, a document, the sessions table and the
+        // backfill screen are looks; creating, editing, removing (its question asked on the phone),
+        // the plan, the backlog, the track, the people, filing sessions, a task's retry and a
+        // session's pin or stop are manage. Every folder picker, the rescan's and archive's and
+        // template's questions, an editor, a handover file, a new session, a Tasks form and another
+        // page's row belong to the PC (a timeline row's transcript reaches the phone as afnav).
+        projects: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'view', 'setTableN', 'sessionTurns', 'selectDoc', 'suggestFolder'],
+            answers: [],
+            pcOnly: ['openLink', 'openSession', 'focusTerminal', 'browseFolder', 'pickFolder', 'revealFolder',
+                'openSessions', 'rescan', 'handover', 'archive', 'saveTemplate', 'openDoc', 'backlogOpenItem',
+                'queueAdd', 'startSession', 'newTask', 'newSchedule', 'newTrigger', 'openWorkRow', 'afnav'],
+            make: host => make.projects(host)
         }
     };
 }

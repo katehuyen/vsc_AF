@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.836.0 - The Projects page opens on the phone (2026-10-05)
+
+- **Your projects, on the phone.** The Projects page now opens in the Agent
+  Farm phone app instead of answering "unavailable". On a phone it is one
+  column: the project list on top (it scrolls on its own), the open project
+  under it, its tabs in rows that fit the screen. Every tab reads there —
+  overview, work, timeline, sessions, plan, backlog, track, documents,
+  people, cost, analysis, code and settings — and a timeline row that
+  points at a conversation opens it on the phone.
+- **A backlog row reads at phone width.** The item's words take the line;
+  its type, priority, size and dates sit under them together with its
+  buttons, which stay on screen because a finger has no hover. Timeline and
+  work rows put what happened and when on the first line and the rest under
+  it.
+- A device that may only read can read every tab; changing anything — the
+  backlog, the plan, the track, the people, a project's settings, filing
+  sessions, a task's retry — needs a device that may manage. Removing a
+  project asks its question on the phone.
+- What would open a folder picker, an editor, a terminal, a new session, a
+  Tasks form or another page's row on the PC stays on the PC, and those
+  buttons are not drawn on the phone (Rescan, Folder, Handover, Save as
+  template, Archive folder, the document open buttons, Start a session, New
+  task / schedule / trigger).
+
 ## 3.835.0 - The Turns page opens on the phone (2026-10-05)
 
 - **Every turn of the farm, on the phone.** The Turns page — the whole farm

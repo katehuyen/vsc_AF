@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Projects — the page.
@@ -299,20 +300,27 @@ export class ProjectsPanel {
             p.focusId = focusId;
             p.seed = newForm;
             if (wanted) { p.openTab = wanted; p.tab = wanted; p.tabProject = focusId ?? p.tabProject; }
-            p.panel.reveal();
+            p.host.reveal();
             p.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.projects',
-            'Agent Farm — Projects',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        ProjectsPanel.current = new ProjectsPanel(panel, deps, focusId, newForm, wanted);
+        ProjectsPanel.current = new ProjectsPanel(
+            desktopHost({ viewType: 'agentfarm.projects', title: 'Agent Farm — Projects' }),
+            deps, focusId, newForm, wanted);
     }
 
-    static refreshIfOpen(): void { ProjectsPanel.current?.refresh(); }
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<ProjectsPanel>();
+
+    /** X-456 — the projects page on a phone's view. */
+    static openOn(host: PanelHost, deps: ProjectsPanelDeps): void {
+        ProjectsPanel.phones.add(new ProjectsPanel(host, deps));
+    }
+
+    static refreshIfOpen(): void {
+        ProjectsPanel.current?.refresh();
+        for (const p of ProjectsPanel.phones) { p.refresh(); }
+    }
 
     /**
      * Put the cursor in the Backlog tab's own Capture box — U-14.
@@ -323,12 +331,12 @@ export class ProjectsPanel {
      * and it shows the backlog you are adding to. Call it right after `show`.
      */
     static captureCurrent(text?: string): void {
-        void ProjectsPanel.current?.panel.webview
+        void ProjectsPanel.current?.host.webview
             .postMessage({ type: 'bl-capture', text: text ?? '' });
     }
 
     private constructor(
-        readonly panel: vscode.WebviewPanel, private deps: ProjectsPanelDeps,
+        readonly host: PanelHost, private deps: ProjectsPanelDeps,
         focusId?: string, newForm?: NewProjectSeed, tab?: string
     ) {
         this.focusId = focusId;
@@ -339,8 +347,8 @@ export class ProjectsPanel {
         // page while the right one was still being made.
         if (tab) { this.openTab = tab; this.tab = tab; this.tabProject = focusId ?? ''; }
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         /**
          * ‼️ COMING BACK TO THIS TAB RE-READS THE DOCUMENTS.
          *
@@ -358,8 +366,9 @@ export class ProjectsPanel {
          * media/projects.js). Debounced because VS Code fires this event more
          * than once for a single tab change.
          */
-        panel.onDidChangeViewState(() => {
-            if (!panel.active) { return; }
+        // A VS Code tab's event carries its panel; a phone's view never fires it.
+        host.onDidChangeViewState(e => {
+            if ((e as { webviewPanel?: { active?: boolean } } | undefined)?.webviewPanel?.active !== true) { return; }
             if (this.focusTimer) { clearTimeout(this.focusTimer); }
             this.focusTimer = setTimeout(() => { this.focusTimer = undefined; this.refresh(); }, 250);
         }, null, this.disposables);
@@ -405,21 +414,21 @@ export class ProjectsPanel {
     }
 
     private render(): void {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview, this.deps.extensionUri,
+        this.host.webview.html = htmlShell(
+            this.host.webview, this.deps.extensionUri,
             'Agent Farm Projects', this.payload(), 'projects.js');
         this.focusId = undefined;
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: this.payload() });
+        this.host.webview.postMessage({ type: 'data', data: this.payload() });
         this.focusId = undefined;
     }
 
     /** Tell the page what happened, then repaint. A save that silently did
      *  nothing is indistinguishable from one that worked. */
     private done(error?: string, ok?: string): void {
-        void this.panel.webview.postMessage({ type: 'result', error: error ?? null, ok: ok ?? null });
+        void this.host.webview.postMessage({ type: 'result', error: error ?? null, ok: ok ?? null });
         this.refresh();
         try { this.deps.onChange?.(); } catch { /* best effort */ }
     }
@@ -464,7 +473,7 @@ export class ProjectsPanel {
             case 'sessionTurns': {
                 const file = typeof msg.file === 'string' ? msg.file : '';
                 if (!file) { break; }
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'sessionTurns', file,
                     turns: this.deps.sessionTurns(this.tabProject, file)
                 });
@@ -526,7 +535,7 @@ export class ProjectsPanel {
                 break;
             }
             case 'suggestFolder':
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'suggestedFolder', folder: this.deps.suggestFolder(String(msg.name ?? ''))
                 });
                 break;
@@ -534,7 +543,7 @@ export class ProjectsPanel {
                 const picked = await this.deps.browseFolder(
                     typeof msg.start === 'string' ? msg.start : undefined);
                 if (picked) {
-                    void this.panel.webview.postMessage({ type: 'pickedFolder', folder: picked });
+                    void this.host.webview.postMessage({ type: 'pickedFolder', folder: picked });
                 }
                 break;
             }
@@ -555,7 +564,7 @@ export class ProjectsPanel {
                 break;
             case 'delete':
                 if (id) {
-                    const yes = await vscode.window.showWarningMessage(
+                    const yes = await this.host.ask.warn(
                         `Remove "${String(msg.name ?? id)}" from Agent Farm?`,
                         {
                             modal: true,
@@ -836,7 +845,7 @@ export class ProjectsPanel {
                 const apply = msg.apply === true;
                 const res = this.deps.trackBackfill(id, apply,
                     typeof msg.code === 'string' && msg.code ? msg.code : undefined);
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'trackBackfill', apply,
                     error: res.error ?? null,
                     scanned: res.scanned ?? 0, partial: res.partial === true,
@@ -926,9 +935,10 @@ export class ProjectsPanel {
     }
 
     private dispose(): void {
-        ProjectsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (ProjectsPanel.current === this) { ProjectsPanel.current = undefined; }
+        ProjectsPanel.phones.delete(this);
         if (this.focusTimer) { clearTimeout(this.focusTimer); this.focusTimer = undefined; }
         for (const d of this.disposables) { try { d.dispose(); } catch { /* ignore */ } }
-        this.panel.dispose();
     }
 }

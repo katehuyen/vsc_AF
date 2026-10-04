@@ -1614,6 +1614,39 @@
                 .pj-badge { opacity:.9; }
                 .pj-unassigned { margin-top:14px; padding:6px 8px; border-top:1px solid var(--vscode-panel-border); font-size:12px; opacity:.8; }
                 .pj-main { flex:1; min-width:0; }
+                /* the phone (media/afMobile.js): one column, the list above the
+                   open project and scrolled on its own, a form one field wide */
+                html.af-phone .pj-wrap { flex-direction:column; gap:8px; }
+                html.af-phone .pj-list { flex:none; width:100%; max-height:34vh; overflow-y:auto; }
+                html.af-phone .pj-main { width:100%; }
+                html.af-phone .pj-grid { grid-template-columns:minmax(0,1fr); }
+                html.af-phone .pj-grid input[type=checkbox] { width:auto; }
+                html.af-phone .pj-tab { padding:7px 10px 5px; }
+                html.af-phone .pj-tab.on { padding:8px 11px 6px; }
+                /* what opens a picker, an editor, a terminal or a form on the PC (remotePages.ts) */
+                html.af-phone [data-act="rescan"], html.af-phone [data-act="nBrowse"], html.af-phone [data-act="pickFolder"],
+                html.af-phone [data-act="revealFolder"], html.af-phone [data-act="handover"], html.af-phone [data-act="saveTemplate"],
+                html.af-phone [data-act="archive"], html.af-phone [data-act="restore"], html.af-phone [data-act="openSessions"],
+                html.af-phone [data-work], html.af-phone button[data-open], html.af-phone button[data-blgo] { display:none; }
+                /* a backlog row: the words take the line, the badges and the actions go under them
+                   (a finger has no hover, so the actions stay on screen) */
+                html.af-phone .pj-bl-row { flex-wrap:wrap; row-gap:2px; }
+                html.af-phone .pj-bl-t { flex:1 1 60%; }
+                html.af-phone .pj-bl-side { flex:1 1 100%; min-width:0; flex-flow:row wrap; align-items:baseline; gap:2px 12px; }
+                html.af-phone .pj-bl-srow { justify-content:flex-start; flex-wrap:wrap; }
+                html.af-phone .pj-bl-act { visibility:visible; }
+                /* a timeline row: what and when on the first line, the rest under it */
+                html.af-phone .pj-ev { grid-template-columns:18px minmax(0,1fr) auto;
+                    grid-template-areas:'g t w' '. d c' '. a a'; row-gap:1px; }
+                html.af-phone .pj-ev > .pj-ev-g { grid-area:g; } html.af-phone .pj-ev > .pj-ev-t { grid-area:t; }
+                html.af-phone .pj-ev > .pj-ev-d { grid-area:d; } html.af-phone .pj-ev > .pj-ev-a { grid-area:a; }
+                html.af-phone .pj-ev > .pj-ev-c { grid-area:c; } html.af-phone .pj-ev > .pj-ev-w { grid-area:w; }
+                /* a work row: what it is and its buttons, its facts under it */
+                html.af-phone .pj-wrow { grid-template-columns:18px minmax(0,1fr) auto;
+                    grid-template-areas:'g t a' '. m m'; row-gap:1px; }
+                html.af-phone .pj-wrow > .pj-ev-g { grid-area:g; } html.af-phone .pj-wrow > .pj-ev-t { grid-area:t; }
+                html.af-phone .pj-wrow > .pj-wact { grid-area:a; }
+                html.af-phone .pj-wrow > .pj-wmeta { grid-area:m; text-align:left; }
                 .pj-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
                 .pj-head h2 { margin:0; }
                 .pj-banner { border:1px solid var(--vscode-editorWarning-foreground); border-radius:6px;
