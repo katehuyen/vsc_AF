@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.824.0 - The farm-wide news makes a sound too (2026-10-04)
+
+- **Five new rows on the Sound page.** Under "When something happens", a new
+  group, **Across the farm**, holds what happens outside any one session: a
+  **New notice**, a **Question card** on the Notices board, a **Workflow asks
+  you**, an account's **Quota running out** (its five-hour window crossing the
+  line the phone is warned at) and a **Mission ended**. Each has the same
+  Ring, Tone and Say who as the session events.
+- **The two that wait for you ring out of the box.** Question card and
+  Workflow asks you are on; the other three are off until you switch them on.
+  The two-switch offer for Turn finished and Asking you still appears on a
+  first opening.
+- **Same rules as every other sound.** Mute all and quiet hours hold them; a
+  session set to Silent does not, because they belong to no session. Say who
+  speaks the agent's name for a notice, the workflow's for a workflow, the
+  account's for quota and the mission's title for a mission, in the voice's
+  own language.
+- **"Why didn't I hear it?" knows them.** Pick one from the Across the farm
+  group and the answer comes from the farm: its switch, Mute all, quiet hours
+  and its tone. The status bar's sound button now names the events it rings on.
+
 ## 3.823.0 - The alert tones get their own volume (2026-10-04)
 
 - **Tone volume on the Sound page.** Under "When something happens", a
