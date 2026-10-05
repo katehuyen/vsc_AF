@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.847.0 - The Studio opens on the phone (2026-10-06)
+
+- **The Studio, on the phone.** The content production page - the
+  pipeline, the assets, triage, assembly and the sources - opens in the
+  Agent Farm phone app. It asks the same level its bridge operations ask -
+  the one a phone pairs at by default - to look and to act: saving a card,
+  a re-run, a scene's status, a triage decision, the wall's buttons and a
+  brand kit.
+- **Its pictures and clips reach the phone.** Each file the page shows gets
+  its own address for that phone and that open page only; no other phone
+  and no closed page can fetch it, and nothing the page does not show is
+  served.
+- A re-run from the phone runs the same model again and says so on the
+  phone; a scene's status and the wall's questions are asked there too.
+  Opening a file on the PC, a new recipe, registering a file, a setting,
+  the guide and the sequence export stay on the PC and are not drawn on the
+  phone.
+- **Clips and sounds in pages now play.** The pages' security policy never
+  allowed video or audio, so the Studio's clips stayed blank on the PC as
+  well; it now allows a page's own media.
+
 ## 3.846.0 - The Living page opens on the phone (2026-10-05)
 
 - **The Living page, on the phone.** "Is the system alive today?" opens in
