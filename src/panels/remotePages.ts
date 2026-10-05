@@ -17,6 +17,8 @@ export interface RemotePageMakers extends MorePageMakers {
     /** `args` narrows the page the way the openSessions command's argument does. */
     sessions(host: PanelHost, args?: Record<string, unknown>): void;
     tasks(host: PanelHost): void;
+    /** The Tasks page on its Run tab. */
+    board(host: PanelHost): void;
     /** False when `args` names no transcript the farm knows: the phone is told "unavailable". */
     session(host: PanelHost, args?: Record<string, unknown>): boolean;
     notices(host: PanelHost): void;
@@ -55,7 +57,7 @@ export function sessionPageTarget(
 }
 
 export function remotePages(make: RemotePageMakers): Record<string, RemotePage> {
-    return {
+    const pages: Record<string, RemotePage> = {
         now: {
             open: 'read', act: 'manage',
             looks: ['refresh'],
@@ -235,4 +237,7 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
         },
         ...morePages(make)
     };
+    // X-456 — the board is the Tasks page on its Run tab (TasksPanel.toTab), under the Tasks' own rule.
+    pages.board = { ...pages.tasks, make: host => make.board(host) };
+    return pages;
 }

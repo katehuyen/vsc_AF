@@ -116,9 +116,18 @@ const alive = setInterval(() => undefined, 1000);
         media: uri('/ext/media'), atLeast: scopeAtLeast, waitMs: 60,
         pages: remotePages({
             needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined,
-            tasks: host => TasksPanel.openOn(host, deps)
+            tasks: host => TasksPanel.openOn(host, deps),
+            board: host => TasksPanel.openOn(host, deps, 'board')
         })
     });
+    // X-456 — the board is the Tasks page on its Run tab, under the Tasks' own rule
+    const P = remotePages({ tasks: () => undefined, board: () => undefined });
+    ok('the board opens under the Tasks page\'s own rule', ['open', 'act', 'looks', 'answers', 'pcOnly'].every(k => JSON.stringify(P.board[k]) === JSON.stringify(P.tasks[k])));
+    views.open({ device: 'dev_b', scope: 'read' }, 'b1', 'board', undefined, () => undefined);
+    const boardPage = (await views.page('/view/board?view=b1', { device: 'dev_b', scope: 'read' })).body;
+    ok('…and lands on the Run tab', boardPage.includes('src="/res/tasksPage.js"') && /"tab":"run"/.test(boardPage));
+    const extSrc = require('fs').readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('the phone opens the board from the palette\'s own deps', /board: host => TasksPanel\.openOn\(host, tasksDeps, 'board'\)/.test(extSrc));
     const reader = { device: 'dev_r', scope: 'read' }, answerer = { device: 'dev_a', scope: 'answer' }, manager_ = { device: 'dev_m', scope: 'manage' };
     const toReader = [], toAnswerer = [], toManager = [];
     ok('the Tasks page opens on a phone', views.open(reader, 'r1', 'tasks', undefined, m => toReader.push(m)) === true);

@@ -31369,6 +31369,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             now: host => NowPanel.openOn(host, nowDeps),
             sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args)),
             tasks: host => TasksPanel.openOn(host, tasksDeps),
+            board: host => TasksPanel.openOn(host, tasksDeps, 'board'),
             notices: host => NoticesPanel.openOn(host, noticesPageDeps()),
             dashboard: host => DashboardPanel.openOn(host, dashboardDeps),
             missions: host => MissionsPanel.openOn(host, missionsPanelDeps),

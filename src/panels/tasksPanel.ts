@@ -1731,9 +1731,9 @@ export class TasksPanel {
             desktopHost({ viewType: 'agentfarm.tasks', title: 'Agent Farm — Tasks' }), deps, tab);
     }
 
-    /** X-456 — the page on a phone: one instance per view, never the desktop's one tab. */
-    static openOn(host: PanelHost, deps: TasksDeps): void {
-        new TasksPanel(host, deps);
+    /** X-456 — the page on a phone: one instance per view, never the desktop's one tab; `section` as show() takes it. */
+    static openOn(host: PanelHost, deps: TasksDeps, section?: TasksSection): void {
+        new TasksPanel(host, deps, TasksPanel.toTab(section));
     }
 
     static refreshIfOpen(): void {
