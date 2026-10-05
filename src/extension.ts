@@ -700,8 +700,8 @@ import { buildNow, NOW_LIMITS } from './core/nowPage';
 import { NoticesPanel, type NoticesDeps } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
 import type { QueueDeps } from './panels/queueDeps';
-import { A2ANotesPanel } from './panels/a2aNotesPanel';
-import { A2ATasksPanel } from './panels/a2aTasksPanel';
+import { A2ANotesDeps, A2ANotesPanel } from './panels/a2aNotesPanel';
+import { A2ATasksDeps, A2ATasksPanel } from './panels/a2aTasksPanel';
 import { WikiPanel } from './panels/wikiPanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
@@ -18536,7 +18536,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             { file: 'work-queue.json', path: path.join(gs, 'work-queue.json'), spec: items('items', 'ts'), reload: () => { workQueueStore.load(); QueuePanel.refreshIfOpen(); } }
         ]);
     }
-    const showA2ANotesPanel = (focusId?: string): void => A2ANotesPanel.show({
+    // X-456 — one deps object for the desktop tab and the phone's view
+    const a2aNotesPageDeps = (): A2ANotesDeps => ({
         extensionUri: context.extensionUri,
         notes: a2aNotes, tasks: a2aTasks,
         projects: () => projectRefs({ all: true }),
@@ -18544,7 +18545,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openTask: (taskId) => showA2ATasksPanel(taskId),
         promoter: () => 'user',
         onChange: a2aChanged
-    }, focusId);
+    });
+    const showA2ANotesPanel = (focusId?: string): void => A2ANotesPanel.show(a2aNotesPageDeps(), focusId);
     /**
      * N-7 — ⚡ RUN NOW, the supervisor's one way to stop waiting.
      *
@@ -18582,7 +18584,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void rememberLaunch(agent.id, o, 'console');
         return { agent: agent.name, surface: 'console' };
     };
-    const showA2ATasksPanel = (focusId?: string): void => A2ATasksPanel.show({
+    const a2aTasksPageDeps = (): A2ATasksDeps => ({
         extensionUri: context.extensionUri,
         tasks: a2aTasks, notes: a2aNotes,
         projects: () => projectRefs({ all: true }),
@@ -18591,7 +18593,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openNote: (noteId) => showA2ANotesPanel(noteId),
         openQueueItem: (itemId) => showQueuePanel(itemId),
         onChange: a2aChanged
-    }, focusId);
+    });
+    const showA2ATasksPanel = (focusId?: string): void => A2ATasksPanel.show(a2aTasksPageDeps(), focusId);
     // X-466 — one deps object for the desktop tab and the phone's view
     const queuePageDeps = (): QueueDeps => ({
         extensionUri: context.extensionUri,
@@ -31366,6 +31369,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             timeline: host => TimelinePanel.openOn(host, timelinePageDeps()),
             engines: host => EnginesPanel.openOn(host, enginesPanelDeps),
             accounts: host => AccountsPanel.openOn(host, accountsPanelDeps),
+            a2anotes: (host, args) => A2ANotesPanel.openOn(host, a2aNotesPageDeps(), typeof args?.focusId === 'string' ? args.focusId : undefined),
+            a2atasks: (host, args) => A2ATasksPanel.openOn(host, a2aTasksPageDeps(), typeof args?.focusId === 'string' ? args.focusId : undefined),
+            portfolio: host => PortfolioPanel.openOn(host, portfolioDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

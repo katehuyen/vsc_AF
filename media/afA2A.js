@@ -298,6 +298,9 @@
             border:1px solid var(--vscode-focusBorder); background:var(--vscode-editorWidget-background); font-size:12px; }
         .a2a-chainbar .a2a-chainid { font-weight:600; }
         .a2a-chainbar .muted { font-size:11.5px; }
+        /* the phone (media/afMobile.js): a lease's words wrap under its bar */
+        html.af-phone .a2a-leasew { display:flex; flex-wrap:wrap; max-width:100%; }
+        html.af-phone .a2a-ltext { white-space:normal; }
     </style>`;
 
     window.AFA2A = { esc, md, coords, directive, directiveFlag, plus, cockpit, leaseBar, stateBadge, controls, wireControls, wireCockpit, CAT, KINDS, STYLE };

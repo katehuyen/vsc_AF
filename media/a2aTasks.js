@@ -6,6 +6,7 @@
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
     const A = window.AFA2A;
     const esc = A.esc;
     let DATA = window.__DATA__;
@@ -250,7 +251,11 @@
         }));
         document.querySelectorAll('.a2a-xref').forEach(x => x.addEventListener('click', ev => {
             ev.stopPropagation();
-            if (x.dataset.note) { vscode.postMessage({ type: 'openNote', id: x.dataset.note }); }
+            // X-456 — on a phone the note opens on the phone's own A2A Notes page
+            if (x.dataset.note) {
+                vscode.postMessage(ON_PHONE_HOST ? { type: 'afnav', to: 'a2anotes', args: { focusId: x.dataset.note } }
+                    : { type: 'openNote', id: x.dataset.note });
+            }
             else if (x.dataset.queue) { vscode.postMessage({ type: 'openQueueItem', id: x.dataset.queue }); }
             else if (x.dataset.task) { focusId = x.dataset.task; expanded.add(focusId); render(); }
         }));

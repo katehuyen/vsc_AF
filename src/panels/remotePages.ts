@@ -32,6 +32,10 @@ export interface RemotePageMakers {
     timeline(host: PanelHost): void;
     engines(host: PanelHost): void;
     accounts(host: PanelHost): void;
+    /** `args.focusId` opens one note / task, as the desktop's focus does. */
+    a2anotes(host: PanelHost, args?: Record<string, unknown>): void;
+    a2atasks(host: PanelHost, args?: Record<string, unknown>): void;
+    portfolio(host: PanelHost): void;
 }
 
 /**
@@ -260,6 +264,26 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             answers: [],
             pcOnly: ACCOUNT_PC,
             make: host => make.accounts(host)
+        },
+        // X-456 — the A2A boards. Resolving, pinning, deleting, clearing, promoting, the supervisor's word,
+        // cancelling, rerouting and Run now are manage; a note's file, a link, a queue item and the other
+        // board's tab belong to the PC (on a phone the other board opens there as afnav).
+        a2anotes: {
+            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['openTask', 'openFile', 'openExternal', 'afnav'],
+            make: (host, args) => make.a2anotes(host, args)
+        },
+        a2atasks: {
+            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['openNote', 'openQueueItem', 'openExternal', 'afnav'],
+            make: (host, args) => make.a2atasks(host, args)
+        },
+        // X-456 — the Agents page reads; a session, a project pick, the folder, a new agent (its CLAUDE.md
+        // opens in the PC's editor) and the guide are the PC's (an agent's row opens its phone page).
+        portfolio: {
+            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['openAgent', 'startSession', 'assignProject', 'manageProjects', 'reveal', 'openGuide', 'agent-new', 'afnav'],
+            make: host => make.portfolio(host)
         }
     };
 }

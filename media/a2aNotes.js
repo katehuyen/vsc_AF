@@ -5,6 +5,7 @@
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
     const A = window.AFA2A;
     const esc = A.esc;
     let DATA = window.__DATA__;
@@ -311,7 +312,12 @@
             ev.stopPropagation();
             const id = b.dataset.id, act = b.dataset.act;
             if (act === 'copyId') { window.AFCtx.copy(id); return; }
-            if (act === 'openTask') { vscode.postMessage({ type: 'openTask', id: b.dataset.task }); return; }
+            if (act === 'openTask') {
+                // X-456 — on a phone the task opens on the phone's own A2A Tasks page
+                vscode.postMessage(ON_PHONE_HOST ? { type: 'afnav', to: 'a2atasks', args: { focusId: b.dataset.task } }
+                    : { type: 'openTask', id: b.dataset.task });
+                return;
+            }
             vscode.postMessage({ type: act, id });
         }));
         document.querySelectorAll('[data-file]').forEach(a => a.addEventListener('click', ev => {

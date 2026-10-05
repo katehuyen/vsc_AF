@@ -8,6 +8,7 @@ import { agentProject, Project, UNASSIGNED } from '../core/projects';
 import { SessionIndex } from '../core/sessions';
 import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * B2 — the fleet on one screen.
@@ -176,32 +177,41 @@ export class PortfolioPanel {
     private disposables: vscode.Disposable[] = [];
 
     /** Follows the index — see AgentDetailPanel.refreshIfOpen. */
-    static refreshIfOpen(): void { PortfolioPanel.current?.refresh(); }
+    static refreshIfOpen(): void {
+        PortfolioPanel.current?.refresh();
+        for (const p of PortfolioPanel.phones) { p.refresh(); }
+    }
 
     static show(deps: PortfolioDeps): void {
         if (PortfolioPanel.current) {
-            PortfolioPanel.current.panel.reveal();
+            PortfolioPanel.current.host.reveal();
             PortfolioPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.portfolio', 'Agent Portfolio', vscode.ViewColumn.Active,
-            { enableScripts: true, retainContextWhenHidden: true });
-        PortfolioPanel.current = new PortfolioPanel(panel, deps);
+        PortfolioPanel.current = new PortfolioPanel(
+            desktopHost({ viewType: 'agentfarm.portfolio', title: 'Agent Portfolio', column: vscode.ViewColumn.Active }), deps);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<PortfolioPanel>();
+
+    /** X-456 — the Agents page on a phone's view. */
+    static openOn(host: PanelHost, deps: PortfolioDeps): void {
+        PortfolioPanel.phones.add(new PortfolioPanel(host, deps));
     }
 
     /** The ONE door to a new agent — `agentfarm.newAgent` opens this, and
      *  `importAgentPack` opens it with the pack it just read. */
     static compose(deps: PortfolioDeps, seed?: Record<string, unknown>): void {
         PortfolioPanel.show(deps);
-        void PortfolioPanel.current?.panel.webview.postMessage({ type: 'agent-compose', seed: seed ?? {} });
+        void PortfolioPanel.current?.host.webview.postMessage({ type: 'agent-compose', seed: seed ?? {} });
     }
 
-    private constructor(private panel: vscode.WebviewPanel, private deps: PortfolioDeps) {
-        panel.webview.html = htmlShell(panel.webview, deps.extensionUri,
+    private constructor(private host: PanelHost, private deps: PortfolioDeps) {
+        host.webview.html = htmlShell(host.webview, deps.extensionUri,
             'Agent Portfolio', this.data(), 'portfolio.js');
-        panel.webview.onDidReceiveMessage(m => this.onMessage(m), null, this.disposables);
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(m => this.onMessage(m), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
         this.disposables.push(deps.index.onDidUpdate(() => this.refresh()));
     }
 
@@ -220,7 +230,7 @@ export class PortfolioPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
@@ -254,7 +264,7 @@ export class PortfolioPanel {
      *  chain's `validateInput` made, said in the card instead of under a box. */
     private createAgent(raw: Record<string, unknown>): void {
         const say = (text: string, ok = false) =>
-            void this.panel.webview.postMessage({ type: 'agent-msg', text, ok });
+            void this.host.webview.postMessage({ type: 'agent-msg', text, ok });
         const s = (k: string) => String(raw[k] ?? '').trim();
         const name = s('name');
         if (!name) { return say('It needs a name — the folder is named after it, and so is the agent.'); }
@@ -279,8 +289,10 @@ export class PortfolioPanel {
     }
 
     private dispose(): void {
-        PortfolioPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (PortfolioPanel.current === this) { PortfolioPanel.current = undefined; }
+        PortfolioPanel.phones.delete(this);
         this.disposables.forEach(d => d.dispose());
-        this.panel.dispose();
+        this.host.dispose();
     }
 }

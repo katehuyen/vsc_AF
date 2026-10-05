@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { A2ANotesStore, HumanDirective } from '../core/a2aNotes';
 import { DIRECTIVE_KINDS } from '../core/a2aSupervisor';
 import { A2ATasksStore, A2ATaskState, A2A_TERMINAL } from '../core/a2aTasks';
@@ -60,37 +61,42 @@ export class A2ANotesPanel {
         if (A2ANotesPanel.current) {
             A2ANotesPanel.current.deps = deps;
             A2ANotesPanel.current.focusId = focusId;
-            A2ANotesPanel.current.panel.reveal();
+            A2ANotesPanel.current.host.reveal();
             A2ANotesPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.a2aNotes',
-            'Agent Farm — A2A Notes',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        A2ANotesPanel.current = new A2ANotesPanel(panel, deps, focusId);
+        A2ANotesPanel.current = new A2ANotesPanel(desktopHost({ viewType: 'agentfarm.a2aNotes', title: 'Agent Farm — A2A Notes' }), deps, focusId);
     }
 
-    static refreshIfOpen(): void { A2ANotesPanel.current?.refresh(); }
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<A2ANotesPanel>();
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: A2ANotesDeps, focusId?: string) {
+    /** X-456 — the A2A Notes page on a phone's view, `focusId` opened as the desktop's is. */
+    static openOn(host: PanelHost, deps: A2ANotesDeps, focusId?: string): void {
+        A2ANotesPanel.phones.add(new A2ANotesPanel(host, deps, focusId));
+    }
+
+    static refreshIfOpen(): void {
+        A2ANotesPanel.current?.refresh();
+        for (const p of A2ANotesPanel.phones) { p.refresh(); }
+    }
+
+    private constructor(readonly host: PanelHost, private deps: A2ANotesDeps, focusId?: string) {
         this.focusId = focusId;
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
     private render(): void {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview, this.deps.extensionUri, 'Agent Farm A2A Notes',
+        this.host.webview.html = htmlShell(
+            this.host.webview, this.deps.extensionUri, 'Agent Farm A2A Notes',
             buildData(this.deps, this.focusId), 'a2aNotes.js');
         this.focusId = undefined;
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focusId) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focusId) });
         this.focusId = undefined;
     }
 
@@ -139,7 +145,7 @@ export class A2ANotesPanel {
                 const prior = this.deps.tasks.list()
                     .find(t => t.sourceNoteId === id && !A2A_TERMINAL.includes(t.state));
                 if (prior) {
-                    void vscode.window.showWarningMessage(`Agent Farm: note ${id} already has a live task (${prior.id}, ${prior.state}).`);
+                    void this.host.ask.warn(`Agent Farm: note ${id} already has a live task (${prior.id}, ${prior.state}).`);
                     break;
                 }
                 const files = note.contextFiles.length ? `\n\nFiles: ${note.contextFiles.join(' · ')}` : '';
@@ -150,11 +156,12 @@ export class A2ANotesPanel {
                     targetRole: note.targetRole, strictness: note.strictness
                 });
                 if (!task) {
-                    void vscode.window.showWarningMessage('Agent Farm: the A2A store is busy — try again in a moment.');
+                    void this.host.ask.warn('Agent Farm: the A2A store is busy — try again in a moment.');
                     break;
                 }
                 this.mutated();
-                try { this.deps.openTask?.(task.id); } catch { /* best-effort */ }
+                // A phone's promotion must not open the A2A Tasks tab on the PC; its card's task chip opens it there.
+                if (!this.host.remote) { try { this.deps.openTask?.(task.id); } catch { /* best-effort */ } }
                 break;
             }
             // N-7 — the supervisor cockpit's two hands on a note. Same call as
@@ -196,7 +203,9 @@ export class A2ANotesPanel {
     }
 
     private dispose(): void {
-        A2ANotesPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (A2ANotesPanel.current === this) { A2ANotesPanel.current = undefined; }
+        A2ANotesPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

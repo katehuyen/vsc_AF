@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { A2ANotesStore, HumanDirective } from '../core/a2aNotes';
 import { DIRECTIVE_KINDS } from '../core/a2aSupervisor';
 import { A2ATask, A2ATasksStore, A2A_TERMINAL, LEASE_MS, MAX_HANDOFF_DEPTH } from '../core/a2aTasks';
@@ -61,37 +62,42 @@ export class A2ATasksPanel {
         if (A2ATasksPanel.current) {
             A2ATasksPanel.current.deps = deps;
             A2ATasksPanel.current.focusId = focusId;
-            A2ATasksPanel.current.panel.reveal();
+            A2ATasksPanel.current.host.reveal();
             A2ATasksPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.a2aTasks',
-            'Agent Farm — A2A Tasks',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        A2ATasksPanel.current = new A2ATasksPanel(panel, deps, focusId);
+        A2ATasksPanel.current = new A2ATasksPanel(desktopHost({ viewType: 'agentfarm.a2aTasks', title: 'Agent Farm — A2A Tasks' }), deps, focusId);
     }
 
-    static refreshIfOpen(): void { A2ATasksPanel.current?.refresh(); }
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<A2ATasksPanel>();
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: A2ATasksDeps, focusId?: string) {
+    /** X-456 — the A2A Tasks page on a phone's view, `focusId` opened as the desktop's is. */
+    static openOn(host: PanelHost, deps: A2ATasksDeps, focusId?: string): void {
+        A2ATasksPanel.phones.add(new A2ATasksPanel(host, deps, focusId));
+    }
+
+    static refreshIfOpen(): void {
+        A2ATasksPanel.current?.refresh();
+        for (const p of A2ATasksPanel.phones) { p.refresh(); }
+    }
+
+    private constructor(readonly host: PanelHost, private deps: A2ATasksDeps, focusId?: string) {
         this.focusId = focusId;
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
     private render(): void {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview, this.deps.extensionUri, 'Agent Farm A2A Tasks',
+        this.host.webview.html = htmlShell(
+            this.host.webview, this.deps.extensionUri, 'Agent Farm A2A Tasks',
             buildData(this.deps, this.focusId), 'a2aTasks.js');
         this.focusId = undefined;
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focusId) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focusId) });
         this.focusId = undefined;
     }
 
@@ -114,7 +120,7 @@ export class A2ATasksPanel {
                 if (!ids.length) { break; }
                 const r = this.deps.tasks.remove(ids);
                 if (r.held.length) {
-                    void vscode.window.showWarningMessage(
+                    void this.host.ask.warn(
                         `Agent Farm: ${r.held.length} task(s) kept — an agent holds them live. ⊘ Cancel first, then delete.`);
                 }
                 if (r.deleted) { this.mutated(); }
@@ -140,7 +146,7 @@ export class A2ATasksPanel {
                 const targetRole = typeof msg.targetRole === 'string' ? msg.targetRole.trim() : '';
                 if (!task || !targetRole) { break; }
                 if (A2A_TERMINAL.includes(task.state)) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${task.id} is ${task.state} — nothing left to reroute.`);
+                    void this.host.ask.warn(`Agent Farm: ${task.id} is ${task.state} — nothing left to reroute.`);
                     break;
                 }
                 const project = typeof msg.project === 'string' ? msg.project.trim() : '';
@@ -152,7 +158,7 @@ export class A2ATasksPanel {
                     targetRole, ...(project ? { project } : {}), ...(workdir ? { workdir } : {})
                 }, 'user', Date.now(), { override: true, why: typeof msg.why === 'string' ? msg.why.trim() : '' });
                 if ('refused' in r) {
-                    void vscode.window.showWarningMessage(`Agent Farm: reroute refused — ${r.refused}.`);
+                    void this.host.ask.warn(`Agent Farm: reroute refused — ${r.refused}.`);
                     break;
                 }
                 this.focusId = r.task.id;
@@ -163,16 +169,16 @@ export class A2ATasksPanel {
                 const task = id ? this.deps.tasks.get(id) : undefined;
                 if (!task) { break; }
                 if (A2A_TERMINAL.includes(task.state)) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${task.id} is ${task.state} — nothing left to run.`);
+                    void this.host.ask.warn(`Agent Farm: ${task.id} is ${task.state} — nothing left to run.`);
                     break;
                 }
                 const r = this.deps.runTaskNow?.(task);
                 if (!r) {
-                    void vscode.window.showWarningMessage('Agent Farm: this window cannot start sessions.');
+                    void this.host.ask.warn('Agent Farm: this window cannot start sessions.');
                     break;
                 }
                 if ('refused' in r) {
-                    void vscode.window.showWarningMessage(`Agent Farm: Run Now refused — ${r.refused}.`);
+                    void this.host.ask.warn(`Agent Farm: Run Now refused — ${r.refused}.`);
                     break;
                 }
                 break;
@@ -198,7 +204,9 @@ export class A2ATasksPanel {
     }
 
     private dispose(): void {
-        A2ATasksPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (A2ATasksPanel.current === this) { A2ATasksPanel.current = undefined; }
+        A2ATasksPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

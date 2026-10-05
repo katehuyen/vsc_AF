@@ -8,6 +8,7 @@
     'use strict';
 
     const vscode = acquireVsCodeApi();
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
     const C = window.AFCharts;
     // htmlShell injects the first payload as window.__DATA__ — reading anything
     // else means an empty table until the user presses Refresh.
@@ -28,6 +29,9 @@
         { id: 'memory', label: 'Memory', num: true, get: r => r.memoryFiles },
         { id: 'ctx', label: 'Fixed ctx', num: true, get: r => r.contextLoad, tip: 'Tokens loaded on every turn of this agent (CLAUDE.md + memory index)' }
     ];
+
+    /** A cell's column name, worn on a phone where the table is a card per agent (media/afMobile.js). */
+    const L = i => ` data-label="${COLS[i].label}"`;
 
     const STATE_KEY = 'afPortfolio';
     const saved = (typeof vscode.getState === 'function' && vscode.getState()) || {};
@@ -53,6 +57,10 @@
             border-radius:3px; background:transparent; opacity:.65;
             border:1px solid var(--vscode-widget-border, #4444); color:var(--vscode-foreground); }
         .miniact:hover { opacity:1; }
+        /* the phone (media/afMobile.js): a card per agent; a session, a project pick, the folder and a new agent are the PC's */
+        html.af-phone .pf td, html.af-phone .pf .agentcell { white-space:normal; min-width:0; }
+        html.af-phone table.pf tr[data-afcard] > td.pfact, html.af-phone #pf-new { display:none; }
+        html.af-phone .pf tr.grouphead, html.af-phone .pf tr.grouphead > td { display:block; }
     </style>`;
 
     const STATUS = {
@@ -102,45 +110,45 @@
             memoryFiles: 0, contextLoad: 0, active: 0, dormant: 0
         });
 
-        const totalsRow = `<tr class="totrow" title="Every agent listed above — the fleet's own numbers, unaffected by sorting">
-            <td class="agentcell"><strong>ALL ${rows.length} AGENTS</strong></td>
-            <td>${totals.active ? `<span class="badge">${totals.active} working</span>` : '<span class="muted">—</span>'}</td>
-            <td class="num">${totals.dormant ? totals.dormant + ' 💤' : '—'}</td>
-            <td class="num">${totals.sessions7 || ''}</td>
-            <td class="num">${totals.cost7 ? C.fmtUSD(totals.cost7) : ''}</td>
-            <td class="num">${totals.sessions30 || ''}</td>
-            <td class="num"><strong>${totals.cost30 ? C.fmtUSD(totals.cost30) : ''}</strong></td>
-            <td class="num">${totals.tokens30 ? C.fmtTokW(totals.tokens30, totals.wTokens30) : ''}</td>
-            <td class="num">${totals.files || ''}</td>
-            <td class="num">${totals.duties || ''}${totals.dutiesWaiting ? ` <span class="badge warn">⏳${totals.dutiesWaiting}</span>` : ''}</td>
-            <td class="num">${totals.errors ? `<span class="badge err">${totals.errors}</span> ` : ''}${totals.warnings ? `<span class="badge warn">${totals.warnings}</span>` : ''}${!totals.errors && !totals.warnings ? '—' : ''}</td>
-            <td class="num">${totals.memoryFiles || ''}</td>
-            <td class="num"><strong>${C.fmtTok(totals.contextLoad)}</strong></td>
-            <td></td>
+        const totalsRow = `<tr class="totrow" data-afcard title="Every agent listed above — the fleet's own numbers, unaffected by sorting">
+            <td class="agentcell" data-lead><strong>ALL ${rows.length} AGENTS</strong></td>
+            <td${L(1)}>${totals.active ? `<span class="badge">${totals.active} working</span>` : '<span class="muted">—</span>'}</td>
+            <td class="num"${L(2)}>${totals.dormant ? totals.dormant + ' 💤' : '—'}</td>
+            <td class="num"${L(3)}>${totals.sessions7 || ''}</td>
+            <td class="num"${L(4)}>${totals.cost7 ? C.fmtUSD(totals.cost7) : ''}</td>
+            <td class="num"${L(5)}>${totals.sessions30 || ''}</td>
+            <td class="num"${L(6)}><strong>${totals.cost30 ? C.fmtUSD(totals.cost30) : ''}</strong></td>
+            <td class="num"${L(7)}>${totals.tokens30 ? C.fmtTokW(totals.tokens30, totals.wTokens30) : ''}</td>
+            <td class="num"${L(8)}>${totals.files || ''}</td>
+            <td class="num"${L(9)}>${totals.duties || ''}${totals.dutiesWaiting ? ` <span class="badge warn">⏳${totals.dutiesWaiting}</span>` : ''}</td>
+            <td class="num"${L(10)}>${totals.errors ? `<span class="badge err">${totals.errors}</span> ` : ''}${totals.warnings ? `<span class="badge warn">${totals.warnings}</span>` : ''}${!totals.errors && !totals.warnings ? '—' : ''}</td>
+            <td class="num"${L(11)}>${totals.memoryFiles || ''}</td>
+            <td class="num"${L(12)}><strong>${C.fmtTok(totals.contextLoad)}</strong></td>
+            <td class="pfact"></td>
         </tr>`;
 
-        const head = `<tr>${COLS.map(c =>
+        const head = `<tr data-afcardhead>${COLS.map(c =>
             `<th class="${c.num ? 'num ' : ''}click" data-sort="${c.id}" title="${c.tip || 'Sort by ' + c.label}">${c.label}${st.sort === c.id ? (st.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`
         ).join('')}<th></th></tr>`;
 
         const rowHtml = r => {
             const s = STATUS[r.status] || STATUS.idle;
-            return `<tr class="click${r.dormant ? ' dormant' : ''}" data-agent="${C.esc(r.id)}"
+            return `<tr class="click${r.dormant ? ' dormant' : ''}" data-afcard data-agent="${C.esc(r.id)}"
                 ${window.AFCtx.agent(r)} title="${C.esc(r.dir)} — ${C.esc(window.AFCtx.AGENT_HINT)}">
-                <td class="agentcell"><i class="dot2" style="background:${r.active ? 'var(--vscode-charts-green,#4caf50)' : s.color}"></i><strong>${C.esc(r.name)}</strong></td>
-                <td>${s.label ? `<span class="badge" style="color:${s.color};border-color:${s.color}">${s.label}</span>` : '<span class="muted">—</span>'}</td>
-                <td class="num">${quietCell(r)}</td>
-                <td class="num">${r.sessions7 || ''}</td>
-                <td class="num">${r.cost7 ? C.fmtUSD(r.cost7) : ''}</td>
-                <td class="num">${r.sessions30 || ''}</td>
-                <td class="num"><strong>${r.cost30 ? C.fmtUSD(r.cost30) : ''}</strong>${r.budget ? ` <span class="badge${r.costToday > r.budget ? ' err' : ''}" title="daily budget ${C.fmtUSD(r.budget)} · today ${C.fmtUSD(r.costToday)}">${Math.round((r.costToday / r.budget) * 100)}%</span>` : ''}</td>
-                <td class="num">${r.tokens30 ? C.fmtTokW(r.tokens30, r.wTokens30) : ''}</td>
-                <td class="num">${r.filesEdited30 || ''}</td>
-                <td class="num">${r.duties || ''}${r.dutiesWaiting ? ` <span class="badge warn" title="${r.dutiesWaiting} duty(ies) have work waiting">⏳${r.dutiesWaiting}</span>` : ''}${r.dutiesPaused ? ` <span class="badge" title="${r.dutiesPaused} paused">⏸${r.dutiesPaused}</span>` : ''}</td>
-                <td class="num">${r.errors ? `<span class="badge err">${r.errors}</span> ` : ''}${r.warnings ? `<span class="badge warn">${r.warnings}</span>` : ''}${!r.errors && !r.warnings ? '<span class="muted">—</span>' : ''}</td>
-                <td class="num">${r.memoryFiles || ''}</td>
-                <td class="num">${C.fmtTok(r.contextLoad)}</td>
-                <td>
+                <td class="agentcell" data-lead><i class="dot2" style="background:${r.active ? 'var(--vscode-charts-green,#4caf50)' : s.color}"></i><strong>${C.esc(r.name)}</strong></td>
+                <td${L(1)}>${s.label ? `<span class="badge" style="color:${s.color};border-color:${s.color}">${s.label}</span>` : '<span class="muted">—</span>'}</td>
+                <td class="num"${L(2)}>${quietCell(r)}</td>
+                <td class="num"${L(3)}>${r.sessions7 || ''}</td>
+                <td class="num"${L(4)}>${r.cost7 ? C.fmtUSD(r.cost7) : ''}</td>
+                <td class="num"${L(5)}>${r.sessions30 || ''}</td>
+                <td class="num"${L(6)}><strong>${r.cost30 ? C.fmtUSD(r.cost30) : ''}</strong>${r.budget ? ` <span class="badge${r.costToday > r.budget ? ' err' : ''}" title="daily budget ${C.fmtUSD(r.budget)} · today ${C.fmtUSD(r.costToday)}">${Math.round((r.costToday / r.budget) * 100)}%</span>` : ''}</td>
+                <td class="num"${L(7)}>${r.tokens30 ? C.fmtTokW(r.tokens30, r.wTokens30) : ''}</td>
+                <td class="num"${L(8)}>${r.filesEdited30 || ''}</td>
+                <td class="num"${L(9)}>${r.duties || ''}${r.dutiesWaiting ? ` <span class="badge warn" title="${r.dutiesWaiting} duty(ies) have work waiting">⏳${r.dutiesWaiting}</span>` : ''}${r.dutiesPaused ? ` <span class="badge" title="${r.dutiesPaused} paused">⏸${r.dutiesPaused}</span>` : ''}</td>
+                <td class="num"${L(10)}>${r.errors ? `<span class="badge err">${r.errors}</span> ` : ''}${r.warnings ? `<span class="badge warn">${r.warnings}</span>` : ''}${!r.errors && !r.warnings ? '<span class="muted">—</span>' : ''}</td>
+                <td class="num"${L(11)}>${r.memoryFiles || ''}</td>
+                <td class="num"${L(12)}>${C.fmtTok(r.contextLoad)}</td>
+                <td class="pfact">
                     <button class="miniact" data-start="${C.esc(r.id)}" title="Start a session for this agent (launcher)">▶</button>
                     <button class="miniact" data-project-of="${C.esc(r.id)}" title="Assign this agent to a project">◧</button>
                     <button class="miniact" data-reveal="${C.esc(r.id)}" title="Reveal this agent's folder">📁</button>
@@ -185,7 +193,7 @@
             })}
             ${agentForm ? agentFormHtml() : (agentMsg ? window.AFForm.msg(agentMsg, !agentMsgOk) : '')}
             <div class="chiprow">${projectChips || ''}${st.projects ? '<button class="chip" id="pf-allproj">All projects</button>' : ''}</div>
-            <div class="tablewrap"><table class="pf">${head}${rows.length ? totalsRow : ''}${body || `<tr><td colspan="${COLS.length + 1}" class="muted">No agents match.</td></tr>`}</table></div>
+            <div class="tablewrap"><table class="pf" data-afcards>${head}${rows.length ? totalsRow : ''}${body || `<tr><td colspan="${COLS.length + 1}" class="muted">No agents match.</td></tr>`}</table></div>
             <p class="footnote">Rows are agents; the group header sums each project's last 30 days. "Quiet" is days since the agent's last session — 💤 marks anything older than ${DATA.dormantDays} days. Costs are API-equivalent values from local transcripts, not a bill.</p>`;
 
         window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
@@ -216,7 +224,8 @@
         const btn = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
         btn('pf-group', () => { st.group = !st.group; save(); render(); });
         btn('pf-dormant', () => { st.hideDormant = !st.hideDormant; save(); render(); });
-        btn('pf-manage', () => vscode.postMessage({ type: 'manageProjects' }));
+        // X-456 — on a phone the Projects page opens on the phone
+        btn('pf-manage', () => vscode.postMessage(ON_PHONE_HOST ? { type: 'afnav', to: 'projects' } : { type: 'manageProjects' }));
         btn('pf-allproj', () => { st.projects = null; save(); render(); });
         btn('pf-new', () => openAgentForm());
         wireAgentForm();
