@@ -3065,16 +3065,6 @@
       ]
     },
     {
-      "capability": "livingPanel.ts#goto",
-      "ui": [
-        "page:livingPanel.ts#goto"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
-      }
-    },
-    {
       "capability": "livingPanel.ts#openGuide",
       "ui": [
         "page:livingPanel.ts#openGuide"

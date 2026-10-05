@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.846.0 - The Living page opens on the phone (2026-10-05)
+
+- **The Living page, on the phone.** "Is the system alive today?" opens in
+  the Agent Farm phone app: the open loops, the ones closing normally, your
+  own checks and what the farm's automations decided lately. It asks the
+  same level its bridge operations ask - the one a phone pairs at by
+  default - to look and to save your checks.
+- A signal's arrow opens that page on the phone itself - the Notices, the
+  Work Queue, the Tasks, the Dashboard or the Projects. The checks editor
+  works there with the path typed in; the PC's file picker and "Edit as
+  JSON" stay on the PC and are not drawn on the phone.
+- On the phone the automation decisions are cards, and in the checks list
+  (and every list like it, such as the Toolbox's policies) a row's buttons
+  take their own line, so a check's name and path keep the screen's width.
+
 ## 3.845.0 - The Settings page opens on the phone (2026-10-05)
 
 - **The Settings page, on the phone.** Every Agent Farm setting, Claude

@@ -137,7 +137,7 @@ function draws(when, section) {
     p.posted.length = 0;
     p.send({ type: 'afctx', act: 'lvGo', ctx: sig });
     ok('going to a signal is the row click\'s own message',
-        p.last().type === 'goto' && p.last().to === 'notices');
+        p.last().type === 'afnav' && p.last().to === 'notices');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -255,14 +255,14 @@
             return `<p class="muted">No automation decisions recorded yet. Every firing — and every wake-up a
                 precondition suppressed — lands here, so a guard can never quietly swallow real work.</p>`;
         }
-        const rows = recent.map(e => `<tr class="${e.outcome}">
+        const rows = recent.map(e => `<tr class="${e.outcome}" data-afcard>
             <td class="muted small nowrap" title="${C.esc(window.AFTime.tip(e.ts, 'Decided'))}">${C.esc(window.AFTime.stamp(e.ts))}</td>
             <td>${e.outcome === 'fired' ? '▶ fired' : '🛡 skipped'}</td>
-            <td>${C.esc(e.title)} <span class="muted small">(${C.esc(e.kind)})</span></td>
-            <td class="muted small">${C.esc(e.reason)}</td>
+            <td data-lead>${C.esc(e.title)} <span class="muted small">(${C.esc(e.kind)})</span></td>
+            <td class="muted small lvwhy">${C.esc(e.reason)}</td>
         </tr>`).join('');
-        return `<div class="tablewrap"><table>
-            <tr><th>When</th><th>Outcome</th><th>Automation</th><th>Why</th></tr>${rows}</table></div>`;
+        return `<div class="tablewrap"><table data-afcards>
+            <tr data-afcardhead><th>When</th><th>Outcome</th><th>Automation</th><th>Why</th></tr>${rows}</table></div>`;
     }
 
     function render() {
@@ -304,6 +304,8 @@
                 tr.skipped td { opacity:.72; }
                 .hintbox { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px;
                     padding:8px 11px; margin:10px 0; font-size:12px; }
+                html.af-phone [data-afbrowse], html.af-phone [data-chk="json"] { display:none; }
+                html.af-phone table[data-afcards] td.lvwhy { flex:1 1 100%; overflow-wrap:anywhere; }
             </style>
             ${window.AFHeader.html({
                 page: 'living',
@@ -328,9 +330,9 @@
 
         window.AFHeader.wire(vscode);
         document.querySelectorAll('[data-goto]').forEach(el => {
-            el.addEventListener('click', () => post({ type: 'goto', to: el.dataset.goto }));
+            el.addEventListener('click', () => post({ type: 'afnav', to: el.dataset.goto }));
             el.addEventListener('keydown', e => {
-                if (e.key === 'Enter' || e.key === ' ') { post({ type: 'goto', to: el.dataset.goto }); }
+                if (e.key === 'Enter' || e.key === ' ') { post({ type: 'afnav', to: el.dataset.goto }); }
             });
         });
         const cfg = document.getElementById('cfg');
@@ -344,7 +346,7 @@
      *  command and needs nothing here. */
     function ctxDo(act, ctx) {
         if (act === 'lvGo') {
-            if (ctx.sigGoto) { post({ type: 'goto', to: String(ctx.sigGoto) }); }
+            if (ctx.sigGoto) { post({ type: 'afnav', to: String(ctx.sigGoto) }); }
             return;
         }
         if (act === 'lvCopy') { window.AFCtx.copy(ctx.sigText); }

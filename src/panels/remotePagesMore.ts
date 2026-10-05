@@ -16,6 +16,7 @@ export interface MorePageMakers {
     toolbox(host: PanelHost): void;
     sound(host: PanelHost): void;
     settings(host: PanelHost): void;
+    living(host: PanelHost): void;
 }
 
 /**
@@ -127,6 +128,15 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
                 'exportProfiles', 'importProfiles', 'ccRaw', 'ccOpenFile', 'rootAdd', 'rootReveal', 'wikiReveal',
                 'wikiOpen', 'spReveal', 'openAgent', 'openGuide', 'afnav', 'svc-connect', ...SOUND_PC],
             make: host => make.settings(host)
+        },
+        // X-456 — "is the system alive today?". Its bridge ops (living.pulse, living.checks,
+        // living.check.add / .remove) ask manage, so the page asks the same to look and to save the
+        // checks. A signal's arrow is the header's own page link, so on a phone it opens that page
+        // there; the file picker, settings.json, the guide's tab and another page belong to the PC.
+        living: {
+            open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['af-browse', 'openSettingsJson', 'openGuide', 'afnav'],
+            make: host => make.living(host)
         }
     };
 }

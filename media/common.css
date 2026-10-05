@@ -607,6 +607,9 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .affra { white-space: nowrap; }
 .affra .mini { margin-left: 3px; }
 .affra .mini[disabled] { opacity: .35; cursor: default; }
+html.af-phone .affrow { flex-wrap: wrap; }
+html.af-phone .affrt { flex: 1 1 calc(100% - 3.5em); }
+html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
 /* ONE item of that list, opened. Nested inside the form's own card, so it is
    visibly part of the thing being built rather than a second dialog on top of
    it — and only ever one at a time, because a list where every row is expanded

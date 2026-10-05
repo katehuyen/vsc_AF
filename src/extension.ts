@@ -31384,6 +31384,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             toolbox: host => ToolboxPanel.openOn(host, toolboxDeps),
             sound: host => SoundPanel.openOn(host, soundPageDeps),
             settings: host => FarmSettingsPanel.openOn(host, farmSettingsDeps()),
+            living: host => LivingPanel.openOn(host, livingDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

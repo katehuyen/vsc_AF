@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { buildLivingReport, LivingCheck, LivingInput } from '../core/living';
 import { handleAfNav, handleFormBrowse, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Living page — "is the system alive today?" on one screen.
@@ -27,40 +28,43 @@ export interface LivingDeps {
 
 export class LivingPanel {
     private static current: LivingPanel | undefined;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<LivingPanel>();
     private disposables: vscode.Disposable[] = [];
 
     static show(deps: LivingDeps): void {
         if (LivingPanel.current) {
-            LivingPanel.current.panel.reveal();
+            LivingPanel.current.host.reveal();
             LivingPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.living',
-            'Agent Farm — Living',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        LivingPanel.current = new LivingPanel(panel, deps);
+        LivingPanel.current = new LivingPanel(
+            desktopHost({ viewType: 'agentfarm.living', title: 'Agent Farm — Living' }), deps);
+    }
+
+    /** X-456 — the Living page on a phone's view. */
+    static openOn(host: PanelHost, deps: LivingDeps): void {
+        LivingPanel.phones.add(new LivingPanel(host, deps));
     }
 
     static refreshIfOpen(): void {
         LivingPanel.current?.refresh();
+        for (const p of LivingPanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: LivingDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Agent Farm Living',
+    private constructor(readonly host: PanelHost, private deps: LivingDeps) {
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Agent Farm Living',
             this.data(), 'livingPage.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.disposables.push(deps.onDidChange(() => this.refresh()));
     }
 
     /** Open the page with the checks editor already up — U-14, surface 4. */
     static compose(deps: LivingDeps): void {
         LivingPanel.show(deps);
-        void LivingPanel.current?.panel.webview.postMessage({ type: 'checks-compose' });
+        void LivingPanel.current?.host.webview.postMessage({ type: 'checks-compose' });
     }
 
     private data(): Record<string, unknown> {
@@ -81,11 +85,11 @@ export class LivingPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
     }
 
     private say(text: string, ok = false): void {
-        void this.panel.webview.postMessage({ type: 'checks-msg', text, ok });
+        void this.host.webview.postMessage({ type: 'checks-msg', text, ok });
     }
 
     /**
@@ -142,14 +146,11 @@ export class LivingPanel {
             case 'afnav':
                 handleAfNav(msg.to);
                 break;
-            case 'goto':
-                handleAfNav(msg.to);
-                break;
             case 'checks-save':
                 void this.saveChecks(msg.checks);
                 break;
             case 'af-browse':
-                void handleFormBrowse(this.panel.webview, msg);
+                void handleFormBrowse(this.host.webview, msg);
                 break;
             case 'openSettingsJson':
                 void vscode.commands.executeCommand('workbench.action.openSettingsJson');
@@ -161,7 +162,10 @@ export class LivingPanel {
     }
 
     private dispose(): void {
-        LivingPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (LivingPanel.current === this) { LivingPanel.current = undefined; }
+        LivingPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }
