@@ -716,7 +716,7 @@ import {
 } from './panels/base';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
-import { SearchPanel, scopeSessions, searchableSessions } from './panels/searchPanel';
+import { SearchPanel, SearchDeps, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
 import { sessionChainOf } from './core/sessionChain';
@@ -31326,6 +31326,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     // X-441 — the pages a phone may open, each on its own host per view. A page
     // not listed here is answered "unavailable" on the phone.
+    // The Search page's deps — the palette's command and a phone's view (X-456) open the same page.
+    const searchPageDeps = (): SearchDeps => ({
+        extensionUri: context.extensionUri,
+        index,
+        getAgentNames: () => agents.map(a => a.name),
+        getMemoryFiles: () => agents.flatMap(a =>
+            a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
+        liveEventsFile: () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
+        // Resolve each session through the project store; one agent
+        // may have sessions in several projects.
+        projectOf: sessionProjectName,
+        // X-35: the OTHER engines' transcripts, read with the very
+        // parser the Session Viewer reads them with.
+        parseForeign: (raw, file) => parseCliViewer(raw, file, pricing),
+        // X-42: the same corpus the bridge op reads — one index.
+        textSearch,
+        semanticSearch,
+        semanticStatus
+    });
     const remoteViews = new RemoteViews({
         media: vscode.Uri.joinPath(context.extensionUri, 'media'),
         atLeast: scopeAtLeast,
@@ -31343,6 +31362,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             turns: host => TurnsPanel.openOn(host, turnsPageDeps()),
             projects: host => ProjectsPanel.openOn(host, projectsPanelDeps()),
             agent: (host, args) => AgentDetailPanel.openOn(host, typeof args?.agentId === 'string' ? args.agentId : '', detailDeps),
+            search: host => SearchPanel.openOn(host, searchPageDeps()),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
@@ -40864,24 +40884,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.searchTranscripts',
             (preset?: { agentName?: string; file?: string; title?: string }) => {
-                SearchPanel.show({
-                    extensionUri: context.extensionUri,
-                    index,
-                    getAgentNames: () => agents.map(a => a.name),
-                    getMemoryFiles: () => agents.flatMap(a =>
-                        a.memoryFiles.map(f => ({ file: f.path, agentName: a.name }))),
-                    liveEventsFile: () => path.join(context.globalStorageUri.fsPath, 'live-events.jsonl'),
-                    // Resolve each session through the project store; one agent
-                    // may have sessions in several projects.
-                    projectOf: sessionProjectName,
-                    // X-35: the OTHER engines' transcripts, read with the very
-                    // parser the Session Viewer reads them with.
-                    parseForeign: (raw, file) => parseCliViewer(raw, file, pricing),
-                    // X-42: the same corpus the bridge op reads — one index.
-                    textSearch,
-                    semanticSearch,
-                    semanticStatus
-                }, preset && typeof preset === 'object' ? preset : undefined);
+                SearchPanel.show(searchPageDeps(), preset && typeof preset === 'object' ? preset : undefined);
             }),
 
         /**

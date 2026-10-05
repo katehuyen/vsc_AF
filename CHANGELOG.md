@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.838.0 - Search opens on the phone (2026-10-05)
+
+- **Search every conversation from the phone.** The Search page now opens
+  in the Agent Farm phone app: type, pick the mode, the scope and the
+  filters, and the answer comes back grouped by session as on the PC.
+  Tapping a hit opens that conversation on the phone at that moment. On a
+  phone the filters stand one per line, every quick-scope choice is
+  visible, and a session's counts sit under its name instead of squeezing
+  it. A device that may only read can search.
+- Finding a session by its id, building the meaning index and its settings
+  stay on the PC and are not drawn on the phone.
+
 ## 3.837.0 - An agent's page opens on the phone (2026-10-05)
 
 - **An agent's page, on the phone.** Tapping an agent on a phone page — its

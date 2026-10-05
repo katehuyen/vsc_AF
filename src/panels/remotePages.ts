@@ -28,6 +28,7 @@ export interface RemotePageMakers {
     projects(host: PanelHost): void;
     /** False when `args.agentId` names no agent the farm knows: the phone is told "unavailable". */
     agent(host: PanelHost, args?: Record<string, unknown>): boolean;
+    search(host: PanelHost): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -204,6 +205,17 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
                 'consoleSession', 'continueSession', 'reveal', 'openMemoryGraph', 'memCard', 'openDashboard',
                 'openTimeline', 'openGuide', 'afnav'],
             make: (host, args) => make.agent(host, args)
+        },
+        // X-456 — searching every transcript is a look. A hit's transcript reaches the phone as afnav; a
+        // file, the Timeline's tab, the id picker, building the semantic index, the settings and the guide
+        // belong to the PC.
+        search: {
+            open: 'read', act: 'manage',
+            looks: ['search'],
+            answers: [],
+            pcOnly: ['openSession', 'openFile', 'openTimeline', 'findSession', 'buildIndex', 'openFarmSettings',
+                'openGuide', 'afnav'],
+            make: host => make.search(host)
         }
     };
 }

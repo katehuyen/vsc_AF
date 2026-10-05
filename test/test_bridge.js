@@ -2427,7 +2427,8 @@ const { opencodeStatus, syncToOpencode } =
         ok('extension.ts registers it against the panel\'s own engine, not a copy',
             /textSearch\.search\(/.test(block) && /searchMemory\(/.test(block) && /searchLiveEvents\(/.test(block));
         ok('…and that one corpus service is what the Search panel is handed too',
-            /new TextSearchService\(\{/.test(src) && /SearchPanel\.show\(\{[\s\S]{0,1400}?\n\s+textSearch,/.test(src));
+            /new TextSearchService\(\{/.test(src) && /const searchPageDeps = \(\): SearchDeps => \(\{[\s\S]{0,1400}?\n\s+textSearch,/.test(src)
+            && /SearchPanel\.show\(searchPageDeps\(\)/.test(src));
         ok('…with the roles, the window and the sources on the wire',
             /roles\?/.test(block) && /from\?\/to\?/.test(block)
             && /tsFrom: when\(args\.from, false\)/.test(block) && /tsTo: when\(args\.to, true\)/.test(block));

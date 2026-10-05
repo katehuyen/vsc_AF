@@ -11,6 +11,7 @@ import {
 import { ENGINES } from '../core/consoleEngine';
 import { chainIndexNow, chainSessionsMatching, isBatonRun } from '../core/chainMembership';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 export interface SearchDeps {
     extensionUri: vscode.Uri;
@@ -196,24 +197,23 @@ export class SearchPanel {
 
     static show(deps: SearchDeps, preset?: SearchPreset): void {
         if (SearchPanel.current) {
-            SearchPanel.current.panel.reveal();
+            SearchPanel.current.host.reveal();
             if (preset) {
-                void SearchPanel.current.panel.webview.postMessage({ type: 'preset', preset });
+                void SearchPanel.current.host.webview.postMessage({ type: 'preset', preset });
             }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.search',
-            'Agent Farm — Search',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        SearchPanel.current = new SearchPanel(panel, deps, preset);
+        SearchPanel.current = new SearchPanel(desktopHost({ viewType: 'agentfarm.search', title: 'Agent Farm — Search' }), deps, preset);
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: SearchDeps, preset?: SearchPreset) {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+    /** X-456 — the search page on a phone's view; never the desktop's tab. */
+    static openOn(host: PanelHost, deps: SearchDeps): void {
+        new SearchPanel(host, deps);
+    }
+
+    private constructor(readonly host: PanelHost, private deps: SearchDeps, preset?: SearchPreset) {
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             'Search',
             {
@@ -224,8 +224,8 @@ export class SearchPanel {
             },
             'search.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
     /**
@@ -379,7 +379,7 @@ export class SearchPanel {
                             // far it has got and never presents a partial answer.
                             onProgress: (done, total) => {
                                 if (token.aborted) { return; }
-                                void this.panel.webview.postMessage({
+                                void this.host.webview.postMessage({
                                     type: 'progress', seq, done, total
                                 });
                             }
@@ -409,7 +409,7 @@ export class SearchPanel {
                 }
                 if (token.aborted) { return; }
                 if (this.running === token) { this.running = undefined; }
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'results', result, query: msg.query,
                     // echoed back so the page can drop results of a superseded
                     // search (auto-search fires on every control change)
@@ -461,7 +461,8 @@ export class SearchPanel {
     }
 
     private dispose(): void {
-        SearchPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (SearchPanel.current === this) { SearchPanel.current = undefined; }
         // A closed panel has nothing to answer; the scan it left running would
         // otherwise keep the host busy for a page nobody is looking at.
         if (this.running) { this.running.aborted = true; this.running = undefined; }
