@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.839.0 - The Live Timeline opens on the phone (2026-10-05)
+
+- **Watch the farm work from the phone.** The Live Timeline now opens in the
+  Agent Farm phone app: the swim lanes, every live session's card, the
+  workflow runs and the longer ranges read there as on the PC. On a phone
+  the lanes keep the size they are drawn at and scroll sideways inside
+  their box, instead of shrinking to a third of it where nothing could be
+  read. Tapping a lane, a mark or Open transcript opens that conversation on
+  the phone at that moment. A device that may only read can read the whole
+  page.
+- Interrupting a turn, clearing a session from the page, a session's turn
+  alerts, their test and its sound panel need a device that may manage; a
+  refused alert change is told on the phone.
+- Jumping to a terminal, End session and Force kill (they ask their
+  question on the PC), installing the hooks, a workflow's live settings, a
+  folder and the guide stay on the PC and are not drawn on the phone.
+
 ## 3.838.0 - Search opens on the phone (2026-10-05)
 
 - **Search every conversation from the phone.** The Search page now opens

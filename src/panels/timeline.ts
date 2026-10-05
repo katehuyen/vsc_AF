@@ -12,6 +12,7 @@ import { AlertEvent, EVENT_LABEL, LANE_EVENTS, VoiceOrigin } from '../core/alert
 import { handleAfNav, htmlShell } from './base';
 import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
 import { soundSurface } from './alertSurface';
+import { desktopHost, type PanelHost } from './panelHost';
 
 export interface TimelineDeps {
     extensionUri: vscode.Uri;
@@ -262,35 +263,38 @@ export class TimelinePanel {
 
     static show(deps: TimelineDeps): void {
         if (TimelinePanel.current) {
-            TimelinePanel.current.panel.reveal();
+            TimelinePanel.current.host.reveal();
             TimelinePanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.timeline',
-            'Agent Farm — Live Timeline',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        TimelinePanel.current = new TimelinePanel(panel, deps);
+        TimelinePanel.current = new TimelinePanel(desktopHost({ viewType: 'agentfarm.timeline', title: 'Agent Farm — Live Timeline' }), deps);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<TimelinePanel>();
+
+    /** X-456 — the Live Timeline on a phone's view. */
+    static openOn(host: PanelHost, deps: TimelineDeps): void {
+        TimelinePanel.phones.add(new TimelinePanel(host, deps));
     }
 
     /** Redraw if the page is open — for facts that change somewhere else (a
      *  session pinned or labelled from another surface). Never opens it. */
     static refreshIfOpen(): void {
         TimelinePanel.current?.refresh();
+        for (const p of TimelinePanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: TimelineDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview,
+    private constructor(readonly host: PanelHost, private deps: TimelineDeps) {
+        host.webview.html = htmlShell(
+            host.webview,
             deps.extensionUri,
             'Live Timeline',
             buildData(deps),
             'timeline.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         const throttledRefresh = () => {
             // Throttle bursts (a busy agent can emit several events per second).
             if (this.throttle) { return; }
@@ -312,14 +316,14 @@ export class TimelinePanel {
     }
 
     refresh(): void {
-        this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps) });
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
         // U-180 — the session sound panel, answered by the handler the Sound page uses.
         const sound = this.deps.sound?.();
         if (sound && /^alert/.test(msg.type)) {
-            void handleAlertMessage(msg, sound, soundSurface(this.panel.webview));
+            void handleAlertMessage(msg, sound, soundSurface(this.host.webview));
             return;
         }
         switch (msg.type) {
@@ -380,7 +384,7 @@ export class TimelinePanel {
             case 'renameSession':
                 void vscode.commands.executeCommand('agentfarm.renameSession', {
                     sessionId: typeof msg.sessionId === 'string' ? msg.sessionId : '',
-                    title: typeof msg.title === 'string' ? msg.title : ''
+                    title: typeof msg.title === 'string' ? msg.title : '', ask: this.host.ask
                 });
                 break;
             case 'revealFolder':
@@ -410,7 +414,7 @@ export class TimelinePanel {
                 const action = typeof msg.action === 'string' ? msg.action : '';
                 const r = this.deps.setSessionAlert(sessionId, action, !!msg.enabled);
                 if (!r.ok) {
-                    void vscode.window.showWarningMessage(
+                    void this.host.ask.warn(
                         `Agent Farm: that alert change was refused — ${r.error ?? 'unknown reason'}.`);
                 }
                 this.refresh();
@@ -432,7 +436,7 @@ export class TimelinePanel {
                 // The countdown runs in the HOST, so the user can leave this
                 // window entirely and still see whether focus really came back.
                 void this.deps.testSessionAlert(sessionId, delayMs, event).then(result => {
-                    void this.panel.webview.postMessage({ type: 'alertTest', result });
+                    void this.host.webview.postMessage({ type: 'alertTest', result });
                 });
                 break;
             }
@@ -440,7 +444,7 @@ export class TimelinePanel {
                 // Long ranges: per-lane density buckets from the persistent event store.
                 const hours = typeof msg.hours === 'number' && msg.hours > 0 ? msg.hours : 24;
                 const windowMs = Math.min(hours, 31 * 24) * 3600 * 1000;
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'history',
                     hours,
                     density: this.deps.live.density(windowMs),
@@ -453,7 +457,9 @@ export class TimelinePanel {
 
     private dispose(): void {
         if (this.throttle) { clearTimeout(this.throttle); }
-        TimelinePanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (TimelinePanel.current === this) { TimelinePanel.current = undefined; }
+        TimelinePanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

@@ -736,7 +736,7 @@ import { planNeedAct } from './core/needsAct';
 import {
     buildData as buildViewerData, runContextCapture, SessionViewerPanel
 } from './panels/sessionViewer';
-import { TimelinePanel } from './panels/timeline';
+import { TimelineDeps, TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
 import { MuteStatusBar } from './views/muteBar';
 import { PlanUsageBar, WatchedUsage } from './views/planUsageBar';
@@ -2084,8 +2084,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const turnSeenTimer = setInterval(
         () => turnAlerts.seen(live.sessions().map(s => s.sessionId)), 5 * 60_000);
     context.subscriptions.push({ dispose: () => clearInterval(turnSeenTimer) });
-    const showTimeline = (): void => {
-        TimelinePanel.show({
+    // The Live Timeline's deps — the palette's tab and a phone's view (X-456) open the same page.
+    const timelinePageDeps = (): TimelineDeps => ({
             extensionUri: context.extensionUri, live, tasks: taskManager, index,
             // U-180 — declared later in activate(); reached only once the page is open.
             sound: () => soundDeps,
@@ -2146,8 +2146,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             testSessionAlert: (sessionId, delayMs, event) =>
                 testSessionAlert(sessionId, delayMs, event)
-        });
-    };
+    });
+    const showTimeline = (): void => { TimelinePanel.show(timelinePageDeps()); };
     /**
      * ‼️ THE ASSET, RESOLVED OFF THE EXTENSION AND NOT OFF A CWD. The alert is
      * a WAV this repo generates (`tools/make_turn_sound.js`) — a real sound file
@@ -31363,6 +31363,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             projects: host => ProjectsPanel.openOn(host, projectsPanelDeps()),
             agent: (host, args) => AgentDetailPanel.openOn(host, typeof args?.agentId === 'string' ? args.agentId : '', detailDeps),
             search: host => SearchPanel.openOn(host, searchPageDeps()),
+            timeline: host => TimelinePanel.openOn(host, timelinePageDeps()),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

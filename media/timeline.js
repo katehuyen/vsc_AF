@@ -171,6 +171,15 @@
         .card.st-bgwait .badge { animation:afdeep 4.2s ease-in-out infinite; }
         @keyframes afdeep { 0%,100% { opacity:1; } 50% { opacity:.3; } }
         @media (prefers-reduced-motion: reduce) { .card.st-bgwait .badge { animation:none; } }
+        /* the phone (media/afMobile.js): a chart keeps the size it is drawn at and scrolls sideways in
+           its box instead of shrinking to a third; a terminal, End and Force kill (their questions are
+           asked on the PC), the hooks install, a workflow's live settings and the guide are the PC's */
+        html.af-phone .chartbox { overflow-x:auto; }
+        html.af-phone .chartbox > svg, html.af-phone .chartbox > .lanes-wrap { min-width:900px; }
+        html.af-phone .af-tipw:has(> [data-focusterm]), html.af-phone .af-tipw:has(> [data-endsess]),
+        html.af-phone .af-tipw:has(> [data-killsess]), html.af-phone [data-focusterm], html.af-phone [data-endsess],
+        html.af-phone [data-killsess], html.af-phone #install, html.af-phone [data-guide],
+        html.af-phone [data-svlive] { display:none; }
     </style>`;
 
     /**

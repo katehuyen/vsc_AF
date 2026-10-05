@@ -21,7 +21,7 @@ const LEGACY = [
     'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'portfolioPanel',
     'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
-    'taskAnalyticsPanel', 'timeline', 'toolboxPanel', 'wikiPanel'
+    'taskAnalyticsPanel', 'toolboxPanel', 'wikiPanel'
 ].map(n => `src/panels/${n}.ts`);
 const HOST_FILE = 'src/panels/panelHost.ts';
 
@@ -178,7 +178,7 @@ const alive = setInterval(() => undefined, 1000);
 
     // ---------- the real page list ----------
     const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined, dashboard: () => undefined, missions: () => undefined, queue: () => undefined });
-    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard, the Missions, the Work Queue, the Chains, the Turns, the Projects, an agent\'s and the Search pages', Object.keys(real).sort().join() === 'agent,chains,console,dashboard,missions,needs,notices,now,projects,queue,search,session,sessions,tasks,turns');
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard, the Missions, the Work Queue, the Chains, the Turns, the Projects, an agent\'s, the Search and the Live Timeline pages', Object.keys(real).sort().join() === 'agent,chains,console,dashboard,missions,needs,notices,now,projects,queue,search,session,sessions,tasks,timeline,turns');
     ok('Dashboard: the board, its table, a turn breakdown, the comparison and the plan usage are looks, pinning and stopping a session need manage, an agent\'s page, a new session or agent, the guide, settings, the Farm Status doors, a terminal and the status bar\'s engine stay on the PC',
         real.dashboard.open === 'read' && ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'].every(t => messageScope(real.dashboard, t) === 'read')
         && ['pinSession', 'interruptSession'].every(t => messageScope(real.dashboard, t) === 'manage')

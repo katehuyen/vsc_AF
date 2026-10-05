@@ -29,6 +29,7 @@ export interface RemotePageMakers {
     /** False when `args.agentId` names no agent the farm knows: the phone is told "unavailable". */
     agent(host: PanelHost, args?: Record<string, unknown>): boolean;
     search(host: PanelHost): void;
+    timeline(host: PanelHost): void;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -216,6 +217,19 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             pcOnly: ['openSession', 'openFile', 'openTimeline', 'findSession', 'buildIndex', 'openFarmSettings',
                 'openGuide', 'afnav'],
             make: host => make.search(host)
+        },
+        // X-456 — the Live Timeline. The page and a long range's history are looks; interrupting and
+        // clearing a session, renaming it, its turn alerts, their test and its sound panel are manage
+        // (the Console's sound panel is judged the same). End and Force kill ask a modal on the PC, the
+        // hooks install a pick and a modal; they, a terminal, a folder, a workflow's live settings, the
+        // Dashboard's tab and the guide belong to the PC (a transcript reaches the phone as afnav).
+        timeline: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'history'],
+            answers: [],
+            pcOnly: ['openSession', 'focusTerminal', 'endSession', 'forceKillSession', 'installHooks', 'workflowLive',
+                'revealFolder', 'openDashboard', 'openGuide', 'afnav'],
+            make: host => make.timeline(host)
         }
     };
 }
