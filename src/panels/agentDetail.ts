@@ -19,6 +19,8 @@ import { safeReadFile } from '../core/util';
 import { handleAfNav, handleFormBrowse, htmlShell, runSurface } from './base';
 import { AGENT_SESSION_TABLE_N, sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
+import { desktopHost, type PanelHost } from './panelHost';
+import type { PanelAsk } from './panelAsk';
 
 export interface AgentDetailDeps {
     extensionUri: vscode.Uri;
@@ -73,12 +75,12 @@ export interface AgentDetailDeps {
  * CLAUDE.md, which is exactly the class of thing a page-side notice must not be
  * allowed to slip past while the focus is elsewhere.
  */
-async function ensureDutiesReference(agent: AgentInfo): Promise<void> {
+async function ensureDutiesReference(agent: AgentInfo, ask: PanelAsk): Promise<void> {
     if (!agent.claudeMdPath) { return; }
     let claudeMd: string;
     try { claudeMd = fs.readFileSync(agent.claudeMdPath, 'utf8'); } catch { return; }
     if (claudeMdReferencesDuties(claudeMd)) { return; }
-    const choice = await vscode.window.showWarningMessage(
+    const choice = await ask.warn(
         `${agent.name}'s CLAUDE.md does not mention ${DUTIES_FILENAME} yet — without a reference the agent will never check its duties. Append a short instruction section?`,
         { modal: true }, 'Append to CLAUDE.md'
     );
@@ -351,12 +353,23 @@ export class AgentDetailPanel {
      *  for Refresh. Called from the debounced broadcast in extension.ts. */
     static refreshIfOpen(): void {
         for (const p of AgentDetailPanel.open.values()) { p.refresh(); }
+        for (const p of AgentDetailPanel.phones) { p.refresh(); }
+    }
+
+    /** X-456 — the views phones have open: one instance each, never a desktop tab. */
+    private static phones = new Set<AgentDetailPanel>();
+
+    /** X-456 — an agent's page on a phone's view; false when the farm has no such agent. */
+    static openOn(host: PanelHost, agentId: string, deps: AgentDetailDeps): boolean {
+        if (!deps.getAgents().some(a => a.id === agentId)) { return false; }
+        AgentDetailPanel.phones.add(new AgentDetailPanel(host, agentId, deps));
+        return true;
     }
 
     static show(agentId: string, deps: AgentDetailDeps): void {
         const existing = AgentDetailPanel.open.get(agentId);
         if (existing) {
-            existing.panel.reveal();
+            existing.host.reveal();
             existing.refresh();
             return;
         }
@@ -365,13 +378,8 @@ export class AgentDetailPanel {
             vscode.window.showWarningMessage('Agent Farm: agent not found.');
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.agentDetail',
-            `Agent: ${agent.name}`,
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        AgentDetailPanel.open.set(agentId, new AgentDetailPanel(panel, agentId, deps));
+        AgentDetailPanel.open.set(agentId, new AgentDetailPanel(
+            desktopHost({ viewType: 'agentfarm.agentDetail', title: `Agent: ${agent.name}` }), agentId, deps));
     }
 
     /**
@@ -385,18 +393,18 @@ export class AgentDetailPanel {
      */
     static composeDuty(agentId: string, deps: AgentDetailDeps, seed: DutyCompose): void {
         AgentDetailPanel.show(agentId, deps);
-        void AgentDetailPanel.open.get(agentId)?.panel.webview
+        void AgentDetailPanel.open.get(agentId)?.host.webview
             .postMessage({ type: 'duty-compose', seed });
     }
 
     private constructor(
-        readonly panel: vscode.WebviewPanel,
+        readonly host: PanelHost,
         private agentId: string,
         private deps: AgentDetailDeps
     ) {
         this.render();
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.deps.index.onDidUpdate(() => this.refresh(), null, this.disposables);
     }
 
@@ -407,8 +415,8 @@ export class AgentDetailPanel {
     private render(): void {
         const agent = this.agent();
         if (!agent) { return; }
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             `Agent ${agent.name}`,
             buildData(agent, this.deps, this.tableN),
@@ -419,14 +427,14 @@ export class AgentDetailPanel {
     refresh(): void {
         const agent = this.agent();
         if (!agent) { return; }
-        this.panel.webview.postMessage({ type: 'data', data: buildData(agent, this.deps, this.tableN) });
+        this.host.webview.postMessage({ type: 'data', data: buildData(agent, this.deps, this.tableN) });
     }
 
     /** A refusal the FORM shows, in the form, beside the button that was
      *  pressed. A modal here would take the focus off the half-filled fields it
      *  is complaining about. */
     private say(text: string, ok = false): void {
-        void this.panel.webview.postMessage({ type: 'duty-msg', text, ok });
+        void this.host.webview.postMessage({ type: 'duty-msg', text, ok });
     }
 
     /**
@@ -462,7 +470,7 @@ export class AgentDetailPanel {
                 return this.say(`${target.name} already has a duty titled “${title}” — give the copy its own title.`);
             }
             addDuty(target.dir, duty);
-            await ensureDutiesReference(target);
+            await ensureDutiesReference(target, this.host.ask);
             this.deps.refreshAll?.();
             this.refresh();
             this.say(`Copied to ${target.name}.`, true);
@@ -478,7 +486,7 @@ export class AgentDetailPanel {
             updateDuty(agent.dir, oldTitle, duty);
         } else {
             addDuty(agent.dir, duty);
-            await ensureDutiesReference(agent);
+            await ensureDutiesReference(agent, this.host.ask);
         }
         this.deps.refreshAll?.();
         this.refresh();
@@ -498,7 +506,7 @@ export class AgentDetailPanel {
         else if (act === 'up') { moveDuty(agent.dir, title, -1); }
         else if (act === 'down') { moveDuty(agent.dir, title, 1); }
         else if (act === 'del') {
-            const yes = await vscode.window.showWarningMessage(
+            const yes = await this.host.ask.warn(
                 `Delete duty "${title}" from ${agent.name}?`, { modal: true }, 'Delete');
             if (yes !== 'Delete') { return; }
             deleteDuty(agent.dir, title);
@@ -512,7 +520,7 @@ export class AgentDetailPanel {
             // The form's own two messages: the OS picker for a watch path, and
             // the save. Everything else the duty surface needs it already has.
             case 'af-browse':
-                void handleFormBrowse(this.panel.webview, msg);
+                void handleFormBrowse(this.host.webview, msg);
                 break;
             case 'duty-save':
                 void this.saveDuty((msg.duty ?? {}) as Record<string, unknown>);
@@ -556,7 +564,7 @@ export class AgentDetailPanel {
                         contextLimitFor: () => 0
                     }).turns;
                 } catch { /* fail-soft: an unreadable file shows an empty turn list */ }
-                void this.panel.webview.postMessage({ type: 'sessionTurns', file, turns });
+                void this.host.webview.postMessage({ type: 'sessionTurns', file, turns });
                 break;
             }
             case 'focusTerminal':
@@ -654,7 +662,7 @@ export class AgentDetailPanel {
                     .filter(r => r.match);
                 void vscode.workspace.getConfiguration('agentFarm')
                     .update('pricing', rules, vscode.ConfigurationTarget.Global)
-                    .then(() => vscode.window.showInformationMessage(
+                    .then(() => this.host.ask.info(
                         'Agent Farm: model rates saved — new sessions use them; earlier costs stay as recorded.'));
                 break;
             }
@@ -662,7 +670,9 @@ export class AgentDetailPanel {
     }
 
     private dispose(): void {
-        AgentDetailPanel.open.delete(this.agentId);
+        // A phone's view closing leaves the desktop's tab for this agent alone.
+        if (AgentDetailPanel.open.get(this.agentId) === this) { AgentDetailPanel.open.delete(this.agentId); }
+        AgentDetailPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

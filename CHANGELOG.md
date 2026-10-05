@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.837.0 - An agent's page opens on the phone (2026-10-05)
+
+- **An agent's page, on the phone.** Tapping an agent on a phone page — its
+  card, row or details button on the Dashboard, or the agent a mission or a
+  need names — now opens that agent's own page in the Agent Farm phone app
+  instead of saying it opens on the PC. The figures, the chart, the health findings,
+  the memory files, the standing duties and the agent's sessions all read
+  there; the duty and memory tables become one card per row on a phone,
+  every figure under its column's name, a long watch path wrapping instead
+  of being cut.
+- A device that may only read can read the whole page; adding, editing,
+  pausing, reordering or deleting a duty, the model rates and pinning or
+  stopping a session need a device that may manage. Deleting a duty, and
+  the offer to add the duties note to the agent's CLAUDE.md, ask their
+  question on the phone.
+- Starting or continuing a session, the folder, opening a file, the memory
+  graph and another page's tab stay on the PC, and those buttons are not
+  drawn on the phone.
+
 ## 3.836.0 - The Projects page opens on the phone (2026-10-05)
 
 - **Your projects, on the phone.** The Projects page now opens in the Agent

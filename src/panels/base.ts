@@ -286,7 +286,7 @@ export async function askExportOptions(
  * what was in it.
  */
 export async function handleFormBrowse(
-    webview: vscode.Webview, msg: Record<string, unknown>
+    webview: Pick<vscode.Webview, 'postMessage'>, msg: Record<string, unknown>
 ): Promise<void> {
     const key = typeof msg.key === 'string' ? msg.key : '';
     if (!key) { return; }

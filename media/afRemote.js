@@ -35,6 +35,11 @@
         var at = m && m.type === 'afnav' && typeof m.to === 'string' ? /^chains:(.+)$/.exec(m.to) : null;
         return at ? { type: 'afnav', to: 'chains', args: { chain: at[1] } } : null;
     }
+    // X-456 — an agent's name, card or row opens that agent's page on the phone
+    function agentOf(m) {
+        return m && m.type === 'openAgent' && typeof m.agentId === 'string' && m.agentId
+            ? { type: 'afnav', to: 'agent', args: { agentId: m.agentId } } : null;
+    }
     // A message posted while the user's own press is being handled carries afPress, so the farm
     // can say on the phone why it did nothing; one the page sends by itself never does. The farm
     // takes the mark off before the page's handler sees it.
@@ -57,7 +62,7 @@
         if (api) { return api; }
         api = {
             postMessage: function (m) {
-                var out = readOf(m) || chainOf(m) || m;
+                var out = readOf(m) || chainOf(m) || agentOf(m) || m;
                 if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },

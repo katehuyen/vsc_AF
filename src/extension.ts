@@ -31342,6 +31342,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
             turns: host => TurnsPanel.openOn(host, turnsPageDeps()),
             projects: host => ProjectsPanel.openOn(host, projectsPanelDeps()),
+            agent: (host, args) => AgentDetailPanel.openOn(host, typeof args?.agentId === 'string' ? args.agentId : '', detailDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

@@ -459,14 +459,14 @@
             : '<tr><td colspan="3" class="muted">No findings — healthy agent. 🌿</td></tr>';
 
         const memHtml = a.memoryFiles.map(f => `
-            <tr class="click" data-file="${C.esc(f.path)}"
+            <tr class="click" data-afcard data-file="${C.esc(f.path)}"
                 ${window.AFCtx.row('afMemoryRow', { memPath: f.path, memName: f.name, agentId: a.id })}
                 title="${C.esc(window.AFCtx.hint(f.path))}">
-                <td>${C.esc(f.name)}${f.orphan ? ' <span title="not referenced in MEMORY.md">⚠</span>' : ''}</td>
-                <td class="num">${(f.size / 1024).toFixed(1)} KB</td>
-                <td class="num">~${C.fmtTok(f.tokens)}</td>
-                <td class="num">${relTime(f.mtime)}</td>
-                <td class="num">${f.recalls === -1 ? '<span class="muted" title="index — loads every session">index</span>'
+                <td data-lead>${C.esc(f.name)}${f.orphan ? ' <span title="not referenced in MEMORY.md">⚠</span>' : ''}</td>
+                <td class="num" data-label="Size">${(f.size / 1024).toFixed(1)} KB</td>
+                <td class="num" data-label="Tokens">~${C.fmtTok(f.tokens)}</td>
+                <td class="num" data-label="Modified">${relTime(f.mtime)}</td>
+                <td class="num" data-label="Recalls 30d">${f.recalls === -1 ? '<span class="muted" title="index — loads every session">index</span>'
                     : f.recalls > 0 ? `<span style="color:var(--vscode-charts-green,#4caf50)">×${f.recalls}</span>`
                     : '<span class="muted">0</span>'}</td>
             </tr>`).join('');
@@ -541,6 +541,10 @@
             </tr>`).join('');
         const pricingHtml = `
             <style>
+                /* the phone: starting, continuing and the folder happen on the PC (remotePages.ts) */
+                html.af-phone [data-afclaim="start"], html.af-phone [data-afclaim="launch"],
+                html.af-phone [data-afclaim="continue"], html.af-phone #reveal, html.af-phone button[data-file] { display:none; }
+                html.af-phone table[data-afcards] td { overflow-wrap:anywhere; }
                 #pricingBox input{background:var(--vscode-input-background);color:var(--vscode-input-foreground);
                     border:1px solid var(--vscode-input-border,var(--vscode-contrastBorder,#3c3c3c));
                     border-radius:3px;padding:2px 5px;font:inherit}
@@ -637,10 +641,10 @@
                 </div>
             </div>
             ${dutyForm ? dutyFormHtml() : (dutyMsg ? window.AFForm.msg(dutyMsg, !dutyMsgOk) : '')}
-            <div class="tablewrap"><table>
-                <tr><th></th><th>Duty</th><th>Cadence</th><th>Watch</th><th>Do</th><th class="num">Status</th><th class="num"></th></tr>
+            <div class="tablewrap"><table data-afcards>
+                <tr data-afcardhead><th></th><th>Duty</th><th>Cadence</th><th>Watch</th><th>Do</th><th class="num">Status</th><th class="num"></th></tr>
                 ${a.duties.length ? a.duties.map((d, i) => `
-                    <tr style="${d.paused ? 'opacity:.5' : ''}"
+                    <tr data-afcard style="${d.paused ? 'opacity:.5' : ''}"
                         ${window.AFCtx.row('afDutyRow', {
                         dutyPath: a.dutiesPath || '', agentId: a.id, dutyTitle: d.title,
                         dutyPaused: !!d.paused,
@@ -648,12 +652,12 @@
                             .filter(Boolean).join(' · ')
                     })}
                         title="${C.esc(window.AFCtx.hint(d.title))}">
-                        <td>${d.missing ? '⛔' : d.pending ? '👁⚠' : '👁'}</td>
-                        <td><strong>${C.esc(d.title)}</strong></td>
-                        <td>${C.esc(d.cadence)}${d.paused ? ' · paused' : ''}</td>
-                        <td class="small">${C.esc(d.watch || '—')}</td>
-                        <td class="small">${C.esc(d.action || '—')}</td>
-                        <td class="num">${C.esc(d.status)}</td>
+                        <td data-first>${d.missing ? '⛔' : d.pending ? '👁⚠' : '👁'}</td>
+                        <td data-lead><strong>${C.esc(d.title)}</strong></td>
+                        <td data-label="Cadence">${C.esc(d.cadence)}${d.paused ? ' · paused' : ''}</td>
+                        <td class="small" data-label="Watch">${C.esc(d.watch || '—')}</td>
+                        <td class="small" data-label="Do">${C.esc(d.action || '—')}</td>
+                        <td class="num" data-label="Status">${C.esc(d.status)}</td>
                         <td class="num" style="white-space:nowrap">
                             <button class="mini secondary" data-duty="edit" data-t="${C.esc(d.title)}" title="Edit it — the same card the + opens, filled in">edit</button>
                             <button class="mini secondary" data-duty="copy" data-t="${C.esc(d.title)}" title="Give another agent its own copy of this duty">copy</button>
@@ -668,8 +672,8 @@
             ${DATA.insightScope ? `<p class="muted small" style="margin:4px 0">${C.esc(DATA.insightScope)}</p>` : ''}
             <div class="tablewrap"><table><tr><th></th><th>Category</th><th>Finding</th></tr>${insightsHtml}</table></div>
             <h2>Memory files</h2>
-            <div class="tablewrap"><table>
-                <tr><th>File</th><th class="num">Size</th><th class="num">Tokens</th><th class="num">Modified</th><th class="num">Recalls 30d</th></tr>
+            <div class="tablewrap"><table data-afcards>
+                <tr data-afcardhead><th>File</th><th class="num">Size</th><th class="num">Tokens</th><th class="num">Modified</th><th class="num">Recalls 30d</th></tr>
                 ${memHtml || '<tr><td colspan="5" class="muted">No memory files.</td></tr>'}
             </table></div>
             <h2>Sessions</h2>

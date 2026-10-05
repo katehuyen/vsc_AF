@@ -26,6 +26,8 @@ export interface RemotePageMakers {
     chains(host: PanelHost, args?: Record<string, unknown>): void;
     turns(host: PanelHost): void;
     projects(host: PanelHost): void;
+    /** False when `args.agentId` names no agent the farm knows: the phone is told "unavailable". */
+    agent(host: PanelHost, args?: Record<string, unknown>): boolean;
 }
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
@@ -187,6 +189,21 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
                 'openSessions', 'rescan', 'handover', 'archive', 'saveTemplate', 'openDoc', 'backlogOpenItem',
                 'queueAdd', 'startSession', 'newTask', 'newSchedule', 'newTrigger', 'openWorkRow', 'afnav'],
             make: host => make.projects(host)
+        },
+        // X-456 — an agent's page. The page, its sessions table and a row's turns are looks; a duty's
+        // form and its pause, order and delete, the model rates and a session's pin or stop are manage
+        // (as the farm's own duties.* and pricing.set ops are), the delete's and the CLAUDE.md offer's
+        // questions asked on the phone. The watch path's picker, a file, a new or continued session, the
+        // sidebar, the memory graph and its cards, another page's tab and the guide belong to the PC (a
+        // session row's transcript reaches the phone as afnav).
+        agent: {
+            open: 'read', act: 'manage',
+            looks: ['refresh', 'setTableN', 'sessionTurns'],
+            answers: [],
+            pcOnly: ['af-browse', 'openFile', 'openSession', 'focusTerminal', 'startSession', 'launchSession',
+                'consoleSession', 'continueSession', 'reveal', 'openMemoryGraph', 'memCard', 'openDashboard',
+                'openTimeline', 'openGuide', 'afnav'],
+            make: (host, args) => make.agent(host, args)
         }
     };
 }
