@@ -40,6 +40,13 @@
         return m && m.type === 'openAgent' && typeof m.agentId === 'string' && m.agentId
             ? { type: 'afnav', to: 'agent', args: { agentId: m.agentId } } : null;
     }
+    // X-456 — a page's ? opens the phone's own guide, at the heading the button names
+    function guideOf(m) {
+        if (!m || m.type !== 'openGuide') { return null; }
+        var args = {};
+        if (typeof m.anchor === 'string' && m.anchor) { args.anchor = m.anchor; }
+        return { type: 'afnav', to: 'guide', args: args };
+    }
     // A message posted while the user's own press is being handled carries afPress, so the farm
     // can say on the phone why it did nothing; one the page sends by itself never does. The farm
     // takes the mark off before the page's handler sees it.
@@ -62,7 +69,7 @@
         if (api) { return api; }
         api = {
             postMessage: function (m) {
-                var out = readOf(m) || chainOf(m) || agentOf(m) || m;
+                var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || m;
                 if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },

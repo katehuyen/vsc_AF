@@ -702,7 +702,7 @@ import { QueuePanel } from './panels/queuePanel';
 import type { QueueDeps } from './panels/queueDeps';
 import { A2ANotesDeps, A2ANotesPanel } from './panels/a2aNotesPanel';
 import { A2ATasksDeps, A2ATasksPanel } from './panels/a2aTasksPanel';
-import { WikiPanel } from './panels/wikiPanel';
+import { WikiPanel, type WikiPanelDeps } from './panels/wikiPanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import { chainExample, inboxExample, morningExample, registerExampleOps } from './core/examples';
@@ -17455,7 +17455,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     });
     /** U-70 — the cockpit over that same pool. */
-    const showWikiPanel = (focus?: string): void => WikiPanel.show({
+    const showWikiPanel = (focus?: string): void => WikiPanel.show(wikiPageDeps(), focus);
+    /** X-456 — what the wiki page is drawn from, on the PC's tab and on a phone. */
+    const wikiPageDeps = (): WikiPanelDeps => ({
         extensionUri: context.extensionUri,
         store: () => wikiStore,
         wiki: () => wikiDeps,
@@ -17468,7 +17470,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openDoc,
         docOpenConfig,
         onChange: () => { TurnsPanel.refreshIfOpen(); }
-    }, focus);
+    });
     /**
      * ‼️ K-26 (X-50) — THE SAME POOL, REACHED FROM THE ROW YOU ARE READING.
      *
@@ -31372,6 +31374,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             a2anotes: (host, args) => A2ANotesPanel.openOn(host, a2aNotesPageDeps(), typeof args?.focusId === 'string' ? args.focusId : undefined),
             a2atasks: (host, args) => A2ATasksPanel.openOn(host, a2aTasksPageDeps(), typeof args?.focusId === 'string' ? args.focusId : undefined),
             portfolio: host => PortfolioPanel.openOn(host, portfolioDeps),
+            guide: (host, args) => GuidePanel.openOn(host, context.extensionUri, args),
+            wiki: (host, args) => WikiPanel.openOn(host, wikiPageDeps(), typeof args?.focus === 'string' ? args.focus : undefined),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

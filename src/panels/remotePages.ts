@@ -1,5 +1,6 @@
 import type { PanelHost } from './panelHost';
 import type { RemotePage } from './remoteViews';
+import { morePages, type MorePageMakers } from './remotePagesMore';
 
 /**
  * X-441 — WHICH PAGES A PHONE MAY OPEN, and what each lets a device do (the
@@ -9,7 +10,7 @@ import type { RemotePage } from './remoteViews';
  * (X-443 navigation, X-447 pickers).
  */
 
-export interface RemotePageMakers {
+export interface RemotePageMakers extends MorePageMakers {
     needs(host: PanelHost): void;
     console(host: PanelHost): void;
     now(host: PanelHost): void;
@@ -30,21 +31,7 @@ export interface RemotePageMakers {
     agent(host: PanelHost, args?: Record<string, unknown>): boolean;
     search(host: PanelHost): void;
     timeline(host: PanelHost): void;
-    engines(host: PanelHost): void;
-    accounts(host: PanelHost): void;
-    /** `args.focusId` opens one note / task, as the desktop's focus does. */
-    a2anotes(host: PanelHost, args?: Record<string, unknown>): void;
-    a2atasks(host: PanelHost, args?: Record<string, unknown>): void;
-    portfolio(host: PanelHost): void;
 }
-
-/**
- * X-456 — the sign-ins section and its rules, the same on the Engines and the Accounts page
- * (media/afAccounts.js, afPolicies.js). A quota reading is the page's look; a sign-in renewed in a
- * PC terminal stays there, and a card's last session reaches the phone as afnav (afRemote.js).
- */
-const ACCOUNT_LOOKS = ['refresh', 'accountRefresh'];
-const ACCOUNT_PC = ['accountReauth', 'accountOpenSession', 'afnav'];
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
 export interface SessionPageTarget { file: string; focusTs?: number; roles?: string[] }
@@ -245,45 +232,6 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
                 'revealFolder', 'openDashboard', 'openGuide', 'afnav'],
             make: host => make.timeline(host)
         },
-        // X-456 — the engines, their routes and the sign-ins. accounts, providers, engines and policies
-        // are admin namespaces even to look (src/remote/scopes.ts: their reads carry configuration), so
-        // the pages ask what their ops ask. A test turn, a route's save, copy and removal, a capture, a
-        // switch, the repairs, the forget (asked on the phone) and the rules are the acts. A CLI's
-        // terminal, a key typed into the PC's password box or the Secrets page and a docs link stay on
-        // the PC.
-        engines: {
-            open: 'admin', act: 'admin',
-            looks: ACCOUNT_LOOKS,
-            answers: [],
-            pcOnly: ['engineCommand', 'engineKey', 'providerKey', 'engineDocs', ...ACCOUNT_PC],
-            make: host => make.engines(host)
-        },
-        accounts: {
-            open: 'admin', act: 'admin',
-            looks: ACCOUNT_LOOKS,
-            answers: [],
-            pcOnly: ACCOUNT_PC,
-            make: host => make.accounts(host)
-        },
-        // X-456 — the A2A boards. Resolving, pinning, deleting, clearing, promoting, the supervisor's word,
-        // cancelling, rerouting and Run now are manage; a note's file, a link, a queue item and the other
-        // board's tab belong to the PC (on a phone the other board opens there as afnav).
-        a2anotes: {
-            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
-            pcOnly: ['openTask', 'openFile', 'openExternal', 'afnav'],
-            make: (host, args) => make.a2anotes(host, args)
-        },
-        a2atasks: {
-            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
-            pcOnly: ['openNote', 'openQueueItem', 'openExternal', 'afnav'],
-            make: (host, args) => make.a2atasks(host, args)
-        },
-        // X-456 — the Agents page reads; a session, a project pick, the folder, a new agent (its CLAUDE.md
-        // opens in the PC's editor) and the guide are the PC's (an agent's row opens its phone page).
-        portfolio: {
-            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
-            pcOnly: ['openAgent', 'startSession', 'assignProject', 'manageProjects', 'reveal', 'openGuide', 'agent-new', 'afnav'],
-            make: host => make.portfolio(host)
-        }
+        ...morePages(make)
     };
 }

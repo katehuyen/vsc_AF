@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.842.0 - The Guide and the Wiki open on the phone (2026-10-05)
+
+- **The guide, on the phone.** The help opens in the Agent Farm phone app,
+  and a page's **?** there opens the phone's own guide at that page's
+  section instead of a tab on the PC. Its search, its contents and its
+  language switch work on the phone; switching the language on the phone
+  changes only that view, never the PC's setting. A link in the guide is
+  copied to the phone rather than opened in a browser on the PC.
+- **The wiki, on the phone.** The wiki's marks open on the phone, each mark
+  a card with its state, source, topics, date and pages. Compiling, editing,
+  dropping and deleting a mark, a new or renamed category, starting the
+  wiki and its shape check need a phone paired to manage; a rename asks its
+  questions on the phone, and an empty name is refused there. A mark's
+  transcript opens on the phone. A wiki page, the wiki's own files and
+  folders, a dropped document and the settings stay on the PC.
+
 ## 3.841.0 - The A2A boards and the Agents page open on the phone (2026-10-05)
 
 - **The agents' boards, on the phone.** The A2A Notes and A2A Tasks boards

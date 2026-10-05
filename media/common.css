@@ -292,6 +292,15 @@ body.guide h2 { font-size: 18px; margin-top: 30px; }
 body.guide h3 { font-size: 14px; margin-top: 20px; }
 body.guide p { line-height: 1.55; }
 body.guide li { line-height: 1.5; margin: 3px 0; }
+/* The guide on a phone (src/panels/guide.ts): one column, the search box stays on top, the contents a short box. */
+html.af-phone body.guide { display: block; height: auto; overflow: visible; }
+html.af-phone body.guide #gsearch { position: sticky; top: 0; left: auto; right: auto; max-width: none; padding: 6px 8px;
+    background: var(--vscode-editor-background); }
+html.af-phone body.guide #langbar { position: static; justify-content: flex-end; padding: 4px 8px 0; }
+html.af-phone body.guide #toc { width: auto; max-height: 40vh; border-right: none; padding: 8px 12px;
+    border-bottom: 1px solid var(--vscode-widget-border, #4443); }
+html.af-phone body.guide #content { overflow: visible; max-width: none; padding: 12px 14px 60px; overflow-wrap: anywhere; }
+html.af-phone body.guide pre, html.af-phone body.guide table { display: block; max-width: 100%; overflow-x: auto; }
 .flash { animation: flashbg 1.6s ease-out; }
 @keyframes flashbg {
     0% { background: var(--vscode-editor-findMatchHighlightBackground, #ffd33d44); }

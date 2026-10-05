@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { revealPath } from '../core/reveal';
 import {
     WikiDeps, WikiStore, candidateView, createWikiCategory, editCandidate, isRawCandidate, lintWiki,
@@ -121,37 +122,42 @@ export class WikiPanel {
         if (WikiPanel.current) {
             WikiPanel.current.deps = deps;
             WikiPanel.current.focus = focus;
-            WikiPanel.current.panel.reveal();
+            WikiPanel.current.host.reveal();
             WikiPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.wiki',
-            'Agent Farm — Wiki',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        WikiPanel.current = new WikiPanel(panel, deps, focus);
+        WikiPanel.current = new WikiPanel(desktopHost({ viewType: 'agentfarm.wiki', title: 'Agent Farm — Wiki' }), deps, focus);
     }
 
-    static refreshIfOpen(): void { WikiPanel.current?.refresh(); }
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<WikiPanel>();
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: WikiPanelDeps, focus?: string) {
+    /** X-456 — the wiki on a phone's view, `focus` opened as the desktop's is. */
+    static openOn(host: PanelHost, deps: WikiPanelDeps, focus?: string): void {
+        WikiPanel.phones.add(new WikiPanel(host, deps, focus));
+    }
+
+    static refreshIfOpen(): void {
+        WikiPanel.current?.refresh();
+        for (const p of WikiPanel.phones) { p.refresh(); }
+    }
+
+    private constructor(private readonly host: PanelHost, private deps: WikiPanelDeps, focus?: string) {
         this.focus = focus;
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+        host.webview.html = htmlShell(
+            host.webview,
             this.deps.extensionUri,
             'Agent Farm Wiki',
             buildData(this.deps, this.focus),
             'wiki.js'
         );
         this.focus = undefined;   // one-shot: consumed by the first render
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focus) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focus) });
         this.focus = undefined;
     }
 
@@ -165,7 +171,7 @@ export class WikiPanel {
      *  that did not change and no reason why. */
     private guard(fn: () => void): void {
         try { fn(); } catch (e) {
-            void vscode.window.showWarningMessage('Agent Farm: ' + (e instanceof Error ? e.message : String(e)));
+            void this.host.ask.warn('Agent Farm: ' + (e instanceof Error ? e.message : String(e)));
         }
     }
 
@@ -199,7 +205,7 @@ export class WikiPanel {
                 this.guard(() => {
                     const ids = Array.isArray(msg.ids) ? msg.ids.map(String).filter(Boolean) : [];
                     const out = startCompileRun(this.deps.wiki(), ids.length ? { ids } : { all: true });
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         `Agent Farm: ${out.agent} is compiling ${out.marks} mark(s) into the wiki`
                         + (out.started ? '' : ' — the task is queued, start it from Tasks'));
                     this.mutated();
@@ -256,7 +262,7 @@ export class WikiPanel {
                 this.guard(() => {
                     const r = scaffoldWiki(this.deps.wiki().root());
                     if (!r.ok) { throw new Error(r.error); }
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         r.created.length
                             ? `Agent Farm: wiki started — ${r.created.join(', ')} created.`
                             : 'Agent Farm: the wiki already holds all three files; nothing was written.');
@@ -277,7 +283,7 @@ export class WikiPanel {
                 this.guard(() => {
                     const r = createWikiCategory(this.deps.wiki().root(), msg.name);
                     if (!r.ok) { throw new Error(r.error); }
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'category', name: r.name, existed: r.existed,
                         id: typeof msg.id === 'string' ? msg.id : ''
                     });
@@ -292,13 +298,13 @@ export class WikiPanel {
                     const store = this.deps.store();
                     const ask = await askCategoryRename(
                         categoryChoices(readWikiCategories(root), store.topics()),
-                        typeof msg.from === 'string' ? msg.from : '');
+                        typeof msg.from === 'string' ? msg.from : '', this.host.ask);
                     if (!ask) { return; }
                     this.guard(() => {
                         const r = renameWikiCategory(root, store, ask.from, ask.to);
                         if (!r.ok) { throw new Error(r.error); }
-                        void vscode.window.showInformationMessage(renameNews(r));
-                        void this.panel.webview.postMessage({ type: 'categoryRenamed', from: r.from, to: r.to });
+                        void this.host.ask.info(renameNews(r));
+                        void this.host.webview.postMessage({ type: 'categoryRenamed', from: r.from, to: r.to });
                         this.mutated();
                     });
                 })();
@@ -310,7 +316,7 @@ export class WikiPanel {
             case 'lint':
                 this.guard(() => {
                     const root = this.deps.wiki().root();
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'lint', data: { root, ...lintWiki(root) }
                     });
                 });
@@ -378,7 +384,8 @@ export class WikiPanel {
     }
 
     private dispose(): void {
-        WikiPanel.current = undefined;
+        WikiPanel.phones.delete(this);
+        if (WikiPanel.current === this) { WikiPanel.current = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

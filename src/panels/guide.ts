@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { getNonce } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { slugify as slugifyText } from '../core/util';
 import { afConfig } from '../core/settingsDoor';
 
@@ -174,25 +175,37 @@ export class GuidePanel {
     ): void {
         const existing = GuidePanel.open.get(doc);
         if (existing) {
-            existing.panel.reveal();
+            existing.host.reveal();
             if (lang && lang !== existing.lang) { existing.setLang(lang); }
-            if (anchor) { existing.anchor = anchor; existing.panel.webview.postMessage({ type: 'scrollTo', anchor }); }
+            if (anchor) { existing.anchor = anchor; void existing.host.webview.postMessage({ type: 'scrollTo', anchor }); }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.guide',
-            'Agent Farm',
-            vscode.ViewColumn.Beside,
+        const host = desktopHost({
+            viewType: 'agentfarm.guide',
+            title: 'Agent Farm',
+            column: vscode.ViewColumn.Beside,
             // enableFindWidget gives the guide VS Code's own ctrl+F on top of
             // the page's section-aware search box — the muscle-memory key works
             // even before anyone notices the box.
-            { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true }
-        );
-        GuidePanel.open.set(doc, new GuidePanel(panel, extensionUri, doc, rawTitle, anchor, lang));
+            options: { enableScripts: true, retainContextWhenHidden: true, enableFindWidget: true }
+        });
+        GuidePanel.open.set(doc, new GuidePanel(host, extensionUri, doc, rawTitle, anchor, lang));
+    }
+
+    /** X-456 — the guides phones have open: one instance each, never the desktop's tab. */
+    private static phones = new Set<GuidePanel>();
+
+    /** X-456 — a help document on a phone's view: only one {@link DOCS} names, never a raw file. */
+    static openOn(host: PanelHost, extensionUri: vscode.Uri, args?: Record<string, unknown>): boolean {
+        const doc = typeof args?.doc === 'string' && args.doc ? args.doc : 'guide';
+        if (!Object.prototype.hasOwnProperty.call(DOCS, doc)) { return false; }
+        const anchor = typeof args?.anchor === 'string' && args.anchor ? args.anchor : undefined;
+        GuidePanel.phones.add(new GuidePanel(host, extensionUri, doc, undefined, anchor));
+        return true;
     }
 
     private constructor(
-        readonly panel: vscode.WebviewPanel,
+        private readonly host: PanelHost,
         private extensionUri: vscode.Uri,
         private doc: string,
         private rawTitle?: string,
@@ -202,14 +215,17 @@ export class GuidePanel {
         this.lang = lang ?? configuredGuideLang();
         this.render();
 
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => {
-            if (msg.type === 'openExternal' && typeof msg.href === 'string') {
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => {
+            if (msg.type === 'openExternal' && typeof msg.href === 'string' && !host.remote) {
                 vscode.env.openExternal(vscode.Uri.parse(msg.href));
             } else if (msg.type === 'setLang' && (msg.lang === 'en' || msg.lang === 'tr')) {
-                // Persist the choice globally so every help surface follows it, then re-render.
-                void vscode.workspace.getConfiguration('agentFarm')
-                    .update('guideLanguage', msg.lang, vscode.ConfigurationTarget.Global);
+                // Persist the choice globally so every help surface follows it, then re-render; a
+                // phone's switch redraws that phone only.
+                if (!host.remote) {
+                    void vscode.workspace.getConfiguration('agentFarm')
+                        .update('guideLanguage', msg.lang, vscode.ConfigurationTarget.Global);
+                }
                 this.setLang(msg.lang);
             }
         }, null, this.disposables);
@@ -261,14 +277,23 @@ export class GuidePanel {
             : '';
 
         const nonce = getNonce();
-        const css = this.panel.webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'common.css'));
-        this.panel.title = r.title;
-        this.panel.webview.html = `<!DOCTYPE html>
-<html lang="${HTML_LANG[r.lang]}">
+        const web = this.host.webview;
+        const css = web.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'common.css'));
+        // X-456 — on a phone: its acquireVsCodeApi first, the page drawn for a narrow screen.
+        const phone = this.host.remote;
+        const phoneHead = phone
+            ? '\n<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+            : '';
+        const phoneApi = phone
+            ? `<script nonce="${nonce}" src="${web.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'afRemote.js'))}"></script>\n`
+            : '';
+        this.host.title = r.title;
+        web.html = `<!DOCTYPE html>
+<html lang="${HTML_LANG[r.lang]}"${phone ? ' class="af-phone"' : ''}>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    content="default-src 'none'; style-src ${web.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">${phoneHead}
 <link rel="stylesheet" href="${css}">
 <style>
 /* In-guide search (E3): 1900 lines of manual are only useful if you can find
@@ -315,12 +340,17 @@ body.guide.searching #content h3 { scroll-margin-top: 46px; }
 ${langbar}
 <nav id="toc">${tocHtml}</nav>
 <main id="content">${html}</main>
-<script nonce="${nonce}">
+${phoneApi}<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+const PHONE = ${phone ? 'true' : 'false'};
+let copies = 0;
 window.addEventListener('message', ev => {
     if (ev.data.type === 'scrollTo') {
         const el = document.getElementById(ev.data.anchor);
         if (el) { el.scrollIntoView({ behavior: 'smooth' }); el.classList.add('flash'); }
+    }
+    if (ev.data.type === 'afClipboardDone') {
+        document.getElementById('gcount').textContent = ev.data.ok ? 'Link copied' : (ev.data.error || 'The clipboard refused that.');
     }
 });
 document.addEventListener('click', ev => {
@@ -330,6 +360,8 @@ document.addEventListener('click', ev => {
     if (!a) { return; }
     if (a.classList.contains('ext')) {
         ev.preventDefault();
+        // a phone copies the link: opening it would open a browser on the PC
+        if (PHONE) { vscode.postMessage({ type: 'afClipboard', token: ++copies, text: a.dataset.href }); return; }
         vscode.postMessage({ type: 'openExternal', href: a.dataset.href });
     }
 });
@@ -446,7 +478,8 @@ ${this.anchor ? `setTimeout(() => { const el = document.getElementById(${JSON.st
     }
 
     private dispose(): void {
-        GuidePanel.open.delete(this.doc);
+        if (this.host.remote) { GuidePanel.phones.delete(this); }
+        else if (GuidePanel.open.get(this.doc) === this) { GuidePanel.open.delete(this.doc); }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

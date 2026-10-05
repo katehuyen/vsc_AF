@@ -18,9 +18,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 // off this list in the same commit; nothing is ever added to it.
 const LEGACY = [
     'airtablePanel', 'capabilities',
-    'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
+    'evalsPanel', 'livingPanel', 'memoryGraph',
     'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
-    'taskAnalyticsPanel', 'toolboxPanel', 'wikiPanel'
+    'taskAnalyticsPanel', 'toolboxPanel'
 ].map(n => `src/panels/${n}.ts`);
 const HOST_FILE = 'src/panels/panelHost.ts';
 
@@ -177,7 +177,7 @@ const alive = setInterval(() => undefined, 1000);
 
     // ---------- the real page list ----------
     const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined, dashboard: () => undefined, missions: () => undefined, queue: () => undefined });
-    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard, the Missions, the Work Queue, the Chains, the Turns, the Projects, an agent\'s, the Search, the Live Timeline, the Engines, the Accounts, the two A2A boards and the Agents pages', Object.keys(real).sort().join() === 'a2anotes,a2atasks,accounts,agent,chains,console,dashboard,engines,missions,needs,notices,now,portfolio,projects,queue,search,session,sessions,tasks,timeline,turns');
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard, the Missions, the Work Queue, the Chains, the Turns, the Projects, an agent\'s, the Search, the Live Timeline, the Engines, the Accounts, the two A2A boards, the Agents, the Guide and the Wiki pages', Object.keys(real).sort().join() === 'a2anotes,a2atasks,accounts,agent,chains,console,dashboard,engines,guide,missions,needs,notices,now,portfolio,projects,queue,search,session,sessions,tasks,timeline,turns,wiki');
     ok('Dashboard: the board, its table, a turn breakdown, the comparison and the plan usage are looks, pinning and stopping a session need manage, an agent\'s page, a new session or agent, the guide, settings, the Farm Status doors, a terminal and the status bar\'s engine stay on the PC',
         real.dashboard.open === 'read' && ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'].every(t => messageScope(real.dashboard, t) === 'read')
         && ['pinSession', 'interruptSession'].every(t => messageScope(real.dashboard, t) === 'manage')

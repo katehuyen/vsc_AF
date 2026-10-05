@@ -612,9 +612,9 @@
         const box = !c.compiling
             ? `<input type="checkbox"${untriaged ? ' class="wk-cbwarn"' : ''} data-cb="${esc(c.id)}"${on ? ' checked' : ''} aria-label="Select this mark">`
             : `<span class="wk-nobox" title="A compile is already running for this mark — leave it alone until the run reports back">·</span>`;
-        return `<tr class="${on ? 'sel' : ''} ${st.cls}">
-            <td class="wk-pick">${box}</td>
-            ${T.cell('wk-state', untriaged ? `data-act="topics" data-id="${esc(c.id)}" role="button" tabindex="0"` : '',
+        return `<tr class="${on ? 'sel' : ''} ${st.cls}" data-afcard>
+            <td class="wk-pick" data-first>${box}</td>
+            ${colCell(T.cell('wk-state', untriaged ? `data-act="topics" data-id="${esc(c.id)}" role="button" tabindex="0"` : '',
             `<span class="wk-st">${st.icon} ${st.label}</span>`, 'State',
             T.lines([
                 st.label === 'waiting' ? 'Marked, and nothing has been compiled from it yet.'
@@ -641,8 +641,8 @@
                         ? ['', 'A topic is the key the compile files the page under — it is the one thing a scan cannot supply, so nothing is offered for compiling until you give it one.',
                             T.GAP, 'Click to pick a category and leave a note for the compiling agent.']
                         : ['', 'Only a run reporting back closes a mark.'])
-            ]))}
-            ${c.raw
+            ])), COL.state)}
+            ${colCell(c.raw
                 // ‼️ U-117 — A DROPPED FILE SHOWS ITS NAME, NOT EIGHT CHARACTERS
                 // OF A KEY. `shortOf('raw:notes.md')` is `raw:note`, which
                 // identifies nothing; the file name is the only handle the
@@ -668,14 +668,14 @@
                         scopeWords(c),
                         (c.excludeTurns || []).length
                             ? `Excluded: ${c.excludeTurns.join(', ')} — the compile is told in so many words not to read them.` : '',
-                        T.GAP, 'Click to open the transcript.']))}
-            ${topicsCell(c)}
-            ${T.cell('wk-label', '', esc(c.label || '—') + (c.note ? ` <span class="wk-note">— ${esc(c.note)}</span>` : ''),
+                        T.GAP, 'Click to open the transcript.'])), COL.source)}
+            ${colCell(topicsCell(c), COL.topics)}
+            ${T.cell('wk-label', 'data-lead', esc(c.label || '—') + (c.note ? ` <span class="wk-note">— ${esc(c.note)}</span>` : ''),
             'What was said', markTip(c))}
-            ${T.cell('wk-when', '', esc(window.AFTime.ago(c.addedAt)),
+            ${colCell(T.cell('wk-when', '', esc(window.AFTime.ago(c.addedAt)),
             'Marked', T.lines([window.AFTime.full(c.addedAt), 'by ' + (c.addedBy || 'agent'),
-                c.compiledAt ? '' : null, c.compiledAt ? 'Compiled ' + window.AFTime.full(c.compiledAt) : null].filter(x => x !== null)))}
-            ${pagesCell(c)}
+                c.compiledAt ? '' : null, c.compiledAt ? 'Compiled ' + window.AFTime.full(c.compiledAt) : null].filter(x => x !== null))), COL.marked)}
+            ${colCell(pagesCell(c), COL.pages)}
             <td class="wk-act">
                 ${c.state === 'pending' && !c.compiling && !untriaged
                 ? `<button class="mini wk-go" data-act="compile" data-id="${esc(c.id)}"
@@ -694,14 +694,18 @@
         </tr>`;
     }
 
+    // U-176 — on a phone each card's figure wears its column's heading (afMobile.js): the same words as the <th> below
+    const COL = { state: 'State', source: 'Source', topics: 'Topics', marked: 'Marked', pages: 'Pages' };
+    function colCell(td, name) { return String(td).replace(/^(\s*<td\b[^>]*)>/, `$1 data-label="${name}">`); }
+
     function tableHtml(list) {
         if (!list.length) {
             return `<p class="muted" style="margin-top:20px">${rows().length
                 ? 'No mark matches these filters.'
                 : 'The pool is empty. Mark a turn with the 🔖 badge on any surface that draws one, or right-click a session → <i>Add to Wiki Candidates…</i>'}</p>`;
         }
-        return `<div class="tablewrap"><table class="wktable">
-            <thead><tr>
+        return `<div class="tablewrap"><table class="wktable" data-afcards>
+            <thead><tr data-afcardhead>
                 <th class="wk-pick"><input type="checkbox" id="wk-all" aria-label="Select every compilable mark shown"></th>
                 <th title="Waiting · compiling (a run is out) · compiled · dropped. Only a run reporting back closes a mark.">State</th>
                 <th title="The conversation and the turn range this mark covers">Source</th>
@@ -994,6 +998,9 @@
                 .wk-lsec { margin-top:7px; font-size:11.5px; }
                 .wk-lsec ul { margin:3px 0 0; padding-left:20px; }
                 .wk-tipw { display:inline-flex; }
+                html.af-phone .wktable tr[data-afcard] > td.wk-act { flex:1 1 100%; text-align:left; white-space:normal; }
+                html.af-phone .wk-act .mini { opacity:1; font-size:14px; padding:4px 10px; }
+                html.af-phone .wktable td.wk-label { max-width:none; white-space:normal; overflow-wrap:anywhere; }
             </style>
             ${window.AFHeader.html({
             page: 'wiki',
@@ -1134,7 +1141,7 @@
         } else if (c.fromTurn === 0 && !n) {
             chips = '<div class="wk-eline"><span class="muted small">This conversation has left the session index, so its turns cannot be drawn — the mark still compiles from the transcript it kept.</span></div>';
         }
-        return `<tr class="wk-erow"><td></td><td colspan="7">
+        return `<tr class="wk-erow" data-afcardmore><td data-first></td><td colspan="7">
             <div class="wk-editor">
                 <div class="wk-eline">
                     <span class="wk-elabel" title="The filing key: the compile opens or amends a page per concept under each of these. The list is the wiki's own folders AND the topics the pool already uses.">topics</span>
@@ -1297,7 +1304,9 @@
         each('[data-reveal]', 'click', e => post({ type: 'revealWikiPath', which: e.currentTarget.dataset.reveal }));
         each('[data-session]', 'click', e => {
             if (e.target.closest('[data-topics],[data-act]')) { return; }
-            post({ type: 'openSession', id: e.currentTarget.dataset.session });
+            const id = e.currentTarget.dataset.session;
+            // X-456 — a transcript's sessionId opens the phone's session page (afRemote.js); a dropped document has none
+            post(/\bwk-rawsess\b/.test(e.currentTarget.className || '') ? { type: 'openSession', id } : { type: 'openSession', id, sessionId: id });
         });
         each('[data-page]', 'click', e => {
             e.stopPropagation();
