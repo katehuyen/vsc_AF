@@ -205,7 +205,7 @@ const alive = setInterval(() => undefined, 1000);
         && /<td class="agentcell" data-lead>/.test(pf) && (pf.match(/\$\{L\(\d+\)\}/g) || []).length === 24);
     ok('…its PC buttons and a new agent are not drawn there, a project\'s head runs the card\'s width',
         /html\.af-phone table\.pf tr\[data-afcard\] > td\.pfact, html\.af-phone #pf-new \{ display:none; \}/.test(pf)
-        && /html\.af-phone \.pf tr\.grouphead, html\.af-phone \.pf tr\.grouphead > td \{ display:block; \}/.test(pf));
+        && /<tr class="grouphead" data-afcardmore>/.test(pf) && !/tr\.grouphead[^{]*\{ display:block/.test(pf));
     ok('a task\'s lease wraps its words under its bar (it was 421px on a 360px screen)',
         /html\.af-phone \.a2a-leasew \{ display:flex; flex-wrap:wrap; max-width:100%; \}/.test(media('afA2A.js')));
 

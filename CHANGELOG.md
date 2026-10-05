@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.841.0 - The A2A boards and the Agents page open on the phone (2026-10-05)
+
+- **The agents' boards, on the phone.** The A2A Notes and A2A Tasks boards
+  open in the Agent Farm phone app: a phone that may read sees every note,
+  task, lease and the supervisor's directive. Changing them - resolving,
+  pinning, deleting or clearing a note, turning a note into a task, setting
+  the directive, cancelling, rerouting or running a task now - needs a phone
+  paired to manage, and a refused change is told on the phone.
+- A note's task and a task's note open on the phone's other board, focused
+  on that item; turning a note into a task no longer opens a tab on the PC.
+  A task's lease wraps under its bar instead of running off the screen.
+- **The Agents page, on the phone.** Each agent is a card with its figures
+  and its projects. Starting a session, assigning a project, revealing the
+  folder, creating a new agent and the guide stay on the PC and are not
+  drawn on the phone. A note's file, a link and a queue item stay on the PC
+  too.
+
 ## 3.840.0 - Engines and Accounts open on the phone (2026-10-05)
 
 - **The engines and the sign-ins, on the phone.** The Engines and the

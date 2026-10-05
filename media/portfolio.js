@@ -60,7 +60,6 @@
         /* the phone (media/afMobile.js): a card per agent; a session, a project pick, the folder and a new agent are the PC's */
         html.af-phone .pf td, html.af-phone .pf .agentcell { white-space:normal; min-width:0; }
         html.af-phone table.pf tr[data-afcard] > td.pfact, html.af-phone #pf-new { display:none; }
-        html.af-phone .pf tr.grouphead, html.af-phone .pf tr.grouphead > td { display:block; }
     </style>`;
 
     const STATUS = {
@@ -167,7 +166,7 @@
             groups.sort((a, b) => a.name === 'Unassigned' ? 1 : b.name === 'Unassigned' ? -1 : a.name.localeCompare(b.name));
             body = groups.map(g => {
                 const cost = g.rows.reduce((n, r) => n + r.cost30, 0);
-                return `<tr class="grouphead"><td colspan="${COLS.length + 1}">${C.esc(g.name)} <span class="muted small">· ${g.rows.length} agent(s) · ${C.fmtUSD(cost)} in 30d</span></td></tr>`
+                return `<tr class="grouphead" data-afcardmore><td colspan="${COLS.length + 1}">${C.esc(g.name)} <span class="muted small">· ${g.rows.length} agent(s) · ${C.fmtUSD(cost)} in 30d</span></td></tr>`
                     + g.rows.map(rowHtml).join('');
             }).join('');
         } else {
