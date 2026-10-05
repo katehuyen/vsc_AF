@@ -1,13 +1,11 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { buildMemoryGraph } from '../core/memgraph';
-import {
-    addMemoryFile, applyIndexFixes, copyMemoryFileTo, IndexFix, MEMORY_TYPES,
-    memoryUsage, planIndexFixes, resolveMemoryFile
-} from '../core/memusage';
-import { buildMergeDraft, DupGroup, findDuplicateGroups, syncGroup } from '../core/memorySync';
+import { addMemoryFile, applyIndexFixes, copyMemoryFileTo, IndexFix, planIndexFixes, resolveMemoryFile } from '../core/memusage';
+import { buildMergeDraft, findDuplicateGroups, syncGroup } from '../core/memorySync';
 import { SessionIndex } from '../core/sessions';
 import { handleAfNav, htmlShell } from './base';
+import { buildData } from './memoryGraphData';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Memory Graph: makes the [[wikilink]] structure of each agent's memory
@@ -41,8 +39,9 @@ export interface MemoryGraphDeps {
     /**
      * The fleet-wide semantic query. It needs the embeddings index and the
      * provider config, which live with the host — the page only asks and draws.
+     * `onPc` false: a phone asked, so the PC shows no progress for it.
      */
-    askMemory?(query: string): Promise<{
+    askMemory?(query: string, onPc?: boolean): Promise<{
         hits?: { agent: string; title: string; score: number; text: string; file: string }[];
         error?: string;
     }>;
@@ -61,76 +60,30 @@ export interface MemoryGraphDeps {
     setPendingMerge?(name: string, files: string[]): void;
 }
 
-const WINDOW_MS = 30 * 24 * 3600 * 1000;
-
-/** A duplicate group as the page needs it — names and paths, no AgentInfo. */
-function groupRow(g: DupGroup): Record<string, unknown> {
-    return {
-        name: g.name,
-        identical: g.identical,
-        copies: g.copies.map(c => ({
-            agentId: c.agent.id, agentName: c.agent.name,
-            path: c.file.path, mtime: c.file.mtime, size: c.file.size
-        }))
-    };
-}
-
-function buildData(deps: MemoryGraphDeps): Record<string, unknown> {
-    const all = deps.getAgents();
-    const agents = all.filter(a => a.memoryFiles.length > 0);
-    const staleMs = (deps.staleDays?.() ?? 45) * 24 * 3600 * 1000;
-    const now = Date.now();
-    return {
-        generatedAt: now,
-        agents: agents.map(a => ({
-            id: a.id,
-            name: a.name,
-            graph: buildMemoryGraph(a, memoryUsage(deps.index, a.id, WINDOW_MS, a.dir)),
-            // The index repair plan, computed here rather than behind a
-            // round trip: the button that opens it can then say how many
-            // there are before it is pressed.
-            fixes: planIndexFixes(a.dir, a.memoryFiles),
-            // What a distillation would be offered for. `stale` and `big` are
-            // the two reasons the picker used to state as a `description`.
-            files: a.memoryFiles
-                .filter(f => f.name.toLowerCase() !== 'memory.md')
-                .map(f => ({
-                    name: f.name, path: f.path, tokens: f.tokens, mtime: f.mtime,
-                    staleDays: Math.floor((now - f.mtime) / (24 * 3600 * 1000)),
-                    stale: now - f.mtime > staleMs
-                }))
-        })),
-        // ‼️ Every agent, not only the ones with memory: a copy has to be able
-        // to land on an agent whose memory folder is still empty.
-        allAgents: all.map(a => ({ id: a.id, name: a.name })),
-        memoryTypes: MEMORY_TYPES.slice(),
-        duplicates: findDuplicateGroups(all).map(groupRow),
-        embeddingsOn: deps.embeddingsOn ? deps.embeddingsOn() : false,
-        canDistill: !!deps.distill
-    };
-}
-
 export class MemoryGraphPanel {
     private static current: MemoryGraphPanel | undefined;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<MemoryGraphPanel>();
     private disposables: vscode.Disposable[] = [];
 
     static show(deps: MemoryGraphDeps, agentId?: string): void {
         if (MemoryGraphPanel.current) {
-            MemoryGraphPanel.current.panel.reveal();
+            MemoryGraphPanel.current.host.reveal();
             MemoryGraphPanel.current.refresh(agentId);
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.memoryGraph',
-            'Agent Farm — Memory Graph',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        MemoryGraphPanel.current = new MemoryGraphPanel(panel, deps, agentId);
+        MemoryGraphPanel.current = new MemoryGraphPanel(
+            desktopHost({ viewType: 'agentfarm.memoryGraph', title: 'Agent Farm — Memory Graph' }), deps, agentId);
+    }
+
+    /** X-456 — the page on a phone. A distillation ends in the PC's diff editor and its decision, so it is not built there. */
+    static openOn(host: PanelHost, deps: MemoryGraphDeps, agentId?: string): void {
+        MemoryGraphPanel.phones.add(new MemoryGraphPanel(host, { ...deps, distill: undefined }, agentId));
     }
 
     static refreshIfOpen(): void {
         MemoryGraphPanel.current?.refresh();
+        for (const p of MemoryGraphPanel.phones) { p.refresh(); }
     }
 
     /**
@@ -141,23 +94,23 @@ export class MemoryGraphPanel {
      */
     static compose(deps: MemoryGraphDeps, seed: Record<string, unknown>): void {
         MemoryGraphPanel.show(deps, typeof seed.agentId === 'string' ? seed.agentId : undefined);
-        void MemoryGraphPanel.current?.panel.webview.postMessage({ type: 'mem-compose', seed });
+        void MemoryGraphPanel.current?.host.webview.postMessage({ type: 'mem-compose', seed });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: MemoryGraphDeps, agentId?: string) {
-        panel.webview.html = htmlShell(
-            panel.webview,
+    private constructor(readonly host: PanelHost, private deps: MemoryGraphDeps, agentId?: string) {
+        host.webview.html = htmlShell(
+            host.webview,
             deps.extensionUri,
             'Memory Graph',
             { ...buildData(deps), selectAgentId: agentId },
             'memgraph.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
     refresh(agentId?: string): void {
-        void this.panel.webview.postMessage({
+        void this.host.webview.postMessage({
             type: 'data',
             data: { ...buildData(this.deps), selectAgentId: agentId }
         });
@@ -169,12 +122,13 @@ export class MemoryGraphPanel {
 
     /** A refusal or a receipt, shown in the card that asked. */
     private say(text: string, ok = false): void {
-        void this.panel.webview.postMessage({ type: 'mem-msg', text, ok });
+        void this.host.webview.postMessage({ type: 'mem-msg', text, ok });
     }
 
     private changed(): void {
         this.deps.refreshAll?.();
-        this.refresh();
+        // every view of it — the PC's tab and each phone's — shows the same disk
+        MemoryGraphPanel.refreshIfOpen();
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
@@ -251,6 +205,7 @@ export class MemoryGraphPanel {
             return this.say((e as Error).message ?? String(e));
         }
         this.changed();
+        if (this.host.remote) { return this.say(`${name}.md created and indexed — write the fact into its body on the PC.`, true); }
         this.say(`${name}.md created and indexed — write the fact into the body.`, true);
         void vscode.window.showTextDocument(vscode.Uri.file(file));
     }
@@ -278,10 +233,10 @@ export class MemoryGraphPanel {
     private async ask(query: string): Promise<void> {
         if (!query.trim()) { return this.say('Type what you are looking for.'); }
         if (!this.deps.askMemory) { return this.say('Semantic memory is not wired in this window.'); }
-        void this.panel.webview.postMessage({ type: 'mem-asking' });
-        const res = await this.deps.askMemory(query.trim());
+        void this.host.webview.postMessage({ type: 'mem-asking' });
+        const res = await this.deps.askMemory(query.trim(), !this.host.remote);
         if (res.error) { return this.say(res.error); }
-        void this.panel.webview.postMessage({
+        void this.host.webview.postMessage({
             type: 'mem-hits', query, hits: res.hits ?? []
         });
     }
@@ -296,7 +251,7 @@ export class MemoryGraphPanel {
         const agent = this.agentById(agentId);
         if (!agent || !file) { return; }
         if (!this.deps.distill) { return this.say('Distillation is not wired in this window.'); }
-        void this.panel.webview.postMessage({ type: 'mem-distilling', path: file });
+        void this.host.webview.postMessage({ type: 'mem-distilling', path: file });
         const res = await this.deps.distill(agent.dir, file);
         if (res.error) { return this.say(`Distillation failed — ${res.error}`); }
         this.changed();
@@ -310,6 +265,10 @@ export class MemoryGraphPanel {
         const name = String(msg.name ?? '');
         const group = findDuplicateGroups(this.deps.getAgents()).find(g => g.name === name);
         if (!group) { return this.say('That file is no longer shared — refresh the page.'); }
+        // a comparison and a merge draft open in the PC's editor
+        if (this.host.remote && (act === 'diff' || act === 'merge')) {
+            return this.say('Comparing and merging open in the PC\'s editor — do that one on the PC.');
+        }
 
         if (act === 'diff') {
             const left = String(msg.left ?? ''), right = String(msg.right ?? '');
@@ -340,8 +299,8 @@ export class MemoryGraphPanel {
         if (!source) { return this.say('Choose which copy is the source of truth.'); }
         const targets = group.copies.filter(c => c !== source);
         // ‼️ The modal stays. This overwrites N files at once, and a page-side
-        // warning can be missed while the focus is somewhere else.
-        const yes = await vscode.window.showWarningMessage(
+        // warning can be missed while the focus is somewhere else. A phone asks it on the phone.
+        const yes = await this.host.ask.warn(
             `Overwrite ${targets.length} copies of "${group.name}" with ${source.agent.name}'s version?\n\n`
             + targets.map(t => t.file.path).join('\n')
             + '\n\nTimestamped .afbak backups are created next to each file.',
@@ -356,7 +315,8 @@ export class MemoryGraphPanel {
     }
 
     private dispose(): void {
-        MemoryGraphPanel.current = undefined;
+        if (MemoryGraphPanel.current === this) { MemoryGraphPanel.current = undefined; }
+        MemoryGraphPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
     }
 }

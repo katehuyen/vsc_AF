@@ -25629,7 +25629,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { indexed: pending.length, files: stats.sessions, chunks: stats.chunks };
     };
 
-    const askFleetMemory = async (query: string, k = 12): Promise<{
+    const askFleetMemory = async (query: string, k = 12, onPc = true): Promise<{
         hits?: { agent: string; title: string; score: number; text: string; file: string }[];
         error?: string;
     }> => {
@@ -25637,22 +25637,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (ecfg.provider === 'off') {
             return { error: 'Semantic memory needs an embeddings provider — set agentFarm.embeddingsProvider (gemini, or a local OpenAI-compatible endpoint).' };
         }
+        const run = async (report: (m: string) => void) => {
+            await indexFleetMemory(report);
+            const q = await embedTexts([query], ecfg);
+            if (q.error || !q.vectors) { throw new Error(q.error ?? 'query embedding failed'); }
+            return {
+                hits: memIndex.search(q.vectors[0], k)
+                    .filter(h => h.score > 0.15)
+                    .map(h => ({
+                        agent: h.chunk.agentName, title: h.chunk.title, score: h.score,
+                        text: h.chunk.text, file: h.chunk.sessionFile
+                    }))
+            };
+        };
         try {
-            return await vscode.window.withProgress(
+            // X-456 — a phone's question shows no progress on the PC; the phone's page says it is asking
+            return !onPc ? await run(() => undefined) : await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: querying fleet memory…' },
-                async (progress) => {
-                    await indexFleetMemory(m => progress.report({ message: m }));
-                    const q = await embedTexts([query], ecfg);
-                    if (q.error || !q.vectors) { throw new Error(q.error ?? 'query embedding failed'); }
-                    return {
-                        hits: memIndex.search(q.vectors[0], k)
-                            .filter(h => h.score > 0.15)
-                            .map(h => ({
-                                agent: h.chunk.agentName, title: h.chunk.title, score: h.score,
-                                text: h.chunk.text, file: h.chunk.sessionFile
-                            }))
-                    };
-                });
+                progress => run(m => progress.report({ message: m })));
         } catch (err) {
             return { error: `Memory query failed — ${String((err as Error).message ?? err)}` };
         }
@@ -25694,7 +25696,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         staleDays: () => cfg().get<number>('staleMemoryDays', 45),
         embeddingsOn: () => embeddingsCfg().provider !== 'off',
         setPendingMerge: (name: string, files: string[]) => { pendingMerge = { name, files }; },
-        askMemory: (query: string) => askFleetMemory(query),
+        askMemory: (query: string, onPc?: boolean) => askFleetMemory(query, 12, onPc),
         distill: (agentDir: string, file: string) => distillOne(agentDir, file)
     };
 
@@ -31396,6 +31398,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             capabilities: host => CapabilitiesPanel.openOn(host, capabilitiesDeps),
             airtable: host => AirtablePanel.openOn(host, airtableDeps),
             analytics: host => TaskAnalyticsPanel.openOn(host, analyticsDeps),
+            memgraph: (host, args) => MemoryGraphPanel.openOn(host, memGraphDeps, typeof args?.agentId === 'string' ? args.agentId : undefined),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

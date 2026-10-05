@@ -22,6 +22,8 @@ export interface MorePageMakers {
     capabilities(host: PanelHost): void;
     airtable(host: PanelHost): void;
     analytics(host: PanelHost): void;
+    /** `args.agentId` opens on that agent's memory, as the desktop's show does. */
+    memgraph(host: PanelHost, args?: Record<string, unknown>): void;
 }
 
 /**
@@ -197,6 +199,18 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
             pcOnly: ['open-history', 'open-forecast', 'open-tasks', 'export-md', 'openGuide', 'afnav'],
             make: host => make.analytics(host)
+        },
+        // X-456 — every agent's memory as a graph. What it draws includes the index repair plan and the
+        // shared files, which ask manage over the bridge (memory.index.plan, memory.duplicates), so the
+        // page asks the same to look and to act: a new memory, a copy, an index repair, a fleet question
+        // and a sync (its overwrite asked on the phone), as the memory.* ops are. A file in the PC's
+        // editor, a distillation (it ends in the PC's diff editor, so a phone's view is built without
+        // it), a comparison and a merge draft (refused in the panel), the guide and another page belong
+        // to the PC.
+        memgraph: {
+            open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['open', 'mem-distill', 'openGuide', 'afnav'],
+            make: (host, args) => make.memgraph(host, args)
         }
     };
 }

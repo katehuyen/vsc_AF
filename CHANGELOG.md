@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.853.0 - The Memory Graph opens on the phone (2026-10-06)
+
+- **The Memory Graph, on the phone.** Every agent's memory as a graph, its
+  hubs, islands, broken links and files missing from MEMORY.md open in the
+  Agent Farm phone app - on one agent's memory when the app asks for it - at
+  the level the index repair plan and the shared files ask over the bridge,
+  the one a phone pairs at by default.
+- From the phone: a new memory file (its body is written on the PC, and the
+  phone says so), a copy onto another agent, the MEMORY.md repair, a meaning
+  search across the fleet (no progress toast on the PC) and a sync of a
+  shared file from one source, its overwrite asked on the phone. A change
+  made in any view - the PC's tab or a phone's - redraws every other one.
+- On a phone the graph keeps its real size and scrolls sideways inside its
+  card, opened on its middle where the hubs start; shrunk to the screen its
+  names could not be read.
+- Opening a file in the editor, a distillation (it ends in the PC's diff
+  editor and its decision), comparing two copies and a merge draft stay on
+  the PC and are not drawn on the phone.
+
 ## 3.852.0 - The board opens on the phone (2026-10-06)
 
 - **The board, on the phone.** Asking the Agent Farm phone app for the board

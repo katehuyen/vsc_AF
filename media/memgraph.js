@@ -3,6 +3,8 @@
     'use strict';
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
+    // X-456 — on a phone a file, a comparison and a merge draft would open in the PC's editor: not drawn there
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
     let DATA = window.__DATA__;
     let agentId = DATA.selectAgentId || (DATA.agents[0] && DATA.agents[0].id);
 
@@ -175,8 +177,8 @@
                         sub: Math.round(h.score * 100) + '% · ' + String(h.text || '').slice(0, 220)
                     }))
                 })
-                + '<div class="btnrow">' + hits.map((h, i) =>
-                    `<button class="mini secondary" data-memopen="${C.esc(h.file)}">open ${C.esc(h.title)}</button>`).join('') + '</div>';
+                + (ON_PHONE_HOST ? '' : '<div class="btnrow">' + hits.map((h, i) =>
+                    `<button class="mini secondary" data-memopen="${C.esc(h.file)}">open ${C.esc(h.title)}</button>`).join('') + '</div>');
         return F.card({
             id: 'memcard',
             title: 'Ask the fleet',
@@ -224,13 +226,13 @@
                     sub: relTime(c.mtime) + ' · ' + (c.size / 1024).toFixed(1) + ' KB · ' + c.path
                 }))
             })
-            + F.sec('Compare two', 'Opens the real diff editor — better than anything this page could draw.')
+            + (ON_PHONE_HOST ? '' : F.sec('Compare two', 'Opens the real diff editor — better than anything this page could draw.')
             + F.grid([
                 F.sel('left', 'Left', copyOpts, card.left || g.copies[0].path, {}),
                 F.sel('right', 'Right', copyOpts, card.right || (g.copies[1] && g.copies[1].path) || '', {})
             ])
             + '<div class="btnrow"><button class="secondary" data-memact="diff">Compare them</button>'
-            + '<button class="secondary" data-memact="merge">Make a merge draft</button></div>'
+            + '<button class="secondary" data-memact="merge">Make a merge draft</button></div>')
             + F.sec('Or make one of them the truth',
                 'Every other copy is overwritten, each with a timestamped .afbak backup beside it.')
             + F.grid([
@@ -410,7 +412,7 @@
             const ly = anchor === 'middle' ? (p.y < cy ? p.y - r - 5 : p.y + r + 12) : p.y + 3;
             // A node IS a memory file, so it carries the memory row's menu —
             // the same one the agent page's memory table draws.
-            dots += `<g class="node" data-open="${C.esc(n.path)}" style="cursor:pointer" ` +
+            dots += `<g class="node"${ON_PHONE_HOST ? '' : ` data-open="${C.esc(n.path)}" style="cursor:pointer"`} ` +
                 window.AFCtx.row('afMemoryRow', { memPath: n.path, memName: n.name, agentId: agentId }) + '>' +
                 `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}"${ring} opacity="0.9"><title>${C.esc(tip)}</title></circle>` +
                 `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" text-anchor="${anchor}" fill="currentColor" opacity="0.85">${C.esc(short(n.name))}<title>${C.esc(tip)}</title></text></g>`;
@@ -446,6 +448,12 @@
         </div>`;
     }
 
+    /** A memory file's name: a link to the PC's editor, plain text on a phone. */
+    function fileName(n) {
+        return ON_PHONE_HOST ? C.esc(n.name)
+            : '<button class="linkish" data-open="' + C.esc(n.path) + '">' + C.esc(n.name) + '</button>';
+    }
+
     function render() {
         const entry = DATA.agents.find(a => a.id === agentId);
         const seg = DATA.agents.map(a =>
@@ -476,11 +484,11 @@
                     ${brokenLinks.length ? `<div class="card"><h3>Broken links</h3><p class="muted small">The [[target]] resolves to no file — a typo, or a note not written yet.</p>${brokenLinks.map(l =>
                         `<div class="sub">• ${C.esc(l.from)} → <span style="color:var(--vscode-charts-red,#f14c4c)">[[${C.esc(l.to)}]]</span></div>`).join('')}</div>` : ''}
                     ${islands.length ? `<div class="card"><h3>Islands</h3><p class="muted small">Notes with no links in or out — weave them into the fabric or archive them.</p>${islands.map(n =>
-                        `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button>${n.recalls ? '' : ' <span class="muted">(not recalled 30d)</span>'}</div>`).join('')}</div>` : ''}
+                        `<div class="sub">• ${fileName(n)}${n.recalls ? '' : ' <span class="muted">(not recalled 30d)</span>'}</div>`).join('')}</div>` : ''}
                     ${hubs.length ? `<div class="card"><h3>Hubs</h3><p class="muted small">The most linked-to notes — the centers of knowledge.</p>${hubs.map(n =>
-                        `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button> — ${n.incoming} in</div>`).join('')}</div>` : ''}
+                        `<div class="sub">• ${fileName(n)} — ${n.incoming} in</div>`).join('')}</div>` : ''}
                     ${notIndexed.length ? `<div class="card"><h3>Not in MEMORY.md</h3><p class="muted small">Files with no line in the index — the agent cannot find them.</p>${notIndexed.map(n =>
-                        `<div class="sub">• <button class="linkish" data-open="${C.esc(n.path)}">${C.esc(n.name)}</button></div>`).join('')}
+                        `<div class="sub">• ${fileName(n)}</div>`).join('')}
                         <div class="btnrow" style="margin-top:8px"><button id="fixindex">Repair MEMORY.md…</button></div></div>` : ''}
                 </div>`;
 
@@ -493,7 +501,7 @@
                         <span><i style="background:var(--vscode-descriptionForeground,#888);border-radius:50%"></i>not recalled</span>
                         <span><i style="border:2px dashed var(--vscode-charts-yellow,#cca700);border-radius:50%;background:none"></i>not in index</span>
                         <span><i style="background:var(--vscode-charts-blue,#3794ff);height:2px;margin-top:6px"></i>[[wikilink]]</span>
-                        <span class="muted">node size = token weight · click = open file</span>
+                        <span class="muted">node size = token weight<span class="pcclick"> · click = open file</span></span>
                     </div>
                 </div>
                 ${lists}`;
@@ -503,7 +511,9 @@
             <style>
                 .linkish { background:none;border:none;color:var(--vscode-textLink-foreground,#3794ff);cursor:pointer;padding:0;font:inherit }
                 .linkish:hover { text-decoration:underline }
-            </style>
+                html.af-phone .chartbox { overflow-x:auto }
+                html.af-phone .chartbox svg { min-width:900px }
+            </style>${ON_PHONE_HOST ? '<style>.pcclick { display:none }</style>' : ''}
             ${window.AFHeader.html({
                 page: 'memgraph',
                 title: 'Memory Graph',
@@ -527,6 +537,14 @@
                 if (el.dataset.open) { vscode.postMessage({ type: 'open', path: el.dataset.open }); }
             }));
         wireCard();
+        centreGraph();
+    }
+
+    /** On a phone the graph keeps its size and scrolls sideways: it opens on its middle, where the hubs start. */
+    function centreGraph() {
+        const root = document.documentElement;
+        const box = root && root.classList && root.classList.contains('af-phone') ? document.querySelector('.chartbox') : null;
+        if (box) { box.scrollLeft = (box.scrollWidth - box.clientWidth) / 2; }
     }
 
     // ------------------------------------------------------- right-click menu
@@ -560,4 +578,8 @@
     window.AFCtx.listen(ctxDo);
 
     render();
+    // afMobile.js marks a phone on DOMContentLoaded, after this first draw (its listener runs first)
+    if (document.readyState === 'loading' && typeof document.addEventListener === 'function') {
+        document.addEventListener('DOMContentLoaded', centreGraph);
+    }
 })();
