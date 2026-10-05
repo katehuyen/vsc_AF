@@ -230,6 +230,7 @@
                 td.num, th.num { text-align:right; white-space:nowrap; }
                 .badge.err { color:var(--vscode-errorForeground,#f85149); border:1px solid currentColor;
                     border-radius:3px; padding:0 5px; font-size:10px; }
+                html.af-phone [data-go], html.af-phone [data-texport] { display:none; }
             </style>
             ${window.AFHeader.html({
                 page: 'tasks',

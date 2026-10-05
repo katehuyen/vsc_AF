@@ -21,6 +21,7 @@ export interface MorePageMakers {
     evals(host: PanelHost): void;
     capabilities(host: PanelHost): void;
     airtable(host: PanelHost): void;
+    analytics(host: PanelHost): void;
 }
 
 /**
@@ -185,6 +186,17 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
             pcOnly: ['add-root', 'add-media', 'open-ui', 'reveal', 'open-config', 'openGuide', 'afnav'],
             make: host => make.airtable(host)
+        },
+        // X-456 — 30 days of task throughput, scorecards, families and the forecast. The forecast asks
+        // manage over the bridge (schedules.forecast), so the page asks the same to look; it has no act
+        // of its own on a phone. The spend by sign-in is the Accounts' data (admin on a phone), so a
+        // phone's view is built without it. The task history, the full forecast, the Tasks page (the
+        // header's own link reaches it on a phone), a Markdown export, the guide and another page
+        // belong to the PC.
+        analytics: {
+            open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['open-history', 'open-forecast', 'open-tasks', 'export-md', 'openGuide', 'afnav'],
+            make: host => make.analytics(host)
         }
     };
 }

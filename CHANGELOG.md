@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.851.0 - The Task Analytics open on the phone (2026-10-06)
+
+- **The Task Analytics, on the phone.** Thirty days of task throughput,
+  the per-agent scorecards, the recurring task families, the alerts and the
+  forecast open in the Agent Farm phone app, at the level the forecast asks
+  over the bridge - the one a phone pairs at by default. A task change or
+  the farm's refresh redraws the phone's view too.
+- The spend by sign-in is not built for the phone at all: it is the
+  Accounts' data, which a phone sees only at the highest level. The PC's
+  tab keeps it.
+- The task history, the full forecast, the way back to Tasks and the
+  Markdown export stay on the PC and are not drawn on the phone; the Tasks
+  page is one tap away in the phone's own menu.
+
 ## 3.850.0 - The Airtable Engine page opens on the phone (2026-10-06)
 
 - **The Airtable Engine, on the phone.** The module's control room - its

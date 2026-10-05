@@ -21041,6 +21041,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         cacheFile: toolboxProbeCacheFile,
         afterStart: flushAfterStart
     };
+    const analyticsDeps = {
+        extensionUri: context.extensionUri,
+        manager: taskManager,
+        allRecords: allTaskRecords,
+        forecastDays: () => cfg().get<number>('forecastDays', 7),
+        onDidChange: taskManager.onDidChange,
+        lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
+        setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
+        // X-252 — the history half. The Engines card answers "today" on
+        // a live percentage; "which sign-in runs cheap and which runs
+        // expensive" is a question about a month, and had no home.
+        accountSpend: (days: number) => accountSpendOver(days)
+    };
     const capabilitiesDeps = {
         extensionUri: context.extensionUri,
         getAgents: () => agents,
@@ -31381,6 +31394,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             evals: host => EvalsPanel.openOn(host, evalsDeps),
             capabilities: host => CapabilitiesPanel.openOn(host, capabilitiesDeps),
             airtable: host => AirtablePanel.openOn(host, airtableDeps),
+            analytics: host => TaskAnalyticsPanel.openOn(host, analyticsDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
@@ -41361,19 +41375,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openTaskAnalytics', () => {
-            TaskAnalyticsPanel.show({
-                extensionUri: context.extensionUri,
-                manager: taskManager,
-                allRecords: allTaskRecords,
-                forecastDays: () => cfg().get<number>('forecastDays', 7),
-                onDidChange: taskManager.onDidChange,
-                lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
-                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
-                // X-252 — the history half. The Engines card answers "today" on
-                // a live percentage; "which sign-in runs cheap and which runs
-                // expensive" is a question about a month, and had no home.
-                accountSpend: (days: number) => accountSpendOver(days)
-            });
+            TaskAnalyticsPanel.show(analyticsDeps);
         }),
 
         // The Living page only sees the FARM until you tell it what the farm

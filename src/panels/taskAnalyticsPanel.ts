@@ -9,6 +9,7 @@ import { buildTriggerStats, triggerAlerts } from '../core/triggerstats';
 import { AccountSpendReport } from '../core/accountSpend';
 import { markdownTable } from '../core/mdTable';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Task Analytics — 30-day throughput, per-agent scorecards, recurring task
@@ -145,38 +146,44 @@ function buildData(deps: TaskAnalyticsDeps): Record<string, unknown> {
 
 export class TaskAnalyticsPanel {
     private static current: TaskAnalyticsPanel | undefined;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<TaskAnalyticsPanel>();
     private disposables: vscode.Disposable[] = [];
 
     static show(deps: TaskAnalyticsDeps): void {
         if (TaskAnalyticsPanel.current) {
-            TaskAnalyticsPanel.current.panel.reveal();
+            TaskAnalyticsPanel.current.host.reveal();
             TaskAnalyticsPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.taskAnalytics',
-            'Agent Farm — Task Analytics',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        TaskAnalyticsPanel.current = new TaskAnalyticsPanel(panel, deps);
+        TaskAnalyticsPanel.current = new TaskAnalyticsPanel(
+            desktopHost({ viewType: 'agentfarm.taskAnalytics', title: 'Agent Farm — Task Analytics' }), deps);
+    }
+
+    /**
+     * X-456 — the analytics on a phone's view, without the spend by sign-in: that is the Accounts'
+     * data, which a phone sees only at admin, so the section is not drawn there.
+     */
+    static openOn(host: PanelHost, deps: TaskAnalyticsDeps): void {
+        TaskAnalyticsPanel.phones.add(new TaskAnalyticsPanel(host, { ...deps, accountSpend: undefined }));
     }
 
     static refreshIfOpen(): void {
         TaskAnalyticsPanel.current?.refresh();
+        for (const p of TaskAnalyticsPanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: TaskAnalyticsDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Agent Farm Task Analytics',
+    private constructor(readonly host: PanelHost, private deps: TaskAnalyticsDeps) {
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Agent Farm Task Analytics',
             buildData(deps), 'taskAnalytics.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
         this.disposables.push(deps.onDidChange(() => this.refresh()));
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps) });
     }
 
     private onMessage(msg: {
@@ -226,7 +233,10 @@ export class TaskAnalyticsPanel {
     }
 
     private dispose(): void {
-        TaskAnalyticsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (TaskAnalyticsPanel.current === this) { TaskAnalyticsPanel.current = undefined; }
+        TaskAnalyticsPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }
