@@ -19,6 +19,7 @@ export interface MorePageMakers {
     living(host: PanelHost): void;
     studio(host: PanelHost): void;
     evals(host: PanelHost): void;
+    capabilities(host: PanelHost): void;
 }
 
 /**
@@ -162,6 +163,16 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'manage', act: 'manage', looks: ['refresh', 'ev-agent'], answers: [],
             pcOnly: ['ev-ab', 'af-browse', 'openGuide', 'afnav'],
             make: host => make.evals(host)
+        },
+        // X-456 — who has which skill, MCP server, memory file and duty, and what is used. The same
+        // inventory reads at read over the bridge (toolbox.list), so the page opens there; a copy onto
+        // an agent (its source picked and confirmed on the phone) is manage, as toolbox.copy,
+        // toolbox.enable, memory.copy and duties.add are. A file in the PC's editor, the task history,
+        // the guide's tab and another page belong to the PC.
+        capabilities: {
+            open: 'read', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['open', 'openTaskHistory', 'openGuide', 'afnav'],
+            make: host => make.capabilities(host)
         }
     };
 }

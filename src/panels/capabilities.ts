@@ -11,6 +11,7 @@ import { buildTaskFamilies, TaskRecord } from '../core/taskstats';
 import { SessionIndex } from '../core/sessions';
 import { hashString, relTime, safeReadFile, safeStat } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Capability Matrix: skills × agents and MCP servers × agents in one glance —
@@ -165,41 +166,44 @@ function buildData(deps: CapabilitiesDeps): Record<string, unknown> {
 
 export class CapabilitiesPanel {
     private static current: CapabilitiesPanel | undefined;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<CapabilitiesPanel>();
     private disposables: vscode.Disposable[] = [];
 
     static show(deps: CapabilitiesDeps): void {
         if (CapabilitiesPanel.current) {
-            CapabilitiesPanel.current.panel.reveal();
+            CapabilitiesPanel.current.host.reveal();
             CapabilitiesPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.capabilities',
-            'Agent Farm — Capability Matrix',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        CapabilitiesPanel.current = new CapabilitiesPanel(panel, deps);
+        CapabilitiesPanel.current = new CapabilitiesPanel(
+            desktopHost({ viewType: 'agentfarm.capabilities', title: 'Agent Farm — Capability Matrix' }), deps);
+    }
+
+    /** X-456 — the Capability Matrix on a phone's view. */
+    static openOn(host: PanelHost, deps: CapabilitiesDeps): void {
+        CapabilitiesPanel.phones.add(new CapabilitiesPanel(host, deps));
     }
 
     static refreshIfOpen(): void {
         CapabilitiesPanel.current?.refresh();
+        for (const p of CapabilitiesPanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: CapabilitiesDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview,
+    private constructor(readonly host: PanelHost, private deps: CapabilitiesDeps) {
+        host.webview.html = htmlShell(
+            host.webview,
             deps.extensionUri,
             'Capability Matrix',
             buildData(deps),
             'capabilities.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps) });
     }
 
     private agentById(id: string): AgentInfo | undefined {
@@ -227,7 +231,7 @@ export class CapabilitiesPanel {
         if (!donors.length) { return undefined; }
         donors = donors.slice().sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
         if (donors.length === 1) {
-            const ok = await vscode.window.showInformationMessage(
+            const ok = await this.host.ask.info(
                 `Copy ${itemLabel} from ${donors[0].agent.name} to ${to.name}?${confirmSuffix}`,
                 { modal: true }, 'Copy');
             return ok === 'Copy' ? donors[0].agent : undefined;
@@ -254,7 +258,7 @@ export class CapabilitiesPanel {
             const share = groups.get(d.contentKey)!.length;
             return `variant ${v}` + (share > 1 ? ` (shared by ${share})` : ' (unique)');
         };
-        const pick = await vscode.window.showQuickPick(
+        const pick = await this.host.ask.pick(
             donors.map(d => ({
                 label: d.agent.name,
                 description: [variantTag(d), d.description].filter(Boolean).join(' · '),
@@ -318,7 +322,7 @@ export class CapabilitiesPanel {
                     this.deps.refreshTrees();
                     this.refresh();
                 } catch (e) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+                    void this.host.ask.warn(`Agent Farm: ${(e as Error).message ?? String(e)}`);
                 }
                 break;
             }
@@ -352,7 +356,7 @@ export class CapabilitiesPanel {
                     this.deps.refreshTrees();
                     this.refresh();
                 } catch (e) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message ?? String(e)}`);
+                    void this.host.ask.warn(`Agent Farm: ${(e as Error).message ?? String(e)}`);
                 }
                 break;
             }
@@ -382,14 +386,14 @@ export class CapabilitiesPanel {
                 const duty = from.duties.find(d => d.title.toLowerCase() === title);
                 if (!duty) { return; }
                 if (to.duties.some(d => d.title === duty.title)) {
-                    void vscode.window.showWarningMessage(`Agent Farm: ${to.name} already has a duty titled "${duty.title}".`);
+                    void this.host.ask.warn(`Agent Farm: ${to.name} already has a duty titled "${duty.title}".`);
                     return;
                 }
                 addDuty(to.dir, { ...duty });
                 if (to.claudeMdPath) {
                     const claudeMd = fs.readFileSync(to.claudeMdPath, 'utf8');
                     if (!claudeMdReferencesDuties(claudeMd)) {
-                        const append = await vscode.window.showWarningMessage(
+                        const append = await this.host.ask.warn(
                             `${to.name}'s CLAUDE.md does not mention DUTIES.md — without a reference the agent will never check its duties. Append the instruction section?`,
                             { modal: true }, 'Append to CLAUDE.md');
                         if (append === 'Append to CLAUDE.md') {
@@ -424,7 +428,7 @@ export class CapabilitiesPanel {
                     this.deps.refreshTrees();
                     this.refresh();
                 } else {
-                    void vscode.window.showWarningMessage('Agent Farm: could not read the server definition to copy it.');
+                    void this.host.ask.warn('Agent Farm: could not read the server definition to copy it.');
                 }
                 break;
             }
@@ -432,7 +436,10 @@ export class CapabilitiesPanel {
     }
 
     private dispose(): void {
-        CapabilitiesPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (CapabilitiesPanel.current === this) { CapabilitiesPanel.current = undefined; }
+        CapabilitiesPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }

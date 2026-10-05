@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.849.0 - The Capability Matrix opens on the phone (2026-10-06)
+
+- **The Capability Matrix, on the phone.** Who has which skill, MCP
+  server, memory file and duty, and what was used in the last 30 days,
+  opens in the Agent Farm phone app at the level its bridge inventory reads
+  at; copying one onto an agent asks the same level as the bridge's copy
+  operations - the one a phone pairs at by default.
+- A copy's source is picked or confirmed on the phone - the newest first,
+  each marked identical or a different version - and so is the question a
+  duty's copy asks about the agent's CLAUDE.md.
+- On the phone the matrix scrolls sideways inside its card while the row
+  names stay in place. Opening a file in the PC's editor and the task
+  history stay on the PC.
+
 ## 3.848.0 - The Evals open on the phone (2026-10-06)
 
 - **The Evals, on the phone.** An agent's regression cases, its runs and

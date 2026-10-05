@@ -4,6 +4,7 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
 
     // ‼️ M-33 — A HOST PUSH WAITS FOR THE READER'S HANDS; THE PAGE'S OWN
     // RENDERS DO NOT. render() replaces the whole of #app, so a repaint that
@@ -246,6 +247,7 @@
                 .tag { font-size: 10px; border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; opacity: 0.7; }
                 .dead { color: var(--vscode-charts-yellow, #cca700); font-size: 9px; vertical-align: middle; }
                 .chips .badge { margin-left: 6px; font-weight: 400; }
+                html.af-phone .matrix th.name, html.af-phone .matrix td.name { min-width: 120px; max-width: 132px; overflow-wrap: anywhere; position: sticky; left: 0; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background)); }
             </style>
             ${window.AFHeader.html({
                 page: 'capabilities',
@@ -263,12 +265,15 @@
         `;
 
         window.AFHeader.wire(vscode);
-        document.querySelectorAll('[data-taskhist]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({ type: 'openTaskHistory' })));
-        document.querySelectorAll('[data-open]').forEach(b =>
-            b.addEventListener('click', () => {
-                if (b.dataset.open) { vscode.postMessage({ type: 'open', path: b.dataset.open }); }
-            }));
+        // the task history and a file in the PC's editor are the PC's, so a phone's cell is not wired to them
+        if (!ON_PHONE_HOST) {
+            document.querySelectorAll('[data-taskhist]').forEach(b =>
+                b.addEventListener('click', () => vscode.postMessage({ type: 'openTaskHistory' })));
+            document.querySelectorAll('[data-open]').forEach(b =>
+                b.addEventListener('click', () => {
+                    if (b.dataset.open) { vscode.postMessage({ type: 'open', path: b.dataset.open }); }
+                }));
+        }
         const COPY_MSG = { skill: 'copySkill', mcp: 'copyMcp', memory: 'copyMemory', duty: 'copyDuty' };
         document.querySelectorAll('.copyhere').forEach(b =>
             b.addEventListener('click', () => {

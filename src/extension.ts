@@ -21034,6 +21034,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * spend real money and end in a report document and a modal; the page asks
      * for them and draws everything they produce.
      */
+    const capabilitiesDeps = {
+        extensionUri: context.extensionUri,
+        getAgents: () => agents,
+        index,
+        refreshTrees: refreshAll,
+        taskRecords: () => allTaskRecords()
+    };
     const evalRunEnv: EvalRunEnv = {
         store: evalStore,
         runArgs: () => cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001'),
@@ -31365,6 +31372,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             living: host => LivingPanel.openOn(host, livingDeps),
             studio: host => StudioPanel.openOn(host, studioDeps),
             evals: host => EvalsPanel.openOn(host, evalsDeps),
+            capabilities: host => CapabilitiesPanel.openOn(host, capabilitiesDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
@@ -39431,13 +39439,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openCapabilities', () => {
-            CapabilitiesPanel.show({
-                extensionUri: context.extensionUri,
-                getAgents: () => agents,
-                index,
-                refreshTrees: refreshAll,
-                taskRecords: () => allTaskRecords()
-            });
+            CapabilitiesPanel.show(capabilitiesDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openAirtable', () => {
