@@ -15,6 +15,7 @@ export interface MorePageMakers {
     wiki(host: PanelHost, args?: Record<string, unknown>): void;
     toolbox(host: PanelHost): void;
     sound(host: PanelHost): void;
+    settings(host: PanelHost): void;
 }
 
 /**
@@ -108,6 +109,24 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'read', act: 'manage', looks: ['refresh', 'alertSpeakVoices', 'alertSessionOpen'], answers: [],
             pcOnly: [...SOUND_PC, 'openSettings', 'afnav'],
             make: host => make.sound(host)
+        },
+        // X-456 — every agentFarm.* setting, Claude Code's own settings and the agent folders: the
+        // settings namespace is admin even to look (src/remote/scopes.ts), so the page asks the same.
+        // A row, its reset, a setting set (asked on the phone), the Flow & Content card, the Telegram
+        // card, the sounds, Kapıcı's tools, the wiki's start, the per-agent defaults and the roots are
+        // the acts; the phone's own reach and port are refused there (settingsPhone.ts). Every file and
+        // folder picker, an editor, a terminal, the key vault, VS Code's settings, the raw settings.json
+        // (it can hold a key and is never sent), the export and import, a folder, another page and a
+        // link belong to the PC, with the Telegram token and the sound controls' picker and folder.
+        settings: {
+            open: 'admin', act: 'admin',
+            looks: ['refresh', 'promptsReload', 'wikiRescan', 'spRescan', 'agentDefaultsEngine', 'alertSpeakVoices'],
+            answers: [],
+            pcOnly: ['browse', 'browseRow', 'promptsPick', 'promptsOpen', 'openSettingsUi', 'openSettingsJson',
+                'engineCommand', 'engineKey', 'engineDocs', 'openEngines', 'openAccounts', 'openSecrets',
+                'exportProfiles', 'importProfiles', 'ccRaw', 'ccOpenFile', 'rootAdd', 'rootReveal', 'wikiReveal',
+                'wikiOpen', 'spReveal', 'openAgent', 'openGuide', 'afnav', 'svc-connect', ...SOUND_PC],
+            make: host => make.settings(host)
         }
     };
 }

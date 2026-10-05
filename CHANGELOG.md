@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.845.0 - The Settings page opens on the phone (2026-10-05)
+
+- **The Settings page, on the phone.** Every Agent Farm setting, Claude
+  Code's own curated settings, the agent folders, the setting sets and the
+  Flow & Content card open in the Agent Farm phone app. Settings are the
+  farm's most powerful knobs, so only a phone paired with full control opens
+  the page - the same level the settings bridge operations ask. There a row,
+  its reset, a setting set (its confirmation asked on the phone), the Flow &
+  Content card, the Telegram card, an agent's engine, model, effort and
+  account, and the agent folders all work.
+- The phone's own reach and port are shown but not changed from the phone -
+  a new one would cut the phone off. A setting set or a Flow & Content preset
+  that carries them still applies everything else and says which two it left
+  alone.
+- Claude Code's raw settings.json never travels to the phone (its env block
+  can hold a key); its curated rows do. Every file and folder picker, the
+  editors, VS Code's own settings, an engine's sign-in terminal, the key
+  vault, links, the export and import of setting sets, revealing a folder and
+  the Telegram token stay on the PC: they are not drawn on the phone and are
+  refused if a phone asks for them anyway.
+- On the phone the form rows stack, an agent's chip wraps, and every Flow &
+  Content row is a card whose box runs the width of the screen.
+
 ## 3.844.0 - The Sound page opens on the phone (2026-10-05)
 
 - **The Sound page, on the phone.** The alerts page opens in the Agent Farm

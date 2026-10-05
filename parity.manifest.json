@@ -4156,10 +4156,10 @@
       "ui": [
         "cmd:agentfarm.openFarmSettings"
       ],
-      "ops": [
-        "constitution.sync",
-        "docopen.get"
-      ]
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the Settings page (FarmSettingsPanel.show with the deps farmSettingsDeps() builds for the tab and a phone alike); every write on that page is a page action with its own op."
+      }
     },
     {
       "capability": "openFile",

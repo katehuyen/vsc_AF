@@ -100,7 +100,8 @@ const C = {
         eq('a message that is not the card\'s is left to the page', await flexCardMessage({ type: 'set' }, deps, say), false);
         const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
         ok('the panel posts the card\'s state and hands it its messages',
-            /flex: this\.deps\.flex \? flexSettingsState\(this\.deps\.flex\)/.test(panel) && /await flexCardMessage\(msg, this\.deps\.flex/.test(panel));
+            /flex: this\.deps\.flex \? flexSettingsState\(this\.deps\.flex\)/.test(panel) && /const flex = this\.deps\.flex && this\.host\.remote \? phoneFlex\(this\.deps\.flex, skipped\) : this\.deps\.flex;/.test(panel)
+            && /await flexCardMessage\(msg, flex, flexError\)/.test(panel));
     }
 
     /* ---------- flex.set on the bridge ---------- */

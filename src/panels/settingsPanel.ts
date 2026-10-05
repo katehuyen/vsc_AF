@@ -28,6 +28,8 @@ import {
 } from './base';
 import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
 import { ALERT_ERROR_KEY } from './alertSurface';
+import { desktopHost, type PanelHost } from './panelHost';
+import { lockedNote, PHONE_LOCKED_SETTINGS, phoneFlex, phoneLocked } from './settingsPhone';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
 export interface AgentFolderReport {
@@ -210,34 +212,40 @@ export class FarmSettingsPanel {
 
     static show(deps: FarmSettingsDeps, focus?: string): void {
         if (FarmSettingsPanel.current) {
-            FarmSettingsPanel.current.panel.reveal();
-            if (focus) { void FarmSettingsPanel.current.panel.webview.postMessage({ type: 'focus', key: focus }); }
+            FarmSettingsPanel.current.host.reveal();
+            if (focus) { void FarmSettingsPanel.current.host.webview.postMessage({ type: 'focus', key: focus }); }
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.settings',
-            'Agent Farm — Settings',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        FarmSettingsPanel.current = new FarmSettingsPanel(panel, deps, focus);
+        FarmSettingsPanel.current = new FarmSettingsPanel(
+            desktopHost({ viewType: 'agentfarm.settings', title: 'Agent Farm — Settings' }), deps, focus);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<FarmSettingsPanel>();
+
+    /** X-456 — the Settings page on a phone's view. */
+    static openOn(host: PanelHost, deps: FarmSettingsDeps): void {
+        FarmSettingsPanel.phones.add(new FarmSettingsPanel(host, deps));
     }
 
     /** Redraw if the page is up — used when something OUTSIDE the settings
      *  system changes what this page offers, e.g. an engine's model catalog
      *  answering after the page was drawn (U-31). */
-    static refreshIfOpen(): void { FarmSettingsPanel.current?.refresh(); }
+    static refreshIfOpen(): void {
+        FarmSettingsPanel.current?.refresh();
+        for (const p of FarmSettingsPanel.phones) { p.refresh(); }
+    }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: FarmSettingsDeps, focus?: string) {
-        this.panel.webview.html = htmlShell(
-            this.panel.webview,
+    private constructor(readonly host: PanelHost, private deps: FarmSettingsDeps, focus?: string) {
+        this.host.webview.html = htmlShell(
+            this.host.webview,
             this.deps.extensionUri,
             'Farm Settings',
             { ...this.buildData(), focus: focus ?? '' },
             'settings.js'
         );
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         // external edits (settings.json, other panels) refresh the page live
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration(CONFIG_SECTION)) { this.refresh(); }
@@ -439,12 +447,14 @@ export class FarmSettingsPanel {
             profiles: this.deps.getProfiles().map(p => ({
                 name: p.name, savedAt: p.savedAt, count: Object.keys(p.values).length
             })),
+            // X-456 — the whole file never reaches a phone: its env block can hold a key.
             claude: {
                 file: this.deps.claudeSettingsFile(),
                 items: buildClaudeModel(cc.json),
-                raw: cc.raw,
+                raw: this.host.remote ? '' : cc.raw,
                 parseError: cc.parseError
             },
+            phoneLocked: this.host.remote ? PHONE_LOCKED_SETTINGS : [],
             docOpen: this.deps.docOpen?.() ?? null,
             prompts: this.deps.promptSnippets?.() ?? null,
             // X-57 — read on every draw, like the engines below: the folder is
@@ -483,13 +493,14 @@ export class FarmSettingsPanel {
     }
 
     private refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.buildData() });
+        void this.host.webview.postMessage({ type: 'data', data: this.buildData() });
     }
 
 
     private async setValue(key: string, value: unknown): Promise<string> {
         const spec = this.deps.schema()[key];
         if (!spec) { return 'unknown setting'; }
+        if (this.host.remote && phoneLocked(key)) { return lockedNote([key]); }
         if (value === undefined) { // reset to default
             await vscode.workspace.getConfiguration().update(key, undefined, vscode.ConfigurationTarget.Global);
             return '';
@@ -507,31 +518,35 @@ export class FarmSettingsPanel {
         // Toolbox handles them with. One card, one set of rules, two pages.
         if (await telegramCardMessage(msg, {
             ...(this.deps.telegram ? { host: this.deps.telegram } : {}),
-            webview: this.panel.webview,
-            warn: t => void vscode.window.showWarningMessage('Agent Farm: ' + t),
+            webview: this.host.webview,
+            warn: t => void this.host.ask.warn('Agent Farm: ' + t),
             refresh: () => this.refresh()
         })) { return; }
         // U-178 — the sound controls are the Sound page's too; one handler answers both pages.
         if (await handleAlertMessage(msg, this.deps, {
-            error: error => void this.panel.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error }),
+            error: error => void this.host.webview.postMessage({ type: 'error', key: ALERT_ERROR_KEY, error }),
             refresh: () => this.refresh()
         })) { return; }
         // U-152 — a written value refreshes through onDidChangeConfiguration, like `set`.
-        if (this.deps.flex && await flexCardMessage(msg, this.deps.flex, error =>
-            void this.panel.webview.postMessage({ type: 'error', key: 'flex', error: error.slice(0, 300) }))) { return; }
+        const flexError = (error: string): void =>
+            void this.host.webview.postMessage({ type: 'error', key: 'flex', error: error.slice(0, 300) });
+        const skipped: string[] = [];
+        const flex = this.deps.flex && this.host.remote ? phoneFlex(this.deps.flex, skipped) : this.deps.flex;
+        if (flex && await flexCardMessage(msg, flex, flexError)) {
+            if (skipped.length) { flexError(lockedNote(skipped)); }
+            return;
+        }
         switch (msg.type) {
-            case 'set': {
+            case 'set':
+            case 'reset': {
                 const key = String(msg.key ?? '');
-                const error = await this.setValue(key, msg.value);
+                const error = await this.setValue(key, msg.type === 'set' ? msg.value : undefined);
                 if (error) {
-                    void this.panel.webview.postMessage({ type: 'error', key, error });
+                    void this.host.webview.postMessage({ type: 'error', key, error });
                 }
                 // success refreshes via onDidChangeConfiguration
                 break;
             }
-            case 'reset':
-                await this.setValue(String(msg.key ?? ''), undefined);
-                break;
             /**
              * Browse… on a path setting (schema `format: file-path` /
              * `folder-path`). The dialog opens where the setting already points
@@ -561,14 +576,14 @@ export class FarmSettingsPanel {
                     const row = Array.isArray(v) ? v[index] : undefined;
                     return String(row ?? '').trim();
                 })();
-                const picked = await vscode.window.showOpenDialog({
+                const picked = await this.host.ask.open({
                     canSelectFolders: folders, canSelectFiles: !folders, canSelectMany: false,
                     openLabel: folders ? 'Use this folder' : 'Use this file',
                     ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
                 });
                 const file = picked?.[0]?.fsPath;
                 if (!file) { break; }
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'browsedRow', key, index, path: file
                 });
                 break;
@@ -577,7 +592,7 @@ export class FarmSettingsPanel {
                 const key = String(msg.key ?? '');
                 const folders = String(msg.kind ?? 'file') === 'folder';
                 const current = String(vscode.workspace.getConfiguration().get(key) ?? '').trim();
-                const picked = await vscode.window.showOpenDialog({
+                const picked = await this.host.ask.open({
                     canSelectFolders: folders, canSelectFiles: !folders, canSelectMany: false,
                     openLabel: folders ? 'Use this folder' : 'Use this file',
                     ...(current ? { defaultUri: vscode.Uri.file(current) } : {})
@@ -585,7 +600,7 @@ export class FarmSettingsPanel {
                 const file = picked?.[0]?.fsPath;
                 if (!file) { break; }
                 const error = await this.setValue(key, file);
-                if (error) { void this.panel.webview.postMessage({ type: 'error', key, error }); }
+                if (error) { void this.host.webview.postMessage({ type: 'error', key, error }); }
                 break;
             }
             /**
@@ -600,7 +615,7 @@ export class FarmSettingsPanel {
              */
             case 'promptsPick': {
                 const current = this.deps.promptSnippets?.().file ?? '';
-                const picked = await vscode.window.showOpenDialog({
+                const picked = await this.host.ask.open({
                     canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
                     openLabel: 'Use this file',
                     filters: { 'Markdown / text': ['md', 'markdown', 'txt'], 'All files': ['*'] },
@@ -692,7 +707,7 @@ export class FarmSettingsPanel {
                 list.sort((a, b) => a.name.localeCompare(b.name));
                 await this.deps.setProfiles(list);
                 this.refresh();
-                void vscode.window.showInformationMessage(
+                void this.host.ask.info(
                     `Agent Farm: setting set "${profile.name}" saved (${Object.keys(profile.values).length} non-default value(s)).`);
                 break;
             }
@@ -701,14 +716,17 @@ export class FarmSettingsPanel {
                 if (!profile) { break; }
                 const plan = profileApplyPlan(profile, this.categories());
                 const resets = plan.filter(p => p.value === undefined).length;
-                const pick = await vscode.window.showWarningMessage(
+                const pick = await this.host.ask.warn(
                     `Apply setting set "${profile.name}"? ${plan.length - resets} value(s) will be set` +
                     (resets ? `, ${resets} other modified setting(s) reset to default` : '') + '.',
                     { modal: true }, 'Apply');
                 if (pick !== 'Apply') { break; }
+                const locked: string[] = [];
                 for (const step of plan) {
-                    await this.setValue(step.key, step.value === undefined ? undefined : step.value);
+                    const error = await this.setValue(step.key, step.value === undefined ? undefined : step.value);
+                    if (error && phoneLocked(step.key)) { locked.push(step.key); }
                 }
+                if (locked.length) { void this.host.ask.info('Agent Farm: ' + lockedNote(locked)); }
                 this.refresh();
                 break;
             }
@@ -728,21 +746,21 @@ export class FarmSettingsPanel {
                 if (!uri) { break; }
                 try {
                     fs.writeFileSync(uri.fsPath, JSON.stringify(list, null, 2), 'utf8');
-                    void vscode.window.showInformationMessage(`Agent Farm: ${list.length} setting set(s) exported.`);
+                    void this.host.ask.info(`Agent Farm: ${list.length} setting set(s) exported.`);
                 } catch (e) {
-                    void vscode.window.showErrorMessage('Agent Farm: export failed — ' + String((e as Error).message));
+                    void this.host.ask.error('Agent Farm: export failed — ' + String((e as Error).message));
                 }
                 break;
             }
             case 'importProfiles': {
-                const uris = await vscode.window.showOpenDialog({
+                const uris = await this.host.ask.open({
                     openLabel: 'Import setting sets', filters: { JSON: ['json'] }, canSelectMany: false
                 });
                 if (!uris?.length) { break; }
                 let imported: SettingsProfile[] = [];
                 try { imported = parseImportedProfiles(fs.readFileSync(uris[0].fsPath, 'utf8')); } catch { /* unreadable */ }
                 if (!imported.length) {
-                    void vscode.window.showWarningMessage('Agent Farm: no valid setting sets in that file.');
+                    void this.host.ask.warn('Agent Farm: no valid setting sets in that file.');
                     break;
                 }
                 const list = this.deps.getProfiles().filter(p => !imported.some(i => i.name === p.name));
@@ -750,7 +768,7 @@ export class FarmSettingsPanel {
                 list.sort((a, b) => a.name.localeCompare(b.name));
                 await this.deps.setProfiles(list);
                 this.refresh();
-                void vscode.window.showInformationMessage(`Agent Farm: imported ${imported.length} setting set(s).`);
+                void this.host.ask.info(`Agent Farm: imported ${imported.length} setting set(s).`);
                 break;
             }
             case 'ccSet': {
@@ -758,16 +776,16 @@ export class FarmSettingsPanel {
                 if (!item) { break; }
                 const cc = this.readClaude();
                 if (cc.parseError) {
-                    void this.panel.webview.postMessage({ type: 'ccError', id: item.id, error: 'settings.json is not valid JSON — fix it in the raw editor first' });
+                    void this.host.webview.postMessage({ type: 'ccError', id: item.id, error: 'settings.json is not valid JSON — fix it in the raw editor first' });
                     break;
                 }
                 const coerced = coerceClaudeValue(item, msg.value);
                 if (!coerced.ok) {
-                    void this.panel.webview.postMessage({ type: 'ccError', id: item.id, error: coerced.error });
+                    void this.host.webview.postMessage({ type: 'ccError', id: item.id, error: coerced.error });
                     break;
                 }
                 const err = this.writeClaude(patchClaudeSettings(cc.json, item.path, coerced.value));
-                if (err) { void vscode.window.showErrorMessage('Agent Farm: could not write settings.json — ' + err); }
+                if (err) { void this.host.ask.error('Agent Farm: could not write settings.json — ' + err); }
                 this.refresh();
                 break;
             }
@@ -784,11 +802,11 @@ export class FarmSettingsPanel {
             case 'ccRaw': {
                 const v = validateRawClaudeSettings(String(msg.text ?? ''));
                 if (!v.ok) {
-                    void this.panel.webview.postMessage({ type: 'ccError', id: '__raw__', error: v.error });
+                    void this.host.webview.postMessage({ type: 'ccError', id: '__raw__', error: v.error });
                     break;
                 }
                 const err = this.writeClaude(v.json);
-                if (err) { void vscode.window.showErrorMessage('Agent Farm: could not write settings.json — ' + err); }
+                if (err) { void this.host.ask.error('Agent Farm: could not write settings.json — ' + err); }
                 this.refresh();
                 break;
             }
@@ -806,7 +824,7 @@ export class FarmSettingsPanel {
                 if (!root) { break; }
                 const rep = this.deps.agentFolders?.().reports.find(r => r.root === root);
                 const n = rep ? rep.candidates.filter(c => !c.excluded).length : 0;
-                const pick = await vscode.window.showWarningMessage(
+                const pick = await this.host.ask.warn(
                     `Remove agent root "${root}"?` +
                     (n ? ` Its ${n} agent(s) leave the farm views.` : '') +
                     ' The folder itself is not touched.',
@@ -833,11 +851,11 @@ export class FarmSettingsPanel {
             case 'wikiInit': {
                 const r = this.deps.wikiInit?.();
                 if (r && !r.ok) {
-                    void this.panel.webview.postMessage({
+                    void this.host.webview.postMessage({
                         type: 'error', key: 'agentFarm.wikiRoot', error: r.error ?? 'could not create it'
                     });
                 } else if (r) {
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         r.created?.length
                             ? `Agent Farm: wiki started — ${r.created.join(', ')} created.`
                             : 'Agent Farm: the wiki already holds all three files; nothing was written.');
@@ -893,7 +911,7 @@ export class FarmSettingsPanel {
                 });
                 if (clean.length !== roots.length) {
                     await cfg.update('agentFarm.agentRoots', clean, vscode.ConfigurationTarget.Global);
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         `Agent Farm: ${roots.length - clean.length} duplicate root entry(ies) removed.`);
                 }
                 break;
@@ -991,7 +1009,7 @@ export class FarmSettingsPanel {
                 try {
                     const v = validateRawClaudeSettings(fs.readFileSync(file, 'utf8'));
                     if (!v.ok) {
-                        void vscode.window.showErrorMessage(
+                        void this.host.ask.error(
                             `Agent Farm: ${file} is not valid JSON — fix the file first.`);
                         break;
                     }
@@ -1003,7 +1021,7 @@ export class FarmSettingsPanel {
                         JSON.stringify(patchClaudeSettings(json, ['model'], model || undefined), null, 2) + '\n',
                         'utf8');
                 } catch (e) {
-                    void vscode.window.showErrorMessage(
+                    void this.host.ask.error(
                         'Agent Farm: could not write ' + file + ' — ' + String((e as Error).message));
                 }
                 this.refresh();
@@ -1027,7 +1045,10 @@ export class FarmSettingsPanel {
     }
 
     private dispose(): void {
-        FarmSettingsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (FarmSettingsPanel.current === this) { FarmSettingsPanel.current = undefined; }
+        FarmSettingsPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }

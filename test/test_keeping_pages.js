@@ -99,7 +99,7 @@ const src = f => fs.readFileSync(path.join(ROOT, 'media', f), 'utf8');
         && /DATA = \{ \.\.\.DATA, \.\.\.ev\.data\.data \};\s*ccRawLanded\(\);/.test(s));
     const host = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
     ok('…which is what the host does: a refusal is ccError with no push, a write is a push',
-        /if \(!v\.ok\) \{\s*void this\.panel\.webview\.postMessage\(\{ type: 'ccError', id: '__raw__', error: v\.error \}\);\s*break;/.test(host));
+        /if \(!v\.ok\) \{\s*void this\.host\.webview\.postMessage\(\{ type: 'ccError', id: '__raw__', error: v\.error \}\);\s*break;/.test(host));
 }
 
 // ---------- the pages that need nothing: their boxes are page state ----------

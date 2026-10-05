@@ -721,7 +721,7 @@ import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
 import { sessionChainOf } from './core/sessionChain';
 import { chainLivingSignals, chainSignalNotices } from './core/chainSignals';
-import { FarmSettingsPanel } from './panels/settingsPanel';
+import { FarmSettingsPanel, type FarmSettingsDeps } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
 import { channelState, NOTIFY_KEYS, notifyState } from './panels/soundModel';
 import { AgentSoundRow, agentSoundRows, AgentVoices, withAgentVoice } from './core/soundAgents';
@@ -31383,6 +31383,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             wiki: (host, args) => WikiPanel.openOn(host, wikiPageDeps(), typeof args?.focus === 'string' ? args.focus : undefined),
             toolbox: host => ToolboxPanel.openOn(host, toolboxDeps),
             sound: host => SoundPanel.openOn(host, soundPageDeps),
+            settings: host => FarmSettingsPanel.openOn(host, farmSettingsDeps()),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
@@ -36879,6 +36880,167 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             `(disabledMcpjsonServers in .claude/settings.local.json). New sessions honor it.`);
     };
 
+    // X-456 — the Settings page's deps, the same for the palette's tab and a phone's view.
+    const farmSettingsDeps = (): FarmSettingsDeps => ({
+        extensionUri: context.extensionUri,
+        flex: flexDeps,
+        categories: settingsCategories,
+        schema: () => {
+            // live schema from our own manifest — a new setting shows
+            // up on this page with zero extra code
+            const pkg = context.extension.packageJSON as {
+                contributes?: { configuration?: { properties?: Record<string, never> } | { properties?: Record<string, never> }[] };
+            };
+            const conf = pkg.contributes?.configuration;
+            if (Array.isArray(conf)) {
+                return Object.assign({}, ...conf.map(c => c.properties ?? {}));
+            }
+            return conf?.properties ?? {};
+        },
+        getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
+        setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
+        claudeSettingsFile: () => userSettingsPath(claudeDir()),
+        // Saved prompts: the section reads the file itself, so the
+        // page answers "is this working?" with the blocks, not with
+        // a path in a box that says nothing either way.
+        promptSnippets: () => readPromptSnippets(),
+        setPromptSnippetsFile: (file) => setPromptSnippetsFile(file),
+        // X-3 — the engine matrix, and its two gestures. Neither of
+        // them handles a credential here: the sign-in is the CLI's
+        // own command in a real terminal (the browser and the CLI
+        // settle it between them, and the grant stays in the CLI's
+        // file), and the key route hands over to the vault's own
+        // form, which is the one surface allowed to hold a value.
+        engines: () => engineMatrix(),
+        engineCommand: (command: string) => engineTerminal(command),
+        // ‼️ The section here is the SUMMARY; the panel is the page.
+        // X-14 settled the placement (2026-08-09): engines get their
+        // own surface, because interrogating a thing — is it
+        // installed, does a call get through, what did it cost to
+        // find out — is not what a list of `agentFarm.*` keys is for.
+        openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
+        openAccounts: () => { AccountsPanel.show(accountsPanelDeps); },
+        kapici: () => ({ ...kapiciHost.status(), agreement: kapiciHost.agreement(30), mcp: kapiciMcpState(context.globalStorageUri.fsPath) }),
+        kapiciMcp: (on: boolean) => {
+            try { setKapiciMcp(context.globalStorageUri.fsPath, on); } catch (e) { void vscode.window.showErrorMessage(`Gatekeeper MCP: ${(e as Error).message}`); }
+        },
+        openSecrets: () => { void vscode.commands.executeCommand('agentfarm.openSecrets'); },
+        // U-29 — the per-agent model box reads the chosen engine's own
+        // catalog, not a list typed into a setting.
+        engineModels: () => engineModelMatrix(),
+        engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
+        // X-57 — the wiki root, READ. `wiki.compile` refuses without
+        // the vault's own law, so a well-spelled path to a folder
+        // that never held it is a wiki that silently never compiles;
+        // the section says which of the three files are there and
+        // offers to write the missing ones. Same functions the
+        // `wiki.health` / `wiki.init` ops call — one implementation
+        // of "is this a wiki", two doors.
+        wikiHealth: () => wikiHealth(wikiRoot(), cfg().get<string>('wikiRoot')?.trim() || ''),
+        wikiInit: () => {
+            const r = scaffoldWiki(wikiRoot());
+            return r.ok
+                ? { ok: true, created: r.created, existed: r.existed }
+                : { ok: false, error: r.error };
+        },
+        openWiki: () => showWikiPanel(),
+        // ‼️ X-136 — the same health the `superpowers.status` op
+        // answers, plus the DISCOVERED agents so the per-agent map
+        // is a list of real names rather than a JSON box somebody
+        // has to spell into. One implementation, two doors.
+        superpowers: () => {
+            const store = superpowersDefaults();
+            return {
+                ...superpowersHealth(superpowersRoot(),
+                    cfg().get<string>('superpowersPath')?.trim() || ''),
+                defaults: store,
+                defaultAgents: [...SUPERPOWERS_DEFAULT_AGENTS],
+                agents: agents.map(a => ({
+                    id: a.id, name: a.name,
+                    on: superpowersDefaultFor(a.name, store),
+                    // Whether the answer was SAID or merely fallen
+                    // back to — the two look the same on a checkbox
+                    // and mean different things when the built-in
+                    // list changes under it.
+                    explicit: Object.keys(store)
+                        .some(k => k.trim().toLowerCase() === a.name.trim().toLowerCase())
+                }))
+            };
+        },
+        superpowersSet: async (agent, on) => {
+            const store = superpowersDefaults();
+            await cfg().update('superpowersDefaults',
+                { ...store, [superpowersDefaultsKey(agent, store)]: on },
+                vscode.ConfigurationTarget.Global);
+        },
+        ...soundDeps,
+        /**
+         * U-84 — THE SAME BRIDGE HOST THE TOOLBOX IS GIVEN, by
+         * reference rather than by a second literal. The snapshot
+         * caches the bot's name in a variable this closure shares;
+         * a copy made here would be a second cache, and the two
+         * pages would then disagree about who the bot is.
+         */
+        telegram: toolboxDeps.telegram,
+        /** U-84 (d) — what a `x-af-values: "agent"` picker offers.
+         *  Read at draw time, so an agent added since the window
+         *  opened is in the list. */
+        agentNames: () => agents.map(a => a.name),
+        /**
+         * ‼️ X-193 — the variables, DRAWN from the dictionary rather
+         * than repeated on the page, each beside what it is on this
+         * machine, and one setting's entries resolved in one call.
+         * The bridge is handed the same pair.
+         */
+        pathVarValues, previewPaths,
+        // Which editor a .md document opens in — reports and answers
+        // (Notices, Work Queue) AND the project documents.
+        docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),
+        setDocOpen: (patch) => {
+            docOpenStore.set(patch);
+            QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
+            ProjectsPanel.refreshIfOpen();
+        },
+        // ‼️ X-255 — the sign-in list and the machine-wide standing
+        // choice, so an agent's row can draw the account it stands
+        // on and say what clearing the box would fall through to.
+        accountChoices: () => ({
+            slots: storedAccounts().map(s => ({
+                id: s.id, engine: s.engine, label: slotLabel(s)
+            })),
+            standing: activeAccounts()
+        }),
+        // Agent folders section: a fresh scan per render, so badges and
+        // the per-root agent lists always match what discovery would do.
+        agentFolders: () => {
+            // effective default model of an agent folder — what the claude
+            // CLI would pick up (settings.local.json overrides settings.json)
+            const modelOf = (dir: string): string => {
+                for (const f of ['settings.local.json', 'settings.json']) {
+                    try {
+                        const j = JSON.parse(fs.readFileSync(path.join(dir, '.claude', f), 'utf8')) as { model?: unknown };
+                        if (typeof j.model === 'string' && j.model) { return j.model; }
+                    } catch { /* missing or invalid — keep looking */ }
+                }
+                return '';
+            };
+            return {
+                reports: scanRoots(
+                    cfg().get<string[]>('agentRoots', []),
+                    cfg().get<string[]>('excludeAgentDirs', [])
+                ).reports.map(r => ({
+                    root: r.root, kind: r.kind, duplicate: r.duplicate,
+                    candidates: r.candidates.map(c => ({
+                        dir: c.dir, name: c.name, excluded: c.excluded,
+                        agentId: agents.find(a => a.normDir === normPath(c.dir))?.id ?? '',
+                        model: c.excluded ? '' : modelOf(c.dir)
+                    }))
+                })),
+                excludes: cfg().get<string[]>('excludeAgentDirs', [])
+            };
+        }
+    });
+
     context.subscriptions.push(
         // arg is optional: the palette, the nav and every notification pass
         // nothing; the status-bar indicators pass { scrollTo: 'top' }.
@@ -41016,165 +41178,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openFarmSettings',
             (arg?: { focus?: string }) => {
-                FarmSettingsPanel.show({
-                    extensionUri: context.extensionUri,
-                    flex: flexDeps,
-                    categories: settingsCategories,
-                    schema: () => {
-                        // live schema from our own manifest — a new setting shows
-                        // up on this page with zero extra code
-                        const pkg = context.extension.packageJSON as {
-                            contributes?: { configuration?: { properties?: Record<string, never> } | { properties?: Record<string, never> }[] };
-                        };
-                        const conf = pkg.contributes?.configuration;
-                        if (Array.isArray(conf)) {
-                            return Object.assign({}, ...conf.map(c => c.properties ?? {}));
-                        }
-                        return conf?.properties ?? {};
-                    },
-                    getProfiles: () => context.globalState.get('agentfarm.settingsProfiles', []),
-                    setProfiles: (list) => context.globalState.update('agentfarm.settingsProfiles', list),
-                    claudeSettingsFile: () => userSettingsPath(claudeDir()),
-                    // Saved prompts: the section reads the file itself, so the
-                    // page answers "is this working?" with the blocks, not with
-                    // a path in a box that says nothing either way.
-                    promptSnippets: () => readPromptSnippets(),
-                    setPromptSnippetsFile: (file) => setPromptSnippetsFile(file),
-                    // X-3 — the engine matrix, and its two gestures. Neither of
-                    // them handles a credential here: the sign-in is the CLI's
-                    // own command in a real terminal (the browser and the CLI
-                    // settle it between them, and the grant stays in the CLI's
-                    // file), and the key route hands over to the vault's own
-                    // form, which is the one surface allowed to hold a value.
-                    engines: () => engineMatrix(),
-                    engineCommand: (command: string) => engineTerminal(command),
-                    // ‼️ The section here is the SUMMARY; the panel is the page.
-                    // X-14 settled the placement (2026-08-09): engines get their
-                    // own surface, because interrogating a thing — is it
-                    // installed, does a call get through, what did it cost to
-                    // find out — is not what a list of `agentFarm.*` keys is for.
-                    openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
-                    openAccounts: () => { AccountsPanel.show(accountsPanelDeps); },
-                    kapici: () => ({ ...kapiciHost.status(), agreement: kapiciHost.agreement(30), mcp: kapiciMcpState(context.globalStorageUri.fsPath) }),
-                    kapiciMcp: (on: boolean) => {
-                        try { setKapiciMcp(context.globalStorageUri.fsPath, on); } catch (e) { void vscode.window.showErrorMessage(`Gatekeeper MCP: ${(e as Error).message}`); }
-                    },
-                    openSecrets: () => { void vscode.commands.executeCommand('agentfarm.openSecrets'); },
-                    // U-29 — the per-agent model box reads the chosen engine's own
-                    // catalog, not a list typed into a setting.
-                    engineModels: () => engineModelMatrix(),
-                    engineKey: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
-                    // X-57 — the wiki root, READ. `wiki.compile` refuses without
-                    // the vault's own law, so a well-spelled path to a folder
-                    // that never held it is a wiki that silently never compiles;
-                    // the section says which of the three files are there and
-                    // offers to write the missing ones. Same functions the
-                    // `wiki.health` / `wiki.init` ops call — one implementation
-                    // of "is this a wiki", two doors.
-                    wikiHealth: () => wikiHealth(wikiRoot(), cfg().get<string>('wikiRoot')?.trim() || ''),
-                    wikiInit: () => {
-                        const r = scaffoldWiki(wikiRoot());
-                        return r.ok
-                            ? { ok: true, created: r.created, existed: r.existed }
-                            : { ok: false, error: r.error };
-                    },
-                    openWiki: () => showWikiPanel(),
-                    // ‼️ X-136 — the same health the `superpowers.status` op
-                    // answers, plus the DISCOVERED agents so the per-agent map
-                    // is a list of real names rather than a JSON box somebody
-                    // has to spell into. One implementation, two doors.
-                    superpowers: () => {
-                        const store = superpowersDefaults();
-                        return {
-                            ...superpowersHealth(superpowersRoot(),
-                                cfg().get<string>('superpowersPath')?.trim() || ''),
-                            defaults: store,
-                            defaultAgents: [...SUPERPOWERS_DEFAULT_AGENTS],
-                            agents: agents.map(a => ({
-                                id: a.id, name: a.name,
-                                on: superpowersDefaultFor(a.name, store),
-                                // Whether the answer was SAID or merely fallen
-                                // back to — the two look the same on a checkbox
-                                // and mean different things when the built-in
-                                // list changes under it.
-                                explicit: Object.keys(store)
-                                    .some(k => k.trim().toLowerCase() === a.name.trim().toLowerCase())
-                            }))
-                        };
-                    },
-                    superpowersSet: async (agent, on) => {
-                        const store = superpowersDefaults();
-                        await cfg().update('superpowersDefaults',
-                            { ...store, [superpowersDefaultsKey(agent, store)]: on },
-                            vscode.ConfigurationTarget.Global);
-                    },
-                    ...soundDeps,
-                    /**
-                     * U-84 — THE SAME BRIDGE HOST THE TOOLBOX IS GIVEN, by
-                     * reference rather than by a second literal. The snapshot
-                     * caches the bot's name in a variable this closure shares;
-                     * a copy made here would be a second cache, and the two
-                     * pages would then disagree about who the bot is.
-                     */
-                    telegram: toolboxDeps.telegram,
-                    /** U-84 (d) — what a `x-af-values: "agent"` picker offers.
-                     *  Read at draw time, so an agent added since the window
-                     *  opened is in the list. */
-                    agentNames: () => agents.map(a => a.name),
-                    /**
-                     * ‼️ X-193 — the variables, DRAWN from the dictionary rather
-                     * than repeated on the page, each beside what it is on this
-                     * machine, and one setting's entries resolved in one call.
-                     * The bridge is handed the same pair.
-                     */
-                    pathVarValues, previewPaths,
-                    // Which editor a .md document opens in — reports and answers
-                    // (Notices, Work Queue) AND the project documents.
-                    docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),
-                    setDocOpen: (patch) => {
-                        docOpenStore.set(patch);
-                        QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
-                        ProjectsPanel.refreshIfOpen();
-                    },
-                    // ‼️ X-255 — the sign-in list and the machine-wide standing
-                    // choice, so an agent's row can draw the account it stands
-                    // on and say what clearing the box would fall through to.
-                    accountChoices: () => ({
-                        slots: storedAccounts().map(s => ({
-                            id: s.id, engine: s.engine, label: slotLabel(s)
-                        })),
-                        standing: activeAccounts()
-                    }),
-                    // Agent folders section: a fresh scan per render, so badges and
-                    // the per-root agent lists always match what discovery would do.
-                    agentFolders: () => {
-                        // effective default model of an agent folder — what the claude
-                        // CLI would pick up (settings.local.json overrides settings.json)
-                        const modelOf = (dir: string): string => {
-                            for (const f of ['settings.local.json', 'settings.json']) {
-                                try {
-                                    const j = JSON.parse(fs.readFileSync(path.join(dir, '.claude', f), 'utf8')) as { model?: unknown };
-                                    if (typeof j.model === 'string' && j.model) { return j.model; }
-                                } catch { /* missing or invalid — keep looking */ }
-                            }
-                            return '';
-                        };
-                        return {
-                            reports: scanRoots(
-                                cfg().get<string[]>('agentRoots', []),
-                                cfg().get<string[]>('excludeAgentDirs', [])
-                            ).reports.map(r => ({
-                                root: r.root, kind: r.kind, duplicate: r.duplicate,
-                                candidates: r.candidates.map(c => ({
-                                    dir: c.dir, name: c.name, excluded: c.excluded,
-                                    agentId: agents.find(a => a.normDir === normPath(c.dir))?.id ?? '',
-                                    model: c.excluded ? '' : modelOf(c.dir)
-                                }))
-                            })),
-                            excludes: cfg().get<string[]>('excludeAgentDirs', [])
-                        };
-                    }
-                }, arg && typeof arg === 'object' ? arg.focus : undefined);
+                FarmSettingsPanel.show(farmSettingsDeps(), arg && typeof arg === 'object' ? arg.focus : undefined);
             }),
 
         vscode.commands.registerCommand('agentfarm.buildSemanticIndex', async () => {

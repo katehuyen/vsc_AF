@@ -96,7 +96,17 @@
             .flexwordt { cursor:pointer; }
             .flexwordx { background:none; border:none; padding:0 4px; color:inherit; cursor:pointer; opacity:.7; }
             .flexwordx:hover { opacity:1; }
-            .flexlist .flexwordadd { width:220px; }`;
+            .flexlist .flexwordadd { width:220px; }
+            html.af-phone .flextable, html.af-phone .flextable tbody { display:block; width:100%; }
+            html.af-phone .flextable tr { display:flex; flex-wrap:wrap; align-items:center; gap:2px 8px; padding:4px 0;
+                border-bottom:1px solid var(--vscode-widget-border, #4444); }
+            html.af-phone .flextable th { order:-2; flex:1 1 calc(100% - 48px); white-space:normal; padding:0; }
+            html.af-phone .flextable td { padding:0; }
+            html.af-phone .flextable td:last-child { order:-1; }
+            html.af-phone .flextable td.flexbox, html.af-phone .flexorigin { flex:1 1 100%; min-width:0; }
+            html.af-phone .flexbox input, html.af-phone .flexbox select, html.af-phone .flexsave input,
+            html.af-phone .flexlist .flexwordadd { width:100%; }
+            html.af-phone .flexsave { flex-wrap:wrap; }`;
     }
 
     /** What a box holds, as the point's type; undefined = empty = back to inherited. */

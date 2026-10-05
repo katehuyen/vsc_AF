@@ -1475,7 +1475,7 @@
             <a id="ccopen">Open the file</a></p>
             ${cc.parseError ? `<div class="seterr">⚠ settings.json could not be parsed (${C.esc(cc.parseError)}) — fix it in the raw editor below; edits are blocked until then.</div>` : ''}
             ${items.map(ccItemHtml).join('')}
-            <details class="setitem" style="margin-top:10px">
+            <details class="setitem" id="ccrawbox" style="margin-top:10px">
                 <summary style="cursor:pointer">Raw settings.json — everything else (hooks, statusLine, permissions lists…)</summary>
                 <div class="setdesc">Full contents of the file. Validated before writing — broken JSON is rejected, never saved.</div>
                 <textarea id="ccraw" rows="${Math.min(18, Math.max(4, String(cc.raw).split('\n').length))}" spellcheck="false"
@@ -2482,6 +2482,18 @@
                 .sprow.spdef .spname { opacity:.7; }
                 ${window.AFTelegram.css()}
                 ${window.AFFlexSettings.css()}
+                html.af-phone .setfrow { flex-wrap:wrap; }
+                html.af-phone .setform .setfrow > .tip-field, html.af-phone .setfdescw { flex:1 1 100%; }
+                html.af-phone .setfrow > input, html.af-phone .setfrow > select { flex:1 1 100%; }
+                html.af-phone .setfrow:has(textarea) .setfdescw { margin-left:0; }
+                html.af-phone .agchip { white-space:normal; display:flex; flex-wrap:wrap; align-items:center; gap:4px; max-width:100%; }
+                html.af-phone .agchip .agmodel { margin-left:0; max-width:100%; }
+                html.af-phone [data-browse], html.af-phone [data-lbrowse], html.af-phone #rootadd, html.af-phone [data-rootreveal],
+                html.af-phone #ccopen, html.af-phone #ccrawbox, html.af-phone #profexport, html.af-phone #profimport,
+                html.af-phone #opensettingsjson, html.af-phone [data-engcmd], html.af-phone [data-engkey],
+                html.af-phone [data-engdocs], html.af-phone #openengines, html.af-phone #openaccounts,
+                html.af-phone #promptspick, html.af-phone #promptsopen, html.af-phone #wikireveal,
+                html.af-phone #wikiopen, html.af-phone #spreveal { display:none; }
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -2536,6 +2548,9 @@
             });
         };
         window.AFHeader.wire(vscode);
+        // X-456 — the phone's own reach and port: shown on a phone, changed on the PC (settingsPhone.ts).
+        (DATA.phoneLocked || []).forEach(k => ['data-set', 'data-reset'].forEach(a =>
+            document.querySelectorAll(`[${a}="${k}"]`).forEach(el => { el.disabled = true; })));
         const openJson = document.getElementById('opensettingsjson');
         if (openJson) {
             openJson.addEventListener('click', () => vscode.postMessage({ type: 'openSettingsJson' }));
