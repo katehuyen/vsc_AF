@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.840.0 - Engines and Accounts open on the phone (2026-10-05)
+
+- **The engines and the sign-ins, on the phone.** The Engines and the
+  Accounts pages now open in the Agent Farm phone app on a device paired as
+  admin: every engine's verdict and its test, the provider routes, each
+  sign-in's quota bars, the account rules. These pages carry the farm's
+  configuration, so they ask what the same information asks everywhere
+  else on the phone link — admin; a phone at the usual level still reads
+  its plans' quota on the Dashboard's usage card.
+- On the phone a quota reading, a test turn, a route's edit, copy and
+  removal, capturing and switching a sign-in, its repairs and the rules all
+  work there; forgetting a sign-in asks its question on the phone. A card's
+  last session opens that conversation on the phone. The provider ownership
+  table scrolls inside its own box instead of running off the screen.
+- Installing or signing in to an engine (a terminal), typing a key (the
+  PC's password box or the Secrets page), a docs link and renewing a
+  sign-in stay on the PC and are not drawn on the phone.
+
 ## 3.839.0 - The Live Timeline opens on the phone (2026-10-05)
 
 - **Watch the farm work from the phone.** The Live Timeline now opens in the

@@ -14,12 +14,15 @@
  * cannot come to mean two different things.
  */
 
+import type { PanelAsk } from './panelAsk';
+
 /** The writers the section needs — each answers with the refusal to show, or
  *  an empty string / list when it went through. */
 export interface AccountsMessageDeps {
     captureAccount(engine: string, label: string): Promise<string>;
     activateAccount(id: string, engine: string): Promise<string>;
-    forgetAccount(id: string): Promise<string>;
+    /** `ask` — whoever is looking at the page is asked (X-447); the desktop's window when absent */
+    forgetAccount(id: string, ask?: PanelAsk): Promise<string>;
     reauthAccount(id: string): Promise<string>;
     repairAccountSettings(id: string): string[];
     completeAccount(id: string): string[];
@@ -38,6 +41,8 @@ export interface AccountsSurface {
     /** ask for a live reading — a gesture that went through changed WHICH
      *  accounts there are to have figures for (X-187) */
     live(): void;
+    /** the page's own host's questions (a phone's view asks the phone) */
+    ask?: PanelAsk;
 }
 
 /**
@@ -113,7 +118,7 @@ export async function handleAccountsMessage(
         case 'accountForget':
             // X-282 — the host shows what goes and what stays, then asks; the
             // folder goes by default, after the slot is drained.
-            await wrote(await deps.forgetAccount(String(msg.id ?? '')));
+            await wrote(await deps.forgetAccount(String(msg.id ?? ''), s.ask));
             return true;
         default:
             return false;

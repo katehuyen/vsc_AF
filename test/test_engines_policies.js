@@ -413,7 +413,7 @@ const formOf = (s) => {
         && !/case 'policySave'/.test(require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'accountsPanel.ts'), 'utf8')));
     ok('the Engines panel enters the shared handler before its own switch, saying into pol-msg',
         /if \(await handlePolicyMessage\(msg, this\.deps, \{[\s\S]{0,300}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
-        && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'pol-msg', text \}\); \}/.test(src));
+        && /say: async text => \{ await this\.host\.webview\.postMessage\(\{ type: 'pol-msg', text \}\); \}/.test(src));
     ok('the data the page is handed carries policies from deps.policies()', /policies: deps\.policies\(\)/.test(src));
 }
 

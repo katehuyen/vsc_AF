@@ -3,6 +3,7 @@ import { AccountsMessageDeps, handleAccountsMessage } from './accountsMessages';
 import { EnginesPanelDeps } from './enginesPanel';
 import { handlePolicyMessage, PolicyMessageDeps } from './policyMessages';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Accounts — the captured sign-ins on a page of their own (X-236).
@@ -47,32 +48,35 @@ export class AccountsPanel {
     static show(deps: AccountsPanelDeps): void {
         if (AccountsPanel.current) {
             AccountsPanel.current.deps = deps;
-            AccountsPanel.current.panel.reveal();
+            AccountsPanel.current.host.reveal();
             AccountsPanel.current.refresh();
             AccountsPanel.current.live();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.accounts',
-            'Agent Farm — Accounts',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        AccountsPanel.current = new AccountsPanel(panel, deps);
+        AccountsPanel.current = new AccountsPanel(desktopHost({ viewType: 'agentfarm.accounts', title: 'Agent Farm — Accounts' }), deps);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<AccountsPanel>();
+
+    /** X-456 — the Accounts page on a phone's view. */
+    static openOn(host: PanelHost, deps: AccountsPanelDeps): void {
+        AccountsPanel.phones.add(new AccountsPanel(host, deps));
     }
 
     /** A capture, a switch or a forget made elsewhere should not leave an open page lying. */
     static refreshIfOpen(): void {
         AccountsPanel.current?.refresh();
+        for (const p of AccountsPanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: AccountsPanelDeps) {
-        panel.webview.html = htmlShell(panel.webview, deps.extensionUri, 'Accounts', buildAccountsData(deps), 'accounts.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+    private constructor(readonly host: PanelHost, private deps: AccountsPanelDeps) {
+        host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Accounts', buildAccountsData(deps), 'accounts.js');
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         this.live();
         // A hidden page is not a page anybody is reading (the Engines page's rule).
-        this.beat = setInterval(() => { if (this.panel.visible) { this.live(); } },
+        this.beat = setInterval(() => { if (this.host.visible) { this.live(); } },
             Math.max(1000, this.deps.accountBeatMs()));
     }
 
@@ -84,17 +88,18 @@ export class AccountsPanel {
     }
 
     private refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildAccountsData(this.deps) });
+        void this.host.webview.postMessage({ type: 'data', data: buildAccountsData(this.deps) });
     }
 
     private async onMessage(msg: { type: string;[k: string]: unknown }): Promise<void> {
         if (await handleAccountsMessage(msg, this.deps, {
-            say: async text => { await this.panel.webview.postMessage({ type: 'acc-msg', text }); },
+            say: async text => { await this.host.webview.postMessage({ type: 'acc-msg', text }); },
             refresh: () => this.refresh(),
-            live: () => this.live()
+            live: () => this.live(),
+            ask: this.host.ask
         })) { return; }
         if (await handlePolicyMessage(msg, this.deps, {
-            say: async text => { await this.panel.webview.postMessage({ type: 'pol-msg', text }); },
+            say: async text => { await this.host.webview.postMessage({ type: 'pol-msg', text }); },
             refresh: () => this.refresh()
         })) { return; }
         switch (msg.type) {
@@ -108,7 +113,9 @@ export class AccountsPanel {
     }
 
     private dispose(): void {
-        AccountsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (AccountsPanel.current === this) { AccountsPanel.current = undefined; }
+        AccountsPanel.phones.delete(this);
         if (this.beat) { clearInterval(this.beat); }
         for (const d of this.disposables) { d.dispose(); }
         this.disposables = [];

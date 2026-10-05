@@ -10,6 +10,7 @@ import { OwnershipRow, PublicProviderProfile } from '../core/providerOwnership';
 import { ROUTE_AUTH_KINDS } from '../core/routeAuth';
 import { ROUTE_TIERS } from '../core/routeModels';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Engines — the page that answers "what can this machine actually run, and why
@@ -359,7 +360,7 @@ export class EnginesPanel {
     static show(deps: EnginesPanelDeps): void {
         if (EnginesPanel.current) {
             EnginesPanel.current.deps = deps;
-            EnginesPanel.current.panel.reveal();
+            EnginesPanel.current.host.reveal();
             EnginesPanel.current.refresh();
             // ‼️ X-187 — coming back to an open page is the same question as
             // opening one: "what is left of my plan, now". The figures may be
@@ -368,26 +369,29 @@ export class EnginesPanel {
             EnginesPanel.current.live();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.engines',
-            'Agent Farm — Engines',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        EnginesPanel.current = new EnginesPanel(panel, deps);
+        EnginesPanel.current = new EnginesPanel(desktopHost({ viewType: 'agentfarm.engines', title: 'Agent Farm — Engines' }), deps);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<EnginesPanel>();
+
+    /** X-456 — the Engines page on a phone's view. */
+    static openOn(host: PanelHost, deps: EnginesPanelDeps): void {
+        EnginesPanel.phones.add(new EnginesPanel(host, deps));
     }
 
     /** After a key was stored or a CLI installed, an open page should not lie. */
     static refreshIfOpen(): void {
         EnginesPanel.current?.refresh();
+        for (const p of EnginesPanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: EnginesPanelDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Engines',
+    private constructor(readonly host: PanelHost, private deps: EnginesPanelDeps) {
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Engines',
             buildData(deps, this.verdicts, this.health, [...this.providerRunning]), 'engines.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         this.live();
         this.readHealth();
         this.beat = setInterval(() => {
@@ -395,7 +399,7 @@ export class EnginesPanel {
             // keeps this panel alive behind other tabs, so without this check an
             // Engines tab opened once would go on asking all day for figures
             // nobody is looking at.
-            if (this.panel.visible) { this.live(); }
+            if (this.host.visible) { this.live(); }
         }, Math.max(1000, this.deps.accountBeatMs()));
     }
 
@@ -418,7 +422,7 @@ export class EnginesPanel {
     }
 
     private refresh(): void {
-        void this.panel.webview.postMessage({
+        void this.host.webview.postMessage({
             type: 'data',
             data: buildData(this.deps, this.verdicts, this.health, [...this.providerRunning])
         });
@@ -441,14 +445,15 @@ export class EnginesPanel {
         // X-236 — the accounts section's presses are answered by the handler both
         // panels share; the switch below is this page's own.
         if (await handleAccountsMessage(msg, this.deps, {
-            say: async text => { await this.panel.webview.postMessage({ type: 'acc-msg', text }); },
+            say: async text => { await this.host.webview.postMessage({ type: 'acc-msg', text }); },
             refresh: () => this.refresh(),
-            live: () => this.live()
+            live: () => this.live(),
+            ask: this.host.ask
         })) { return; }
         // X-305 — and the policies section's, by the handler the Accounts page
         // runs too: a rule saved here is the rule the other page lists.
         if (await handlePolicyMessage(msg, this.deps, {
-            say: async text => { await this.panel.webview.postMessage({ type: 'pol-msg', text }); },
+            say: async text => { await this.host.webview.postMessage({ type: 'pol-msg', text }); },
             refresh: () => this.refresh()
         })) { return; }
         switch (msg.type) {
@@ -514,10 +519,10 @@ export class EnginesPanel {
     /** `saved` = this answers the route form, which empties itself on success and only then. */
     private async write(refusal: string[], saved = false): Promise<void> {
         if (refusal.length) {
-            await this.panel.webview.postMessage({ type: 'prov-msg', text: refusal.join(' · ') });
+            await this.host.webview.postMessage({ type: 'prov-msg', text: refusal.join(' · ') });
             return;
         }
-        await this.panel.webview.postMessage({ type: 'prov-msg', text: '', ...(saved ? { saved: true } : {}) });
+        await this.host.webview.postMessage({ type: 'prov-msg', text: '', ...(saved ? { saved: true } : {}) });
         this.refresh();
     }
 
@@ -531,14 +536,14 @@ export class EnginesPanel {
         if (!engine) { return; }
         if (!engine.cli.found) {
             // Refusing here rather than spending: there is nothing to call.
-            void this.panel.webview.postMessage({
+            void this.host.webview.postMessage({
                 type: 'eng-msg', id,
                 text: `${engine.label} is not installed — there is nothing to call yet.`
             });
             return;
         }
         this.running.add(id);
-        void this.panel.webview.postMessage({ type: 'eng-testing', id });
+        void this.host.webview.postMessage({ type: 'eng-testing', id });
         try {
             const result = await this.deps.test(id);
             this.verdicts.set(id, result);
@@ -563,7 +568,7 @@ export class EnginesPanel {
         try {
             await this.deps.providerTest(engine, providerId, model);
         } catch (e) {
-            void this.panel.webview.postMessage({
+            void this.host.webview.postMessage({
                 type: 'prov-msg', text: String((e as Error)?.message ?? e)
             });
         } finally {
@@ -575,7 +580,9 @@ export class EnginesPanel {
     }
 
     private dispose(): void {
-        EnginesPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (EnginesPanel.current === this) { EnginesPanel.current = undefined; }
+        EnginesPanel.phones.delete(this);
         if (this.beat) { clearInterval(this.beat); this.beat = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }

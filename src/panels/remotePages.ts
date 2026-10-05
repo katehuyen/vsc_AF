@@ -30,7 +30,17 @@ export interface RemotePageMakers {
     agent(host: PanelHost, args?: Record<string, unknown>): boolean;
     search(host: PanelHost): void;
     timeline(host: PanelHost): void;
+    engines(host: PanelHost): void;
+    accounts(host: PanelHost): void;
 }
+
+/**
+ * X-456 — the sign-ins section and its rules, the same on the Engines and the Accounts page
+ * (media/afAccounts.js, afPolicies.js). A quota reading is the page's look; a sign-in renewed in a
+ * PC terminal stays there, and a card's last session reaches the phone as afnav (afRemote.js).
+ */
+const ACCOUNT_LOOKS = ['refresh', 'accountRefresh'];
+const ACCOUNT_PC = ['accountReauth', 'accountOpenSession', 'afnav'];
 
 /** X-456 — the transcript a phone asked to read and where to open it. */
 export interface SessionPageTarget { file: string; focusTs?: number; roles?: string[] }
@@ -230,6 +240,26 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             pcOnly: ['openSession', 'focusTerminal', 'endSession', 'forceKillSession', 'installHooks', 'workflowLive',
                 'revealFolder', 'openDashboard', 'openGuide', 'afnav'],
             make: host => make.timeline(host)
+        },
+        // X-456 — the engines, their routes and the sign-ins. accounts, providers, engines and policies
+        // are admin namespaces even to look (src/remote/scopes.ts: their reads carry configuration), so
+        // the pages ask what their ops ask. A test turn, a route's save, copy and removal, a capture, a
+        // switch, the repairs, the forget (asked on the phone) and the rules are the acts. A CLI's
+        // terminal, a key typed into the PC's password box or the Secrets page and a docs link stay on
+        // the PC.
+        engines: {
+            open: 'admin', act: 'admin',
+            looks: ACCOUNT_LOOKS,
+            answers: [],
+            pcOnly: ['engineCommand', 'engineKey', 'providerKey', 'engineDocs', ...ACCOUNT_PC],
+            make: host => make.engines(host)
+        },
+        accounts: {
+            open: 'admin', act: 'admin',
+            looks: ACCOUNT_LOOKS,
+            answers: [],
+            pcOnly: ACCOUNT_PC,
+            make: host => make.accounts(host)
         }
     };
 }

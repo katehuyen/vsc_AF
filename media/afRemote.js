@@ -15,7 +15,7 @@
     if (typeof window.acquireVsCodeApi === 'function') { return; }
     var key = 'afRemoteState:' + location.pathname + location.search;
     var api = null;
-    var READS = { openSession: true, 'open-transcript': true, chainGo: true };
+    var READS = { openSession: true, 'open-transcript': true, chainGo: true, accountOpenSession: true };
     function readOf(m) {
         // a project timeline row's link to a transcript is the same read
         if (m && m.type === 'openLink' && m.link && m.link.to === 'session') {

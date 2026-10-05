@@ -684,7 +684,7 @@ const by = (list, id) => list.find(e => e.id === id);
             && /private live\(\)/.test(panel)
             && /this\.deps\.readAccounts\(\)/.test(panel));
         ok('…which is skipped while nobody is looking at the page',
-            /this\.panel\.visible/.test(panel));
+            /this\.host\.visible/.test(panel));
         ok('…and stops when the page closes',
             /clearInterval\(this\.beat\)/.test(panel));
         ok('…and a second press does not buy a second turn',

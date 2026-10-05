@@ -637,6 +637,11 @@
                 .engnote { margin-top:6px; font-size:12px;
                     background:var(--vscode-inputValidation-warningBackground,#663);
                     padding:5px 8px; border-radius:5px; }
+                /* the phone (media/afMobile.js): the ownership table scrolls in its own box; a CLI's
+                   terminal, a key (the PC's password box or the Secrets page) and a docs link are the PC's */
+                html.af-phone .potab { display:block; max-width:100%; overflow-x:auto; }
+                html.af-phone [data-engcmd], html.af-phone [data-engkey], html.af-phone [data-engdocs],
+                html.af-phone [data-pokey] { display:none; }
                 /* X-236 — the accounts view's own rules, and the section frame (.posec,
                    .poform, .pohead ...) it shares with the routes below: one copy, in
                    media/afAccounts.js, so the Accounts page draws the same cards. */

@@ -820,7 +820,7 @@ const sec = () => {
         /case 'accountsAutoRefresh':[\s\S]{0,200}await deps\.setAutoRefresh\(msg\.on === true\);[\s\S]{0,60}s\.refresh\(\);/.test(shared));
     ok('‼️ …and the Engines panel enters that handler before its own switch, with its own section, redraw and live read',
         /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n[\s\S]{0,200}?if \(await handlePolicyMessage\(msg, this\.deps, \{[\s\S]{0,300}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
-        && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
+        && /say: async text => \{ await this\.host\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
         && /live: \(\) => this\.live\(\)/.test(src) && !/case 'accountCapture'/.test(src));
     ok('…and the data the page is handed carries autoRefresh from deps.autoRefresh()', /autoRefresh: deps\.autoRefresh\(\)/.test(src));
 }

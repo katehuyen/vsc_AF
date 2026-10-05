@@ -1422,6 +1422,8 @@
         .poname { font-weight:600; font-size:13px; }
         .poid, .porev { font-size:11px; opacity:.7; cursor:help; font-family:var(--vscode-editor-font-family,monospace); }
         .pobody { margin-top:5px; }
+        /* the phone (media/afMobile.js): a sign-in is renewed in a terminal on the PC */
+        html.af-phone .af-tipw:has(> [data-acreauth]), html.af-phone [data-acreauth] { display:none; }
     `;
 
     const api = {

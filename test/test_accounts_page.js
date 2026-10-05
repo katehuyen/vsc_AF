@@ -128,13 +128,13 @@ const r = runPage('accounts.js', DATA);
     const src = read('src', 'panels', 'accountsPanel.ts');
     ok('the panel enters the shared handlers — accounts, then policies — before its own switch',
         /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n[\s\S]{0,200}?if \(await handlePolicyMessage\(msg, this\.deps, \{[\s\S]{0,300}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
-        && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
+        && /say: async text => \{ await this\.host\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
         && !/case 'account/.test(src));
     ok('…its deps are picked out of EnginesPanelDeps by name', /Pick<EnginesPanelDeps,/.test(src) && /& AccountsMessageDeps/.test(src));
     ok('…and the page is handed the four fields the section reads, plus the labels',
         /accounts: deps\.accounts\?\.\(\) \?\? \[\]/.test(src) && /accountEngines: deps\.accountEngines\(\)/.test(src)
         && /autoRefresh: deps\.autoRefresh\(\)/.test(src) && /engineLabels: deps\.engineLabels/.test(src));
-    ok('‼️ a hidden page does not keep asking for figures', /if \(this\.panel\.visible\) \{ this\.live\(\); \}/.test(src));
+    ok('‼️ a hidden page does not keep asking for figures', /if \(this\.host\.visible\) \{ this\.live\(\); \}/.test(src));
 
     const ext = read('src', 'extension.ts');
     ok('extension.ts hands the Accounts page the Engines page\'s own deps',

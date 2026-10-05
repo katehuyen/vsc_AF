@@ -22784,7 +22784,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * is the exception offered by name, because a folder left behind is the
      * orphan the next capture counts past.
      */
-    const forgetAccountFromPage = async (id: string): Promise<string> => {
+    const forgetAccountFromPage = async (id: string, ask: PanelAsk = desktopAsk()): Promise<string> => {
         const clean = (id || '').trim();
         const slot = findSlot(storedAccounts(), clean);
         if (!slot) { return `No account "${clean}" is stored on this machine.`; }
@@ -22800,7 +22800,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             '',
             FORGET_REVOKE_NOTE
         ];
-        const pick = await vscode.window.showWarningMessage(lines.join('\n'), { modal: true },
+        const pick = await ask.warn(lines.join('\n'), { modal: true },
             'Forget and delete folder', 'Forget, keep folder');
         if (!pick) { return ''; }
         return (await forgetAccount(clean, pick === 'Forget and delete folder')).refusal;
@@ -24682,7 +24682,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (await captureAccount(engine, label, false)).refusal,
         activateAccount: async (id: string, engine: string): Promise<string> =>
             (await activateAccount(id, engine)).refusal,
-        forgetAccount: (id: string): Promise<string> => forgetAccountFromPage(id),
+        forgetAccount: (id: string, ask?: PanelAsk): Promise<string> => forgetAccountFromPage(id, ask),
         reauthAccount: (id: string): Promise<string> => reauthAccount(id),
         // X-269 — the card's [fix] press and `accounts.repairSettings` are the
         // same function; the button answers with what it had to put back.
@@ -31364,6 +31364,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agent: (host, args) => AgentDetailPanel.openOn(host, typeof args?.agentId === 'string' ? args.agentId : '', detailDeps),
             search: host => SearchPanel.openOn(host, searchPageDeps()),
             timeline: host => TimelinePanel.openOn(host, timelinePageDeps()),
+            engines: host => EnginesPanel.openOn(host, enginesPanelDeps),
+            accounts: host => AccountsPanel.openOn(host, accountsPanelDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

@@ -17,8 +17,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 // Panels that still make their own tab. Move one to desktopHost() and take it
 // off this list in the same commit; nothing is ever added to it.
 const LEGACY = [
-    'a2aNotesPanel', 'a2aTasksPanel', 'accountsPanel', 'airtablePanel', 'capabilities',
-    'enginesPanel', 'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
+    'a2aNotesPanel', 'a2aTasksPanel', 'airtablePanel', 'capabilities',
+    'evalsPanel', 'guide', 'livingPanel', 'memoryGraph',
     'portfolioPanel',
     'secretsPanel', 'selectionPanel', 'settingsPanel', 'studioPanel',
     'taskAnalyticsPanel', 'toolboxPanel', 'wikiPanel'
@@ -178,7 +178,7 @@ const alive = setInterval(() => undefined, 1000);
 
     // ---------- the real page list ----------
     const real = remotePages({ needs: () => undefined, console: () => undefined, now: () => undefined, sessions: () => undefined, tasks: () => undefined, session: () => true, notices: () => undefined, dashboard: () => undefined, missions: () => undefined, queue: () => undefined });
-    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard, the Missions, the Work Queue, the Chains, the Turns, the Projects, an agent\'s, the Search and the Live Timeline pages', Object.keys(real).sort().join() === 'agent,chains,console,dashboard,missions,needs,notices,now,projects,queue,search,session,sessions,tasks,timeline,turns');
+    ok('the phone has the Needs, the Console, the Now, the Sessions, the Tasks, a session\'s, the Notices, the Dashboard, the Missions, the Work Queue, the Chains, the Turns, the Projects, an agent\'s, the Search, the Live Timeline, the Engines and the Accounts pages', Object.keys(real).sort().join() === 'accounts,agent,chains,console,dashboard,engines,missions,needs,notices,now,projects,queue,search,session,sessions,tasks,timeline,turns');
     ok('Dashboard: the board, its table, a turn breakdown, the comparison and the plan usage are looks, pinning and stopping a session need manage, an agent\'s page, a new session or agent, the guide, settings, the Farm Status doors, a terminal and the status bar\'s engine stay on the PC',
         real.dashboard.open === 'read' && ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'].every(t => messageScope(real.dashboard, t) === 'read')
         && ['pinSession', 'interruptSession'].every(t => messageScope(real.dashboard, t) === 'manage')
