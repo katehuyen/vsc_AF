@@ -17,6 +17,7 @@ export interface MorePageMakers {
     sound(host: PanelHost): void;
     settings(host: PanelHost): void;
     living(host: PanelHost): void;
+    studio(host: PanelHost): void;
 }
 
 /**
@@ -137,6 +138,18 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
             pcOnly: ['af-browse', 'openSettingsJson', 'openGuide', 'afnav'],
             make: host => make.living(host)
+        },
+        // X-456 — the content production page. Its bridge ops (studio.productions, studio.assets,
+        // studio.library, studio.rerun …) ask manage, so the page asks the same to look and to act;
+        // a tab, a production and the wall's filter only change what this view shows. Its pictures
+        // and clips reach the phone by the view's own tokens (remoteFiles.ts); an export is written
+        // to a file picked on the PC (told on the phone). Opening a file, a new recipe, registering a
+        // file, the vary / feedback commands (they open the PC's Studio), a setting, the guide's tab
+        // and another page belong to the PC.
+        studio: {
+            open: 'manage', act: 'manage', looks: ['refresh', 'tab', 'project', 'libraryView'], answers: [],
+            pcOnly: ['openAsset', 'openFile', 'generate', 'registerAsset', 'vary', 'feedback', 'openSettings', 'openGuide', 'afnav'],
+            make: host => make.studio(host)
         }
     };
 }

@@ -11,6 +11,8 @@
     const C = window.AFCharts;
     // The shell's own global (see htmlShell) — not AF_DATA, which nothing sets.
     let DATA = window.__DATA__ || { productions: [], items: [], untriaged: [], loose: [] };
+    // X-456 — on a phone a picture is looked at, not opened in the PC's editor
+    const ON_PHONE_HOST = !!(window.__AFUI__ && window.__AFUI__.remote === true);
 
     // Assets tab filters (the gallery's own semantics: production/scene are a
     // drill-down, source is a plain multi-pick).
@@ -42,6 +44,10 @@
     };
 
     const STYLE = `<style>
+        html.af-phone #register, html.af-phone #editmanifest, html.af-phone #exportseq,
+        html.af-phone [data-settings], html.af-phone [data-act="generate"], html.af-phone button[data-open] { display:none; }
+        html.af-phone .srcrow { flex-wrap:wrap; }
+        html.af-phone .srcrow select { max-width:100%; }
         .tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); flex-wrap:wrap; }
         .tab { padding:7px 15px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
             background:transparent; color:var(--vscode-foreground); opacity:.7; cursor:pointer; font-size:12px; }
@@ -457,7 +463,7 @@
         window.AFStudioLib.wire(post);
         if (window.AFBrand && DATA.tab === 'sources') { window.AFBrand.wireStudio(DATA, post, render); }
 
-        on('[data-open]', el => el.addEventListener('click', () => post('openAsset', { path: el.dataset.open })));
+        if (!ON_PHONE_HOST) { on('[data-open]', el => el.addEventListener('click', () => post('openAsset', { path: el.dataset.open }))); }
         on('[data-rerun]', el => el.addEventListener('click', () => post('rerun', { taskId: el.dataset.rerun })));
         on('[data-vary]', el => el.addEventListener('click', () => openAssetCard('vary', el.dataset.vary)));
         on('[data-feedback]', el => el.addEventListener('click', () => openAssetCard('feedback', el.dataset.feedback)));

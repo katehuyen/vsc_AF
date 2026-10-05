@@ -16,8 +16,9 @@ import { buildStudio, pipelineSummary, SCENE_TARGET_SEP } from '../core/studio';
 import { wallItems } from '../core/studioLibrary';
 import { TaskManager } from '../core/tasks';
 import { handleAfNav, htmlShell } from './base';
+import { desktopHost, type PanelHost } from './panelHost';
 import { StudioLibraryView, studioRoots, WallReader } from './studioLibraryView';
-import { LibraryActDeps, libraryEditFromPage, libraryPromoteFromPage } from './studioLibraryActions';
+import { LibraryActDeps, libraryEditFromPage, libraryPromoteFromPage, type LibrarySay } from './studioLibraryActions';
 import { studioBrandData, studioBrandMessage } from './studioBrand';
 import { FlexDeps } from '../core/flexActions';
 
@@ -55,13 +56,15 @@ export interface StudioDeps {
 
 export class StudioPanel {
     private static current?: StudioPanel;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<StudioPanel>();
     private disposables: vscode.Disposable[] = [];
     private tab = 'pipeline';
     private project = '';
 
     static show(deps: StudioDeps, opts?: { tab?: string; projectId?: string }): void {
         if (StudioPanel.current) {
-            StudioPanel.current.panel.reveal();
+            StudioPanel.current.host.reveal();
             if (opts?.tab) { StudioPanel.current.tab = opts.tab; }
             if (opts?.projectId) { StudioPanel.current.project = opts.projectId; }
             StudioPanel.current.refresh();
@@ -69,37 +72,50 @@ export class StudioPanel {
         }
         // Ingested assets live outside the outputs folder and a webview may only
         // load from listed roots — allow every directory that currently holds one.
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.studio', 'Studio', vscode.ViewColumn.One,
-            {
+        StudioPanel.current = new StudioPanel(desktopHost({
+            viewType: 'agentfarm.studio', title: 'Studio',
+            options: {
                 enableScripts: true, retainContextWhenHidden: true,
                 localResourceRoots: studioRoots(deps.extensionUri, deps.tasks.outputsDir, readMediaMetas(deps.tasks.outputsDir), [])
-            });
-        StudioPanel.current = new StudioPanel(panel, deps);
+            }
+        }), deps);
         if (opts?.tab) { StudioPanel.current.tab = opts.tab; }
         if (opts?.projectId) { StudioPanel.current.project = opts.projectId; }
         StudioPanel.current.refresh();
     }
 
+    /** X-456 — the Studio on a phone's view; its pictures and clips go by the view's own tokens (remoteFiles.ts). */
+    static openOn(host: PanelHost, deps: StudioDeps): void {
+        const p = new StudioPanel(host, deps);
+        StudioPanel.phones.add(p);
+        p.refresh();
+    }
+
     /** Media runs finish in the background — keep an open page current. */
     static refreshIfOpen(): void {
         StudioPanel.current?.refresh();
+        for (const p of StudioPanel.phones) { p.refresh(); }
     }
 
     /** The ONE door to a production, a variation, an assignment or an export —
      *  U-14, surface 6. */
     static compose(deps: StudioDeps, seed: Record<string, unknown>): void {
         StudioPanel.show(deps, seed.kind === 'export' ? { tab: 'assemble' } : undefined);
-        void StudioPanel.current?.panel.webview.postMessage({ type: 'studio-compose', seed });
+        void StudioPanel.current?.host.webview.postMessage({ type: 'studio-compose', seed });
     }
 
     private lib: StudioLibraryView;
 
-    private constructor(private panel: vscode.WebviewPanel, private deps: StudioDeps) {
+    private constructor(private host: PanelHost, private deps: StudioDeps) {
         this.lib = new StudioLibraryView(deps.libraryWall, newDirs => this.onWall(newDirs));
-        panel.webview.html = htmlShell(panel.webview, deps.extensionUri, 'Studio', this.data(), 'studio.js');
-        panel.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Studio', this.data(), 'studio.js');
+        host.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+    }
+
+    /** The desktop tab's own webview, whose roots grow with the wall; a phone's view has no roots. */
+    private get desk(): vscode.Webview | undefined {
+        return this.host.remote ? undefined : this.host.webview as vscode.Webview;
     }
 
     private metas(): MediaMeta[] {
@@ -108,7 +124,7 @@ export class StudioPanel {
 
     private uriOf(file?: string): string | undefined {
         if (!file || !fs.existsSync(file)) { return undefined; }
-        return this.panel.webview.asWebviewUri(vscode.Uri.file(file)).toString();
+        return this.host.webview.asWebviewUri(vscode.Uri.file(file)).toString();
     }
 
     private data(): Record<string, unknown> {
@@ -188,59 +204,29 @@ export class StudioPanel {
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
-        void this.lib.load(this.metas(), (this.panel.webview.options.localResourceRoots ?? []).map(u => u.fsPath));
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
+        void this.lib.load(this.metas(), (this.desk?.options.localResourceRoots ?? []).map(u => u.fsPath));
     }
 
     /** A newer wall arrived. A preview folder the webview may not load from yet means new roots — and new roots only take with a fresh page. */
     private onWall(newDirs: boolean): void {
-        if (newDirs) {
-            this.panel.webview.options = {
-                ...this.panel.webview.options,
+        const desk = this.desk;
+        if (newDirs && desk) {
+            desk.options = {
+                ...desk.options,
                 localResourceRoots: studioRoots(this.deps.extensionUri, this.deps.tasks.outputsDir, this.metas(), this.lib.dirs())
             };
-            this.panel.webview.html = htmlShell(this.panel.webview, this.deps.extensionUri, 'Studio', this.data(), 'studio.js');
+            desk.html = htmlShell(desk, this.deps.extensionUri, 'Studio', this.data(), 'studio.js');
             return;
         }
-        void this.panel.webview.postMessage({ type: 'data', data: this.data() });
-    }
-
-    /** QuickPick a production scene; null clears the assignment, undefined cancels. */
-    private async pickScene(preferScene?: string): Promise<{ projectId: string; sceneId?: string } | null | undefined> {
-        const productions = discoverProductions(this.deps.getAgents());
-        if (!productions.length) {
-            void vscode.window.showInformationMessage(
-                'Agent Farm: no production.json found in any agent folder — create one with "New Production" on the Pipeline tab.');
-            return undefined;
-        }
-        interface Pick extends vscode.QuickPickItem { projectId?: string; sceneId?: string; clear?: boolean }
-        const items: Pick[] = [];
-        for (const p of productions) {
-            items.push({
-                label: `$(project) ${p.production.title}`,
-                description: `${p.agentName} — project only`, projectId: p.production.id
-            });
-            for (const s of p.production.scenes) {
-                items.push({
-                    label: `    ${s.id === preferScene ? '$(check)' : '$(circle-small)'} ${s.title}`,
-                    description: `${p.production.title} · ${s.status}`,
-                    projectId: p.production.id, sceneId: s.id
-                });
-            }
-        }
-        items.push({ label: '$(clear-all) Clear assignment', description: 'detach from any production/scene', clear: true });
-        const pick = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Assign this asset to a production scene', ignoreFocusOut: true
-        });
-        if (!pick) { return undefined; }
-        return pick.clear ? null : { projectId: pick.projectId!, sceneId: pick.sceneId };
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
         const str = (k: string) => (typeof msg[k] === 'string' ? msg[k] as string : '');
         const said = await studioBrandMessage(msg, this.deps.getAgents(), this.deps.flex);
         if (said !== undefined) {
-            if (said) { void vscode.window.showWarningMessage(`Agent Farm: ${said}`); }
+            if (said) { void this.host.ask.warn(`Agent Farm: ${said}`); }
             this.refresh();
             return;
         }
@@ -248,10 +234,10 @@ export class StudioPanel {
             case 'refresh': this.refresh(); break;
             case 'libraryView': this.lib.setView(msg.view); this.refresh(); break;
             case 'libEdit':
-                if (this.deps.libraryAct) { await libraryEditFromPage(msg, this.deps.libraryAct, { metas: () => this.metas(), outputsDir: this.deps.tasks.outputsDir }); this.refresh(); }
+                if (this.deps.libraryAct) { await libraryEditFromPage(msg, this.deps.libraryAct, { metas: () => this.metas(), outputsDir: this.deps.tasks.outputsDir }, this.libSay()); this.refresh(); }
                 break;
             case 'libPromote':
-                if (this.deps.libraryAct) { await libraryPromoteFromPage(msg, this.deps.libraryAct); this.refresh(); }
+                if (this.deps.libraryAct) { await libraryPromoteFromPage(msg, this.deps.libraryAct, this.libSay()); this.refresh(); }
                 break;
             case 'tab':
                 this.tab = str('tab') || 'pipeline';
@@ -269,6 +255,8 @@ export class StudioPanel {
             // The three regeneration paths keep the gallery's own argument
             // shape (taskId, vary, feedback) — same command, same behaviour.
             case 'rerun':
+                // a phone's ↻ runs the card's own path and is told on the phone, not in a PC toast
+                if (this.host.remote) { await this.saveForm({ kind: 'rerun', taskId: str('taskId') }); break; }
                 void vscode.commands.executeCommand('agentfarm.rerunMedia', str('taskId'), false);
                 break;
             case 'vary':
@@ -295,7 +283,7 @@ export class StudioPanel {
                 const asked = str('status');
                 const status = (SCENE_STATUSES as readonly string[]).includes(asked)
                     ? asked
-                    : await vscode.window.showQuickPick(
+                    : await this.host.ask.pick(
                         SCENE_STATUSES as readonly string[] as string[],
                         { placeHolder: `New status for "${found.production.scenes.find(s => s.id === sceneId)?.title ?? sceneId}"`, ignoreFocusOut: true });
                 if (!status) { break; }
@@ -350,7 +338,13 @@ export class StudioPanel {
 
     /** A refusal the FORM shows, in the form. */
     private say(text: string, ok = false): void {
-        void this.panel.webview.postMessage({ type: 'studio-msg', text, ok });
+        void this.host.webview.postMessage({ type: 'studio-msg', text, ok });
+    }
+
+    /** Where the wall's ✓ ✗ ✎ ↑ are asked and told: a quiet success on the PC's status bar, on a phone in its own sheet. */
+    private libSay(): LibrarySay {
+        const ask = this.host.ask;
+        return { ask, quiet: this.host.remote ? t => void ask.info(t) : (t, ms) => void vscode.window.setStatusBarMessage(t, ms) };
     }
 
     /**
@@ -375,7 +369,7 @@ export class StudioPanel {
             const scenes = s('scenes').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
             const file = path.join(agent.dir, PRODUCTION_FILENAME);
             if (fs.existsSync(file)) {
-                const over = await vscode.window.showWarningMessage(
+                const over = await this.host.ask.warn(
                     `${agent.name} already has a ${PRODUCTION_FILENAME}. Overwrite it?`,
                     { modal: true }, 'Overwrite');
                 if (over !== 'Overwrite') { return this.say('Left as it was — nothing was written.'); }
@@ -415,7 +409,7 @@ export class StudioPanel {
             return this.say('Assigned.', true);
         }
 
-        if (kind === 'vary' || kind === 'feedback') {
+        if (kind === 'vary' || kind === 'feedback' || kind === 'rerun') {
             const meta = this.metas().find(m => m.taskId === s('taskId'));
             if (!meta) { return this.say('That generation is no longer in the outputs folder — refresh the page.'); }
             let input = meta.input;
@@ -425,7 +419,7 @@ export class StudioPanel {
                 if (!edited.trim()) { return this.say('The input cannot be empty — that is what the provider receives.'); }
                 input = edited;
                 suffix = ' (vary)';
-            } else {
+            } else if (kind === 'feedback') {
                 const fb = s('feedback');
                 if (!fb) { return this.say('Say what should change — the critique is what makes this different from a plain re-run.'); }
                 input = injectMediaFeedback(meta.input, fb);
@@ -442,6 +436,7 @@ export class StudioPanel {
         const found = discoverProductions(this.deps.getAgents())
             .find(p => p.production.id === String(raw.projectId ?? '').trim());
         if (!found) { return this.say('Pick a production to export.'); }
+        if (this.host.remote) { return this.say('The sequence is written to a file you pick on the PC — export it there.'); }
         // Asked before the save dialog, so nobody picks a file to be told there was nothing to put in it.
         if (!pickSequenceAssets(found.production, this.metas()).length) {
             return this.say(`"${found.production.title}" has no scene assets to place — assign assets to scenes first (the Assets tab's "assign" on each one).`);
@@ -463,8 +458,10 @@ export class StudioPanel {
     }
 
     private dispose(): void {
-        StudioPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (StudioPanel.current === this) { StudioPanel.current = undefined; }
+        StudioPanel.phones.delete(this);
         this.disposables.forEach(d => d.dispose());
-        this.panel.dispose();
+        this.disposables = [];
     }
 }

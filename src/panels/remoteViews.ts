@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import type { HostWebview, PanelHost } from './panelHost';
 import { RemoteAsk, type PanelAsk } from './panelAsk';
+import { FILE_URL, MAX_FILE_BYTES, ViewFiles, type ServedFile } from './remoteFiles';
 
 /**
  * X-441 — THE FARM'S PAGES ON A PHONE. Each view a phone opens is a panel
@@ -49,9 +50,11 @@ export interface RemoteViewsDeps {
     atLeast(have: string, needed: string): boolean;
     /** How long a page fetch waits for its view's open (the phone sends both at once). */
     waitMs?: number;
+    /** The biggest page file a phone is sent (remoteFiles.ts). */
+    maxFileBytes?: number;
 }
 
-type Served = { status: number; type: string; body: string };
+type Served = ServedFile;
 
 class RemoteWebview implements HostWebview {
     html = '';
@@ -61,14 +64,18 @@ class RemoteWebview implements HostWebview {
     readonly onDidReceiveMessage = this.inbox.event;
     private live = true;
 
-    constructor(private readonly media: vscode.Uri, private readonly post: (message: unknown) => void) { }
+    readonly files: ViewFiles;
 
-    /** A media file as the page asks for it: /res/<path>, relative so it works on any origin. */
+    constructor(private readonly media: vscode.Uri, private readonly post: (message: unknown) => void, view: string) {
+        this.files = new ViewFiles(view);
+    }
+
+    /** A media file is /res/<path>, relative so it works on any origin; another file the panel shows gets this view's token. */
     asWebviewUri(uri: vscode.Uri): vscode.Uri {
         const rel = path.posix.relative(this.media.path, uri.path);
         const href = rel && !rel.startsWith('..') && !path.posix.isAbsolute(rel)
             ? '/res/' + rel.split('/').map(encodeURIComponent).join('/')
-            : '/res/-';
+            : (uri.scheme === 'file' && this.files.address(uri.fsPath)) || '/res/-';
         // htmlShell only ever prints it; a Uri would print an absolute file: or https: address.
         return { toString: () => href } as unknown as vscode.Uri;
     }
@@ -96,8 +103,8 @@ class RemoteView implements PanelHost {
     readonly ask: PanelAsk;
     private closed = false;
 
-    constructor(readonly page: string, readonly spec: RemotePage, media: vscode.Uri, post: (message: unknown) => void) {
-        this.webview = new RemoteWebview(media, post);
+    constructor(readonly page: string, readonly spec: RemotePage, media: vscode.Uri, post: (message: unknown) => void, view: string) {
+        this.webview = new RemoteWebview(media, post, view);
         this.asker = new RemoteAsk(m => { void this.webview.postMessage(m); });
         this.ask = this.asker;
     }
@@ -128,7 +135,7 @@ export class RemoteViews {
         if (!spec || !this.d.atLeast(caller.scope, spec.open)) { return false; }
         const key = keyOf(caller, view);
         this.views.get(key)?.dispose();
-        const host = new RemoteView(page, spec, this.d.media, post);
+        const host = new RemoteView(page, spec, this.d.media, post, view);
         this.views.set(key, host);
         host.onDidDispose(() => { if (this.views.get(key) === host) { this.views.delete(key); } });
         const made = spec.make(host, args) !== false;
@@ -162,6 +169,9 @@ export class RemoteViews {
     }
 
     async page(url: string, caller: ViewCaller): Promise<Served | null> {
+        const f = FILE_URL.exec(url);
+        // a page's file belongs to the device and the view that were given its address
+        if (f) { return (await this.views.get(keyOf(caller, f[1]))?.webview.files.serve(f[2], this.d.maxFileBytes ?? MAX_FILE_BYTES)) ?? null; }
         const m = VIEW_URL.exec(url);
         if (!m) { return null; }
         const key = keyOf(caller, m[2]);

@@ -42,7 +42,8 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt, log?: Audi
     const audit = auditor(log ?? new AuditLog(path.join(dir, AUDIT_FILE)), devices);
     const views = port.views ? port.views() : null;
     const res = port.resourceDir ? port.resourceDir() : null;
-    const page = (url: string, caller: RemoteCaller) => url.startsWith('/view/')
+    // /res/~/ is a file one view's own panel gave an address to (src/panels/remoteFiles.ts)
+    const page = (url: string, caller: RemoteCaller) => url.startsWith('/view/') || url.startsWith('/res/~/')
         ? (views ? views.page(url, caller) : null)
         : (res ? resourcePage(res, url) : null);
     const server = createRemoteServer({

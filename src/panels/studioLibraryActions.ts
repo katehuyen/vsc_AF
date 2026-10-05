@@ -1,5 +1,5 @@
 import * as path from 'path';
-import * as vscode from 'vscode';
+import type { PanelAsk } from './panelAsk';
 import { MediaMeta, updateMediaMeta } from '../core/media';
 import { promotionOf, scoreOf, StudioEditKind, StudioEditOutcome, StudioEditRequest } from '../core/studioLibraryWrite';
 
@@ -16,6 +16,9 @@ export interface LibraryActDeps {
     promoteMode(): string;
 }
 
+/** Who is asked and told: the page's own asker, and a quiet line for a success (the PC's status bar, a phone's sheet). */
+export interface LibrarySay { ask: PanelAsk; quiet(text: string, ms: number): void }
+
 /** Where a file made here keeps its sidecar selection, so the sequence picker agrees with the record. */
 export interface SidecarSide { metas(): MediaMeta[]; outputsDir: string }
 
@@ -23,23 +26,23 @@ type Msg = { [k: string]: unknown };
 const str = (m: Msg, k: string): string => (typeof m[k] === 'string' ? m[k] as string : '');
 const same = (a: string, b: string): boolean => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 
-function say(r: StudioEditOutcome): void {
-    if (r.written) { vscode.window.setStatusBarMessage(`Studio — ${r.why}`, 5000); return; }
-    if (r.conflict) { void vscode.window.showWarningMessage(`Studio — ${r.id}: ${r.why}`); return; }
-    void vscode.window.showErrorMessage(`Studio — ${r.id}: ${r.why}`);
+function say(r: StudioEditOutcome, tell: LibrarySay): void {
+    if (r.written) { tell.quiet(`Studio — ${r.why}`, 5000); return; }
+    if (r.conflict) { void tell.ask.warn(`Studio — ${r.id}: ${r.why}`); return; }
+    void tell.ask.error(`Studio — ${r.id}: ${r.why}`);
 }
 
 /** ✎ — which field, then its value, each box opening on what the record holds now. */
-async function askEdit(msg: Msg): Promise<{ kind: StudioEditKind; value: string } | undefined> {
+async function askEdit(msg: Msg, ask: PanelAsk): Promise<{ kind: StudioEditKind; value: string } | undefined> {
     const cur = (msg.current && typeof msg.current === 'object' ? msg.current : {}) as Msg;
     const shown = (k: string) => String(cur[k] ?? '').trim() || '(none)';
-    const pick = await vscode.window.showQuickPick([
+    const pick = await ask.pick([
         { label: 'Tags', description: shown('tags'), detail: 'Comma separated — replaces the record\'s tags', field: 'tags' as StudioEditKind },
         { label: 'Score', description: shown('score'), detail: 'Your score, 0–1 or a percent — it beats the automatic one', field: 'score' as StudioEditKind },
         { label: 'Note', description: shown('note'), detail: 'The review note (moderation.notes) — not the file\'s description', field: 'note' as StudioEditKind }
     ], { placeHolder: `Edit ${str(msg, 'id')} on ${str(msg, 'base') || 'the database'}`, ignoreFocusOut: true });
     if (!pick) { return undefined; }
-    const value = await vscode.window.showInputBox({
+    const value = await ask.input({
         prompt: `${pick.label} of ${str(msg, 'id')}`, value: String(cur[pick.field] ?? ''), ignoreFocusOut: true,
         validateInput: pick.field === 'score' ? (v => (scoreOf(v) === undefined ? 'A score is 0–1, or a percent 0–100' : undefined)) : undefined
     });
@@ -47,11 +50,11 @@ async function askEdit(msg: Msg): Promise<{ kind: StudioEditKind; value: string 
 }
 
 /** ✓ / ✗ / ✎ from the page — written onto the version the card showed. */
-export async function libraryEditFromPage(msg: Msg, deps: LibraryActDeps, side: SidecarSide): Promise<void> {
+export async function libraryEditFromPage(msg: Msg, deps: LibraryActDeps, side: SidecarSide, tell: LibrarySay): Promise<void> {
     let kind = str(msg, 'kind') as StudioEditKind | 'edit';
     let value: unknown;
     if (kind === 'edit') {
-        const asked = await askEdit(msg);
+        const asked = await askEdit(msg, tell.ask);
         if (!asked) { return; }
         ({ kind, value } = asked);
     }
@@ -68,27 +71,27 @@ export async function libraryEditFromPage(msg: Msg, deps: LibraryActDeps, side: 
             updateMediaMeta(side.outputsDir, m.taskId, { selectedUrls: kind === 'select' ? urls : [], rejectedUrls: kind === 'select' ? [] : urls });
         }
     }
-    say(r);
+    say(r, tell);
 }
 
 /** ↑ from the page — raw → asset, semi → final; the file and its record move together. */
-export async function libraryPromoteFromPage(msg: Msg, deps: LibraryActDeps): Promise<void> {
+export async function libraryPromoteFromPage(msg: Msg, deps: LibraryActDeps, tell: LibrarySay): Promise<void> {
     const from = str(msg, 'stage');
     const to = promotionOf(from);
     const file = str(msg, 'file');
     if (!to || !file) {
-        void vscode.window.showWarningMessage(`Studio — a ${from || 'file with no'} stage has no promotion: raw → asset and semi → final only.`);
+        void tell.ask.warn(`Studio — a ${from || 'file with no'} stage has no promotion: raw → asset and semi → final only.`);
         return;
     }
     if (deps.promoteMode() !== 'auto') {
-        const ok = await vscode.window.showWarningMessage(
+        const ok = await tell.ask.warn(
             `Promote ${path.basename(file)} from ${from} to ${to}? The file moves into the ${to} folder and its record moves with it.`,
             { modal: true, detail: 'Farm setting agentFarm.studioLibraryPromote: ask → auto promotes without this question.' }, 'Promote');
         if (ok !== 'Promote') { return; }
     }
     const r = await deps.promote({ file, stage: to, base: str(msg, 'base') || undefined, id: str(msg, 'id') || undefined });
-    if (r.error) { void vscode.window.showErrorMessage(`Studio — ${path.basename(file)} was not promoted: ${r.error}`); return; }
-    vscode.window.setStatusBarMessage(r.pending
+    if (r.error) { void tell.ask.error(`Studio — ${path.basename(file)} was not promoted: ${r.error}`); return; }
+    tell.quiet(r.pending
         ? `Studio — ${path.basename(r.file)} moved to ${to}; its record waits for the ${r.base} engine (media.pending)`
         : `Studio — ${path.basename(r.file)} promoted to ${to} on ${r.base}`, 6000);
 }

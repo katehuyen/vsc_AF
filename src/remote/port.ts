@@ -47,7 +47,7 @@ export interface RemoteViewsPort {
     /** Nothing when the view is not open. */
     message(caller: RemoteCaller, view: string, message: unknown): ViewMessageNote | undefined;
     close(caller: RemoteCaller, view: string): void;
-    /** GET /view/… for this caller; may wait briefly for a view whose open is still on its way. */
+    /** GET /view/… (may wait briefly for a view whose open is still on its way) and /res/~/<view>/<token>, a file that view was given, for this caller. */
     page(url: string, caller: RemoteCaller): Promise<ServedPage | null>;
 }
 
