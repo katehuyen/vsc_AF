@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.843.0 - The Toolbox opens on the phone (2026-10-05)
+
+- **The Toolbox, on the phone.** The Toolbox opens in the Agent Farm phone
+  app on a device paired as admin: it carries the farm's configuration (MCP
+  server definitions, the Telegram bridge, the web view, the paired phones,
+  the live hooks), so it asks what the same information asks everywhere
+  else on the phone link. A phone at the usual level is told it is not
+  available.
+- On the phone each skill, subagent, command, MCP server, hook and plugin
+  is a card with its scope, description and figures. Probing a server,
+  turning a server or a plugin on or off, removing a tool, installing or
+  taking out the live hooks, the Telegram bridge's settings, the web view's
+  switches and a new token, pairing a phone, a phone's level and revoking
+  all work there - every confirmation is asked on the phone.
+- The phone app's reach is shown on the phone but changed only on the PC
+  (a new reach drops the phone's own connection). Typing the Telegram
+  token, the firewall prompt, copying to the PC's clipboard, opening a file
+  or a folder, a plugin's homepage, a skill's scope and the constitution
+  sync stay on the PC and are not drawn on the phone.
+
 ## 3.842.0 - The Guide and the Wiki open on the phone (2026-10-05)
 
 - **The guide, on the phone.** The help opens in the Agent Farm phone app,

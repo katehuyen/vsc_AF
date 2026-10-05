@@ -136,6 +136,18 @@ const base = (services) => ({
 
 const data = () => base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), hooks: hooks() });
 
+/** X-456 — a few tools of each table kind, so the inventory tabs draw rows (on a phone: cards). */
+const TOOLS = () => ([
+    { kind: 'skill', name: 'account-signup', scope: 'user', description: 'Sign one Google account up to a list of web services via Continue with Google.', source: 'C:\\Users\\x\\.claude\\skills\\account-signup\\SKILL.md', dir: 'C:\\Users\\x\\.claude\\skills\\account-signup', detail: { usage30d: 4 } },
+    { kind: 'skill', name: 'superpowers-brainstorming', scope: 'agent', agentId: 'developer', agentName: 'developer', description: 'Turn a rough idea into a design before any code is written.', source: 'D:\\zone\\agent\\ajanlar\\developer\\.claude\\skills\\brainstorming\\SKILL.md', detail: { usage30d: 0 } },
+    { kind: 'mcp', name: 'obsidian', scope: 'agent', agentId: 'developer', agentName: 'developer', description: 'npx -y obsidian-mcp-server --vault D:\\zone\\know\\note\\obsidian', source: 'D:\\zone\\agent\\ajanlar\\developer\\.mcp.json', detail: { transport: 'stdio', disabled: false } },
+    { kind: 'mcp', name: 'playwright', scope: 'user', description: 'npx @playwright/mcp@latest', source: 'C:\\Users\\x\\.claude.json', detail: { transport: 'stdio' } },
+    { kind: 'plugin', name: 'claude-plugins-official', scope: 'user', description: 'The official marketplace', source: 'C:\\Users\\x\\.claude\\plugins\\marketplaces\\official\\marketplace.json', detail: { isMarketplace: true, pluginCount: 2, lastUpdated: '2026-08-28' } },
+    { kind: 'plugin', name: 'code-review', scope: 'user', description: 'Review the current diff for correctness bugs.', source: 'x', detail: { plugin: 'code-review', marketplace: 'claude-plugins-official', enabled: true, category: 'development', author: 'Anthropic', homepage: 'https://example.com/code-review' } },
+    { kind: 'plugin', name: 'security-review', scope: 'user', description: 'Complete a security review of the pending changes on the current branch.', source: 'x', detail: { plugin: 'security-review', marketplace: 'claude-plugins-official', enabled: false, category: 'security', author: 'Anthropic' } }
+]);
+const PROBES = () => ({ 'agent:developer:obsidian': { ok: true, probedAt: Date.parse('2026-08-30T08:00:00Z'), ms: 840, tools: [{ name: 'vault_read', params: ['path'], description: 'Read a note' }, { name: 'vault_append', params: ['path', 'content'], description: 'Append to a note' }] } });
+
 /** U-155 — the shipped rules as kapici.rules answers them (src/core/kapici/builtinRules.ts). */
 const KAPICI_RULES = () => ([
     { id: 'dispatch.route', version: 1, description: 'Which agent should take this request? The candidates arrive with the call.', layer: 'builtin', providers: ['jev', 'llm'], questions: { agent: 'choice' }, minConfidence: 0.7, onLowConfidence: 'mechanical', onFailure: 'fallback', golden: 5 },
@@ -186,6 +198,10 @@ const variants = () => ([
         data: { ...base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), tab: 'overview' }
     }
     ,
+    // X-456 — the inventory tabs, so a phone's view of a tool table can be looked at
+    { id: 'toolbox-skills', label: 'Toolbox — Skills: the inventory table', data: { ...base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), items: TOOLS(), tab: 'skill' } },
+    { id: 'toolbox-mcp', label: 'Toolbox — MCP: the servers table', data: { ...base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), items: TOOLS(), probeCache: PROBES(), tab: 'mcp' } },
+    { id: 'toolbox-plugins', label: 'Toolbox — Plugins: the plugins table', data: { ...base({ telegram: tg({ botUsername: 'muvu_farm_bot' }) }), items: TOOLS(), tab: 'plugin' } },
     {
         id: 'toolbox-hooks', label: 'Toolbox — Services: the live hooks are in and the listener is up',
         data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), hooks: hooks() })

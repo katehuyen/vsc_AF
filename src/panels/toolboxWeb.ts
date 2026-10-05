@@ -16,6 +16,7 @@
 import * as vscode from 'vscode';
 import { qrEncode, qrSvg } from '../core/qr';
 import { webStatus, webUrl } from '../core/webCockpit';
+import { desktopAsk, type PanelAsk } from './panelAsk';
 
 /** What the extension host lends the card. Optional everywhere: a window that
  *  supplies nothing simply does not draw it. */
@@ -83,6 +84,8 @@ export interface WebCardContext {
     host?: WebViewHost;
     /** one answer line on the card, then a redraw */
     say(m: { ok: boolean; text: string } | undefined): void;
+    /** where the card's confirmations are asked: the phone looking at it, else the PC's window */
+    ask?: PanelAsk;
 }
 
 /**
@@ -103,11 +106,12 @@ export async function webCardMessage(
     if (type.indexOf('web-') !== 0) { return false; }
     const host = ctx.host;
     if (!host) { ctx.say({ ok: false, text: 'This window does not host the web view.' }); return true; }
+    const ask = ctx.ask ?? desktopAsk();
 
     switch (type) {
         case 'web-start': {
             const bind = webBind(msg.bind);
-            if (bind === 'lan' && !await confirmLan()) { ctx.say(undefined); return true; }
+            if (bind === 'lan' && !await confirmLan(ask)) { ctx.say(undefined); return true; }
             await host.enableWebView(bind);
             ctx.say({
                 ok: true, text: bind === 'lan'
@@ -122,7 +126,7 @@ export async function webCardMessage(
             return true;
         case 'web-bind': {
             const bind = webBind(msg.bind);
-            if (bind === 'lan' && !await confirmLan()) { ctx.say(undefined); return true; }
+            if (bind === 'lan' && !await confirmLan(ask)) { ctx.say(undefined); return true; }
             await host.setWebBind(bind);
             ctx.say({
                 ok: true, text: bind === 'lan'
@@ -132,7 +136,7 @@ export async function webCardMessage(
             return true;
         }
         case 'web-token': {
-            const yes = await vscode.window.showWarningMessage(
+            const yes = await ask.warn(
                 'Mint a new token? Every link and every phone bookmark made from the old one stops working.',
                 { modal: true }, 'New token');
             if (yes !== 'New token') { ctx.say(undefined); return true; }
@@ -152,8 +156,8 @@ export async function webCardMessage(
     }
 }
 
-async function confirmLan(): Promise<boolean> {
-    const yes = await vscode.window.showWarningMessage(
+async function confirmLan(ask: PanelAsk): Promise<boolean> {
+    const yes = await ask.warn(
         'Serve the dashboard to this whole network? Anyone on it who has the link can READ your farm. '
         + 'It stays read only — no route starts, stops or changes anything.',
         { modal: true }, 'Serve on the network');

@@ -5,6 +5,7 @@
  */
 import * as vscode from 'vscode';
 import { remoteCardData, type RemoteCardInput, type RemoteCardMode } from '../core/remoteCard';
+import { desktopAsk, type PanelAsk } from './panelAsk';
 
 export interface RemoteDevicesHost {
     snapshot(): Omit<RemoteCardInput, 'pair'>;
@@ -37,6 +38,8 @@ export interface RemoteCardContext {
     setPair(p: RemoteCardInput['pair']): void;
     /** one answer line on the card, then a redraw */
     say(m: { ok: boolean; text: string } | undefined): void;
+    /** where the card's confirmations are asked: the phone looking at it, else the PC's window */
+    ask?: PanelAsk;
 }
 
 /** Returns true when the message was the card's. */
@@ -45,6 +48,7 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
     if (type.indexOf('remote-') !== 0) { return false; }
     const host = ctx.host;
     if (!host) { ctx.say({ ok: false, text: 'This window does not host the phone app.' }); return true; }
+    const ask = ctx.ask ?? desktopAsk();
     switch (type) {
         case 'remote-listen': {
             const mode = remoteMode(msg.mode);
@@ -88,7 +92,7 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
             const id = String(msg.device ?? '');
             const name = String(msg.name ?? id);
             if (!id) { ctx.say({ ok: false, text: 'No phone named.' }); return true; }
-            if (!await confirm(`Revoke "${name}"? It is disconnected at once and must pair again.`, 'Revoke')) { ctx.say(undefined); return true; }
+            if (!await confirm(ask, `Revoke "${name}"? It is disconnected at once and must pair again.`, 'Revoke')) { ctx.say(undefined); return true; }
             const n = host.revoke(id);
             ctx.say(n ? { ok: true, text: `"${name}" is revoked.` } : { ok: false, text: `"${name}" was not paired (or already revoked).` });
             return true;
@@ -98,7 +102,7 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
             const name = String(msg.name ?? id);
             const scope = String(msg.scope ?? '');
             if (!id) { ctx.say({ ok: false, text: 'No phone named.' }); return true; }
-            if (scope === 'admin' && !await confirm(
+            if (scope === 'admin' && !await confirm(ask, 
                 `Make "${name}" an admin? It can then change settings, accounts and agent files, and pair, revoke and re-scope phones.`,
                 'Make admin')) {
                 ctx.say(undefined); return true;
@@ -110,7 +114,7 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
             return true;
         }
         case 'remote-revoke-all': {
-            if (!await confirm('Revoke EVERY paired phone? Each is disconnected at once and must pair again.', 'Revoke all')) {
+            if (!await confirm(ask, 'Revoke EVERY paired phone? Each is disconnected at once and must pair again.', 'Revoke all')) {
                 ctx.say(undefined); return true;
             }
             const n = host.revoke();
@@ -122,6 +126,6 @@ export async function remoteCardMessage(msg: { type?: unknown;[k: string]: unkno
     }
 }
 
-async function confirm(text: string, yes: string): Promise<boolean> {
-    return (await vscode.window.showWarningMessage(text, { modal: true }, yes)) === yes;
+async function confirm(ask: PanelAsk, text: string, yes: string): Promise<boolean> {
+    return (await ask.warn(text, { modal: true }, yes)) === yes;
 }

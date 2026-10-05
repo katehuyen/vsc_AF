@@ -65,13 +65,15 @@
             'svc-tip');
     }
 
+    // X-456 — on a phone the reach is read, never changed: a new reach drops the phone's own connection
+    function PHONE() { return !!(window.__AFUI__ && window.__AFUI__.remote === true); }
     function modeRow(r) {
         const opt = m => `<option value="${m[0]}" title="${esc(m[2])}"${r.mode === m[0] ? ' selected' : ''}>${esc(m[1])}</option>`;
         const cur = MODES.find(m => m[0] === r.mode) || MODES[0];
         return `<div class="svc-row">
             <label class="svc-lbl">Reach</label>
             <div class="svc-val">
-                ${window.AFTip.wrap(`<select id="remote-mode">${MODES.map(opt).join('')}</select>`,
+                ${window.AFTip.wrap(`<select id="remote-mode"${PHONE() ? ' disabled' : ''}>${MODES.map(opt).join('')}</select>`,
             'Reach — ' + cur[1], cur[2] + '\n\n' + MODES.map(m => m[1] + ': ' + m[2]).join('\n\n'), 'svc-tip')}
                 <span class="muted small">port ${esc(r.port)}</span>
             </div>
@@ -231,6 +233,7 @@
             .rm-pairlink { font-family:var(--vscode-editor-font-family); font-size:10px; word-break:break-all;
                 user-select:all; padding:2px 4px; border-radius:3px;
                 background:var(--vscode-textCodeBlock-background); }
+            html.af-phone [data-remote="firewall-allow"], html.af-phone [data-remote="copy-link"] { display:none; }
         `;
     }
 

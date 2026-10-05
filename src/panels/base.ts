@@ -1010,7 +1010,7 @@ export async function telegramCardMessage(
     msg: { type?: unknown;[k: string]: unknown },
     ctx: {
         host?: TelegramBridgeHost;
-        webview: vscode.Webview;
+        webview: Pick<vscode.Webview, 'postMessage'>;
         /** How this page tells the user a value was refused. */
         warn(text: string): void;
         /** Redraw — the card never paints a value before the write lands. */

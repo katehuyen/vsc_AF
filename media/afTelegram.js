@@ -293,7 +293,13 @@
             .svc-fact { align-items: center; display: inline-flex; gap: 5px; opacity: .8; }
             .svc-fact b { font-weight: 600; opacity: 1; }
             .svc-y { color: var(--vscode-charts-green, #4caf50); }
-            .svc-n { color: var(--vscode-charts-orange, #d18616); }`;
+            .svc-n { color: var(--vscode-charts-orange, #d18616); }
+            html.af-phone .svc-row { flex-wrap: wrap; gap: 4px 10px; }
+            html.af-phone .svc-lbl { flex: 1 1 100%; padding-top: 0; }
+            html.af-phone .svc-val { min-width: 0; max-width: 100%; }
+            html.af-phone .svc-val select, html.af-phone .svc-val input { max-width: 100%; }
+            html.af-phone .svc-head { flex-wrap: wrap; }
+            html.af-phone [data-svc="connect"] { display: none; }`;
     }
 
     window.AFTelegram = {

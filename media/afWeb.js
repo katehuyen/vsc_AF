@@ -220,6 +220,7 @@
             .webqr-img svg { display:block; border-radius:4px; }
             .webqr-cap { text-align:center; max-width:190px; }
             .webqr-none { padding:10px 0; }
+            html.af-phone [data-web=copy] { display:none; }
         `;
     }
 

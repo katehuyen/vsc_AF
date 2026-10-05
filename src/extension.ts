@@ -31376,6 +31376,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             portfolio: host => PortfolioPanel.openOn(host, portfolioDeps),
             guide: (host, args) => GuidePanel.openOn(host, context.extensionUri, args),
             wiki: (host, args) => WikiPanel.openOn(host, wikiPageDeps(), typeof args?.focus === 'string' ? args.focus : undefined),
+            toolbox: host => ToolboxPanel.openOn(host, toolboxDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

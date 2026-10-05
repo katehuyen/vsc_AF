@@ -17,6 +17,7 @@ import { TelegramSnapshot } from '../core/telegramCockpit';
 import { handleAfNav, htmlShell, telegramCardData, telegramCardMessage } from './base';
 import { webCardData, webCardMessage, WebViewHost } from './toolboxWeb';
 import { remoteCard, remoteCardMessage, type RemoteDevicesHost } from './toolboxRemote';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /** ‼️ The snapshot's contract lives in the pure core now — Farm Settings draws
  *  the same card and would otherwise have to import it from a panel. Re-exported
@@ -219,39 +220,42 @@ export class ToolboxPanel {
 
     static show(deps: ToolboxPanelDeps): void {
         if (ToolboxPanel.current) {
-            ToolboxPanel.current.panel.reveal();
+            ToolboxPanel.current.host.reveal();
             ToolboxPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.toolbox',
-            'Agent Farm — Toolbox',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        ToolboxPanel.current = new ToolboxPanel(panel, deps);
+        ToolboxPanel.current = new ToolboxPanel(desktopHost({ viewType: 'agentfarm.toolbox', title: 'Agent Farm — Toolbox' }), deps);
+    }
+
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<ToolboxPanel>();
+
+    /** X-456 — the Toolbox on a phone's view. */
+    static openOn(host: PanelHost, deps: ToolboxPanelDeps): void {
+        ToolboxPanel.phones.add(new ToolboxPanel(host, deps));
     }
 
     static refreshIfOpen(): void {
         ToolboxPanel.current?.refresh();
+        for (const p of ToolboxPanel.phones) { p.refresh(); }
     }
 
     /** The ONE door to a tool. Every command that used to build one out of
      *  input boxes opens this instead. */
     static compose(deps: ToolboxPanelDeps, seed: ToolCompose): void {
         ToolboxPanel.show(deps);
-        void ToolboxPanel.current?.panel.webview.postMessage({ type: 'tool-compose', seed });
+        void ToolboxPanel.current?.host.webview.postMessage({ type: 'tool-compose', seed });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: ToolboxPanelDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Toolbox', buildData(deps), 'toolbox.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+    private constructor(private readonly host: PanelHost, private deps: ToolboxPanelDeps) {
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Toolbox', buildData(deps), 'toolbox.js');
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps, this.remotePair) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.remotePair) });
     }
 
     private agentById(id: string): AgentInfo | undefined {
@@ -264,7 +268,7 @@ export class ToolboxPanel {
     }
 
     private warn(text: string): void {
-        void vscode.window.showWarningMessage(`Agent Farm: ${text}`);
+        void this.host.ask.warn(`Agent Farm: ${text}`);
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
@@ -272,7 +276,7 @@ export class ToolboxPanel {
         // Settings handles them with. One card, one set of rules, two pages.
         if (await telegramCardMessage(msg, {
             ...(this.deps.telegram ? { host: this.deps.telegram } : {}),
-            webview: this.panel.webview,
+            webview: this.host.webview,
             warn: t => this.warn(t),
             refresh: () => this.refresh()
         })) { return; }
@@ -280,12 +284,14 @@ export class ToolboxPanel {
         // same reason: the card is a component, so its rules are too.
         if (await webCardMessage(msg, {
             ...(this.deps.web ? { host: this.deps.web } : {}),
-            say: m => this.webMsg(m)
+            say: m => this.webMsg(m),
+            ask: this.host.ask
         })) { return; }
         if (await remoteCardMessage(msg, {
             ...(this.deps.remote ? { host: this.deps.remote } : {}),
             setPair: p => { this.remotePair = p; },
-            say: m => this.remoteMsg(m)
+            say: m => this.remoteMsg(m),
+            ask: this.host.ask
         })) { return; }
         switch (msg.type) {
             case 'refresh':
@@ -335,7 +341,7 @@ export class ToolboxPanel {
             case 'mcp-def': {
                 const node = this.mcpNode(String(msg.agentId ?? ''), String(msg.name ?? ''));
                 const def = node ? readServerRawDef(node.server) ?? {} : {};
-                void this.panel.webview.postMessage({
+                void this.host.webview.postMessage({
                     type: 'mcp-def',
                     name: String(msg.name ?? ''),
                     def: {
@@ -353,7 +359,7 @@ export class ToolboxPanel {
                 const key = String(msg.key ?? '');
                 if (!key) { return; }
                 if (setPluginEnabled(key, msg.on === true, this.deps.home)) {
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         `Agent Farm: "${key}" ${msg.on ? 'enabled' : 'disabled'} in user settings.json — applies to new claude sessions.`);
                     this.changed();
                 } else { this.warn('could not update enabledPlugins in user settings.json.'); }
@@ -386,7 +392,7 @@ export class ToolboxPanel {
             // is the wrong shape for a status card, however good the merge is.
             case 'hooks-install': {
                 const scope = hookScope(msg.scope);
-                const yes = await vscode.window.showWarningMessage(
+                const yes = await this.host.ask.warn(
                     scope === 'user'
                         ? 'Merge Agent Farm\'s live hooks into your user settings.json? A one-time .agentfarm-bak copy is made beside it, and every other hook you have is kept.'
                         : `Merge Agent Farm's live hooks into the ${scope} settings file(s)? A one-time .agentfarm-bak copy is made beside each, and every other hook is kept.`,
@@ -400,7 +406,7 @@ export class ToolboxPanel {
             }
             case 'hooks-remove': {
                 const scope = hookScope(msg.scope, 'both');
-                const yes = await vscode.window.showWarningMessage(
+                const yes = await this.host.ask.warn(
                     'Take Agent Farm\'s hook entries back out? Every hook that is not ours is left exactly where it is — and until they are put back, the timeline, the live turn and the permission-wait notice all stop.',
                     { modal: true }, 'Remove');
                 if (yes !== 'Remove') { break; }
@@ -420,7 +426,7 @@ export class ToolboxPanel {
                     this.hooksMsg({ ok: false, text: holder?.detail ?? 'nothing to stop.' });
                     break;
                 }
-                const yes = await vscode.window.showWarningMessage(
+                const yes = await this.host.ask.warn(
                     `Stop ${holder.name || 'the process'} (pid ${holder.pid})? Anything it is doing ends immediately.`,
                     { modal: true }, 'Stop it');
                 if (yes !== 'Stop it') { break; }
@@ -437,7 +443,7 @@ export class ToolboxPanel {
     /** One answer line on the hooks card, then a redraw — the card never paints
      *  the result of a write before the write has happened. */
     private hooksMsg(m: { ok: boolean; text: string } | undefined): void {
-        if (m) { void this.panel.webview.postMessage({ type: 'hooks-said', ...m }); }
+        if (m) { void this.host.webview.postMessage({ type: 'hooks-said', ...m }); }
         this.refresh();
     }
 
@@ -446,13 +452,13 @@ export class ToolboxPanel {
 
     /** The same contract for the Agent Farm app card (X-444). */
     private remoteMsg(m: { ok: boolean; text: string } | undefined): void {
-        if (m) { void this.panel.webview.postMessage({ type: 'remote-said', ...m }); }
+        if (m) { void this.host.webview.postMessage({ type: 'remote-said', ...m }); }
         this.refresh();
     }
 
     /** The same contract for the web view card (U-85). */
     private webMsg(m: { ok: boolean; text: string } | undefined): void {
-        if (m) { void this.panel.webview.postMessage({ type: 'web-said', ...m }); }
+        if (m) { void this.host.webview.postMessage({ type: 'web-said', ...m }); }
         this.refresh();
     }
 
@@ -478,22 +484,25 @@ export class ToolboxPanel {
         if (scope === 'agent' && !agent) { return; }
         const cfg = resolveServerConfig(server, agent, this.deps.home);
         if (!cfg) { this.warn(`could not read the definition of "${server}" to connect.`); return; }
-        await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: `Toolbox: asking "${server}" for its tool list…` },
-            async () => {
-                const result = await probeMcpServer(cfg as McpServerConfig);
-                const cache = loadProbeCache(this.deps.cacheFile);
-                cache[probeCacheKey(agent ? 'agent' : 'user', agent?.id, server)] = result;
-                saveProbeCache(this.deps.cacheFile, cache);
-                if (!result.ok) { this.warn(`"${server}" probe failed — ${result.error}`); }
-            });
+        const run = async (): Promise<void> => {
+            const result = await probeMcpServer(cfg as McpServerConfig);
+            const cache = loadProbeCache(this.deps.cacheFile);
+            cache[probeCacheKey(agent ? 'agent' : 'user', agent?.id, server)] = result;
+            saveProbeCache(this.deps.cacheFile, cache);
+            if (!result.ok) { this.warn(`"${server}" probe failed — ${result.error}`); }
+        };
+        // a phone's probe shows no progress toast on the PC; the row redraws with the answer
+        if (this.host.remote) { await run(); } else {
+            await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: `Toolbox: asking "${server}" for its tool list…` }, run);
+        }
         this.refresh();
     }
 
     private async remove(item: ToolboxItem | undefined): Promise<void> {
         if (!item?.kind || !item.name) { return; }
         const where = item.scope === 'user' ? 'user scope (ALL agents)' : item.agentName ?? 'agent scope';
-        const ok = await vscode.window.showWarningMessage(
+        const ok = await this.host.ask.warn(
             `Remove ${item.kind} "${item.name}" from ${where}? A backup copy is kept next to it (.afbak).`,
             { modal: true }, 'Remove');
         if (ok !== 'Remove') { return; }
@@ -507,7 +516,7 @@ export class ToolboxPanel {
 
     /** A refusal the FORM shows, in the form. */
     private say(text: string, ok = false): void {
-        void this.panel.webview.postMessage({ type: 'tool-msg', text, ok });
+        void this.host.webview.postMessage({ type: 'tool-msg', text, ok });
     }
 
     /**
@@ -534,13 +543,14 @@ export class ToolboxPanel {
         this.say(res.note ?? 'Done.', true);
         // A scaffolded markdown file is empty on purpose — the next thing anybody
         // does with it is write the instructions, so it opens.
-        if (res.file && s('kind') !== 'mcp' && (s('mode') || 'new') === 'new') {
+        if (res.file && s('kind') !== 'mcp' && (s('mode') || 'new') === 'new' && !this.host.remote) {
             void vscode.window.showTextDocument(vscode.Uri.file(res.file));
         }
     }
 
     private dispose(): void {
-        ToolboxPanel.current = undefined;
+        ToolboxPanel.phones.delete(this);
+        if (ToolboxPanel.current === this) { ToolboxPanel.current = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

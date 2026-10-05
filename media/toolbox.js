@@ -589,9 +589,22 @@
         }
         return head +
             (newButtons(kind) ? `<p>${newButtons(kind)}</p>` : '') + form +
-            `<div class="card tablewrap"><table class="tb">
-            <tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(rowFn).join('')}</table></div>`;
+            `<div class="card tablewrap"><table class="tb" data-afcards>
+            <tr data-afcardhead>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${rows.map(x => cardRow(rowFn(x), cols)).join('')}</table></div>`;
     }
+
+    // X-456 — on a phone a tool row is a card (media/afMobile.js): its name leads, every figure wears its
+    // column's heading, an opened row runs the card's width. Only the row's own cells are marked.
+    function cardRow(html, cols) {
+        const end = html.indexOf('</tr>') + 5;
+        let k = -1;
+        const own = html.slice(0, end).replace(/<tr\b/, '<tr data-afcard').replace(/<td\b/g, () => {
+            k++;
+            return k === 0 ? '<td data-lead' : cols[k] ? `<td data-label="${cols[k]}"` : '<td';
+        });
+        return own + html.slice(end).replace(/<tr class="exprow">/g, '<tr class="exprow" data-afcardmore>');
+    }
+    const PLUGIN_COLS = ['Plugin', 'Category', 'Description', 'Author', ''];
 
     function skillTab() {
         return mdTable('skill', ['Skill', 'Scope', 'Description', 'Used (30d)', ''], x => {
@@ -695,13 +708,13 @@
                     <button class="mini ${d.enabled ? 'danger' : 'add'}" data-act="plugin" data-key="${esc(key)}" data-on="${d.enabled ? '' : '1'}">${d.enabled ? 'disable' : 'enable'}</button>
                     ${d.homepage ? `<button class="mini" data-act="home" data-url="${esc(d.homepage)}">homepage</button>` : ''}
                 </td></tr>`;
-        }).join('');
+        }).map(r => cardRow(r, PLUGIN_COLS)).join('');
         return searchBox(`filter ${totalPlugins} plugins…`) +
             filterBar('plugin', plugins.length, totalPlugins) +
             `<p class="muted small">Marketplaces: ${mkts || 'none'} — ${enabledCount} of ${totalPlugins} plugin(s) enabled.
              Enabling writes <code>enabledPlugins</code> in user settings.json; claude installs/loads it on the next session start.</p>` +
             (plugins.length
-                ? `<div class="card tablewrap"><table class="tb"><tr><th>Plugin</th><th>Category</th><th>Description</th><th>Author</th><th></th></tr>${rows}</table></div>`
+                ? `<div class="card tablewrap"><table class="tb" data-afcards><tr data-afcardhead>${PLUGIN_COLS.map(c => `<th>${c}</th>`).join('')}</tr>${rows}</table></div>`
                 : `<p class="muted">${totalPlugins
                     ? 'Nothing matches — narrow it less, or ✕ clear.'
                     : 'No marketplace catalog found.'} ${EXPLAIN.plugin}</p>`);
@@ -948,6 +961,14 @@
                 .tb-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 10px; }
                 .tb-filters .grow { flex: 1; }
                 .tb-filters select { font-size: 11px; }
+                html.af-phone .hkfile { flex-wrap: wrap; }
+                html.af-phone .hkpath { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
+                html.af-phone [data-act="open"], html.af-phone [data-act="reveal"], html.af-phone [data-act="home"] { display: none; }
+                html.af-phone .searchbar input { width: 100%; }
+                html.af-phone .tb td.nm, html.af-phone .tb td.act { white-space: normal; }
+                html.af-phone .tb td.desc { max-width: none; }
+                html.af-phone .tb tr[data-afcard] > td.act { flex: 1 1 100%; text-align: left; }
+                html.af-phone table.tb.inner { display: block; max-width: 100%; overflow-x: auto; }
                 .searchbar input { width: 280px; }            </style>
             ${window.AFHeader.html({
                 page: 'toolbox',
