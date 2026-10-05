@@ -295,6 +295,27 @@ ok('opening the menu is not a filter change', renders === before);
         ms.rightClick('p11') === false && last === 'untouched');
     ok('…and says nothing about a gesture it does not have',
         !/RIGHT-CLICK/.test(rendered));
+
+    // ‼️ K-46 — A PICKER THAT ASKS FOR IT STEPS THROUGH EVERY PRESET: everything →
+    // Dialog → Natural → everything; from anything else, the first preset.
+    const two = [{ id: 'dialog', label: 'Dialog', values: ['agent', 'user'] },
+        { id: 'natural', label: 'Natural', values: ['agent', 'user', 'system'] }];
+    const drawCycle = (selected, cycle) => {
+        rendered = AF.multi({ id: 'p12', label: 'show', options: ['user', 'agent', 'tool', 'system'], selected, presets: two, cycle });
+        AF.wireMulti({ id: 'p12', onChange: sel => { last = sel; } });
+    };
+    drawCycle(null, true);
+    ok('‼️ K-46: everything → the first preset', ms.rightClick('p12') && JSON.stringify(last) === '["user","agent"]');
+    drawCycle(['user', 'agent'], true);
+    ok('‼️ K-46: …the first preset → the second', ms.rightClick('p12') && JSON.stringify(last) === '["user","agent","system"]');
+    drawCycle(['user', 'agent', 'system'], true);
+    ok('‼️ K-46: …the last preset → back to everything', ms.rightClick('p12') && last === null);
+    drawCycle(['tool'], true);
+    ok('K-46: …any other combination → the first preset', ms.rightClick('p12') && JSON.stringify(last) === '["user","agent"]');
+    ok('‼️ K-46: the hover names the whole round', /RIGHT-CLICK steps from everything through Dialog → Natural and back to everything/.test(rendered));
+    drawCycle(['user', 'agent'], undefined);
+    ok('‼️ K-46: a picker with two presets that does not ask for it still flips between everything and its first',
+        ms.rightClick('p12') && last === null && /RIGHT-CLICK flips between everything and Dialog/.test(rendered));
 }
 
 // ------------------------------------------- U-92: a long menu finds ----

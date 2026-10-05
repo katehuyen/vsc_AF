@@ -437,7 +437,7 @@ const html = allHtml;
     ok('dialog is shown by default',
         html().includes('read the report') && html().includes('on it')
         && !html().includes('file body') && !html().includes('permission denied'));
-    ok('…and the filter says so', afms.label('c-kinds').indexOf('2/7') >= 0);
+    ok('…and the filter says so', afms.label('c-kinds').indexOf('3/7') >= 0);
 
     afms.open('c-kinds');
     afms.clear('c-kinds');
@@ -469,11 +469,17 @@ const html = allHtml;
     // ‼️ THE ONE SUBSET THIS LIST HAS A WORD FOR. Seven kinds of line exist and
     // the reading people keep coming back to is the conversation itself; it used
     // to cost Clear plus two ticks, every time.
-    ok('the show box offers Dialog as a named subset',
-        afms.presets('c-kinds').join(',') === 'dialog');
+    ok('the show box offers Dialog and Natural as named subsets, in that order',
+        afms.presets('c-kinds').join(',') === 'dialog,natural');
     afms.preset('c-kinds', 'dialog');
-    ok('…and it leaves exactly you and the agent showing',
-        savedKinds().slice().sort().join(',') === 'agent,user');
+    // K-46 — a question the agent asked and your answer are the conversation too
+    ok('‼️ …Dialog leaves you, the agent and its questions with your answers showing',
+        savedKinds().slice().sort().join(',') === 'agent,ask,user');
+    afms.preset('c-kinds', 'natural');
+    ok('‼️ …and Natural everything but the tool calls and their results',
+        savedKinds().slice().sort().join(',') === 'agent,ask,error,system,user');
+    ok('‼️ …and a right-click on show steps through all three, as its hover says',
+        /RIGHT-CLICK steps from everything through Dialog → Natural and back to everything/.test(html()));
 
     // …and the per-row version of the same idea: the NAME means "only this".
     afms.clickName('c-kinds', 'user');

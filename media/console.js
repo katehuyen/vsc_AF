@@ -93,6 +93,8 @@
      * state. A saved state from before that still carries the four is read
      * once and stripped below.
      */
+    /** K-46 — Dialog: you, the agent, its questions and your answers. */
+    const DIALOG_KINDS = ['agent', 'user', 'ask'];
     let st = Object.assign({
         draft: '', showResume: false,
         // files hung on the message being written — paths only, never payload;
@@ -100,7 +102,7 @@
         attach: [],
         /**
          * Which kinds of line the conversation shows; null = everything.
-         * Default is Dialog (['agent', 'user']).
+         * Default is Dialog (DIALOG_KINDS).
          *
          * ‼️ K-21 — THIS IS THE STARTING POINT, NOT THE SETTING. What `show` is
          * set to belongs to the CARD, not to the panel: two sessions side by
@@ -110,7 +112,7 @@
          * left on. `kindsBy` is each session's own answer; this is what a
          * session that has never been given one starts from.
          */
-        kinds: ['agent', 'user'],
+        kinds: DIALOG_KINDS.slice(),
         /** card id → that card's own `show`, once it has been set (K-21) */
         kindsBy: {},
         /**
@@ -161,7 +163,7 @@
     // card's. An earlier build seeded this from the last `show` anybody chose,
     // so one "everything" on one card put every later session on everything;
     // a stored `null` or a stale mark from that build is overwritten here.
-    st.kinds = ['agent', 'user'];
+    st.kinds = DIALOG_KINDS.slice();
     delete st.kindsSeeded;
     save();
 
@@ -4759,10 +4761,16 @@
                     // is the conversation itself — what was asked and what was
                     // answered, with the machinery in between out of the way.
                     // Reaching it meant Clear plus two ticks, every time.
+                    // K-46 — a question the agent asked and your answer to it are
+                    // the conversation too; Natural is everything but the tools.
                     presets: [{
-                        id: 'dialog', label: 'Dialog', values: ['agent', 'user'],
-                        title: 'Just the conversation — you and the agent. Tool calls, results, system lines and questions are hidden.'
+                        id: 'dialog', label: 'Dialog', values: DIALOG_KINDS,
+                        title: 'Just the conversation — you, the agent, its questions and your answers. Tool calls, results, errors and system lines are hidden.'
+                    }, {
+                        id: 'natural', label: 'Natural', values: ['agent', 'user', 'ask', 'error', 'system'],
+                        title: t('Everything except the tool calls and their results.')
                     }],
+                    cycle: true,
                     title: 'Which kinds of line the conversation shows. '
                         + 'This belongs to THIS session card — the next card keeps its own, '
                         + 'and every card starts on Dialog. What you set here is kept for this '

@@ -187,6 +187,7 @@
     /**
      * o: { id, label, options, selected, title, allLabel, disabled, width,
      *      presets: [{ id, label, title, values: [...] }],
+     *      cycle: true when a right-click steps through every preset (K-46),
      *      align: 'right' when the picker sits at the right edge of a header }
      * `id` must be unique on the page — it keys the button, the menu and the
      * survives-a-re-render open state.
@@ -210,7 +211,7 @@
         const opts = normOptions(o.options);
         const sel = o.selected === undefined ? null : o.selected;
         const presets = (o.presets || []).filter(p => p && p.id && Array.isArray(p.values));
-        defs[o.id] = { label: o.label, allLabel: o.allLabel, opts, presets };
+        defs[o.id] = { label: o.label, allLabel: o.allLabel, opts, presets, cycle: o.cycle === true && presets.length > 1 };
         const on = v => sel === null || sel.indexOf(v) >= 0;
         const items = opts.map(x =>
             `<span class="afms-item"${x.hint ? ` title="${esc(x.hint)}"` : ''}>` +
@@ -240,7 +241,10 @@
         // right-click nobody is told about is a right-click nobody uses, and
         // the sentence is only true where there IS a preset to flip to — so it
         // is built from the same list the listener reads, never typed twice.
-        const flipHint = presets.length
+        const flipHint = defs[o.id].cycle
+            ? '\n\n' + t('RIGHT-CLICK steps from everything through {presets} and back to everything, without opening this list. From any other selection, the first press lands on {preset}.',
+                { presets: presets.map(p => p.label || p.id).join(' → '), preset: presets[0].label || presets[0].id })
+            : presets.length
             ? '\n\n' + t('RIGHT-CLICK flips between everything and {preset} without opening this list. '
                 + 'From any other selection, the first press lands on {preset}.', { preset: presets[0].label || presets[0].id })
             : '';
@@ -405,9 +409,16 @@
                 // The preset is written against a VOCABULARY, not one render —
                 // a value it names that this list does not have is not missing,
                 // it is simply not here (same rule as the preset link above).
-                const want = preset1.values.filter(v => all.indexOf(v) >= 0);
+                const fit = p => p.values.filter(v => all.indexOf(v) >= 0);
+                const want = fit(preset1);
                 const now = read();
-                const to = (now.length !== all.length && same(now, want)) ? all : want;
+                let to = (now.length !== all.length && same(now, want)) ? all : want;
+                if (def.cycle) {
+                    // K-46 — everything, then each preset in its order, and round again
+                    const states = [all].concat(def.presets.map(fit));
+                    const at = states.findIndex(s => same(now, s));
+                    to = at < 0 ? states[1] : states[(at + 1) % states.length];
+                }
                 boxes().forEach(b => { b.checked = to.indexOf(b.dataset.afmsOpt) >= 0; });
                 emit(read());
             });

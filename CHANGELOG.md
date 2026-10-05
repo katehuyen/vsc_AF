@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.856.0 - The Console's Dialog keeps the questions, and Natural joins it (2026-10-06)
+
+- **Dialog now includes the agent's questions and your answers.** They are
+  part of the conversation; until now Dialog showed only you and the agent,
+  so a question and its answer vanished from it. A card nobody has filtered
+  starts on this Dialog.
+- **Natural** - a new named subset of the Console's show box: everything
+  except the tool calls and their results. It sits between Dialog and Clear
+  at the top of the list.
+- A right-click on show now steps from everything to Dialog, to Natural and
+  back to everything, without opening the list; from any other selection the
+  first press lands on Dialog. The other pages' show boxes keep their own
+  two-way flip.
+
 ## 3.855.0 - The Tasks page's links open their pages on the phone (2026-10-06)
 
 - On the phone, the Tasks page shows its **Analytics** button again and

@@ -70,7 +70,7 @@ const note = () => (r.sandbox.document.getElementById('c-hidden').innerHTML || '
 
 // ---------------------------------------------------------------- the default
 ok('a card nobody has filtered shows dialog', rows().join() === 'cs1-u,cs1-a');
-ok('…and the picker says so', r.ms.label('c-kinds') === 'show: 2/7');
+ok('…and the picker says so', r.ms.label('c-kinds') === 'show: 3/7');
 ok('…with hidden lines reported', /2 line\(s\) hidden/.test(note()));
 
 // ---------------------------------------------------------------- set one card
@@ -84,7 +84,7 @@ go('cs2');
 ok('‼️ K-21 — the OTHER card is untouched by it',
     rows().join() === 'cs2-u,cs2-a');
 ok('…and its picker describes itself, not the one you came from',
-    r.ms.label('c-kinds') === 'show: 2/7');
+    r.ms.label('c-kinds') === 'show: 3/7');
 ok('…and it reports hidden lines', /2 line\(s\) hidden/.test(note()));
 
 // A second, different reading on the second card.
@@ -109,7 +109,7 @@ ok('the panel survives a card being removed', rows().join() === 'cs2-t');
 go('cs1', ['cs1', 'cs2']);
 ok('‼️ K-21 — a card that came back is a new card, on the default again',
     rows().join() === 'cs1-u,cs1-a'
-    && r.ms.label('c-kinds') === 'show: 2/7');
+    && r.ms.label('c-kinds') === 'show: 3/7');
 ok('…and the card that never left kept its own', (() => {
     go('cs2', ['cs1', 'cs2']);
     return rows().join() === 'cs2-t';
@@ -147,7 +147,7 @@ const rowsOf = (p) => {
 
 const c0 = cold();
 ok('a cold panel the host remembers nothing for keeps the shipped default',
-    rowsOf(c0).join() === 'cs1-u,cs1-a' && c0.ms.label('c-kinds') === 'show: 2/7');
+    rowsOf(c0).join() === 'cs1-u,cs1-a' && c0.ms.label('c-kinds') === 'show: 3/7');
 
 // the host's memory is keyed by the CLI session id (`S-cs1` in this fixture)
 const c1 = cold({ kindsBy: { 'S-cs1': null } });
@@ -156,7 +156,7 @@ ok('‼️ K-38 — "everything" survives the panel being closed',
     && c1.ms.label('c-kinds') === 'show: everything');
 ok('‼️ K-40 — …on THAT card only: the next card starts on Dialog, not on everything', (() => {
     c1.send({ type: 'data', data: shell('cs2', ['cs1', 'cs2'], { kindsBy: { 'S-cs1': null } }) });
-    return rowsOf(c1).join() === 'cs2-u,cs2-a' && c1.ms.label('c-kinds') === 'show: 2/7';
+    return rowsOf(c1).join() === 'cs2-u,cs2-a' && c1.ms.label('c-kinds') === 'show: 3/7';
 })());
 
 const c2 = cold({ kindsBy: { 'S-cs1': ['tool'], 'S-cs2': null } });
@@ -179,7 +179,7 @@ const legacy = cold(undefined, { afConsole: { kinds: null, kindsSeeded: true, ki
 ok('‼️ K-40 — a stored panel-wide "everything" from the earlier build is not honoured',
     rowsOf(legacy).join() === 'cs1-u,cs1-a');
 ok('…and the page writes Dialog back, mark gone',
-    String(legacy.state().afConsole.kinds) === 'agent,user'
+    String(legacy.state().afConsole.kinds) === 'agent,user,ask'
     && !('kindsSeeded' in legacy.state().afConsole));
 
 // ‼️ K-40 — THE HOST SIDE OF THE SAME RULE, measured on the source: the record
