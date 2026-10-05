@@ -258,6 +258,8 @@
                 .tag { font-size:10px; border:1px solid currentColor; border-radius:8px; padding:0 6px; opacity:.8; }
                 .tag.on { color: var(--vscode-charts-green,#4caf50); }
                 .tag.off { color: var(--vscode-charts-orange,#d18616); }
+                html.af-phone [data-do="add-root"], html.af-phone [data-do="add-media"], html.af-phone [data-open-ui], html.af-phone [data-reveal] { display:none; }
+                html.af-phone [data-openconfig] { pointer-events:none; } html.af-phone .air-tools { grid-template-columns: 1fr; } html.af-phone .air-tool, html.af-phone .air-conn { flex-wrap: wrap; } html.af-phone .air-conn > a { min-width: 0; max-width: 100%; } html.af-phone .air-conn code { max-width: 100%; }
             </style>
             ${window.AFHeader.html({
                 page: 'airtable',

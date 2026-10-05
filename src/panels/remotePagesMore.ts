@@ -20,6 +20,7 @@ export interface MorePageMakers {
     studio(host: PanelHost): void;
     evals(host: PanelHost): void;
     capabilities(host: PanelHost): void;
+    airtable(host: PanelHost): void;
 }
 
 /**
@@ -173,6 +174,17 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'read', act: 'manage', looks: ['refresh'], answers: [],
             pcOnly: ['open', 'openTaskHistory', 'openGuide', 'afnav'],
             make: host => make.capabilities(host)
+        },
+        // X-456 — the Airtable Engine module. Opening it probes the live instances, which asks manage
+        // over the bridge (airtable.instances), so the page asks the same to look and to act: a
+        // folder's removal, a default, the MCP registration (its questions asked on the phone), a
+        // tools probe and an instance's start, as the airtable.* ops are. A folder is added with the
+        // PC's folder picker; the engine's own web panel, a folder, the config file, the guide's tab
+        // and another page belong to the PC.
+        airtable: {
+            open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
+            pcOnly: ['add-root', 'add-media', 'open-ui', 'reveal', 'open-config', 'openGuide', 'afnav'],
+            make: host => make.airtable(host)
         }
     };
 }

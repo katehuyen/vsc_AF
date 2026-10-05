@@ -21034,6 +21034,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * spend real money and end in a report document and a modal; the page asks
      * for them and draws everything they produce.
      */
+    const airtableDeps = {
+        extensionUri: context.extensionUri,
+        storageDir: airtableStorage,
+        extVersion,
+        cacheFile: toolboxProbeCacheFile,
+        afterStart: flushAfterStart
+    };
     const capabilitiesDeps = {
         extensionUri: context.extensionUri,
         getAgents: () => agents,
@@ -31373,6 +31380,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             studio: host => StudioPanel.openOn(host, studioDeps),
             evals: host => EvalsPanel.openOn(host, evalsDeps),
             capabilities: host => CapabilitiesPanel.openOn(host, capabilitiesDeps),
+            airtable: host => AirtablePanel.openOn(host, airtableDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
@@ -39443,13 +39451,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openAirtable', () => {
-            AirtablePanel.show({
-                extensionUri: context.extensionUri,
-                storageDir: airtableStorage,
-                extVersion,
-                cacheFile: toolboxProbeCacheFile,
-                afterStart: flushAfterStart
-            });
+            AirtablePanel.show(airtableDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openToolbox', () => {

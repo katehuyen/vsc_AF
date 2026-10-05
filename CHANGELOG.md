@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.850.0 - The Airtable Engine page opens on the phone (2026-10-06)
+
+- **The Airtable Engine, on the phone.** The module's control room - its
+  live instances, folders, defaults, the MCP registration and what agents
+  can do with it - opens in the Agent Farm phone app. It asks the same
+  level as its bridge operations - the one a phone pairs at by default - to
+  look and to act: a default, removing a folder, registering or
+  unregistering the MCP, probing its tools and starting an instance.
+- The unregister question is asked on the phone, and what a registration,
+  a start or a probe did is told there; a probe from the phone shows no
+  progress on the PC.
+- Adding a folder (the PC's folder picker), the engine's own web panel, a
+  folder and the config file stay on the PC and are not drawn on the phone;
+  there the tool list is one column and the connection rows wrap.
+
 ## 3.849.0 - The Capability Matrix opens on the phone (2026-10-06)
 
 - **The Capability Matrix, on the phone.** Who has which skill, MCP

@@ -8,6 +8,7 @@ import { loadProbeCache, probeMcpServer, saveProbeCache } from '../core/mcpProbe
 import { probeCacheKey, resolveServerConfig } from '../core/toolboxBridge';
 import { handleAfNav, htmlShell } from './base';
 import { revealPath } from '../core/reveal';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Airtable Engine page — the module's own control room (it outgrew being a
@@ -38,51 +39,54 @@ function buildData(deps: AirtablePanelDeps): Record<string, unknown> {
 
 export class AirtablePanel {
     private static current: AirtablePanel | undefined;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<AirtablePanel>();
     private disposables: vscode.Disposable[] = [];
 
     static show(deps: AirtablePanelDeps): void {
         if (AirtablePanel.current) {
-            AirtablePanel.current.panel.reveal();
+            AirtablePanel.current.host.reveal();
             AirtablePanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.airtable',
-            'Agent Farm — Airtable Engine',
-            vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        AirtablePanel.current = new AirtablePanel(panel, deps);
+        AirtablePanel.current = new AirtablePanel(
+            desktopHost({ viewType: 'agentfarm.airtable', title: 'Agent Farm — Airtable Engine' }), deps);
+    }
+
+    /** X-456 — the Airtable Engine page on a phone's view. */
+    static openOn(host: PanelHost, deps: AirtablePanelDeps): void {
+        AirtablePanel.phones.add(new AirtablePanel(host, deps));
     }
 
     static refreshIfOpen(): void {
         AirtablePanel.current?.refresh();
+        for (const p of AirtablePanel.phones) { p.refresh(); }
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: AirtablePanelDeps) {
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Airtable Engine', buildData(deps), 'airtablePage.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+    private constructor(readonly host: PanelHost, private deps: AirtablePanelDeps) {
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Airtable Engine', buildData(deps), 'airtablePage.js');
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         void this.probeInstances();
     }
 
     refresh(): void {
-        void this.panel.webview.postMessage({ type: 'data', data: buildData(this.deps) });
+        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps) });
         void this.probeInstances();
     }
 
     private async probeInstances(): Promise<void> {
         try {
             const rows = await probeAirtableInstances(this.deps.storageDir);
-            void this.panel.webview.postMessage({ type: 'instances', rows });
+            void this.host.webview.postMessage({ type: 'instances', rows });
         } catch (e) {
-            void this.panel.webview.postMessage({ type: 'instances', rows: [], error: String((e as Error).message ?? e) });
+            void this.host.webview.postMessage({ type: 'instances', rows: [], error: String((e as Error).message ?? e) });
         }
     }
 
     private fail(what: string, e: unknown): void {
-        void vscode.window.showErrorMessage(`Agent Farm — Airtable Engine: ${what} failed — ${(e as Error)?.message ?? e}`);
+        void this.host.ask.error(`Agent Farm — Airtable Engine: ${what} failed — ${(e as Error)?.message ?? e}`);
     }
 
     /** Store mutation with mandatory error surfacing. */
@@ -135,7 +139,7 @@ export class AirtablePanel {
                     if (!registerMcp(this.deps.storageDir, this.deps.home)) {
                         throw new Error('could not write ~/.claude.json');
                     }
-                    void vscode.window.showInformationMessage(
+                    void this.host.ask.info(
                         'Agent Farm: Airtable Engine MCP registered — every NEW claude session (any agent) '
                         + 'now sees the airtable_* tools. Running sessions pick it up on restart.');
                     this.refresh();
@@ -144,7 +148,7 @@ export class AirtablePanel {
                 }
                 break;
             case 'unregister': {
-                const sure = await vscode.window.showWarningMessage(
+                const sure = await this.host.ask.warn(
                     'Unregister the Airtable Engine MCP from ~/.claude.json? '
                     + 'New claude sessions will no longer see the airtable_* tools (folders and data are untouched).',
                     { modal: true }, 'Unregister');
@@ -167,7 +171,7 @@ export class AirtablePanel {
                 const r = await startNamedInstance(this.deps.storageDir, name);
                 if (r.ok) {
                     this.deps.afterStart?.(r.instance);
-                    void vscode.window.showInformationMessage(`Agent Farm — Airtable Engine: ${r.instance} ${r.alreadyRunning ? 'was already running' : `is running on port ${r.port} (${Math.round(r.ms / 100) / 10} s)`}.`);
+                    void this.host.ask.info(`Agent Farm — Airtable Engine: ${r.instance} ${r.alreadyRunning ? 'was already running' : `is running on port ${r.port} (${Math.round(r.ms / 100) / 10} s)`}.`);
                 } else {
                     this.fail(`starting ${name}`, new Error(r.error));
                 }
@@ -230,26 +234,31 @@ export class AirtablePanel {
     private async probeTools(): Promise<void> {
         const cfg = resolveServerConfig('airtable', undefined, this.deps.home);
         if (!cfg) {
-            void vscode.window.showWarningMessage(
+            void this.host.ask.warn(
                 'Agent Farm: the airtable MCP is not registered yet — register it first, then probe.');
             return;
         }
-        await vscode.window.withProgress(
+        const probe = async () => {
+            const result = await probeMcpServer(cfg);
+            const cache = loadProbeCache(this.deps.cacheFile);
+            cache[probeCacheKey('user', undefined, 'airtable')] = result;
+            saveProbeCache(this.deps.cacheFile, cache);
+            if (!result.ok) {
+                void this.host.ask.warn(`Agent Farm: probe failed — ${result.error}`);
+            }
+        };
+        // a phone's probe shows no progress toast on the PC; the page redraws with the answer
+        await (this.host.remote ? probe() : vscode.window.withProgress(
             { location: vscode.ProgressLocation.Notification, title: 'Airtable Engine: asking the MCP server for its tool list…' },
-            async () => {
-                const result = await probeMcpServer(cfg);
-                const cache = loadProbeCache(this.deps.cacheFile);
-                cache[probeCacheKey('user', undefined, 'airtable')] = result;
-                saveProbeCache(this.deps.cacheFile, cache);
-                if (!result.ok) {
-                    void vscode.window.showWarningMessage(`Agent Farm: probe failed — ${result.error}`);
-                }
-            });
+            probe));
         this.refresh();
     }
 
     private dispose(): void {
-        AirtablePanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (AirtablePanel.current === this) { AirtablePanel.current = undefined; }
+        AirtablePanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }
