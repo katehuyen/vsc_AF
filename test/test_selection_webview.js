@@ -10,6 +10,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 let posted = [];
 let lastHtml = '';
 let wired = {};
+let hostSays = () => undefined;
 
 function pickEls() {
     const out = [];
@@ -35,7 +36,8 @@ function run(data) {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m) }),
         window: {
             AFCharts: charts({ esc: s => String(s).replace(/</g, '&lt;'), fmtUSD: v => '$' + v }),
-            __DATA__: data
+            __DATA__: data,
+            addEventListener: (type, fn) => { if (type === 'message') { hostSays = m => fn({ data: m }); } }
         },
         document: {
             getElementById: (id) => id === 'app' ? appEl : idEl(id),
@@ -83,6 +85,19 @@ ok('confirm disabled after toggle off', confirmDisabled() === true);
 // cancel posts cancel
 idEl('cancel')._click();
 ok('cancel posts', posted.find(p => p.type === 'cancel'));
+
+// X-456 — the host's word: a refusal is shown and the picks stay; an answer from any door ends the page
+run(Object.assign(mk(3), { title: 'T', message: '', min: 1, max: 2 }));
+wired['.pick'][0]._click();
+hostSays({ type: 'refused', text: 'It asks at most 2.' });
+ok('a refusal is shown, the picks kept and the step still open', /It asks at most 2\./.test(lastHtml) && /1 selected/.test(lastHtml) && confirmDisabled() === false);
+hostSays({ type: 'answered' });
+ok('‼️ an answer from another door disables Use selected and Cancel and says so', confirmDisabled() === true
+    && /<button class="secondary" id="cancel" disabled>/.test(lastHtml) && /has been answered/.test(lastHtml));
+posted = [];
+wired['.pick'][1]._click();
+idEl('cancel')._click();
+ok('…and nothing more is picked or sent from it', posted.length === 0 && /1 selected/.test(lastHtml));
 
 // empty candidates → no crash, confirm disabled (min 1)
 run(Object.assign(mk(0), { title: 'T', message: '', min: 1, max: 0 }));

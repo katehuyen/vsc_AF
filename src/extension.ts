@@ -31399,6 +31399,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             airtable: host => AirtablePanel.openOn(host, airtableDeps),
             analytics: host => TaskAnalyticsPanel.openOn(host, analyticsDeps),
             memgraph: (host, args) => MemoryGraphPanel.openOn(host, memGraphDeps, typeof args?.agentId === 'string' ? args.agentId : undefined),
+            selection: (host, args) => SelectionPanel.openOn(host, context.extensionUri, selectionWaits, typeof args?.id === 'string' ? args.id : undefined),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

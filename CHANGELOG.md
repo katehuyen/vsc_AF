@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.854.0 - A workflow's selection step can be answered on the phone (2026-10-06)
+
+- **The selection step, on the phone.** When a workflow waits for you to
+  keep some of its candidate assets, the Agent Farm phone app can open that
+  picker - the one it names, or the one asked first - and keep or cancel
+  there, at the level the bridge's own answer asks. Its pictures and clips
+  reach the phone by addresses only that view holds.
+- A choice from the phone meets the step's own rule - how few, how many,
+  only its own candidates, none twice - and a refusal says why on the phone.
+- Leaving the picker on the phone cancels nothing; only its Cancel does.
+  When the step is answered somewhere else - the PC, the bridge or another
+  phone - the phone's picker says so and stops offering its buttons. On the
+  PC, closing the picker's tab still cancels the step, and the tab still
+  closes by itself when the step is answered elsewhere.
+
 ## 3.853.0 - The Memory Graph opens on the phone (2026-10-06)
 
 - **The Memory Graph, on the phone.** Every agent's memory as a graph, its

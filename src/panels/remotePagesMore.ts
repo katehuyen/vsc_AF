@@ -24,6 +24,8 @@ export interface MorePageMakers {
     analytics(host: PanelHost): void;
     /** `args.agentId` opens on that agent's memory, as the desktop's show does. */
     memgraph(host: PanelHost, args?: Record<string, unknown>): void;
+    /** `args.id` opens that open selection, none the one asked first; false when none is open. */
+    selection(host: PanelHost, args?: Record<string, unknown>): boolean;
 }
 
 /**
@@ -211,6 +213,15 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'manage', act: 'manage', looks: ['refresh'], answers: [],
             pcOnly: ['open', 'mem-distill', 'openGuide', 'afnav'],
             make: (host, args) => make.memgraph(host, args)
+        },
+        // X-456 — a workflow's select step: keep some of the candidate assets, or cancel the step. Both
+        // settle the same wait workflows.select settles, which asks manage over the bridge, so the page
+        // asks the same to look (its pictures and clips reach the phone by the view's own tokens) and to
+        // act. A phone's choice meets the step's own rule there; leaving the view cancels nothing, and
+        // an answer from another door is told on the phone.
+        selection: {
+            open: 'manage', act: 'manage', looks: [], answers: [], pcOnly: [],
+            make: (host, args) => make.selection(host, args)
         }
     };
 }

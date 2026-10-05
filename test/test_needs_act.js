@@ -58,9 +58,10 @@ const items = [approval, mission, question];
     ok('…which takes the typed text instead of the input box', /answer \?\? await workflowAsks\.pick\(q\)/.test(ext)
         && /answerMissionQuestion\(item\.ref\.missionRunId, answer\)/.test(ext));
     ok('workflows.select settles the same store the page does', /op: 'workflows\.select'[\s\S]{0,2000}selectionWaits\.settle\(s\.id, urls!\)/.test(ext)
-        && /waits\.settle\(req\.id, msg\.urls\)/.test(panel));
-    ok('‼️ the page closes when the bridge answered first, and closing it unanswered cancels', /answered\.then\(\(\) => \{ if \(open\) \{ panel\.dispose\(\); \} \}\)/.test(panel)
-        && /onDidDispose\(\(\) => \{ open = false; waits\.settle\(req\.id, null\); \}\)/.test(panel));
+        && /waits\.settle\(req\.id, urls\)/.test(panel));
+    ok('‼️ the page closes when the bridge answered first, and closing it unanswered cancels',
+        /answered\.then\(\(\) => \{\s*if \(!open\) \{ return; \}\s*if \(host\.remote\) \{ void host\.webview\.postMessage\(\{ type: 'answered' \}\); \} else \{ host\.dispose\(\); \}/.test(panel)
+        && /onDidDispose\(\(\) => \{ open = false; if \(!host\.remote\) \{ waits\.settle\(req\.id, null\); \} \}\)/.test(panel));
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

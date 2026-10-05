@@ -5,6 +5,16 @@
     const C = window.AFCharts;
     const DATA = window.__DATA__;
     const chosen = new Set();
+    /** U-189 — the interface language (media/afI18n.js). */
+    function tr(s) { return window.AFI18n ? window.AFI18n.t(s) : s; }
+    // X-456 — the host's word: why a choice was refused, or that the step was answered (a phone's view stays open)
+    let note = '';
+    let answered = false;
+    window.addEventListener('message', ev => {
+        const m = ev.data || {};
+        if (m.type === 'refused') { note = String(m.text || ''); render(); }
+        if (m.type === 'answered') { answered = true; note = tr('This step has been answered — nothing waits for a pick here any more.'); render(); }
+    });
 
     function meetsMin() { return chosen.size >= DATA.min; }
     function atMax() { return DATA.max > 0 && chosen.size >= DATA.max; }
@@ -29,7 +39,7 @@
     }
 
     function render() {
-        const canConfirm = meetsMin();
+        const canConfirm = meetsMin() && !answered;
         const rangeText = DATA.max > 0
             ? (DATA.min === DATA.max ? `pick exactly ${DATA.min}` : `pick ${DATA.min}–${DATA.max}`)
             : `pick at least ${DATA.min}`;
@@ -41,10 +51,11 @@
                 </div>
                 <div class="btnrow">
                     <button id="confirm" ${canConfirm ? '' : 'disabled'}>Use selected</button>
-                    <button class="secondary" id="cancel">Cancel</button>
+                    <button class="secondary" id="cancel"${answered ? ' disabled' : ''}>Cancel</button>
                     <span class="badge" style="${canConfirm ? 'color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)' : ''}">${chosen.size} selected</span>
                 </div>
             </div>
+            ${note ? `<div class="card"><p class="${answered ? 'muted' : 'err'}">${C.esc(note)}</p></div>` : ''}
             ${DATA.candidates.length
                 ? `<div class="grid">${DATA.candidates.map(card).join('')}</div>`
                 : '<div class="card"><p class="muted">No candidate assets were produced before this step.</p></div>'}
@@ -52,6 +63,7 @@
         `;
         document.querySelectorAll('.pick').forEach(el =>
             el.addEventListener('click', () => {
+                if (answered) { return; }
                 const c = DATA.candidates[Number(el.dataset.i)];
                 if (chosen.has(c.url)) { chosen.delete(c.url); }
                 else if (!atMax()) { chosen.add(c.url); }
@@ -59,7 +71,7 @@
             }));
         const confirm = document.getElementById('confirm');
         if (confirm) { confirm.addEventListener('click', () => { if (meetsMin()) { vscode.postMessage({ type: 'confirm', urls: [...chosen] }); } }); }
-        document.getElementById('cancel').addEventListener('click', () => vscode.postMessage({ type: 'cancel' }));
+        document.getElementById('cancel').addEventListener('click', () => { if (!answered) { vscode.postMessage({ type: 'cancel' }); } });
     }
 
     render();

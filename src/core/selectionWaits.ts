@@ -19,15 +19,22 @@ export interface OpenSelection extends SelectionAsk {
  * settle the same entry and the first answer wins.
  */
 export class SelectionWaits {
-    private readonly open = new Map<string, { sel: OpenSelection; resolve: (r: string[] | null) => void }>();
+    private readonly open = new Map<string, {
+        sel: OpenSelection; resolve: (r: string[] | null) => void; promise: Promise<string[] | null>;
+    }>();
     private seq = 0;
 
     add(ask: SelectionAsk, now = Date.now()): { id: string; promise: Promise<string[] | null> } {
         const id = `sel-${now.toString(36)}-${++this.seq}`;
-        const promise = new Promise<string[] | null>(resolve => {
-            this.open.set(id, { sel: { ...ask, id, askedAt: now }, resolve });
-        });
+        let resolve!: (r: string[] | null) => void;
+        const promise = new Promise<string[] | null>(r => { resolve = r; });
+        this.open.set(id, { sel: { ...ask, id, askedAt: now }, resolve, promise });
         return { id, promise };
+    }
+
+    /** X-456 — the answer an open selection waits for, to a door opened after it was asked (a phone's view). */
+    whenAnswered(id: string): Promise<string[] | null> | undefined {
+        return this.open.get(id)?.promise;
     }
 
     list(): OpenSelection[] {
