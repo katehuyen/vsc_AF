@@ -14,7 +14,14 @@ export interface MorePageMakers {
     /** `args.focus` opens one mark, as the desktop's focus does. */
     wiki(host: PanelHost, args?: Record<string, unknown>): void;
     toolbox(host: PanelHost): void;
+    sound(host: PanelHost): void;
 }
+
+/**
+ * X-456 — the sound controls' presses that open the PC's file picker (a new sound) or its folder,
+ * refused on every page whose host answers alert messages (src/panels/alertMessages.ts).
+ */
+export const SOUND_PC = ['alertVoiceAdd', 'alertFolder'];
 
 /**
  * X-456 — the sign-ins section and its rules, the same on the Engines and the Accounts page
@@ -92,6 +99,15 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             pcOnly: ['open', 'reveal', 'openExternal', 'skillScope', 'headerAction', 'svc-connect', 'remote-listen',
                 'remote-firewall-allow', 'remote-copy-link', 'web-copy', 'openGuide', 'afnav'],
             make: host => make.toolbox(host)
+        },
+        // X-456 — the alerts. Reading the page, the machine's voices (asked on opening) and a session's
+        // sound panel are looks; every switch, tone, voice, rename, removal, ▶ and rehearsal is manage,
+        // as the alerts.* ops are, and plays on the PC whose alerts they are. A new sound's file picker,
+        // the sounds folder and a channel's setting belong to the PC (another page opens as afnav).
+        sound: {
+            open: 'read', act: 'manage', looks: ['refresh', 'alertSpeakVoices', 'alertSessionOpen'], answers: [],
+            pcOnly: [...SOUND_PC, 'openSettings', 'afnav'],
+            make: host => make.sound(host)
         }
     };
 }

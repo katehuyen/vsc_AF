@@ -143,6 +143,8 @@
                 .sndchan.on { border-color:var(--vscode-testing-iconPassed, #3a3); }
                 .sndtone input[type=range] { width:180px; margin:0; }
                 .sndtoneval { min-width:3ch; text-align:right; font-variant-numeric:tabular-nums; opacity:.85; }
+                html.af-phone .alerttbl td.alerttone { flex:1 1 100%; }
+                html.af-phone #alertadd, html.af-phone #alertfolder { display:none; }
             </style>
             ${window.AFHeader.html({ page: 'sound', title: 'Sound', sub: 'What rings, on which event, and what is said' })}
             <div class="sndwrap">${al ? body(al) : '<p class="muted">The sound system is not available in this window.</p>'}</div>`;

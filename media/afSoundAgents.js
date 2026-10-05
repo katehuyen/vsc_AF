@@ -17,14 +17,14 @@
         const tip = `Plays: ${S().voiceName(al, t.voice)} — ${ORIGIN[t.origin] || t.origin}`
             + `\n\n${evName(t.event)} for every session of ${a.name}. A session's own choice still wins; `
             + `clearing this hands the answer back to the fleet's choice (${fleet}), never to silence.`;
-        return `<td><select data-sagvoice="${C.esc(a.name)}|${C.esc(t.event)}" title="${C.esc(tip)}">
+        return `<td data-label="${C.esc(evName(t.event))}"><select data-sagvoice="${C.esc(a.name)}|${C.esc(t.event)}" title="${C.esc(tip)}">
             ${C.option('', 'all\'s', { selected: !t.chosen, detail: `The fleet's choice answers: ${fleet}` })}${S().toneGroups(al, t.chosen)}</select></td>`;
     }
 
     function row(al, a) {
         const lines = (a.tones || []).map(t => `${evName(t.event)}: ${S().voiceName(al, t.voice)} — ${ORIGIN[t.origin] || t.origin}`);
         const own = (a.tones || []).filter(t => t.chosen).length;
-        return `<tr><td>${T().wrap(`<span class="ssname">${C.esc(a.name)}</span>`,
+        return `<tr data-afcard><td data-lead>${T().wrap(`<span class="ssname">${C.esc(a.name)}</span>`,
             `${a.name} — ${own ? `${own} tone${own === 1 ? '' : 's'} of its own` : 'like all'}`, T().lines(lines))}</td>
             ${(a.tones || []).map(t => cell(al, a, t)).join('')}</tr>`;
     }
@@ -42,7 +42,8 @@
             .sagtbl th:first-child { width:150px; }
             .sagtbl td:first-child { overflow:hidden; text-overflow:ellipsis; }
             .sagtbl select { width:100%; }
-        </style><table class="settbl sstbl sagtbl"><thead><tr>
+            html.af-phone .sagtbl td[data-label] { flex:1 1 100%; }
+        </style><table class="settbl sstbl sagtbl" data-afcards><thead><tr data-afcardhead>
             <th title="The agent — hover for what each event plays for its sessions and why">Agent</th>
             ${events.map(e => `<th title="${C.esc(((S().EVENT_TEXT || {})[e] || ['', ''])[1])}">${C.esc(evName(e))}</th>`).join('')}</tr></thead>
             <tbody>${rows.map(a => row(al, a)).join('')}</tbody></table>`;

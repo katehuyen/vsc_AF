@@ -37,7 +37,7 @@ const fx = require(path.join(__dirname, 'fixtures', 'sound.js'));
     const r = runPage('sound.js', fx.inUse());
     const html = (r.sandbox.document.getElementById('app') || {}).innerHTML || '';
     const at = s => html.indexOf(s);
-    ok('one row under the event table, before Voice', at('<table class="settbl alerttbl">') < at('class="sndchans"') && at('class="sndchans"') < at('>Voice</h3>'));
+    ok('one row under the event table, before Voice', at('<table class="settbl alerttbl" data-afcards>') < at('class="sndchans"') && at('class="sndchans"') < at('>Voice</h3>'));
     ok('a chip per channel with its state', /📱 Phone · on/.test(html) && /💬 Telegram · off/.test(html) && /🔗 Webhook · on/.test(html));
     ok('…on and off look different, not by colour alone (the word is on the chip)', /sndchan on"/.test(html) && /sndchan off"/.test(html));
     ok('‼️ MIRROR — each hover opens on the current state',
@@ -65,7 +65,9 @@ const fx = require(path.join(__dirname, 'fixtures', 'sound.js'));
         /msg\.type === 'openSettings'[\s\S]{0,200}Object\.values\(CHANNEL_KEYS\)\.find\(k => k === msg\.focus\)[\s\S]{0,120}agentfarm\.openFarmSettings/.test(panel));
     ok('…and redraws when any channel setting changes', /\.\.\.CHANNEL_WATCH/.test(panel) && /channels: this\.deps\.channels\?\.\(\) \?\? \[\]/.test(panel));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('the Sound page is handed the host\'s channel reader', /SoundPanel\.show\(\{[\s\S]{0,300}channels: soundChannels/.test(ext)
+    ok('the Sound page is handed the host\'s channel reader, on the desktop and on a phone',
+        /const soundPageDeps = \{[\s\S]{0,300}channels: soundChannels/.test(ext)
+        && /SoundPanel\.show\(soundPageDeps\)/.test(ext) && /SoundPanel\.openOn\(host, soundPageDeps\)/.test(ext)
         && /const soundChannels = \(\) => channelState\(/.test(ext));
 }
 

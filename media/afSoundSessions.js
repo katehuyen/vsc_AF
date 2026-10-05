@@ -42,14 +42,14 @@
         const sid = C.esc(r.sessionId);
         const own = (r.tones || []).filter(t => t.chosen);
         const ctx = window.AFSessionCtx ? window.AFSessionCtx.attr({ sessionId: r.sessionId, title: r.label }) : '';
-        return `<tr ${ctx}>
-            <td>${T().wrap(`<span class="ssname">${C.esc(r.label)}</span>`, `${r.label} — ${SOUND.find(s => s[0] === r.sound)[1]}`, rowTip(r, al))}</td>
+        return `<tr data-afcard ${ctx}>
+            <td data-lead>${T().wrap(`<span class="ssname">${C.esc(r.label)}</span>`, `${r.label} — ${SOUND.find(s => s[0] === r.sound)[1]}`, rowTip(r, al))}</td>
             <td class="muted">${C.esc(r.engine || '')}</td>
-            <td><select data-sssound="${sid}" title="Like all: whatever the fleet says · Always: rings even when the fleet switch is off · Silent: never a sound">
+            <td data-label="Sound"><select data-sssound="${sid}" title="Like all: whatever the fleet says · Always: rings even when the fleet switch is off · Silent: never a sound">
                 ${SOUND.map(([v, l]) => C.option(v, l, { selected: r.sound === v })).join('')}</select></td>
-            <td>${own.length ? own.map(t => `<span title="${C.esc(evName(t.event))}">${C.esc(S().voiceName(al, t.chosen))}</span>`).join(' · ') : '<span class="muted">all\'s</span>'}</td>
-            <td>${r.speechVoice ? C.esc(r.speechVoice) : '<span class="muted">all\'s</span>'}</td>
-            <td class="ssread"><input type="checkbox" data-ssread="${sid}" ${r.read ? 'checked' : ''} title="Read each finished answer of this session aloud">${r.reading
+            <td data-label="Tone">${own.length ? own.map(t => `<span title="${C.esc(evName(t.event))}">${C.esc(S().voiceName(al, t.chosen))}</span>`).join(' · ') : '<span class="muted">all\'s</span>'}</td>
+            <td data-label="Say who">${r.speechVoice ? C.esc(r.speechVoice) : '<span class="muted">all\'s</span>'}</td>
+            <td class="ssread" data-label="Read aloud"><input type="checkbox" data-ssread="${sid}" ${r.read ? 'checked' : ''} title="Read each finished answer of this session aloud">${r.reading
                 ? ' <button class="secondary small" data-ssreadstop title="Cut short the answer being read now">■</button>' : ''}</td>
             <td class="ssalso">${ALSO.map(([k, g, l, tip]) => alsoChip(sid, k, g, l, tip, !!(r.also || {})[k])).join('')}</td>
             <td><button class="secondary small" data-sspop="${sid}" title="Everything about this session's sound, with a test">⋯</button></td>
@@ -64,7 +64,7 @@
         const q = window.AFQuery.compile(filter);
         const rows = all.filter(r => (show === 'all' || differs(r)) && q.test(`${r.label} ${r.engine}`));
         if (!rows.length) { return `<p class="muted">No session matches${show === 'differs' ? ' among those that sound different' : ''}.</p>`; }
-        return `<table class="settbl sstbl"><thead><tr>
+        return `<table class="settbl sstbl" data-afcards><thead><tr data-afcardhead>
             <th title="The session — hover for which tone each event plays and why">Session</th><th>Engine</th>
             <th title="Like all · Always · Silent">Sound</th><th title="A tone of its own, for the events it chose one for">Tone</th>
             <th title="The voice that says who, when it has one of its own">Say who</th><th title="Reads each finished answer aloud">Read aloud</th>
@@ -91,6 +91,7 @@
             .ssalsob.on, .sstab.on { opacity:1; border-color:var(--vscode-focusBorder, #4448); }
             .sstab { opacity:.6; }
             .ssread input { margin:0; width:auto; }
+            html.af-phone .sstbl td { white-space:normal; overflow-wrap:anywhere; }
         </style>
         <div class="sshead">${tabBtn('sessions', 'Sessions', 'Every live session and how it sounds')}${tabBtn('agents', 'Agents', 'A tone for every session of one agent — above the fleet\'s choice, below a session\'s own')}
             <span class="muted small">${ag ? `${n} agent${n === 1 ? '' : 's'} · ${odd} with a tone of their own` : `${n} live · ${odd} sound${odd === 1 ? 's' : ''} different`}</span>

@@ -28529,6 +28529,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const soundNotify = () => notifyState(k => vscode.workspace.getConfiguration().get<boolean>(k) === true);
     const soundChannels = () => channelState(k => vscode.workspace.getConfiguration().get(k));
+    // U-178 — the Sound page's deps, the same for the desktop's tab and a phone's view (X-456).
+    const soundPageDeps = {
+        extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows,
+        agents: soundAgentRows, alertsSetAgentVoice, channels: soundChannels
+    };
 
     // ---------- DALGA 1: the Console's session host ----------
     // Long-lived claude processes this window owns, spoken to over the CLI's
@@ -31377,6 +31382,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             guide: (host, args) => GuidePanel.openOn(host, context.extensionUri, args),
             wiki: (host, args) => WikiPanel.openOn(host, wikiPageDeps(), typeof args?.focus === 'string' ? args.focus : undefined),
             toolbox: host => ToolboxPanel.openOn(host, toolboxDeps),
+            sound: host => SoundPanel.openOn(host, soundPageDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }
@@ -40999,10 +41005,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // U-178 — the Sound page: the same host acts the Settings summary is given.
         vscode.commands.registerCommand('agentfarm.openSound', () => {
-            SoundPanel.show({
-                extensionUri: context.extensionUri, ...soundDeps, notify: soundNotify, sessions: soundSessionRows,
-                agents: soundAgentRows, alertsSetAgentVoice, channels: soundChannels
-            });
+            SoundPanel.show(soundPageDeps);
         }),
         // U-185 — "Sound: Stop Reading", the same stop as `alerts.read stop` and the ■
         vscode.commands.registerCommand('agentfarm.stopReading', () => {

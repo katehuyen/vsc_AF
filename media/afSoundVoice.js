@@ -35,6 +35,10 @@
             border:1px solid var(--vscode-widget-border, #4444); white-space:nowrap; }
         .svreader.now { border-color:var(--vscode-focusBorder, #4448); }
         .svreader button { padding:0 5px; min-width:0; }
+        html.af-phone .svrow { grid-template-columns:minmax(0, 1fr); gap:2px; }
+        html.af-phone .svgap { margin-left:0; }
+        html.af-phone .svline #alertspeakvoice { flex:1 1 100%; min-width:0; max-width:100%; }
+        html.af-phone .svreader { white-space:normal; overflow-wrap:anywhere; }
     </style>`;
 
     /** The voice picker — the setting is always shown, even when no voice on this machine answers to it. */

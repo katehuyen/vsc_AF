@@ -48,7 +48,18 @@ export class SoundPanel {
             desktopHost({ viewType: 'agentfarm.sound', title: 'Agent Farm — Sound' }), deps);
     }
 
-    static refreshIfOpen(): void { SoundPanel.current?.refresh(); }
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<SoundPanel>();
+
+    /** X-456 — the Sound page on a phone's view. */
+    static openOn(host: PanelHost, deps: SoundDeps): void {
+        SoundPanel.phones.add(new SoundPanel(host, deps));
+    }
+
+    static refreshIfOpen(): void {
+        SoundPanel.current?.refresh();
+        for (const p of SoundPanel.phones) { p.refresh(); }
+    }
 
     private constructor(readonly host: PanelHost, private deps: SoundDeps) {
         host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Sound', this.data(), 'sound.js');
@@ -99,7 +110,10 @@ export class SoundPanel {
     }
 
     private dispose(): void {
+        // A phone's view closing leaves the desktop's tab alone.
         if (SoundPanel.current === this) { SoundPanel.current = undefined; }
+        SoundPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }

@@ -183,12 +183,12 @@
                     'A VS Code notification when a Console turn finishes and you are not watching that conversation — never the one on your screen, never a turn you interrupted. The notifyConsoleTurnEnd setting.' + differs)}</span>`
                 : box(row.event, '', 'Notification',
                     'A VS Code notification for this event — the same switch as the matching notify setting in Settings.' + differs);
-        return `<tr>
-            <td>${name}</td>
-            <td class="alertck">${ring}</td>
-            <td class="alerttone"><div class="alerttonebox">${alertVoiceSelect(al, row)}<button class="secondary small" data-alertplay="${C.esc(row.voice)}" ${row.playable ? '' : 'disabled'} title="Play it now — this is what this event sounds like">▶</button></div>${note}</td>
-            <td class="alertck">${say}</td>
-            <td class="alertck">${pop}</td>
+        return `<tr data-afcard>
+            <td data-lead>${name}</td>
+            <td class="alertck" data-label="Ring">${ring}</td>
+            <td class="alerttone" data-label="Tone"><div class="alerttonebox">${alertVoiceSelect(al, row)}<button class="secondary small" data-alertplay="${C.esc(row.voice)}" ${row.playable ? '' : 'disabled'} title="Play it now — this is what this event sounds like">▶</button></div>${note}</td>
+            <td class="alertck" data-label="Say who">${say}</td>
+            <td class="alertck" data-label="Notification">${pop}</td>
         </tr>`;
     }
 
@@ -196,8 +196,8 @@
     function alertEvents(al, notify) {
         const th = (label, tip) => `<th class="setth" title="${C.esc(tip)}">${label}</th>`;
         const isFleet = e => (al.fleetEvents || []).indexOf(e.event) >= 0;
-        return `<table class="settbl alerttbl">
-            <thead><tr>
+        return `<table class="settbl alerttbl" data-afcards>
+            <thead><tr data-afcardhead>
                 ${th('Event', 'What happened.')}
                 ${th('Ring', 'Play this event\'s tone on every session in the fleet.')}
                 ${th('Tone', 'Which sound. Leave it on Default and the built-in answer stands — Turn finished and Asking you deliberately differ, so the two can be told apart from another room. The hover says what would ACTUALLY play and which step chose it: this session > this agent > your choice here > the built-in default.')}
@@ -205,7 +205,7 @@
                 ${th('Notification', 'A VS Code notification for the same event — the notify settings, shown here too. Turn finished has two: every session, and a Console turn you are not watching. Session ended and Error have none.')}
             </tr></thead>
             <tbody>${(al.events || []).filter(e => !isFleet(e)).map(e => alertEventRow(al, e, notify)).join('')}
-                ${(al.events || []).some(isFleet) ? `<tr class="alertgrp"><td colspan="5" title="${C.esc(t('These happen across the farm, tied to no session: only the Ring switch here arms them, and a session\'s sound panel has no say.'))}">${C.esc(t('Across the farm'))}</td></tr>` : ''}
+                ${(al.events || []).some(isFleet) ? `<tr class="alertgrp" data-afcardmore><td colspan="5" title="${C.esc(t('These happen across the farm, tied to no session: only the Ring switch here arms them, and a session\'s sound panel has no say.'))}">${C.esc(t('Across the farm'))}</td></tr>` : ''}
                 ${(al.events || []).filter(isFleet).map(e => alertEventRow(al, e, notify)).join('')}</tbody>
         </table>`;
     }

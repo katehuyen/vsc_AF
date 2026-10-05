@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.844.0 - The Sound page opens on the phone (2026-10-05)
+
+- **The Sound page, on the phone.** The alerts page opens in the Agent Farm
+  phone app: what rings on which event, the tones, the voice that says who,
+  the reminder, the quiet hours and every live session's and agent's sound.
+  Reading it needs only a phone that may read; switching an alert, choosing
+  a tone or a voice, renaming or removing one of your own sounds, a ▶ and a
+  rehearsal need the usual level - the same rule the alerts bridge
+  operations follow. A ▶ and a rehearsal play on the PC, whose alerts these
+  are.
+- On the phone every event, live session and agent is a card with each
+  switch and tone under its own name, and the tone and voice pickers fit the
+  screen. Adding a new sound (the PC's file picker) and opening the sounds
+  folder stay on the PC and are not drawn on the phone; a channel chip's
+  setting opens on the PC.
+- The Console's and the Live Timeline's sound panels on the phone now refuse
+  the file picker and the sounds folder as well, so no message from a phone
+  can open either on the PC.
+
 ## 3.843.0 - The Toolbox opens on the phone (2026-10-05)
 
 - **The Toolbox, on the phone.** The Toolbox opens in the Agent Farm phone

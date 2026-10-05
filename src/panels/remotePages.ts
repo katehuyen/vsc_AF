@@ -1,6 +1,6 @@
 import type { PanelHost } from './panelHost';
 import type { RemotePage } from './remoteViews';
-import { morePages, type MorePageMakers } from './remotePagesMore';
+import { morePages, SOUND_PC, type MorePageMakers } from './remotePagesMore';
 
 /**
  * X-441 — WHICH PAGES A PHONE MAY OPEN, and what each lets a device do (the
@@ -75,7 +75,7 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             looks: ['refresh', 'getAccounts', 'slashCommands', 'select', 'loadOlder', 'resumeQuery', 'batonLegs'],
             answers: ['askAnswer', 'askHold', 'askPicks'],
             pcOnly: ['attachPick', 'attachUris', 'attachDrop', 'attachTooMany', 'attachNothing',
-                'openFile', 'openTranscript', 'openProject', 'openGuide', 'afnav'],
+                'openFile', 'openTranscript', 'openProject', 'openGuide', 'afnav', ...SOUND_PC],
             make: host => make.console(host)
         },
         // X-456 — opening a transcript, a terminal or the guide happens on the PC, so a phone never
@@ -223,13 +223,14 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
         // clearing a session, renaming it, its turn alerts, their test and its sound panel are manage
         // (the Console's sound panel is judged the same). End and Force kill ask a modal on the PC, the
         // hooks install a pick and a modal; they, a terminal, a folder, a workflow's live settings, the
-        // Dashboard's tab and the guide belong to the PC (a transcript reaches the phone as afnav).
+        // Dashboard's tab, the guide and the sound controls' file picker and folder (SOUND_PC, refused on
+    // the Console too) belong to the PC (a transcript reaches the phone as afnav).
         timeline: {
             open: 'read', act: 'manage',
             looks: ['refresh', 'history'],
             answers: [],
             pcOnly: ['openSession', 'focusTerminal', 'endSession', 'forceKillSession', 'installHooks', 'workflowLive',
-                'revealFolder', 'openDashboard', 'openGuide', 'afnav'],
+                'revealFolder', 'openDashboard', 'openGuide', 'afnav', ...SOUND_PC],
             make: host => make.timeline(host)
         },
         ...morePages(make)

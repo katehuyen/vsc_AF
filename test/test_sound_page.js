@@ -42,8 +42,8 @@ const byAttr = (p, attr, key) =>
     ok('A — the state line leads: what rings, whether the name is said',
         /Rings on 4 of 10 events/.test(html) && /Say who: on/.test(html) && at('class="sndhead"') < at('class="alertgate"'));
     ok('…then B (the event table), C (Voice), E (Library) — in that order',
-        at('class="alertgate"') < at('<table class="settbl alerttbl">')
-        && at('<table class="settbl alerttbl">') < at('class="svwrap"')
+        at('class="alertgate"') < at('<table class="settbl alerttbl" data-afcards>')
+        && at('<table class="settbl alerttbl" data-afcards>') < at('class="svwrap"')
         && at('class="svwrap"') < at('>Library'));
     ok('the table is Event | Ring | Tone | Say who | Notification, and the Plays column is gone',
         /Event<\/th>[\s\S]*Ring<\/th>[\s\S]*Tone<\/th>[\s\S]*Say who<\/th>[\s\S]*Notification<\/th>/.test(html)
@@ -455,7 +455,7 @@ const byAttr = (p, attr, key) =>
     ok('U-178 — the Voice section follows the gate and the event table: is anything heard'
         + ' at all, what happens on which event, then what is said',
         html.indexOf('class="svwrap"') > html.indexOf('id="alertmute"')
-        && html.indexOf('class="svwrap"') > html.indexOf('<table class="settbl alerttbl">'));
+        && html.indexOf('class="svwrap"') > html.indexOf('<table class="settbl alerttbl" data-afcards>'));
     ok('‼️ WHICH VOICE THE SETTING ACTUALLY REACHES is the selected row, not the'
         + ' fragment the user typed — "Tolga" is a legal setting and no voice is'
         + ' called that, so a box keyed on the raw value would read "System'
@@ -668,7 +668,7 @@ const byAttr = (p, attr, key) =>
         html.indexOf(LABEL(VOICES.DEFAULT_VOICE.question)) >= 0
         && (html.slice(html.indexOf('class="sndstart"'), html.indexOf('id="sndstart"'))
             .match(/data-alertplay=/g) || []).length === 2);
-    ok('…and the full table is still below it', html.indexOf('id="sndstart"') < html.indexOf('<table class="settbl alerttbl">'));
+    ok('…and the full table is still below it', html.indexOf('id="sndstart"') < html.indexOf('<table class="settbl alerttbl" data-afcards>'));
     const before = sent(p).length;
     byId(p, 'sndstart').dispatchEvent(new p.sandbox.Event('click'));
     const fired = sent(p).slice(before);
@@ -700,8 +700,8 @@ const byAttr = (p, attr, key) =>
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('agentfarm.openSound opens the page with the SAME host acts Settings is given',
-        /registerCommand\('agentfarm\.openSound'[\s\S]{0,200}SoundPanel\.show\(\{[^}]*\.\.\.soundDeps/.test(ext)
-        && /\.\.\.soundDeps,/.test(ext) && (ext.match(/const soundDeps: AlertMessageDeps = \{/g) || []).length === 1);
+        /registerCommand\('agentfarm\.openSound'[\s\S]{0,200}SoundPanel\.show\(soundPageDeps\)/.test(ext)
+        && /const soundPageDeps = \{[^}]*\.\.\.soundDeps,/.test(ext) && (ext.match(/const soundDeps: AlertMessageDeps = \{/g) || []).length === 1);
     ok('alerts.status answers the page\'s own model', /op: 'alerts\.status'[\s\S]{0,2000}handler: \(\) => \(\{ alerts: alertsPage\(\), notify: soundNotify\(\), sessions: soundSessionRows\(\), agents: soundAgentRows\(\), channels: soundChannels\(\) \}\)/.test(ext));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     ok('the command is contributed, titled from the vocabulary', pkg.contributes.commands

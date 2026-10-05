@@ -27,7 +27,7 @@ const html = () => (doc.getElementById('app') || {}).innerHTML || '';
 const at = s => html().indexOf(s);
 ok('‼️ Sessions comes after Voice and before the Library', at('>Read aloud<') < at('>Sessions<') && at('>Sessions<') < at('>Library'));
 ok('the table is Session · Engine · Sound · Tone · Say who · Read aloud · Also',
-    /<table class="settbl sstbl">/.test(html()) && ['>Session<', '>Engine<', '>Sound<', '>Tone<', '>Say who<', '>Read aloud<', '>Also<'].every(h => html().includes(h)));
+    /<table class="settbl sstbl" data-afcards>/.test(html()) && ['>Session<', '>Engine<', '>Sound<', '>Tone<', '>Say who<', '>Read aloud<', '>Also<'].every(h => html().includes(h)));
 const silent = d.sessions.find(x => x.sound === 'silent');
 const sel = doc.querySelectorAll('[data-sssound]').find(e => e.dataset.sssound === silent.sessionId);
 ok('‼️ Sound is ONE box of three, drawn as it stands (MIRROR)', !!sel && sel.value === 'silent'

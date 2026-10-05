@@ -30,7 +30,7 @@ const withReaders = (readers) => { const d = fx.inUse(); d.alerts.speak = { ...d
     const at = s => html.indexOf(s);
     ok('‼️ three rows, in the order they take effect: Say who · Sentence · Read aloud',
         at('>Say who<') > 0 && at('>Say who<') < at('>Sentence<') && at('>Sentence<') < at('>Read aloud<'));
-    ok('…after the event table, before the library', at('<table class="settbl alerttbl">') < at('>Say who<') && at('>Read aloud<') < at('>Library'));
+    ok('…after the event table, before the library', at('<table class="settbl alerttbl" data-afcards>') < at('>Say who<') && at('>Read aloud<') < at('>Library'));
     ok('‼️ Speed is a slider, −10 to 10, with its figure beside it',
         /<input type="range" id="alertspeakrate" min="-10" max="10"/.test(html) && /<span class="svval" id="alertspeakrateval">/.test(html));
     ok('‼️ Volume is a slider, 0 to 100', /<input type="range" id="alertspeakvol" min="0" max="100"/.test(html) && /<span class="svval" id="alertspeakvolval">/.test(html));
