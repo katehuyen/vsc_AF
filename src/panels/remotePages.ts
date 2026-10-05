@@ -90,7 +90,8 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             make: (host, args) => make.sessions(host, args)
         },
         // X-456 — making, running and switching work is manage; a permission is answered. What opens
-        // a file, an editor, a browser, another tab or a save dialog on the PC stays there.
+        // a file, an editor, a browser, another tab or a save dialog on the PC stays there; the links to
+        // the Analytics and the Needs pages open those pages on the phone instead (media/afRemote.js).
         tasks: {
             open: 'read', act: 'manage',
             looks: ['refresh', 'promptSnippets', 'runs-archive', 'chooser-pick'],

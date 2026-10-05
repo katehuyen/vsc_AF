@@ -550,7 +550,7 @@
                   is reachable from either tab; `openComposer` already moves the
                   tab under it, so pressing it from Plan lands on the form. */''}
             <button id="nt-open"${composer ? ' disabled' : ''} title="Make a task, with every dimension a session start offers — agent, model, effort, permissions, project, priority, folder. It can be turned into a schedule or a trigger while you are still writing it.">+ New task</button>
-            <button class="secondary" data-open="open-analytics"${ON_PHONE_HOST ? ' hidden' : ''} title="30-day throughput, agent scorecards, task families and the forecast — reading, not managing">📊 Analytics</button>
+            <button class="secondary" data-open="open-analytics" title="30-day throughput, agent scorecards, task families and the forecast — reading, not managing">📊 Analytics</button>
         </div>`;
     }
 

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.855.0 - The Tasks page's links open their pages on the phone (2026-10-06)
+
+- On the phone, the Tasks page shows its **Analytics** button again and
+  opens the Task Analytics there - until now the button was hidden on the
+  phone, and the phone's menu has no other way to the Analytics.
+- The Tasks page's "need you" count opens the Needs page on the phone; it
+  used to do nothing there.
+- The Analytics page's way back to Tasks, drawn when a phone is held
+  sideways, opens the Tasks page on the phone.
+
 ## 3.854.0 - A workflow's selection step can be answered on the phone (2026-10-06)
 
 - **The selection step, on the phone.** When a workflow waits for you to

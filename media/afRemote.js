@@ -47,6 +47,13 @@
         if (typeof m.anchor === 'string' && m.anchor) { args.anchor = m.anchor; }
         return { type: 'afnav', to: 'guide', args: args };
     }
+    // X-456 — a page's link to a page the phone has (the Tasks page's Analytics and its "need you",
+    // the Analytics page's way back to Tasks) opens that page on the phone
+    var LINKS = { 'open-analytics': 'analytics', 'open-needs': 'needs', 'open-tasks': 'tasks' };
+    function linkOf(m) {
+        return m && typeof m.type === 'string' && Object.prototype.hasOwnProperty.call(LINKS, m.type)
+            ? { type: 'afnav', to: LINKS[m.type] } : null;
+    }
     // A message posted while the user's own press is being handled carries afPress, so the farm
     // can say on the phone why it did nothing; one the page sends by itself never does. The farm
     // takes the mark off before the page's handler sees it.
@@ -69,7 +76,7 @@
         if (api) { return api; }
         api = {
             postMessage: function (m) {
-                var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || m;
+                var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || linkOf(m) || m;
                 if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },

@@ -206,12 +206,21 @@ const alive = setInterval(() => undefined, 1000);
     ok('nothing a phone sends opens a file, an editor, a browser or a tab on the PC', commands.length === 0 && did.length === 0);
     ok('…and no dialog was ever shown on the PC for a phone', pcSide.length === 0);
     const pageSrc = require('fs').readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8');
-    ok('the page drawn on a phone leaves out what only works at the PC (the command bar, ⬇ MD, Analytics, a run\'s output)',
+    ok('the page drawn on a phone leaves out what only works at the PC (the command bar, ⬇ MD, a run\'s output)',
         /ON_PHONE_HOST = !!\(window\.__AFUI__ && window\.__AFUI__\.remote === true\)/.test(pageSrc)
-        && /data-open="open-analytics"\$\{ON_PHONE_HOST \? ' hidden' : ''\}/.test(pageSrc)
         && /id="runs-export"\$\{ON_PHONE_HOST \? ' hidden' : ''\}/.test(pageSrc)
         && /<div class="cmdbar"\$\{ON_PHONE_HOST \? ' hidden' : ''\}>/.test(pageSrc)
         && /r\.hasOutput && !ON_PHONE_HOST/.test(pageSrc));
+    // X-456 — the Analytics and the Needs pages are the phone's too: their links open them there
+    ok('‼️ Analytics is drawn on a phone', /<button class="secondary" data-open="open-analytics" title=/.test(pageSrc));
+    const shellSaw = [];
+    const shellWin = { afShell: { post: s => shellSaw.push(JSON.parse(s)) }, sessionStorage: { getItem: () => null, setItem: () => undefined } };
+    shellWin.window = shellWin;
+    require('vm').runInNewContext(require('fs').readFileSync(path.join(ROOT, 'media', 'afRemote.js'), 'utf8'),
+        Object.assign(shellWin, { location: { pathname: '/view/tasks', search: '?view=t' } }));
+    for (const type of ['open-analytics', 'open-needs', 'open-tasks', 'open-history']) { shellWin.acquireVsCodeApi().postMessage({ type }); }
+    ok('‼️ …and on the phone Analytics, "need you" and the way back to Tasks open those pages there, a PC-only link still goes to the farm (refused)',
+        JSON.stringify(shellSaw) === JSON.stringify([{ type: 'afnav', to: 'analytics' }, { type: 'afnav', to: 'needs' }, { type: 'afnav', to: 'tasks' }, { type: 'open-history' }]));
 
     // ---- the desktop keeps its one tab
     TasksPanel.show(deps);
