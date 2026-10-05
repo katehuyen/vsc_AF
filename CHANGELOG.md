@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.852.0 - The board opens on the phone (2026-10-06)
+
+- **The board, on the phone.** Asking the Agent Farm phone app for the board
+  opens the Tasks page on its Run tab - the same thing the board is on the
+  PC - under the Tasks page's own rule: looking needs what the Tasks page
+  needs, and starting, stopping or editing a task asks what it asks there.
+  What the Tasks page leaves on the PC stays there on the board too.
+
 ## 3.851.0 - The Task Analytics open on the phone (2026-10-06)
 
 - **The Task Analytics, on the phone.** Thirty days of task throughput,
