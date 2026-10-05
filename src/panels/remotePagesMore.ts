@@ -18,6 +18,7 @@ export interface MorePageMakers {
     settings(host: PanelHost): void;
     living(host: PanelHost): void;
     studio(host: PanelHost): void;
+    evals(host: PanelHost): void;
 }
 
 /**
@@ -150,6 +151,17 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             open: 'manage', act: 'manage', looks: ['refresh', 'tab', 'project', 'libraryView'], answers: [],
             pcOnly: ['openAsset', 'openFile', 'generate', 'registerAsset', 'vary', 'feedback', 'openSettings', 'openGuide', 'afnav'],
             make: host => make.studio(host)
+        },
+        // X-456 — an agent's regression cases and its runs. The runs it shows ask manage over the
+        // bridge (evals.runs), as a new case and a delete do (evals.add, evals.delete), so the page
+        // asks the same to look and to act; switching the agent only changes what this view shows.
+        // A run is confirmed and told on the phone (evalsRun.ts). The A/B ends in the PC's report and
+        // may rewrite the agent's CLAUDE.md, so it stays on the PC with the file picker, the guide's
+        // tab and another page.
+        evals: {
+            open: 'manage', act: 'manage', looks: ['refresh', 'ev-agent'], answers: [],
+            pcOnly: ['ev-ab', 'af-browse', 'openGuide', 'afnav'],
+            make: host => make.evals(host)
         }
     };
 }

@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.848.0 - The Evals open on the phone (2026-10-06)
+
+- **The Evals, on the phone.** An agent's regression cases, its runs and
+  what changed between the last two open in the Agent Farm phone app. It
+  asks the same level as the runs it shows over the bridge - the one a
+  phone pairs at by default - to look, to add or delete a case and to run
+  the set; switching the agent only changes that phone's view.
+- **Run the set from the phone.** The question that says what a run
+  spends is asked on the phone, which is then told which case it is on and
+  what the run found. Nothing opens on the PC - no progress toast, no
+  report document; a run started on the PC works as before.
+- Deleting a case is asked on the phone. The A/B of an agent's
+  instructions stays on the PC: it ends in the PC's report and may rewrite
+  the agent's CLAUDE.md. On the phone the cases are cards.
+
 ## 3.847.0 - The Studio opens on the phone (2026-10-06)
 
 - **The Studio, on the phone.** The content production page - the

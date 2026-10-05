@@ -15,6 +15,7 @@
     let DATA = window.__DATA__;
 
     const post = (m) => vscode.postMessage(m);
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     let card = null;      // { kind: 'case' | 'ab', … }
     let msg = '';
@@ -177,7 +178,7 @@
         const byCase = new Map((DATA.verdicts || []).map(v => [v.caseId, v]));
         const cases = DATA.cases || [];
         if (!cases.length) {
-            return `<tr><td colspan="5" class="muted" style="padding:16px">
+            return `<tr data-afcard><td colspan="5" class="muted" style="padding:16px">
                 No cases yet. A case is normally born from a bad trace — a session you scored low, or a task whose
                 verification failed. Those are offered in the card the <b>+ New case</b> button opens.</td></tr>`;
         }
@@ -186,15 +187,15 @@
             const ch = v ? CHANGE[v.change] : null;
             const verdict = !v ? '<span class="muted">not run</span>'
                 : v.pass ? '<span class="ok">pass</span>' : '<span class="stop">FAIL</span>';
-            return `<tr ${window.AFCtx.row('afEvalCase', { evCase: c.id, evTitle: c.title, evInput: c.input })}
+            return `<tr data-afcard ${window.AFCtx.row('afEvalCase', { evCase: c.id, evTitle: c.title, evInput: c.input })}
                 title="${C.esc(window.AFCtx.hint(c.title))}">
-                <td class="main">${window.AFTip.wrap(
+                <td class="main" data-lead>${window.AFTip.wrap(
                     `<b>${C.esc(c.title)}</b>`,
                     `${C.esc(c.title)} · ${c.input.length} characters · from a ${C.esc(c.source)} trace`,
                     'INPUT\n' + c.input + '\n\nEXPECTATION\n' + c.expectation)}
                     <div class="muted small">${C.esc(c.expectation.slice(0, 120))}${c.expectation.length > 120 ? '…' : ''}</div></td>
-                <td class="small">${C.esc(c.source)}</td>
-                <td class="state">${verdict}</td>
+                <td class="small" data-label="${C.esc(t('From'))}">${C.esc(c.source)}</td>
+                <td class="state" data-label="${C.esc(t('Last run'))}">${verdict}</td>
                 <td class="small ${ch ? ch.cls : ''}">${ch && ch.icon ? ch.icon + ' ' + C.esc(ch.text) : ''}</td>
                 <td class="acts"><button class="mini secondary" data-del="${C.esc(c.id)}" title="Delete this case">✕</button></td>
             </tr>`;
@@ -245,6 +246,7 @@
                 td.state { width:1%; white-space:nowrap; }
                 td.main { min-width:22rem; }
                 button.mini { font-size:10px; padding:1px 6px; }
+                html.af-phone #abtest { display:none; } html.af-phone td.main .small { font-weight:400; }
             </style>
             ${window.AFHeader.html({
                 page: 'evals',
@@ -277,8 +279,8 @@
                     ${verdicts.filter(v => v.change === 'same').length} unchanged
                     ${verdicts.filter(v => v.change === 'new').length ? ` · ${verdicts.filter(v => v.change === 'new').length} new` : ''}
                 </div></div>` : ''}
-            <div class="tablewrap"><table class="grid">
-                <tr><th>Case</th><th>From</th><th>Last run</th><th>Change</th><th class="acts"></th></tr>
+            <div class="tablewrap"><table class="grid" data-afcards>
+                <tr data-afcardhead><th>Case</th><th>From</th><th>Last run</th><th>Change</th><th class="acts"></th></tr>
                 ${caseRows()}
             </table></div>
             <h2>Runs</h2>

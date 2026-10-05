@@ -85,7 +85,7 @@ import {
     DUTIES_FILENAME, Duty, moveDuty, readDuties, togglePauseDuty,
     updateDuty, watchStatus
 } from './core/duties';
-import { buildEvalReport, compareRuns, EvalCase, EvalStore, runEvalSet, summarizeRun } from './core/evals';
+import { EvalCase, EvalStore, runEvalSet } from './core/evals';
 import { buildInsights, Insight } from './core/health';
 import {
     ApprovalQueue, blockingCount, buildNeedsQueue, filterDismissedNeeds, isClearable, NeedItem, needKey
@@ -649,6 +649,7 @@ import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
 import { AccountsPanel } from './panels/accountsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
+import { type EvalRunEnv, type EvalRunOn, runEvalsFor } from './panels/evalsRun';
 import { registerTurnsOps } from './core/turns';
 import { deliverDocument, exportStamp } from './core/exportDoc';
 import { markdownTable, tableOfRecords } from './core/mdTable';
@@ -21033,6 +21034,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * spend real money and end in a report document and a modal; the page asks
      * for them and draws everything they produce.
      */
+    const evalRunEnv: EvalRunEnv = {
+        store: evalStore,
+        runArgs: () => cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001'),
+        runSet: (dir, runArgs, cases, log) => runEvalSet(dir, runArgs, judgeArgs(), cases, log),
+        newId
+    };
     const evalsDeps = {
         extensionUri: context.extensionUri,
         getAgents: () => agents,
@@ -21071,38 +21078,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         suggestions: (agentId: string) => suggestionStore.open()
             .filter(s => s.agentId === agentId)
             .map(s => ({ id: s.id, rule: s.rule })),
-        run: async (agentId: string) => {
+        run: (agentId: string, on: EvalRunOn) => {
             const agent = agents.find(a => a.id === agentId);
-            if (!agent) { return; }
-            const cases = evalStore.casesFor(agent.id);
-            if (!cases.length) { return; }
-            const runArgs = cfg().get<string>('evalRunArgs', '--model claude-haiku-4-5-20251001');
-            // ‼️ THE MODAL STAYS. One agent call and one judge call per case is
-            // real money, and a page-side notice can be missed while the focus
-            // is somewhere else.
-            const confirm = await vscode.window.showInformationMessage(
-                `Run ${cases.length} eval case(s) against ${agent.name}?\n\n`
-                + `Each case = one agent call (${runArgs || 'agent default model'}) + one cheap judge call.`,
-                { modal: true }, 'Run');
-            if (confirm !== 'Run') { return; }
-            const results = await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `Agent Farm: evals — ${agent.name}` },
-                (progress) => runEvalSet(agent.dir, runArgs, judgeArgs(), cases,
-                    m => progress.report({ message: m })));
-            const prev = evalStore.lastRun(agent.id);
-            const cmp = compareRuns(prev, results);
-            evalStore.addRun({
-                id: newId(), agentId: agent.id, agentName: agent.name, ts: Date.now(),
-                passed: results.filter(r => r.pass).length,
-                failed: results.filter(r => !r.pass).length,
-                results
-            });
-            const doc = await vscode.workspace.openTextDocument({
-                content: buildEvalReport(agent.name, results, cmp, prev), language: 'markdown'
-            });
-            await vscode.window.showTextDocument(doc, { preview: true });
-            void vscode.window.showInformationMessage(
-                `Agent Farm evals — ${agent.name}: ${summarizeRun(results, cmp)}`);
+            return agent ? runEvalsFor(agent, evalRunEnv, on) : Promise.resolve(undefined);
         },
         abTest: async (agentId: string, variant: { rule?: string; file?: string; prompts: string[] }) => {
             const agent = agents.find(a => a.id === agentId);
@@ -31386,6 +31364,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             settings: host => FarmSettingsPanel.openOn(host, farmSettingsDeps()),
             living: host => LivingPanel.openOn(host, livingDeps),
             studio: host => StudioPanel.openOn(host, studioDeps),
+            evals: host => EvalsPanel.openOn(host, evalsDeps),
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

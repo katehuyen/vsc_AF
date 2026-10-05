@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { EvalCase, EvalRun, EvalStore } from '../core/evals';
 import { handleAfNav, handleFormBrowse, htmlShell } from './base';
+import type { EvalRunOn } from './evalsRun';
+import { desktopHost, type PanelHost } from './panelHost';
 
 /**
  * Evals — the only surface in the sweep that had to be BUILT, not converted.
@@ -34,9 +36,8 @@ export interface EvalsDeps {
         id: string; label: string; detail: string; input: string;
         source: EvalCase['source'];
     }[];
-    /** Run the whole set for one agent. The confirmation and the report belong
-     *  to the host — this only asks for it. */
-    run(agentId: string): Promise<void>;
+    /** Run the whole set for one agent (evalsRun.ts) — the summary line, or undefined when nothing ran. */
+    run(agentId: string, on: EvalRunOn): Promise<string | undefined>;
     /** Start an A/B on the agent's CLAUDE.md. `rule` appends one line to the
      *  current file; `file` reads variant B whole from a path. */
     abTest(agentId: string, variant: { rule?: string; file?: string; prompts: string[] }): Promise<string | undefined>;
@@ -104,48 +105,54 @@ function buildData(deps: EvalsDeps, agentId: string): Record<string, unknown> {
 
 export class EvalsPanel {
     private static current: EvalsPanel | undefined;
+    /** X-456 — the views phones have open: one instance each, never the desktop's one tab. */
+    private static phones = new Set<EvalsPanel>();
     private disposables: vscode.Disposable[] = [];
     private agentId = '';
 
     static show(deps: EvalsDeps, agentId?: string): void {
         if (EvalsPanel.current) {
-            EvalsPanel.current.panel.reveal();
+            EvalsPanel.current.host.reveal();
             if (agentId) { EvalsPanel.current.agentId = agentId; }
             EvalsPanel.current.refresh();
             return;
         }
-        const panel = vscode.window.createWebviewPanel(
-            'agentfarm.evals', 'Agent Farm — Evals', vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true });
-        EvalsPanel.current = new EvalsPanel(panel, deps, agentId ?? '');
+        EvalsPanel.current = new EvalsPanel(
+            desktopHost({ viewType: 'agentfarm.evals', title: 'Agent Farm — Evals' }), deps, agentId ?? '');
+    }
+
+    /** X-456 — the Evals on a phone's view. */
+    static openOn(host: PanelHost, deps: EvalsDeps): void {
+        EvalsPanel.phones.add(new EvalsPanel(host, deps, ''));
     }
 
     static refreshIfOpen(): void {
         EvalsPanel.current?.refresh();
+        for (const p of EvalsPanel.phones) { p.refresh(); }
     }
 
     /** The ONE door to an eval act — the four palette commands land here. */
     static compose(deps: EvalsDeps, seed: Record<string, unknown>): void {
         EvalsPanel.show(deps, typeof seed.agentId === 'string' ? seed.agentId : undefined);
-        void EvalsPanel.current?.panel.webview.postMessage({ type: 'ev-compose', seed });
+        void EvalsPanel.current?.host.webview.postMessage({ type: 'ev-compose', seed });
     }
 
-    private constructor(readonly panel: vscode.WebviewPanel, private deps: EvalsDeps, agentId: string) {
+    private constructor(readonly host: PanelHost, private deps: EvalsDeps, agentId: string) {
         this.agentId = agentId;
-        panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Evals', buildData(deps, agentId), 'evals.js');
-        panel.onDidDispose(() => this.dispose(), null, this.disposables);
-        panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        host.webview.html = htmlShell(
+            host.webview, deps.extensionUri, 'Evals', buildData(deps, agentId), 'evals.js');
+        host.onDidDispose(() => this.dispose(), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
     }
 
     refresh(): void {
         const data = buildData(this.deps, this.agentId);
         this.agentId = String(data.agentId ?? '');
-        void this.panel.webview.postMessage({ type: 'data', data });
+        void this.host.webview.postMessage({ type: 'data', data });
     }
 
     private say(text: string, ok = false): void {
-        void this.panel.webview.postMessage({ type: 'ev-msg', text, ok });
+        void this.host.webview.postMessage({ type: 'ev-msg', text, ok });
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
@@ -156,7 +163,7 @@ export class EvalsPanel {
                 void vscode.commands.executeCommand('agentfarm.openGuide', 'degerlendirme');
                 break;
             case 'af-browse':
-                void handleFormBrowse(this.panel.webview, msg);
+                void handleFormBrowse(this.host.webview, msg);
                 break;
             case 'ev-agent':
                 this.agentId = String(msg.agentId ?? '');
@@ -168,10 +175,14 @@ export class EvalsPanel {
             case 'ev-case-delete':
                 await this.deleteCase(String(msg.id ?? ''));
                 break;
-            case 'ev-run':
-                await this.deps.run(this.agentId);
+            case 'ev-run': {
+                // a phone is told how far the run got and what it found; the PC keeps its toast and report
+                const said = await this.deps.run(this.agentId,
+                    { ask: this.host.ask, remote: this.host.remote, progress: m => this.say(m, true) });
                 this.refresh();
+                if (said && this.host.remote) { this.say(said, true); }
                 break;
+            }
             case 'ev-ab':
                 await this.ab((msg.form ?? {}) as Record<string, unknown>);
                 break;
@@ -203,7 +214,7 @@ export class EvalsPanel {
         const c = this.deps.store.cases.find(x => x.id === id);
         if (!c) { return; }
         // ‼️ A destructive act keeps its modal, deliberately.
-        const yes = await vscode.window.showWarningMessage(
+        const yes = await this.host.ask.warn(
             `Delete eval case "${c.title}"?`, { modal: true }, 'Delete');
         if (yes !== 'Delete') { return; }
         this.deps.store.deleteCase(id);
@@ -237,7 +248,10 @@ export class EvalsPanel {
     }
 
     private dispose(): void {
-        EvalsPanel.current = undefined;
+        // A phone's view closing leaves the desktop's tab alone.
+        if (EvalsPanel.current === this) { EvalsPanel.current = undefined; }
+        EvalsPanel.phones.delete(this);
         for (const d of this.disposables) { d.dispose(); }
+        this.disposables = [];
     }
 }
