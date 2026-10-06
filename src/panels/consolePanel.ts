@@ -43,6 +43,7 @@ import { afConfig } from '../core/settingsDoor';
 import { normalizeLegCeiling } from '../core/baton';
 import { ReopenSetup } from '../core/closingSetup';
 import { ReopenQuery } from '../launch/reopen';
+import { ComposerSetup, composerSetup, setupRoute } from '../launch/doors/composer';
 
 /**
  * ‼️ X-113 - WHAT A LIVE CARD'S CONTEXT READING IS A FRACTION OF.
@@ -829,11 +830,7 @@ export class ConsolePanel {
             agentId: s.agentId, pinAgent: true,
             projectId: s.projectId ?? '',
             engine: s.engine,
-            launch: {
-                model: s.model, effort: s.effort, permissionMode: s.permissionMode,
-                superpowers: s.superpowers, providerId: s.providerId, tier: s.tier,
-                account: s.account, prompt: found.prompt
-            }
+            launch: { ...composerSetup(s), prompt: found.prompt }
         });
         return found;
     }
@@ -845,16 +842,7 @@ export class ConsolePanel {
         engine?: string;
         /** ‼️ K-34 — the whole setup a launcher already settled, so the composer
          *  opens on it instead of a session being spawned with it. */
-        launch?: {
-            model?: string; effort?: string; permissionMode?: string;
-            prompt?: string; superpowers?: boolean;
-            /** X-103 — the route the calling door picked; carried to the start
-             *  because the composer has no control for it yet (X-105). */
-            providerId?: string; tier?: string;
-            /** X-169 — the sign-in the calling door resolved. Absent leaves the
-             *  engine's active account to answer at the spawn. */
-            account?: string;
-        };
+        launch?: ComposerSetup;
     }): void {
         const apply = (c: ConsolePanel): void => {
             if (opts?.sessionId) { c.selected = opts.sessionId; }
@@ -919,6 +907,9 @@ export class ConsolePanel {
                 c.composerPrompt = undefined;
                 // S-102 — the record's account is a rule or nothing; pruned like a pick
                 if (!opts.launch) { c.composerAccount = c.prunedAccount(last?.account); }
+                // ‼️ X-506 — and the route from the record its model is read from: a
+                // remembered model on a route, opened with no route, goes to the default endpoint.
+                if (!opts.launch) { c.composerRoute = c.prunedRoute(last ? setupRoute(last) : undefined); }
                 if (!opts.launch && (last || own.model || own.effort)) {
                     const pick = (...v: (string | undefined)[]) =>
                         v.map(x => (x ?? '').trim()).find(x => x) ?? '';
@@ -956,9 +947,7 @@ export class ConsolePanel {
                 // Claude route and then opened the panel on another engine used
                 // to leave the pick sitting in state where the new box could not
                 // show it and Send would still have used it.
-                c.composerRoute = c.prunedRoute((l.providerId ?? '').trim()
-                    ? { providerId: l.providerId, tier: l.tier }
-                    : undefined);
+                c.composerRoute = c.prunedRoute(setupRoute(l));
                 // ‼️ X-169 — and the sign-in, narrowed the same way: a door that
                 // resolved a Claude account and then opened the panel on Codex
                 // would leave a pick in state that no box can show and that Send
@@ -1816,7 +1805,8 @@ export class ConsolePanel {
         const keep = (this.composerIntent.model || this.composerIntent.effort)
             ? { model: this.composerIntent.model, effort: this.composerIntent.effort } : null;
         this.narrowComposer(keep, false);
-        this.composerRoute = this.prunedRoute(this.composerRoute);
+        // ‼️ X-506 — the route comes from the record the model above came from
+        this.composerRoute = this.prunedRoute(mem ? setupRoute(mem) : this.composerRoute);
         // S-102 — the rule remembered for the NEW engine first, as the model above
         this.composerAccount = this.prunedAccount(mem?.account) ?? this.prunedAccount(this.composerAccount);
     }

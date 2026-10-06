@@ -821,7 +821,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('‼️ a saved setup records the account it STATED, not the slot it resolved',
         /await rememberLaunch\(agent\.id, \{ \.\.\.o, account: statedAccount \}, 'terminal'\);/.test(extTs));
     ok('…and hands its rule to the composer, which resolves and commits it at Send',
-        /account: rule \?\? o\.account, prompt: o\.prompt/.test(extTs)
+        /launch: \{ \.\.\.composerSetup\(o\), account: rule \?\? o\.account \}/.test(extTs)
         && /\{ model: o\.model \|\| '', commit: surface === 'terminal' \}/.test(extTs));
 }
 

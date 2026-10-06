@@ -199,8 +199,10 @@ walk(path.join(ROOT, 'src'));
     ok('‼️ …including the pin, which is what was missing (X-267)', pin >= 0);
     ok('‼️ …and the rule resolver after it, or a rule picked in a Console box is refused (X-305 R2)',
         /launchAccountPick\(/.test(args[pin + 1] || ''));
-    ok('‼️ …and the auto-answer settings last, or the host treats the feature as OFF (K-43)',
-        /autoAnswerSettings\(/.test(args[pin + 2] || '') && pin + 2 === args.length - 1);
+    ok('‼️ …and the auto-answer settings after it, or the host treats the feature as OFF (K-43)',
+        /autoAnswerSettings\(/.test(args[pin + 2] || ''));
+    ok('‼️ …and the resume gate last, or a Console resume skips its route (X-506)',
+        /resumeRouteFor\(/.test(args[pin + 3] || '') && pin + 3 === args.length - 1);
 }
 
 // ------------- 4. …and the same mistake one slot over, on every page there is

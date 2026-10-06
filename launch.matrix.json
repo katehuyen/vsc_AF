@@ -1,6 +1,6 @@
 {
   "note": "X-150/X-151. Every launch dimension x every launch door, measured by CALLING each door with every dimension set and seeing what it hands on. Each cell is carried, exempt:<reason> or gap:<reason>. An exemption is declared in the door module itself, beside the code its reason is about - never here. gapBudget MAY ONLY BE LOWERED: raising it means a door stopped carrying something, which is the failure this counts. Reseed: node test/test_launch_matrix.js --fix",
-  "gapBudget": 31,
+  "gapBudget": 25,
   "wiredFloor": 5,
   "cells": {
     "treeRow": {
@@ -26,8 +26,8 @@
     "treeMenu": {
       "engine": "carried",
       "account": "carried",
-      "providerId": "gap: reaches this door and stops - nobody has said whether it should",
-      "tier": "gap: reaches this door and stops - nobody has said whether it should",
+      "providerId": "carried",
+      "tier": "carried",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
       "model": "carried",
       "effort": "carried",
@@ -126,8 +126,8 @@
     "projects": {
       "engine": "carried",
       "account": "carried",
-      "providerId": "gap: reaches this door and stops - nobody has said whether it should",
-      "tier": "gap: reaches this door and stops - nobody has said whether it should",
+      "providerId": "carried",
+      "tier": "carried",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
       "model": "carried",
       "effort": "carried",
@@ -146,8 +146,8 @@
     "webviews": {
       "engine": "carried",
       "account": "carried",
-      "providerId": "gap: reaches this door and stops - nobody has said whether it should",
-      "tier": "gap: reaches this door and stops - nobody has said whether it should",
+      "providerId": "carried",
+      "tier": "carried",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
       "model": "carried",
       "effort": "carried",

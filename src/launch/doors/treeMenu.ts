@@ -18,15 +18,16 @@ export const treeMenuDoor: LaunchDoor = {
     },
     /**
      * MEASURED, AND IT IS NOT A PASS-THROUGH. agentfarm.consoleForAgent seeds
-     * with the whole remembered setup and then forwards FIVE NAMED FIELDS into
-     * ConsolePanel.show. Everything else stops here - which is exactly the shape
-     * X-103 and X-105 were filed against, written out rather than smoothed over
-     * so the matrix can count it.
+     * with the whole remembered setup and forwards the fields below into
+     * ConsolePanel.show. Everything else stops here, written out rather than
+     * smoothed over so the matrix can count it. ‼️ X-506 - the route is among
+     * them: a remembered model opened without the route it ran on is sent to
+     * the default endpoint.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
         const o = ctx.seed(ctx.agentId ?? '');
         return withAccount(ctx, {
-            ...pick(o, ['engine', 'model', 'effort', 'permissionMode', 'superpowers']),
+            ...pick(o, ['engine', 'model', 'effort', 'permissionMode', 'superpowers', 'providerId', 'tier']),
             ...pick((ctx.picked ?? {}) as never, ['cli'])
         });
     }

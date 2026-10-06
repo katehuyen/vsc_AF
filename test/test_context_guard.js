@@ -523,8 +523,10 @@ console.log('\n== continuing from a handover — the note is seen at the write, 
         /case 'continueFromHandover':/.test(panel) && /ConsolePanel\.continueFromHandover\(this\.deps, str\('id'\)\)/.test(panel));
     ok('‼️ the door opens the COMPOSER on the card\'s agent with the card\'s whole setup — never a spawn',
         /ConsolePanel\.show\(deps, \{/.test(door) && /pinAgent: true/.test(door)
-        && ['model', 'effort', 'permissionMode', 'superpowers', 'providerId', 'tier', 'account'].every(k => new RegExp(k + ': s\\.' + k).test(door))
-        && /prompt: found\.prompt/.test(door) && !/host\.start\(/.test(door));
+        && /launch: \{ \.\.\.composerSetup\(s\), prompt: found\.prompt \}/.test(door)
+        && ['model', 'effort', 'permissionMode', 'superpowers', 'providerId', 'tier', 'account']
+            .every(k => require(path.join(ROOT, 'out', 'launch', 'doors', 'composer.js')).COMPOSER_SETUP_KEYS.includes(k))
+        && !/host\.start\(/.test(door));
     ok('…asking the host for the note only on the click', /deps\.handoverContinue\(s\.sessionId, s\.projectId\)/.test(door));
     ok('a card with no session id has nothing to continue from', /if \(!s\?\.sessionId\) \{ return undefined; \}/.test(door));
 

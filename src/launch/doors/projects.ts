@@ -20,13 +20,13 @@ export const projectsDoor: LaunchDoor = {
      * A DOOR IS ONLY AS GOOD AS ITS WEAKEST ARM, AND THIS ONE HAS TWO.
      *
      * The terminal arm hands the whole seeded setup to the spawner. The CONSOLE
-     * arm names four fields into ConsolePanel.show plus the engine - so
-     * providerId, tier and variant reach this door and stop. The weaker arm is
-     * what is modelled, because a dimension that survives one route and not the
-     * other is not carried.
+     * arm is this answer, handed to ConsolePanel.show - so variant reaches this
+     * door and stops. The weaker arm is what is modelled, because a dimension
+     * that survives one route and not the other is not carried. ‼️ X-506 - the
+     * route travels with the remembered model it was chosen with.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
         return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? ''),
-            ['engine', 'model', 'effort', 'permissionMode', 'superpowers']));
+            ['engine', 'model', 'effort', 'permissionMode', 'superpowers', 'providerId', 'tier']));
     }
 };

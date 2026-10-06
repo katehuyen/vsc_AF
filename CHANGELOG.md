@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.857.0 - A session keeps its provider route whichever door opens it (2026-10-06)
+
+- **A saved launch profile on a provider route opens the Console on that
+  route.** The composer used to open with the profile's model and no route
+  under it, so the first message went to the default endpoint and failed,
+  and the card wore no provider badge.
+- **Resume in the Console's session list continues a conversation on the
+  route it ran on**, as a card's own Resume already did - with its badge.
+  When that route can no longer be used, the card says why and nothing is
+  started.
+- Agent Farm now keeps which launch started which session after the card is
+  closed and after a window reload, so a resume can still find the route.
+  Sessions started before this version cannot be matched to their launch;
+  they resume with no route, as before.
+- **Talk to agent** (the agents tree and the agent pages), a project's Start
+  session and the agents tree's Start session open the composer on the route
+  that goes with the model they open on - remembered, or set for the agent.
+  Switching the engine in the composer takes the route remembered for the
+  new engine together with its model.
+
 ## 3.856.0 - The Console's Dialog keeps the questions, and Natural joins it (2026-10-06)
 
 - **Dialog now includes the agent's questions and your answers.** They are

@@ -56,6 +56,7 @@ import {
 import { isPolicyId, MACHINE_ACCOUNT_ID } from './accountPolicy';
 import { SetupChoice, confirmedChoice } from './liveChoice';
 import { StopFrom, stopWords } from './stopSource';
+import { ResumeRouteAsk, gateResumeRoute } from './consoleResumeRoute';
 
 /**
  * What a path IS, as far as attaching goes.
@@ -624,7 +625,9 @@ export class ConsoleHost {
          * K-43 — the auto-answer settings as they are now. Absent = OFF: a host
          * nobody configured (every test) must never answer a question on its own.
          */
-        private autoAnswerConfig?: () => AutoAnswerSettings
+        private autoAnswerConfig?: () => AutoAnswerSettings,
+        /** X-506 — the X-109 gate, asked here for every resume that named no route. */
+        private resumeRoute?: ResumeRouteAsk
     ) {}
 
     /** K-43 — the countdown on a parked question, one timer per card. */
@@ -926,6 +929,21 @@ export class ConsoleHost {
         id: string, init: HostedSessionInit, projectId: string | undefined,
         prior: ConsoleMessage[], permission: EffectivePermission
     ): string {
+        const blocked = permission.blocked;
+        const text = `This session was not started. It asked for ${BYPASS}`
+            + `${permission.requested ? '' : ' (Default resolves to it through ' + permission.settingsFile + ')'}`
+            + `, and that cannot be enforced here: ${blocked?.why} — ${blocked?.file}.`
+            + ' Agent Farm will not run a session labelled bypass that would then stop and ask you for'
+            + ' permission. Change that policy, or start this session in a mode you actually want.';
+        return this.refuseStart(id, init, projectId, prior, text, 'bypass was requested and could not be enforced',
+            { enforcedPermissionMode: '', permissionWhy: permission.why });
+    }
+
+    /** A card that says, in error, why it was not started — nothing is spawned. */
+    private refuseStart(
+        id: string, init: HostedSessionInit, projectId: string | undefined,
+        prior: ConsoleMessage[], text: string, exitReason: string, extra: Partial<ConsoleSessionState> = {}
+    ): string {
         const now = Date.now();
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
@@ -935,20 +953,11 @@ export class ConsoleHost {
             now, sessionId: init.resume, projectId, resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
-        const blocked = permission.blocked;
-        const text = `This session was not started. It asked for ${BYPASS}`
-            + `${permission.requested ? '' : ' (Default resolves to it through ' + permission.settingsFile + ')'}`
-            + `, and that cannot be enforced here: ${blocked?.why} — ${blocked?.file}.`
-            + ' Agent Farm will not run a session labelled bypass that would then stop and ask you for'
-            + ' permission. Change that policy, or start this session in a mode you actually want.';
         this.sessions.set(id, {
             state: {
                 ...base,
                 messages: [...prior, { id: `perm-${now.toString(36)}`, ts: now, role: 'error', text }],
-                status: 'error',
-                exitReason: 'bypass was requested and could not be enforced',
-                enforcedPermissionMode: '',
-                permissionWhy: permission.why
+                status: 'error', exitReason, ...extra
             },
             engine: engineOf(init.engine), buffer: '', reqSeq: 0
         });
@@ -978,6 +987,10 @@ export class ConsoleHost {
         // record of it, a line before the new one takes the same seat.
         if (seat) { this.sessions.delete(seat.id); }
         const projectId = init.projectId ?? this.activeProjectId();
+        // ‼️ X-506 — the route a resume runs on is its own conversation's, on every door.
+        const gated = gateResumeRoute(init, this.resumeRoute);
+        if (gated.refuse) { return this.refuseStart(id, init, projectId, prior, gated.refuse, 'the route it ran on cannot be resumed'); }
+        init = gated.init;
         // An explicit answer from the caller always wins — including `false`, or
         // switching the discipline OFF on a resume would be impossible.
         const superpowers = init.superpowers ?? seatSuperpowers;

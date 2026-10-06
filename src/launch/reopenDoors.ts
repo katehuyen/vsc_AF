@@ -104,7 +104,8 @@ export const NOT_REOPENS: readonly { file: string; anchor: string; why: string }
 export const REOPEN_DIMENSIONS: Readonly<Record<string, string>> = {
     engine: 'the session\'s own: a conversation belongs to its transcript\'s engine',
     account: 'closing: explicit → the card\'s record → the launch; a baton leg: S-106; a task: its own policy',
-    providerId: 'the X-109 gate pins the conversation\'s own route',
+    providerId: 'the X-109 gate pins the conversation\'s own route, asked at the spawn of every Console '
+        + 'resume (ConsoleHost.start, X-506) and every terminal one (startClaudeSession)',
     tier: 'rides with providerId through the gate',
     variant: 'not carried back: the engine\'s own default',
     model: 'closing: explicit → newest of card record and transcript → launch → agent → fleet',

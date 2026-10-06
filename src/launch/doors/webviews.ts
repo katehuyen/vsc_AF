@@ -15,9 +15,9 @@ export const webviewsDoor: LaunchDoor = {
         continueLast: 'the buttons open a composer for a new session; the pages list the '
             + 'existing ones separately, which is where continuing belongs.'
     },
-    /** Measured: seeds with the whole remembered setup, forwards five named fields. */
+    /** Measured: the buttons run agentfarm.consoleForAgent, so this is the tree menu's list (X-506: the route on it). */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
         return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? ''),
-            ['engine', 'model', 'effort', 'permissionMode', 'superpowers']));
+            ['engine', 'model', 'effort', 'permissionMode', 'superpowers', 'providerId', 'tier']));
     }
 };

@@ -217,6 +217,7 @@ import { projectsDoor } from './launch/doors/projects';
 import { paletteDoor } from './launch/doors/palette';
 import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
+import { composerSetup } from './launch/doors/composer';
 import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, publicProfile, secretKeyFor } from './core/providerOwnership';
 import { ProviderKeys } from './core/providerKeys';
 import { keyHint, keyPickItems, routeKeyFor } from './core/routeKey';
@@ -237,6 +238,7 @@ import { scrubSecrets, secretValuesOf } from './core/secretScrub';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
+import { SpawnPair, keepSpawnPairs } from './core/spawnIds';
 import {
     LaunchManifest, LaunchMechanism, ManifestInput, manifestFor, manifestIndex, manifestLeaks,
     manifestOf, newLaunchId, rememberManifest
@@ -25775,6 +25777,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * it into the automation lane on every surface that filters by origin.
      * `setSpawnIds` writes one field and touches nothing else.
      */
+    const SPAWN_PAIRS_KEY = 'agentfarm.spawnPairs';
+    let spawnPairs = context.globalState.get<SpawnPair[]>(SPAWN_PAIRS_KEY, []) ?? [];
     const publishSpawnIds = (): void => {
         const pairs: { sessionId: string; launchId: string }[] = [];
         for (const b of termBindings) {
@@ -25783,7 +25787,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const s of consoleHost.list()) {
             if (s.sessionId && s.launchId) { pairs.push({ sessionId: s.sessionId, launchId: s.launchId }); }
         }
-        index.setSpawnIds(pairs);
+        // ‼️ X-506 — kept past the card and the window (src/core/spawnIds.ts).
+        const kept = keepSpawnPairs(spawnPairs, pairs);
+        if (kept.changed) { spawnPairs = kept.pairs; void context.globalState.update(SPAWN_PAIRS_KEY, spawnPairs); }
+        index.setSpawnIds(kept.pairs);
     };
     // persisted so a fresh "#n" never collides with a window from the previous run
     let launchSeq = context.globalState.get<number>('agentfarm.termLaunchSeq', 0);
@@ -26966,10 +26973,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ConsolePanel.show(consoleDeps, {
                 agentId: agent.id, pinAgent: true, projectId,
                 engine: o.engine,
-                launch: {
-                    model: o.model, effort: o.effort, permissionMode: o.permissionMode,
-                    superpowers: o.superpowers, account: rule ?? o.account, prompt: o.prompt
-                }
+                // ‼️ X-506 — the whole setup, the route included (src/launch/doors/composer.ts)
+                launch: { ...composerSetup(o), account: rule ?? o.account }
             });
             return;
         }
@@ -27723,25 +27728,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         agentId: agent.id, pinAgent: true,
                         engine: engineOf(merged.engine).id,
                         ...(project !== undefined ? { projectId: project } : {}),
-                        launch: {
-                            model: merged.model, effort: merged.effort,
-                            permissionMode: merged.permissionMode,
-                            prompt: o.prompt,
-                            superpowers: merged.superpowers,
-                            // ‼️ X-103 — the route travels into the composer with
-                            // the rest of the setup. It has no box there yet
-                            // (X-105 draws one); carried rather than dropped,
-                            // because a launcher that showed a route row and then
-                            // started the card on a different endpoint would be
-                            // lying about the one thing this item exists to make
-                            // sayable. See ConsolePanel.composerRoute.
-                            providerId: merged.providerId, tier: merged.tier,
-                            // ‼️ X-169 — and the sign-in, for the same reason:
-                            // the launcher shows an Account row, so a card
-                            // started on a different one would make that row a
-                            // lie about the only thing it exists to say.
-                            account: merged.account
-                        }
+                        // ‼️ X-103/X-169/X-506 — the whole setup the rows showed, route and
+                        // sign-in included: a card on another endpoint would make a row a lie.
+                        launch: { ...composerSetup(merged), prompt: o.prompt }
                     });
                 } else {
                     const ran = startClaudeSession(agent, o, undefined, undefined, project);
@@ -28638,11 +28627,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // K-45 — how much of a question the word list reads, and the list: the user's
             filter: cfg().get(AUTO_ANSWER_FILTER_KEY.replace(/^agentFarm\./, '')),
             words: cfg().get(AUTO_ANSWER_WORDS_KEY.replace(/^agentFarm\./, ''))
-        }));
+        }),
+        // ‼️ X-506 — the SAME gate the terminal's spawn asks, at the Console's spawn.
+        (agentId, engine, sessionId) => {
+            const g = resumeRouteFor(sessionId, engine, agentId, {}, 'acp');
+            return g.act === 'refuse' ? { refuse: describeResumeRoute(g) } : gatedRoute(g);
+        });
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;
-    consoleNeedsOf = () => consoleNeedAsks(consoleHost.list(), id => consoleHost.autoAnswerView(id));
+    // X-506 — the kept pairs reach the index now, not on the first live-monitor tick.
+    publishSpawnIds();
+    consoleNeedsOf =() => consoleNeedAsks(consoleHost.list(), id => consoleHost.autoAnswerView(id));
     let consoleNeedsSeen = '';
     context.subscriptions.push(consoleHost.onChange(() => {
         const sig = consoleNeedSig(consoleNeedsOf!());
@@ -39793,13 +39789,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // person is about to look at. Nothing is spawned here, so
                         // nothing is recorded either: the composer's own Send is
                         // the launch, and it does the remembering.
-                        launch: {
-                            model: o.model, effort: o.effort,
-                            permissionMode: o.permissionMode, superpowers: o.superpowers,
-                            // ‼️ X-169 — …and the account the door settled, into
-                            // the box the person is about to look at.
-                            account: o.account
-                        }
+                        // ‼️ X-169/X-506 — the account and the route the door settled too.
+                        launch: composerSetup(o)
                     });
                     return;
                 }
