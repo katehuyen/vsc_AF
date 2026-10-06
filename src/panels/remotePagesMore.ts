@@ -30,9 +30,10 @@ export interface MorePageMakers {
 
 /**
  * X-456 — the sound controls' presses that open the PC's file picker (a new sound) or its folder,
- * refused on every page whose host answers alert messages (src/panels/alertMessages.ts).
+ * refused on every page whose host answers alert messages (src/panels/alertMessages.ts) — and a
+ * reading aloud: a phone does not make the PC speak a conversation (its own voice is U-209).
  */
-export const SOUND_PC = ['alertVoiceAdd', 'alertFolder'];
+export const SOUND_PC = ['alertVoiceAdd', 'alertFolder', 'readAloud', 'readControl'];
 
 /**
  * X-456 — the sign-ins section and its rules, the same on the Engines and the Accounts page

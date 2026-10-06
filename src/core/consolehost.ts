@@ -2224,13 +2224,15 @@ export class ConsoleHost {
                 void this.reseal(id, held.trim(), []);
                 return;
             }
-            const next = shiftQueued(h.state);
+            // U-200 — stamped as `send` stamps it, so its row names its transcript line
+            const qid = h.engine.shape !== 'perTurn' && h.engine.shape !== 'sharedAcp' ? newUuid() : undefined;
+            const next = shiftQueued(h.state, Date.now(), qid);
             h.state = next.state;
             if (next.text) {
                 // …and a released message is a turn of its own, so it asks the
                 // same question about itself (see askSettings)
                 this.askSettings(id, h.state.turnStartedAt);
-                this.write(id, userMessageLine(next.text));
+                this.write(id, userMessageLine(next.text, [], qid));
             }
         }
         this.fire(id);

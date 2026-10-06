@@ -37,6 +37,7 @@ import { getSlashCommands, reportToSources, SlashReport } from '../core/slashCom
 import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
+import { readingView } from '../core/readerOps';
 import { soundSurface } from './alertSurface';
 import { desktopHost, type PanelHost } from './panelHost';
 import { afConfig } from '../core/settingsDoor';
@@ -1367,6 +1368,8 @@ export class ConsolePanel {
                 ...(s.sessionId ? this.deps.cardViews?.(s.sessionId) : undefined),
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
+            // U-200 — what is being read aloud, for the 🔊 · ■ · ▶ on the messages
+            reading: readingView(this.deps.sound?.()?.reader),
             agents: this.deps.getAgents().map(a => ({
                 id: a.id, name: a.name, dir: a.dir,
                 // X-133 — …and whether THIS one opens the composer with the

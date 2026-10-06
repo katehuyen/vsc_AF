@@ -197,18 +197,20 @@ export function transcriptMessages(
         const type = String(line['type'] ?? '');
         const msg = line['message'] as { content?: unknown } | undefined;
         const ts = tsOf(line, now);
+        // U-200 — the line's own uuid: what a row's 🔊 names to the reader
+        const uid = typeof line['uuid'] === 'string' && line['uuid'] ? { uuid: line['uuid'] as string } : {};
 
         if (type === 'user') {
             const content = msg?.content;
             if (typeof content === 'string') {
-                if (content.trim()) { push({ role: 'user', ts, text: content }); }
+                if (content.trim()) { push({ role: 'user', ts, text: content, ...uid }); }
                 continue;
             }
             if (!Array.isArray(content)) { continue; }
             for (const b of content as Record<string, unknown>[]) {
                 const bt = String(b?.['type'] ?? '');
                 if (bt === 'text' && String(b['text'] ?? '').trim()) {
-                    push({ role: 'user', ts, text: String(b['text']) });
+                    push({ role: 'user', ts, text: String(b['text']), ...uid });
                 } else if (bt === 'tool_result') {
                     const text = typeof b['content'] === 'string'
                         ? b['content'] as string
@@ -228,7 +230,7 @@ export function transcriptMessages(
             for (const b of content as Record<string, unknown>[]) {
                 const bt = String(b?.['type'] ?? '');
                 if (bt === 'text' && String(b['text'] ?? '').trim()) {
-                    push({ role: 'agent', ts, text: String(b['text']) });
+                    push({ role: 'agent', ts, text: String(b['text']), ...uid });
                 } else if (bt === 'tool_use' && b['name']) {
                     const name = String(b['name']);
                     const input = b['input'] as Record<string, unknown> | undefined;

@@ -16,7 +16,7 @@ import { buildSessionMarkdown, SessionExportView } from '../core/sessionExport';
 import { chainIndexNow, chainPlace } from '../core/chainMembership';
 import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
-import { readingAct, readingState, readNow, type ReaderDeps } from '../core/readerOps';
+import { readingAct, readingView, readNow, type ReaderDeps } from '../core/readerOps';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -995,8 +995,7 @@ export class SessionViewerPanel {
 
     /** U-199 — what is being read, for the 🔊 on each step; null while nothing is. */
     private readingNow(): { sessionId: string; key: string; paused: boolean } | null {
-        const s = this.deps.reader ? readingState(this.deps.reader) : null;
-        return s?.source ? { sessionId: s.source.sessionId, key: s.key, paused: !!s.at?.paused } : null;
+        return readingView(this.deps.reader);
     }
 
     /**

@@ -97,6 +97,12 @@ export function readingState(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'>):
     return { reading: !!source, speaking: deps.dialogue.speaking, source, at, key: readingKeyNow(source, at) };
 }
 
+/** U-199 — what a page draws on its steps (🔊 · ■ · ▶, media/afReadAloud.js); null while nothing is read. */
+export function readingView(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'> | undefined): { sessionId: string; key: string; paused: boolean } | null {
+    const s = deps ? readingState(deps) : null;
+    return s?.source ? { sessionId: s.source.sessionId, key: s.key, paused: !!s.at?.paused } : null;
+}
+
 /**
  * U-198 — ONE BODY for every control of the reading now: the bridge's
  * `alerts.reading` and the Sound: Pause / Resume, Next and Previous commands.

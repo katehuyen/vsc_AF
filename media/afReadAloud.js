@@ -64,7 +64,7 @@
         const st = stateOf(b.dataset.readSid, b.dataset.read);
         if (st === 'reading') { post({ type: 'readControl', action: 'stop' }); }
         else if (st === 'paused') { post({ type: 'readControl', action: 'resume' }); }
-        else { post({ type: 'readAloud', pick: { msg: b.dataset.read } }); }
+        else { post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: { msg: b.dataset.read } }); }
     }
 
     /** The host's two messages for this component; true when it was one of them. */

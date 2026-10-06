@@ -28594,7 +28594,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return r;
         },
         // U-181 — the Console's ■, the same function `alerts.read stop` runs
-        alertsStopReading: async () => { alertsStopReading(); }
+        alertsStopReading: async () => { alertsStopReading(); },
+        // U-200 — a message's 🔊 and Read last answer: the one reading channel
+        reader: readerDeps
     };
     const soundNotify = () => notifyState(k => vscode.workspace.getConfiguration().get<boolean>(k) === true);
     const soundChannels = () => channelState(k => vscode.workspace.getConfiguration().get(k));

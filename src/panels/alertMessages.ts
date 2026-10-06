@@ -15,6 +15,7 @@ import { AlertsPage, NOTIFY_KEYS } from './soundModel';
 import { LANE_EVENTS } from '../core/alertVoices';
 import { parseSessionPatch, SessionSoundPatch } from '../core/soundSession';
 import type { AlertSurface } from './alertSurface';
+import { readingAct, readNow, type ReaderDeps } from '../core/readerOps';
 
 /** The host acts the sound controls need — each one the function an op runs. */
 export interface AlertMessageDeps {
@@ -85,6 +86,8 @@ export interface AlertMessageDeps {
     alertsSessionTest?(sessionId: string, event: string, real?: boolean): Promise<unknown>;
     /** U-181 — cut the reading happening now short (`alerts.read stop`) */
     alertsStopReading?(): Promise<void>;
+    /** U-200 — the one reading channel: a message's 🔊 · ■ · ▶ and Read last answer (`alerts.readNow` / `alerts.reading`) */
+    reader?: ReaderDeps;
 }
 
 /**
@@ -281,6 +284,21 @@ export async function handleAlertMessage(
         case 'alertReadStop':
             try { await deps.alertsStopReading?.(); }
             catch (e) { sessionFail(e); }
+            return true;
+        // U-200 — a message read aloud ({ msg } its step key, { text } where it has none, {} the last answer)
+        // and the ■ / ▶ on it: the bodies of alerts.readNow / alerts.reading; a refusal is a toast.
+        case 'readAloud': {
+            if (!deps.reader) { return true; }
+            const pick = msg.pick && typeof msg.pick === 'object' ? msg.pick as Record<string, unknown> : {};
+            await readNow(deps.reader, { ...pick, sessionId: sid() }, String(msg.surface || 'page').slice(0, 40))
+                .catch(e => surface.post?.({ type: 'readRefused', error: String((e as Error)?.message ?? e) }));
+            return true;
+        }
+        case 'readControl':
+            if (!deps.reader) { return true; }
+            try { readingAct(deps.reader, String(msg.action ?? '')); } catch (e) {
+                surface.post?.({ type: 'readRefused', error: String((e as Error)?.message ?? e) });
+            }
             return true;
     }
     return false;

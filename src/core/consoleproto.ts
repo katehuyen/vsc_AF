@@ -187,6 +187,12 @@ export interface ConsoleMessage {
     role: 'user' | 'agent' | 'tool' | 'result' | 'system' | 'error' | 'ask';
     ts: number;
     text?: string;
+    /**
+     * U-200 — the transcript line this row is (its step key, sessionRead.ts stepKey): what a 🔊 reads.
+     * Measured (claude-cli, 2026-10-06): an assistant event's uuid IS its transcript line's, and the
+     * uuid the host stamps on a user line becomes that line's. None on a sub-agent's words.
+     */
+    uuid?: string;
     /** said INTO a running turn (see acceptUserText) rather than starting one */
     steer?: boolean;
     /** files that went with this message — shown in the talk, payload not kept */
@@ -1170,6 +1176,9 @@ export function detectPermissionDenial(text: string): { detail: string } | undef
 
 let seq = 0;
 const nextId = (): string => `cm${++seq}-${Date.now().toString(36)}`;
+/** U-200 — an event's transcript line as a row's `uuid`; a sub-agent's words are another transcript's, so none. */
+const lineUuid = (o: Record<string, unknown>): { uuid?: string } =>
+    typeof o.uuid === 'string' && o.uuid && !(typeof o.parent_tool_use_id === 'string' && o.parent_tool_use_id) ? { uuid: o.uuid } : {};
 
 /** Reset the message-id counter (tests only — ids are otherwise opaque). */
 export function resetIds(): void { seq = 0; }
@@ -1530,7 +1539,7 @@ export function reduceEvent(
                     ...next, lastTs: now, turnSteps: (next.turnSteps ?? 0) + 1,
                     messages: [...next.messages, {
                         id: nextId(), ts: now, role: 'agent', text: String(b.text),
-                        kind: 'say', ...takeCharge()
+                        kind: 'say', ...takeCharge(), ...lineUuid(o)
                     }]
                 };
                 changed = true;
@@ -2204,7 +2213,7 @@ export function acceptUserText(
                 ...(uuid ? { steered: [...(state.steered ?? []), { uuid, text: t }] } : {}),
                 messages: [...state.messages, {
                     id: nextId(), ts: now, role: 'user', text: t, steer: true,
-                    ...(attach.length ? { attach } : {})
+                    ...(attach.length ? { attach } : {}), ...(uuid ? { uuid } : {})
                 }]
             },
             send: true
@@ -2224,7 +2233,7 @@ export function acceptUserText(
             stopAsked: undefined,
             messages: [...state.messages, {
                 id: nextId(), ts: now, role: 'user', text: t,
-                ...(attach.length ? { attach } : {})
+                ...(attach.length ? { attach } : {}), ...(uuid ? { uuid } : {})
             }]
         },
         send: true
@@ -2344,7 +2353,9 @@ export function answerAsk(
  * become part of the conversation (see acceptUserText).
  */
 export function shiftQueued(
-    state: ConsoleSessionState, now = Date.now()
+    state: ConsoleSessionState, now = Date.now(),
+    /** U-200 — the uuid the released line is stamped with (see acceptUserText) */
+    uuid?: string
 ): { state: ConsoleSessionState; text?: string } {
     if (state.status !== 'idle' || !state.queued.length) { return { state }; }
     const [next, ...rest] = state.queued;
@@ -2354,7 +2365,7 @@ export function shiftQueued(
             turnStartedAt: now, turnTokensAt: state.tokens, turnUsage: emptyUsage(),
             turnApiCalls: 0,
             ...turnBrain(state),
-            messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next }]
+            messages: [...state.messages, { id: nextId(), ts: now, role: 'user', text: next, ...(uuid ? { uuid } : {}) }]
         },
         text: next
     };
