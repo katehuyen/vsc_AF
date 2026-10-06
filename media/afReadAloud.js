@@ -191,8 +191,16 @@
         const sel = selectedIn(step);
         if (st === 'reading' && !sel) { post({ type: 'readControl', action: 'stop' }); }
         else if (st === 'paused' && !sel) { post({ type: 'readControl', action: 'resume' }); }
+        else if (!b.dataset.readSid) {
+            // U-207 — a page's own text, named by its key; the page says what the text is (texts())
+            const text = sel || (textOf ? String(textOf(b.dataset.read) || '') : '');
+            if (text.trim()) { follow = true; post({ type: 'readAloud', pick: { text, key: b.dataset.read } }); }
+        }
         else { follow = true; post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : { msg: b.dataset.read } }); }
     }
+    /** U-207 — the ONE button for a text a page reads by its own name (a notice, an article): `key` names it. */
+    let textOf = null;
+    function textBtn(key) { return btn('', key); }
 
     /** The host's two messages for this component; true when it was one of them. */
     function receive(m) {
@@ -224,6 +232,7 @@
     window.AFRead = {
         init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key ? reading : null; schedule(); },
         set, btn, paint, press, receive, keyOf, stateOf, selectedIn, blockOf, following: () => follow,
+        textBtn, texts(fn) { textOf = typeof fn === 'function' ? fn : null; },
         reading: () => now
     };
 })();
