@@ -33,10 +33,19 @@ let totalPass = 0, totalFail = 0;
 const failed = [];
 const t0 = Date.now();
 
+// Some suites spin up mock HTTP servers / child processes. A file slow by its nature (several real
+// Chromes) says so in its head, `// af-test-budget: <seconds>`; every other file keeps the default,
+// so a hung test still fails in minutes.
+const DEFAULT_MS = 180000;
+const budgetOf = f => {
+    const m = /^\/\/ af-test-budget: (\d+)\s*$/m.exec(fs.readFileSync(path.join(__dirname, f), 'utf8').slice(0, 4000));
+    return m ? Math.max(DEFAULT_MS, Number(m[1]) * 1000) : DEFAULT_MS;
+};
+
 for (const f of files) {
     const r = spawnSync(process.execPath, [path.join(__dirname, f)], {
         encoding: 'utf8',
-        timeout: 180000 // some suites spin up mock HTTP servers / child processes
+        timeout: budgetOf(f)
     });
     const out = (r.stdout || '') + (r.stderr || '');
     const m = /(\d+) passed, (\d+) failed/.exec(out);

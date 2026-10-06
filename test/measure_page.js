@@ -91,7 +91,8 @@ function main() {
         + 'try{out=JSON.stringify(' + evaluate + ',null,1);}catch(e){out="ERROR: "+e.message;}'
         + 'document.documentElement.innerHTML="<pre id=\\"' + MARK + '\\"></pre>";'
         + 'document.getElementById("' + MARK + '").textContent=out;});</script>';
-    const tmp = path.join(RENDER, `.measure-${name}.html`);
+    // its own copy per run: two measurements of one page may run at once (test_tip_contain.js)
+    const tmp = path.join(RENDER, `.measure-${name}-${process.pid}.html`);
     const page = fs.readFileSync(html, 'utf8');
     fs.writeFileSync(tmp, phone ? phoneWrap(page, phone, probe, name) : page + probe, 'utf8');
 

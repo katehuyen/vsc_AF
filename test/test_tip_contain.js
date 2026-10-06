@@ -17,7 +17,11 @@
  * widths, because which panels overflow is decided by the width.
  *
  *   node test/test_tip_contain.js
+ *
+ * Four real Chromes one after another: alone it takes most of the runner's
+ * default limit on a slow machine, and a busy one went past it.
  */
+// af-test-budget: 360
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
