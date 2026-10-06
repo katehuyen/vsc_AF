@@ -30,7 +30,8 @@ const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
 
 const ROOT = path.resolve(__dirname, '..');
 const FIXTURES = path.join(__dirname, 'fixtures');
-const OUT = path.join(ROOT, 'dist', 'render');
+// AF_RENDER_OUT: a run of its own (the theme audit) renders where no other run writes
+const OUT = process.env.AF_RENDER_OUT || path.join(ROOT, 'dist', 'render');
 
 /**
  * The editor's own variables, as a webview receives them (U-235). The colours are VS Code's
