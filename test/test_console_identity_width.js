@@ -52,7 +52,14 @@ const CANDIDATES = [
     ok('‼️ K-42 — the card header never wraps', /\.srow \.h \{[^}]*flex-wrap:nowrap/.test(src));
     ok('‼️ K-42 — a live card has a fixed second line for the sign-in and the spend',
         /\.srow \.h2 \{[^}]*justify-content:space-between/.test(src)
-        && /<div class="h2">\s*\$\{acct \|\| \(bchip \? '' : '<span><\/span>'\)\}\$\{bchip\}/.test(src));
+        && /<div class="h2">\s*\$\{acct \|\| \(bchip \|\| eng2 \? '' : '<span><\/span>'\)\}\$\{eng2\}\$\{bchip\}/.test(src));
+    ok('‼️ S-131 — a routed card keeps the route on line 1 and moves its engine to line 2, right after the sign-in',
+        /<span class="hb">\$\{route \|\| engineBadge\(s\)\}<\/span>/.test(src)
+        && /const route = routeBadge\(s\), eng2 = route \? engineBadge\(s\) : '';/.test(src)
+        && /\.srow \.h2 > \.af-eng \{[^}]*flex:0 0 auto/.test(src));
+    ok('…and the route\'s name there is cut to the card\'s length, its panel opening with the whole name',
+        /window\.AFProvider\.chip\(\{ providerId: shape, providerLabel: nowLabel \},\s*moved \? 'af-prov-moved' : '', window\.AFProvider\.CARD_MAX\)/.test(src)
+        && /`\$\{nowLabel\} — the \$\{noun\.toLowerCase\(\)\} this session is served by`/.test(src));
     ok('…and S-91\'s relay chip on it never shrinks, so ⑂ N is never cut',
         /\.srow \.h2 > \.af-tipw\.bcw \{[^}]*flex:0 0 auto/.test(src));
     ok('…and the sign-in is no longer on the crowded status line',

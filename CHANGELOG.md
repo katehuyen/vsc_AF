@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.860.0 - A routed Console card keeps its route in view (2026-10-06)
+
+- **A Console card running on a provider route shows the route at the top
+  and the engine on its second line.** The route badge stays beside the
+  name; the engine badge moves down, right after the account badge. With the
+  engine out of the way the name and the route no longer squeeze each other.
+  Cards with no route look as before.
+- **Long route names are cut to 15 characters on the card** (and in the
+  conversation's header). Hovering the badge still opens with the whole name.
+- The Sessions table's Tokens column is narrower: it was sized for the
+  "(off-plan)" word that 3.859.0 took out of the cells, and is now sized for
+  the widest figure the column can show.
+
 ## 3.859.0 - "off-plan" leaves the token cells (2026-10-06)
 
 - A run the Claude plan did not serve no longer writes "(off-plan)" after its

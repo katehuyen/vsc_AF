@@ -273,11 +273,12 @@
         tokens: 8.962, ctx: 5.241, cost: 3.906
     };
     /** U-192 — the narrowest each column may be drawn, in em of the table's font and padding included:
-     *  the widest figure it holds, measured on the sessions fixture (`32m⋯25.8 h`, `12.9k ⚖ 8.7k (off-plan)`,
-     *  an `Antigravity` badge). A header wider than this is its floor instead (media/afColFit.js). */
+     *  the widest figure it holds, measured on the sessions fixture (`32m⋯25.8 h`, an `Antigravity` badge).
+     *  Tokens is the widest figure the format can reach, `888.8M ⚖ 888.8M` (8.63em), not the fixture's.
+     *  A header wider than this is its floor instead (media/afColFit.js). */
     const FLOOR_EM = {
         title: 10, agent: 8, engine: 10, project: 4, when: 4.5, duration: 6.2,
-        turns: 3.5, tools: 3.5, files: 3, errors: 2.5, tokens: 10.3, ctx: 4, cost: 4.5
+        turns: 3.5, tools: 3.5, files: 3, errors: 2.5, tokens: 8.7, ctx: 4, cost: 4.5
     };
 
     /**

@@ -304,6 +304,7 @@
             min-height:16px; margin-top:2px; font-size:10px; }
         .srow .h2 > .af-tipw.acw { flex:0 1 auto; min-width:0; display:block; overflow:hidden; }
         .srow .h2 > .af-tipw.bcw { flex:0 0 auto; }
+        .srow .h2 > .af-eng { flex:0 0 auto; }
         .srow .h2 .batonsig { font-size:10px; line-height:15px; white-space:nowrap; }
         .srow .h2 .sbadge { font-size:10px; line-height:15px; white-space:nowrap; cursor:pointer; }
         /* …and on line 1 the ROUTE yields before the name does: the shelf may
@@ -2549,6 +2550,8 @@
             const acct = accountBadge(s);
             // S-91 — a card in a relay says so in the list, beside the sign-in.
             const bchip = batonPill(s, 'tip-batoncard bcw');
+            // S-131 — a routed card gives line 1 to the route; its engine goes down beside the sign-in.
+            const route = routeBadge(s), eng2 = route ? engineBadge(s) : '';
             return `
             <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
@@ -2579,15 +2582,15 @@
                 <div class="h">
                     ${cardTip(`<span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>`,
                         twho.head, twho.body, 'nw')}
-                    ${/* ‼️ B-03.1 / K-42 — only the engine and the route sit
-                          beside the name, as one pinned group: four badges there
+                    ${/* ‼️ B-03.1 / K-42 — only the engine (the route, on a routed
+                          card) sits beside the name, as one pinned group: four badges there
                           took the name down to nothing, and a shelf that fell to
                           a second line when the token figure grew made every
                           card change height mid-session. */''}
-                    <span class="hb">${engineBadge(s)}${routeBadge(s)}</span>
+                    <span class="hb">${route || engineBadge(s)}</span>
                 </div>
                 <div class="h2">
-                    ${acct || (bchip ? '' : '<span></span>')}${bchip}
+                    ${acct || (bchip || eng2 ? '' : '<span></span>')}${eng2}${bchip}
                     <span class="hb">${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
                           The rows below carry one each, but only for the card
                           being read; from a card in the list the whole thing is
@@ -3892,7 +3895,7 @@
         const shape = moved ? r.now.id : (r.shape || r.id);
         return cardTip(
             window.AFProvider.chip({ providerId: shape, providerLabel: nowLabel },
-                moved ? 'af-prov-moved' : ''),
+                moved ? 'af-prov-moved' : '', window.AFProvider.CARD_MAX),
             // SHORTHAND: the pill is the short form, and the panel opens with
             // the long one so a reader never has to already know what it meant.
             `${nowLabel} — the ${noun.toLowerCase()} this session is served by`,

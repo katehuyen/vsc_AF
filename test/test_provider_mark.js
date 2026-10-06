@@ -50,6 +50,14 @@ const P = sandbox.window.AFProvider;
         /class="af-prov af-provc kimi dense"/.test(P.chip('kimi', 'dense')));
     ok('the label is escaped',
         /&quot;x&quot;/.test(P.chip({ providerId: 'x', providerLabel: 'a "x" b' })));
+    // S-131 — a user-named route is cut to the card's fixed length; no cap, no cut.
+    const longName = { providerId: 'p1', providerLabel: 'Qwen Coder Plus (work)' };
+    ok('S-131: with a cap the chip says at most that many characters, the last one an ellipsis',
+        P.CARD_MAX === 15 && />Qwen Coder Plu…</.test(P.chip(longName, '', P.CARD_MAX))
+        && Array.from(P.cut(longName.providerLabel, 15)).length === 15);
+    ok('…a name that fits is left whole, and a chip asked for no cap keeps the whole name',
+        P.cut('Kimi', 15) === 'Kimi' && P.cut('123456789012345', 15) === '123456789012345'
+        && />Qwen Coder Plus \(work\)</.test(P.chip(longName)));
 
     // ‼️ THE SAME ID IS THE SAME COLOUR ON EVERY PAGE. A slot taken from a
     // position in a list would make one provider change colour between two

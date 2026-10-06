@@ -139,11 +139,18 @@
         'launch-declared': ''
     };
 
+    /** S-131 — a user-named route is cut to `max` characters where space is
+     *  fixed; the caller's hover must open with the whole name (MIRROR). */
+    function cut(s, max) {
+        const a = Array.from(String(s));
+        return max > 1 && a.length > max ? a.slice(0, max - 1).join('') + '…' : String(s);
+    }
+
     /**
      * The chip. `extra` is appended to the class list so a caller can size it
      * for a dense row without inventing a colour.
      */
-    function chip(v, extra) {
+    function chip(v, extra, max) {
         const I = normalize(v);
         if (multi(I)) {
             const n = (I.reportedProviderIds || []).length;
@@ -153,10 +160,10 @@
         const who = servedBy(I);
         if (!who) { return ''; }
         return '<span class="af-prov ' + cls({ providerId: who })
-            + (extra ? ' ' + extra : '') + '">' + esc(label({
+            + (extra ? ' ' + extra : '') + '">' + esc(cut(label({
                 providerId: who,
                 providerLabel: id(who) === id(I.providerId) ? I.providerLabel : ''
-            })) + '</span>';
+            }), max)) + '</span>';
     }
 
     /**
@@ -229,7 +236,7 @@
     }
 
     window.AFProvider = {
-        id: id, label: label, cls: cls, chip: chip, known: KNOWN,
+        id: id, label: label, cls: cls, chip: chip, cut: cut, known: KNOWN, CARD_MAX: 15,
         servedBy: servedBy, multi: multi, tipLines: tipLines, title: title,
         binding: BINDING, proof: PROOF
     };

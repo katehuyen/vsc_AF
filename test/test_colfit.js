@@ -98,6 +98,17 @@ document.querySelectorAll('table.sesstable').forEach(t=>{
             + (uniq.length ? ' — ' + uniq.join(', ') : ''), !!(m && m.tables > 0 && m.over.length === 0));
         if (width === 800) { ok('…and at 800px the floors are wider than the box, so the table scrolls sideways', !!(m && m.scroll === m.tables)); }
     }
+    // ‼️ S-131 — the Tokens floor is the widest figure the format can reach, put into a real cell:
+    // it holds it, and it carries no leftover width (the "(off-plan)" word once widened it by 1.7em).
+    const TOKX = `(()=>{const t=document.querySelector('table.sesstable');const td=[...t.querySelectorAll('td[data-col="tokens"]')].find(x=>x.querySelector('.wtok'));
+if(!td)return null;const fs=parseFloat(getComputedStyle(t).fontSize),cs=getComputedStyle(td),sp=td.querySelector('.wtok');
+const tw=document.createTreeWalker(td,NodeFilter.SHOW_TEXT);for(let n=tw.nextNode();n;n=tw.nextNode()){if(n.textContent.trim()&&!sp.contains(n)){n.textContent='888.8M ';break;}}
+sp.textContent='\\u2696 888.8M';const r=document.createRange();r.selectNodeContents(td);
+return (r.getBoundingClientRect().width+parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight))/fs;})()`;
+    let tokEm = null;
+    try { tokEm = JSON.parse(node([path.join('test', 'measure_page.js'), 'sessions', TOKX, '--width', '1700'])); } catch { tokEm = null; }
+    ok(`‼️ S-131 — the Tokens floor holds "888.8M ⚖ 888.8M" and is no wider than it needs (${tokEm ? tokEm.toFixed(2) : '?'}em of ${spec.floorsEm.tokens}em)`,
+        typeof tokEm === 'number' && tokEm <= spec.floorsEm.tokens && spec.floorsEm.tokens - tokEm < 0.5);
     const wide = measure(true, 1700);
     ok('at 1700px the shares already hold every floor: the declared layout is untouched and nothing scrolls',
         !!(wide && wide.tables > 0 && wide.moved === 0 && wide.scroll === 0 && wide.over.length === 0));
