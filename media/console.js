@@ -4097,6 +4097,36 @@
         return '|' + (s.engine || '') + ':' + (s.model || '')
             + '/' + (s.effort || '') + '/' + (s.permissionMode || '');
     }
+    /** A running card's Model and Perm boxes, one rule for the shell and the in-place mirror below. */
+    function liveModelBox(s) {
+        const cur = window.AFLaunch.aliasIn(modelsFor(s.engine), s.model);
+        return { list: withCurrent(modelsFor(s.engine), cur), cur: cur };
+    }
+    function livePermBox(s) {
+        const steer = s.steerable !== false;
+        return {
+            list: withCurrentFrom(steer ? (DATA.livePermissions || DATA.permissions) : permissionsFor(s.engine),
+                s.permissionMode, DATA.permissions),
+            cur: s.permissionMode
+        };
+    }
+    /**
+     * ‼️ S-133 — …AND THEY FOLLOW THE READING WHILE THE REBUILD WAITS. The CLI
+     * names the model at the first turn; a card opened on Default (a route
+     * decides its model) read Default for as long as the hands were in the
+     * message box, because M-33 holds the rebuild that would redraw it. The two
+     * boxes are redrawn in place instead, never the one the hand is on.
+     */
+    function mirrorLiveBoxes(s) {
+        [['c-model-live', 'Model', liveModelBox(s)], ['c-perm', 'Perm', livePermBox(s)]].forEach(([id, axis, b]) => {
+            const el = document.getElementById(id);
+            const want = String(b.cur || '');
+            if (!el || el === document.activeElement || el.value === want) { return; }
+            el.innerHTML = axisBoxBody({ axis: axis, list: b.list, cur: b.cur });
+            el.value = want;
+            window.AFTip.syncAxis(el);
+        });
+    }
     /** ‼️ X-211 — the machine's own sign-in, stated. The value is the sentinel
      *  the host and the core share; drawing '' here is what let the browser
      *  select the first account while the session opened as somebody else.
@@ -4565,7 +4595,7 @@
         // an engine that cannot do it would be the panel lying about the one
         // thing the reader is deciding.
         const live = !s || s.steerable !== false;
-        const shownModel = s ? window.AFLaunch.aliasIn(modelsFor(s.engine), s.model) : '';
+        const shownModel = s ? liveModelBox(s).cur : '';
         // ‼️ U-59 — AND THE THIRD SHAPE ANSWERS DIFFERENTLY AGAIN, SO IT IS
         // ASKED SEPARATELY. `steerable` answers ONE question — can this be
         // changed while a turn is RUNNING — and a shared-ACP engine says no to
@@ -4734,7 +4764,7 @@
                     // THE ID THE CLI REPORTED. `claude-opus-5` beside a Claude
                     // badge is the engine written twice in the narrowest place
                     // on the row; the word is `opus`. Rule: AFLaunch.aliasIn.
-                    list: withCurrent(modelsFor(s.engine), shownModel), cur: shownModel,
+                    ...liveModelBox(s),
                     standard: window.AFTip.lines([modelTip, modelNote(s.engine)])
                 })}
                 ${effortBox(s.engine, shownModel, s.effort, 'c-effort-live', effortTip)}
@@ -4746,10 +4776,7 @@
                     // running conversation into it — a rule about CHOOSING that
                     // was silently deciding what the box could SAY, so a session
                     // really running on bypass drew `Default`. See withCurrentFrom.
-                    list: withCurrentFrom(
-                        live ? (DATA.livePermissions || DATA.permissions) : permissionsFor(s.engine),
-                        s.permissionMode, DATA.permissions),
-                    cur: s.permissionMode, standard: permTip
+                    ...livePermBox(s), standard: permTip
                 })}
                 ${window.AFFilter.multi({
                     // allLabel is what follows "show: " — repeating the word
@@ -5700,6 +5727,7 @@
                 if (el && 'value' in el && el.value !== want) { el.value = want; }
             });
         }
+        if (s && shellOwed) { mirrorLiveBoxes(s); }
 
         const talkEl = document.getElementById('talk');
         // Where the reader is, BEFORE anything is written. The element itself is

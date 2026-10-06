@@ -1686,6 +1686,32 @@ const intentOf = (o) => Object.assign({
             !!after && after[1] === 'Model: claude-opus-5');
     }
 
+    // ‼️ S-133 — …AND WITH THE HANDS IN THE MESSAGE BOX, which is where the first
+    // turn is sent from. A card on a route opens on Default (the route decides its
+    // model) and the CLI names the model while the box is still held: M-33 holds
+    // the rebuild, and the Model box read Default until focus left the text.
+    {
+        push(data(CONVO.slice(), { status: 'working', model: '', permissionMode: 'default' }));
+        const text = sandbox.document.getElementById('c-text');
+        text.tagName = 'TEXTAREA';
+        sandbox.document.activeElement = text;
+        const held = app()._writes;
+        push(data(CONVO.slice(), { status: 'working', model: 'kimi-k2', permissionMode: 'default' }));
+        const box = sandbox.document.getElementById('c-model-live');
+        ok('the shell rebuild still waits while the message box is held (M-33)', app()._writes === held);
+        ok('‼️ …but the Model box follows the model the CLI reported, in place (got '
+            + JSON.stringify(box && box.value) + ')',
+            !!box && box.value === 'kimi-k2' && /value="kimi-k2" selected/.test(box._html));
+        box.tagName = 'SELECT';
+        sandbox.document.activeElement = box;
+        push(data(CONVO.slice(), { status: 'working', model: 'kimi-k3', permissionMode: 'default' }));
+        ok('…and it is never redrawn under a hand that is on it',
+            box.value === 'kimi-k2' && app()._writes === held);
+        sandbox.document.activeElement = null;
+        fireDoc('focusout');
+        ok('…and the owed rebuild is still paid when the hands come free', app()._writes > held);
+    }
+
     // ---------- U-59: the THIRD shape, which agreed with neither sentence ----
     //
     // ‼️ `steerable` answers ONE question — can this change while a turn is

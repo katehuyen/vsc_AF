@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.858.0 - A running card's Model box shows the model at once (2026-10-06)
+
+- **The Model box of a running Console card follows the model the session
+  reports, even while you are typing.** A card started on a provider route
+  opens on Default, because the route decides the model; the real model
+  arrives with the first turn. The box kept reading Default until you clicked
+  somewhere outside the message box - it now changes as soon as the model is
+  known. The Permissions box follows the same way.
+- A box you are holding is never changed under your hand.
+
 ## 3.857.0 - A session keeps its provider route whichever door opens it (2026-10-06)
 
 - **A saved launch profile on a provider route opens the Console on that

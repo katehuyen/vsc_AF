@@ -1825,8 +1825,8 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // strip falling back to `DATA.permissions` would offer a running session two
     // modes its own CLI rejects.
     ok('…and the permission list is the START vocabulary there, not the live one',
-        /live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : permissionsFor\(s\.engine\)/.test(js)
-        && /cur: s\.permissionMode, standard: permTip/.test(js));
+        /steer \? \(DATA\.livePermissions \|\| DATA\.permissions\) : permissionsFor\(s\.engine\)/.test(js)
+        && /cur: s\.permissionMode\s*\}/.test(js) && /\.\.\.livePermBox\(s\), standard: permTip/.test(js));
     // ‼️ …AND THE NARROWER LIST DECIDES WHAT YOU MAY PICK, NEVER WHAT THE BOX
     // MAY SAY. The live list drops `bypassPermissions` because a running
     // conversation may not be raised into it — a rule about choosing that was
@@ -1841,8 +1841,9 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // option is a min-content floor the row could no longer shrink under, which
     // is how the agent name and its badge came to overlap. The user saw both.
     ok('‼️ the live model box selects the catalogue ALIAS of what the CLI reported',
-        /const shownModel = s \? window\.AFLaunch\.aliasIn\(modelsFor\(s\.engine\), s\.model\) : '';/.test(js)
-        && /list: withCurrent\(modelsFor\(s\.engine\), shownModel\), cur: shownModel,/.test(js)
+        /const cur = window\.AFLaunch\.aliasIn\(modelsFor\(s\.engine\), s\.model\);/.test(js)
+        && /return \{ list: withCurrent\(modelsFor\(s\.engine\), cur\), cur: cur \};/.test(js)
+        && /\.\.\.liveModelBox\(s\),/.test(js) && /const shownModel = s \? liveModelBox\(s\)\.cur : '';/.test(js)
         && (() => {
             const L = require('../media/afLaunch.js');
             const rows = [{ id: '' }, { id: 'sonnet' }, { id: 'opus' }, { id: 'haiku' }];
@@ -1853,7 +1854,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
                 && L.aliasIn([{ id: 'a/opus' }, { id: 'b/opus' }], 'x-opus-1') === 'x-opus-1';
         })());
     ok('‼️ …but a mode the live list dropped is still borrowed back to be SAID',
-        /list: withCurrentFrom\(\s*live \? \(DATA\.livePermissions/.test(js)
+        /list: withCurrentFrom\(\s*steer \? \(DATA\.livePermissions/.test(js)
         && /const row = \(wider \|\| \[\]\)\.find\(x => x && x\.id === v\);/.test(js));
 
     // X-19 — the money half.
