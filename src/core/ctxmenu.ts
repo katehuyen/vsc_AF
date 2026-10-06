@@ -308,6 +308,8 @@ export const CTX_ITEMS: CtxItem[] = [
     { command: 'agentfarm.setSessionAlertVoice', when: LIVE_SESSION_ROW, group: '2_mark@6' },
     // U-201 — listen to that conversation's last answer, from its card, lane or turn row
     { command: 'agentfarm.readLastAnswer', when: 'webviewSection =~ /^(afTimelineAgent|afTimelineSession|afConsoleSession|afTurnRow)$/ && sessionId', group: '2_mark@7' },
+    // U-202 — on any page, over selected text (media/afCtx.js puts the selection in the context)
+    { command: 'agentfarm.readSelection', when: 'afSelection', group: '5_copy@0' },
 
     // ---------------------------------------------------------------------
     // The Console's cards. A resumable row can be joined; a live card can be

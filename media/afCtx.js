@@ -244,6 +244,20 @@
     /** The tooltip tail an agent row carries — it says what the menu is FOR. */
     const AGENT_HINT = 'right-click for everything this agent can be asked to do';
 
+    // U-202 — a right-click over selected text carries that text: VS Code merges the body's context
+    // into every row's, so "Sound: Read Selection" is offered exactly when there is something to read.
+    // Captured before VS Code's own listener reads the context; cleared when nothing is selected.
+    function stampSelection() {
+        const body = document.body;
+        if (!body || !body.dataset) { return; }
+        const sel = window.getSelection ? String(window.getSelection() || '').trim() : '';
+        let o = {};
+        try { o = JSON.parse(body.dataset.vscodeContext || '{}') || {}; } catch (e) { o = {}; }
+        if (sel) { o.afSelection = sel; } else { delete o.afSelection; }
+        body.dataset.vscodeContext = JSON.stringify(o);
+    }
+    if (typeof document.addEventListener === 'function') { document.addEventListener('contextmenu', stampSelection, true); }
+
     window.AFCtx = {
         attr, obj, row, agent, hint, listen, copy, toast, HINT, AGENT_HINT, panel
     };

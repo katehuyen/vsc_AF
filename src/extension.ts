@@ -381,6 +381,7 @@ import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
 import { ReaderDeps, readingAct, readNow, registerReaderOps } from './core/readerOps';
 import { readLastAnswer } from './core/readLast';
+import { readSelection } from './core/readSelection';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
@@ -41264,6 +41265,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             choose: async items => (await vscode.window.showQuickPick(items.map(x => ({ label: x.label, description: x.sessionId.slice(0, 8), id: x.sessionId })),
                 { placeHolder: 'Read the last answer of which session?' }))?.id,
             read: ref => readNow(readerDeps, { sessionId: ref }, 'command'),
+            say: text => { void vscode.window.setStatusBarMessage(text, 4000); }
+        }, arg)),
+        // U-202 — the page's selection (afCtx.js stamps it on the right-click), else the editor's
+        vscode.commands.registerCommand('agentfarm.readSelection', (arg?: unknown) => readSelection({
+            editorSelection: () => { const e = vscode.window.activeTextEditor; return e ? e.selections.map(s => e.document.getText(s)).filter(Boolean).join('\n\n') : ''; },
+            read: ask => readNow(readerDeps, ask, 'selection'),
             say: text => { void vscode.window.setStatusBarMessage(text, 4000); }
         }, arg)),
 

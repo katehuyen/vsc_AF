@@ -5451,6 +5451,16 @@
       ]
     },
     {
+      "capability": "readSelection",
+      "ui": [
+        "cmd:agentfarm.readSelection",
+        "ctx:agentfarm.readSelection"
+      ],
+      "ops": [
+        "alerts.readNow"
+      ]
+    },
+    {
       "capability": "refresh",
       "ui": [
         "cmd:agentfarm.refresh"
