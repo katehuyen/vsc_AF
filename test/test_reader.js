@@ -158,6 +158,48 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
         ok('both ops are in farm.ops', names.includes('alerts.readNow') && names.includes('alerts.reading'));
     }
     {
+        // U-199 — the whole of a turn, and from a step to the end, each step under its own key
+        const { readingKeyNow } = require(path.join(ROOT, 'out', 'core', 'reader.js'));
+        ok('whole goes with a turn; from is one more pick',
+            readAskOf({ sessionId: 's', turn: 2, whole: true }).whole === true && readAskOf({ sessionId: 's', from: 'a1' }).kind === 'from'
+            && /whole goes with turn/.test(readAskOf({ sessionId: 's', whole: true }).error)
+            && /ONE of msg, turn, from, last or text/.test(readAskOf({ sessionId: 's', from: 'a1', last: true }).error));
+        const all = readTarget(steps, { kind: 'turn', sessionId: 'x', turn: 1, whole: true });
+        ok('the whole turn is what was asked and every word the agent said — no tool output, no subagent',
+            all.segments.map(s => s.key).join() === 'u1,a1,a2' && all.msg === 'u1' && all.turn === 1 && /^hi\n\nLet me look\./.test(all.text));
+        const rest = readTarget(steps, { kind: 'from', sessionId: 'x', from: 'a1' });
+        ok('from a step: that step, then the agent\'s words to the end', rest.segments.map(s => s.key).join() === 'a1,a2' && rest.msg === 'a1');
+        ok('from the prompt by place', readTarget(steps, { kind: 'from', sessionId: 'x', from: '#1' }).segments.map(s => s.key).join() === 'u1,a1,a2');
+        ok('from nowhere, and with nothing after it, are refused by name',
+            /no step "zz"/.test(readTarget(steps, { kind: 'from', sessionId: 'x', from: 'zz' }).error)
+            && /nothing in words follows step "t2"/.test(readTarget(steps, { kind: 'from', sessionId: 'x', from: 't2' }).error));
+        const { BridgeRegistry } = require(path.join(ROOT, 'out', 'core', 'bridge.js'));
+        const { registerReaderOps } = require(path.join(ROOT, 'out', 'core', 'readerOps.js'));
+        const { EN_PHRASES } = require(path.join(ROOT, 'out', 'core', 'speechPhrases.js'));
+        let at = { paragraph: 0, paragraphs: 3, paused: false };
+        const spoke = [];
+        const reading = new ReadingNow();
+        const reg = new BridgeRegistry();
+        registerReaderOps(reg, {
+            conversation: () => ({ sessionId: 'sid-full', label: 'dev', steps }),
+            voiceOf: () => '', fleet: () => ({ on: false, voice: '', rate: 0, volume: 100, events: [], template: '' }),
+            speechFor: async w => ({ voice: w, words: EN_PHRASES }),
+            dialogue: { speaking: true, get state() { return at; }, act: () => true, setRate: () => true,
+                speak: (paras) => { spoke.push(paras); return new Promise(() => undefined); } },
+            readingNow: reading, stop: () => true
+        });
+        const r = await reg.dispatch('alerts.readNow', { sessionId: 'sid', turn: 1, whole: true });
+        ok('a reading of several steps says so and hands each paragraph its step',
+            r.ok && r.result.steps === 3 && spoke[0].length === 3 && reading.source.keys.join() === 'u1,a1,a2');
+        const k0 = (await reg.dispatch('alerts.reading', {})).result.key;
+        at = { ...at, paragraph: 2 };
+        const k2 = (await reg.dispatch('alerts.reading', {})).result.key;
+        ok('‼️ the step being read moves with the paragraph the player is on', k0 === 'u1' && k2 === 'a2');
+        await reg.dispatch('alerts.readNow', { sessionId: 'sid', msg: 'a2' });
+        ok('a one-step reading carries no key list — its key is the step', !reading.source.keys && readingKeyNow(reading.source, at) === 'a2'
+            && readingKeyNow(null, at) === '');
+    }
+    {
         const fs = require('fs'), os = require('os');
         const Module = require('module');
         const origLoad = Module._load;

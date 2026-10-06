@@ -10,7 +10,7 @@
  * noise nobody chose, and asking for a reading is a choice.
  */
 import { BridgeRefusal, BridgeRegistry, optStr } from './bridge';
-import { readAskOf, readingParagraphs, ReadingSource, readingTimeoutMs, readTarget } from './reader';
+import { readAskOf, readingKeyNow, readingParagraphs, ReadingSource, readingTimeoutMs, readTarget } from './reader';
 import { clampRate, PlayState, ReadingAction, READING_ACTIONS } from './readingPlayer';
 import type { ReadableStep } from './sessionRead';
 import type { SpeakConfig } from './speech';
@@ -36,6 +36,8 @@ export interface ReaderDeps {
 
 export interface ReadNowAnswer {
     reading: true; sessionId: string; label: string; msg?: string; turn?: number;
+    /** how many steps the reading spans */
+    steps: number;
     surface: string; chars: number; voice: string;
 }
 
@@ -46,25 +48,34 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
     const conv = ask.sessionId ? deps.conversation(ask.sessionId) : null;
     if (conv && 'error' in conv) { throw new BridgeRefusal(conv.error, { step: 'session' }); }
     let raw = '';
+    let segments: { key: string; text: string }[] = [];
     let where: Pick<ReadingSource, 'msg' | 'turn'> = {};
     if (ask.kind === 'text') {
         raw = ask.text;
+        segments = [{ key: '', text: raw }];
     } else {
         const t = readTarget((conv as Conversation).steps, ask);
         if ('error' in t) { throw new BridgeRefusal(t.error, { step: 'target' }); }
         raw = t.text;
+        segments = t.segments;
         where = { msg: t.msg, ...(t.turn ? { turn: t.turn } : {}) };
     }
     const sessionId = conv ? conv.sessionId : '';
     const fleet = deps.fleet();
     const how = await deps.speechFor((sessionId && deps.voiceOf(sessionId)) || fleet.voice, raw);
-    const paras = readingParagraphs(raw, true, how.words);
+    // U-199 — each step's paragraphs carry its key, so the page marks the step being read
+    const paras: string[] = [], keys: string[] = [];
+    for (const s of segments) {
+        const ps = readingParagraphs(s.text, true, how.words);
+        paras.push(...ps);
+        keys.push(...ps.map(() => s.key));
+    }
     if (!paras.length) { throw new BridgeRefusal('nothing in it can be spoken', { step: 'text' }); }
     const chars = paras.join(' ').length;
     const run = deps.dialogue.speak(paras, { ...fleet, voice: how.voice }, { timeoutMs: readingTimeoutMs(chars) });
-    deps.readingNow.start(sessionId, run, { surface, ...where });
+    deps.readingNow.start(sessionId, run, { surface, ...where, ...(segments.length > 1 ? { keys } : {}) });
     return {
-        reading: true, sessionId, label: conv ? conv.label : '', ...where,
+        reading: true, sessionId, label: conv ? conv.label : '', ...where, steps: segments.length,
         surface, chars, voice: how.voice || '(system default)'
     };
 }
@@ -75,12 +86,15 @@ export interface ReadingStateAnswer {
     source: ReadingSource | null;
     /** U-198 — where the player is; null while nothing plays */
     at: PlayState | null;
+    /** U-199 — the step being read right now ('' for a text of your own) */
+    key: string;
 }
 
 /** What is being read now: the source while a reading lasts, whether its player is speaking yet, and where it is. */
 export function readingState(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'>): ReadingStateAnswer {
     const source = deps.readingNow.source;
-    return { reading: !!source, speaking: deps.dialogue.speaking, source, at: deps.dialogue.state };
+    const at = deps.dialogue.state;
+    return { reading: !!source, speaking: deps.dialogue.speaking, source, at, key: readingKeyNow(source, at) };
 }
 
 /**
@@ -111,13 +125,17 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
                 + '(markdown, code, links), in the conversation\'s own voice or the fleet\'s. It is NOT silenced by Mute all, Quiet hours or Silent — an ask is a choice, not noise. '
                 + 'There is one reading at a time: this cuts short whatever is being read, and anything newer cuts this. Stop it with `alerts.reading action=stop`. '
                 + 'args: sessionId? (id, 8-character prefix or transcript path; required unless text) + exactly one of: msg? (a step\'s key, as `sessions.read` lists it), '
-                + 'turn? (1-based — that turn\'s answer), last? (true — the newest answer; also what a sessionId alone reads), text? (your own text, e.g. a report for the user; '
-                + 'with a sessionId it is read in that conversation\'s voice). Returns { reading, sessionId, label, msg?, turn?, chars, voice }.',
+                + 'turn? (1-based — that turn\'s answer; with whole=true the whole turn: what was asked and everything the agent said in words), '
+                + 'from? (a step\'s key — that step, then everything the agent said in words to the end of the conversation), '
+                + 'last? (true — the newest answer; also what a sessionId alone reads), text? (your own text, e.g. a report for the user; '
+                + 'with a sessionId it is read in that conversation\'s voice). Returns { reading, sessionId, label, msg?, turn?, steps, chars, voice } — '
+                + 'while a reading of several steps goes on, `alerts.reading` names the one being read (`key`).',
             handler: (args) => readNow(deps, args as Record<string, unknown>, 'bridge')
         },
         {
             op: 'alerts.reading',
-            describe: 'WHAT IS BEING READ ALOUD NOW, AND ITS CONTROLS — with no args: { reading, speaking, source: { sessionId, msg?, turn?, surface } | null, at }: the conversation '
+            describe: 'WHAT IS BEING READ ALOUD NOW, AND ITS CONTROLS — with no args: { reading, speaking, source: { sessionId, msg?, turn?, surface, keys? } | null, at, key }: '
+                + '`key` = the step being read right now (on a reading of several steps it moves with the paragraphs); the conversation '
                 + '(empty for a text of your own), the step\'s key, the turn, and who asked (`auto` = Read aloud, `bridge`, or a page); `speaking` turns true once the player runs; '
                 + '`at` = { paragraph, paragraphs (0-based of n), sentence, word, wordLen (characters within the paragraph), paused, rate, live } — `live` is false where the '
                 + 'backend reads a paragraph at a time (macOS, Linux): there pause and rate restart the paragraph and the word is not known. '
