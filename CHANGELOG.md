@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.872.0 - Read the text you selected (2026-10-06)
+
+- **Sound: Read Selection** - select a passage anywhere in Agent Farm (a
+  transcript, the Console, Notices, the Wiki, any page) and right-click it:
+  the menu reads just that passage aloud, in its conversation's voice when it
+  sits in one. In the editor the same item is on the right-click menu whenever
+  text is selected - a report, a note, a markdown file.
+- **A message's speaker reads only your selection** when you have selected
+  text inside that message; with nothing selected it reads the whole message
+  as before.
+- The selection is cleaned for speech and voiced in its own language, exactly
+  like every other reading.
+
 ## 3.871.0 - Read the last answer from the keyboard or a right-click (2026-10-06)
 
 - **Sound: Read Last Answer** - a new command that reads a conversation's last
