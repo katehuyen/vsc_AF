@@ -69,7 +69,15 @@
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
     const repaint = window.AFRepaint.guard(render);
+    // U-207 - a compiled page's speaker reads that page; the host reads it only if this mark wrote it
+    window.AFRead.init(m => vscode.postMessage(m), DATA.reading);
+    window.AFRead.texts(key => {
+        const at = key.lastIndexOf('#'), c = rows().find(x => 'wiki:' + x.id === key.slice(0, at));
+        const page = c && (c.pages || [])[Number(key.slice(at + 1))];
+        return page ? { mark: c.id, page } : '';
+    });
     window.addEventListener('message', ev => {
+        if (window.AFRead.receive(ev.data)) { return; }
         if (ev.data.type === 'data') { DATA = ev.data.data; repaint(); }
         if (ev.data.type === 'lint') { LINT = ev.data.data; render(); }
         // U-125 — a filter left on the old name would show an empty table.
@@ -580,11 +588,11 @@
         }
         const pages = c.pages || [];
         if (!pages.length) { return '<td class="wk-pages muted">—</td>'; }
-        const crumbs = pages.map(p => {
+        const crumbs = pages.map((p, i) => {
             const parts = String(p).split(/[\\/]/);
             const file = parts.pop().replace(/\.md$/i, '');
             const cat = parts.pop() || '';
-            return `<a class="wk-page" data-page="${esc(p)}" data-id="${esc(c.id)}"
+            return `${window.AFRead.textBtn('wiki:' + c.id + '#' + i)}<a class="wk-page" data-page="${esc(p)}" data-id="${esc(c.id)}"
                 >${cat ? esc(cat) + ' <span class="muted">/</span> ' : ''}${esc(file)}</a>`;
         }).join('<span class="wk-vsep">·</span>');
         return T.cell('wk-pages', '', crumbs, `${pages.length} page(s) written`,
@@ -957,6 +965,7 @@
                 .wk-when { white-space:nowrap; opacity:.75; width:1%; }
                 .wk-pages { max-width:26ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .wk-page { cursor:pointer; color:var(--vscode-textLink-foreground); text-decoration:none; }
+                .wk-pages .readb { padding:0 2px; margin-right:2px; min-width:0; background:none; border:0; color:inherit; cursor:pointer; }
                 .wk-page:hover { text-decoration:underline; }
                 /* ‼️ U-95 — A RUN THAT IS OUT IS THE ONE THING ON THIS PAGE THAT
                    IS HAPPENING RIGHT NOW, and a still blue word looks exactly

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { attachPageReading, fileForReading, pageReadingNow, pageReads } from './pageReading';
 import { desktopHost, type PanelHost } from './panelHost';
 import { revealPath } from '../core/reveal';
 import {
@@ -148,16 +149,27 @@ export class WikiPanel {
             host.webview,
             this.deps.extensionUri,
             'Agent Farm Wiki',
-            buildData(this.deps, this.focus),
+            { ...buildData(this.deps, this.focus), reading: pageReadingNow() },
             'wiki.js'
         );
         this.focus = undefined;   // one-shot: consumed by the first render
         host.onDidDispose(() => this.dispose(), null, this.disposables);
-        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => { if (!pageReads(msg, host.webview, this.reading)) { this.onMessage(msg); } }, null, this.disposables);
+        this.disposables.push(attachPageReading(host.webview));
     }
 
+    /** U-207 - a compiled page is read only if this mark wrote it, the rule openPage follows. */
+    private readonly reading = {
+        surface: 'wiki',
+        resolve: (pick: Record<string, unknown>): string | { error: string } | undefined => {
+            if (typeof pick.mark !== 'string' || typeof pick.page !== 'string') { return undefined; }
+            const hit = (this.deps.store().get(pick.mark)?.pages ?? []).find(p => p === pick.page);
+            return hit ? fileForReading(hit) : { error: 'that page is not one this mark wrote' };
+        }
+    };
+
     refresh(): void {
-        void this.host.webview.postMessage({ type: 'data', data: buildData(this.deps, this.focus) });
+        void this.host.webview.postMessage({ type: 'data', data: { ...buildData(this.deps, this.focus), reading: pageReadingNow() } });
         this.focus = undefined;
     }
 

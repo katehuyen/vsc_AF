@@ -162,6 +162,16 @@ const reader = {
     ok('the Now host takes reading messages first and sends the reading with its data', /pageReads\(msg, host\.webview/.test(nwp) && /attachPageReading\(host\.webview\)/.test(nwp)
         && /reading: pageReadingNow\(\)/.test(nwp) && !/data: this\.deps\.build\(\)/.test(nwp));
 
+    // --- Wiki: a compiled page is read only if the mark wrote it (the rule openPage follows)
+    const wkp = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'wikiPanel.ts'), 'utf8');
+    ok('the Wiki host reads a page only from the mark\'s own pages', /resolve:[\s\S]{0,300}this\.deps\.store\(\)\.get\(pick\.mark\)\?\.pages \?\? \[\]\)\.find\(p => p === pick\.page\)/.test(wkp)
+        && /hit \? fileForReading\(hit\) : \{ error: 'that page is not one this mark wrote' \}/.test(wkp));
+    ok('…takes reading messages first and sends the reading with both of its data paths', /pageReads\(msg, host\.webview, this\.reading\)/.test(wkp) && /attachPageReading\(host\.webview\)/.test(wkp)
+        && (wkp.match(/reading: pageReadingNow\(\)/g) || []).length === 2);
+    const wkj = fs.readFileSync(path.join(ROOT, 'media', 'wiki.js'), 'utf8');
+    ok('each written page carries its button, named by the mark and the page\'s place', /\$\{window\.AFRead\.textBtn\('wiki:' \+ c\.id \+ '#' \+ i\)\}<a class="wk-page"/.test(wkj));
+    ok('…which asks for the mark and the page, never a text of its own', /return page \? \{ mark: c\.id, page \} : '';/.test(wkj) && /AFRead\.receive\(ev\.data\)/.test(wkj));
+
     // --- Needs You: a question row reads the question whole, then its options — which the row must carry
     const { consoleNeedAsks, consoleNeedItems } = require(path.join(ROOT, 'out', 'core', 'consoleNeeds.js'));
     const { buildNeedsQueue } = require(path.join(ROOT, 'out', 'core', 'needs.js'));
