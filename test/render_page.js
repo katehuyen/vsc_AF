@@ -17,6 +17,7 @@
  *   node test/render_page.js track              → dist/render/track.html
  *   node test/render_page.js --list             → the fixtures there are
  *   node test/render_page.js track --light      → the light theme instead
+ *   node test/render_page.js track --hc         → High Contrast (--hc-light: High Contrast Light)
  *
  * ‼️ IT IS A LOOKING GLASS, NOT A TEST. It asserts nothing and it is not wired
  * into `npm test`; a rendered page that looks right proves the CSS, never the
@@ -32,116 +33,22 @@ const FIXTURES = path.join(__dirname, 'fixtures');
 const OUT = path.join(ROOT, 'dist', 'render');
 
 /**
- * The editor's own variables, as a webview receives them. Values are VS Code's
- * Dark Modern / Light Modern defaults — the point is not to match a theme
- * exactly but to give every `var(--vscode-…)` in the sheet something real to
- * resolve to, because a fallback-only render flatters a palette that would be
- * invisible on a user's actual screen.
+ * The editor's own variables, as a webview receives them (U-235). The colours are VS Code's
+ * own — Dark Modern, Light Modern, High Contrast and High Contrast Light — read off the
+ * installed VS Code by tools/theme_vars.js into test/theme_vars.json: the theme file's colour,
+ * else the colour registry's default for that kind, for every variable the pages use. A
+ * hand-picked subset made a light render fall back to the dark defaults wherever it picked
+ * nothing, so it measured the renderer rather than the page. The fonts come from settings,
+ * not from a theme. A colour VS Code sets none of (`none`) is left out, as VS Code leaves it.
  */
-const THEMES = {
-    dark: {
-        'font-family': '"Segoe WPC", "Segoe UI", sans-serif',
-        'editor-font-family': 'Consolas, "Courier New", monospace',
-        foreground: '#cccccc',
-        'editor-background': '#1f1f1f',
-        'editorWidget-background': '#202020',
-        'sideBar-background': '#181818',
-        'panel-border': '#2b2b2b',
-        'widget-border': '#313131',
-        focusBorder: '#0078d4',
-        descriptionForeground: '#9d9d9d',
-        errorForeground: '#f14c4c',
-        'editorError-foreground': '#f14c4c',
-        'editorWarning-foreground': '#cca700',
-        'list-hoverBackground': '#2a2d2e',
-        'list-activeSelectionBackground': '#04395e',
-        'list-activeSelectionForeground': '#ffffff',
-        'button-background': '#0078d4',
-        'button-foreground': '#ffffff',
-        'button-hoverBackground': '#026ec1',
-        'button-secondaryBackground': '#313131',
-        'button-secondaryForeground': '#cccccc',
-        'button-secondaryHoverBackground': '#3c3c3c',
-        'badge-background': '#616161',
-        'badge-foreground': '#f8f8f8',
-        'input-background': '#313131',
-        'input-foreground': '#cccccc',
-        'input-border': '#3c3c3c',
-        'inputValidation-errorBackground': '#5a1d1d',
-        'inputValidation-warningBackground': '#352a05',
-        'inputValidation-infoBackground': '#063b49',
-        'textLink-foreground': '#4daafc',
-        'textLink-activeForeground': '#4daafc',
-        'textCodeBlock-background': '#2b2b2b',
-        'toolbar-hoverBackground': '#313131',
-        'menu-background': '#1f1f1f',
-        'menu-foreground': '#cccccc',
-        'menu-border': '#454545',
-        'menu-selectionBackground': '#0078d4',
-        'menu-selectionForeground': '#ffffff',
-        'editor-findMatchHighlightBackground': '#9e6a03',
-        'editor-selectionHighlightBackground': '#3a3d41',
-        'charts-red': '#f14c4c',
-        'charts-blue': '#3794ff',
-        'charts-yellow': '#cca700',
-        'charts-orange': '#d18616',
-        'charts-green': '#89d185',
-        'charts-purple': '#b180d7',
-        'charts-foreground': '#cccccc',
-        'charts-lines': '#808080'
-    },
-    light: {
-        'font-family': '"Segoe WPC", "Segoe UI", sans-serif',
-        'editor-font-family': 'Consolas, "Courier New", monospace',
-        foreground: '#3b3b3b',
-        'editor-background': '#ffffff',
-        'editorWidget-background': '#f8f8f8',
-        'sideBar-background': '#f8f8f8',
-        'panel-border': '#e5e5e5',
-        'widget-border': '#d4d4d4',
-        focusBorder: '#005fb8',
-        descriptionForeground: '#3b3b3b99',
-        errorForeground: '#e51400',
-        'editorError-foreground': '#e51400',
-        'editorWarning-foreground': '#bf8803',
-        'list-hoverBackground': '#f2f2f2',
-        'list-activeSelectionBackground': '#e8e8e8',
-        'list-activeSelectionForeground': '#000000',
-        'button-background': '#005fb8',
-        'button-foreground': '#ffffff',
-        'button-hoverBackground': '#0258a8',
-        'button-secondaryBackground': '#e5e5e5',
-        'button-secondaryForeground': '#3b3b3b',
-        'button-secondaryHoverBackground': '#cccccc',
-        'badge-background': '#cccccc',
-        'badge-foreground': '#3b3b3b',
-        'input-background': '#ffffff',
-        'input-foreground': '#3b3b3b',
-        'input-border': '#cecece',
-        'inputValidation-errorBackground': '#f2dede',
-        'inputValidation-warningBackground': '#f6f5d2',
-        'inputValidation-infoBackground': '#d6ecf2',
-        'textLink-foreground': '#005fb8',
-        'textLink-activeForeground': '#005fb8',
-        'textCodeBlock-background': '#f3f3f3',
-        'toolbar-hoverBackground': '#e5e5e5',
-        'menu-background': '#ffffff',
-        'menu-foreground': '#3b3b3b',
-        'menu-border': '#cecece',
-        'menu-selectionBackground': '#005fb8',
-        'menu-selectionForeground': '#ffffff',
-        'editor-findMatchHighlightBackground': '#a8ac94',
-        'editor-selectionHighlightBackground': '#add6ff80',
-        'charts-red': '#cd3131',
-        'charts-blue': '#316bcd',
-        'charts-yellow': '#bf8803',
-        'charts-orange': '#d18616',
-        'charts-green': '#388a34',
-        'charts-purple': '#652d90',
-        'charts-foreground': '#3b3b3b',
-        'charts-lines': '#61616188'
-    }
-};
+const THEME_VARS = require(path.join(__dirname, 'theme_vars.json'));
+const FONTS = { 'font-family': '"Segoe WPC", "Segoe UI", sans-serif', 'editor-font-family': 'Consolas, "Courier New", monospace' };
+const THEMES = Object.fromEntries(Object.entries(THEME_VARS.themes).map(([k, v]) => [k, Object.assign({}, FONTS, v)]));
+/** The classes VS Code puts on a webview's body for each kind of theme — what a theme-scoped rule keys on. */
+const BODY_CLASS = { dark: 'vscode-dark', light: 'vscode-light', 'hc-dark': 'vscode-high-contrast', 'hc-light': 'vscode-high-contrast vscode-high-contrast-light' };
+const KIND = { dark: 'vscode-dark', light: 'vscode-light', 'hc-dark': 'vscode-high-contrast', 'hc-light': 'vscode-high-contrast-light' };
+/** The file-name suffix of each kind's render: name.html, name.light.html, name.hc.html, name.hclight.html. */
+const SUFFIX = { dark: '', light: '.light', 'hc-dark': '.hc', 'hc-light': '.hclight' };
 
 function themeCss(name) {
     const t = THEMES[name] || THEMES.dark;
@@ -255,11 +162,11 @@ function main() {
     const args = process.argv.slice(2);
     if (!args.length || args.indexOf('--list') >= 0) {
         console.log('fixtures: ' + (listFixtures().join(' ') || '(none)'));
-        console.log('usage: node test/render_page.js <fixture> [--light] [--lang <id>]');
+        console.log('usage: node test/render_page.js <fixture> [--light | --hc | --hc-light] [--lang <id>]');
         return;
     }
     const name = args[0];
-    const theme = args.indexOf('--light') >= 0 ? 'light' : 'dark';
+    const theme = args.indexOf('--light') >= 0 ? 'light' : args.indexOf('--hc-light') >= 0 ? 'hc-light' : args.indexOf('--hc') >= 0 ? 'hc-dark' : 'dark';
     const fixturePath = path.join(FIXTURES, name + '.js');
     if (!fs.existsSync(fixturePath)) {
         console.error(`no fixture "${name}" — have: ${listFixtures().join(' ')}`);
@@ -411,12 +318,12 @@ body { margin: 0; padding: 0 0 60px;
    Pinning is a scrolling behaviour and there is no scrolling here. */
 .rndr-page .af-head, .rndr-page [class*="sticky"] { position: static !important; }
 </style></head>
-<body>
+<body class="${BODY_CLASS[theme]}" data-vscode-theme-kind="${KIND[theme]}">
 ${withMenus}
 </body></html>`;
 
     fs.mkdirSync(OUT, { recursive: true });
-    const out = path.join(OUT, `${name}${theme === 'light' ? '.light' : ''}.html`);
+    const out = path.join(OUT, `${name}${SUFFIX[theme]}.html`);
     fs.writeFileSync(out, html, 'utf8');
     console.log(out);
 }
