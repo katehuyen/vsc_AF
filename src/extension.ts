@@ -379,7 +379,9 @@ import { registryMatch, whoami } from './core/whoami';
 import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
-import { ReaderDeps, readingAct, readNow, registerReaderOps } from './core/readerOps';
+import { ReaderDeps, readingAct, readingState, readNow, registerReaderOps } from './core/readerOps';
+import { readingBadge } from './core/readingBadge';
+import { ReadingStatusBar } from './views/readingBar';
 import { parseReadingPatch, READING_DEFAULT, READING_SAMPLE, readingLimit, readingPrefsOf, readingVoiceWant, readingWords, type ReadingPrefs } from './core/readingPrefs';
 import { readingTimeoutMs } from './core/reader';
 import { readLastAnswer } from './core/readLast';
@@ -2061,7 +2063,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * session would give the room a crowd.
      */
     // U-198 / U-199 — a reading starting, ending, pausing or moving on is redrawn wherever reading is drawn
-    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); };
+    // U-206 — the bar item that exists only while a reading lasts (made once the reader's deps exist)
+    let readingBar: ReadingStatusBar | undefined;
+    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); readingBar?.update(); };
     const dialogue = new DialogueSpeaker({ onChange: readingRepaint });
     const readingNow = new ReadingNow(readingRepaint);
     // U-183 — the Sound page's Sessions table follows sessions coming, going and
@@ -17841,7 +17845,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fleet: speakCfg, reading: readingCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
     };
     registerReaderOps(bridge, readerDeps);
-    const readingControl = (action: 'toggle' | 'next' | 'prev'): void => {
+    readingBar = new ReadingStatusBar({
+        view: () => {
+            const s = readingState(readerDeps);
+            const lv = s.source?.sessionId ? live.sessions().find(x => x.sessionId === s.source?.sessionId) : undefined;
+            return readingBadge(s.source, s.at, lv ? live.labelOf(lv) : '');
+        }
+    });
+    context.subscriptions.push(readingBar);
+    const readingControl =(action: 'toggle' | 'next' | 'prev'): void => {
         const r = readingAct(readerDeps, action);
         if (!r.done) {
             void vscode.window.setStatusBarMessage(r.reading
