@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.862.0 - Every session is told how to reach Agent Farm (2026-10-06)
+
+- **A session now learns at its start how to call Agent Farm.** The bridge is
+  a command run from the shell, not a tool in the model's tool list, and it is
+  the same for every engine and every account. A model that looked for it in
+  its tool list found nothing and concluded it had been left out - a session
+  on a provider route said exactly that. Every session Agent Farm's hooks
+  reach is now given one line naming the command and the op that lists the
+  rest, beside the work-area line it already got.
+
 ## 3.861.0 - Provider routes keep their history (2026-10-06)
 
 - **Removing a provider route retires its id.** Past sessions name the route

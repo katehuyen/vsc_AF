@@ -294,6 +294,7 @@ import {
 } from './core/providerProfiles';
 import { retire, RETIRED_PROFILES_KEY, retiredProfileIds } from './core/retiredProfiles';
 import { launchRecordHealth } from './core/launchRecordHealth';
+import { bridgeStartText } from './core/bridgeStartText';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, matchProfile,
     pressedSetupStarts, profileAccountGone, profileFrom,
@@ -1918,9 +1919,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (sv) { shellGuardLog.add({ ...sv, id: sv.rule, ts: Date.now(), sessionId: String(p.session_id ?? '') }); }
                 return denyResponseBody(p.hook_event_name, sv);
             },
-            // B-30 — every start and resume is told the work area in force
-            startContext: (p) => (p.hook_event_name === 'SessionStart' && ensureWorkArea()
-                ? startContextBody(p.hook_event_name, workAreaStartText(workArea.path)) : undefined),
+            // B-30 — every start and resume is told the work area in force; X-505 — and the way to the bridge
+            startContext: (p) => startContextBody(p.hook_event_name, [
+                p.hook_event_name === 'SessionStart' && ensureWorkArea() ? workAreaStartText(workArea.path) : '',
+                bridgeStartText(stagedBridgeCliPath(context.globalStorageUri.fsPath))
+            ].filter(Boolean).join('\n')),
             stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
             notifyStuck: cfg().get<boolean>('notifyStuck', true),

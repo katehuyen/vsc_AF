@@ -97,7 +97,8 @@ console.log('\n== wired end to end ==');
     const live = src('core/live.ts');
     ok('the listener answers SessionStart through startContext, after a refusal and before the signal',
         /cfg\.toolGuard\?\.\(payload\)\s*\?\? cfg\.startContext\?\.\(payload\)\s*\?\? hookResponseBody/.test(live));
-    ok('the host hands it the start line, creating the folder first', /startContext: \(p\) => \(p\.hook_event_name === 'SessionStart' && ensureWorkArea\(\)/.test(ext));
+    ok('the host hands it the start line, creating the folder first',
+        /startContext: \(p\) => startContextBody\(p\.hook_event_name, \[\s*p\.hook_event_name === 'SessionStart' && ensureWorkArea\(\) \? workAreaStartText\(workArea\.path\) : ''/.test(ext));
     ok('the tool guard asks the work-area verdict and logs what it stops', /workAreaVerdict\(\{/.test(ext) && /workAreaGuardLog\.add\(/.test(ext));
     ok('the folder goes into this host\'s environment and every terminal\'s',
         /process\.env\[WORK_AREA_ENV\] = r\.path/.test(ext) && /environmentVariableCollection\.replace\(WORK_AREA_ENV, r\.path\)/.test(ext));
