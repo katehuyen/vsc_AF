@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.875.0 - Read notices, questions, last answers and wiki pages aloud (2026-10-07)
+
+- **Notices:** an open notice has a 🔊 at the start of its action row - it
+  reads the title, the text and the sections. A notice with a report has a
+  second 🔊 beside Open full report: it reads the whole report (without its
+  frontmatter), and the player steers it paragraph by paragraph.
+- **Needs You:** a question row has a 🔊 first among its buttons - it reads
+  the question whole, then its options, numbered. A Console question's row
+  now carries its options too.
+- **Now:** a running session has a 🔊 on its row - it reads that session's
+  last answer. While anything of that session is read the button is ■ (stop),
+  ▶ when paused.
+- **Wiki:** each page a compile wrote has a small 🔊 before its name - it
+  reads that page.
+- Every one of these is the same button as a transcript step's: it shows ■
+  while its own text is read and ▶ when paused, and the header's player
+  steers whatever is being read.
+- **For agents:** nothing new to call - these are `alerts.readNow` and
+  `alerts.reading`; a report or a wiki page is read only from the notice's or
+  the mark's own record, never from a path a page names.
+
 ## 3.874.0 - See and steer a reading from anywhere (2026-10-06)
 
 - **The page header's speaker turns into the reading.** While something is
