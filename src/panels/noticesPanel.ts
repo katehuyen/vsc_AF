@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { askExportOptions, handleAfNav, htmlShell } from './base';
+import { attachPageReading, fileForReading, pageReadingNow, pageReads } from './pageReading';
 import { desktopHost, type PanelHost } from './panelHost';
 import { buildNoticesMarkdown, Notice, noticeMarkdown, NoticesStore } from '../core/notices';
 
@@ -121,13 +122,24 @@ export class NoticesPanel {
         this.focusNotice = focusNotice;
         this.render();
         host.onDidDispose(() => this.dispose(), null, this.disposables);
-        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
+        host.webview.onDidReceiveMessage(msg => { if (!pageReads(msg, host.webview, this.reading)) { this.onMessage(msg); } }, null, this.disposables);
+        this.disposables.push(attachPageReading(host.webview));
     }
+
+    /** U-207 — a notice's report is read from the notice's own record, like openReport. */
+    private readonly reading = {
+        surface: 'notices',
+        resolve: (pick: Record<string, unknown>): string | { error: string } | undefined => {
+            if (typeof pick.report !== 'string') { return undefined; }
+            const n = this.deps.store.list({ limit: 0 }).find(x => x.id === pick.report);
+            return n?.reportPath ? fileForReading(n.reportPath) : { error: 'this notice has no report' };
+        }
+    };
 
     /** buildData + the panel-local undo count (kept out of the store). Focus is
      *  one-shot: consumed by the first render/refresh after it is set. */
     private data(): Record<string, unknown> {
-        const d = { ...buildData(this.deps, this.focusNotice), undoable: this.deps.store.undoable() };
+        const d = { ...buildData(this.deps, this.focusNotice), undoable: this.deps.store.undoable(), reading: pageReadingNow() };
         this.focusNotice = undefined;
         return d;
     }

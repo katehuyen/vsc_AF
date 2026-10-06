@@ -729,6 +729,7 @@ import {
     pushSoundHeader, setSoundHeaderProvider,
     setWikiMarkBridge, speakerSettings
 } from './panels/base';
+import { pushPageReading, setPageReader } from './panels/pageReading';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, SearchDeps, scopeSessions, searchableSessions } from './panels/searchPanel';
@@ -2065,7 +2066,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // U-198 / U-199 — a reading starting, ending, pausing or moving on is redrawn wherever reading is drawn
     // U-206 — the bar item that exists only while a reading lasts (made once the reader's deps exist)
     let readingBar: ReadingStatusBar | undefined;
-    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); readingBar?.update(); pushSoundHeader(); };
+    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); pushPageReading(); readingBar?.update(); pushSoundHeader(); };
     const dialogue = new DialogueSpeaker({ onChange: readingRepaint });
     const readingNow = new ReadingNow(readingRepaint);
     // U-183 — the Sound page's Sessions table follows sessions coming, going and
@@ -17845,6 +17846,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fleet: speakCfg, reading: readingCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
     };
     registerReaderOps(bridge, readerDeps);
+    setPageReader(readerDeps);
     const readingBadgeNow = (): ReturnType<typeof readingBadge> => {
         const s = readingState(readerDeps);
         const lv = s.source?.sessionId ? live.sessions().find(x => x.sessionId === s.source?.sessionId) : undefined;

@@ -324,7 +324,7 @@
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">📄 ${esc(reportBase(n.reportPath))}</span>
                     <span class="muted small">· ${esc(tr('open it on the PC'))}</span>
                 </div>` : `<div class="nt-report">
-                    ${docSplit(n.id, esc(lab('📄 Open full report')), n.reportPath)}
+                    ${docSplit(n.id, esc(lab('📄 Open full report')), n.reportPath)}${window.AFRead.textBtn('report:' + n.id)}
                     <span class="muted small nt-reppath" title="${esc(n.reportPath)}">${esc(reportBase(n.reportPath))}</span>
                 </div>`;
             body = `<div class="muted small nt-sub">${esc(tr(t.label))} · L${L} ${esc(tr(LEVELS[L]))}${n.edited ? ' · ✎ ' + esc(tr('edited')) + (n.editedAt ? ' ' + esc(window.AFTime.full(n.editedAt).toLocaleString()) : '') : ''}</div>
@@ -332,6 +332,7 @@
                 ${n.body ? `<div class="nt-md">${mdToHtml(n.body)}</div>` : (!n.sections && !isQ ? `<div class="muted small">${esc(tr('(no details)'))}</div>` : '')}
                 ${sectionsHtml(n)}${reportBtn}${questionBlock(n)}${spawnedHtml(n)}${convertHtml(n)}${originalBlock(n)}${projectPicker(n)}
                 <div class="btnrow nt-actions">
+                    ${window.AFRead.textBtn('notice:' + n.id)}
                     ${ON_PHONE_HOST ? '' : `<button data-act="handoffNotice" data-id="${esc(n.id)}" title="${esc(tr('Open the responsible agent and type this message into its terminal (not sent)'))}">🔗 ${esc(tr('Hand to agent'))}</button>`}
                     ${!isQ ? `<button data-act="convert" data-id="${esc(n.id)}" title="${esc(tr('Turn this message into a queue item'))}">📥 ${esc(tr('Add to queue'))}</button>` : ''}
                     <button class="secondary" data-act="read" data-id="${esc(n.id)}" data-read="${n.read ? '0' : '1'}">${esc(tr(n.read ? 'Mark unread' : 'Mark read'))}</button>
@@ -1006,7 +1007,16 @@
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
     const repaint = window.AFRepaint.guard(render);
+    // U-207 — a notice's 🔊 reads its title, text and sections; its report's is read on the host, from the notice
+    window.AFRead.init(m => vscode.postMessage(m), DATA.reading);
+    window.AFRead.texts(key => {
+        const id = key.slice(key.indexOf(':') + 1);
+        if (key.startsWith('report:')) { return { report: id }; }
+        const n = (DATA.notices || []).find(x => x.id === id);
+        return n ? [n.title, n.body, ...(n.sections || []).map(s => [s.title, s.body].filter(Boolean).join('\n\n'))].filter(Boolean).join('\n\n') : '';
+    });
     window.addEventListener('message', ev => {
+        if (window.AFRead.receive(ev.data)) { return; }
         if (ev.data.type === 'data') {
             DATA = ev.data.data;
             const ids = new Set((DATA.notices || []).map(n => n.id));

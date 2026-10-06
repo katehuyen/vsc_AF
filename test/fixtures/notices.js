@@ -88,6 +88,14 @@ module.exports = {
         {
             id: 'noprojects', label: 'Notices — nothing declared to file under',
             data: data({ projects: [], activeProjectId: '', notices: notices.map(n => ({ ...n, projectId: null })) })
+        },
+        // U-207 — an open report notice: 🔊 on its action row is being read (■), the report strip's is idle
+        {
+            id: 'reading', label: 'Notices — a notice read aloud, its report beside it',
+            data: data({
+                focusId: 'n2', reading: { sessionId: '', key: 'notice:n2', paused: false, head: '' },
+                notices: notices.map(n => (n.id === 'n2' ? { ...n, reportPath: 'D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\10_REPORT\\Derleme raporu - 261006.md' } : n))
+            })
         }
     ]
 };

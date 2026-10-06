@@ -6246,6 +6246,24 @@
       ]
     },
     {
+      "capability": "pageReading.ts#readAloud",
+      "ui": [
+        "page:pageReading.ts#readAloud"
+      ],
+      "ops": [
+        "alerts.readNow"
+      ]
+    },
+    {
+      "capability": "pageReading.ts#readControl",
+      "ui": [
+        "page:pageReading.ts#readControl"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
       "capability": "sessionViewer.ts#refresh",
       "ui": [
         "page:sessionViewer.ts#refresh"

@@ -30,12 +30,12 @@
         return now.paused ? 'paused' : 'reading';
     }
     const glyph = st => (st === 'reading' ? '■' : st === 'paused' ? '▶' : '🔊');
-    const title = st => (st === 'reading' ? t('Stop reading')
-        : st === 'paused' ? t('Resume reading') : t('Read this step aloud'));
+    const title = (st, own) => (st === 'reading' ? t('Stop reading')
+        : st === 'paused' ? t('Resume reading') : own ? t('Read it aloud') : t('Read this step aloud'));
 
-    /** The button for one step of one conversation. */
+    /** The button for one step of one conversation; no session = a page's own text (textBtn). */
     function btn(sessionId, key) {
-        const st = stateOf(sessionId, key), says = esc(title(st));
+        const st = stateOf(sessionId, key), says = esc(title(st, !sessionId));
         return `<button data-read="${esc(key)}" data-read-sid="${esc(sessionId)}" class="readb${st ? ' on' : ''}" title="${says}" aria-label="${says}">${glyph(st)}</button>`;
     }
 
@@ -44,10 +44,10 @@
         const doc = root || (typeof document !== 'undefined' ? document : null);
         if (!doc || typeof doc.querySelectorAll !== 'function') { return; }
         for (const b of doc.querySelectorAll('button[data-read]')) {
-            const st = stateOf(b.dataset.readSid, b.dataset.read);
+            const st = stateOf(b.dataset.readSid, b.dataset.read), says = title(st, !b.dataset.readSid);
             b.textContent = glyph(st);
-            b.title = title(st);
-            if (typeof b.setAttribute === 'function') { b.setAttribute('aria-label', title(st)); }
+            b.title = says;
+            if (typeof b.setAttribute === 'function') { b.setAttribute('aria-label', says); }
             b.classList[st ? 'add' : 'remove']('on');
         }
     }
@@ -192,15 +192,28 @@
         if (st === 'reading' && !sel) { post({ type: 'readControl', action: 'stop' }); }
         else if (st === 'paused' && !sel) { post({ type: 'readControl', action: 'resume' }); }
         else if (!b.dataset.readSid) {
-            // U-207 — a page's own text, named by its key; the page says what the text is (texts())
-            const text = sel || (textOf ? String(textOf(b.dataset.read) || '') : '');
-            if (text.trim()) { follow = true; post({ type: 'readAloud', pick: { text, key: b.dataset.read } }); }
+            // U-207 — a page's own text, named by its key; the page says what it is (texts()): the
+            // text it holds, or a pick its panel answers on the host (a notice's report)
+            const said = sel || (textOf ? textOf(b.dataset.read) : '');
+            const pick = said && typeof said === 'object' ? { ...said, key: b.dataset.read } : { text: String(said || ''), key: b.dataset.read };
+            if (pick.text === undefined || pick.text.trim()) { follow = true; post({ type: 'readAloud', pick }); }
         }
         else { follow = true; post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : { msg: b.dataset.read } }); }
     }
     /** U-207 — the ONE button for a text a page reads by its own name (a notice, an article): `key` names it. */
     let textOf = null;
     function textBtn(key) { return btn('', key); }
+    // its press is the component's own: no page wires it, and the row under it never sees the click
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !window.__afReadTextWired) {
+        window.__afReadTextWired = true;
+        document.addEventListener('click', ev => {
+            const b = ev.target && ev.target.closest ? ev.target.closest('button[data-read]') : null;
+            if (!b || b.dataset.readSid) { return; }
+            ev.preventDefault();
+            ev.stopPropagation();
+            press(b, b.closest('[data-read-scope]'));
+        }, true);
+    }
 
     /** The host's two messages for this component; true when it was one of them. */
     function receive(m) {
