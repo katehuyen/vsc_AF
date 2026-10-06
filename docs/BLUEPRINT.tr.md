@@ -836,6 +836,7 @@ Headless işler (task, mission) baştan beri durdurulabiliyordu — süreç bizi
 | Ctrl+Alt+N | Needs You |
 | Ctrl+Alt+L | Live Timeline |
 | Ctrl+Alt+A | Add to Work Queue |
+| Ctrl+Alt+H, sonra R · P · S · → · ← | **Sesli okuma**, tek akor altında: son cevabı oku (öndeki Console kartı, yoksa açık transkript, yoksa canlı oturum seçici) · duraklat / sürdür · durdur · sonraki / önceki paragraf. Mac'te ⌃⌘H (⌥⌘H sistemin *Hide Others* kısayolu). Önek, VS Code'un kendi varsayılanlarında boş — bir test bunu VS Code'un yayımlanan listesine karşı denetliyor (`tools/vscode_default_keys.js`). |
 
 **Türkçe-Q klavye notu:** Windows'ta Ctrl+Alt = AltGr. Türkçe-Q düzeninde AltGr **Q/E/T** harflerinde karakter üretir (`@`, `€`, `₺`), bu yüzden hiçbir kısayol o üç harfe konmuyor — kural istisnasız her bağlama için geçerli ve bir test bunu denetliyor. **Q harfi Agent Farm'dan tamamen boş:** eklenti Ctrl+Q'ya da hiçbir şey bağlamıyor (o tuş VS Code'un kendi *Open View* komutu — `workbench.action.quickOpenView`).
 

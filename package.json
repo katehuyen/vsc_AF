@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.870.0",
+  "version": "3.871.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -211,6 +211,31 @@
         "command": "agentfarm.backlogAdd",
         "key": "ctrl+alt+b",
         "mac": "cmd+alt+b"
+      },
+      {
+        "command": "agentfarm.readLastAnswer",
+        "key": "ctrl+alt+h r",
+        "mac": "ctrl+cmd+h r"
+      },
+      {
+        "command": "agentfarm.pauseReading",
+        "key": "ctrl+alt+h p",
+        "mac": "ctrl+cmd+h p"
+      },
+      {
+        "command": "agentfarm.stopReading",
+        "key": "ctrl+alt+h s",
+        "mac": "ctrl+cmd+h s"
+      },
+      {
+        "command": "agentfarm.nextParagraph",
+        "key": "ctrl+alt+h right",
+        "mac": "ctrl+cmd+h right"
+      },
+      {
+        "command": "agentfarm.previousParagraph",
+        "key": "ctrl+alt+h left",
+        "mac": "ctrl+cmd+h left"
       }
     ],
     "commands": [
@@ -1382,6 +1407,12 @@
         "title": "Sound: Previous Paragraph",
         "category": "Agent Farm",
         "icon": "$(debug-step-back)"
+      },
+      {
+        "command": "agentfarm.readLastAnswer",
+        "title": "Sound: Read Last Answer",
+        "category": "Agent Farm",
+        "icon": "$(play)"
       },
       {
         "command": "agentfarm.focusSessionTerminal",
@@ -4603,6 +4634,11 @@
           "command": "agentfarm.setSessionAlertVoice",
           "when": "webviewSection =~ /^(afTimelineAgent|afTimelineSession|afConsoleSession)$/",
           "group": "2_mark@6"
+        },
+        {
+          "command": "agentfarm.readLastAnswer",
+          "when": "webviewSection =~ /^(afTimelineAgent|afTimelineSession|afConsoleSession|afTurnRow)$/ && sessionId",
+          "group": "2_mark@7"
         },
         {
           "command": "agentfarm.resumeInConsole",

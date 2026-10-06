@@ -38,6 +38,7 @@ import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { AlertMessageDeps, handleAlertMessage } from './alertMessages';
 import { readingView } from '../core/readerOps';
+import type { Facing } from '../core/readLast';
 import { soundSurface } from './alertSurface';
 import { desktopHost, type PanelHost } from './panelHost';
 import { afConfig } from '../core/settingsDoor';
@@ -1050,6 +1051,13 @@ export class ConsolePanel {
     static isWatching(hostId: string): boolean {
         const c = ConsolePanel.current;
         return !!c && c.surface.visible && c.selected === hostId;
+    }
+
+    /** U-201 — the selected card's conversation, for Sound: Read Last Answer (core/readLast.ts). */
+    static facing(): Facing[] {
+        const c = ConsolePanel.current;
+        const s = c?.selected ? c.deps.host.list().find(x => x.id === c.selected) : undefined;
+        return c && s?.sessionId ? [{ from: 'console', ref: s.sessionId, active: !!c.surface.active, visible: c.surface.visible }] : [];
     }
 
     /**

@@ -31,6 +31,8 @@ export interface PanelHost {
     title: string;
     /** Whether the page is on screen (a phone's view is while it is open). */
     readonly visible: boolean;
+    /** U-201 — the tab the user is in (a VS Code tab only; a phone's view has no focus to ask about). */
+    readonly active?: boolean;
     reveal(): void;
     readonly onDidDispose: vscode.Event<void>;
     /** A tab going behind another one or coming back; a phone's view never fires it. */
@@ -61,6 +63,7 @@ export function desktopHost(tab: DesktopTab): PanelHost {
         get title() { return panel.title; },
         set title(t: string) { panel.title = t; },
         get visible() { return panel.visible; },
+        get active() { return panel.active; },
         reveal: () => panel.reveal(),
         onDidDispose: (listener, thisArgs?, bag?) => panel.onDidDispose(listener, thisArgs, bag),
         onDidChangeViewState: (listener, thisArgs?, bag?) => panel.onDidChangeViewState(listener, thisArgs, bag),

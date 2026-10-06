@@ -306,6 +306,8 @@ export const CTX_ITEMS: CtxItem[] = [
     // to. It sits with the MARKS because that is what it is: a property put on
     // one conversation, not something done to it.
     { command: 'agentfarm.setSessionAlertVoice', when: LIVE_SESSION_ROW, group: '2_mark@6' },
+    // U-201 — listen to that conversation's last answer, from its card, lane or turn row
+    { command: 'agentfarm.readLastAnswer', when: 'webviewSection =~ /^(afTimelineAgent|afTimelineSession|afConsoleSession|afTurnRow)$/ && sessionId', group: '2_mark@7' },
 
     // ---------------------------------------------------------------------
     // The Console's cards. A resumable row can be joined; a live card can be

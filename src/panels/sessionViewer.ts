@@ -17,6 +17,7 @@ import { chainIndexNow, chainPlace } from '../core/chainMembership';
 import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 import { readingAct, readingView, readNow, type ReaderDeps } from '../core/readerOps';
+import type { Facing } from '../core/readLast';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -902,6 +903,11 @@ export class SessionViewerPanel {
         for (const p of [...SessionViewerPanel.open.values(), ...SessionViewerPanel.phones]) {
             void p.host.webview.postMessage({ type: 'reading', reading: p.readingNow() });
         }
+    }
+
+    /** U-201 — every transcript tab on this machine, for Sound: Read Last Answer (core/readLast.ts). */
+    static facing(): Facing[] {
+        return [...SessionViewerPanel.open].map(([file, p]) => ({ from: 'transcript' as const, ref: file, active: !!p.host.active, visible: p.host.visible }));
     }
 
     /** A session renamed anywhere is renamed here too — tab caption included. */

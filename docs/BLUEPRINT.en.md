@@ -793,6 +793,7 @@ A 173-command extension had exactly one shortcut. Now there is a **hub** and six
 | Ctrl+Alt+N | Needs You |
 | Ctrl+Alt+L | Live Timeline |
 | Ctrl+Alt+A | Add to Work Queue |
+| Ctrl+Alt+H, then R · P · S · → · ← | **Reading aloud**, under one chord: read the last answer (the Console card in front, else the open transcript, else a live-session picker) · pause / resume · stop · next / previous paragraph. On a Mac ⌃⌘H (⌥⌘H is the system's *Hide Others*). VS Code's own defaults leave the prefix free — a test holds it against VS Code's published list (`tools/vscode_default_keys.js`). |
 
 **Keyboard-layout note:** on Windows, Ctrl+Alt is AltGr. On a Turkish-Q layout AltGr types a character on **Q/E/T** (`@`, `€`, `₺`), so no shortcut sits on those three letters — the rule holds for every binding, with no exemptions, and a test enforces it. **Q is free of Agent Farm entirely:** the extension binds nothing on Ctrl+Q either (that key is VS Code's own *Open View* — `workbench.action.quickOpenView`).
 

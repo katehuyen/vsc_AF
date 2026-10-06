@@ -133,7 +133,7 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
                 + 'args: sessionId? (id, 8-character prefix or transcript path; required unless text) + exactly one of: msg? (a step\'s key, as `sessions.read` lists it), '
                 + 'turn? (1-based — that turn\'s answer; with whole=true the whole turn: what was asked and everything the agent said in words), '
                 + 'from? (a step\'s key — that step, then everything the agent said in words to the end of the conversation), '
-                + 'last? (true — the newest answer; also what a sessionId alone reads), text? (your own text, e.g. a report for the user; '
+                + 'last? (true — the newest answer; also what a sessionId alone reads, and what Sound: Read Last Answer runs), text? (your own text, e.g. a report for the user; '
                 + 'with a sessionId it is read in that conversation\'s voice). Returns { reading, sessionId, label, msg?, turn?, steps, chars, voice } — '
                 + 'while a reading of several steps goes on, `alerts.reading` names the one being read (`key`).',
             handler: (args) => readNow(deps, args as Record<string, unknown>, 'bridge')

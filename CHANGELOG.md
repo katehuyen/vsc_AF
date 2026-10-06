@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.871.0 - Read the last answer from the keyboard or a right-click (2026-10-06)
+
+- **Sound: Read Last Answer** - a new command that reads a conversation's last
+  answer aloud, whole. Run from the Command Palette or its shortcut it reads the
+  conversation in front of you: the selected Console card, else the open
+  transcript, else it asks which live session.
+- **Right-click** a Console card, a Live Timeline lane or agent row, or a row on
+  the Turns page: **Sound: Read Last Answer** reads that conversation.
+- **Reading has shortcuts now, all under one chord - Ctrl+Alt+H** (on a Mac
+  Ctrl+Cmd+H), then: **R** read the last answer · **P** pause / resume · **S**
+  stop · **→** next paragraph · **←** previous paragraph. VS Code itself uses
+  nothing on Ctrl+Alt+H, and every key can be changed in Keyboard Shortcuts.
+
 ## 3.870.0 - A relay leg keeps its number after it stops (2026-10-06)
 
 - **⑂ n stays on a relay leg's past sessions.** In the Console's left column, a

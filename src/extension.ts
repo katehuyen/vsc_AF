@@ -379,7 +379,8 @@ import { registryMatch, whoami } from './core/whoami';
 import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
-import { ReaderDeps, readingAct, registerReaderOps } from './core/readerOps';
+import { ReaderDeps, readingAct, readNow, registerReaderOps } from './core/readerOps';
+import { readLastAnswer } from './core/readLast';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
@@ -41256,6 +41257,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.pauseReading', () => readingControl('toggle')),
         vscode.commands.registerCommand('agentfarm.nextParagraph', () => readingControl('next')),
         vscode.commands.registerCommand('agentfarm.previousParagraph', () => readingControl('prev')),
+        // U-201 — the row's conversation, else the page in front, else a pick; alerts.readNow's own body
+        vscode.commands.registerCommand('agentfarm.readLastAnswer', (arg?: unknown) => readLastAnswer({
+            facing: () => [...ConsolePanel.facing(), ...SessionViewerPanel.facing()],
+            live: () => live.sessions().map(x => ({ sessionId: x.sessionId, label: live.labelOf(x) })),
+            choose: async items => (await vscode.window.showQuickPick(items.map(x => ({ label: x.label, description: x.sessionId.slice(0, 8), id: x.sessionId })),
+                { placeHolder: 'Read the last answer of which session?' }))?.id,
+            read: ref => readNow(readerDeps, { sessionId: ref }, 'command'),
+            say: text => { void vscode.window.setStatusBarMessage(text, 4000); }
+        }, arg)),
 
         vscode.commands.registerCommand('agentfarm.openFarmSettings',
             (arg?: { focus?: string }) => {

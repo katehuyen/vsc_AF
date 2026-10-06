@@ -5441,6 +5441,16 @@
       }
     },
     {
+      "capability": "readLastAnswer",
+      "ui": [
+        "cmd:agentfarm.readLastAnswer",
+        "ctx:agentfarm.readLastAnswer"
+      ],
+      "ops": [
+        "alerts.readNow"
+      ]
+    },
+    {
       "capability": "refresh",
       "ui": [
         "cmd:agentfarm.refresh"

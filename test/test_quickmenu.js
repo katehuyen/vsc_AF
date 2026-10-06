@@ -95,8 +95,9 @@ const keyOf = cmd => (keybindings.find(k => k.command === cmd) || {}).key;
     // e-mail address was typed. There is no exemption any more: the rule holds
     // for every binding, old ones included.
     const TR_ALTGR = ['q', 'e', 't'];
+    // a chord is held to it by its first part (U-201's reading chord)
     const clashes = keybindings
-        .filter(k => TR_ALTGR.includes(k.key.replace('ctrl+alt+', '')));
+        .filter(k => TR_ALTGR.includes(k.key.split(' ')[0].replace('ctrl+alt+', '')));
     ok('no binding sits on a Turkish AltGr character key',
         clashes.length === 0 || why('clash: ' + clashes.map(c => c.key).join(', ')));
     // Ctrl+Q is VS Code's own "Open View" (workbench.action.quickOpenView) and
@@ -104,7 +105,10 @@ const keyOf = cmd => (keybindings.find(k => k.command === cmd) || {}).key;
     ok('nothing in the extension binds a bare ctrl+q',
         !keybindings.some(k => /^(ctrl|cmd)\+q$/.test(k.key)));
     ok('the hub key is ctrl+alt+f', keyOf('agentfarm.quickMenu') === 'ctrl+alt+f');
-    ok('the keyboard set stays small enough to remember', keybindings.length <= 10);
+    // U-201 — the reading controls live under ONE chord (ctrl+alt+h …): one more thing to remember, not five
+    const singles = keybindings.filter(k => !k.key.includes(' '));
+    const chords = new Set(keybindings.filter(k => k.key.includes(' ')).map(k => k.key.split(' ')[0]));
+    ok('the keyboard set stays small enough to remember', singles.length <= 10 && chords.size <= 1);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
