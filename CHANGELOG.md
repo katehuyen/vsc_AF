@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.859.0 - "off-plan" leaves the token cells (2026-10-06)
+
+- A run the Claude plan did not serve no longer writes "(off-plan)" after its
+  ⚖ figure in the token cells of the Sessions table, the Dashboard and the
+  other pages. The figure keeps its orange colour and dotted underline, and
+  hovering it still explains what off-plan means. Exports and other plain
+  text still say "off-plan" in words.
+
 ## 3.858.0 - A running card's Model box shows the model at once (2026-10-06)
 
 - **The Model box of a running Console card follows the model the session

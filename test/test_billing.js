@@ -273,6 +273,12 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
     const C = box.window.AFCharts;
     const page = C.dollarSum(runs, r => r.c, r => B.get(r.id));
     ok('‼️ charts.js dollarSum === billing.ts sumDollars on the same rows', same(JSON.parse(JSON.stringify(page)), s));
+    const off = C.fmtTokW(4600000, 600000, 'off-plan');
+    ok('‼️ an off-plan ⚖ figure carries its mark as colour and hover, never as a word in the cell (S-131)',
+        /class="wtok offplan"/.test(off) && off.includes(C.OFF_PLAN_TIP.slice(0, 30))
+        && !/\(off-plan\)/.test(off) && /⚖ [^<]*<\/span>$/.test(off));
+    ok('…while the text twin, which has no colour, still says it',
+        C.fmtTokWText(4600000, 600000, 'off-plan').includes('off-plan'));
     const cell = C.fmtUSDSum(s.usd, s.parts);
     ok('a mixed total says (mixed) on the cell and carries its breakdown on hover',
         /\(mixed\)<\/span>$/.test(cell) && /class="usdmix"/.test(cell) && cell.includes('Not one kind of dollar'));

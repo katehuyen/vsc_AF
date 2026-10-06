@@ -114,12 +114,11 @@
     function fmtTokW(n, w, mark) {
         const raw = fmtTok(n || 0);
         if (!(w > 0)) { return raw; }
+        // ‼️ S-131 — the mark is the figure's colour and its hover, never a word in
+        // the cell: "(off-plan)" widened the tokens column on every table and moved
+        // every column beside it. The text twin below still says it in words.
         return raw + ' <span class="wtok' + (mark ? ' offplan' : '') + '" title="'
-            + esc(mark ? OFF_PLAN_TIP : WEIGHTED_TIP) + '">⚖ ' + fmtTok(Math.round(w))
-            // ‼️ PARENTHESISED, because almost every caller writes a UNIT after
-            // this string ("… tokens", "… tok"). Bare, the mark landed between
-            // the number and its unit and the line read "9.4k off-plan tokens".
-            + (mark ? ' (' + esc(mark) + ')' : '') + '</span>';
+            + esc(mark ? OFF_PLAN_TIP : WEIGHTED_TIP) + '">⚖ ' + fmtTok(Math.round(w)) + '</span>';
     }
 
     /** Plain-text twin of fmtTokW, for tooltips and title attributes. */
