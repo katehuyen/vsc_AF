@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.867.0 - Pause a reading, skip a paragraph, change its speed (2026-10-06)
+
+- **A reading can be paused and resumed where it stopped.** New commands:
+  Sound: Pause / Resume Reading, Sound: Next Paragraph and Sound: Previous
+  Paragraph (Previous restarts the paragraph once it is past its first
+  sentence, as a player's back button does). They work on any reading -
+  Read aloud as well as one you asked for.
+- **The speed of the reading now can be changed while it reads**, from the
+  sentence it is on; your speech settings are not touched.
+- **No gaps between paragraphs on Windows.** A reading is now one voice
+  process for the whole text instead of a new one per paragraph (measured:
+  starting a voice process takes almost a second on its own).
+- On macOS and Linux a reading goes a paragraph at a time: pausing or changing
+  the speed restarts the paragraph.
+- **For agents:** `alerts.reading` takes `action` (stop, pause, resume,
+  toggle, next, prev) and `rate`, and reports where the reading is.
+
 ## 3.866.0 - Have an answer read to you, whole, when you ask (2026-10-06)
 
 - **An agent can now read an answer out loud for you on request** - the

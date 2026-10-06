@@ -379,7 +379,7 @@ import { registryMatch, whoami } from './core/whoami';
 import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
-import { registerReaderOps } from './core/readerOps';
+import { ReaderDeps, readingAct, registerReaderOps } from './core/readerOps';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
@@ -679,7 +679,7 @@ import {
 } from './core/turnAlerts';
 import {
     announcement, matchVoice, speakConfig, speakEvents, speaks, SPEAK_DEFAULT, SPEAK_MAX,
-    SPEECH_ONECORE_NOTE, voiceLabel, sanitizeForSpeech, type InstalledVoice, type SpeakConfig
+    SPEECH_ONECORE_NOTE, voiceLabel, sanitizeForSpeech, speechParagraphs, type InstalledVoice, type SpeakConfig
 } from './core/speech';
 import {
     addCustomVoice, AlertEvent, ALERT_EVENTS, ALERT_ON_DEFAULT, AlertVoice, builtinVoices, CustomVoice, FLEET_EVENTS, LANE_EVENTS,
@@ -2056,7 +2056,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * other, and the newer answer is the one worth hearing. A reader per
      * session would give the room a crowd.
      */
-    const dialogue = new DialogueSpeaker();
+    // U-198 — a paused reading or another paragraph is redrawn where reading is drawn
+    const dialogue = new DialogueSpeaker({ onChange: soundRepaint });
     const readingNow = new ReadingNow(soundRepaint);
     // U-183 — the Sound page's Sessions table follows sessions coming, going and
     // being renamed; a hook event that changes none of that redraws nothing.
@@ -3229,7 +3230,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const own = turnAlerts.speechVoiceFor(s.sessionId);
         void speechFor(own || fleet.voice, sense).then(how => {
             const text = ask ? askSpoken(live.labelOf(s), ask, how.words) : said ?? '';
-            readingNow.start(s.sessionId, dialogue.speak(sanitizeForSpeech(text, undefined, how.words), { ...fleet, voice: how.voice }));
+            readingNow.start(s.sessionId, dialogue.speak(speechParagraphs(text, undefined, how.words), { ...fleet, voice: how.voice }));
         });
     }
 
@@ -17783,7 +17784,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // S-98 — the user's soft brake: the op and the Console card share applyLastLeg
     registerLastLegOp(bridge, { store: batonStore });
     // U-197 — reading on demand: the conversation is read through the transcript page's own parse, unclipped
-    registerReaderOps(bridge, {
+    const readerDeps: ReaderDeps = {
         conversation: ref => {
             const hit = resolveSessionRef(index.allWithExternal(), ref);
             if (!hit.ok) { return { error: hit.error + (hit.candidates.length ? ` Candidates: ${hit.candidates.join(', ')}` : '') }; }
@@ -17798,7 +17799,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         voiceOf: id => turnAlerts.speechVoiceFor(id),
         fleet: speakCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
-    });
+    };
+    registerReaderOps(bridge, readerDeps);
+    const readingControl = (action: 'toggle' | 'next' | 'prev'): void => {
+        const r = readingAct(readerDeps, action);
+        if (!r.done) {
+            void vscode.window.setStatusBarMessage(r.reading
+                ? 'Agent Farm: no paragraph after this one' : 'Agent Farm: nothing is being read aloud', 3000);
+        }
+    };
 
     // S-70 / S-71 — the release and the door. The three end signals (hook
     // SessionEnd, Console host exit, terminal close) all arrive as the live
@@ -41234,6 +41243,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.setStatusBarMessage('Agent Farm: nothing is being read aloud', 3000);
             }
         }),
+        // U-198 — the reading's controls, the same body as `alerts.reading action=`
+        vscode.commands.registerCommand('agentfarm.pauseReading', () => readingControl('toggle')),
+        vscode.commands.registerCommand('agentfarm.nextParagraph', () => readingControl('next')),
+        vscode.commands.registerCommand('agentfarm.previousParagraph', () => readingControl('prev')),
 
         vscode.commands.registerCommand('agentfarm.openFarmSettings',
             (arg?: { focus?: string }) => {

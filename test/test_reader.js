@@ -106,7 +106,7 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
         const { EN_PHRASES } = require(path.join(ROOT, 'out', 'core', 'speechPhrases.js'));
         const long = Array.from({ length: 120 }, (_, i) => `Line ${i + 1} of the long report.`).join(' ');
         const conv = { sessionId: 'abcd1234-full', label: 'developer', steps: [...steps, { role: 'assistant', text: long, turn: 2, uuid: 'L' }] };
-        const spoke = [], wants = [];
+        const spoke = [], wants = [], acts = [];
         let stops = 0;
         const reading = new ReadingNow();
         const deps = {
@@ -114,7 +114,11 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
             voiceOf: id => id === 'abcd1234-full' ? 'Tolga' : '',
             fleet: () => ({ on: false, voice: 'David', rate: 0, volume: 100, events: [], template: '' }),
             speechFor: async (want) => { wants.push(want); return { voice: want, words: EN_PHRASES }; },
-            dialogue: { speaking: false, speak: (text, cfg, d) => { spoke.push({ text, cfg, d }); return new Promise(() => undefined); } },
+            dialogue: {
+                speaking: false, state: { paragraph: 0, paragraphs: 2, paused: false, live: true },
+                act: a => { acts.push(a); return a !== 'next'; }, setRate: r => { acts.push('rate ' + r); return true; },
+                speak: (text, cfg, d) => { spoke.push({ text: [].concat(text).join(' '), paras: text, cfg, d }); return new Promise(() => undefined); }
+            },
             readingNow: reading,
             stop: () => { stops++; reading.stop(); return true; }
         };
@@ -142,8 +146,14 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
         const st = await d('alerts.reading', {});
         ok('alerts.reading says what is being read', st.ok && st.result.reading && st.result.source.surface === 'bridge' && st.result.speaking === false);
         const sp = await d('alerts.reading', { action: 'stop' });
-        ok('action=stop runs the one stop and the channel is empty after it', sp.ok && sp.result.stopped && stops === 1 && sp.result.reading === false);
-        ok('an action the player does not have yet is refused by name', /"pause" is not known/.test((await d('alerts.reading', { action: 'pause' })).error));
+        ok('action=stop runs the one stop and the channel is empty after it', sp.ok && sp.result.done && stops === 1 && sp.result.reading === false);
+        const pz = await d('alerts.reading', { action: 'PAUSE', rate: 3 });
+        ok('U-198 — an action and a rate go to the player, and the answer says where it is', pz.ok && pz.result.done && acts.join('|') === 'pause|rate 3'
+            && pz.result.at.paragraphs === 2);
+        ok('nowhere to go is done:false, not an error', (await d('alerts.reading', { action: 'next' })).result.done === false);
+        ok('an action the player does not have, and a rate that is not a number, are refused by name',
+            /"rewind" is not known — one of stop, pause, resume, toggle, next, prev/.test((await d('alerts.reading', { action: 'rewind' })).error)
+            && /rate is a number from -10/.test((await d('alerts.reading', { rate: 'fast' })).error));
         const names = (reg.catalog() || []).map(o => o.op);
         ok('both ops are in farm.ops', names.includes('alerts.readNow') && names.includes('alerts.reading'));
     }

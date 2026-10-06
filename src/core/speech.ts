@@ -201,10 +201,9 @@ const VOICE_TOKEN_ROOTS = [
     'HKLM:\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens'
 ];
 
-const SPVOICE_SCRIPT =
-    'if (-not $env:AF_SPEAK_TEXT) { exit 4 };'
-    + '$v = New-Object -ComObject SAPI.SpVoice;'
-    + 'if ($env:AF_SPEAK_VOICE) {'
+/** Finds `$env:AF_SPEAK_VOICE` in both registries and sets it on `$v`, or exits 5 — shared with the reading player. */
+export const SPVOICE_PICK =
+    'if ($env:AF_SPEAK_VOICE) {'
     + '  $want = $env:AF_SPEAK_VOICE; $got = $false;'
     + '  $tok = New-Object -ComObject SAPI.SpObjectToken;'
     + '  if ($want.StartsWith("HKEY_")) {'
@@ -220,7 +219,12 @@ const SPVOICE_SCRIPT =
     + '    }'
     + '  };'
     + '  if (-not $got) { exit 5 }'
-    + '};'
+    + '};';
+
+const SPVOICE_SCRIPT =
+    'if (-not $env:AF_SPEAK_TEXT) { exit 4 };'
+    + '$v = New-Object -ComObject SAPI.SpVoice;'
+    + SPVOICE_PICK
     + '$v.Rate = [int]$env:AF_SPEAK_RATE;'
     + '$v.Volume = [int]$env:AF_SPEAK_VOLUME;'
     + '$v.Speak($env:AF_SPEAK_TEXT) | Out-Null';
@@ -511,8 +515,13 @@ export const DIALOGUE_MORE = EN_PHRASES.more;
  * language for the spoken side; a reading that mixed two is worse than either.
  */
 export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX, words: SpeechPhrases = EN_PHRASES): string {
+    return speechParagraphs(text, limit, words).join(' ');
+}
+
+/** U-198 — the same text as `sanitizeForSpeech`, kept in its paragraphs, so a player can step between them. */
+export function speechParagraphs(text: unknown, limit: number = DIALOGUE_MAX, words: SpeechPhrases = EN_PHRASES): string[] {
     let s = String(text ?? '').replace(/\r\n?/g, '\n');
-    if (!s.trim()) { return ''; }
+    if (!s.trim()) { return []; }
 
     // 1. Fenced code FIRST, before anything else can look inside one, and in
     //    TWO passes rather than one alternation.
@@ -589,10 +598,23 @@ export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX, w
 
     // 8. One paragraph per block, each ending in a stop so the voice breathes.
     const blocks = s.split(/\n{2,}/)
-        .map(b => sentence(b.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ')))
+        .map(b => sentence(b.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ')).replace(/\s{2,}/g, ' '))
         .filter(Boolean);
-    const out = blocks.join(' ').replace(/\s{2,}/g, ' ').trim();
-    return limit > 0 ? cutForSpeech(out, limit, words.more) : out;
+    const out = blocks.join(' ');
+    return limit > 0 ? paragraphsOf(blocks, cutForSpeech(out, limit, words.more)) : blocks;
+}
+
+/** The cut text back in its paragraphs: whole ones while they fit, then what is left (the cut one and "There is more"). */
+function paragraphsOf(blocks: string[], said: string): string[] {
+    const out: string[] = [];
+    let at = 0;
+    for (const b of blocks) {
+        if (said.slice(at, at + b.length) !== b) { break; }
+        out.push(b);
+        at += b.length + 1;
+    }
+    const rest = said.slice(at).trim();
+    return rest ? [...out, rest] : out;
 }
 
 /** How a fenced block is said: its SIZE, which is all a listener can use —

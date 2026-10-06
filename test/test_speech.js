@@ -481,20 +481,22 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
                 };
                 return { execFile, spawned };
             };
+            // U-198 - the long-lived player is not this test: it cannot start, so the one-shot path below is what reads
+            const noPlayer = () => { throw Object.assign(new Error('spawn powershell ENOENT'), { code: 'ENOENT' }); };
             const cfg = S.speakConfig({ voice: '' });
 
             {
                 const f = fakeSpawn();
                 const sp = new T.DialogueSpeaker();
                 const first = sp.speak('The first answer.', cfg,
-                    { platform: 'win32', execFile: f.execFile });
+                    { platform: 'win32', execFile: f.execFile, spawn: noPlayer });
                 ok('a reading holds the PROCESS while it runs — a pid can be'
                     + ' recycled between reading it and killing it', sp.speaking === true);
                 // ‼️ THE NEWEST TURN WINS. A reading is about what is on the
                 // screen NOW; queueing would put the farm minutes behind the
                 // conversation, and nobody wants that version.
                 const second = sp.speak('The second answer.', cfg,
-                    { platform: 'win32', execFile: f.execFile });
+                    { platform: 'win32', execFile: f.execFile, spawn: noPlayer });
                 ok('a new turn KILLS the reading it replaced rather than queueing it',
                     f.spawned[0].killed === true);
                 f.spawned[1].finish();

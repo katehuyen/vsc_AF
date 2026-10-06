@@ -35,6 +35,8 @@ import {
     type InstalledVoice, type SpeakConfig
 } from './speech';
 import { withToneVolume } from './toneVolume';
+import { persistentPlayback, Playback, SpawnFn, stepwisePlayback } from './readingPlayback';
+import type { PlayState, ReadingAction } from './readingPlayer';
 
 export const TURN_ALERT_ACTIONS = ['sound', 'focus', 'modal', 'toast'] as const;
 export type TurnAlertAction = (typeof TURN_ALERT_ACTIONS)[number];
@@ -998,6 +1000,8 @@ export interface PlaySoundDeps {
     ) => unknown;
     now?: () => number;
     timeoutMs?: number;
+    /** U-198 — node's `child_process.spawn` for the reading player, injectable so a test never makes noise. */
+    spawn?: SpawnFn;
     /** U-212 — the tone level, 0–100 (`agentFarm.alerts.toneVolume`); unset = 100 = as it always played */
     volume?: number;
 }
@@ -1070,7 +1074,7 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
  * release. What varies between a tone and an announcement is the candidate
  * table and nothing else.
  */
-function runPlayers(
+export function runPlayers(
     usable: PlayerCandidate[],
     ctx: {
         execFile: NonNullable<PlaySoundDeps['execFile']>;
@@ -1235,13 +1239,30 @@ export const DIALOGUE_TIMEOUT_MS = 5 * 60_000;
  *    that wants to say "nothing was being read" must not have to guess.
  */
 export class DialogueSpeaker {
-    private child: { kill?: (signal?: string) => boolean } | null = null;
+    /** U-198 — the reading being played, by whichever engine plays it. */
+    private play: Playback | null = null;
     /** Which reading is the current one. A reply from a killed process must not
      *  be able to clear the handle of the reading that replaced it. */
     private epoch = 0;
 
+    /** `onChange`: the reading started, ended, paused, moved paragraph or rate — what a surface redraws. */
+    constructor(private readonly opts: { onChange?: () => void } = {}) { }
+
+    private onChange(): void {
+        try { this.opts.onChange?.(); } catch { /* a surface never stops a reading */ }
+    }
+
     /** Is something being read aloud right now? */
-    get speaking(): boolean { return this.child !== null; }
+    get speaking(): boolean { return this.play !== null; }
+
+    /** U-198 — where the reading is, or null. */
+    get state(): PlayState | null { return this.play ? this.play.state() : null; }
+
+    /** U-198 — pause · resume · toggle · next · prev on the reading now; false when there is none or nowhere to go. */
+    act(action: ReadingAction): boolean { return this.play ? this.play.act(action) : false; }
+
+    /** U-198 — this reading's rate (−10…10), from the sentence it is on; the setting is not touched. */
+    setRate(rate: unknown): boolean { return this.play ? this.play.setRate(rate) : false; }
 
     /**
      * Read one turn aloud, cutting short whatever was being read.
@@ -1249,40 +1270,49 @@ export class DialogueSpeaker {
      * The text is expected to have been through `sanitizeForSpeech` already —
      * it is not done here, because WHAT to read (a whole turn, a selection, one
      * paragraph) is the caller's question and the ceiling belongs with it.
+     * Paragraphs (`speechParagraphs`) are what next / previous step between.
      */
-    async speak(text: string, cfg: SpeakConfig, deps: PlaySoundDeps = {}): Promise<SoundResult> {
+    async speak(text: string | readonly string[], cfg: SpeakConfig, deps: PlaySoundDeps = {}): Promise<SoundResult> {
         this.stop();
         const mine = ++this.epoch;
         const platform = deps.platform ?? process.platform;
         const now = deps.now ?? (() => Date.now());
         const startedAt = now();
-        const said = String(text ?? '').trim();
+        const paras = (typeof text === 'string' ? [text] : [...text]).map(p => String(p ?? '').trim()).filter(Boolean);
+        const said = paras.join(' ');
         const base = (backend: string): SoundResult => ({
             backend, ok: false, startedAt, durationMs: now() - startedAt,
             exitCode: null, stderr: '', spoke: said
         });
-        if (!said) {
+        if (!paras.length) {
             return { ...base('none'), skipped: 'nothing to read — the turn had no speakable text' };
         }
-        const usable = speakCandidates(platform, said, cfg);
-        if (!usable.length) {
+        if (!speakCandidates(platform, said, cfg).length) {
             return { ...base('none'), error: `no speech backend known for platform ${platform}` };
         }
         const execFile = (deps.execFile
             ?? (require('child_process') as typeof import('child_process')).execFile
         ) as NonNullable<PlaySoundDeps['execFile']>;
-        const r = await runPlayers(usable, {
-            execFile,
-            timeout: deps.timeoutMs ?? DIALOGUE_TIMEOUT_MS,
-            now, startedAt, base,
-            onSpawn: c => {
-                // A late spawn from a reading that has already been replaced is
-                // killed on the spot rather than left running unreachable.
-                if (mine !== this.epoch) { killChild(c); return; }
-                this.child = c as { kill?: (signal?: string) => boolean };
-            }
+        const onChange = () => { if (mine === this.epoch) { this.onChange(); } };
+        // The one-shot players, a paragraph at a time: every platform's path, and
+        // Windows' own when its player cannot start.
+        const stepwise = () => stepwisePlayback(paras, cfg, {
+            now, base, onChange, kill: killChild,
+            oneShot: (t, c, onSpawn) => runPlayers(speakCandidates(platform, t, c), {
+                execFile, timeout: deps.timeoutMs ?? DIALOGUE_TIMEOUT_MS, now, startedAt, base,
+                onSpawn: ch => (mine === this.epoch ? onSpawn(ch) : killChild(ch))
+            })
         });
-        if (mine === this.epoch) { this.child = null; }
+        const spawn = (deps.spawn ?? (require('child_process') as typeof import('child_process')).spawn) as unknown as SpawnFn;
+        this.play = (platform === 'win32' ? persistentPlayback(paras, cfg, { spawn, now, base, onChange }) : null) ?? stepwise();
+        this.onChange();
+        let r = await this.play.done;
+        if (r.early && mine === this.epoch) {
+            this.play = stepwise();
+            r = await this.play.done;
+        }
+        if (mine === this.epoch) { this.play = null; this.onChange(); }
+        delete r.early;
         // ‼️ INTERRUPTED IS NOT FAILED. A killed player exits non-zero and the
         // runner reports that honestly; saying so here is what keeps "I stopped
         // it" out of the error log the user reads when nothing was heard.
@@ -1291,11 +1321,12 @@ export class DialogueSpeaker {
 
     /** Stop whatever is being read. Answers whether there was anything. */
     stop(): boolean {
-        const c = this.child;
-        this.child = null;
+        const p = this.play;
+        this.play = null;
         this.epoch++;
-        if (!c) { return false; }
-        killChild(c);
+        if (!p) { return false; }
+        p.kill();
+        this.onChange();
         return true;
     }
 }

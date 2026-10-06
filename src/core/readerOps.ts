@@ -10,7 +10,8 @@
  * noise nobody chose, and asking for a reading is a choice.
  */
 import { BridgeRefusal, BridgeRegistry, optStr } from './bridge';
-import { readAskOf, readingText, ReadingSource, readingTimeoutMs, readTarget } from './reader';
+import { readAskOf, readingParagraphs, ReadingSource, readingTimeoutMs, readTarget } from './reader';
+import { clampRate, PlayState, ReadingAction, READING_ACTIONS } from './readingPlayer';
 import type { ReadableStep } from './sessionRead';
 import type { SpeakConfig } from './speech';
 import type { SpeechPhrases } from './speechPhrases';
@@ -27,7 +28,7 @@ export interface ReaderDeps {
     fleet(): SpeakConfig;
     /** A chosen voice wins; Auto ('') takes an installed voice of the text's language, with that language's inserted words. */
     speechFor(want: string, text: string): Promise<{ voice: string; words: SpeechPhrases }>;
-    dialogue: Pick<DialogueSpeaker, 'speak' | 'speaking'>;
+    dialogue: Pick<DialogueSpeaker, 'speak' | 'speaking' | 'state' | 'act' | 'setRate'>;
     readingNow: Pick<ReadingNow, 'start' | 'source'>;
     /** Cut the reading short — the same stop as `alerts.read stop` and Sound: Stop Reading. */
     stop(): boolean;
@@ -57,20 +58,48 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
     const sessionId = conv ? conv.sessionId : '';
     const fleet = deps.fleet();
     const how = await deps.speechFor((sessionId && deps.voiceOf(sessionId)) || fleet.voice, raw);
-    const text = readingText(raw, true, how.words);
-    if (!text) { throw new BridgeRefusal('nothing in it can be spoken', { step: 'text' }); }
-    const run = deps.dialogue.speak(text, { ...fleet, voice: how.voice }, { timeoutMs: readingTimeoutMs(text.length) });
+    const paras = readingParagraphs(raw, true, how.words);
+    if (!paras.length) { throw new BridgeRefusal('nothing in it can be spoken', { step: 'text' }); }
+    const chars = paras.join(' ').length;
+    const run = deps.dialogue.speak(paras, { ...fleet, voice: how.voice }, { timeoutMs: readingTimeoutMs(chars) });
     deps.readingNow.start(sessionId, run, { surface, ...where });
     return {
         reading: true, sessionId, label: conv ? conv.label : '', ...where,
-        surface, chars: text.length, voice: how.voice || '(system default)'
+        surface, chars, voice: how.voice || '(system default)'
     };
 }
 
-/** What is being read now: the source while a reading lasts, and whether its player is speaking yet. */
-export function readingState(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'>): { reading: boolean; speaking: boolean; source: ReadingSource | null } {
+export interface ReadingStateAnswer {
+    reading: boolean;
+    speaking: boolean;
+    source: ReadingSource | null;
+    /** U-198 — where the player is; null while nothing plays */
+    at: PlayState | null;
+}
+
+/** What is being read now: the source while a reading lasts, whether its player is speaking yet, and where it is. */
+export function readingState(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'>): ReadingStateAnswer {
     const source = deps.readingNow.source;
-    return { reading: !!source, speaking: deps.dialogue.speaking, source };
+    return { reading: !!source, speaking: deps.dialogue.speaking, source, at: deps.dialogue.state };
+}
+
+/**
+ * U-198 — ONE BODY for every control of the reading now: the bridge's
+ * `alerts.reading` and the Sound: Pause / Resume, Next and Previous commands.
+ * `done` is false when nothing is being read or there is nowhere to go.
+ */
+export function readingAct(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow' | 'stop'>, action: string, rate?: unknown): ReadingStateAnswer & { done: boolean } {
+    const a = String(action ?? '').trim().toLowerCase();
+    if (a && a !== 'stop' && !(READING_ACTIONS as readonly string[]).includes(a)) {
+        throw new BridgeRefusal(`action "${a}" is not known — one of stop, ${READING_ACTIONS.join(', ')}`, { step: 'action' });
+    }
+    if (rate !== undefined && rate !== null && rate !== '' && clampRate(rate) === null) {
+        throw new BridgeRefusal('rate is a number from -10 (slowest) to 10 (fastest)', { step: 'rate' });
+    }
+    let done = false;
+    if (a === 'stop') { done = deps.stop(); } else if (a) { done = deps.dialogue.act(a as ReadingAction); }
+    if (rate !== undefined && rate !== null && rate !== '' && a !== 'stop') { done = deps.dialogue.setRate(rate) || done; }
+    return { done, ...readingState(deps) };
 }
 
 export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): void {
@@ -88,16 +117,17 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
         },
         {
             op: 'alerts.reading',
-            describe: 'WHAT IS BEING READ ALOUD NOW — { reading, speaking, source: { sessionId, msg?, turn?, surface } | null }: the conversation (empty for a text of your own), '
-                + 'the step\'s key, the turn, and who asked (`auto` = Read aloud, `bridge`, or a page). `speaking` turns true once the player is running. '
-                + 'args: action? ("stop" — cut the reading short; the same stop as `alerts.read stop` and Sound: Stop Reading). Answers `stopped` with a stop.',
+            describe: 'WHAT IS BEING READ ALOUD NOW, AND ITS CONTROLS — with no args: { reading, speaking, source: { sessionId, msg?, turn?, surface } | null, at }: the conversation '
+                + '(empty for a text of your own), the step\'s key, the turn, and who asked (`auto` = Read aloud, `bridge`, or a page); `speaking` turns true once the player runs; '
+                + '`at` = { paragraph, paragraphs (0-based of n), sentence, word, wordLen (characters within the paragraph), paused, rate, live } — `live` is false where the '
+                + 'backend reads a paragraph at a time (macOS, Linux): there pause and rate restart the paragraph and the word is not known. '
+                + 'args: action? (stop · pause · resume · toggle · next · prev — the same body as Sound: Stop Reading, Sound: Pause / Resume Reading, Sound: Next Paragraph and '
+                + 'Sound: Previous Paragraph; prev restarts the paragraph once it is past its first sentence, else goes back one), rate? (-10…10, this reading only, '
+                + 'from the sentence it is on — the setting is not changed). Answers `done` (false: nothing is being read, or there is nowhere to go) with the state after it.',
             handler: (args) => {
-                const action = (optStr(args, 'action') ?? '').trim().toLowerCase();
-                if (action && action !== 'stop') {
-                    throw new BridgeRefusal(`action "${action}" is not known — "stop" is the one there is`, { step: 'action' });
-                }
-                if (action === 'stop') { return { stopped: deps.stop(), ...readingState(deps) }; }
-                return readingState(deps);
+                const action = optStr(args, 'action');
+                const rate = (args as { rate?: unknown }).rate;
+                return action || rate !== undefined ? readingAct(deps, action ?? '', rate) : readingState(deps);
             }
         }
     ]);

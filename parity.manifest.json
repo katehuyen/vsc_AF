@@ -6884,6 +6884,33 @@
       ]
     },
     {
+      "capability": "pauseReading",
+      "ui": [
+        "cmd:agentfarm.pauseReading"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
+      "capability": "nextParagraph",
+      "ui": [
+        "cmd:agentfarm.nextParagraph"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
+      "capability": "previousParagraph",
+      "ui": [
+        "cmd:agentfarm.previousParagraph"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
       "capability": "studioBrand.ts#brand:save",
       "ui": [
         "page:studioBrand.ts#brand:save"

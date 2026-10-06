@@ -13,7 +13,7 @@
  */
 
 import { ReadableStep, stepKey } from './sessionRead';
-import { DIALOGUE_MAX, sanitizeForSpeech } from './speech';
+import { DIALOGUE_MAX, sanitizeForSpeech, speechParagraphs } from './speech';
 import { EN_PHRASES, SpeechPhrases } from './speechPhrases';
 import { DIALOGUE_TIMEOUT_MS } from './turnAlerts';
 
@@ -30,6 +30,11 @@ export interface ReadingSource {
 /** The text a reading speaks: an ask reads all of it; Read aloud keeps its ceiling. */
 export function readingText(raw: unknown, onDemand: boolean, words: SpeechPhrases = EN_PHRASES): string {
     return sanitizeForSpeech(raw, onDemand ? 0 : DIALOGUE_MAX, words);
+}
+
+/** U-198 — the same text in its paragraphs, which the player steps between. */
+export function readingParagraphs(raw: unknown, onDemand: boolean, words: SpeechPhrases = EN_PHRASES): string[] {
+    return speechParagraphs(raw, onDemand ? 0 : DIALOGUE_MAX, words);
 }
 
 /** One ask, as `alerts.readNow` takes it — exactly one of message, turn, last answer or free text. */
