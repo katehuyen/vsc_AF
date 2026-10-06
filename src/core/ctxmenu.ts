@@ -240,6 +240,9 @@ export const CTX_SUBMENUS: CtxSubmenu[] = [
     { id: CTX_PREFIX + 'tnCopy', label: 'Copy this turn', group: '5_copy@3', when: TURN_ROW },
     { id: CTX_PREFIX + 'vtCopy', label: 'Copy', group: '5_copy@1', when: VIEWER_TURN },
     { id: CTX_PREFIX + 'vsCopy', label: 'Copy', group: '5_copy@1', when: VIEWER_STEP },
+    // U-199 — the step's 🔊 in the menu the hand already opens; a step without words has nothing to read.
+    { id: CTX_PREFIX + 'vtRead', label: 'Read aloud', group: '4_read@1', when: VIEWER_TURN },
+    { id: CTX_PREFIX + 'vsRead', label: 'Read aloud', group: '4_read@1', when: `${VIEWER_STEP} && stepWords` },
     { id: CTX_PREFIX + 'shCopy', label: 'Copy the match', group: '5_copy@3', when: SEARCH_HIT },
     { id: CTX_PREFIX + 'scStatus', label: 'Status', group: '2_edit@1', when: SCENE_ROW },
     { id: CTX_PREFIX + 'asCopy', label: 'Copy', group: '5_copy@1', when: ASSET_CARD }
@@ -1347,6 +1350,11 @@ export const CTX_ITEMS: CtxItem[] = [
         ['answer', 'What came back'],
         ['all', 'The whole turn']
     ]),
+    ...picker(CTX_PREFIX + 'vtRead', VIEWER_TURN, 'vtRead', [
+        ['answer', 'The answer'],
+        ['all', 'The whole turn'],
+        ['rest', 'From here to the end']
+    ]),
 
     // ---- one step inside a turn -------------------------------------------
     {
@@ -1361,6 +1369,10 @@ export const CTX_ITEMS: CtxItem[] = [
         ['text', 'What it says'],
         ['tool', 'What was sent to the tool'],
         ['result', 'What came back']
+    ]),
+    ...picker(CTX_PREFIX + 'vsRead', `${VIEWER_STEP} && stepWords`, 'vsRead', [
+        ['step', 'This step'],
+        ['rest', 'From here to the end']
     ]),
 
     // ---- a file this session changed, and one hunk of it -------------------

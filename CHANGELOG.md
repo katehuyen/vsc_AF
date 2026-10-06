@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.868.0 - Read any step of a transcript aloud (2026-10-06)
+
+- **A 🔊 button on every step with words.** In a session's transcript, the
+  prompts and the agent's answers now have a 🔊 next to their ⧉ copy button
+  (it appears when the pointer is over the step, like ⧉). Press it and that
+  step is read aloud, whole. Tool calls and tool results have none.
+- **The step being read shows ■** - press it to stop. A paused reading shows
+  **▶** - press it to resume. The button follows the reading wherever it was
+  started from (a menu, a command, an agent), and every open transcript shows
+  it.
+- **Read aloud in the right-click menus.** On a turn: *The answer*, *The whole
+  turn*, or *From here to the end* (the agent's answers from this turn on, one
+  after another). On a step: *This step* or *From here to the end*.
+- On the phone the transcript has no 🔊 yet: reading plays on the PC's
+  speakers, and a phone should not make a PC in another room speak.
+
 ## 3.867.0 - Pause a reading, skip a paragraph, change its speed (2026-10-06)
 
 - **A reading can be paused and resumed where it stopped.** New commands:

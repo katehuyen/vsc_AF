@@ -116,6 +116,7 @@
         // K-26 — the wiki tagger answers for itself; the marks it hands back
         // are what turns the band's 🔖 green without waiting for a data push.
         if (window.AFWiki && window.AFWiki.receive(ev.data)) { return; }
+        if (window.AFRead.receive(ev.data)) { return; }
         // The receipt for one step's copy button — drawn on the button itself, and
         // only after the host says the clipboard actually took it. No repaint: the
         // reader is looking at that row and moving it under them would be rude.
@@ -130,6 +131,7 @@
         }
         if (ev.data.type !== 'data') { return; }
         DATA = ev.data.data;
+        window.AFRead.set(DATA.reading);
         foldNewTurns();
         if (ev.data.auto && replay.active) {
             // live update while replaying: keep position/controls, just refresh the counter.
@@ -491,6 +493,13 @@
      *  per step over a thousand-step transcript is either invisible or a rash. */
     const copyBtnHtml = idx =>
         `<button class="copyb" data-copy="${idx}" title="Copy this step's text to the clipboard">⧉</button>`;
+    /** U-199 — a step with words (a prompt, an answer) can be read aloud. Not drawn on the
+     *  phone: a press there would speak in the room the PC is in. */
+    const readable = m => !!m && (m.role === 'user' || m.role === 'assistant') && !!stepText(m).trim();
+    const readBtnHtml = m => {
+        const key = !ON_PHONE_HOST && readable(m) ? window.AFRead.keyOf(DATA, m) : '';
+        return key ? window.AFRead.btn(DATA.sessionId, key) : '';
+    };
 
     function messageHtml(m, idx) {
         // The 🧑 glyph names a PERSON, so a delegation lane does not wear it:
@@ -520,14 +529,14 @@
         // The button rides on the meta line rather than in the body: the body is
         // the step's own words and a control inside them would be copied along
         // by anyone selecting by hand — which is the thing this replaces.
-        const bar = `<div class="meta">${meta}${copyBtnHtml(idx)}</div>`;
+        const bar = `<div class="meta">${meta}${readBtnHtml(m)}${copyBtnHtml(idx)}</div>`;
         // A step publishes what it is and what it touched. The path is read off
         // the tool input rather than stored on the message: nothing upstream
         // records it, and "open the file it touched" is the question a tool step
         // most often raises.
         const ctx = window.AFCtx.row('afViewerStep', {
             stepIdx: idx, stepRole: m.role, stepKind: m.kind || '',
-            stepTool: m.tool || '', stepFile: toolPath(m)
+            stepTool: m.tool || '', stepFile: toolPath(m), stepWords: readable(m)
         });
 
         if (m.role === 'tool') {
@@ -1341,6 +1350,8 @@
             // ‼️ Delegated, like everything else on this element: a listener per
             // step would be thousands of them on a real transcript, re-attached
             // on every keystroke in the filter box.
+            const rd = t.closest('button[data-read]');
+            if (rd) { ev.stopPropagation(); window.AFRead.press(rd); return; }
             const cp = t.closest('button[data-copy]');
             if (cp) {
                 ev.stopPropagation();          // not a band click
@@ -1526,6 +1537,11 @@
             window.AFCtx.toast(ON_THE_PC, true);
             return;
         }
+        if (ON_PHONE_HOST && (verb === 'vtRead' || verb === 'vsRead')) {
+            window.AFCtx.toast(window.AFI18n.t('Read aloud plays on the PC, not on the phone.'), true);
+            return;
+        }
+        const readAloud = pick => vscode.postMessage({ type: 'readAloud', pick });
 
         switch (verb) {
             // ---- a turn ----
@@ -1566,6 +1582,14 @@
                 copyHost(pick.map(stepText).filter(Boolean).join('\n\n'));
                 return;
             }
+            // U-199 — the step's 🔊 channel: the turn's answer, the whole turn, or the answers from here on.
+            case 'vtRead': {
+                if (arg !== 'rest') { readAloud(arg === 'all' ? { turn: n, whole: true } : { turn: n }); return; }
+                const first = (DATA.messages || []).find(m => m.turn >= n && m.role === 'assistant' && !m.sidechain && readable(m));
+                if (!first) { window.AFCtx.toast(window.AFI18n.t('No answer from here on to read.'), true); return; }
+                readAloud({ from: window.AFRead.keyOf(DATA, first) });
+                return;
+            }
 
             // ---- one step ----
             case 'vsFile':
@@ -1591,6 +1615,11 @@
                 copyHost(arg === 'tool' ? String(m.input || '')
                     : arg === 'result' ? String(m.role === 'toolResult' ? (m.text || '') : '')
                         : stepText(m));
+                return;
+            }
+            case 'vsRead': {
+                const key = window.AFRead.keyOf(DATA, renderedMsgs()[Number(ctx.stepIdx)]);
+                if (key) { readAloud(arg === 'rest' ? { from: key } : { msg: key }); }
                 return;
             }
 
@@ -1641,6 +1670,7 @@
         render({ keepScroll: true });
     });
     window.AFWiki.wire();
+    window.AFRead.init(m => vscode.postMessage(m), DATA.reading);
 
     if (DATA.resetView) {
         filter = '';

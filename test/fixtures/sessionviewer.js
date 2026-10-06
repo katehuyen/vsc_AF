@@ -224,9 +224,37 @@ module.exports = {
             label: 'Session viewer — menu: the counter\'s leg list, leg 24 marked, bounded and scrolling',
             data: data({ over: { origin: 'auto', chain: chainAt(24, true) } }),
             act: r => { r.els.app.innerHTML += `<div class="afchain-menu" style="position:static;margin:8px 0 0 40%">${(r.sandbox.window || r.sandbox).AFChainNav.menuHtml(chainAt(24, true))}</div>`; }
+        },
+        // U-199 — a step's 🔊 beside its ⧉. Headless Chrome has no pointer, so the hover
+        // scene lifts the buttons the way `.msg:hover` does, on every step at once — on its
+        // own buttons: the scenes share one document, and a <style> would lift them in all.
+        {
+            id: 'sessionviewer-read-hover',
+            label: 'Session viewer — every step hovered, Everything shown: 🔊 left of ⧉ on words only, the tool steps ⧉ alone',
+            data: data(),
+            act: r => {
+                unfold(r);
+                r.query('.chip[data-preset="all"]')[0].click();
+                r.els.app.innerHTML = r.els.app.innerHTML.replace(/class="(readb|copyb)"/g, 'class="$1" style="opacity:1"');
+            }
+        },
+        {
+            id: 'sessionviewer-reading',
+            label: 'Session viewer — the answer being read: its button a lit ■ (stop), every other step quiet',
+            data: data({ over: { reading: { sessionId: SID, key: '#5', paused: false } } }),
+            act: unfold
+        },
+        {
+            id: 'sessionviewer-reading-paused',
+            label: 'Session viewer — the reading paused: a lit ▶ (resume) on the answer',
+            data: data({ over: { reading: { sessionId: SID, key: '#5', paused: true } } }),
+            act: unfold
         }
     ]
 };
+
+const SID = '019fe7bc-545c-70d2-9a11-0b1c2d3e4f50';
+function unfold(r) { r.send({ type: 'afctx', act: 'vtFold:0', ctx: { turnN: 1 } }); }
 
 function quotaView() {
     const G = require('../../out/core/contextGuard.js');

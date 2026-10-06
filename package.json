@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.867.0",
+  "version": "3.868.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -3007,6 +3007,21 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.ctx.vtReadAnswer",
+        "title": "The answer",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtReadAll",
+        "title": "The whole turn",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vtReadRest",
+        "title": "From here to the end",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.ctx.vsFile",
         "title": "Open the file it touched",
         "category": "Agent Farm"
@@ -3029,6 +3044,16 @@
       {
         "command": "agentfarm.ctx.vsCopyResult",
         "title": "What came back",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsReadStep",
+        "title": "This step",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.vsReadRest",
+        "title": "From here to the end",
         "category": "Agent Farm"
       },
       {
@@ -3456,6 +3481,14 @@
       {
         "id": "agentfarm.ctx.vsCopy",
         "label": "Copy"
+      },
+      {
+        "id": "agentfarm.ctx.vtRead",
+        "label": "Read aloud"
+      },
+      {
+        "id": "agentfarm.ctx.vsRead",
+        "label": "Read aloud"
       },
       {
         "id": "agentfarm.ctx.shCopy",
@@ -4425,6 +4458,16 @@
           "submenu": "agentfarm.ctx.vsCopy",
           "when": "webviewSection == 'afViewerStep'",
           "group": "5_copy@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.vtRead",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "4_read@1"
+        },
+        {
+          "submenu": "agentfarm.ctx.vsRead",
+          "when": "webviewSection == 'afViewerStep' && stepWords",
+          "group": "4_read@1"
         },
         {
           "submenu": "agentfarm.ctx.shCopy",
@@ -5980,6 +6023,35 @@
           "command": "agentfarm.openTaskHistory",
           "when": "webviewSection == 'afAnalyticsTable'",
           "group": "1_open@1"
+        }
+      ],
+      "agentfarm.ctx.vsRead": [
+        {
+          "command": "agentfarm.ctx.vsReadStep",
+          "when": "webviewSection == 'afViewerStep' && stepWords",
+          "group": "1_pick@1"
+        },
+        {
+          "command": "agentfarm.ctx.vsReadRest",
+          "when": "webviewSection == 'afViewerStep' && stepWords",
+          "group": "1_pick@2"
+        }
+      ],
+      "agentfarm.ctx.vtRead": [
+        {
+          "command": "agentfarm.ctx.vtReadAnswer",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "1_pick@1"
+        },
+        {
+          "command": "agentfarm.ctx.vtReadAll",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "1_pick@2"
+        },
+        {
+          "command": "agentfarm.ctx.vtReadRest",
+          "when": "webviewSection == 'afViewerTurn'",
+          "group": "1_pick@3"
         }
       ],
       "agentfarm.ctx.a2tCopy": [
@@ -7682,6 +7754,21 @@
           "group": "ctx"
         },
         {
+          "command": "agentfarm.ctx.vtReadAnswer",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.vtReadAll",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.vtReadRest",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
           "command": "agentfarm.ctx.vsFile",
           "when": "false",
           "group": "ctx"
@@ -7703,6 +7790,16 @@
         },
         {
           "command": "agentfarm.ctx.vsCopyResult",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.vsReadStep",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.vsReadRest",
           "when": "false",
           "group": "ctx"
         },

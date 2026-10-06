@@ -103,13 +103,15 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
         },
         // X-456 — reading a transcript. Renaming, pinning, resuming in the Console, capturing the
         // context and keeping turns for the wiki are manage; files, the raw JSONL, the terminal, the
-        // export and the PC clipboard stay on the PC. The chain arrows reach the phone as afnav.
+        // export, the PC clipboard and the PC's speakers stay on the PC (a phone's 🔊 is the phone's
+        // own voice, U-209). The chain arrows reach the phone as afnav.
         session: {
             open: 'read', act: 'manage',
             looks: ['refresh', 'sessionFileEdits', 'wikiAsk'],
             answers: [],
             pcOnly: ['openRaw', 'copyStep', 'openEditedFile', 'revealFile', 'exportChoose', 'resume',
-                'focusTerminal', 'openAgent', 'openDashboard', 'openTimeline', 'chainGo', 'openGuide', 'afnav'],
+                'focusTerminal', 'openAgent', 'openDashboard', 'openTimeline', 'chainGo', 'openGuide', 'afnav',
+                'readAloud', 'readControl'],
             make: (host, args) => make.session(host, args)
         },
         // X-456 — the notice board. Answering or declining a question and marking what was read are

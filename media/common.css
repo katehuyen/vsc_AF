@@ -137,13 +137,18 @@ td.num, th.num { text-align: right; }
 /* One step's copy button. `margin-left:auto` parks it at the right edge of the
    meta line, and it stays faint until the row is under the pointer: a thousand
    steps each shouting a button is the wall a transcript must not become. */
-.msg .meta .copyb {
+.msg .meta .copyb, .msg .meta .readb {
     margin-left: auto; background: none; border: 1px solid transparent; color: inherit;
     cursor: pointer; font-size: 12px; line-height: 1; padding: 1px 6px; border-radius: 4px;
     opacity: 0; transition: opacity .12s;
 }
-.msg:hover .meta .copyb, .msg .meta .copyb:focus { opacity: 1; }
-.msg .meta .copyb:hover { color: var(--vscode-foreground);
+/* U-199 — the 🔊 sits just left of the ⧉ under the same rule; the step being read
+   (■) or paused (▶) stays lit, because it is the control the listener reaches for. */
+.msg .meta .readb + .copyb { margin-left: 0; }
+.msg:hover .meta .copyb, .msg .meta .copyb:focus,
+.msg:hover .meta .readb, .msg .meta .readb:focus, .msg .meta .readb.on { opacity: 1; }
+.msg .meta .readb.on { color: var(--vscode-charts-blue, #3794ff); border-color: var(--vscode-charts-blue, #3794ff); }
+.msg .meta .copyb:hover, .msg .meta .readb:hover { color: var(--vscode-foreground);
     background: var(--vscode-toolbar-hoverBackground, #8882);
     border-color: var(--vscode-widget-border, #4443); }
 /* The receipt outlives the pointer leaving the row — otherwise the one frame
