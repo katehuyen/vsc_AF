@@ -42,3 +42,17 @@ export class ReadingStatusBar implements vscode.Disposable {
 
     dispose(): void { this.item.dispose(); }
 }
+
+/** Sound: Reading Speed… from the palette — the speed of the reading now, the current one picked. */
+export async function pickReadingRate(current: number): Promise<number | undefined> {
+    const items = Array.from({ length: 21 }, (_, i) => i - 10).map(r => ({
+        label: r === current ? `$(check) ${r}` : String(r),
+        description: r === 0 ? 'the voice\'s own normal speed' : r < 0 ? 'slower' : 'faster',
+        rate: r
+    }));
+    const pick = await vscode.window.showQuickPick(items, {
+        title: 'Reading speed — this reading only; the setting is on the Sound page',
+        placeHolder: `Now ${current}. −10 slow to 10 fast`
+    });
+    return pick ? pick.rate : undefined;
+}

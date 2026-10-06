@@ -115,8 +115,8 @@ const settle = () => new Promise(r => setTimeout(r, 20));
     ok('…paused, when it is', tab.posted.filter(m => m.type === 'reading').pop().reading.paused === true);
     SessionViewerPanel.refreshOpen();
     const pushed = tab.posted.filter(m => m.type === 'data').pop();
-    ok('a data push carries it too, so a repaint draws it',
-        !!pushed && JSON.stringify(pushed.data.reading) === '{"sessionId":"sid-1","key":"a1","paused":true}');
+    ok('a data push carries it too, so a repaint draws it — with the paragraph\'s first words (U-206)',
+        !!pushed && JSON.stringify(pushed.data.reading) === '{"sessionId":"sid-1","key":"a1","paused":true,"head":"Selam, buradayım."}');
 
     tab.inbox.fire({ type: 'readControl', action: 'resume' });
     tab.inbox.fire({ type: 'readControl', action: 'stop' });

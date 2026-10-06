@@ -68,18 +68,22 @@ export class ReadingNow {
     private n = 0;
     /** U-197 — WHAT is being read: the message or turn, and the surface that asked. */
     private src: ReadingSource | null = null;
+    /** U-206 — each paragraph's first words (paragraphHead), so a page can mark the one being read. */
+    private heads: readonly string[] = [];
 
     constructor(private readonly changed: () => void = () => undefined) { }
 
-    start(sessionId: string, run: Promise<unknown>, source?: Omit<ReadingSource, 'sessionId'>): void {
+    start(sessionId: string, run: Promise<unknown>, source?: Omit<ReadingSource, 'sessionId'>, heads: readonly string[] = []): void {
         const n = ++this.n;
         this.id = String(sessionId ?? '');
         this.src = { surface: 'auto', ...source, sessionId: this.id };
+        this.heads = heads;
         this.changed();
         void run.then(undefined, () => undefined).then(() => {
             if (this.n !== n) { return; }
             this.id = '';
             this.src = null;
+            this.heads = [];
             this.changed();
         });
     }
@@ -90,11 +94,15 @@ export class ReadingNow {
         if (!this.id && !this.src) { return; }
         this.id = '';
         this.src = null;
+        this.heads = [];
         this.changed();
     }
 
     /** What is being read, or null. A free-text reading has an empty sessionId. */
     get source(): ReadingSource | null { return this.src; }
+
+    /** The first words of paragraph `i` of the reading now; '' when not known. */
+    headOf(i: number): string { return this.heads[i] ?? ''; }
 
     is(sessionId: string): boolean {
         return !!sessionId && this.id === sessionId;

@@ -15,6 +15,12 @@ export interface ReadingBadge {
     /** the hover's lines, plain text */
     lines: string[];
     paused: boolean;
+    /** whose words and where, without the icon: "developer #3 · 3/9" */
+    label: string;
+    /** "Paragraph 3 of 9"; '' for a single paragraph or before the player speaks */
+    paragraph: string;
+    /** the speed this reading plays at; null before the player speaks */
+    rate: number | null;
 }
 
 /** Whose words: the conversation's label, else what kind of text it is (the surface that asked). */
@@ -32,12 +38,14 @@ export function readingBadge(src: ReadingSource | null, at: PlayState | null, la
     const paused = !!at?.paused;
     const step = at && at.paragraphs > 1 ? `${at.paragraph + 1}/${at.paragraphs}` : '';
     const what = src.turn ? `turn ${src.turn}'s answer` : src.surface === 'auto' ? 'its newest answer' : '';
+    const named = `${who}${step ? ` · ${step}` : ''}`;
+    const paragraph = at && at.paragraphs > 1 ? `Paragraph ${at.paragraph + 1} of ${at.paragraphs}` : '';
     return {
-        text: `$(${paused ? 'debug-pause' : 'unmute'}) ${who}${step ? ` · ${step}` : ''}`,
-        paused,
+        text: `$(${paused ? 'debug-pause' : 'unmute'}) ${named}`,
+        paused, label: named, paragraph, rate: at ? at.rate : null,
         lines: [
             `${paused ? 'Paused' : at ? 'Reading' : 'Starting to read'}: ${who}${what ? ` — ${what}` : ''}`,
-            ...(at && at.paragraphs > 1 ? [`Paragraph ${at.paragraph + 1} of ${at.paragraphs}`] : []),
+            ...(paragraph ? [paragraph] : []),
             ...(at && at.rate ? [`Speed ${at.rate}`] : [])
         ]
     };

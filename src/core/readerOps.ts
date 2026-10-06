@@ -10,7 +10,7 @@
  * noise nobody chose, and asking for a reading is a choice.
  */
 import { BridgeRefusal, BridgeRegistry, optStr } from './bridge';
-import { readAskOf, readingKeyNow, readingParagraphs, ReadingSource, readingTimeoutMs, readTarget } from './reader';
+import { paragraphHead, readAskOf, readingKeyNow, readingParagraphs, ReadingSource, readingTimeoutMs, readTarget } from './reader';
 import { clampRate, PlayState, ReadingAction, READING_ACTIONS } from './readingPlayer';
 import { ReadingPrefs, readingVoiceWant, readingWords } from './readingPrefs';
 import type { ReadableStep } from './sessionRead';
@@ -33,7 +33,7 @@ export interface ReaderDeps {
     /** A chosen voice wins; Auto ('') takes an installed voice of the text's language, with that language's inserted words. */
     speechFor(want: string, text: string): Promise<{ voice: string; words: SpeechPhrases }>;
     dialogue: Pick<DialogueSpeaker, 'speak' | 'speaking' | 'state' | 'act' | 'setRate'>;
-    readingNow: Pick<ReadingNow, 'start' | 'source'>;
+    readingNow: Pick<ReadingNow, 'start' | 'source' | 'headOf'>;
     /** Cut the reading short — the same stop as `alerts.read stop` and Sound: Stop Reading. */
     stop(): boolean;
 }
@@ -79,7 +79,7 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
     if (!paras.length) { throw new BridgeRefusal('nothing in it can be spoken', { step: 'text' }); }
     const chars = paras.join(' ').length;
     const run = deps.dialogue.speak(paras, { ...fleet, voice: how.voice, rate: prefs.rate }, { timeoutMs: readingTimeoutMs(chars) });
-    deps.readingNow.start(sessionId, run, { surface, ...where, ...(segments.length > 1 ? { keys } : {}) });
+    deps.readingNow.start(sessionId, run, { surface, ...where, ...(segments.length > 1 ? { keys } : {}) }, paras.map(p => paragraphHead(p)));
     return {
         reading: true, sessionId, label: conv ? conv.label : '', ...where, steps: segments.length,
         surface, chars, voice: how.voice || '(system default)'
@@ -103,10 +103,15 @@ export function readingState(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'>):
     return { reading: !!source, speaking: deps.dialogue.speaking, source, at, key: readingKeyNow(source, at) };
 }
 
-/** U-199 — what a page draws on its steps (🔊 · ■ · ▶, media/afReadAloud.js); null while nothing is read. */
-export function readingView(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'> | undefined): { sessionId: string; key: string; paused: boolean } | null {
+/**
+ * U-199 — what a page draws on its steps (🔊 · ■ · ▶, media/afReadAloud.js); null while nothing is read.
+ * U-206 — `head`: the first words of the paragraph being read, which the page finds in the step's text and marks.
+ */
+export function readingView(deps: Pick<ReaderDeps, 'dialogue' | 'readingNow'> | undefined): { sessionId: string; key: string; paused: boolean; head: string } | null {
     const s = deps ? readingState(deps) : null;
-    return s?.source ? { sessionId: s.source.sessionId, key: s.key, paused: !!s.at?.paused } : null;
+    if (!deps || !s?.source) { return null; }
+    const head = s.at && typeof deps.readingNow.headOf === 'function' ? deps.readingNow.headOf(s.at.paragraph) : '';
+    return { sessionId: s.source.sessionId, key: s.key, paused: !!s.at?.paused, head };
 }
 
 /**
@@ -153,7 +158,7 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
                 + 'backend reads a paragraph at a time (macOS, Linux): there pause and rate restart the paragraph and the word is not known. '
                 + 'args: action? (stop · pause · resume · toggle · next · prev — the same body as Sound: Stop Reading, Sound: Pause / Resume Reading, Sound: Next Paragraph and '
                 + 'Sound: Previous Paragraph; prev restarts the paragraph once it is past its first sentence, else goes back one), rate? (-10…10, this reading only, '
-                + 'from the sentence it is on — the setting is not changed). Answers `done` (false: nothing is being read, or there is nowhere to go) with the state after it.',
+                + 'from the sentence it is on — the setting is not changed; the same as Sound: Reading Speed… and the page header player\'s − / +). Answers `done` (false: nothing is being read, or there is nowhere to go) with the state after it.',
             handler: (args) => {
                 const action = optStr(args, 'action');
                 const rate = (args as { rate?: unknown }).rate;

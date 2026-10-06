@@ -227,6 +227,17 @@
     'Hear it': 'Dinle',
     'tones at {v} of 100': 'tonlar 100 üzerinden {v}',
     'The sentence\'s own volume, separate from the tones\' level: that one is Tone volume, under When something happens.': 'Cümlenin kendi düzeyi, tonların düzeyinden ayrı: o, When something happens altındaki Ton düzeyi.',
+    // U-206 — the header's reading player
+    'Click opens the player: pause, the paragraph before or after, stop, speed.': 'Tıklayınca oynatıcı açılır: duraklat, önceki ya da sonraki paragraf, durdur, hız.',
+    'Reading aloud': 'Sesli okuma',
+    'Previous paragraph — or the start of this one': 'Önceki paragraf — ya da bu paragrafın başı',
+    'Pause reading': 'Okumayı duraklat',
+    'Resume reading': 'Okumayı sürdür',
+    'Next paragraph': 'Sonraki paragraf',
+    'Stop reading': 'Okumayı durdur',
+    'Speed of this reading: {v} — −10 slow to 10 fast; the setting is on the Sound page': 'Bu okumanın hızı: {v} — −10 yavaş, 10 hızlı; ayarı Sound sayfasında',
+    'Slower': 'Daha yavaş',
+    'Faster': 'Daha hızlı',
     // U-205 — the Sound page's Reading rows, the Settings summary and the flex points
     'Reading': 'Okuma',
     '— a message\'s 🔊, Read Last Answer, Read Selection and Read aloud': '— bir mesajın 🔊 düğmesi, Read Last Answer, Read Selection ve Read aloud',

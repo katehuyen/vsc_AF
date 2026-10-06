@@ -143,6 +143,11 @@ export function readTarget(
     return { text, msg: ask.msg, ...turnOf(spoken[0]), segments: [{ key: ask.msg, text }] };
 }
 
+/** U-206 — a spoken paragraph's first words: what a page matches in the text it shows to mark the paragraph being read. */
+export function paragraphHead(p: unknown, words = 12): string {
+    return String(p ?? '').trim().split(/\s+/).slice(0, words).join(' ');
+}
+
 /**
  * How long a reading may run before its player is taken for hung. Measured
  * with SAPI writing to a file: about 5 characters a second at the slowest

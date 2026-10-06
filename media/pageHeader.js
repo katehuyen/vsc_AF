@@ -418,7 +418,8 @@
                 const s = soundNav();
                 cluster.push(navBtn({
                     label: label, name: s.head, icon: s.icon,
-                    attrs: `data-afnav="sound" data-afsound="${s.state}"`, tip: s.tip
+                    attrs: `data-afnav="sound" data-afsound="${s.state}"`, tip: s.tip,
+                    wrapAttrs: 'data-aftip-mute="body.af-rp-open"'
                 }));
                 continue;
             }
@@ -529,8 +530,12 @@
      * post for pages that must do extra client work first.
      */
     function wire(vscode, hooks) {
+        // U-206 — while a reading lasts the header's 🔊 opens the reading's player (afReadingPlayer.js) instead.
         document.querySelectorAll('[data-afnav]').forEach(b =>
-            b.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: b.dataset.afnav })));
+            b.addEventListener('click', ev => {
+                if (window.AFReadingPlayer && window.AFReadingPlayer.claim(b, ev, vscode)) { return; }
+                vscode.postMessage({ type: 'afnav', to: b.dataset.afnav });
+            }));
         // ‼️ SCOPED TO THE HEADER, and that is not tidiness. `data-afact` is also
         // what afForm.js puts on a card's Submit and Cancel, so an unscoped query
         // bound every form button on the page to this handler as well: pressing

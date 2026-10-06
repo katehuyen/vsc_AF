@@ -272,7 +272,7 @@
     function navState(fallbackTip) {
         const s = (window.__AFUI__ || {}).sound;
         if (!s) { return { icon: '🔊', state: '', head: 'Sound', tip: fallbackTip || '' }; }
-        return { icon: s.icon, state: s.state, head: s.head, tip: (s.lines || []).join('\n') + '\n\nClick opens the Sound page.' };
+        return { icon: s.icon, state: s.state, head: s.head, tip: (s.lines || []).join('\n') + '\n\n' + (s.reading ? t('Click opens the player: pause, the paragraph before or after, stop, speed.') : 'Click opens the Sound page.') };
     }
 
     /** Repaint every header 🔊 in place on a push — a re-render would cost scroll, menus and drafts. */

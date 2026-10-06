@@ -5470,6 +5470,15 @@
       ]
     },
     {
+      "capability": "readingSpeed",
+      "ui": [
+        "cmd:agentfarm.readingSpeed"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
       "capability": "refresh",
       "ui": [
         "cmd:agentfarm.refresh"

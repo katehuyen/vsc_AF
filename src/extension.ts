@@ -381,7 +381,7 @@ import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
 import { ReaderDeps, readingAct, readingState, readNow, registerReaderOps } from './core/readerOps';
 import { readingBadge } from './core/readingBadge';
-import { ReadingStatusBar } from './views/readingBar';
+import { pickReadingRate, ReadingStatusBar } from './views/readingBar';
 import { parseReadingPatch, READING_DEFAULT, READING_SAMPLE, readingLimit, readingPrefsOf, readingVoiceWant, readingWords, type ReadingPrefs } from './core/readingPrefs';
 import { readingTimeoutMs } from './core/reader';
 import { readLastAnswer } from './core/readLast';
@@ -2065,7 +2065,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // U-198 / U-199 — a reading starting, ending, pausing or moving on is redrawn wherever reading is drawn
     // U-206 — the bar item that exists only while a reading lasts (made once the reader's deps exist)
     let readingBar: ReadingStatusBar | undefined;
-    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); readingBar?.update(); };
+    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); readingBar?.update(); pushSoundHeader(); };
     const dialogue = new DialogueSpeaker({ onChange: readingRepaint });
     const readingNow = new ReadingNow(readingRepaint);
     // U-183 — the Sound page's Sessions table follows sessions coming, going and
@@ -17845,13 +17845,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fleet: speakCfg, reading: readingCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
     };
     registerReaderOps(bridge, readerDeps);
-    readingBar = new ReadingStatusBar({
-        view: () => {
-            const s = readingState(readerDeps);
-            const lv = s.source?.sessionId ? live.sessions().find(x => x.sessionId === s.source?.sessionId) : undefined;
-            return readingBadge(s.source, s.at, lv ? live.labelOf(lv) : '');
-        }
-    });
+    const readingBadgeNow = (): ReturnType<typeof readingBadge> => {
+        const s = readingState(readerDeps);
+        const lv = s.source?.sessionId ? live.sessions().find(x => x.sessionId === s.source?.sessionId) : undefined;
+        return readingBadge(s.source, s.at, lv ? live.labelOf(lv) : '');
+    };
+    readingBar = new ReadingStatusBar({ view: readingBadgeNow });
     context.subscriptions.push(readingBar);
     const readingControl =(action: 'toggle' | 'next' | 'prev'): void => {
         const r = readingAct(readerDeps, action);
@@ -17859,6 +17858,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.setStatusBarMessage(r.reading
                 ? 'Agent Farm: no paragraph after this one' : 'Agent Farm: nothing is being read aloud', 3000);
         }
+    };
+    // U-206 — the header player's − / +, and the palette's pick; this reading only (`alerts.reading rate=`)
+    const readingSpeed = async (arg?: unknown): Promise<void> => {
+        const s = readingState(readerDeps);
+        if (!s.source) { void vscode.window.setStatusBarMessage('Agent Farm: nothing is being read aloud', 3000); return; }
+        const rate = arg === undefined ? await pickReadingRate(s.at?.rate ?? readingCfg().rate) : arg;
+        if (rate !== undefined) { readingAct(readerDeps, '', rate); }
     };
 
     // S-70 / S-71 — the release and the door. The three end signals (hook
@@ -20614,7 +20620,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             quietConfigured: quiet.configured,
             quietLine: quietLine(quiet),
             armed: ALERT_EVENTS.filter(e => on[e] === true),
-            silentSessions: live.sessions().filter(s => turnAlerts.mutedFor(s.sessionId)).map(s => live.labelOf(s))
+            silentSessions: live.sessions().filter(s => turnAlerts.mutedFor(s.sessionId)).map(s => live.labelOf(s)),
+            reading: readingBadgeNow()
         });
     });
     // A-22 — 🔇 for the whole farm, one click, from wherever the eye already is.
@@ -41306,6 +41313,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.pauseReading', () => readingControl('toggle')),
         vscode.commands.registerCommand('agentfarm.nextParagraph', () => readingControl('next')),
         vscode.commands.registerCommand('agentfarm.previousParagraph', () => readingControl('prev')),
+        vscode.commands.registerCommand('agentfarm.readingSpeed', (rate?: unknown) => readingSpeed(rate)),
         // U-201 — the row's conversation, else the page in front, else a pick; alerts.readNow's own body
         vscode.commands.registerCommand('agentfarm.readLastAnswer', (arg?: unknown) => readLastAnswer({
             facing: () => [...ConsolePanel.facing(), ...SessionViewerPanel.facing()],

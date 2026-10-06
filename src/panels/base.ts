@@ -315,6 +315,10 @@ export function runSurface(v: unknown): 'terminal' | 'console' | undefined {
     return v === 'terminal' || v === 'console' ? v : undefined;
 }
 
+const READING_NAV: Record<string, string> = {
+    toggle: 'agentfarm.pauseReading', next: 'agentfarm.nextParagraph', prev: 'agentfarm.previousParagraph', stop: 'agentfarm.stopReading'
+};
+
 /** One router for the shared header's cross-navigation cluster
  *  (media/pageHeader.js posts {type:'afnav', to}). Pages with a scoped
  *  ⌕ Search intercept to === 'search' before delegating here. */
@@ -359,6 +363,9 @@ export function handleAfNav(to: unknown): void {
     // S-123 — `chains:<chainId>` opens the Chains page on that chain: a ⑂ on any page that routes afnav reaches it.
     const chainTo = /^chains:(.+)$/.exec(String(to));
     if (chainTo) { void vscode.commands.executeCommand('agentfarm.openChains', chainTo[1]); return; }
+    // U-206 — the header's reading player, on every page: its buttons are the reading's own commands.
+    const readTo = /^reading:(toggle|next|prev|stop|rate:(-?\d{1,2}))$/.exec(String(to));
+    if (readTo) { void vscode.commands.executeCommand(READING_NAV[readTo[1]] ?? 'agentfarm.readingSpeed', ...(readTo[2] ? [Number(readTo[2])] : [])); return; }
     const cmd = commands[String(to)];
     if (cmd) { void vscode.commands.executeCommand(cmd); }
 }
@@ -519,6 +526,7 @@ export function htmlShell(
     const soundPop = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSoundPop.js'));
     // U-199 — a step's 🔊, ■ and ▶: every surface that draws a step reads it through the one channel.
     const readAloud = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afReadAloud.js'));
+    const readingPlayer = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afReadingPlayer.js'));
     // The web view card (U-85) — the farm on a phone, and the QR that opens it.
     // Ships everywhere for the reason the card above does, sharpened: the fact
     // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
@@ -662,6 +670,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${soundWire}"></script>
 <script nonce="${nonce}" src="${soundPop}"></script>
 <script nonce="${nonce}" src="${readAloud}"></script>
+<script nonce="${nonce}" src="${readingPlayer}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${phoneAppCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>

@@ -92,7 +92,8 @@ const said = (uuid, text, extra) => Object.assign({
     ok('a message\'s 🔊 is the sound handler\'s', await send({ type: 'readAloud', sessionId: 's1', pick: { msg: 'a1' }, surface: 'console' }));
     ok('…and reads that step of THAT card\'s conversation, whole', spoke[0] === 'Son cevap bu.' && reading.source.msg === 'a1'
         && reading.source.surface === 'console');
-    ok('the reading view says which step is being read', JSON.stringify(readingView(reader)) === '{"sessionId":"s1","key":"a1","paused":false}');
+    ok('the reading view says which step is being read, and the paragraph\'s first words (U-206)',
+        JSON.stringify(readingView(reader)) === '{"sessionId":"s1","key":"a1","paused":false,"head":"Son cevap bu."}');
     await send({ type: 'readAloud', sessionId: 's1', pick: {} });
     ok('Read last answer — no pick — reads the conversation\'s last answer', spoke[1] === 'Son cevap bu.' && reading.source.surface === 'page');
     await send({ type: 'readAloud', sessionId: 's1', pick: { text: 'Bir Codex satırı.' } });

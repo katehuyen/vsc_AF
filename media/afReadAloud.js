@@ -54,8 +54,126 @@
 
     /** Take the host's answer for what is being read, and show it. */
     function set(reading) {
+        const was = now;
         now = reading && typeof reading === 'object' && reading.key ? reading : null;
+        if (!now || !was || was.sessionId !== now.sessionId) { follow = true; }
         paint();
+        schedule();
+    }
+
+    // U-206 — THE PARAGRAPH BEING READ, MARKED AND FOLLOWED. The host sends the spoken
+    // paragraph's first words (`head`); the step's text is found by its letters and digits
+    // alone (the spoken text has lost the markdown), and the raw block between blank lines
+    // around it is marked with a CSS highlight — no DOM is touched, so a selection or a
+    // repaint is never disturbed. A code paragraph ("a code block of 9 lines") matches nothing.
+    let follow = true, spot = '', marked = null, pending = false, missed = '';
+    const spotOf = r => r.sessionId + '|' + r.key + '|' + r.head;
+    const fold = s => {
+        let n = '';
+        const at = [];
+        for (let i = 0; i < s.length; i++) {
+            if (/[\p{L}\p{N}]/u.test(s[i])) { n += s[i].toLowerCase()[0]; at.push(i); }
+        }
+        return { n, at };
+    };
+
+    /** [start, end) of the raw block (between blank lines) that holds the paragraph starting `head`; null if none does. */
+    function blockOf(text, head) {
+        const raw = String(text || ''), words = String(head || '').split(/\s+/).filter(Boolean);
+        if (!raw || !words.length) { return null; }
+        const all = fold(raw);
+        for (const from of [0, 1, 2]) {
+            for (const k of [12, 6, 3]) {
+                const want = fold(words.slice(from, from + k).join(' ')).n;
+                const i = want.length >= 6 ? all.n.indexOf(want) : -1;
+                if (i < 0) { continue; }
+                const at = all.at[i];
+                const gap = /\n[ \t]*\n/g;
+                let start = 0, end = raw.length, m;
+                while ((m = gap.exec(raw))) {
+                    if (m.index + m[0].length <= at) { start = m.index + m[0].length; } else { end = m.index; break; }
+                }
+                while (end > start && /\s/.test(raw[end - 1])) { end--; }
+                return [start, end];
+            }
+        }
+        return null;
+    }
+
+    function rangeNow() {
+        if (!now || !now.head || typeof document.createRange !== 'function') { return null; }
+        const b = [...document.querySelectorAll('button[data-read]')].find(x => x.dataset.read === now.key && x.dataset.readSid === now.sessionId);
+        const row = b && b.closest ? b.closest('.msg') : null;
+        const body = row && row.querySelector('.body');
+        const nodes = body ? [...body.childNodes].filter(n => n.nodeType === 3) : [];
+        const at = blockOf(nodes.map(n => n.data).join(''), now.head);
+        // the step is drawn and none of it is this paragraph: not looked for again until the reading moves
+        if (!at) { missed = body ? spotOf(now) : ''; return null; }
+        const r = document.createRange();
+        let base = 0, started = false;
+        for (const n of nodes) {
+            const len = n.data.length;
+            if (!started && at[0] <= base + len) { r.setStart(n, at[0] - base); started = true; }
+            if (started && at[1] <= base + len) { r.setEnd(n, at[1] - base); return r; }
+            base += len;
+        }
+        return null;
+    }
+
+    /** Bring the marked paragraph into view inside whatever scrolls it — only when it is out of view. */
+    function reveal(r) {
+        const rect = r.getBoundingClientRect();
+        let el = r.startContainer.parentElement;
+        while (el && el !== document.body && el !== document.documentElement) {
+            const oy = getComputedStyle(el).overflowY;
+            if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) { break; }
+            el = el.parentElement;
+        }
+        const page = !el || el === document.body || el === document.documentElement;
+        const top = page ? 0 : el.getBoundingClientRect().top, h = page ? window.innerHeight : el.clientHeight;
+        if (rect.top >= top + 8 && rect.bottom <= top + h - 8) { return; }
+        const dy = rect.top - top - Math.min(h * 0.3, Math.max(8, h - rect.height - 8));
+        const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        (page ? window : el).scrollBy({ top: dy, behavior: still ? 'auto' : 'smooth' });
+    }
+
+    function mark() {
+        pending = false;
+        const hl = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight === 'function' ? CSS.highlights : null;
+        if (!hl) { return; }
+        marked = rangeNow();
+        if (!marked) { hl.delete('af-reading'); spot = ''; return; }
+        if (!document.getElementById('af-reading-style')) {
+            const s = document.createElement('style');
+            s.id = 'af-reading-style';
+            s.textContent = '::highlight(af-reading) { background-color:var(--vscode-editor-findMatchHighlightBackground, #ea5c0055); }';
+            (document.head || document.body).appendChild(s);
+        }
+        hl.set('af-reading', new Highlight(marked));
+        const at = spotOf(now);
+        if (at !== spot) { spot = at; if (follow) { reveal(marked); } }
+    }
+    /** After the page's own render: set() is called before the page draws what it was sent. */
+    function schedule() { if (!pending && typeof setTimeout === 'function') { pending = true; setTimeout(mark, 0); } }
+
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function' && !window.__afReadFollowWired) {
+        window.__afReadFollowWired = true;
+        // the reader's own hand on the scroll ends following until the next reading
+        const away = () => { if (now) { follow = false; } };
+        window.addEventListener('wheel', away, { passive: true });
+        window.addEventListener('touchmove', away, { passive: true });
+        document.addEventListener('keydown', ev => {
+            const tg = ev.target, field = tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName || '') || tg.isContentEditable);
+            if (!field && /^(PageUp|PageDown|Home|End|ArrowUp|ArrowDown)$/.test(ev.key)) { away(); }
+        });
+        document.addEventListener('mousedown', ev => { const el = ev.target; if (el && el.clientWidth && ev.offsetX >= el.clientWidth) { away(); } });
+        // a page that repaints its rows drops the mark with them: mark again, without scrolling
+        if (typeof MutationObserver === 'function' && document.body) {
+            new MutationObserver(() => {
+                if (now && now.head && missed !== spotOf(now) && !(marked && marked.startContainer.isConnected)) { schedule(); }
+            })
+                .observe(document.body, { childList: true, subtree: true });
+        }
     }
 
     /** A press on a step's button: stop it, resume it, or read it. */
@@ -73,7 +191,7 @@
         const sel = selectedIn(step);
         if (st === 'reading' && !sel) { post({ type: 'readControl', action: 'stop' }); }
         else if (st === 'paused' && !sel) { post({ type: 'readControl', action: 'resume' }); }
-        else { post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : { msg: b.dataset.read } }); }
+        else { follow = true; post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : { msg: b.dataset.read } }); }
     }
 
     /** The host's two messages for this component; true when it was one of them. */
@@ -104,8 +222,8 @@
     }
 
     window.AFRead = {
-        init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key ? reading : null; },
-        set, btn, paint, press, receive, keyOf, stateOf, selectedIn,
+        init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key ? reading : null; schedule(); },
+        set, btn, paint, press, receive, keyOf, stateOf, selectedIn, blockOf, following: () => follow,
         reading: () => now
     };
 })();

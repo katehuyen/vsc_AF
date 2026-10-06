@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.874.0 - See and steer a reading from anywhere (2026-10-06)
+
+- **The page header's speaker turns into the reading.** While something is
+  read aloud it shows 🗣️ (⏸️ when paused), and its hover says whose words,
+  which paragraph and the speed. A click opens a small player under it on
+  every page: whose words, "Paragraph 3 of 9", ⏮ previous, ⏸/▶ pause and
+  resume, ⏭ next, ■ stop, and the speed with − and +. When the reading ends
+  the speaker is the link to the Sound page again.
+- **A status bar item exists only while a reading lasts** - "developer #3 ·
+  3/9", a pause sign while paused. A click pauses or resumes; its hover
+  carries Pause, Previous, Next and Stop. Nothing sits on the bar when
+  nothing is read.
+- **The paragraph being read is marked** in the transcript and in the
+  Console, and kept in view as the reading moves on. Scroll by hand and the
+  page stops following until the next reading; the mark still moves. A code
+  block, said by its size, is not marked.
+- **Sound: Reading Speed…** - a new command: the speed of the reading now,
+  without changing the setting on the Sound page.
+- **For agents:** `alerts.reading rate=` is the same speed control; the
+  player's buttons are the reading's own commands.
+
 ## 3.873.0 - Reading settings of their own on the Sound page (2026-10-06)
 
 - **Sound page ▸ Voice ▸ Reading** - how an answer sounds when it is read

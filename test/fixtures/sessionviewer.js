@@ -249,6 +249,20 @@ module.exports = {
             label: 'Session viewer — the reading paused: a lit ▶ (resume) on the answer',
             data: data({ over: { reading: { sessionId: SID, key: '#5', paused: true } } }),
             act: unfold
+        },
+        // U-206 — the header's 🔊 while a reading lasts is 🗣️; pressed, the player stands under it.
+        // The shim draws no pointer, so the press is drawn: the module's own markup and sheet.
+        {
+            id: 'sessionviewer-reading-player',
+            label: 'Session viewer — reading, the header\'s 🗣️ pressed: whose words, paragraph 2 of 3, ⏮ ⏸ ⏭ ■ and speed − 2 +',
+            data: data({ over: { reading: { sessionId: SID, key: '#5', paused: false } } }),
+            act: r => {
+                unfold(r);
+                const P = (r.sandbox.window || r.sandbox).AFReadingPlayer;
+                const reading = { head: 'Reading: developer #3 — turn 1\'s answer', paragraph: 'Paragraph 2 of 3', paused: false, rate: 2 };
+                r.els.app.innerHTML = r.els.app.innerHTML.replace(/(<button[^>]*data-afsound=")[^"]*("[^>]*>)[^<]*</, '$1reading$2🗣️<')
+                    + `<style>${P.css}</style><div class="af-rp" style="top:44px;right:16px">${P.html(reading)}</div>`;
+            }
         }
     ]
 };
