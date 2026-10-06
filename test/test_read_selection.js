@@ -35,6 +35,32 @@ const { selectionOf, readSelection } = require(path.join(ROOT, 'out', 'core', 'r
     ok('no selection: the key is gone, so the item is not offered', !('afSelection' in ctx) && ctx.afPanel === 'x#1');
 }
 
+// 1b. a step's 🔊 reads only what is selected inside that step
+{
+    const posted = [];
+    const sandbox = { window: {}, document: {} };
+    vm.createContext(sandbox);
+    vm.runInContext(read('media', 'afReadAloud.js'), sandbox);
+    const R = sandbox.window.AFRead;
+    R.init(m => posted.push(m), null);
+    const inside = { id: 'in' }, outside = { id: 'out' };
+    const step = { contains: n => n === inside };
+    let s = { text: 'just this part', anchorNode: inside, focusNode: inside };
+    sandbox.window.getSelection = () => ({ toString: () => s.text, anchorNode: s.anchorNode, focusNode: s.focusNode });
+    const b = { dataset: { readSid: 'S', read: 'k1' } };
+    R.press(b, step);
+    ok('‼️ a selection inside the step: only it is read, in that conversation', posted.length === 1 && posted[0].pick.text === 'just this part' && posted[0].sessionId === 'S');
+    s = { text: 'elsewhere', anchorNode: outside, focusNode: outside };
+    R.press(b, step);
+    ok('a selection outside the step: the whole step', posted[1].pick.msg === 'k1' && !('text' in posted[1].pick));
+    s = { text: 'half in', anchorNode: inside, focusNode: outside };
+    ok('a selection that runs out of the step is not this step\'s', R.selectedIn(step) === '');
+    R.press(b, null);
+    ok('no step handed: the whole step, as before', posted[3] ? false : posted[2].pick.msg === 'k1');
+    ok('the transcript and the Console hand their step', /window\.AFRead\.press\(rd, rd\.closest\('\.msg\[data-idx\]'\)\)/.test(read('media', 'sessionViewer.js'))
+        && /window\.AFRead\.press\(b, row\)/.test(read('media', 'console.js')) && /window\.AFRead\.selectedIn\(row\) \|\| String\(m\.text/.test(read('media', 'console.js')));
+}
+
 // 2. the command's body
 (async () => {
     ok('the menu hands the text and the row\'s conversation', JSON.stringify(selectionOf({ afSelection: ' hi ', sessionId: 's1', webviewSection: 'x' })) === '{"text":"hi","sessionId":"s1"}'

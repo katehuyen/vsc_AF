@@ -1351,7 +1351,7 @@
             // step would be thousands of them on a real transcript, re-attached
             // on every keystroke in the filter box.
             const rd = t.closest('button[data-read]');
-            if (rd) { ev.stopPropagation(); window.AFRead.press(rd); return; }
+            if (rd) { ev.stopPropagation(); window.AFRead.press(rd, rd.closest('.msg[data-idx]')); return; }
             const cp = t.closest('button[data-copy]');
             if (cp) {
                 ev.stopPropagation();          // not a band click

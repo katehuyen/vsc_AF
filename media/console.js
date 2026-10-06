@@ -1951,8 +1951,8 @@
                 b.textContent = bad ? '⚠' : '✓'; b.classList.add('done');
                 setTimeout(() => { b.textContent = '⧉'; b.classList.remove('done'); }, 1400);
             });
-        } else if (b.dataset.read) { window.AFRead.press(b); }
-        else { vscode.postMessage({ type: 'readAloud', sessionId: cur.sessionId, pick: { text: String(m.text || '') }, surface: 'console' }); }
+        } else if (b.dataset.read) { window.AFRead.press(b, row); }
+        else { vscode.postMessage({ type: 'readAloud', sessionId: cur.sessionId, pick: { text: window.AFRead.selectedIn(row) || String(m.text || '') }, surface: 'console' }); }
     }
     function messageHtml(m) {
         const mid = ` data-mid="${C.esc(m.id || '')}"`;

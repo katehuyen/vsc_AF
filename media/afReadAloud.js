@@ -59,12 +59,21 @@
     }
 
     /** A press on a step's button: stop it, resume it, or read it. */
-    function press(b) {
+    /** U-202 — the text selected INSIDE this step, '' when the selection is elsewhere or empty. */
+    function selectedIn(step) {
+        const s = step && window.getSelection ? window.getSelection() : null;
+        const text = s ? String(s).trim() : '';
+        return text && s.anchorNode && step.contains && step.contains(s.anchorNode) && step.contains(s.focusNode) ? text : '';
+    }
+
+    /** `step`: the element the button's step is drawn in — a selection inside it is read instead of the whole step. */
+    function press(b, step) {
         if (!b || !b.dataset) { return; }
         const st = stateOf(b.dataset.readSid, b.dataset.read);
-        if (st === 'reading') { post({ type: 'readControl', action: 'stop' }); }
-        else if (st === 'paused') { post({ type: 'readControl', action: 'resume' }); }
-        else { post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: { msg: b.dataset.read } }); }
+        const sel = selectedIn(step);
+        if (st === 'reading' && !sel) { post({ type: 'readControl', action: 'stop' }); }
+        else if (st === 'paused' && !sel) { post({ type: 'readControl', action: 'resume' }); }
+        else { post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : { msg: b.dataset.read } }); }
     }
 
     /** The host's two messages for this component; true when it was one of them. */
@@ -96,7 +105,7 @@
 
     window.AFRead = {
         init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key ? reading : null; },
-        set, btn, paint, press, receive, keyOf, stateOf,
+        set, btn, paint, press, receive, keyOf, stateOf, selectedIn,
         reading: () => now
     };
 })();
