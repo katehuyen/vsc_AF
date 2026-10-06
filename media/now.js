@@ -13,8 +13,11 @@
     let note = null;
 
     const repaint = window.AFRepaint.guard(render);
+    // U-207 — a running row's 🔊 reads that session's last answer; ■ / ▶ while that session is read
+    window.AFRead.init(m => vscode.postMessage(m), DATA.reading);
     window.addEventListener('message', ev => {
         const m = ev.data || {};
+        if (window.AFRead.receive(m)) { return; }
         if (m.type === 'data') { DATA = m.data; repaint(); }
         if (m.type === 'sent') {
             note = m.ok ? { ok: true, text: t('Sent.') } : { ok: false, text: m.error || t('Not sent.') };
@@ -65,6 +68,7 @@
                 <span class="nw-main"><b>${esc(s.agentName)}</b> ${window.AFEngine.badge(s.engine)}
                     <span class="nw-st ${esc(STATUS[s.status] || 'other')}">${esc(stateOf(s))}</span>
                     <span class="nw-line muted">${esc(s.doing || '—')}</span></span>
+                ${s.sessionId ? window.AFRead.lastBtn(s.sessionId) : ''}
                 <span class="nw-when muted" title="${esc(T.tip(s.since, s.status === 'working' ? 'Turn started' : 'Started'))}">${esc(T.ago(s.since))}<br>${money(s.costUSD)}</span>
                 ${sel ? '<span class="nw-check" aria-hidden="true">✓</span>' : ''}
             </div>`,
@@ -153,6 +157,7 @@
                 .nw-main { flex:1; min-width:0; }
                 .nw-line { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
                 .nw-when { flex-shrink:0; text-align:right; font-size:11px; }
+                .nw-row .readb { flex-shrink:0; padding:1px 6px; }
                 .nw-check { flex-shrink:0; }
                 .nw-tipw { display:block; }
                 .nw-st { font-size:11px; opacity:.8; margin-left:4px; }

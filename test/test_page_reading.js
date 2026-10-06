@@ -138,6 +138,30 @@ const reader = {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('every change of the reading reaches these pages', /const readingRepaint = [^\n]*pushPageReading\(\)/.test(ext) && /setPageReader\(readerDeps\)/.test(ext));
 
+    // --- Now: a running row's 🔊 reads that session's last answer, and is that session's reading
+    ok('a session\'s last-answer button says so', /data-read="@last" data-read-sid="S"/.test(R.lastBtn('S')) && /title="Read its last answer aloud"/.test(R.lastBtn('S')));
+    capture(ev(mk('S', '@last')));
+    ok('pressed, it asks for that session\'s last answer', JSON.stringify(posted.pop()) === '{"type":"readAloud","sessionId":"S","pick":{"last":true}}');
+    R.set({ sessionId: 'S', key: 'u-77', paused: false });
+    ok('while any step of that session is read it is ■', R.stateOf('S', '@last') === 'reading' && /■<\/button>$/.test(R.lastBtn('S')));
+    ok('…another session\'s is quiet', R.stateOf('T', '@last') === '');
+    capture(ev(mk('S', '@last')));
+    ok('…and a press stops it', posted.pop().action === 'stop');
+    R.set({ sessionId: 'S', key: 'u-77', paused: true });
+    capture(ev(mk('S', '@last')));
+    ok('paused, a press resumes it', posted.pop().action === 'resume');
+    R.set(null);
+    const { buildNow } = require(path.join(ROOT, 'out', 'core', 'nowPage.js'));
+    const nd0 = buildNow({ needs: [], sessions: [{ id: 'c1', sessionId: 'eng-1', agentName: 'dev', status: 'idle', startedAt: 1, lastTs: 1, costUSD: 0, messages: [] },
+        { id: 'c2', agentName: 'dev', status: 'idle', startedAt: 1, lastTs: 1, costUSD: 0, messages: [] }], todayCost: 0, quotas: [], notices: [], now: 2 });
+    ok('a running row carries the engine\'s session id, \'\' until known', nd0.running.map(r => r.sessionId).join('|') === 'eng-1|');
+    const nwj = fs.readFileSync(path.join(ROOT, 'media', 'now.js'), 'utf8');
+    ok('the Now row draws it only when the session is known', /\$\{s\.sessionId \? window\.AFRead\.lastBtn\(s\.sessionId\) : ''\}/.test(nwj)
+        && /AFRead\.receive\(m\)/.test(nwj) && /AFRead\.init\(m => vscode\.postMessage\(m\), DATA\.reading\)/.test(nwj));
+    const nwp = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'nowPanel.ts'), 'utf8');
+    ok('the Now host takes reading messages first and sends the reading with its data', /pageReads\(msg, host\.webview/.test(nwp) && /attachPageReading\(host\.webview\)/.test(nwp)
+        && /reading: pageReadingNow\(\)/.test(nwp) && !/data: this\.deps\.build\(\)/.test(nwp));
+
     // --- Needs You: a question row reads the question whole, then its options — which the row must carry
     const { consoleNeedAsks, consoleNeedItems } = require(path.join(ROOT, 'out', 'core', 'consoleNeeds.js'));
     const { buildNeedsQueue } = require(path.join(ROOT, 'out', 'core', 'needs.js'));

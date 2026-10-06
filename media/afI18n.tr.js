@@ -236,6 +236,7 @@
     'Next paragraph': 'Sonraki paragraf',
     'Stop reading': 'Okumayı durdur',
     'Read it aloud': 'Sesli oku',
+    'Read its last answer aloud': 'Son cevabını sesli oku',
     'Speed of this reading: {v} — −10 slow to 10 fast; the setting is on the Sound page': 'Bu okumanın hızı: {v} — −10 yavaş, 10 hızlı; ayarı Sound sayfasında',
     'Slower': 'Daha yavaş',
     'Faster': 'Daha hızlı',

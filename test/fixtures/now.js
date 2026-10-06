@@ -24,9 +24,9 @@ const input = () => ({
         insights: []
     }),
     sessions: [
-        { id: 'con_1', agentName: 'developer', engine: 'claude', status: 'working', startedAt: T - 95 * 60000, turnStartedAt: T - 4 * 60000,
+        { id: 'con_1', sessionId: 'c54e5147-553d-4e5e-b1c3-5994591c9bca', agentName: 'developer', engine: 'claude', status: 'working', startedAt: T - 95 * 60000, turnStartedAt: T - 4 * 60000,
             lastTs: T, costUSD: 3.41, messages: [{ role: 'agent', text: 'Şimdi sayfasının fixture\'ını yazıyorum; ardından masaüstü ve 360×800 çekimleri.' }] },
-        { id: 'con_2', agentName: 'psikolog', engine: 'claude', status: 'idle', startedAt: T - 40 * 60000, lastTs: T - 60000,
+        { id: 'con_2', sessionId: '7d1f3a2e-0b8c-4f6a-9e21-3c5d8a7b6f10', agentName: 'psikolog', engine: 'claude', status: 'idle', startedAt: T - 40 * 60000, lastTs: T - 60000,
             costUSD: 0.62, pendingAsk: { requestId: 'a1' }, messages: [{ role: 'agent', text: 'Bugünkü günlüğe hangi başlıkla ekleyelim?' }] },
         { id: 'con_3', agentName: 'asistan', engine: 'codex', status: 'idle', startedAt: T - 180 * 60000, lastTs: T - 30 * 60000,
             costUSD: 0, messages: [{ role: 'tool', tool: { name: 'Read', detail: '01_INBOX/10_TODO/__TODO__.md' } }] }

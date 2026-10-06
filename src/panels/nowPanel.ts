@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { NowData } from '../core/nowPage';
 import { handleAfNav, htmlShell } from './base';
+import { attachPageReading, pageReadingNow, pageReads } from './pageReading';
 import { desktopHost, type PanelHost } from './panelHost';
 
 /**
@@ -41,11 +42,14 @@ export class NowPanel {
     }
 
     private constructor(readonly host: PanelHost, private deps: NowDeps) {
-        host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Now', deps.build(), 'now.js');
+        host.webview.html = htmlShell(host.webview, deps.extensionUri, 'Now', this.data(), 'now.js');
         host.onDidDispose(() => this.dispose(), null, this.disposables);
-        host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
-        this.disposables.push(deps.onDidChange(() => this.soon()));
+        host.webview.onDidReceiveMessage(msg => { if (!pageReads(msg, host.webview, { surface: 'now' })) { this.onMessage(msg); } }, null, this.disposables);
+        this.disposables.push(deps.onDidChange(() => this.soon()), attachPageReading(host.webview));
     }
+
+    /** U-207 — with the reading now, which a running row's 🔊 paints from */
+    private data(): NowData & { reading: ReturnType<typeof pageReadingNow> } { return { ...this.deps.build(), reading: pageReadingNow() }; }
 
     private soon(): void {
         if (this.timer) { return; }
@@ -53,7 +57,7 @@ export class NowPanel {
     }
 
     refresh(): void {
-        void this.host.webview.postMessage({ type: 'data', data: this.deps.build() });
+        void this.host.webview.postMessage({ type: 'data', data: this.data() });
     }
 
     private onMessage(msg: { type: string; id?: unknown; text?: unknown; to?: unknown }): void {

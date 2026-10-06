@@ -24,18 +24,21 @@
     const places = new WeakMap();
     const indexed = new WeakSet();
 
+    // U-207 — a session's last answer (lastBtn): it is that session's reading whatever step is read now
+    const LAST = '@last';
     /** `''` · `'reading'` · `'paused'` — what this step is to the reading now. */
     function stateOf(sessionId, key) {
-        if (!now || !key || now.key !== key || now.sessionId !== sessionId) { return ''; }
+        if (!now || !key || (key !== LAST && now.key !== key) || now.sessionId !== sessionId) { return ''; }
         return now.paused ? 'paused' : 'reading';
     }
     const glyph = st => (st === 'reading' ? '■' : st === 'paused' ? '▶' : '🔊');
-    const title = (st, own) => (st === 'reading' ? t('Stop reading')
-        : st === 'paused' ? t('Resume reading') : own ? t('Read it aloud') : t('Read this step aloud'));
+    const title = (st, sessionId, key) => (st === 'reading' ? t('Stop reading')
+        : st === 'paused' ? t('Resume reading') : key === LAST ? t('Read its last answer aloud')
+            : !sessionId ? t('Read it aloud') : t('Read this step aloud'));
 
     /** The button for one step of one conversation; no session = a page's own text (textBtn). */
     function btn(sessionId, key) {
-        const st = stateOf(sessionId, key), says = esc(title(st, !sessionId));
+        const st = stateOf(sessionId, key), says = esc(title(st, sessionId, key));
         return `<button data-read="${esc(key)}" data-read-sid="${esc(sessionId)}" class="readb${st ? ' on' : ''}" title="${says}" aria-label="${says}">${glyph(st)}</button>`;
     }
 
@@ -44,7 +47,7 @@
         const doc = root || (typeof document !== 'undefined' ? document : null);
         if (!doc || typeof doc.querySelectorAll !== 'function') { return; }
         for (const b of doc.querySelectorAll('button[data-read]')) {
-            const st = stateOf(b.dataset.readSid, b.dataset.read), says = title(st, !b.dataset.readSid);
+            const st = stateOf(b.dataset.readSid, b.dataset.read), says = title(st, b.dataset.readSid, b.dataset.read);
             b.textContent = glyph(st);
             b.title = says;
             if (typeof b.setAttribute === 'function') { b.setAttribute('aria-label', says); }
@@ -198,7 +201,10 @@
             const pick = said && typeof said === 'object' ? { ...said, key: b.dataset.read } : { text: String(said || ''), key: b.dataset.read };
             if (pick.text === undefined || pick.text.trim()) { follow = true; post({ type: 'readAloud', pick }); }
         }
-        else { follow = true; post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : { msg: b.dataset.read } }); }
+        else {
+            follow = true;
+            post({ type: 'readAloud', sessionId: b.dataset.readSid, pick: sel ? { text: sel } : b.dataset.read === LAST ? { last: true } : { msg: b.dataset.read } });
+        }
     }
     /** U-207 — the ONE button for a text a page reads by its own name (a notice, an article): `key` names it. */
     let textOf = null;
@@ -208,7 +214,7 @@
         window.__afReadTextWired = true;
         document.addEventListener('click', ev => {
             const b = ev.target && ev.target.closest ? ev.target.closest('button[data-read]') : null;
-            if (!b || b.dataset.readSid) { return; }
+            if (!b || (b.dataset.readSid && b.dataset.read !== LAST)) { return; }
             ev.preventDefault();
             ev.stopPropagation();
             press(b, b.closest('[data-read-scope]'));
@@ -245,7 +251,7 @@
     window.AFRead = {
         init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key ? reading : null; schedule(); },
         set, btn, paint, press, receive, keyOf, stateOf, selectedIn, blockOf, following: () => follow,
-        textBtn, texts(fn) { textOf = typeof fn === 'function' ? fn : null; },
+        textBtn, texts(fn) { textOf = typeof fn === 'function' ? fn : null; }, lastBtn: sessionId => btn(sessionId, LAST),
         reading: () => now
     };
 })();

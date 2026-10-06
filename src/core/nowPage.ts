@@ -9,6 +9,7 @@ import { isBlocking, needKey, type NeedItem } from './needs';
 
 export interface NowSessionIn {
     id: string;
+    sessionId?: string;
     agentName: string;
     engine?: string;
     status: string;
@@ -45,6 +46,8 @@ export interface NowWaiting {
 
 export interface NowRunning {
     id: string; agentName: string; engine: string; status: string;
+    /** U-207 — the engine's session id, '' until it is known: whose last answer the row's 🔊 reads */
+    sessionId: string;
     /** the turn's start while working, else the session's */
     since: number;
     /** the session's last visible act: its own words or the tool it ran */
@@ -84,7 +87,7 @@ export function buildNow(i: NowInput): NowData {
     const running = i.sessions
         .filter(s => s.status !== 'ended')
         .map((s): NowRunning => ({
-            id: s.id, agentName: s.agentName, engine: s.engine ?? 'claude', status: s.status,
+            id: s.id, sessionId: s.sessionId ?? '', agentName: s.agentName, engine: s.engine ?? 'claude', status: s.status,
             since: s.status === 'working' ? (s.turnStartedAt ?? s.startedAt) : s.startedAt,
             doing: doingOf(s.messages), costUSD: s.costUSD,
             waits: !!(s.pendingAsk || s.pendingPermission)
