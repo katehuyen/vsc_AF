@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { isClearable, NeedItem, needKey } from '../core/needs';
 import { handleAfNav, htmlShell } from './base';
+import { attachPageReading, pageReadingNow, pageReads } from './pageReading';
 import { desktopHost, type PanelHost } from './panelHost';
 
 /**
@@ -57,8 +58,8 @@ export class NeedsPanel {
             'needs.js'
         );
         host.onDidDispose(() => this.dispose(), null, this.disposables);
-        host.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
-        this.disposables.push(deps.onDidChange(() => this.refresh()));
+        host.webview.onDidReceiveMessage(msg => { if (!pageReads(msg, host.webview, { surface: 'needs' })) { void this.onMessage(msg); } }, null, this.disposables);
+        this.disposables.push(deps.onDidChange(() => this.refresh()), attachPageReading(host.webview));
     }
 
     /** The page renders keys and clearability from here — never re-derived in JS. */
@@ -66,7 +67,7 @@ export class NeedsPanel {
         const items = this.deps.buildItems().map(item => ({
             ...item, key: needKey(item), clearable: isClearable(item)
         }));
-        return { items, hidden: this.deps.hiddenCount(), generatedAt: Date.now() };
+        return { items, hidden: this.deps.hiddenCount(), generatedAt: Date.now(), reading: pageReadingNow() };
     }
 
     refresh(): void {

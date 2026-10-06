@@ -14,6 +14,8 @@ export interface ConsoleNeedAsk {
     requestId: string;
     agentName: string;
     question: string;
+    /** U-207 — every question's options, in order */
+    options?: string[];
     /** why no clock runs, without the "waiting for you" the row already says */
     why: string;
     ts: number;
@@ -22,7 +24,7 @@ export interface ConsoleNeedAsk {
 interface HostedCard {
     id: string;
     agentName: string;
-    pendingAsk?: { requestId: string; ts: number; detail?: string; questions: { question: string }[] };
+    pendingAsk?: { requestId: string; ts: number; detail?: string; questions: { question: string; options?: { label: string }[] }[] };
 }
 
 export function consoleNeedAsks(cards: HostedCard[], viewOf: (id: string) => AutoAnswerView | null): ConsoleNeedAsk[] {
@@ -35,6 +37,7 @@ export function consoleNeedAsks(cards: HostedCard[], viewOf: (id: string) => Aut
         out.push({
             consoleId: c.id, requestId: a.requestId, agentName: c.agentName, ts: a.ts,
             question: a.questions.map(q => q.question).join('\n'),
+            options: a.questions.flatMap(q => (q.options ?? []).map(o => o.label)),
             why: v.why.replace(/^waiting for you — /, '')
         });
     }
@@ -55,6 +58,7 @@ export function consoleNeedItems(asks: ConsoleNeedAsk[], urgency: number): NeedI
             urgency, kind: 'console-question', agentName: a.agentName,
             ...said('{agent} is asking you — no timer will answer it', { agent: a.agentName }),
             detail: line, body: `${a.why}\n\n${a.question}`, ts: a.ts,
+            ...(a.options?.length ? { options: a.options } : {}),
             ref: { consoleId: a.consoleId, requestId: a.requestId },
             actions: [{ id: 'open-console', label: 'Answer in Console' }]
         };

@@ -138,6 +138,25 @@ const reader = {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('every change of the reading reaches these pages', /const readingRepaint = [^\n]*pushPageReading\(\)/.test(ext) && /setPageReader\(readerDeps\)/.test(ext));
 
+    // --- Needs You: a question row reads the question whole, then its options — which the row must carry
+    const { consoleNeedAsks, consoleNeedItems } = require(path.join(ROOT, 'out', 'core', 'consoleNeeds.js'));
+    const { buildNeedsQueue } = require(path.join(ROOT, 'out', 'core', 'needs.js'));
+    const asks = consoleNeedAsks([{ id: 'c1', agentName: 'developer', pendingAsk: { requestId: 'r1', ts: 1, questions: [
+        { question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Blue' }] }, { question: 'Ship now?', options: [{ label: 'Yes' }] }] } }],
+    () => ({ state: 'off', reason: 'no-timer', why: 'waiting for you — no timer is set' }));
+    const ci = consoleNeedItems(asks, 1)[0];
+    ok('a Console question row carries every option, in order', ci && JSON.stringify(ci.options) === '["Red","Blue","Yes"]');
+    const wq = buildNeedsQueue({ liveSessions: [], approvals: [], insights: [], workflowQuestions: [{ id: 'q1', workflowTitle: 'W', question: 'Go on?', options: ['Go on', 'Stop here'], askedAt: 2 }] })
+        .find(x => x.kind === 'question');
+    ok('a workflow question row carries its options whole', wq && JSON.stringify(wq.options) === '["Go on","Stop here"]');
+    const nd = fs.readFileSync(path.join(ROOT, 'media', 'needs.js'), 'utf8');
+    ok('a question row draws the one text button; other rows do not', /READS\.has\(item\.kind\) \? window\.AFRead\.textBtn\('need:' \+ item\.key\)/.test(nd)
+        && /new Set\(\['question', 'console-question'\]\)/.test(nd));
+    ok('…which reads the title, the whole text, then the numbered options', /\[said\(it\), it\.body \|\| saidD\(it\), \.\.\.\(it\.options \|\| \[\]\)\.map\(\(o, i\) => `\$\{i \+ 1\}\. \$\{o\}`\)\]/.test(nd)
+        && /AFRead\.receive\(ev\.data\)/.test(nd) && /AFRead\.init\(m => vscode\.postMessage\(m\), DATA\.reading\)/.test(nd));
+    const npn = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'needsPanel.ts'), 'utf8');
+    ok('the Needs You host takes reading messages first and hears the reading', /pageReads\(msg, host\.webview/.test(npn) && /attachPageReading\(host\.webview\)/.test(npn) && /reading: pageReadingNow\(\)/.test(npn));
+
     console.log(`test_page_reading: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

@@ -28,7 +28,15 @@
     // the caret falls to <body> — where space IS Page Down. Full text, and
     // what a page-specific busy() is for: media/afRepaint.js.
     const repaint = window.AFRepaint.guard(render);
+    // U-207 — a question row's 🔊 reads the question whole, then its options
+    const READS = new Set(['question', 'console-question']);
+    window.AFRead.init(m => vscode.postMessage(m), DATA.reading);
+    window.AFRead.texts(key => {
+        const it = (DATA.items || []).find(x => 'need:' + x.key === key);
+        return it ? [said(it), it.body || saidD(it), ...(it.options || []).map((o, i) => `${i + 1}. ${o}`)].filter(Boolean).join('\n\n') : '';
+    });
     window.addEventListener('message', ev => {
+        if (window.AFRead.receive(ev.data)) { return; }
         if (ev.data.type === 'data') { DATA = ev.data.data; repaint(); }
     });
 
@@ -155,7 +163,7 @@
                     <pre class="nd-full">${C.esc(item.body)}</pre>
                 </div>` : ''}
             </div>
-            <div class="need-actions btnrow">${actions}${clear}</div>
+            <div class="need-actions btnrow">${READS.has(item.kind) ? window.AFRead.textBtn('need:' + item.key) : ''}${actions}${clear}</div>
         </div>`;
     }
 

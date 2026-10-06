@@ -70,6 +70,8 @@ export interface NeedItem {
     detailVars?: Record<string, string>;
     /** ‼️ THE ROW'S LINE, and only that. It is cut to a row on purpose. */
     detail: string;
+    /** U-207 — a question's options as it asks them, whole: what its 🔊 reads after the question */
+    options?: string[];
     /**
      * ‼️ U-118 — THE SAME THING WHOLE: what an opened row and a hover panel
      * carry.
@@ -325,7 +327,8 @@ export function buildNeedsQueue(input: NeedsInput): NeedItem[] {
         items.push({
             urgency: URGENCY.question, kind: 'question', agentName: 'workflow',
             ...said('Workflow "{workflow}" — its supervisor asks', { workflow: q.workflowTitle }),
-            ...split(q.question), ts: q.askedAt, ref: { questionId: q.id }, actions: askActions(q)
+            ...split(q.question), ts: q.askedAt, ref: { questionId: q.id }, actions: askActions(q),
+            ...(q.options.length ? { options: [...q.options] } : {})
         });
     }
     items.push(...consoleNeedItems(input.consoleAsks ?? [], URGENCY['console-question']));
