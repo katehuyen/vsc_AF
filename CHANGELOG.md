@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.863.0 - Long provider route names stay in their place on every page (2026-10-06)
+
+- **A provider route's name is cut to 15 characters wherever its chip is
+  drawn,** not only on the Console card: the Sessions table, the session page
+  header, the Turns table, the Live Timeline card, the Tasks run rows and the
+  Missions step rows. The whole name is in the chip's hover on each of them.
+- **The Sessions table's Engine column makes room for a route.** It is never
+  drawn narrower than the widest engine badge plus a cut route name, so the
+  chip no longer runs over into the Project column; a name made of very wide
+  letters shortens inside its own cell.
+- **The Turns table no longer turns a long provider name into dots.** The
+  chip used to vanish whole behind the cell's ellipsis; it now shortens
+  inside itself and keeps the start of the name visible.
+
 ## 3.862.0 - Every session is told how to reach Agent Farm (2026-10-06)
 
 - **A session now learns at its start how to call Agent Farm.** The bridge is

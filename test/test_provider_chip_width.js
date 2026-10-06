@@ -50,7 +50,7 @@ const CANDIDATES = [
     const viewer = fs.readFileSync(path.join(ROOT, 'media', 'sessionViewer.js'), 'utf8');
     ok('…and every surface asks the component rather than drawing a provider itself',
         /window\.AFProvider\.chip\(/.test(sess) && /window\.AFProvider\.chip\(/.test(turns)
-        && /window\.AFProvider\.chip\(I\)/.test(viewer));
+        && /window\.AFProvider\.chip\(I, '', window\.AFProvider\.CARD_MAX\)/.test(viewer));
     // X-110 (part 3) — the last three surfaces: a live card, a run row, a
     // delegation row. Each asks the component and each is fed by the host's
     // ONE reader, never by a field of its own.
@@ -62,8 +62,9 @@ const CANDIDATES = [
             /\$\{engineBadge\(s\)\}\$\{providerChip\(s\)\}<\/h3>/.test(live)
             && /reported'\)\)\}\$\{runProviderChip\(r\)\}<\/td>/.test(tasks)
             && /\$\{stepProv\(s\)\}\$\{stepProvider\(s\)\}/.test(missions)
-            && /window\.AFProvider\.chip\(I\)/.test(live) && /window\.AFProvider\.chip\(I\)/.test(tasks)
-            && /window\.AFProvider\.chip\(I\)/.test(missions));
+            && /window\.AFProvider\.chip\(I, '', window\.AFProvider\.CARD_MAX\)/.test(live)
+            && /window\.AFProvider\.chip\(I, '', window\.AFProvider\.CARD_MAX\)/.test(tasks)
+            && /window\.AFProvider\.chip\(I, '', window\.AFProvider\.CARD_MAX\)/.test(missions));
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
         const tl = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'timeline.ts'), 'utf8');
         const tp = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');
@@ -73,6 +74,28 @@ const CANDIDATES = [
             && /const identity = stepSess \? sessionIdentityOf\(stepSess\.sessionId\) : undefined;/.test(ext)
             && /identity: deps\.identityFor\?\.\(s\.sessionId\) \?\? null,/.test(tl)
             && /return sid \? deps\.identityFor\?\.\(sid\) \?\? null : null;/.test(tp));
+    }
+    // ‼️ S-134 — a user-named route is cut to AFProvider.CARD_MAX on EVERY surface that draws its chip,
+    // not only on the Console card: each call's own argument list ends with the cap.
+    {
+        const loose = [];
+        for (const f of fs.readdirSync(path.join(ROOT, 'media')).filter(n => n.endsWith('.js') && n !== 'afProvider.js')) {
+            const src = fs.readFileSync(path.join(ROOT, 'media', f), 'utf8');
+            const re = /window\.AFProvider\.chip\(/g;
+            let m;
+            while ((m = re.exec(src))) {
+                const open = m.index + m[0].length - 1;
+                let depth = 0, end = open;
+                for (; end < src.length; end++) {
+                    if (src[end] === '(') { depth++; } else if (src[end] === ')' && --depth === 0) { break; }
+                }
+                if (!/window\.AFProvider\.CARD_MAX\s*$/.test(src.slice(open + 1, end))) {
+                    loose.push(f + ':' + src.slice(0, m.index).split('\n').length);
+                }
+            }
+        }
+        ok('‼️ S-134 — every provider chip in media/ is drawn with the AFProvider.CARD_MAX cap'
+            + (loose.length ? ' — uncapped: ' + loose.join(', ') : ''), loose.length === 0);
     }
     // ‼️ THE PAGE AND THE RESUME GATE READ ONE RECORD. A page with its own
     // reader could say "Kimi" over a run the gate then refuses to resume onto
@@ -143,6 +166,18 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
             ok('‼️ sessionviewer: the chip\'s panel says who is billed and that ⚖ is NOT on the plan window',
                 !!bill && bill.has && bill.window);
         }
+    }
+    // ‼️ S-134 — on Turns a provider name longer than the Engine column drew as `···`: the line's
+    // ellipsis hid the whole chip. A capped long name is now shortened INSIDE the chip and stays in the cell.
+    {
+        const LONG = "(()=>{const out=[];document.querySelectorAll('td.engcell > .tcut').forEach(t=>{const p=t.querySelector('.af-prov');"
+            + "if(!p||/providers$/.test(p.textContent))return;p.textContent='cloudflare-wor\\u2026';"
+            + "const r=p.getBoundingClientRect(),c=t.getBoundingClientRect();out.push({w:Math.round(r.width),past:Math.round(r.right-c.right)});});return out;})()";
+        let rows;
+        try { rows = JSON.parse(node([path.join('test', 'measure_page.js'), 'turns', LONG, '--width', '1300'])); } catch { rows = null; }
+        ok('‼️ S-134 — turns: a long provider chip shortens inside the Engine cell instead of vanishing'
+            + (rows ? ' ' + JSON.stringify(rows) : ''),
+            Array.isArray(rows) && rows.length > 0 && rows.every(x => x.past <= 1 && x.w >= 30));
     }
 }
 

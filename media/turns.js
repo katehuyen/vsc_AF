@@ -70,7 +70,7 @@
     const providerMark = r => window.AFProvider.chip({
         providerId: '', reportedProviderIds: r.providerIds || [],
         multiProvider: (r.providerIds || []).length > 1
-    });
+    }, '', window.AFProvider.CARD_MAX);
 
     // Content filter of an unfolded turn — the session viewer's chip set, same
     // semantics: empty selection = show everything; "Errors" matches the flag,
@@ -189,6 +189,9 @@
            td clips the panel as well as the text — every hover on this table
            vanished the first time the cells clipped, and nothing said so. */
         table.turnstable td > .tcut { display:block; overflow:hidden; text-overflow:ellipsis; }
+        /* S-134 - the line's ellipsis hid a long provider chip WHOLE (drawn as dots); the chip shortens itself instead */
+        table.turnstable td.engcell > .tcut { display:flex; align-items:baseline; gap:2px; }
+        table.turnstable td.engcell > .tcut > .af-prov { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
         /* A header's own panel hangs under the header cell, so the cell is what
            it is measured against — the same trick AFTip.cell plays on a <td>. */
         table.turnstable th { position:relative; }
@@ -608,7 +611,7 @@
         //
         // The REPORTED half only: a turn's declared route is the session's, and
         // what the engine named for THIS turn is the fact a turn row owns.
-        engine: r => cell('',
+        engine: r => cell('engcell',
             window.AFEngine.badge(r.engine || 'claude') + providerMark(r),
             engineLabel(r), [
                 line('Model', (r.models || []).join(', ') || '—'),

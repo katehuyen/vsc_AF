@@ -953,7 +953,7 @@
     function providerChipHtml() {
         const I = DATA.identity;
         if (!I) { return ''; }
-        const chip = window.AFProvider.chip(I);
+        const chip = window.AFProvider.chip(I, '', window.AFProvider.CARD_MAX);
         if (!chip) { return ''; }
         return window.AFTip.wrap(chip, window.AFProvider.title(I),
             window.AFTip.lines(window.AFProvider.tipLines(I)));

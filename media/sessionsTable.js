@@ -275,9 +275,11 @@
     /** U-192 — the narrowest each column may be drawn, in em of the table's font and padding included:
      *  the widest figure it holds, measured on the sessions fixture (`32m⋯25.8 h`, an `Antigravity` badge).
      *  Tokens is the widest figure the format can reach, `888.8M ⚖ 888.8M` (8.63em), not the fixture's.
+     *  S-134: Engine holds the widest badge plus a route name capped at AFProvider.CARD_MAX
+     *  (OpenCode + `OpenRouter Dee…`, 12.83em); wider glyphs shorten inside the cell (.cellline > .af-prov).
      *  A header wider than this is its floor instead (media/afColFit.js). */
     const FLOOR_EM = {
-        title: 10, agent: 8, engine: 10, project: 4, when: 4.5, duration: 6.2,
+        title: 10, agent: 8, engine: 13, project: 4, when: 4.5, duration: 6.2,
         turns: 3.5, tools: 3.5, files: 3, errors: 2.5, tokens: 8.7, ctx: 4, cost: 4.5
     };
 
@@ -414,6 +416,8 @@
         .cellline > * { flex:0 0 auto; }
         .cellline > .ctext { flex:1 1 auto; min-width:0;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* S-134 - the Engine floor holds a capped name of ordinary letters; a wider one shortens here, never into Project */
+        .cellline > .af-prov { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
         /* figures are never wrapped: the widths above already carry them */
         table.sesstable td.num, table.sesstable th.num { white-space:nowrap; }
         /* U-176 — on a phone a row is a card (media/afMobile.js, table[data-afcards]) */
@@ -1334,7 +1338,7 @@
             // placeholder on every row would cost the column for nothing.
             engine: r => `<td title="${tipOf(TIP.engine(r))}"><span class="cellline">`
                 + `${window.AFEngine.badge(r.engine)}`
-                + `${window.AFProvider.chip((r.launch || {}).identity)}</span></td>`,
+                + `${window.AFProvider.chip((r.launch || {}).identity, '', window.AFProvider.CARD_MAX)}</span></td>`,
             // ‼️ The title cell hands its hover to the rich panel: the answer to
             // "what was this session actually asked to do" is the opening
             // PROMPT, whole, and a native tooltip cannot hold one.

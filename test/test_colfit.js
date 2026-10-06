@@ -109,6 +109,31 @@ return (r.getBoundingClientRect().width+parseFloat(cs.paddingLeft)+parseFloat(cs
     try { tokEm = JSON.parse(node([path.join('test', 'measure_page.js'), 'sessions', TOKX, '--width', '1700'])); } catch { tokEm = null; }
     ok(`‼️ S-131 — the Tokens floor holds "888.8M ⚖ 888.8M" and is no wider than it needs (${tokEm ? tokEm.toFixed(2) : '?'}em of ${spec.floorsEm.tokens}em)`,
         typeof tokEm === 'number' && tokEm <= spec.floorsEm.tokens && spec.floorsEm.tokens - tokEm < 0.5);
+    // ‼️ S-134 — the Engine floor holds the widest routable badge plus a route name cut to
+    // AFProvider.CARD_MAX, built by the components themselves and put into a real cell.
+    const C = {};
+    vm.runInNewContext(read('media/afEngine.js') + '\n' + read('media/afProvider.js'), { window: C });
+    const ENG = C.AFEngine.badge('opencode') + C.AFProvider.chip({ providerId: 'openrouter', providerLabel: 'OpenRouter Deepseek V3' }, '', C.AFProvider.CARD_MAX);
+    const ENGX = `(()=>{const t=document.querySelector('table.sesstable');const td=[...t.querySelectorAll('td[data-col="engine"]')].find(x=>x.querySelector('.af-prov'));
+if(!td)return null;const fs=parseFloat(getComputedStyle(t).fontSize),cs=getComputedStyle(td),line=td.querySelector('.cellline');
+line.innerHTML=${JSON.stringify(ENG)};line.style.width='max-content';const r=document.createRange();r.selectNodeContents(line);
+return (r.getBoundingClientRect().width+parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight))/fs;})()`;
+    let engEm = null;
+    try { engEm = JSON.parse(node([path.join('test', 'measure_page.js'), 'sessions', ENGX, '--width', '1700'])); } catch { engEm = null; }
+    ok(`‼️ S-134 — the Engine floor holds OpenCode + a capped route name and is no wider than it needs (${engEm ? engEm.toFixed(2) : '?'}em of ${spec.floorsEm.engine}em)`,
+        typeof engEm === 'number' && engEm <= spec.floorsEm.engine && spec.floorsEm.engine - engEm < 0.5);
+    // …and a capped name of the widest letters, which the floor does not promise, shortens inside its cell.
+    const WIDEX = `(()=>{${SRC}
+const SPEC=${JSON.stringify(spec)};const t=document.querySelector('table.sesstable');const row=t.querySelector('tr.sessrow');
+const cols=[...row.children].map(td=>td.getAttribute('data-col')).filter(Boolean);
+window.AFColFit.attach(t.parentElement.parentElement,{table:'table.sesstable',head:'tr[data-afcardhead]',cols,shares:SPEC.shares,floorsEm:SPEC.floorsEm});
+const out=[];t.querySelectorAll('td[data-col="engine"] .af-prov').forEach(p=>{if(/providers$/.test(p.textContent))return;p.textContent='MMMMMMMMMMMMMM\\u2026';
+const r=p.getBoundingClientRect(),c=p.closest('td').getBoundingClientRect();out.push({w:Math.round(r.width),past:Math.round(r.right-c.right)});});return out;})()`;
+    let wideRows = null;
+    try { wideRows = JSON.parse(node([path.join('test', 'measure_page.js'), 'sessions', WIDEX, '--width', '800'])); } catch { wideRows = null; }
+    ok('‼️ S-134 — at 800px a capped route name of the widest letters stays inside the Engine cell'
+        + (wideRows ? ' ' + JSON.stringify(wideRows) : ''),
+        Array.isArray(wideRows) && wideRows.length > 0 && wideRows.every(x => x.past <= 1 && x.w >= 40));
     const wide = measure(true, 1700);
     ok('at 1700px the shares already hold every floor: the declared layout is untouched and nothing scrolls',
         !!(wide && wide.tables > 0 && wide.moved === 0 && wide.scroll === 0 && wide.over.length === 0));
