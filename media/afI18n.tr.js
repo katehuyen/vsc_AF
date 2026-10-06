@@ -243,7 +243,7 @@
     'Faster': 'Daha hızlı',
     // U-205 — the Sound page's Reading rows, the Settings summary and the flex points
     'Reading': 'Okuma',
-    '— a message\'s 🔊, Read Last Answer, Read Selection and Read aloud': '— bir mesajın 🔊 düğmesi, Read Last Answer, Read Selection ve Read aloud',
+    '— a message\'s 🔊, Read Last Answer, Read Selection, Read aloud and the daily briefing': '— bir mesajın 🔊 düğmesi, Read Last Answer, Read Selection, Read aloud ve günlük brifing',
     'Voice': 'Ses',
     'Speed': 'Hız',
     'Length': 'Uzunluk',

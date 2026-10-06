@@ -248,7 +248,7 @@ export function registerReportOps(bridge: BridgeRegistry, deps: ReportBridgeDeps
         },
         {
             op: 'digest.daily',
-            describe: '‼️ TODAY\'S DIGEST — and by default it only SHOWS it to you. `send:true` puts it out through the configured channel and `speak:true` reads it aloud; both are gestures aimed at the outside world, so neither happens because an op was called to look at the text. Doing both in one call is allowed and is what the scheduled digest does. args: send? (default false), speak? (default false)',
+            describe: '‼️ TODAY\'S DIGEST — and by default it only SHOWS it to you. `send:true` puts it out through the configured channel and `speak:true` reads it aloud (this computer\'s own voice while `agentFarm.digestTtsModel` is empty; with a fal.ai model there, an audio file in `agentFarm.digestTtsFolder`); both are gestures aimed at the outside world, so neither happens because an op was called to look at the text. Doing both in one call is allowed and is what the scheduled digest does. args: send? (default false), speak? (default false)',
             handler: (args) => {
                 const body = deps.digestBody();
                 const send = args.send === true;

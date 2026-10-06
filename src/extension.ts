@@ -25,7 +25,7 @@ import {
 } from './core/agentpack';
 import { buildAbReport, runAbTest } from './core/abtest';
 import { dailyCostHistory, detectCostAnomaly, heavyHitters, todayCost } from './core/anomaly';
-import { speakText } from './core/briefing';
+import { speakBriefing, speakText } from './core/briefing';
 import { buildOtlpTraces } from './core/otel';
 import { collectGalleryPacks } from './core/packgallery';
 import { RelayTailer } from './core/relay';
@@ -5727,16 +5727,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // B-9 — the spoken briefing as a function: the command and the bridge op
     // both come here, so there is one TTS call and one folder rule.
-    const speakDigestNow = async (): Promise<{ ok: boolean; file?: string; error?: string }> => {
-        const model = cfg().get<string>('digestTtsModel', '');
-        const folder = expandEnvPath(cfg().get<string>('digestTtsFolder', '')) ||
-            expandEnvPath(cfg().get<string>('autoReportFolder', ''));
-        const key = vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY'));
-        return vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: generating spoken briefing…' },
-            () => speakText(buildDigestText(), model, key ? `Key ${key}` : '', folder,
-                { baseUrl: cfg().get<string>('mediaBaseUrl', '') || undefined }));
-    };
+    // U-216 — with no fal model the briefing is read aloud here (core/briefing speakBriefing)
+    const speakDigestNow = async (): Promise<{ ok: boolean; file?: string; error?: string }> => speakBriefing({
+        model: () => cfg().get<string>('digestTtsModel', ''), text: buildDigestText,
+        readAloud: text => readNow(readerDeps, { text }, 'briefing'),
+        toFile: (text, model) => {
+            const folder = expandEnvPath(cfg().get<string>('digestTtsFolder', '')) ||
+                expandEnvPath(cfg().get<string>('autoReportFolder', ''));
+            const key = vault.get(cfg().get<string>('mediaAuthSecret', 'FAL_KEY'));
+            return Promise.resolve(vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: generating spoken briefing…' },
+                () => speakText(text, model, key ? `Key ${key}` : '', folder,
+                    { baseUrl: cfg().get<string>('mediaBaseUrl', '') || undefined })));
+        }
+    });
 
     /**
      * B-9 — the two reports that were built inside the command that showed
@@ -12554,7 +12558,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.readingSettings',
-            describe: 'U-205 — HOW A READING SOUNDS (`agentFarm.alerts.reading`), apart from the announcement\'s voice and speed. Every reading uses it: one asked for (`alerts.readNow`, a 🔊, Read Last Answer, Read Selection) and Read aloud at a turn\'s end. A conversation\'s own voice still wins over `voice`; the volume is the announcement\'s. Read it with no args. args: voice? ("" = Auto — each reading in an installed voice of its own language; or an installed voice\'s name, as `alerts.speak` lists them), rate? (-10…10), length? (first = Read aloud reads the first part and says there is more · whole = the whole answer; a reading somebody asks for is always whole), code? (size = a code block, error trace, log or JSON is said by its size · skip = left out without a word), play? (true — read a short sample with the settings afterwards, through the one reading channel), text? (the sample to read instead)',
+            describe: 'U-205 — HOW A READING SOUNDS (`agentFarm.alerts.reading`), apart from the announcement\'s voice and speed. Every reading uses it: one asked for (`alerts.readNow`, a 🔊, Read Last Answer, Read Selection), the daily briefing when `agentFarm.digestTtsModel` is empty, and Read aloud at a turn\'s end. A conversation\'s own voice still wins over `voice`; the volume is the announcement\'s. Read it with no args. args: voice? ("" = Auto — each reading in an installed voice of its own language; or an installed voice\'s name, as `alerts.speak` lists them), rate? (-10…10), length? (first = Read aloud reads the first part and says there is more · whole = the whole answer; a reading somebody asks for is always whole), code? (size = a code block, error trace, log or JSON is said by its size · skip = left out without a word), play? (true — read a short sample with the settings afterwards, through the one reading channel), text? (the sample to read instead)',
             handler: async (args) => {
                 const raw = args as Record<string, unknown>;
                 const changed = Object.keys(READING_DEFAULT).some(k => raw[k] !== undefined);
@@ -41859,6 +41863,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showWarningMessage(`Agent Farm: briefing failed — ${result.error}`);
                 return;
             }
+            if (!result.file) { return; } // read aloud here: the reading player shows it
             void vscode.window.showInformationMessage(
                 `Agent Farm: spoken briefing saved — ${path.basename(result.file!)}`, 'Reveal')
                 .then(c => {

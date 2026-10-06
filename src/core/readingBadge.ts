@@ -28,6 +28,7 @@ export function readingWho(src: ReadingSource, label: string): string {
     if (src.sessionId) { return String(label || '').trim() || src.sessionId.slice(0, 8); }
     if (src.surface === 'selection') { return 'your selection'; }
     if (src.surface === 'sound') { return 'the sample'; }
+    if (src.surface === 'briefing') { return 'the daily briefing'; }
     return 'a text';
 }
 

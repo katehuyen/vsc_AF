@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.877.0",
+  "version": "3.878.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -10730,12 +10730,12 @@
         "agentFarm.digestTtsModel": {
           "type": "string",
           "default": "",
-          "description": "fal.ai TTS model id for the spoken daily briefing (e.g. an ElevenLabs TTS endpoint on fal — verify the exact id on fal.ai). Empty disables 'Speak Daily Briefing'."
+          "description": "fal.ai TTS model id for the spoken daily briefing (e.g. an ElevenLabs TTS endpoint on fal — verify the exact id on fal.ai): with one, 'Speak Daily Briefing' saves the briefing as an audio file in agentFarm.digestTtsFolder (paid, uses your fal key). Empty: this computer reads the briefing aloud with its own voice, free — the Sound page's Reading voice and speed, and the reading player's pause and skip."
         },
         "agentFarm.digestTtsFolder": {
           "type": "string",
           "default": "",
-          "description": "Folder the spoken briefing mp3 is saved into (e.g. a phone-synced folder). Empty = autoReportFolder."
+          "description": "Folder the spoken briefing's audio file is saved into when agentFarm.digestTtsModel names a fal.ai model (e.g. a phone-synced folder). Empty = autoReportFolder."
         },
         "agentFarm.modelPolicy": {
           "type": "array",

@@ -160,7 +160,7 @@
         const pick = (id, value, opts, tip) => `<select id="${id}" title="${C.esc(tip)}">${opts.map(([v, label]) =>
             C.option(v, label, { selected: v === value })).join('')}</select>`;
         return `<div class="svwrap">
-            <div class="svsub">${C.esc(t('Reading'))} <span class="muted">${C.esc(t('— a message\'s 🔊, Read Last Answer, Read Selection and Read aloud'))}</span></div>
+            <div class="svsub">${C.esc(t('Reading'))} <span class="muted" title="${C.esc(t('Sound: Speak Daily Briefing is read here too while agentFarm.digestTtsModel is empty; with a fal.ai model there it is saved as an audio file instead.'))}">${C.esc(t('— a message\'s 🔊, Read Last Answer, Read Selection, Read aloud and the daily briefing'))}</span></div>
             <div class="svrow"><span class="svlbl">${C.esc(t('Voice'))}</span><span class="svline">
                 ${readingVoiceBox(al.speak || {}, rd)}
                 ${slider('readrate', t('Speed'), -10, 10, rd.rate, t('Reading speed: {v}', { v: rd.rate }) + '\n\n' + t('−10 slow to 10 fast, apart from the sentence\'s speed: a long answer is often listened to faster.'))}

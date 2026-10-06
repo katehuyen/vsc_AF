@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.878.0 - The daily briefing is read aloud for free when no fal.ai model is set (2026-10-07)
+
+- **Sound: Speak Daily Briefing** works without a fal.ai account. With
+  `agentFarm.digestTtsModel` empty, this computer reads today's briefing aloud
+  with its own voice - the Sound page's Reading voice (Auto picks a voice of
+  the text's language) and speed - and the reading player pauses and skips it
+  like any other reading; the player names it "the daily briefing".
+- With a fal.ai model set, nothing changes: the briefing is saved as an audio
+  file in `agentFarm.digestTtsFolder`.
+- The setting's description and the Sound page's Reading line say so.
+- **For agents:** `digest.daily` with `speak:true` follows the same rule.
+
 ## 3.877.0 - Listen to a conversation from the start: Replay reads each answer aloud (2026-10-07)
 
 - **Transcript Replay:** the replay bar has a **Read answers** switch. On,

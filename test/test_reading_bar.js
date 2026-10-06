@@ -24,8 +24,8 @@ ok('paused: the pause sign, Paused, the speed — and an unknown label is the id
 ok('one paragraph says no count; before the player speaks it is starting',
     B.readingBadge({ sessionId: '', surface: 'bridge' }, at({ paragraph: 0, paragraphs: 1 }), '').text === '$(unmute) a text'
     && B.readingBadge({ sessionId: '', surface: 'bridge' }, null, '').lines[0] === 'Starting to read: a text');
-eq('free text is named by who asked', ['selection', 'sound', 'page'].map(s => B.readingWho({ sessionId: '', surface: s }, '')),
-    ['your selection', 'the sample', 'a text']);
+eq('free text is named by who asked', ['selection', 'sound', 'briefing', 'page'].map(s => B.readingWho({ sessionId: '', surface: s }, '')),
+    ['your selection', 'the sample', 'the daily briefing', 'a text']);
 
 // --- the item, against a stand-in vscode ---
 const items = [];
