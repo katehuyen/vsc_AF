@@ -240,8 +240,8 @@ import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch'
 import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
 import { SpawnPair, keepSpawnPairs } from './core/spawnIds';
 import {
-    LaunchManifest, LaunchMechanism, ManifestInput, manifestFor, manifestIndex, manifestLeaks,
-    manifestOf, newLaunchId, rememberManifest
+    isRoutedManifest, LaunchManifest, LaunchMechanism, ManifestInput, manifestFor, manifestIndex,
+    manifestLeaks, manifestOf, newLaunchId, rememberManifest
 } from './core/launchManifest';
 import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount,
@@ -292,6 +292,8 @@ import {
     addProfile, duplicateProfile, readProfiles, readProfilesReport, removeProfile, setProfile,
     StoredProviderProfile
 } from './core/providerProfiles';
+import { retire, RETIRED_PROFILES_KEY, retiredProfileIds } from './core/retiredProfiles';
+import { launchRecordHealth } from './core/launchRecordHealth';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, matchProfile,
     pressedSetupStarts, profileAccountGone, profileFrom,
@@ -19272,6 +19274,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the CLI registry says their process is up, not because the engine has announced itself. '
                 + '`workArea` — B-30 — the agents\' scratch folder in force, how many folders it refuses and how '
                 + 'many writes it stopped (farm.workArea has the whole reading). '
+                + '`launchRecords` — S-138 — how full the launch manifests and the session → launch pairs are '
+                + '(count, cap, oldest, routed); `warning` is set near a cap, past which the oldest plain '
+                + 'launches are dropped (a launch on a route profile is kept). '
                 + 'args: none',
             handler: () => {
                 const w = restartWorld();
@@ -19323,6 +19328,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     })(),
                     // B-30 — the scratch folder in force (full reading: farm.workArea)
                     workArea: { path: workArea.path, source: workArea.source, retired: workArea.retired.length, refused: workAreaGuardLog.total },
+                    // S-138 — how full the launch records are (src/core/launchRecordHealth.ts)
+                    launchRecords: launchRecordHealth(launchManifests(), spawnPairs),
                     bootId,
                     startedAt: new Date(bootAt).toISOString(),
                     uptimeMs: Date.now() - bootAt,
@@ -23815,6 +23822,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const writeProviderProfiles = async (list: StoredProviderProfile[]): Promise<void> => {
         await cfg().update('providerProfiles', list, vscode.ConfigurationTarget.Global);
     };
+    // S-135 — a route id is given once (src/core/retiredProfiles.ts); every add, copy and remove asks these two.
+    const retiredProviderIds = (): string[] => retiredProfileIds(providerProfiles(), launchManifests(),
+        context.globalState.get<unknown[]>(RETIRED_PROFILES_KEY, []));
+    const retireProviderId = async (id: string): Promise<void> => {
+        await context.globalState.update(RETIRED_PROFILES_KEY,
+            retire(context.globalState.get<unknown[]>(RETIRED_PROFILES_KEY, []), id));
+    };
     /** X-488 / X-492 — the key a route signs in with (its own, or a Farm Secret it names), at the endpoint it was given for. */
     const routeKeyOf = (p: StoredProviderProfile) =>
         routeKeyFor(p, providerKeys.bindOf(p.id), id => providerKeys.get(id), name => vault.get(name));
@@ -24733,7 +24747,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // X-494 — a NEW route naming an id that exists is refused, never turned into an overwrite.
             const w = edit
                 ? setProfile(list, id, input, engines)
-                : addProfile(list, input, engines);
+                : addProfile(list, input, engines, retiredProviderIds());
             if (w.refusal.length) { return w.refusal; }
             await writeProviderProfiles(w.list);
             EnginesPanel.refreshIfOpen();
@@ -24743,6 +24757,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const w = removeProfile(providerProfiles(), id);
             if (w.refusal.length) { return w.refusal; }
             await writeProviderProfiles(w.list);
+            await retireProviderId(w.profile!.id);
             // …and the credential goes with it, or it stays in the keychain
             // with nothing left to collect it.
             await clearProviderSecret(id);
@@ -24752,7 +24767,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return [];
         },
         copyProfile: async (id: string): Promise<string[]> => {
-            const w = duplicateProfile(providerProfiles(), id);
+            const w = duplicateProfile(providerProfiles(), id, undefined, retiredProviderIds());
             if (w.refusal.length) { return w.refusal; }
             await writeProviderProfiles(w.list);
             EnginesPanel.refreshIfOpen();
@@ -25787,8 +25802,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         for (const s of consoleHost.list()) {
             if (s.sessionId && s.launchId) { pairs.push({ sessionId: s.sessionId, launchId: s.launchId }); }
         }
-        // ‼️ X-506 — kept past the card and the window (src/core/spawnIds.ts).
-        const kept = keepSpawnPairs(spawnPairs, pairs);
+        // ‼️ X-506 — kept past the card and the window (src/core/spawnIds.ts); S-136 — a routed launch's pair outlives the cap.
+        let routed: Set<string> | undefined;
+        const kept = keepSpawnPairs(spawnPairs, pairs, undefined, id =>
+            (routed ??= new Set(launchManifests().filter(isRoutedManifest).map(m => m.launchId))).has(id));
         if (kept.changed) { spawnPairs = kept.pairs; void context.globalState.update(SPAWN_PAIRS_KEY, spawnPairs); }
         index.setSpawnIds(kept.pairs);
     };
@@ -43960,11 +43977,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'names the Farm Secret the route signs in with (absent = a key of its own), and '
                 + '`keyHint` is a masked reminder of which key it is (`sk-or-…4444`), never the key. '
                 + 'X-492 — `keyHeldFor` names the endpoint a key was given for when the route has moved '
-                + 'since; such a route has no key until a person confirms it. args: id? (one route by id)',
+                + 'since; such a route has no key until a person confirms it. S-135 — `retired` lists the '
+                + 'ids of removed routes that are never given again (past sessions still carry them). '
+                + 'args: id? (one route by id)',
             handler: (args) => {
                 const id = optStr(args, 'id').trim().toLowerCase();
                 const all = publicProviderProfiles();
-                if (!id) { return { profiles: all, count: all.length }; }
+                if (!id) { return { profiles: all, count: all.length, retired: retiredProviderIds() }; }
                 const one = all.find(p => p.id === id);
                 need(!!one, `no provider profile with the id "${id}"`);
                 return one!;
@@ -43985,10 +44004,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'name) is chosen only in the Engines page and kept beside the keychain, not in the '
                 + 'route, so no call can point a secret at an endpoint. args: id, label?, providerId, '
                 + 'baseUrl?, authKind?, tiers? (object, tier → model id), description? (the owner\'s '
-                + 'note), engine? (claude)',
+                + 'note), engine? (claude). S-135 — the id of a removed route is refused: an id is given '
+                + 'once (providers.list → retired).',
             handler: async (args) => {
                 const w = addProfile(providerProfiles(), args as Record<string, unknown>,
-                    Object.keys(ENGINES));
+                    Object.keys(ENGINES), retiredProviderIds());
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
                 EnginesPanel.refreshIfOpen();
@@ -44029,7 +44049,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'never reuses one, because a returning id would inherit a keychain entry. '
                 + 'args: id, newId?',
             handler: async (args) => {
-                const w = duplicateProfile(providerProfiles(), argStr(args, 'id'), optStr(args, 'newId'));
+                const w = duplicateProfile(providerProfiles(), argStr(args, 'id'), optStr(args, 'newId'),
+                    retiredProviderIds());
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
                 EnginesPanel.refreshIfOpen();
@@ -44051,6 +44072,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // actually collected — which is the half that cannot be undone.
                 const hadSecret = providerSecretIds().includes(id);
                 await writeProviderProfiles(w.list);
+                await retireProviderId(id);
                 await clearProviderSecret(id);
                 // X-115 — and the verdicts filed under it, the last trace left.
                 await forgetProviderTests(w.profile?.engine ?? 'claude', id);

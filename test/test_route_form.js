@@ -123,7 +123,7 @@ const formOf = (h) => {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'enginesPanel.ts'), 'utf8');
     ok('the host picks add or set by the door, not by whether the id exists',
-        /const w = edit\s*\? setProfile\(list, id, input, engines\)\s*: addProfile\(list, input, engines\);/.test(ext)
+        /const w = edit\s*\? setProfile\(list, id, input, engines\)\s*: addProfile\(list, input, engines, retiredProviderIds\(\)\);/.test(ext)
         && !/list\.some\(p => p\.id === id\)\s*\? setProfile/.test(ext));
     ok('…and the panel hands it the door', /msg\.mode === 'edit'\), true\);/.test(panel));
     // X-493 — the launcher (QuickPick) folds the same way the Console composer does

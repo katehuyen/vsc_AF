@@ -284,6 +284,20 @@ export function rememberManifest(
     // whichever the array order happened to put first.
     const out = (list || []).filter(x => x && x.launchId !== m.launchId);
     out.push(m);
+    return keepRoutedFirst(out, cap, isRoutedManifest);
+}
+
+/** S-136 — a launch on an Agent Farm route profile. Its transcript never names that route (X-98),
+ *  so this record is the only witness of what served the session. */
+export function isRoutedManifest(m: LaunchManifest | undefined): boolean {
+    return !!str(m?.identity?.providerProfileId);
+}
+
+/** Over the cap, the oldest plain rows go first; a kept row goes only when kept rows alone pass it. */
+export function keepRoutedFirst<T>(rows: T[], cap: number, kept: (row: T) => boolean): T[] {
+    if (rows.length <= cap) { return rows; }
+    let over = rows.length - cap;
+    const out = rows.filter(r => { if (over > 0 && !kept(r)) { over--; return false; } return true; });
     return out.length > cap ? out.slice(out.length - cap) : out;
 }
 

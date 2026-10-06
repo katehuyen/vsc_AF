@@ -266,9 +266,9 @@ async function main() {
         const capped = keepSpawnPairs([{ sessionId: 'o1', launchId: 'A' }, { sessionId: 'o2', launchId: 'B' }], [{ sessionId: 'n1', launchId: 'C' }], 2);
         ok('…and the oldest goes first at the cap', capped.pairs.length === 2 && capped.pairs[0].sessionId === 'o2');
         const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-        const pub = ext.slice(ext.indexOf('const publishSpawnIds = ('), ext.indexOf('const publishSpawnIds = (') + 900);
+        const pub = ext.slice(ext.indexOf('const publishSpawnIds = ('), ext.indexOf('const publishSpawnIds = (') + 1300);
         ok('the extension publishes the KEPT pairs and stores the new ones',
-            /keepSpawnPairs\(spawnPairs, pairs\)/.test(pub) && /index\.setSpawnIds\(kept\.pairs\)/.test(pub) && /globalState\.update\(SPAWN_PAIRS_KEY/.test(pub));
+            /keepSpawnPairs\(spawnPairs, pairs, undefined, id =>/.test(pub) && /index\.setSpawnIds\(kept\.pairs\)/.test(pub) && /globalState\.update\(SPAWN_PAIRS_KEY/.test(pub));
         ok('…and publishes them at activation, not at the first live tick',
             /consoleHostRef = consoleHost;[\s\S]{0,200}publishSpawnIds\(\);/.test(ext));
     }

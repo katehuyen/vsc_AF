@@ -10,8 +10,10 @@
  *
  * So the pairs are kept. FIRST WINS, the rule `setSpawnIds` already follows: a
  * session belongs to the spawn that produced it, and a resume records no new
- * launch. Bounded the way the manifests are — the oldest pair goes first.
+ * launch. Bounded the way the manifests are — the oldest plain pair goes first.
  */
+import { keepRoutedFirst } from './launchManifest';
+
 export interface SpawnPair {
     sessionId: string;
     launchId: string;
@@ -20,7 +22,9 @@ export interface SpawnPair {
 export const SPAWN_PAIR_CAP = 2000;
 
 export function keepSpawnPairs(
-    stored: readonly SpawnPair[] | undefined, live: readonly SpawnPair[], cap = SPAWN_PAIR_CAP
+    stored: readonly SpawnPair[] | undefined, live: readonly SpawnPair[], cap = SPAWN_PAIR_CAP,
+    /** S-136 — a launch whose pair must outlive the cap (a routed one: launchManifest.ts isRoutedManifest). */
+    keepLaunch?: (launchId: string) => boolean
 ): { pairs: SpawnPair[]; changed: boolean } {
     const seen = new Set<string>();
     const pairs: SpawnPair[] = [];
@@ -35,6 +39,5 @@ export function keepSpawnPairs(
     for (const p of stored ?? []) { add(p); }
     let changed = false;
     for (const p of live) { if (add(p)) { changed = true; } }
-    if (pairs.length > cap) { pairs.splice(0, pairs.length - cap); }
-    return { pairs, changed };
+    return { pairs: keepRoutedFirst(pairs, cap, p => !!keepLaunch?.(p.launchId)), changed };
 }

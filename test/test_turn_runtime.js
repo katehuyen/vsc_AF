@@ -463,7 +463,7 @@ const CLAUDE_ROUTE = {
     // of sessions and the one nobody was asking about.
     ok('a hand-opened terminal or card gets its spawn joined as well',
         /const publishSpawnIds = \(\): void =>/.test(ext)
-        && /keepSpawnPairs\(spawnPairs, pairs\)/.test(ext)
+        && /keepSpawnPairs\(spawnPairs, pairs, undefined, id =>/.test(ext)
         && /index\.setSpawnIds\(kept\.pairs\);/.test(ext));
     ok('…fed by both doors that write a manifest without a task behind them',
         /for \(const b of termBindings\) \{/.test(ext)

@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.861.0 - Provider routes keep their history (2026-10-06)
+
+- **Removing a provider route retires its id.** Past sessions name the route
+  they ran on by that id, so a new route created later under the same id
+  would have mixed its sessions into the old one's history - in the Sessions
+  table's filters, and in a resume of an old conversation, which could have
+  continued on the new endpoint and key. Adding a route on a retired id is
+  now refused, and the message names the next free one (`qwen-2`). A copy
+  skips retired ids by itself. Routes removed before this version are
+  recognised too, from the launch records of the sessions that ran on them.
+- **A session started on a provider route keeps showing that route.** Agent
+  Farm keeps a bounded number of launch records; when the store is full the
+  oldest ones go. From now on the launches without a route go first, so a
+  session's route is not forgotten because many other runs came after it.
+- `farm.health` now reports how full the launch records are and warns when
+  a store nears its limit.
+
 ## 3.860.0 - A routed Console card keeps its route in view (2026-10-06)
 
 - **A Console card running on a provider route shows the route at the top

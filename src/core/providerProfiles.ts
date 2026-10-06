@@ -133,13 +133,19 @@ export function baseUrlRefusal(url: string): string {
  */
 export function profileRefusal(
     p: StoredProviderProfile,
-    opts: { engines?: string[]; takenIds?: string[] } = {}
+    opts: { engines?: string[]; takenIds?: string[]; retiredIds?: readonly string[] } = {}
 ): string[] {
     const out: string[] = [];
     if (!PROFILE_ID.test(p.id)) { out.push(PROFILE_ID_REFUSAL); }
     if (opts.takenIds?.includes(p.id)) {
         out.push(`a profile with the id "${p.id}" already exists — ids are permanent because the `
             + 'credential is filed under one; change it with Edit on its card (providers.set), or copy it to a new id.');
+    } else if (opts.retiredIds?.includes(p.id)) {
+        // S-135 — src/core/retiredProfiles.ts says why an id is given once.
+        const free = freeIdAmong(new Set([...(opts.takenIds ?? []), ...opts.retiredIds]), p.id);
+        out.push(`the id "${p.id}" belonged to a route that was removed, and the sessions that ran on it `
+            + 'still carry it — an id is given once, so a new route never inherits that history'
+            + (free ? `; use "${free}".` : '.'));
     }
     if (opts.engines?.length && !opts.engines.includes(p.engine)) {
         out.push(`engine "${p.engine}" is not one of: ${opts.engines.join(', ')}`);
@@ -259,10 +265,11 @@ export function readProfilesReport(raw: unknown): ProfileReadReport {
 }
 
 export function addProfile(
-    list: StoredProviderProfile[], input: ProviderProfileInput, engines?: string[]
+    list: StoredProviderProfile[], input: ProviderProfileInput, engines?: string[],
+    retiredIds?: readonly string[]
 ): ProfileWrite {
     const p = { ...storedProfile(input), revision: 1 };
-    const refusal = profileRefusal(p, { engines, takenIds: list.map(x => x.id) });
+    const refusal = profileRefusal(p, { engines, takenIds: list.map(x => x.id), retiredIds });
     if (refusal.length) { return refuse(list, refusal); }
     return { list: [...list, p], refusal: [], profile: p };
 }
@@ -319,23 +326,28 @@ export function removeProfile(list: StoredProviderProfile[], id: string): Profil
  * them would leave the other working with nothing to say why.
  */
 export function duplicateProfile(
-    list: StoredProviderProfile[], id: string, newId?: string
+    list: StoredProviderProfile[], id: string, newId?: string, retiredIds?: readonly string[]
 ): ProfileWrite {
     const src = list.find(x => x.id === str(id).toLowerCase());
     if (!src) { return refuse(list, [`no profile with the id "${str(id)}"`]); }
-    const wanted = str(newId).toLowerCase() || freeProfileId(list, src.id);
+    const wanted = str(newId).toLowerCase() || freeProfileId(list, src.id, retiredIds);
     const copy: StoredProviderProfile = {
         ...src, id: wanted, label: `${src.label} (copy)`, revision: 1
     };
-    const refusal = profileRefusal(copy, { takenIds: list.map(x => x.id) });
+    const refusal = profileRefusal(copy, { takenIds: list.map(x => x.id), retiredIds });
     if (refusal.length) { return refuse(list, refusal); }
     return { list: [...list, copy], refusal: [], profile: copy };
 }
 
 /** `kimi` → `kimi-2` → `kimi-3`. Counts up and never reuses, for the reason a
  *  backlog code does: an id that came back would inherit a keychain entry. */
-export function freeProfileId(list: StoredProviderProfile[], base: string): string {
-    const taken = new Set(list.map(x => x.id));
+export function freeProfileId(
+    list: StoredProviderProfile[], base: string, retiredIds?: readonly string[]
+): string {
+    return freeIdAmong(new Set([...list.map(x => x.id), ...(retiredIds ?? [])]), base);
+}
+
+function freeIdAmong(taken: Set<string>, base: string): string {
     const root = str(base).toLowerCase().replace(/-\d+$/, '') || 'profile';
     for (let n = 2; n < 1000; n++) {
         const id = `${root}-${n}`;
