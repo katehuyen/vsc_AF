@@ -11,6 +11,7 @@
  * aloud is not silenced by Silent (alerts.read), so 🔊■ can sit on a Silent card.
  */
 import { SessionSound } from './soundSession';
+import type { ReadingSource } from './reader';
 
 export interface SoundCardInput {
     sound: SessionSound;
@@ -65,16 +66,20 @@ export function soundCardView(i: SoundCardInput): SoundCardView {
 export class ReadingNow {
     private id = '';
     private n = 0;
+    /** U-197 — WHAT is being read: the message or turn, and the surface that asked. */
+    private src: ReadingSource | null = null;
 
     constructor(private readonly changed: () => void = () => undefined) { }
 
-    start(sessionId: string, run: Promise<unknown>): void {
+    start(sessionId: string, run: Promise<unknown>, source?: Omit<ReadingSource, 'sessionId'>): void {
         const n = ++this.n;
         this.id = String(sessionId ?? '');
+        this.src = { surface: 'auto', ...source, sessionId: this.id };
         this.changed();
         void run.then(undefined, () => undefined).then(() => {
             if (this.n !== n) { return; }
             this.id = '';
+            this.src = null;
             this.changed();
         });
     }
@@ -82,10 +87,14 @@ export class ReadingNow {
     /** The reader was stopped by hand. */
     stop(): void {
         this.n++;
-        if (!this.id) { return; }
+        if (!this.id && !this.src) { return; }
         this.id = '';
+        this.src = null;
         this.changed();
     }
+
+    /** What is being read, or null. A free-text reading has an empty sessionId. */
+    get source(): ReadingSource | null { return this.src; }
 
     is(sessionId: string): boolean {
         return !!sessionId && this.id === sessionId;
