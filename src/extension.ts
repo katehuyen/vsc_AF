@@ -2056,9 +2056,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * other, and the newer answer is the one worth hearing. A reader per
      * session would give the room a crowd.
      */
-    // U-198 — a paused reading or another paragraph is redrawn where reading is drawn
-    const dialogue = new DialogueSpeaker({ onChange: soundRepaint });
-    const readingNow = new ReadingNow(soundRepaint);
+    // U-198 / U-199 — a reading starting, ending, pausing or moving on is redrawn wherever reading is drawn
+    const readingRepaint = (): void => { soundRepaint(); SessionViewerPanel.readingChanged(); };
+    const dialogue = new DialogueSpeaker({ onChange: readingRepaint });
+    const readingNow = new ReadingNow(readingRepaint);
     // U-183 — the Sound page's Sessions table follows sessions coming, going and
     // being renamed; a hook event that changes none of that redraws nothing.
     let soundLiveKey = '';
@@ -25013,6 +25014,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reopenLate = reopenFor;
     const viewerDeps = {
         extensionUri: context.extensionUri,
+        reader: readerDeps,
         accountFor: sessionAccountOf,
         // X-110 — and which provider served it, from the same reader the resume
         // gate uses, so the page and the gate cannot describe one run two ways.

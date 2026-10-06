@@ -16,9 +16,12 @@ import { buildSessionMarkdown, SessionExportView } from '../core/sessionExport';
 import { chainIndexNow, chainPlace } from '../core/chainMembership';
 import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
+import { readingAct, readingState, readNow, type ReaderDeps } from '../core/readerOps';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
+    /** U-199 — the one reading channel: a step's 🔊 and the Read aloud menus go through it */
+    reader?: ReaderDeps;
     getPricing(): PricingEngine;
     maxMessages(): number;
     /** Context-window size for the "Context now" gauge, resolved from the session's
@@ -894,6 +897,13 @@ export class SessionViewerPanel {
         SessionViewerPanel.phones.add(new SessionViewerPanel(host, file, deps, focusTs, roles));
     }
 
+    /** U-199 — every change of the one reading channel redraws the 🔊 on the steps. */
+    static readingChanged(): void {
+        for (const p of [...SessionViewerPanel.open.values(), ...SessionViewerPanel.phones]) {
+            void p.host.webview.postMessage({ type: 'reading', reading: p.readingNow() });
+        }
+    }
+
     /** A session renamed anywhere is renamed here too — tab caption included. */
     static refreshOpen(): void {
         for (const p of [...SessionViewerPanel.open.values(), ...SessionViewerPanel.phones]) {
@@ -979,7 +989,14 @@ export class SessionViewerPanel {
             };
         }
         this.host.title = tabCaption(String(data.sessionId ?? ''), String(data.title ?? ''));
+        data.reading = this.readingNow();
         return data;
+    }
+
+    /** U-199 — what is being read, for the 🔊 on each step; null while nothing is. */
+    private readingNow(): { sessionId: string; key: string; paused: boolean } | null {
+        const s = this.deps.reader ? readingState(this.deps.reader) : null;
+        return s?.source ? { sessionId: s.source.sessionId, key: s.key, paused: !!s.at?.paused } : null;
     }
 
     /**
@@ -1064,6 +1081,22 @@ export class SessionViewerPanel {
                 void vscode.env.clipboard.writeText(text).then(
                     () => this.host.webview.postMessage({ type: 'copied', idx, ok: true }),
                     () => this.host.webview.postMessage({ type: 'copied', idx, ok: false }));
+                break;
+            }
+            // U-199 — a step, a turn or the rest read aloud: the same bodies as alerts.readNow / alerts.reading.
+            // The transcript names the conversation; a refusal comes back as a toast.
+            case 'readAloud': {
+                if (!this.deps.reader) { break; }
+                const pick = msg.pick && typeof msg.pick === 'object' ? msg.pick as Record<string, unknown> : {};
+                readNow(this.deps.reader, { ...pick, sessionId: this.file }, 'transcript').catch(e =>
+                    this.host.webview.postMessage({ type: 'readRefused', error: String((e as Error)?.message ?? e) }));
+                break;
+            }
+            case 'readControl': {
+                if (!this.deps.reader) { break; }
+                try { readingAct(this.deps.reader, String(msg.action ?? '')); } catch (e) {
+                    void this.host.webview.postMessage({ type: 'readRefused', error: String((e as Error)?.message ?? e) });
+                }
                 break;
             }
             // ---- what the agent did to the code (B3) ----

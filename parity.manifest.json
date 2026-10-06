@@ -6136,6 +6136,24 @@
       }
     },
     {
+      "capability": "sessionViewer.ts#readAloud",
+      "ui": [
+        "page:sessionViewer.ts#readAloud"
+      ],
+      "ops": [
+        "alerts.readNow"
+      ]
+    },
+    {
+      "capability": "sessionViewer.ts#readControl",
+      "ui": [
+        "page:sessionViewer.ts#readControl"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
       "capability": "sessionViewer.ts#pinSession",
       "ui": [
         "page:sessionViewer.ts#pinSession"
