@@ -95,6 +95,11 @@
     // G4 replay state: play messages 0..pos step by step over the *filtered* list,
     // honoring real gaps.
     const replay = { active: false, playing: false, pos: 0, speed: 2, timer: null, msgs: [] };
+    // U-210 — the replay read aloud: an answer it plays onto is read before it goes on (media/afReplayRead.js)
+    const replayRead = window.AFReplayRead.create({
+        post: m => vscode.postMessage(m), sessionId: () => DATA.sessionId, keyOf: m => window.AFRead.keyOf(DATA, m),
+        proceed: () => scheduleNext(), hold: () => { stopTimer(true); updateReplayUi(); }, changed: () => updateReplayUi()
+    });
 
     window.addEventListener('message', ev => {
         // An already-open page reached again from the Search results takes the
@@ -493,11 +498,10 @@
      *  per step over a thousand-step transcript is either invisible or a rash. */
     const copyBtnHtml = idx =>
         `<button class="copyb" data-copy="${idx}" title="Copy this step's text to the clipboard">⧉</button>`;
-    /** U-199 — a step with words (a prompt, an answer) can be read aloud. Not drawn on the
-     *  phone: a press there would speak in the room the PC is in. */
+    /** U-199 — a step with words (a prompt, an answer) can be read aloud; on a phone by its own voice (U-209). */
     const readable = m => !!m && (m.role === 'user' || m.role === 'assistant') && !!stepText(m).trim();
     const readBtnHtml = m => {
-        const key = !ON_PHONE_HOST && readable(m) ? window.AFRead.keyOf(DATA, m) : '';
+        const key = readable(m) ? window.AFRead.keyOf(DATA, m) : '';
         return key ? window.AFRead.btn(DATA.sessionId, key) : '';
     };
 
@@ -553,9 +557,11 @@
 
     // ---------- replay engine ----------
 
-    function stopTimer() {
+    /** `leaveReading`: the replay's ⏸ and a reading that took over — every other stop ends the answer being read. */
+    function stopTimer(leaveReading) {
         if (replay.timer) { clearTimeout(replay.timer); replay.timer = null; }
         replay.playing = false;
+        if (!leaveReading) { replayRead.stop(); }
     }
 
     function stepDelay(i) {
@@ -570,7 +576,7 @@
         replay.timer = setTimeout(() => {
             replay.pos++;
             renderReplayStep();
-            scheduleNext();
+            if (!replayRead.arrive(replay.msgs[replay.pos])) { scheduleNext(); }
         }, stepDelay(replay.pos + 1));
     }
 
@@ -593,6 +599,7 @@
         }
         const btn = document.getElementById('rp-play');
         if (btn) { btn.textContent = replay.playing ? '⏸ Pause' : '▶ Play'; }
+        replayRead.paint(document.getElementById('rp-read'));
     }
 
     function jumpTo(pred, from) {
@@ -1256,8 +1263,9 @@
                 <button class="secondary" id="rp-back">−1</button>
                 <button class="secondary" id="rp-fwd">+1</button>
                 <select id="rp-speed">
-                    ${[1, 2, 4, 8].map(s => `<option value="${s}"${s === replay.speed ? ' selected' : ''}>${s}x</option>`).join('')}
+                    ${[1, 2, 4, 8].map(s => `<option value="${s}"${s === replay.speed ? ' selected' : ''} title="${C.esc(window.AFI18n.t('Steps come {n} times faster than the conversation really ran — a long pause is cut short first', { n: s }))}">${s}x</option>`).join('')}
                 </select>
+                ${replayRead.html()}
                 <button class="secondary" id="rp-nexterr" ${errorCount ? '' : 'disabled'}>next error ⚠</button>
                 <button class="secondary" id="rp-nextprompt">next prompt 💬</button>
                 <button class="secondary" id="rp-exit">✕ Exit</button>
@@ -1468,9 +1476,11 @@
 
         if (replay.active) {
             document.getElementById('rp-play').addEventListener('click', () => {
-                if (replay.playing) { stopTimer(); } else { replay.playing = true; scheduleNext(); }
+                if (replay.playing) { stopTimer(true); replayRead.pause(); } else { replay.playing = true; if (!replayRead.resume()) { scheduleNext(); } }
                 updateReplayUi();
             });
+            const rd = document.getElementById('rp-read');
+            if (rd) { rd.addEventListener('click', () => { replayRead.toggle(); updateReplayUi(); }); }
             document.getElementById('rp-restart').addEventListener('click', () => {
                 stopTimer(); replay.pos = 0; renderReplayList();
             });
@@ -1537,8 +1547,8 @@
             window.AFCtx.toast(ON_THE_PC, true);
             return;
         }
-        if (ON_PHONE_HOST && (verb === 'vtRead' || verb === 'vsRead')) {
-            window.AFCtx.toast(window.AFI18n.t('Read aloud plays on the PC, not on the phone.'), true);
+        if ((verb === 'vtRead' || verb === 'vsRead') && !window.AFRead.can()) {
+            window.AFCtx.toast(window.AFI18n.t('This phone app cannot read aloud — update Agent Farm on the phone.'), true);
             return;
         }
         const readAloud = pick => vscode.postMessage({ type: 'readAloud', pick });

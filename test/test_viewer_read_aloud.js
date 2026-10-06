@@ -125,14 +125,26 @@ const press = (p, key) => {
         pkg.contributes.menus['agentfarm.ctx.vtRead'].length === 3 && pkg.contributes.menus['agentfarm.ctx.vsRead'].length === 2);
 }
 
-// ---------------------------------------------------------------- on the phone
+// ---------------------------------------------------------------- on the phone (U-209)
 {
     const p = runPage('sessionViewer.js', data(), { __AFUI__: { remote: true } });
     unfold(p);
-    ok('‼️ the phone draws no 🔊 — a press there would speak in the room the PC is in', reads(p).length === 0);
+    ok('‼️ a phone that cannot speak draws no 🔊 — a phone never makes the PC speak', reads(p).length === 0);
     p.send({ type: 'afctx', act: 'vsRead:step', ctx: { stepIdx: 1 } });
-    ok('…and its menu says where reading plays instead of sending it',
-        !p.posted.some(m => m.type === 'readAloud') && /plays on the PC/.test(p.els['afctx-toast'].textContent));
+    ok('…and its menu says the phone app cannot read instead of sending it',
+        !p.posted.some(m => m.type === 'readAloud') && /cannot read aloud/.test(p.els['afctx-toast'].textContent));
+}
+{
+    const p = runPage('sessionViewer.js', data(), { __AFUI__: { remote: true }, afShell: { speaks: () => true, post: () => { } } });
+    unfold(p);
+    ok('a phone that speaks draws the same 🔊 on the same steps', reads(p).join() === 'u-1,#7,u-2,u-3,a-3s,a-3');
+    p.posted.length = 0;
+    p.send({ type: 'afctx', act: 'vsRead:step', ctx: { stepIdx: 1 } });
+    ok('…and its menu sends the step to be read (the phone shell turns it into its own voice)',
+        p.last() && p.last().type === 'readAloud' && JSON.stringify(p.last().pick) === '{"msg":"#7"}');
+    p.send({ type: 'reading', reading: { sessionId: SID, key: '#7', paused: false, head: '' }, phone: true });
+    p.send({ type: 'data', auto: true, data: data({ reading: null }) });
+    ok('‼️ the PC\'s reading in a data push does not wipe the phone\'s ■', /data-read="#7"[^>]*class="readb on"[^>]*>■/.test(p.html()));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

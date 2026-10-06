@@ -83,8 +83,11 @@ const deps = {
     setSessionAlert: (sessionId, action, enabled) => { alertCalls.push(`${sessionId}:${action}:${enabled}`); return alertAnswer; },
     resolveSessionVoice: () => ({ voice: 'chime', label: 'Chime', origin: 'default', originLabel: 'default', playable: true, chosen: '', skipped: [] }),
     alertGate: () => ({ muted: false, quiet: { configured: false, inside: false, from: '', to: '' }, mutedSessions: [] }),
-    testSessionAlert: async () => ({ ok: true })
+    testSessionAlert: async () => ({ ok: true }),
+    // the session panel's ▶ Read last answer reaches the reader through the sound host (U-200, U-209)
+    sound: () => ({ reader: { conversation: ref => { asked.push(ref); return { error: 'no conversation ' + ref }; } } })
 };
+const asked = [];
 const settle = () => new Promise(r => setTimeout(r, 10));
 const alive = setInterval(() => undefined, 1000);
 
@@ -126,6 +129,13 @@ const alive = setInterval(() => undefined, 1000);
     views.message(reader, 'r1', { type: 'setTurnAlert', sessionId: SID, action: 'sound', enabled: true });
     await settle();
     ok('‼️ a read device changes nothing', commands.length === 0 && alertCalls.length === 0);
+    views.message(reader, 'r1', { type: 'readAloud', sessionId: SID, pick: {}, surface: 'soundPanel' });
+    await settle();
+    ok('‼️ the session panel\'s ▶ never makes the PC speak from a phone', asked.length === 0);
+    views.message(reader, 'r1', { type: 'readFor', token: 'p1', sessionId: SID, pick: {}, surface: 'soundPanel' });
+    await settle();
+    ok('…its readFor is answered for the phone\'s own voice, under its token', asked.includes(SID)
+        && toReader.some(m => m.type === 'readRefused' && m.token === 'p1' && /no conversation/.test(m.error)));
     views.close(reader, 'r1');
 
     const manager = { device: 'dev_m', scope: 'manage' };

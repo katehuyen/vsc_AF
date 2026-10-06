@@ -1928,12 +1928,11 @@
     }
 
     /** U-200 — a message's ⧉ (the whole text) and 🔊 (its transcript line; its words where it has
-     *  none). No 🔊 on a phone: a press there would speak in the room the PC is in. */
+     *  none); on a phone the 🔊 is read by the phone's own voice (U-209). */
     function msgActs(m) {
         if (!String(m.text || '').trim()) { return ''; }
         const sid = (sel() || {}).sessionId || '';
-        const phone = !!(window.__AFUI__ && window.__AFUI__.remote === true);
-        const read = sid && !phone ? window.AFRead.btn(sid, m.uuid || '') : '';
+        const read = sid ? window.AFRead.btn(sid, m.uuid || '') : '';
         return `<span class="macts">${read}<button data-mcopy="1" class="mcopy" title="${C.esc(t('Copy the whole message'))}">⧉</button></span>`;
     }
     /** …and their press, on the rows exactly as drawn (visibleMessages) — the uuid where the row has one. */
@@ -6118,7 +6117,7 @@
             'tip-sound', 'This session\'s sound');
         // U-200 — …and while nothing is read, ▶ reads the last answer: listening without looking.
         if (!v.reading) {
-            if (window.__AFUI__ && window.__AFUI__.remote === true) { return speaker; }
+            if (!window.AFRead.can()) { return speaker; }
             return speaker + cardTip(`<button data-readlast="1" id="c-readlast" class="stchip" aria-label="${C.esc(t('Read the last answer aloud'))}">▶</button>`,
                 t('Read last answer'), T.lines([t('Reads this conversation\'s last answer aloud, whole.')]), 'tip-readlast', t('Read last answer'));
         }

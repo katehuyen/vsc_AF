@@ -263,6 +263,27 @@ module.exports = {
                 r.els.app.innerHTML = r.els.app.innerHTML.replace(/(<button[^>]*data-afsound=")[^"]*("[^>]*>)[^<]*</, '$1reading$2🗣️<')
                     + `<style>${P.css}</style><div class="af-rp" style="top:44px;right:16px">${P.html(reading)}</div>`;
             }
+        },
+        // U-210 — the replay bar's switch: off, and on with the replay waiting on the answer being read
+        {
+            id: 'sessionviewer-replay',
+            label: 'Session viewer — Replay: the bar\'s 🔇 Read answers switch, off',
+            data: data(),
+            act: r => { unfold(r); r.query('#replaytoggle')[0].click(); }
+        },
+        {
+            id: 'sessionviewer-replay-read',
+            label: 'Session viewer — Replay reading aloud: 🔊 Read answers on, stopped at the answer being read (its ■ lit)',
+            data: data({ over: { reading: { sessionId: SID, key: '#5', paused: false } } }),
+            act: r => {
+                unfold(r);
+                r.query('#replaytoggle')[0].click();
+                // a phone that cannot speak (the phone fixture) draws no switch
+                const sw = r.query('#rp-read')[0];
+                if (sw) { sw.click(); }
+                for (let i = 0; i < 4; i++) { r.query('#rp-fwd')[0].click(); }
+                r.send({ type: 'sessionFileEdits', file: '', records: [] });
+            }
         }
     ]
 };

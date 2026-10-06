@@ -65,6 +65,9 @@ const MEASURE = `(function(){
     window.__show();
     r.phonePanel=!!document.querySelector('.sp-pop');
     r.phoneDrawn=!!document.querySelector('[data-spreadlast]');
+    window.AFPhoneRead={on:true,mute:false};
+    window.__show();
+    r.speakingDrawn=!!document.querySelector('[data-spreadlast]');
     return r;
 })()`;
 
@@ -72,7 +75,7 @@ function page() {
     return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
         + fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8')
         + 'body{background:#1f1f1f;color:#ccc;font-family:Segoe UI,sans-serif;font-size:13px;}</style></head><body>'
-        + ['charts.js', 'afSoundCard.js', 'afSoundPop.js'].map(f => '<script>' + media(f) + '</script>').join('')
+        + ['charts.js', 'afSoundCard.js', 'afSoundPop.js', 'afReadAloud.js'].map(f => '<script>' + media(f) + '</script>').join('')
         + '<script>' + SETUP + '</script>'
         + '<script>if(location.search.indexOf("af=measure")>=0){window.addEventListener("load",function(){var out;'
         + 'try{out=JSON.stringify(' + MEASURE + ');}catch(e){out=JSON.stringify("ERROR: "+e.message);}'
@@ -111,7 +114,8 @@ ok('a press asks the host to read this session\'s last answer, from the sound pa
     (r.posted || []).length === 1 && p.type === 'readAloud' && p.sessionId === 's1'
     && JSON.stringify(p.pick) === '{}' && p.surface === 'soundPanel');
 ok('the press leaves the panel open', r.stillOpen === true);
-ok('on a phone the panel opens without it (reading plays on the PC)', r.phonePanel === true && r.phoneDrawn === false);
+ok('on a phone that cannot speak the panel opens without it (a phone never makes the PC speak)', r.phonePanel === true && r.phoneDrawn === false);
+ok('on a phone that speaks it is drawn — the phone reads it with its own voice (U-209)', r.speakingDrawn === true);
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

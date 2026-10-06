@@ -69,8 +69,15 @@ const press = (p, b, mid) => {
 }
 {
     const p = runPage('console.js', scene('console-readlast'), { __AFUI__: { remote: true } });
-    ok('‼️ on a phone: ⧉ stays, no 🔊 and no ▶ — reading plays on the PC',
+    ok('‼️ on a phone that cannot speak: ⧉ stays, no 🔊 and no ▶ — a phone never makes the PC speak',
         reads(p).length === 0 && p.html().includes('data-mcopy') && !p.html().includes('id="c-readlast"'));
+}
+{
+    // U-209 — a phone that speaks: the same 🔊 and ▶, read by the phone's own voice
+    const pc = runPage('console.js', scene('console-readlast'));
+    const p = runPage('console.js', scene('console-readlast'), { __AFUI__: { remote: true }, afShell: { speaks: () => true, post: () => { } } });
+    ok('on a phone that speaks: the same 🔊 as on the PC, and ▶ Read last answer',
+        reads(p).length > 0 && reads(p).join() === reads(pc).join() && p.html().includes('id="c-readlast"'));
 }
 
 // ---------------------------------------------------------------- measured: the row does not move

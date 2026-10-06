@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.877.0 - Listen to a conversation from the start: Replay reads each answer aloud (2026-10-07)
+
+- **Transcript Replay:** the replay bar has a **Read answers** switch. On,
+  every agent answer the replay plays onto is read aloud, and the replay
+  waits until it has been read before it goes on - the natural way to listen
+  to a conversation from the beginning. Prompts, tool steps and a subagent's
+  asides are passed over at their usual pace.
+- Pause pauses the reading with the replay and Play resumes it; −1, +1,
+  restart, a jump, a new filter and Exit end it. The ■ on the answer being
+  read skips to the next step; a reading you start elsewhere pauses the
+  replay. If the reading is refused (the toast says why) the switch turns
+  itself off and the replay goes on in silence.
+- **Fixed (phone):** the transcript, the Console and a session's sound panel
+  showed no 🔊 on the phone at all, although 3.876.0 said they read with the
+  phone's voice. They do now - every step's 🔊, the turn and step menus'
+  Read aloud, the Console's ▶ Read last answer, and the Replay switch - and a
+  data refresh no longer clears what the phone is reading.
+- **Fixed:** in the Live Timeline, a session's sound panel's ▶ Read last
+  answer did nothing.
+
 ## 3.876.0 - On the phone, a page's 🔊 reads with the phone's own voice (2026-10-07)
 
 - **Phone app:** a 🔊 on a page opened on the phone (a transcript, the

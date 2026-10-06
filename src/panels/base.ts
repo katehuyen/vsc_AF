@@ -529,6 +529,8 @@ export function htmlShell(
     const readingPlayer = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afReadingPlayer.js'));
     // U-209 — on a phone, its 🔊 says the text with the phone's own voice.
     const phoneRead = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afPhoneRead.js'));
+    // U-210 — the transcript's replay read aloud, answer by answer.
+    const replayRead = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afReplayRead.js'));
     // The web view card (U-85) — the farm on a phone, and the QR that opens it.
     // Ships everywhere for the reason the card above does, sharpened: the fact
     // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
@@ -674,6 +676,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${readAloud}"></script>
 <script nonce="${nonce}" src="${readingPlayer}"></script>
 <script nonce="${nonce}" src="${phoneRead}"></script>
+<script nonce="${nonce}" src="${replayRead}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${phoneAppCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>

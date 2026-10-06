@@ -167,6 +167,8 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
             selectionStart: null, selectionEnd: null,
             setSelectionRange(s, e) { this.selectionStart = s; this.selectionEnd = e; },
             scrollIntoView() { },
+            // a browser adds the markup and leaves the children already there alone (the transcript's replay steps)
+            insertAdjacentHTML(where, h) { this._html = where === 'afterbegin' ? h + this._html : this._html + h; },
             closest() { return null; },
             // Pages that hand their own root to wire() query through it. The
             // shim has one document, so an element's query is the page's query

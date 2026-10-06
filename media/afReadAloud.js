@@ -36,10 +36,13 @@
         : st === 'paused' ? t('Resume reading') : key === LAST ? t('Read its last answer aloud')
             : !sessionId ? t('Read it aloud') : t('Read this step aloud'));
 
+    /** U-209 — whether a press can be read here: anywhere but a phone whose shell cannot speak (a phone never makes the PC speak). */
+    const phone = () => !!(window.__AFUI__ && window.__AFUI__.remote === true);
+    const can = () => !phone() || !!(window.AFPhoneRead && window.AFPhoneRead.on);
+
     /** The button for one step of one conversation; no session = a page's own text (textBtn). */
     function btn(sessionId, key) {
-        // U-209 — a phone that cannot speak draws none: its press could only be refused
-        if (window.AFPhoneRead && window.AFPhoneRead.mute) { return ''; }
+        if (!can()) { return ''; }
         const st = stateOf(sessionId, key), says = esc(title(st, sessionId, key));
         return `<button data-read="${esc(key)}" data-read-sid="${esc(sessionId)}" class="readb${st ? ' on' : ''}" title="${says}" aria-label="${says}">${glyph(st)}</button>`;
     }
@@ -57,14 +60,20 @@
         }
     }
 
-    /** Take the host's answer for what is being read, and show it. */
-    function set(reading) {
+    /** Take the host's answer for what is being read, and show it. `own`: the phone's own voice said it. */
+    function set(reading, own) {
+        // U-209 — on a phone that speaks, the reading is the phone's: the PC's (a page's data) is not its own
+        if (phone() && can() && own !== true) { return; }
         const was = now;
         now = reading && typeof reading === 'object' && reading.key ? reading : null;
         if (!now || !was || was.sessionId !== now.sessionId) { follow = true; }
         paint();
         schedule();
+        hear({ reading: now });
     }
+    // U-210 — who follows the reading itself (the transcript's replay waits on it): every change and every refusal
+    const watchers = [];
+    const hear = what => { for (const fn of watchers) { try { fn(what); } catch (e) { /* a watcher's fault is its own */ } } };
 
     // U-206 — THE PARAGRAPH BEING READ, MARKED AND FOLLOWED. The host sends the spoken
     // paragraph's first words (`head`); the step's text is found by its letters and digits
@@ -226,9 +235,10 @@
     /** The host's two messages for this component; true when it was one of them. */
     function receive(m) {
         if (!m) { return false; }
-        if (m.type === 'reading') { set(m.reading); return true; }
+        if (m.type === 'reading') { set(m.reading, m.phone === true); return true; }
         if (m.type === 'readRefused') {
             if (window.AFCtx && window.AFCtx.toast) { window.AFCtx.toast(String(m.error || t('Nothing was read.')), true); }
+            hear({ refused: String(m.error || '') });
             return true;
         }
         return false;
@@ -255,6 +265,6 @@
         init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key && !(window.AFPhoneRead && window.AFPhoneRead.on) ? reading : null; schedule(); },
         set, btn, paint, press, receive, keyOf, stateOf, selectedIn, blockOf, following: () => follow,
         textBtn, texts(fn) { textOf = typeof fn === 'function' ? fn : null; }, lastBtn: sessionId => btn(sessionId, LAST),
-        reading: () => now
+        reading: () => now, can, watch(fn) { if (typeof fn === 'function') { watchers.push(fn); } }
     };
 })();

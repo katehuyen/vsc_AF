@@ -320,9 +320,9 @@ export class TimelinePanel {
     }
 
     private onMessage(msg: { type: string; [k: string]: unknown }): void {
-        // U-180 — the session sound panel, answered by the handler the Sound page uses.
+        // U-180 — the session sound panel, answered by the handler the Sound page uses — its ▶ Read last answer too.
         const sound = this.deps.sound?.();
-        if (sound && /^alert/.test(msg.type)) {
+        if (sound && /^(alert|readAloud$|readControl$|readFor$)/.test(msg.type)) {
             void handleAlertMessage(msg, sound, soundSurface(this.host.webview));
             return;
         }

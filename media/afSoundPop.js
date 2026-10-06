@@ -94,9 +94,9 @@
         if (el) { el.innerHTML = ''; }
     }
 
-    /** U-200 — listen to the last answer now, whole (not on a phone: reading plays on the PC). */
+    /** U-200 — listen to the last answer now, whole; on a phone by its own voice, none on one that cannot speak (U-209). */
     function readLastHtml() {
-        if (window.__AFUI__ && window.__AFUI__.remote === true) { return ''; }
+        if (!window.AFRead.can()) { return ''; }
         const tr = s => (window.AFI18n ? window.AFI18n.t(s) : s);
         const cls = 'secondary small'; // i18n-exempt — class names
         return ` <button data-spreadlast="1" class="${cls}" title="${esc(tr('Reads this conversation\'s last answer aloud, whole.'))}">▶ ${esc(tr('Read last answer'))}</button>`;
