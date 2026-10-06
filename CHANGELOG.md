@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.865.0 - A question you have not opened shows in the status bar (2026-10-06)
+
+- **The Notices mark in the status bar turns into a red question mark while
+  an agent's question waits that you have not opened.** It is the same icon
+  the Notices board uses for the question category, with the count beside it;
+  the hover names how many questions are unopened. The bell, its dot and the
+  aging warning are unchanged otherwise.
+
 ## 3.864.0 - A provider route has one name everywhere (2026-10-06)
 
 - **Renaming a provider route renames it on every page.** Sessions that ran

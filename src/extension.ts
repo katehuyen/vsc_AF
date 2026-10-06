@@ -294,6 +294,7 @@ import {
 } from './core/providerProfiles';
 import { retire, RETIRED_PROFILES_KEY, retiredProfileIds } from './core/retiredProfiles';
 import { RouteNames, routeName, routeNames } from './core/routeName';
+import { noticesBarText, unseenQuestionCount } from './core/noticesBar';
 import { launchRecordHealth } from './core/launchRecordHealth';
 import { bridgeStartText } from './core/bridgeStartText';
 import {
@@ -1210,6 +1211,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return {
             stale: all.filter(n => !n.read && n.level >= 3 && n.ts < cutoff),
             questions: all.filter(n => n.type === 'question' && n.status === 'open' && n.ts < cutoff),
+            unseen: unseenQuestionCount(all),
             staleH
         };
     };
@@ -1217,10 +1219,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const u = noticesStore.unread();
         const b = workQueueStore.blocked();   // queue items that need YOU
         const n = u + b;
-        const { stale, questions, staleH } = escalatedNotices();
+        const { stale, questions, unseen, staleH } = escalatedNotices();
         const aging = stale.length + questions.length;
+        // U-221 — an unopened question turns the mark into the question category's own icon (core/noticesBar.ts).
+        noticesBar.text = noticesBarText({ count: n, aging, unseenQuestions: unseen });
+        const unseenLine = unseen ? `${unseen} agent question(s) you have not opened yet` : '';
         if (aging > 0) {
-            noticesBar.text = `$(warning) ${n || aging}`;
             noticesBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
             const oldest = [...stale, ...questions].sort((a, b2) => a.ts - b2.ts)[0];
             const days = Math.round((Date.now() - oldest.ts) / 3600_000 / 24 * 10) / 10;
@@ -1228,12 +1232,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `${aging} item(s) waiting longer than ${staleH}h — oldest "${oldest.title}" (${days} day(s))` +
                 `${stale.length ? `\n${stale.length} unread important notice(s)` : ''}` +
                 `${questions.length ? `\n${questions.length} unanswered agent question(s)` : ''}` +
+                `${unseenLine ? `\n${unseenLine}` : ''}` +
                 '\nClick to open the board.';
         } else {
-            noticesBar.text = n > 0 ? `$(bell-dot) ${n}` : '$(bell)';
             noticesBar.backgroundColor = undefined;
             noticesBar.tooltip = n > 0
-                ? `${u} unread notice(s)${b ? ` · ${b} queue item(s) need you` : ''} — click to open`
+                ? `${unseenLine ? unseenLine + '\n' : ''}${u} unread notice(s)${b ? ` · ${b} queue item(s) need you` : ''} — click to open`
                 : 'Notices & work queue — agent↔you';
         }
         noticesBar.show();
