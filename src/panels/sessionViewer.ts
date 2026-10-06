@@ -137,6 +137,8 @@ interface ViewMessage {
     input?: string;
     isError?: boolean;
     sidechain?: boolean;
+    /** the transcript line's own id — the step's key for a reading (stepKey) */
+    uuid?: string;
     model?: string;
     tokens?: number;
     /** the same step against the plan limit — see QUOTA_WEIGHTS */
@@ -501,7 +503,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             type?: string; subtype?: string; content?: string;
             summary?: string; isMeta?: boolean; isSidechain?: boolean;
             timestamp?: string; cwd?: string; permissionMode?: string; requestId?: string;
-            entrypoint?: string;
+            entrypoint?: string; uuid?: string;
             costUSD?: number; toolUseResult?: unknown;
             message?: {
                 id?: string; model?: string; content?: unknown;
@@ -511,6 +513,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         try { line = JSON.parse(lineText); } catch { continue; }
 
         const ts = line.timestamp ? Date.parse(line.timestamp) : 0;
+        const uid = line.uuid ? { uuid: line.uuid } : {};
         if (ts) {
             if (!firstTs) { firstTs = ts; }
             lastTs = Math.max(lastTs, ts);
@@ -542,7 +545,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             messages.push({
                 role: 'system', ts,
                 text: line.content.replace(/<\/?local-command-stdout>/g, '').trim(),
-                sidechain: line.isSidechain
+                sidechain: line.isSidechain, ...uid
             });
             continue;
         }
@@ -551,7 +554,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             const content = line.message.content;
             if (typeof content === 'string') {
                 if (!line.isMeta) {
-                    messages.push({ role: 'user', ts, text: content, sidechain: line.isSidechain });
+                    messages.push({ role: 'user', ts, text: content, sidechain: line.isSidechain, ...uid });
                     if (!line.isSidechain) { inTurn++; }
                     if (!title) { title = titleCandidate(content); }
                 }
@@ -563,7 +566,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                             role: 'toolResult', ts,
                             text: clipTool(contentToText(b.content) || String(b.text ?? '')),
                             isError: !!b.is_error, kind: 'result',
-                            sidechain: line.isSidechain
+                            sidechain: line.isSidechain, ...uid
                         });
                     } else if (b?.type === 'text' && b.text && !line.isMeta) {
                         // isMeta is the harness talking, not the user. A string-content
@@ -572,7 +575,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                         // carried the number, and the tokens, of the one before. The
                         // session index never counted it, so the same transcript showed
                         // one turn count on the page and another in the tables.
-                        messages.push({ role: 'user', ts, text: b.text, sidechain: line.isSidechain });
+                        messages.push({ role: 'user', ts, text: b.text, sidechain: line.isSidechain, ...uid });
                         if (!line.isSidechain) { inTurn++; }
                         if (!title) { title = titleCandidate(b.text); }
                     }
@@ -652,7 +655,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                             role: 'assistant', ts, text: b.text,
                             model: msg.model, tokens: msgTokens, wTokens: Math.round(msgWTokens) || undefined,
                             cost: msgCost, kind: 'say',
-                            sidechain: line.isSidechain
+                            sidechain: line.isSidechain, ...uid
                         });
                         if (inTurn > 0) { turnAcc(inTurn).steps++; }
                         msgTokens = 0; msgCost = 0; msgWTokens = 0; // attribute once
@@ -666,7 +669,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                             model: msgTokens ? msg.model : undefined,
                             tokens: msgTokens || undefined, wTokens: Math.round(msgWTokens) || undefined,
                             cost: msgCost || undefined, kind: stepKindForTool(b.name),
-                            sidechain: line.isSidechain
+                            sidechain: line.isSidechain, ...uid
                         });
                         msgTokens = 0; msgCost = 0; msgWTokens = 0;
                     }

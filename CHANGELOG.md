@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.866.0 - Have an answer read to you, whole, when you ask (2026-10-06)
+
+- **An agent can now read an answer out loud for you on request** - the
+  newest answer of a conversation, the answer of a given turn, one step, or
+  a text of its own such as a report it just wrote. Until now the only way to
+  hear an answer was to switch Read aloud on for a conversation and have
+  every turn read as it ended.
+- **A reading you ask for reads the whole text.** Read aloud keeps its
+  ceiling and its "There is more"; an ask has none, and the player is given
+  as long as the text needs (a long answer used to be cut off after a few
+  minutes).
+- **Mute all, Quiet hours and Silent do not stop a reading you asked for** -
+  they silence what nobody chose. There is still one reading at a time: a new
+  one cuts the old one short, and Sound: Stop Reading stops either.
+- **For agents:** `alerts.readNow` starts a reading, `alerts.reading` says
+  what is being read (and stops it), and every step `sessions.read` lists now
+  carries the key a reading takes.
+
 ## 3.865.0 - A question you have not opened shows in the status bar (2026-10-06)
 
 - **The Notices mark in the status bar turns into a red question mark while

@@ -53,11 +53,24 @@ export interface ReadableStep {
     sidechain?: boolean;
     turn?: number;
     model?: string;
+    /** the transcript line's own id, where the engine writes one */
+    uuid?: string;
+}
+
+/**
+ * The name a surface and an agent give one step: the transcript line's uuid
+ * where the engine writes one (it is the file's own and survives any parse),
+ * its 1-based place in the whole conversation (`#n`) where it does not.
+ */
+export function stepKey(step: { uuid?: string }, index: number): string {
+    return step.uuid ? step.uuid : `#${index + 1}`;
 }
 
 export interface ReadStep {
     /** 1-based position in the FILTERED list — what `from` counts in. */
     i: number;
+    /** the step's name across filters and surfaces — what `alerts.readNow msg` takes (`stepKey`) */
+    key: string;
     turn: number | null;
     role: ReadRole;
     ts: number;
@@ -129,10 +142,14 @@ export function readTranscriptPage(
     const all = Array.isArray(steps) ? steps : [];
     const turns = all.reduce((m, s) => Math.max(m, typeof s.turn === 'number' ? s.turn : 0), 0);
     const turn = Math.floor(Number(opts.turn) || 0);
-    const wanted = all.filter(s =>
-        roles.includes(s.role as ReadRole)
-        && (opts.sidechain === true || s.sidechain !== true)
-        && (turn <= 0 || s.turn === turn));
+    const keyOf = new Map<ReadableStep, string>();
+    const wanted = all.filter((s, at) => {
+        const keep = roles.includes(s.role as ReadRole)
+            && (opts.sidechain === true || s.sidechain !== true)
+            && (turn <= 0 || s.turn === turn);
+        if (keep) { keyOf.set(s, stepKey(s, at)); }
+        return keep;
+    });
     const total = wanted.length;
     const limit = Math.min(READ_LIMIT_MAX, Math.max(1, Math.floor(Number(opts.limit) || READ_LIMIT_DEFAULT)));
     const rawFrom = Math.floor(Number(opts.from) || 1);
@@ -146,6 +163,7 @@ export function readTranscriptPage(
         const inp = clip(s.input, maxChars);
         const out: ReadStep = {
             i: from + k,
+            key: keyOf.get(s) as string,
             turn: typeof s.turn === 'number' ? s.turn : null,
             role: s.role as ReadRole,
             ts: s.ts

@@ -379,6 +379,7 @@ import { registryMatch, whoami } from './core/whoami';
 import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, openerOf } from './core/baton';
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
+import { registerReaderOps } from './core/readerOps';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
@@ -17781,6 +17782,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     // S-98 — the user's soft brake: the op and the Console card share applyLastLeg
     registerLastLegOp(bridge, { store: batonStore });
+    // U-197 — reading on demand: the conversation is read through the transcript page's own parse, unclipped
+    registerReaderOps(bridge, {
+        conversation: ref => {
+            const hit = resolveSessionRef(index.allWithExternal(), ref);
+            if (!hit.ok) { return { error: hit.error + (hit.candidates.length ? ` Candidates: ${hit.candidates.join(', ')}` : '') }; }
+            const s = hit.row;
+            if (!fs.existsSync(s.file)) { return { error: `The transcript of ${s.sessionId} is not on this machine any more (${s.file}).` }; }
+            const data = buildViewerData(s.file, { ...viewerDeps, maxMessages: () => Number.MAX_SAFE_INTEGER });
+            const lv = live.sessions().find(x => x.sessionId === s.sessionId);
+            return {
+                sessionId: s.sessionId, label: lv ? live.labelOf(lv) : String(s.agentName || data['title'] || ''),
+                steps: (data['messages'] as ReadableStep[] | undefined) ?? []
+            };
+        },
+        voiceOf: id => turnAlerts.speechVoiceFor(id),
+        fleet: speakCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
+    });
 
     // S-70 / S-71 — the release and the door. The three end signals (hook
     // SessionEnd, Console host exit, terminal close) all arrive as the live
