@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.876.0 - On the phone, a page's 🔊 reads with the phone's own voice (2026-10-07)
+
+- **Phone app:** a 🔊 on a page opened on the phone (a transcript, the
+  Console, Notices, Needs You, Now, the wiki) no longer makes this computer
+  speak. Agent Farm prepares the text exactly as it would read it here -
+  markdown, code and links said in words, as the Sound page's Reading
+  settings say - in the text's own language, and the phone reads it with its
+  own voice.
+- While it reads, that 🔊 is ■ (stop) and ▶ when paused, as on the computer,
+  and a small player sits above the phone's tab bar: previous paragraph,
+  pause, next paragraph, stop and the speed. A call pauses it; leaving the
+  page ends it.
+- A phone app too old to read aloud shows no 🔊 at all, instead of a button
+  that could only be refused. Needs the phone app 0.2.6.
+- **Fixed:** on the phone, the 🔊 on Notices, Needs You, Now and the wiki
+  made this computer speak. No page opened on a phone can do that any more.
+- **For agents:** `alerts.readText` returns what a reading would say -
+  paragraphs, each one's step, the text's language and the speed - without
+  saying it (the same arguments as `alerts.readNow`).
+
 ## 3.875.0 - Read notices, questions, last answers and wiki pages aloud (2026-10-07)
 
 - **Notices:** an open notice has a 🔊 at the start of its action row - it

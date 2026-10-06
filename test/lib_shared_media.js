@@ -119,6 +119,8 @@ const SHARED = [
     'afReadAloud.js',
     // afReadingPlayer.js — the header's reading player (U-206): ⏮ ⏸ ⏭ ■ and the speed, on every page.
     'afReadingPlayer.js',
+    // afPhoneRead.js — on a phone, a 🔊 read by the phone's own voice (U-209); nothing elsewhere.
+    'afPhoneRead.js',
     // afWeb.js — the web view card (U-85): the farm on a phone and the QR that
     // opens it. Shared for the reason the card above is, sharpened: the fact it
     // draws is true or false on a detail no page can see for itself, and the

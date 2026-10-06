@@ -10,7 +10,7 @@
  */
 import * as fs from 'fs';
 import type { HostWebview } from './panelHost';
-import { readingAct, readingView, readNow, type ReaderDeps } from '../core/readerOps';
+import { readingAct, readingView, readNow, spokenReading, type ReaderDeps } from '../core/readerOps';
 
 let reader: ReaderDeps | undefined;
 type PageWebview = Pick<HostWebview, 'postMessage'>;
@@ -53,7 +53,7 @@ export interface PageReadingAsk {
 
 /** Takes a reading message before the panel's own handler sees it; false = not one, the panel's turn. */
 export function pageReads(msg: { type: string;[k: string]: unknown }, webview: PageWebview, ask: PageReadingAsk): boolean {
-    if (!msg || (msg.type !== 'readAloud' && msg.type !== 'readControl')) { return false; }
+    if (!msg || (msg.type !== 'readAloud' && msg.type !== 'readControl' && msg.type !== 'readFor')) { return false; }
     void handlePageReading(msg, webview, ask);
     return true;
 }
@@ -75,6 +75,18 @@ export async function handlePageReading(msg: { type: string;[k: string]: unknown
             if (!reader) { return true; }
             try { readingAct(reader, String(msg.action ?? '')); } catch (e) { refuse(e); }
             return true;
+        // U-209 — a phone's 🔊: the same pick, prepared and handed back for the phone's own voice
+        case 'readFor': {
+            if (!reader) { return true; }
+            let pick: Record<string, unknown> = msg.pick && typeof msg.pick === 'object' ? { ...(msg.pick as Record<string, unknown>) } : {};
+            const own = ask.resolve?.(pick);
+            const answer = (m: Record<string, unknown>): void => { void webview.postMessage({ ...m, token: msg.token }); };
+            if (typeof own === 'object') { answer({ type: 'readRefused', error: own.error.slice(0, 300) }); return true; }
+            if (typeof own === 'string') { pick = { text: own, ...(typeof pick.key === 'string' ? { key: pick.key } : {}) }; }
+            await spokenReading(reader, { ...pick, sessionId: String(msg.sessionId ?? '') })
+                .then(r => answer({ type: 'readText', ...r }), e => answer({ type: 'readRefused', error: String((e as Error)?.message ?? e).slice(0, 300) }));
+            return true;
+        }
     }
     return false;
 }

@@ -38,6 +38,8 @@
 
     /** The button for one step of one conversation; no session = a page's own text (textBtn). */
     function btn(sessionId, key) {
+        // U-209 — a phone that cannot speak draws none: its press could only be refused
+        if (window.AFPhoneRead && window.AFPhoneRead.mute) { return ''; }
         const st = stateOf(sessionId, key), says = esc(title(st, sessionId, key));
         return `<button data-read="${esc(key)}" data-read-sid="${esc(sessionId)}" class="readb${st ? ' on' : ''}" title="${says}" aria-label="${says}">${glyph(st)}</button>`;
     }
@@ -249,7 +251,8 @@
     }
 
     window.AFRead = {
-        init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key ? reading : null; schedule(); },
+        // U-209 — on a phone what is being read is the phone's own voice: the PC's reading is not its own
+        init(postFn, reading) { if (typeof postFn === 'function') { post = postFn; } now = reading && reading.key && !(window.AFPhoneRead && window.AFPhoneRead.on) ? reading : null; schedule(); },
         set, btn, paint, press, receive, keyOf, stateOf, selectedIn, blockOf, following: () => follow,
         textBtn, texts(fn) { textOf = typeof fn === 'function' ? fn : null; }, lastBtn: sessionId => btn(sessionId, LAST),
         reading: () => now

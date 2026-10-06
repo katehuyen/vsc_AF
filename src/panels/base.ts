@@ -527,6 +527,8 @@ export function htmlShell(
     // U-199 — a step's 🔊, ■ and ▶: every surface that draws a step reads it through the one channel.
     const readAloud = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afReadAloud.js'));
     const readingPlayer = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afReadingPlayer.js'));
+    // U-209 — on a phone, its 🔊 says the text with the phone's own voice.
+    const phoneRead = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afPhoneRead.js'));
     // The web view card (U-85) — the farm on a phone, and the QR that opens it.
     // Ships everywhere for the reason the card above does, sharpened: the fact
     // it carries ("can your phone reach this") is TRUE OR FALSE on a detail no
@@ -671,6 +673,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${soundPop}"></script>
 <script nonce="${nonce}" src="${readAloud}"></script>
 <script nonce="${nonce}" src="${readingPlayer}"></script>
+<script nonce="${nonce}" src="${phoneRead}"></script>
 <script nonce="${nonce}" src="${webCard}"></script>
 <script nonce="${nonce}" src="${phoneAppCard}"></script>
 <script nonce="${nonce}" src="${a2a}"></script>

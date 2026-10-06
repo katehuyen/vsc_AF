@@ -230,6 +230,7 @@
     // U-206 — the header's reading player
     'Click opens the player: pause, the paragraph before or after, stop, speed.': 'Tıklayınca oynatıcı açılır: duraklat, önceki ya da sonraki paragraf, durdur, hız.',
     'Reading aloud': 'Sesli okuma',
+    'Paragraph {n} of {m}': 'Paragraf {n} / {m}',
     'Previous paragraph — or the start of this one': 'Önceki paragraf — ya da bu paragrafın başı',
     'Pause reading': 'Okumayı duraklat',
     'Resume reading': 'Okumayı sürdür',

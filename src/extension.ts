@@ -2351,7 +2351,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // U-203 — the voice and the inserted words for one thing to be said: a chosen voice wins, Auto ('') matches the text's language
     const speechFor = async (want: string, text: string) => {
         const pick = chooseSpeechVoice(want, text, (await alertsSpeechVoices()).voices, currentUiLanguage().lang);
-        return { voice: pick.voice, words: phrasesFor(pick.lang) };
+        return { voice: pick.voice, words: phrasesFor(pick.lang), lang: pick.lang };
     };
     /**
      * ‼️ A TEST SPEAKS EVEN WHEN THE ANNOUNCEMENT IS OFF, and says which

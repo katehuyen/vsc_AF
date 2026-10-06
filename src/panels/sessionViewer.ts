@@ -16,7 +16,7 @@ import { buildSessionMarkdown, SessionExportView } from '../core/sessionExport';
 import { chainIndexNow, chainPlace } from '../core/chainMembership';
 import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
-import { readingAct, readingView, readNow, type ReaderDeps } from '../core/readerOps';
+import { readingAct, readingView, readNow, spokenReading, type ReaderDeps } from '../core/readerOps';
 import type { Facing } from '../core/readLast';
 
 export interface ViewerDeps {
@@ -1102,6 +1102,15 @@ export class SessionViewerPanel {
                 try { readingAct(this.deps.reader, String(msg.action ?? '')); } catch (e) {
                     void this.host.webview.postMessage({ type: 'readRefused', error: String((e as Error)?.message ?? e) });
                 }
+                break;
+            }
+            // U-209 — a phone's 🔊: the same pick, prepared and handed back for the phone's own voice
+            case 'readFor': {
+                if (!this.deps.reader) { break; }
+                const pick = msg.pick && typeof msg.pick === 'object' ? msg.pick as Record<string, unknown> : {};
+                spokenReading(this.deps.reader, { ...pick, sessionId: this.file }).then(
+                    r => this.host.webview.postMessage({ type: 'readText', token: msg.token, ...r }),
+                    e => this.host.webview.postMessage({ type: 'readRefused', token: msg.token, error: String((e as Error)?.message ?? e) }));
                 break;
             }
             // ---- what the agent did to the code (B3) ----

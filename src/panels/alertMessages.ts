@@ -15,7 +15,7 @@ import { AlertsPage, NOTIFY_KEYS } from './soundModel';
 import { LANE_EVENTS } from '../core/alertVoices';
 import { parseSessionPatch, SessionSoundPatch } from '../core/soundSession';
 import type { AlertSurface } from './alertSurface';
-import { readingAct, readNow, type ReaderDeps } from '../core/readerOps';
+import { readingAct, readNow, spokenReading, type ReaderDeps } from '../core/readerOps';
 
 /** The host acts the sound controls need — each one the function an op runs. */
 export interface AlertMessageDeps {
@@ -305,6 +305,15 @@ export async function handleAlertMessage(
                 surface.post?.({ type: 'readRefused', error: String((e as Error)?.message ?? e) });
             }
             return true;
+        // U-209 — a phone's 🔊: the same pick, prepared and handed back for the phone's own voice
+        case 'readFor': {
+            if (!deps.reader) { return true; }
+            const pick = msg.pick && typeof msg.pick === 'object' ? msg.pick as Record<string, unknown> : {};
+            await spokenReading(deps.reader, { ...pick, sessionId: sid() }).then(
+                r => surface.post?.({ type: 'readText', token: msg.token, ...r }),
+                e => surface.post?.({ type: 'readRefused', token: msg.token, error: String((e as Error)?.message ?? e) }));
+            return true;
+        }
     }
     return false;
 }

@@ -30,8 +30,11 @@ export interface ReaderDeps {
     fleet(): SpeakConfig;
     /** U-205 — the reading's own voice, speed, Read aloud length and code (`agentFarm.alerts.reading`) */
     reading(): ReadingPrefs;
-    /** A chosen voice wins; Auto ('') takes an installed voice of the text's language, with that language's inserted words. */
-    speechFor(want: string, text: string): Promise<{ voice: string; words: SpeechPhrases }>;
+    /**
+     * A chosen voice wins; Auto ('') takes an installed voice of the text's language, with that language's inserted words.
+     * `lang`: the language those words are in — with Auto, the text's own (U-209 hands it to the phone's voice).
+     */
+    speechFor(want: string, text: string): Promise<{ voice: string; words: SpeechPhrases; lang?: string }>;
     dialogue: Pick<DialogueSpeaker, 'speak' | 'speaking' | 'state' | 'act' | 'setRate'>;
     readingNow: Pick<ReadingNow, 'start' | 'source' | 'headOf'>;
     /** Cut the reading short — the same stop as `alerts.read stop` and Sound: Stop Reading. */
@@ -45,8 +48,22 @@ export interface ReadNowAnswer {
     surface: string; chars: number; voice: string;
 }
 
-/** Start one reading somebody asked for; refuses by name when there is nothing to read. */
-export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, surface: string): Promise<ReadNowAnswer> {
+/** A reading made ready to be said: its paragraphs, each one's step key, and how it is said. */
+interface Prepared {
+    conv: Conversation | null;
+    where: Pick<ReadingSource, 'msg' | 'turn'>;
+    steps: number;
+    paras: string[];
+    keys: string[];
+    how: { voice: string; lang?: string };
+    rate: number;
+}
+
+/**
+ * What one ask reads, cleaned for speech — ONE body for this machine's voice and the phone's.
+ * `want`: the voice asked for — the conversation's, else the reading's; '' (Auto) takes the text's language.
+ */
+async function prepareReading(deps: ReaderDeps, args: Record<string, unknown>, want: (sessionId: string) => string): Promise<Prepared> {
     const ask = readAskOf(args);
     if ('error' in ask) { throw new BridgeRefusal(ask.error, { step: 'ask' }); }
     const conv = ask.sessionId ? deps.conversation(ask.sessionId) : null;
@@ -66,9 +83,8 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
         where = { msg: t.msg, ...(t.turn ? { turn: t.turn } : {}) };
     }
     const sessionId = conv ? conv.sessionId : '';
-    const fleet = deps.fleet();
     const prefs = deps.reading();
-    const how = await deps.speechFor(readingVoiceWant(sessionId ? deps.voiceOf(sessionId) : '', prefs), raw);
+    const how = await deps.speechFor(want(sessionId), raw);
     const words = readingWords(how.words, prefs);
     // U-199 — each step's paragraphs carry its key, so the page marks the step being read
     const paras: string[] = [], keys: string[] = [];
@@ -78,12 +94,50 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
         keys.push(...ps.map(() => s.key));
     }
     if (!paras.length) { throw new BridgeRefusal('nothing in it can be spoken', { step: 'text' }); }
+    return { conv, where, steps: segments.length, paras, keys, how, rate: prefs.rate };
+}
+
+/** Start one reading somebody asked for; refuses by name when there is nothing to read. */
+export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, surface: string): Promise<ReadNowAnswer> {
+    const ready = await prepareReading(deps, args, sid => readingVoiceWant(sid ? deps.voiceOf(sid) : '', deps.reading()));
+    const { conv, where, steps, paras, keys, how } = ready;
+    const sessionId = conv ? conv.sessionId : '';
     const chars = paras.join(' ').length;
-    const run = deps.dialogue.speak(paras, { ...fleet, voice: how.voice, rate: prefs.rate }, { timeoutMs: readingTimeoutMs(chars) });
-    deps.readingNow.start(sessionId, run, { surface, ...where, ...(segments.length > 1 ? { keys } : {}) }, paras.map(p => paragraphHead(p)));
+    const run = deps.dialogue.speak(paras, { ...deps.fleet(), voice: how.voice, rate: ready.rate }, { timeoutMs: readingTimeoutMs(chars) });
+    deps.readingNow.start(sessionId, run, { surface, ...where, ...(steps > 1 ? { keys } : {}) }, paras.map(p => paragraphHead(p)));
     return {
-        reading: true, sessionId, label: conv ? conv.label : '', ...where, steps: segments.length,
+        reading: true, sessionId, label: conv ? conv.label : '', ...where, steps,
         surface, chars, voice: how.voice || '(system default)'
+    };
+}
+
+/** U-209 — a reading for a device that says it with its own voice. */
+export interface SpokenReading {
+    sessionId: string; label: string; msg?: string; turn?: number;
+    /** what is said, paragraph by paragraph, cleaned exactly as this machine would say it */
+    paragraphs: string[];
+    /** each paragraph's step key — what a page marks while that paragraph is said */
+    keys: string[];
+    /** each paragraph's first words — what a page finds in the step and marks (U-206) */
+    heads: string[];
+    /** the text's language ('' when it gives no sign); the device's own voice for it says it */
+    lang: string;
+    /** the reading's speed, −10 … 10 */
+    rate: number;
+}
+
+/**
+ * U-209 — THE PHONE'S READING: the same ask, prepared exactly as this machine would read it — the
+ * same cleaning, the same inserted words, the text's own language (Auto: the PC's chosen voices mean
+ * nothing to a phone) — and handed back, never spoken here.
+ */
+export async function spokenReading(deps: ReaderDeps, args: Record<string, unknown>): Promise<SpokenReading> {
+    const p = await prepareReading(deps, args, () => '');
+    const keyOf = (i: number): string => (p.steps > 1 ? p.keys[i] : undefined) ?? p.where.msg ?? '';
+    return {
+        sessionId: p.conv ? p.conv.sessionId : '', label: p.conv ? p.conv.label : '', ...p.where,
+        paragraphs: p.paras, keys: p.paras.map((_, i) => keyOf(i)), heads: p.paras.map(x => paragraphHead(x)),
+        lang: p.how.lang ?? '', rate: p.rate
     };
 }
 
@@ -149,6 +203,15 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
                 + 'with a sessionId it is read in that conversation\'s voice; key? names the text - `alerts.reading` then answers it as the step being read). Returns { reading, sessionId, label, msg?, turn?, steps, chars, voice } — '
                 + 'while a reading of several steps goes on, `alerts.reading` names the one being read (`key`).',
             handler: (args) => readNow(deps, args as Record<string, unknown>, 'bridge')
+        },
+        {
+            op: 'alerts.readText',
+            describe: 'THE TEXT A READING WOULD SAY, NOT SAID — for a device that reads it with its own voice (the phone app\'s 🔊 asks this). '
+                + 'The same args as `alerts.readNow` (sessionId? + one of msg, turn, from, last, text; key?), prepared the same way (markdown, code, links spoken; '
+                + 'the reading\'s length and code settings) but in the text\'s OWN language — a voice chosen on this machine means nothing to another device. '
+                + 'Returns { sessionId, label, msg?, turn?, paragraphs[], keys[] (each paragraph\'s step), heads[] (each paragraph\'s first words), lang (\'\' = no sign), rate (-10…10) }. '
+                + 'Nothing is spoken here and the reading channel (`alerts.reading`) is not touched.',
+            handler: (args) => spokenReading(deps, args as Record<string, unknown>)
         },
         {
             op: 'alerts.reading',

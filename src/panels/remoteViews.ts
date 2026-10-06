@@ -32,12 +32,21 @@ export interface RemotePage {
     make(host: PanelHost, args: Record<string, unknown> | undefined): boolean | void;
 }
 
-/** Messages every page's shell sends (htmlShell's shared helpers) that only look. */
-const SHELL_LOOKS = ['afClipboard'];
+/**
+ * Messages every page's shell sends (htmlShell's shared helpers) that only look. readFor (U-209): a
+ * phone's 🔊 asks for the text it shows, prepared for speech, and says it with its own voice.
+ */
+const SHELL_LOOKS = ['afClipboard', 'readFor'];
+
+/**
+ * U-209 — a reading aloud and its controls never run from a phone, on any page: a phone never makes
+ * the PC speak. Its 🔊 asks readFor (SHELL_LOOKS) and the phone says the text with its own voice.
+ */
+export const READ_PC: readonly string[] = ['readAloud', 'readControl'];
 
 /** The scope a message from a phone's view needs, or null when it never runs from one. */
 export function messageScope(spec: RemotePage, type: string): string | null {
-    if (spec.pcOnly.includes(type)) { return null; }
+    if (spec.pcOnly.includes(type) || READ_PC.includes(type)) { return null; }
     if (spec.looks.includes(type) || SHELL_LOOKS.includes(type)) { return spec.open; }
     if (spec.answers.includes(type)) { return 'answer'; }
     return spec.act;

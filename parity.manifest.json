@@ -1087,6 +1087,15 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#readFor",
+      "ui": [
+        "page:alertMessages.ts#readFor"
+      ],
+      "ops": [
+        "alerts.readText"
+      ]
+    },
+    {
       "capability": "applyMergedMemory",
       "ui": [
         "cmd:agentfarm.applyMergedMemory"
@@ -6246,6 +6255,15 @@
       ]
     },
     {
+      "capability": "sessionViewer.ts#readFor",
+      "ui": [
+        "page:sessionViewer.ts#readFor"
+      ],
+      "ops": [
+        "alerts.readText"
+      ]
+    },
+    {
       "capability": "pageReading.ts#readAloud",
       "ui": [
         "page:pageReading.ts#readAloud"
@@ -6261,6 +6279,15 @@
       ],
       "ops": [
         "alerts.reading"
+      ]
+    },
+    {
+      "capability": "pageReading.ts#readFor",
+      "ui": [
+        "page:pageReading.ts#readFor"
+      ],
+      "ops": [
+        "alerts.readText"
       ]
     },
     {

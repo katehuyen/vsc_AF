@@ -59,7 +59,7 @@
     // takes the mark off before the page's handler sees it.
     var pressing = false;
     // answered by the shell itself (and_AgentFarm ShellRequest): they never reach the farm
-    var SHELL = { afnav: true, afClipboard: true, afVoice: true };
+    var SHELL = { afnav: true, afClipboard: true, afVoice: true, afSpeak: true, afSpeakControl: true };
     function pressStart(e) {
         if (e.type === 'keydown' && e.key !== 'Enter') { return; }
         pressing = true;
@@ -76,6 +76,8 @@
         if (api) { return api; }
         api = {
             postMessage: function (m) {
+                // U-209 — a reading's messages become the phone's own voice's (media/afPhoneRead.js)
+                if (window.AFPhoneRead && typeof window.AFPhoneRead.out === 'function') { m = window.AFPhoneRead.out(m); }
                 var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || linkOf(m) || m;
                 if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
