@@ -293,6 +293,7 @@ import {
     StoredProviderProfile
 } from './core/providerProfiles';
 import { retire, RETIRED_PROFILES_KEY, retiredProfileIds } from './core/retiredProfiles';
+import { RouteNames, routeName, routeNames } from './core/routeName';
 import { launchRecordHealth } from './core/launchRecordHealth';
 import { bridgeStartText } from './core/bridgeStartText';
 import {
@@ -11834,10 +11835,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // identity the table's route chip is drawn from.
                 const sel = runSelectionArgs(args);
                 const manifests = launchManifests();
+                const names = routeNamesNow();
                 const identities = new Map<string, RunIdentity>();
                 const identityOf = (s: SessionInfo): RunIdentity => {
                     let id = identities.get(s.file);
-                    if (!id) { id = sessionIdentity(s, manifests); identities.set(s.file, id); }
+                    if (!id) { id = sessionIdentity(s, manifests, names); identities.set(s.file, id); }
                     return id;
                 };
                 const chainIx = chainIndexNow();
@@ -17120,6 +17122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         index,
         getPricing: () => pricing,
         launchManifests: () => launchManifests(),
+        routeNames: () => routeNamesNow(),
         projectOf: sessionProjectName,
         lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
         setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
@@ -17130,7 +17133,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         forcedWindow: () => cfg().get<number>('contextWindowTokens', 0),
         // X-111 — the same identity the Sessions table states, so `providers=kimi`
         // finds the Claude-via-Kimi turns here as it does on the page.
-        identityOf: s => sessionIdentity(s, launchManifests()),
+        identityOf: s => sessionIdentity(s, launchManifests(), routeNamesNow()),
         projectOf: sessionProjectName,
         // B-21 — the page's own builder, so the op cannot describe a turn
         // differently from the row it came from.
@@ -21010,7 +21013,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ X-251 (3/n) — …and what that recorded sign-in is CALLED. The
         // manifest holds a slot id (a directory name); the reader gets the
         // label the viewer and the timeline already show them.
-        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts())
+        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts()),
+        routeNames: () => routeNamesNow()
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -21032,6 +21036,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // manifest holds a slot id (a directory name); the reader gets the
         // label the viewer and the timeline already show them.
         accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts()),
+        routeNames: () => routeNamesNow(),
         // The page writes DUTIES.md now (U-14). Nothing watches that file, so
         // the trees and the Toolbox would keep yesterday's list until the next
         // Refresh — the write has to say so itself.
@@ -24497,18 +24502,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         }
         const profile = providerProfiles().find(p => p.id === id);
+        // S-137 — a profile's one name (core/routeName.ts): current, or the last one a launch recorded once removed.
+        const names = routeNamesNow();
+        const named = profile || (names.last[id.toLowerCase()] && !form.providers.some(c => c.id === id))
+            ? routeName(id, '', names) : undefined;
         return {
             id,
             // X-110 — the company behind the profile, which is what the chip is
             // coloured by: two profiles on Kimi are one colour, not two.
-            shape: profile?.providerId || id,
+            shape: profile?.providerId || named?.providerId || id,
             ...(servingNow && servingNow !== id
                 ? { now: { id: servingNow, label: labelOf(servingNow) } } : {}),
             ...lastTurn,
-            // The route's own name; the raw id is the honest fallback for a
-            // profile deleted since the card was started — a card must not stop
+            // The route's own name; a profile deleted since keeps the last name a
+            // launch recorded (the raw id only when none did) — a card must not stop
             // saying what it runs on because the settings file moved on.
-            label: labelOf(id),
+            label: named ? named.label : labelOf(id),
+            ...(named?.removed ? { removed: true } : {}),
             noun: form.noun,
             ...((tier ?? '').trim() ? { tier } : {}),
             ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
@@ -24929,7 +24939,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const s = index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
         if (!s) { return engine ? runIdentity(undefined, engine, [], {}) : undefined; }
         // X-111 — the one identity rule, in core; this door only adds the lookup.
-        return sessionIdentity(s, launchManifests(), engine);
+        return sessionIdentity(s, launchManifests(), routeNamesNow(), engine);
     };
     const sessionAccountOf = (sessionId: string): { id: string; label: string } | undefined => {
         const s = index.byId(sessionId);
@@ -26168,6 +26178,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const MANIFEST_KEY = 'agentfarm.launchManifests';
     const launchManifests = (): LaunchManifest[] =>
         context.globalState.get<LaunchManifest[]>(MANIFEST_KEY, []) ?? [];
+    // S-137 — every route profile's one name; rebuilt only when the records or the profiles change.
+    let routeNamesMemo: { ms: unknown; sig: string; names: RouteNames } | undefined;
+    const routeNamesNow = (): RouteNames => {
+        const ms = launchManifests(), ps = providerProfiles();
+        const sig = JSON.stringify(ps.map(p => [p.id, p.label, p.providerId]));
+        if (!routeNamesMemo || routeNamesMemo.ms !== ms || routeNamesMemo.sig !== sig) {
+            routeNamesMemo = { ms, sig, names: routeNames(ps, ms) };
+        }
+        return routeNamesMemo.names;
+    };
 
     /**
      * ‼️ THE LEAK GUARD RUNS ON THE WAY IN, AND A LEAKING RECORD IS NOT WRITTEN.
@@ -31340,7 +31360,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         launchManifests: () => launchManifests(),
         // ‼️ X-251 (3/n) — …and the sign-in in words, not as a slot id, through
         // the one resolver every surface uses.
-        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts())
+        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts()),
+        routeNames: () => routeNamesNow()
     });
     // What the Sessions page opens narrowed to, from the command's argument or a phone's.
     const sessionsScopeOf = (arg?: Record<string, unknown>): SessionsPageScope => {
@@ -35939,7 +35960,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // claude-only list on purpose — see sessionsOfProject.
                         rows: sessionRowPool(sessionsOfProject(id, 0, { withExternal: true }),
                             s => index.isSessionActive(s), tableN,
-                            () => projectStore.get(id)?.name, projectStyleOf),
+                            () => projectStore.get(id)?.name, projectStyleOf, launchManifests(),
+                            stated => statedAccountLabel(stated, storedAccounts()), routeNamesNow()),
                         tableN
                     };
                 case 'work':
@@ -43687,7 +43709,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // kind of absence.
                     identity: runIdentity(manifest, engine,
                         (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })),
-                        { external: s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest) }),
+                        { external: s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest), names: routeNamesNow() }),
                     drift,
                     note: describeDrift(drift),
                     turns: rows.map(r => ({

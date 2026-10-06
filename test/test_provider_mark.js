@@ -189,7 +189,7 @@ const P = sandbox.window.AFProvider;
         /r\.shape \|\| r\.id/.test(console_));
     const ext = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('…which the host answers off the profile itself, never guessed from a name',
-        /shape: profile\?\.providerId \|\| id,/.test(ext));
+        /shape: profile\?\.providerId \|\| named\?\.providerId \|\| id,/.test(ext));
 }
 
 // ---------- X-112: who is billed, in the host's own words ----------

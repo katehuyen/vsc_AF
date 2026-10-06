@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.864.0 - A provider route has one name everywhere (2026-10-06)
+
+- **Renaming a provider route renames it on every page.** Sessions that ran
+  on a route used to keep the name it had when they started, while the
+  Console card showed the new one - the same session under two names. Every
+  page now shows the route's current name; where a session was started under
+  another name, its hover says so ("Name at launch").
+- **A removed route keeps its last name.** The Console card used to fall back
+  to the route's raw id (and a different colour) once its profile was
+  removed. Every page now shows the last name the route was launched under,
+  in its company's colour, and the hover says the profile was removed.
+- **The Projects page's session table shows routes too.** It was the one
+  sessions table not given the launch records, so it never drew a route chip
+  or the launch lines in its hover.
+
 ## 3.863.0 - Long provider route names stay in their place on every page (2026-10-06)
 
 - **A provider route's name is cut to 15 characters wherever its chip is

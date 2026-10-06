@@ -14,6 +14,7 @@ import { desktopHost, type PanelHost } from './panelHost';
 import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
+import type { RouteNames } from '../core/routeName';
 import { billingReader, describeDrift, runDrift, sessionIdentity, turnRuntimes } from '../core/turnRuntime';
 import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
@@ -83,6 +84,8 @@ export interface DashboardDeps {
      * than printing a directory name.
      */
     accountLabel?(stated: string): string;
+    /** S-137 — every route profile's one name (core/routeName.ts). */
+    routeNames?(): RouteNames;
     /** X-231 — every open wait in the fleet, already in the shared shape. */
     waits?(): FleetWait[];
 }
@@ -187,7 +190,9 @@ export function sessionRowPool(
      * degrades to the raw id — unreadable still names the right account, blank
      * would name none.
      */
-    accountLabel?: (stated: string) => string
+    accountLabel?: (stated: string) => string,
+    /** S-137 — every route profile's one name; every caller passes the host's (test_route_name.js). */
+    names?: RouteNames
 ): unknown[] {
     /**
      * ‼️ THE DENOMINATOR UNDER THE CTX CELL, PER ENGINE (X-35).
@@ -230,7 +235,7 @@ export function sessionRowPool(
         const reports = (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }));
         // X-111 — the ONE identity rule (external, manifest, engine) lives in
         // core now, so the Turns page and the bridge answer the same as this row.
-        const identity = sessionIdentity(s, manifests);
+        const identity = sessionIdentity(s, manifests, names);
         if (!m) {
             return {
                 route: '', revision: null, requested: '', surface: '', account: '', at: 0,
@@ -245,7 +250,7 @@ export function sessionRowPool(
             // one was injected, and "inherited route" when nothing was — which
             // is NOT "Anthropic". Nothing was injected and nothing was cleared,
             // so the run took whatever the window already carried.
-            route: m.identity.providerLabel || m.identity.providerId
+            route: identity.providerLabel || m.identity.providerId
                 || (m.identity.origin === 'not-applicable' ? '' : 'inherited route'),
             revision: m.identity.providerProfileRevision ?? null,
             // What was ASKED FOR, kept apart from what came back on purpose:
@@ -608,7 +613,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         s => deps.index.isSessionActive(s, now), tableN,
         s => (s.agentName ? projectByAgent[s.agentName] : undefined),
         name => deps.projectStyle?.(name), deps.launchManifests?.(),
-        stated => deps.accountLabel?.(stated) ?? stated);
+        stated => deps.accountLabel?.(stated) ?? stated, deps.routeNames?.());
 
     const win = deps.index.windowUsage(now);
 

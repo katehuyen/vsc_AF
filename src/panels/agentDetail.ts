@@ -7,6 +7,7 @@ import {
 } from '../core/duties';
 import { Insight } from '../core/health';
 import { LaunchManifest } from '../core/launchManifest';
+import type { RouteNames } from '../core/routeName';
 import { sumDollars } from '../core/billing';
 import { billingReader } from '../core/turnRuntime';
 import { mcpUsage, readAgentMcpServers, readDisabledServers } from '../core/mcp';
@@ -50,6 +51,8 @@ export interface AgentDetailDeps {
      * than printing a directory name.
      */
     accountLabel?(stated: string): string;
+    /** S-137 — every route profile's one name (core/routeName.ts). */
+    routeNames?(): RouteNames;
     /** Re-read the agent folders and repaint every tree and page. Writing a
      *  duty changes a file no session index is watching, so the page has to say
      *  so itself — otherwise the tree keeps yesterday's duty list. */
@@ -292,7 +295,7 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
             s => deps.index.isSessionActive(s), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name), deps.launchManifests?.(),
-            stated => deps.accountLabel?.(stated) ?? stated),
+            stated => deps.accountLabel?.(stated) ?? stated, deps.routeNames?.()),
         sessionTableN: tableN,
         /**
          * ‼️ U-111 — EVERY SESSION'S SPAN, because `sessions` above CANNOT

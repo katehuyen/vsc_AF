@@ -120,6 +120,8 @@ export interface ConsoleRoute {
     id: string;
     /** its own name, which is what the reader sees */
     label: string;
+    /** S-137 — the profile was removed since; `label` is the last name a launch recorded for it */
+    removed?: boolean;
     /**
      * ‼️ X-110 — THE PROVIDER THAT ROUTE TALKS TO, which is what the colour is
      * keyed on. `id` above is a PROFILE on Claude ("Kimi (work)", "Kimi

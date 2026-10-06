@@ -31,6 +31,7 @@
 
 import { LaunchManifest, manifestIndex, manifestOf } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
+import { RouteNames, routeName } from './routeName';
 import {
     hasProviderConflict, legacyIdentity, ProviderIdentity, proofOf, scopeAllowsTurnChange,
     TurnRuntimeIdentity, turnIdentity
@@ -343,6 +344,10 @@ export interface RunIdentity {
     /** Only an Agent Farm route profile has these; '' / null otherwise. */
     providerProfileId: string;
     providerProfileRevision: number | null;
+    /** S-137 — the label the run was started under, only when the profile's name is now another. */
+    providerLabelAtLaunch?: string;
+    /** S-137 — the profile was removed; `providerLabel` is the last name it carried. */
+    providerProfileRemoved?: boolean;
     requestedModelRef: string;
     reportedProviderIds: string[];
     reportedModels: string[];
@@ -386,16 +391,19 @@ export function runIdentity(
     turns: readonly TurnReport[],
     /** The transcript is not from a run Agent Farm started — an import, or a
      *  CLI whose sessions it merely reads. The caller knows; this file cannot. */
-    opts?: { external?: boolean }
+    opts?: { external?: boolean; names?: RouteNames }
 ): RunIdentity {
     const rows = turnRuntimes(manifest, engine, turns);
     const drift = runDrift(rows);
     const id = declaredOf(manifest, str(engine) || 'claude');
     const binding = bindingOf(manifest, id, opts);
+    const named = routeName(str(id.providerProfileId), str(id.providerLabel), opts?.names);
     return {
         engine: id.engine || str(engine) || 'claude',
         providerId: str(id.providerId),
-        providerLabel: str(id.providerLabel),
+        providerLabel: named ? named.label : str(id.providerLabel),
+        ...(named?.launchedAs ? { providerLabelAtLaunch: named.launchedAs } : {}),
+        ...(named?.removed ? { providerProfileRemoved: true } : {}),
         // ‼️ An EXTERNAL run's origin is `external` and says so, rather than
         // borrowing `legacy-inherit` — "nobody was asked" is a statement about
         // our own records and is simply untrue of somebody else's transcript.
@@ -414,7 +422,7 @@ export function runIdentity(
         turnScope: drift.turnScope,
         agreement: drift.agreement,
         binding,
-        billing: runBilling(manifest, engine, opts)
+        billing: runBilling(manifest, engine, opts, named?.label)
     };
 }
 
@@ -443,6 +451,8 @@ export interface IndexedRun {
  */
 export function sessionIdentity(
     s: IndexedRun, manifests: readonly LaunchManifest[] | undefined,
+    /** S-137 — required, so no surface can name a route by a rule of its own (routeName.ts). */
+    names: RouteNames | undefined,
     /** The caller's own word for the engine, when it knows better than the transcript. */
     engineOverride?: string
 ): RunIdentity {
@@ -450,7 +460,7 @@ export function sessionIdentity(
     const engine = engineOverride || s.source || 'claude';
     const reports = (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }));
     const external = s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !m);
-    return runIdentity(m, engine, reports, { external });
+    return runIdentity(m, engine, reports, { external, names });
 }
 
 /**
@@ -463,13 +473,15 @@ export function sessionIdentity(
 export function runBilling(
     manifest: LaunchManifest | undefined,
     engine: string,
-    opts?: { external?: boolean }
+    opts?: { external?: boolean },
+    /** S-137 — the route's one name (routeName.ts), when the caller has it. */
+    label?: string
 ): BillingIdentity {
     const id = declaredOf(manifest, str(engine) || 'claude');
     const binding = bindingOf(manifest, id, opts);
     return billingOf({
         engine: id.engine || str(engine) || 'claude',
-        providerId: str(id.providerId), providerLabel: str(id.providerLabel),
+        providerId: str(id.providerId), providerLabel: str(label) || str(id.providerLabel),
         origin: binding === 'external' ? 'external' : id.origin, binding,
         route: id.route
     });

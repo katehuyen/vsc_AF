@@ -7,6 +7,7 @@ import { SessionIndex, SessionInfo } from '../core/sessions';
 import { buildTurnRows } from '../core/turns';
 import { chainIndexNow } from '../core/chainMembership';
 import { LaunchManifest } from '../core/launchManifest';
+import type { RouteNames } from '../core/routeName';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarkMessage } from './base';
 import { afConfig } from '../core/settingsDoor';
 import { desktopHost, type PanelHost } from './panelHost';
@@ -26,6 +27,8 @@ export interface TurnsDeps {
     getPricing(): PricingEngine;
     /** X-111 — the launch manifests, so a turn can say which route its session ran on. */
     launchManifests?(): readonly LaunchManifest[];
+    /** S-137 — every route profile's one name (core/routeName.ts). */
+    routeNames?(): RouteNames;
     /** U-191 — the session's project, by the Sessions table's own resolver. */
     projectOf?(s: SessionInfo): string | undefined;
     /** Export MD remembers the last folder saved to (shared with the viewer). */
@@ -47,7 +50,7 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
         rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.()), chainIndexNow(), deps.projectOf),
+            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.(), deps.routeNames?.()), chainIndexNow(), deps.projectOf),
         tableN: TURNS_TABLE_N
     };
 }

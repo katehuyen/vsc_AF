@@ -441,7 +441,7 @@ const CLAUDE_ROUTE = {
     // place that decides manifest · engine · external, so the Turns page and
     // the bridge answer exactly what this row does.
     ok('‼️ …and a run with no manifest says which kind of nothing it is',
-        /const identity = sessionIdentity\(s, manifests\);/.test(dash)
+        /const identity = sessionIdentity\(s, manifests, names\);/.test(dash)
         && /route: '', revision: null, requested: '', surface: '', account: ''/.test(dash));
     ok('…with no value invented to go beside it',
         !/if \(!m\) \{ return null; \}/.test(dash));

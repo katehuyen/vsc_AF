@@ -4,6 +4,7 @@ import { PricingEngine } from '../core/pricing';
 import { SessionIndex, SessionInfo } from '../core/sessions';
 import { chainIndexNow } from '../core/chainMembership';
 import { LaunchManifest } from '../core/launchManifest';
+import type { RouteNames } from '../core/routeName';
 import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 import { sessionRowPool } from './dashboard';
@@ -51,6 +52,8 @@ export interface SessionsPageDeps {
      * than printing a directory name.
      */
     accountLabel?(stated: string): string;
+    /** S-137 — every route profile's one name (core/routeName.ts). */
+    routeNames?(): RouteNames;
 }
 
 /** What the page opens scoped to. Everything is optional: with nothing set the
@@ -123,7 +126,7 @@ function buildData(
         sessions: withChainLegs(sessions, scope?.chain, list => sessionRowPool(list, s => deps.index.isSessionActive(s, now), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name), deps.launchManifests?.(),
-            stated => deps.accountLabel?.(stated) ?? stated)),
+            stated => deps.accountLabel?.(stated) ?? stated, deps.routeNames?.())),
         sessionTableN: tableN
     };
 }

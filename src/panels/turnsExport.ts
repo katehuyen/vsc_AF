@@ -1,4 +1,5 @@
 import type { LaunchManifest } from '../core/launchManifest';
+import type { RouteNames } from '../core/routeName';
 import type { SessionInfo } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
 import { RunIdentity, sessionIdentity } from '../core/turnRuntime';
@@ -21,8 +22,10 @@ export interface TurnMsg {
 }
 
 /** The manifests are read ONCE per build, not once per session row. */
-export function identityOf(manifests: readonly LaunchManifest[] | undefined): (s: SessionInfo) => RunIdentity | undefined {
-    return s => sessionIdentity(s, manifests);
+export function identityOf(
+    manifests: readonly LaunchManifest[] | undefined, names: RouteNames | undefined
+): (s: SessionInfo) => RunIdentity | undefined {
+    return s => sessionIdentity(s, manifests, names);
 }
 
 /** One turn's messages. clip/cap keep the on-screen fold light; export passes
@@ -93,7 +96,7 @@ export function buildTurnsMarkdown(
     // is not. The export silently dropped those rows and the header lookup below
     // fell through to a bare "turn N". A LOG surface reads the log list, once.
     for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-        afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.()))) {
+        afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.(), deps.routeNames?.()))) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
     const sc = afConfig();

@@ -188,6 +188,18 @@
         return b && b.why ? 'Billing: ' + b.why : '';
     }
 
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v)
+        : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+
+    /** S-137 — the route's name history, worded once (the host's core/routeName.ts decides it). */
+    function nameLines(v) {
+        const I = normalize(v);
+        return [
+            I.providerLabelAtLaunch ? t('Name at launch: {name}', { name: I.providerLabelAtLaunch }) : '',
+            I.providerProfileRemoved ? t('Profile removed — shown by the last name it carried') : ''
+        ];
+    }
+
     function tipLines(v) {
         const I = normalize(v);
         const rep = (I.reportedProviderIds || []).filter(Boolean);
@@ -210,6 +222,7 @@
             declared ? 'Route: ' + declared
                 + (I.providerProfileRevision ? ' · profile revision ' + I.providerProfileRevision : '')
                 : 'Route: none declared — the engine\'s own default answered',
+            ...nameLines(I),
             // ‼️ ONLY WHEN IT ADDS SOMETHING. On a run where the engine named
             // what was declared this restates the line above it, and a panel
             // that repeats itself is one a reader stops opening.
@@ -237,7 +250,7 @@
 
     window.AFProvider = {
         id: id, label: label, cls: cls, chip: chip, cut: cut, known: KNOWN, CARD_MAX: 15,
-        servedBy: servedBy, multi: multi, tipLines: tipLines, title: title,
+        servedBy: servedBy, multi: multi, tipLines: tipLines, nameLines: nameLines, title: title,
         binding: BINDING, proof: PROOF
     };
 })();

@@ -1188,6 +1188,7 @@
             }
             return [
                 line('Route', L.route + (L.revision ? ` · profile revision ${L.revision}` : '')),
+                ...window.AFProvider.nameLines(I),
                 line('Answered by', (I.reportedProviderIds || []).join(', ')),
                 line('How we know', PROOF[I.proof] || ''),
                 line('Requested', L.requested),
