@@ -728,6 +728,20 @@
         .msg .who:has(.skind) { opacity:1; }
         .msg .who .skind { font-size:13px; line-height:1; }
         .msg .body { flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; }
+        /* U-200 — a message's copy and read-aloud buttons float over its top right corner and stay
+           hidden until the row is under the pointer: the row's layout does not move by a pixel.
+           The message being read keeps its stop / resume button, and a faint blue ground. */
+        .msg { position:relative; }
+        .msg .macts { position:absolute; top:-7px; right:6px; display:flex; gap:3px; opacity:0;
+            pointer-events:none; transition:opacity .12s; z-index:2; }
+        .msg:hover .macts, .msg .macts:has(.readb.on) { opacity:1; pointer-events:auto; }
+        .msg .macts button { background:var(--vscode-editorWidget-background, var(--vscode-editor-background));
+            border:1px solid var(--vscode-widget-border,#4446); border-radius:4px; color:inherit;
+            font-size:11px; line-height:1; padding:2px 5px; cursor:pointer; }
+        .msg .macts button:hover { background:var(--vscode-toolbar-hoverBackground,#8883); }
+        .msg .macts .readb.on { color:var(--vscode-charts-blue,#3794ff); border-color:var(--vscode-charts-blue,#3794ff); }
+        .msg .macts .mcopy.done { color:var(--vscode-charts-green,#3fb950); }
+        .talk .msg:has(.readb.on) { background:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 16%, transparent); border-radius:6px; }
         .msg.user .body { background:color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
             border-radius:7px; padding:6px 9px; }
         /* said INTO a running turn — it did not start one, and the reply above
@@ -1910,6 +1924,33 @@
             'tip-free');
     }
 
+    /** U-200 — a message's ⧉ (the whole text) and 🔊 (its transcript line; its words where it has
+     *  none). No 🔊 on a phone: a press there would speak in the room the PC is in. */
+    function msgActs(m) {
+        if (!String(m.text || '').trim()) { return ''; }
+        const sid = (sel() || {}).sessionId || '';
+        const phone = !!(window.__AFUI__ && window.__AFUI__.remote === true);
+        const read = sid && !phone ? window.AFRead.btn(sid, m.uuid || '') : '';
+        return `<span class="macts">${read}<button data-mcopy="1" class="mcopy" title="${C.esc(t('Copy the whole message'))}">⧉</button></span>`;
+    }
+    /** …and their press, on the rows exactly as drawn (visibleMessages) — the uuid where the row has one. */
+    function msgPress(ev) {
+        const tg = ev.target && ev.target.closest ? ev.target : null;
+        const b = tg && tg.closest('.macts>button');
+        if (!b) { return; }
+        ev.preventDefault();
+        const row = b.closest('.msg[data-mid]');
+        const cur = sel() || {};
+        const m = visibleMessages(cur.messages || []).find(x => x.id === (row && row.dataset.mid));
+        if (!m) { return; }
+        if (b.dataset.mcopy) {
+            window.AFCtx.copy(String(m.text || ''), (_said, bad) => {
+                b.textContent = bad ? '⚠' : '✓'; b.classList.add('done');
+                setTimeout(() => { b.textContent = '⧉'; b.classList.remove('done'); }, 1400);
+            });
+        } else if (b.dataset.read) { window.AFRead.press(b); }
+        else { vscode.postMessage({ type: 'readAloud', sessionId: cur.sessionId, pick: { text: String(m.text || '') }, surface: 'console' }); }
+    }
     function messageHtml(m) {
         const mid = ` data-mid="${C.esc(m.id || '')}"`;
         if (m.role === 'user') {
@@ -1931,7 +1972,7 @@
             }) : '';
             // ↯ — said INTO the turn above it, which was already running: it is
             // not the question that reply was answering.
-            return `<div class="msg user${m.steer ? ' steer' : ''}"${mid}${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you${mark}</span><div class="body">${C.esc(m.text || '')}</div></div>`;
+            return `<div class="msg user${m.steer ? ' steer' : ''}"${mid}${m.steer ? ' title="Said into the running turn — the agent picks it up at its next step"' : ''}><span class="who">you${mark}</span><div class="body">${C.esc(m.text || '')}</div>${msgActs(m)}</div>`;
         }
         // ‼️ EVERY STEP ROW SAYS WHAT KIND OF STEP IT IS AND WHAT IT COST.
         // The conversation used to show only WHAT happened: a file read off
@@ -1952,7 +1993,7 @@
                 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens, markOf(sel()))}</span>`
                 : '');
         if (m.role === 'agent') {
-            return `<div class="msg"${mid}><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div></div>`;
+            return `<div class="msg"${mid}><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div>${msgActs(m)}</div>`;
         }
         if (m.role === 'tool') {
             if (m.tool) {
@@ -5007,6 +5048,9 @@
                 unseen = 0;
                 paintJump();
             });
+            // U-200 — on POINTERDOWN, delegated to this element, which outlives `talkinner`: that is
+            // rewritten on every stream change, and a click whose down and up straddle it is lost.
+            talkEl.addEventListener('pointerdown', msgPress);
         }
         const byId = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         byId('c-jump', 'click', jumpToEnd);
@@ -5914,6 +5958,7 @@
             byId('c-attach', 'click', () => vscode.postMessage({ type: 'attachPick' }));
             byId('c-sound', 'click', () => { if (s && s.sessionId && window.AFSoundPop) { window.AFSoundPop.open(s.sessionId); } });
             byId('c-readstop', 'click', () => vscode.postMessage({ type: 'alertReadStop' }));
+            byId('c-readlast', 'click', () => vscode.postMessage({ type: 'readAloud', sessionId: s.sessionId, pick: {}, surface: 'console' }));
             byId('c-goto-live', 'click', () => {
                 const live = (DATA.sessions || []).find(x => x.agentId === agentNow()
                     && x.status !== 'ended' && x.status !== 'error');
@@ -6068,7 +6113,12 @@
         const speaker = cardTip(`<button class="stchip" id="c-sound" aria-label="This session's sound">${C.esc(v.icon)}</button>`,
             v.head, T.lines(v.lines.concat([T.GAP, 'Click to open this session\'s sound: Like all · Always · Silent, its tones, the voice and Read aloud.'])),
             'tip-sound', 'This session\'s sound');
-        if (!v.reading) { return speaker; }
+        // U-200 — …and while nothing is read, ▶ reads the last answer: listening without looking.
+        if (!v.reading) {
+            if (window.__AFUI__ && window.__AFUI__.remote === true) { return speaker; }
+            return speaker + cardTip(`<button data-readlast="1" id="c-readlast" class="stchip" aria-label="${C.esc(t('Read the last answer aloud'))}">▶</button>`,
+                t('Read last answer'), T.lines([t('Reads this conversation\'s last answer aloud, whole.')]), 'tip-readlast', t('Read last answer'));
+        }
         return speaker + cardTip('<button class="stchip" id="c-readstop" aria-label="Stop reading">■</button>',
             'Stop reading', T.lines(['Cuts short the answer being read aloud now.', 'Read aloud stays on for the next answer.']),
             'tip-readstop', 'Stop reading');
@@ -6517,6 +6567,7 @@
         if (window.AFSnippets.receive(ev.data)) { return; }
         // …and the wiki tagger the same way (K-26).
         if (window.AFWiki.receive(ev.data)) { return; }
+        if (window.AFRead.receive(ev.data)) { return; }
         // …and the "/" catalog, gathered when the picker opened (K-30). It
         // drops an answer about an engine or agent the composer has moved on
         // from, so a slow disk cannot repopulate a list with the wrong one.
@@ -6549,6 +6600,7 @@
         if (ev.data && ev.data.type === 'data') {
             const wasOn = DATA.selected;
             DATA = ev.data.data;
+            window.AFRead.set(DATA.reading);
             // A different conversation is not "new lines in this one".
             if (DATA.selected !== wasOn) { shownCount = -1; unseen = 0; tailKey = ''; tailLines = 0; }
             // K-21 — a card taken off the shelf takes its `show` with it. The
@@ -6581,6 +6633,8 @@
         vscode.postMessage({ type: 'getAccounts' });
     }, 30000);
 
+    // U-200 — a message's 🔊 goes through the one reading channel, named as the Console's
+    window.AFRead.init(m => vscode.postMessage(Object.assign({ surface: 'console' }, m)), DATA.reading);
     paint();
     // The list you left open (and the question you left it asking) is state the
     // HOST has to know about: it is the one that can see every session, and it

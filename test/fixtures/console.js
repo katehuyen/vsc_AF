@@ -1402,9 +1402,36 @@ module.exports = {
             label: 'Console — 📎 Attach files, its panel open',
             tip: 'tip-attach',
             data: relayAttachData()
+        },
+        // U-200 — a message's ⧉ and 🔊. Headless Chrome has no pointer, so the hover scene lifts
+        // its own clusters (inline, not a <style>: the scenes share one document).
+        {
+            id: 'console-read-hover',
+            label: 'Console — every message hovered: 🔊 and ⧉ over its top right corner, the row unmoved; tool rows none',
+            data: readData(null),
+            act: r => { r.els.talkinner.innerHTML = r.els.talkinner.innerHTML.replace(/class="macts"/g, 'class="macts" style="opacity:1;pointer-events:auto"'); }
+        },
+        {
+            id: 'console-reading',
+            label: 'Console — the answer being read: a lit ■ over it on a faint blue ground, nothing else lifted',
+            data: readData({ sessionId: '019fe859-3b4d-7b03', key: 'a-m4', paused: false })
+        },
+        {
+            id: 'console-readlast',
+            label: 'Console — nothing being read: ▶ Read last answer beside the speaker on the status line',
+            data: readData(null, true)
         }
     ]
 };
+
+/** U-200 — the working card's answer has its transcript line; `quiet`: nothing is being read. */
+function readData(reading, quiet) {
+    const d = data();
+    const card = d.sessions.find(s => s.id === 'cs2');
+    card.messages.find(m => m.id === 'm4').uuid = 'a-m4';
+    if (quiet) { card.soundView = soundView({ read: true, reading: false }); }
+    return Object.assign(d, { reading });
+}
 
 /** The host's own words (`bridgeGuardView`), on a Claude card under the lines. */
 function guardData(n) {

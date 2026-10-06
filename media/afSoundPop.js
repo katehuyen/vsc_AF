@@ -94,6 +94,14 @@
         if (el) { el.innerHTML = ''; }
     }
 
+    /** U-200 — listen to the last answer now, whole (not on a phone: reading plays on the PC). */
+    function readLastHtml() {
+        if (window.__AFUI__ && window.__AFUI__.remote === true) { return ''; }
+        const tr = s => (window.AFI18n ? window.AFI18n.t(s) : s);
+        const cls = 'secondary small'; // i18n-exempt — class names
+        return ` <button data-spreadlast="1" class="${cls}" title="${esc(tr('Reads this conversation\'s last answer aloud, whole.'))}">▶ ${esc(tr('Read last answer'))}</button>`;
+    }
+
     function render() {
         let root = document.getElementById('sp-root');
         if (!root) {
@@ -104,6 +112,9 @@
         if (!current || !alerts) { root.innerHTML = ''; return; }
         style();
         root.innerHTML = html(current, alerts);
+        const readRow = root.querySelector('[data-spread]');
+        const readLine = readRow && readRow.closest ? readRow.closest('.sp-line') : null;
+        if (readLine) { readLine.insertAdjacentHTML('beforeend', readLastHtml()); }
         place(root.querySelector('.sp-pop'));
         const id = current.sessionId;
         const apply = patch => vscode.postMessage({ type: 'alertSessionApply', sessionId: id, patch });
@@ -119,6 +130,7 @@
             vscode.postMessage({ type: 'alertSessionTest', sessionId: id, event: ev ? ev.value : 'turn-ready' });
         });
         on('[data-spnav]', 'click', () => { vscode.postMessage({ type: 'afnav', to: 'sound' }); close(); });
+        on('[data-spreadlast]', 'click', () => vscode.postMessage({ type: 'readAloud', sessionId: id, pick: {}, surface: 'soundPanel' }));
         on('[data-spclose]', 'click', close);
     }
 

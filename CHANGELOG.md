@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.869.0 - Copy or read aloud any Console message (2026-10-06)
+
+- **⧉ and 🔊 on every Console message.** Hover a prompt or an answer in the
+  Console: a small ⧉ copies the whole message, and 🔊 reads it aloud, whole.
+  The buttons float over the message's corner - the conversation does not move
+  by a pixel - and they answer even while the agent is still streaming.
+- **The message being read shows ■** (press: stop) or **▶** when paused (press:
+  resume), and gets a faint blue ground - the same reading the transcript's
+  buttons show.
+- **▶ Read last answer**, beside the speaker on the Console's status line while
+  nothing is being read, and in the session's sound panel: listen to the last
+  answer without looking for it.
+- For Claude Code sessions a message is read as the transcript's own step; for
+  other engines it is read by its words.
+- On the phone the Console has ⧉ but no 🔊: reading plays on the PC's speakers.
+
 ## 3.868.0 - Read any step of a transcript aloud (2026-10-06)
 
 - **A 🔊 button on every step with words.** In a session's transcript, the
