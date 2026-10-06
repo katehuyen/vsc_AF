@@ -98,6 +98,9 @@ const said = (uuid, text, extra) => Object.assign({
     ok('Read last answer — no pick — reads the conversation\'s last answer', spoke[1] === 'Son cevap bu.' && reading.source.surface === 'page');
     await send({ type: 'readAloud', sessionId: 's1', pick: { text: 'Bir Codex satırı.' } });
     ok('a row with no line of its own is read by its words', spoke[2] === 'Bir Codex satırı.');
+    await send({ type: 'readAloud', pick: { text: 'Bir bildirim.', key: 'notice:n1' } });
+    ok('U-207 — a text named by key is read as that "step", so its button shows ■ / ▶',
+        spoke[3] === 'Bir bildirim.' && reading.source.msg === 'notice:n1' && readingView(reader).key === 'notice:n1');
     await send({ type: 'readControl', action: 'pause' });
     ok('■ / ▶ are alerts.reading\'s body', acts.includes('pause'));
     posted.length = 0;

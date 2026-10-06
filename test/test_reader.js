@@ -33,6 +33,9 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
             readAskOf({ sessionId: 'abc' }).kind === 'last' && readAskOf({ sessionId: 'abc', last: true }).kind === 'last');
         ok('free text needs no session — an agent can have a report read to the user',
             readAskOf({ text: 'Your build is ready.' }).kind === 'text');
+        ok('U-207 — a page names its own text by key; no key, no name',
+            readAskOf({ text: 'A notice.', key: ' notice:n1 ' }).key === 'notice:n1' && !('key' in readAskOf({ text: 'A notice.' }))
+            && readAskOf({ text: 'x', key: 'k'.repeat(300) }).key.length === 200);
         ok('two picks at once, or nothing to read, is refused with the reason',
             /ONE of/.test(readAskOf({ sessionId: 'abc', msg: 'm', turn: 2 }).error)
             && /sessionId is required/.test(readAskOf({}).error));

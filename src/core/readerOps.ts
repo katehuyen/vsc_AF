@@ -56,7 +56,8 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
     let where: Pick<ReadingSource, 'msg' | 'turn'> = {};
     if (ask.kind === 'text') {
         raw = ask.text;
-        segments = [{ key: '', text: raw }];
+        segments = [{ key: ask.key ?? '', text: raw }];
+        if (ask.key) { where = { msg: ask.key }; }
     } else {
         const t = readTarget((conv as Conversation).steps, ask);
         if ('error' in t) { throw new BridgeRefusal(t.error, { step: 'target' }); }
@@ -145,7 +146,7 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
                 + 'turn? (1-based — that turn\'s answer; with whole=true the whole turn: what was asked and everything the agent said in words), '
                 + 'from? (a step\'s key — that step, then everything the agent said in words to the end of the conversation), '
                 + 'last? (true — the newest answer; also what a sessionId alone reads, and what Sound: Read Last Answer runs), text? (your own text, e.g. a report for the user; '
-                + 'with a sessionId it is read in that conversation\'s voice). Returns { reading, sessionId, label, msg?, turn?, steps, chars, voice } — '
+                + 'with a sessionId it is read in that conversation\'s voice; key? names the text - `alerts.reading` then answers it as the step being read). Returns { reading, sessionId, label, msg?, turn?, steps, chars, voice } — '
                 + 'while a reading of several steps goes on, `alerts.reading` names the one being read (`key`).',
             handler: (args) => readNow(deps, args as Record<string, unknown>, 'bridge')
         },

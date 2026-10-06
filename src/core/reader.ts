@@ -51,7 +51,7 @@ export type ReadAsk =
     | { kind: 'turn'; sessionId: string; turn: number; whole?: boolean }
     | { kind: 'from'; sessionId: string; from: string }
     | { kind: 'last'; sessionId: string }
-    | { kind: 'text'; text: string; sessionId: string };
+    | { kind: 'text'; text: string; sessionId: string; key?: string };
 
 /** Spells an ask out of loose arguments, or says why it cannot. */
 export function readAskOf(args: Record<string, unknown>): ReadAsk | { error: string } {
@@ -66,7 +66,9 @@ export function readAskOf(args: Record<string, unknown>): ReadAsk | { error: str
     const picks = [!!msg, hasTurn, last, !!text.trim(), !!from].filter(Boolean).length;
     if (picks > 1) { return { error: 'name ONE of msg, turn, from, last or text' }; }
     if (whole && !hasTurn) { return { error: 'whole goes with turn — it reads all of that turn' }; }
-    if (text.trim()) { return { kind: 'text', text, sessionId: sid }; }
+    // U-207 — a page names its own text (a notice, an article) so its button shows ■ / ▶ while that text is read
+    const key = typeof args.key === 'string' ? args.key.trim().slice(0, 200) : '';
+    if (text.trim()) { return { kind: 'text', text, sessionId: sid, ...(key ? { key } : {}) }; }
     if (!sid) { return { error: 'sessionId is required unless text is given' }; }
     if (msg) { return { kind: 'msg', sessionId: sid, msg }; }
     if (from) { return { kind: 'from', sessionId: sid, from }; }
