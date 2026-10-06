@@ -80,7 +80,7 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
         && posted[0].to === 'chains:chn_a' && stopped === 1);
     click({ target: { closest: () => null }, preventDefault() { }, stopPropagation() { stopped++; } });
     ok('a press anywhere else is left alone', posted.length === 1 && stopped === 1);
-    for (const [file, re] of [['console.js', /class="batonsig"\$\{open \? ' ' \+ open : ''\}/],
+    for (const [file, re] of [['console.js', /class="batonsig\$\{faint \? ' faint' : ''\}"\$\{open \? ' ' \+ open : ''\}/],
         ['sessionsTable.js', /window\.AFTip\.cell\('chaincell', window\.AFChainNav \? window\.AFChainNav\.openAttr\(r\.chain\.chainId\)/],
         ['turns.js', /nav \? nav\.openAttr\(r\.chainId\) : ''/],
         ['timeline.js', /window\.AFChainNav\.markOf\(s\.chain\)/]]) {

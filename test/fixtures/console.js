@@ -1420,9 +1420,29 @@ module.exports = {
             id: 'console-readlast',
             label: 'Console — nothing being read: ▶ Read last answer beside the speaker on the status line',
             data: readData(null, true)
+        },
+        // U-222 — past sessions keep their leg: the shelf row and two resume rows, faint ⑂ n
+        {
+            id: 'console-past-legs',
+            label: 'Console — a relay leg on the shelf and in the resume list keeps its ⑂ n, faint; a row in no chain has none',
+            data: pastLegData(),
+            state: { afConsole: { showResume: true } }
         }
     ]
 };
+
+/** U-222 — the place the chain index keeps for sessions whose batons the store dropped (the host's own builder). */
+function pastLegData() {
+    const M = require('../../out/core/chainMembership.js');
+    const shelf = '019fe4aa-1c2d-70f1', a = RESUME_ROWS[0].sessionId, c = RESUME_ROWS[2].sessionId;
+    const link = (hop, from, to) => ({ chainId: 'chn_muqmf6q7001io2', hop, from, to, state: 'started', createdAt: NOW - hop * 60000, updatedAt: NOW - hop * 60000 });
+    const ix = M.chainIndex([link(6, 's-six', a), link(7, a, shelf), link(8, shelf, c), link(9, c, 's-ten')]);
+    const view = sid => M.placeCardView(M.chainPlace(ix, sid), sid) || null;
+    const d = resumeData();
+    d.lastWindow = d.lastWindow.map(r => Object.assign({}, r, { batonView: view(r.sessionId) }));
+    d.resumable = d.resumable.map(r => Object.assign({}, r, { batonView: view(r.sessionId) }));
+    return d;
+}
 
 /** U-200 — the working card's answer has its transcript line; `quiet`: nothing is being read. */
 function readData(reading, quiet) {

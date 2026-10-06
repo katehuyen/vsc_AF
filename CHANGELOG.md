@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.870.0 - A relay leg keeps its number after it stops (2026-10-06)
+
+- **⑂ n stays on a relay leg's past sessions.** In the Console's left column, a
+  session that ran as a leg of a baton relay keeps its leg number in faint text
+  on the "Where you left off" shelf and in the Resume list - so you can still
+  tell which leg of the chain a past session was. Hover it for the chain, the
+  legs before and after it, and when it ran; click it to open the chain on the
+  Chains page (the row itself does not resume).
+- An ended card in the active list keeps its ⑂ n too, even after Agent Farm has
+  tidied away the chain's older relay records - it reads the same chain record
+  the Sessions table uses.
+
 ## 3.869.0 - Copy or read aloud any Console message (2026-10-06)
 
 - **⧉ and 🔊 on every Console message.** Hover a prompt or an answer in the

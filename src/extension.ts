@@ -728,7 +728,7 @@ import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, SearchDeps, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
-import { sessionChainOf } from './core/sessionChain';
+import { chainsCache, sessionChainOf } from './core/sessionChain';
 import { chainLivingSignals, chainSignalNotices } from './core/chainSignals';
 import { FarmSettingsPanel, type FarmSettingsDeps } from './panels/settingsPanel';
 import { AlertMessageDeps } from './panels/alertMessages';
@@ -17715,7 +17715,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             contextSignalView: contextSignalView((sid && contextGuard.record(sid)) || undefined, contextGuard.thresholds(), relTime),
             bridgeGuardView: bridgeGuardView(bridgeGuardLog.forSession(sid), relTime) ?? null,
             batonView: (() => {
-                try { return (sid && batonCardView(batonStore.all(), sid, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')))) || null; } catch { return null; }
+                // U-222 — …or, once the store has dropped its batons, the place the chain index keeps
+                try { return (sid && (batonCardView(batonStore.all(), sid, normalizeMaxLegs(cfg().get<unknown>('batonMaxHops'))) ?? consoleChains.of(sid))) || null; } catch { return null; }
             })()
         };
     }
@@ -17729,6 +17730,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     publishChainSessions();
     context.subscriptions.push(batonStore.onDidChange(publishChainSessions));
+    const consoleChains = chainsCache(() => batonStore.all(), chainIndexNow);
+    context.subscriptions.push(batonStore.onDidChange(consoleChains.drop));
     const gitShortStatus = async (cwd: string) => { const c = await changesSummary(cwd); return c.note ? undefined : c.status; };
     // ‼️ S-83 — a leg's work lands in its folder AND its project's repositories; every relay door reads both
     const legGit = legGitReaders({
@@ -30303,6 +30306,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         handoverContinue: (sessionId: string, projectId?: string) => handoverContinueFor(sessionId, projectId),
         // S-77 — the card's ✕ runs the one body baton.stop chain= runs.
         cardViews: (sessionId: string) => consoleCardViews(sessionId),
+        // U-222 — the shelf's and the resume list's rows keep their leg too
+        chainOf: (sessionId: string) => consoleChains.of(sessionId) ?? null,
         // S-82 — the card's ⑂ Attach relay runs baton.attach's own body…
         batonAttach: (sessionId: string, account: string, maxHops: unknown) =>
             attachRelay(batonAttachDeps, { sessionId, account, maxHops, by: 'the user (Console card)' }),

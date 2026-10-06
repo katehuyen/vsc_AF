@@ -351,6 +351,7 @@
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
         /* S-77: the relay leg is information, not a warning. */
         .batonsig { font-weight:600; color:var(--vscode-textLink-foreground); }
+        .batonsig.faint { font-weight:400; opacity:.6; }
         /* U-81 — the status row hosts AFTip panels, so it is dimmed with a COLOUR (tip-host), never
            opacity: an ancestor's opacity paints the panel see-through. Its buttons dim themselves. */
         #c-status button { opacity:.6; }
@@ -1645,16 +1646,18 @@
     };
     /** S-77 — this run's leg of a baton relay: `⑂ 3`, the chain in its panel. The words are the host's. */
     // S-123 — and a press on it opens that chain on the Chains page (AFChainNav.wireOpen, wired once below)
-    const batonPill = (s, cls) => {
+    // U-222 — `faint`: a past session's row (the shelf, the resume list) keeps its leg, quietly
+    const batonPill = (s, cls, faint) => {
         const v = s.batonView;
         if (!v || !v.chip) { return ''; }
         const nav = window.AFChainNav;
         const open = nav && v.chainId ? nav.openAttr(v.chainId) : '';
-        return cardTip(`<span class="batonsig"${open ? ' ' + open : ''}>${C.esc(v.chip)}</span>`, v.head,
+        return cardTip(`<span class="batonsig${faint ? ' faint' : ''}"${open ? ' ' + open : ''}>${C.esc(v.chip)}</span>`, v.head,
             window.AFTip.lines([...(v.lines || []), ...(open ? ['', nav.OPEN_HINT] : [])]), cls, 'Baton relay chain');
     };
     if (window.AFChainNav) { window.AFChainNav.wireOpen(vscode); }
     const batonChip = (s) => { const p = batonPill(s, 'tip-baton'); return p ? p + ' · ' : ''; };
+    const pastLeg = (r) => { const p = batonPill(r, 'tip-batonrow', true); return p ? p + ' · ' : ''; };
     /**
      * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this
      * session, so the rule is seen being held rather than trusted. Nothing is
@@ -2687,7 +2690,7 @@
                     r.title ? `${r.title.length.toLocaleString()} characters` : 'never named',
                     r.title || 'This session ended before the CLI named it.', 't2w')}
                 ${projSquare(r, true)}${colorDot(r.sessionId, r.color, 'back')}
-                <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
+                <div class="m">${pastLeg(r)}ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
         return `${callout}
             ${back}
@@ -2888,7 +2891,7 @@
                     <span class="hb">${resumeEngineBadge(r)}</span>
                 </div>
                 ${projSquare(r, true)}${colorDot(r.sessionId, r.color, 'resume')}
-                <div class="m wrap">${cardTip(who(r.agentName, r.sessionId),
+                <div class="m wrap">${pastLeg(r)}${cardTip(who(r.agentName, r.sessionId),
                     `${r.agentName || 'session'}${r.sessionId ? ` · #${String(r.sessionId).slice(0, 8)}` : ''}`,
                     window.AFTip.lines([
                         'Agent: ' + (r.agentName || 'session'),

@@ -505,6 +505,8 @@ export interface ConsoleDeps {
     handoverContinue(sessionId: string, projectId?: string): { prompt: string; note?: string; pct?: number };
     /** the host's own views for one card — context signal, bridge-guard stops, baton leg (the console.sessions op's builder) */
     cardViews?(sessionId: string): { contextSignalView: unknown; bridgeGuardView: unknown; batonView: unknown };
+    /** U-222 — a past session's leg (sessionChainOf's verdict), for the shelf's and the resume list's rows */
+    chainOf?(sessionId: string): unknown;
     /** S-82 — ⑂ Attach relay: baton.attach's own body (attachRelay) for this card's session */
     batonAttach?(sessionId: string, account: string, maxHops: unknown): Promise<{ ok: true; sentence: string } | { ok: false; why: string }>;
     /** S-82 — ⑂ Pass now: the handover order for this runner, worded for its relay (passNowText) */
@@ -1505,7 +1507,8 @@ export class ConsolePanel {
             // cannot be trusted anywhere.
             lastWindow: this.deps.lastWindow().map(r => ({
                 ...r, color: r.sessionId ? (this.deps.colorFor?.(r.sessionId) ?? '') : '',
-                ...this.projectMark(r, projectList)
+                ...this.projectMark(r, projectList),
+                batonView: r.sessionId ? (this.deps.chainOf?.(r.sessionId) ?? null) : null
             }))
                 /**
                  * ‼️ S-55 — A SESSION THIS WINDOW IS SHOWING A CARD FOR IS NOT
@@ -1899,6 +1902,8 @@ export class ConsolePanel {
             // K-35 — the index projects the mark onto every SessionInfo, so a
             // resumable row is coloured by the same fact the live card is.
             color: s.color ?? '',
+            // U-222 — a relay leg keeps its ⑂ n here too, faint
+            batonView: this.deps.chainOf?.(s.sessionId) ?? null,
             // what the session spent — the figure the card leads with, because
             // "$0.03" alone does not say whether that was haiku or opus
             tokens: totalTokens(s.usage),
