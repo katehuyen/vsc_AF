@@ -12,6 +12,9 @@
  */
 import type { SpeechPhrases } from './speechPhrases';
 
+/** A size said as a sentence of its own; U-205 — a phrase skipped ('') leaves no stray stop behind. */
+export const spokenStop = (phrase: string): string => (phrase ? `${phrase}.` : '');
+
 const BLANK = /^[ \t]*$/;
 const INDENTED = /^(?: {4,}|\t)[ \t]*\S/;
 const LIST_ITEM = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/;
@@ -74,7 +77,7 @@ export function sayBlocks(text: string, words: SpeechPhrases): string {
         const c = t || g ? 0 : indentedRun(lines, i);
         const n = t || g || c;
         if (n) {
-            out.push('', `${t ? words.trace(t) : g ? words.log(g) : words.codeBlock(c)}.`, '');
+            out.push('', spokenStop(t ? words.trace(t) : g ? words.log(g) : words.codeBlock(c)), '');
             i += n;
         } else {
             out.push(lines[i]);
@@ -129,7 +132,7 @@ function jsonSaid(span: string, words: SpeechPhrases): string | null {
     try { v = JSON.parse(span); } catch { return null; }
     const isList = Array.isArray(v);
     if (isList ? !(v as unknown[]).some(isObject) : !isObject(v) || !Object.keys(v).length) { return null; }
-    if (span.includes('\n')) { return `\n\n${words.codeBlock(span.split('\n').length)}.\n\n`; }
+    if (span.includes('\n')) { return `\n\n${spokenStop(words.codeBlock(span.split('\n').length))}\n\n`; }
     if (isList) { return words.jsonList((v as unknown[]).length); }
     const o = v as Record<string, unknown>;
     const keys = Object.keys(o);

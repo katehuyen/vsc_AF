@@ -248,11 +248,17 @@
         const state = g.muted ? 'muted' : sil.silent ? 'silent right now' : on ? 'on' : 'off';
         const q = g.quiet || {};
         const muted = (g.mutedSessions || []).length;
+        const rd = al.reading || {};
         const parts = [
             on ? `rings on ${on} event${on === 1 ? '' : 's'}` : 'no event rings',
             q.configured ? `quiet ${q.from}–${q.to}` : '',
             muted ? `${muted} silent session${muted === 1 ? '' : 's'}` : '',
-            Number(al.toneVolume) < 100 ? t('tones at {v} of 100', { v: Number(al.toneVolume) }) : ''
+            Number(al.toneVolume) < 100 ? t('tones at {v} of 100', { v: Number(al.toneVolume) }) : '',
+            // U-205 — the reading's settings, only where they differ from out of the box
+            rd.voice ? t('reads in {voice}', { voice: rd.resolvedName || rd.voice }) : '',
+            Number(rd.rate) ? t('reading speed {v}', { v: Number(rd.rate) }) : '',
+            rd.length === 'whole' ? t('Read aloud reads whole answers') : '',
+            rd.code === 'skip' ? t('code left out of readings') : ''
         ].filter(Boolean);
         return `<div class="setitem alertsum" data-item="agentFarm.alerts.voices" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="setname">🔊 Sound</span>

@@ -78,6 +78,7 @@ const said = (uuid, text, extra) => Object.assign({
             ? { sessionId: 's1', label: 'dev', steps: [{ role: 'user', text: 'merhaba', turn: 1, uuid: 'u1' }, { role: 'assistant', text: 'Son cevap bu.', turn: 1, uuid: 'a1' }] }
             : { error: `no session matches "${ref}"` }),
         voiceOf: () => '', fleet: () => ({ on: false, voice: '', rate: 0, volume: 100, events: [], template: '' }),
+        reading: () => ({ voice: '', rate: 0, length: 'first', code: 'size' }),
         speechFor: async w => ({ voice: w, words: EN_PHRASES }),
         dialogue: {
             speaking: true, get state() { return at; }, act: a => { acts.push(a); return true; }, setRate: () => true,

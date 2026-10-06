@@ -111,6 +111,7 @@
             ${S().channels(DATA.channels)}
             <h3 class="sndh">Voice</h3>
             ${S().voice(al)}
+            ${S().reading(al)}
             <h3 class="sndh">Sessions</h3>
             ${S().sessions(DATA)}
             <h3 class="sndh">Why didn't I hear it?</h3>
@@ -153,6 +154,7 @@
         S().wireChannels(vscode);
         S().wireTone(vscode);
         S().wireVoice(vscode);
+        S().wireReading(vscode);
         S().wireSessions(vscode, render);
         S().wireWhy(vscode);
         const start = document.getElementById('sndstart');

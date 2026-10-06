@@ -112,7 +112,9 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
         const deps = {
             conversation: ref => 'abcd1234-full'.startsWith(ref) ? conv : { error: `no session matches "${ref}"` },
             voiceOf: id => id === 'abcd1234-full' ? 'Tolga' : '',
-            fleet: () => ({ on: false, voice: 'David', rate: 0, volume: 100, events: [], template: '' }),
+            fleet: () => ({ on: false, voice: 'Zira', rate: 0, volume: 70, events: [], template: '' }),
+            // U-205 — a reading has its own voice and speed; the announcement lends only its volume
+            reading: () => ({ voice: 'David', rate: 2, length: 'first', code: 'size' }),
             speechFor: async (want) => { wants.push(want); return { voice: want, words: EN_PHRASES }; },
             dialogue: {
                 speaking: false, state: { paragraph: 0, paragraphs: 2, paused: false, live: true },
@@ -136,7 +138,8 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
             b.ok && b.result.msg === 'L' && spoke[1].text.length > DIALOGUE_MAX && /Line 120 of the long report\./.test(spoke[1].text)
             && !/There is more/.test(spoke[1].text) && spoke[1].d.timeoutMs > DIALOGUE_TIMEOUT_MS);
         const c = await d('alerts.readNow', { text: 'Your build is ready.' });
-        ok('free text is read in the fleet\'s voice with no session', c.ok && c.result.sessionId === '' && spoke[2].cfg.voice === 'David'
+        ok('free text is read in the reading\'s voice and speed with no session, at the announcement\'s volume', c.ok && c.result.sessionId === ''
+            && spoke[2].cfg.voice === 'David' && spoke[2].cfg.rate === 2 && spoke[2].cfg.volume === 70
             && reading.source.sessionId === '' && wants[2] === 'David');
         const refused = [await d('alerts.readNow', { sessionId: 'abcd', msg: 't2' }), await d('alerts.readNow', { sessionId: 'zzz' }),
             await d('alerts.readNow', { sessionId: 'abcd', msg: 'a1', turn: 1 })];
@@ -183,6 +186,7 @@ const { ReadingNow } = require(path.join(ROOT, 'out', 'core', 'soundCard.js'));
         registerReaderOps(reg, {
             conversation: () => ({ sessionId: 'sid-full', label: 'dev', steps }),
             voiceOf: () => '', fleet: () => ({ on: false, voice: '', rate: 0, volume: 100, events: [], template: '' }),
+            reading: () => ({ voice: '', rate: 0, length: 'first', code: 'size' }),
             speechFor: async w => ({ voice: w, words: EN_PHRASES }),
             dialogue: { speaking: true, get state() { return at; }, act: () => true, setRate: () => true,
                 speak: (paras) => { spoke.push(paras); return new Promise(() => undefined); } },

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.872.0",
+  "version": "3.873.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9479,6 +9479,56 @@
           "minimum": 0,
           "maximum": 100,
           "description": "How loud the alert tones play, 0–100. 100 is as loud as they have always played. Every tone uses it: an event's, a reminder's, a run's own tone at its end, and Hear it. The announcement that says who has its own volume (Sound page ▸ Voice). A player that cannot lower its level (Windows SoundPlayer on a machine without WPF, Linux aplay) is used only as the last resort, at full volume."
+        },
+        "agentFarm.alerts.reading": {
+          "type": "object",
+          "description": "How an answer sounds when it is READ aloud — apart from the announcement that says who, which has its own voice and speed (`agentFarm.alerts.speak`). Every reading uses it: one you ask for (a message's 🔊, Read Last Answer, Read Selection) and Read aloud at the end of a turn. A conversation's own voice still wins over this one; the volume is the announcement's. Set on the Sound page ▸ Voice ▸ Reading.",
+          "default": {
+            "voice": "",
+            "rate": 0,
+            "length": "first",
+            "code": "size"
+          },
+          "properties": {
+            "voice": {
+              "type": "string",
+              "default": "",
+              "description": "Empty means Auto: each reading is voiced by an installed voice of its own language — a Turkish answer by a Turkish voice, an English one by an English voice — and by the system voice where none is installed. A name, e.g. 'Microsoft Tolga', reads every text with that voice."
+            },
+            "rate": {
+              "type": "number",
+              "default": 0,
+              "minimum": -10,
+              "maximum": 10,
+              "description": "Reading speed, −10 (slow) to 10 (fast); 0 is the voice's own normal. Separate from the announcement's speed — a long answer is often listened to faster."
+            },
+            "length": {
+              "type": "string",
+              "enum": [
+                "first",
+                "whole"
+              ],
+              "enumDescriptions": [
+                "Read aloud reads the first part of a long answer, stops at a sentence end and says there is more.",
+                "Read aloud reads the whole answer."
+              ],
+              "default": "first",
+              "description": "How much of an answer Read aloud reads when a turn ends. A reading you ask for always reads all of it."
+            },
+            "code": {
+              "type": "string",
+              "enum": [
+                "size",
+                "skip"
+              ],
+              "enumDescriptions": [
+                "A code block, an error trace, a log or JSON is said by its size, e.g. 'a 3-line code block'.",
+                "Code, traces, logs and JSON are left out without a word."
+              ],
+              "default": "size",
+              "description": "What a reading says where the answer has code, an error trace, a log or JSON."
+            }
+          }
         },
         "agentFarm.alerts.quietHours": {
           "type": "object",

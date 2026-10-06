@@ -1015,6 +1015,15 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#alertReading",
+      "ui": [
+        "page:alertMessages.ts#alertReading"
+      ],
+      "ops": [
+        "alerts.readingSettings"
+      ]
+    },
+    {
       "capability": "alertMessages.ts#alertUnmuteSession",
       "ui": [
         "page:alertMessages.ts#alertUnmuteSession"

@@ -78,6 +78,14 @@
         }, extra || {});
     }
 
+    /** U-205 — one field of agentFarm.alerts.reading: the Sound page's Reading row and alerts.readingSettings. */
+    function reading(field, label, type, dflt, extra) {
+        return Object.assign({
+            id: 'alerts.reading.' + field, label: label, type: type, default: dflt, remembered: false,
+            levels: { settings: { surface: 'setting:agentFarm.alerts.reading#' + field, bridge: 'alerts.readingSettings:' + field } }
+        }, extra || {});
+    }
+
     /** A step's own judge (M-42): set on the step card's verify row, carried by the step's `verify`. */
     function judgeStep(field, label, dflt) {
         return {
@@ -383,6 +391,11 @@
             id: 'alerts.toneVolume', label: N_('Sound — tone volume (0–100)'), type: 'number', default: 100, min: 0, max: 100, remembered: false,
             levels: { settings: { surface: 'setting:agentFarm.alerts.toneVolume', bridge: 'settings.set:agentFarm.alerts.toneVolume' } }
         },
+        // U-205 — how a reading sounds, apart from the announcement (src/core/readingPrefs.ts)
+        reading('voice', N_('Reading — voice (empty = Auto, the text\'s own language)'), 'text', ''),
+        reading('rate', N_('Reading — speed (−10 to 10)'), 'number', 0, { min: -10, max: 10 }),
+        reading('length', N_('Read aloud — how much of an answer'), 'enum', 'first', { options: ['first', 'whole'] }),
+        reading('code', N_('Reading — code, traces, logs and JSON'), 'enum', 'size', { options: ['size', 'skip'] }),
         // B-30 — the agents' scratch folder (src/core/workArea.ts)
         {
             id: 'workArea', label: 'Work area — the agents\' scratch folder', type: 'text', default: '${temp}/agent_farm', remembered: false,

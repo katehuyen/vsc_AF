@@ -201,7 +201,7 @@ const CATEGORY_OF: Record<string, string> = {
     // A-22 — the gate. Filed beside the two boxes the same card replaces, so a
     // search for "mute" or "quiet" lands on the card rather than beneath it.
     'alerts.muted': 'live', 'alerts.quietHours': 'live', 'alerts.nudge': 'live',
-    'alerts.speak': 'live', 'alerts.toneVolume': 'live',
+    'alerts.speak': 'live', 'alerts.toneVolume': 'live', 'alerts.reading': 'live',
     // U-119 — what Allow/Reject type into a blocked session's terminal. It sits
     // with the live monitor because that is what notices the block.
     permissionAnswerKeys: 'live',

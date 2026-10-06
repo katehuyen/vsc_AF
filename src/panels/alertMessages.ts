@@ -86,6 +86,8 @@ export interface AlertMessageDeps {
     alertsSessionTest?(sessionId: string, event: string, real?: boolean): Promise<unknown>;
     /** U-181 — cut the reading happening now short (`alerts.read stop`) */
     alertsStopReading?(): Promise<void>;
+    /** U-205 — the Sound page's Reading rows: `alerts.readingSettings`'s function (voice, rate, length, code) */
+    alertsSetReading?(patch: Record<string, unknown>): Promise<void>;
     /** U-200 — the one reading channel: a message's 🔊 · ■ · ▶ and Read last answer (`alerts.readNow` / `alerts.reading`) */
     reader?: ReaderDeps;
 }
@@ -199,6 +201,9 @@ export async function handleAlertMessage(
             return true;
         case 'alertToneVolume':
             await alertAct(() => deps.alertsSetToneVolume?.(msg.volume));
+            return true;
+        case 'alertReading':
+            await alertAct(() => deps.alertsSetReading?.(msg.patch && typeof msg.patch === 'object' ? msg.patch as Record<string, unknown> : {}));
             return true;
         case 'alertVoiceAdd':
             await alertAct(() => deps.alertsVoiceAdd?.());

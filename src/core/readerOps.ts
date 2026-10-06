@@ -12,6 +12,7 @@
 import { BridgeRefusal, BridgeRegistry, optStr } from './bridge';
 import { readAskOf, readingKeyNow, readingParagraphs, ReadingSource, readingTimeoutMs, readTarget } from './reader';
 import { clampRate, PlayState, ReadingAction, READING_ACTIONS } from './readingPlayer';
+import { ReadingPrefs, readingVoiceWant, readingWords } from './readingPrefs';
 import type { ReadableStep } from './sessionRead';
 import type { SpeakConfig } from './speech';
 import type { SpeechPhrases } from './speechPhrases';
@@ -25,7 +26,10 @@ export interface ReaderDeps {
     conversation(ref: string): Conversation | { error: string };
     /** The conversation's own voice; '' = none chosen. */
     voiceOf(sessionId: string): string;
+    /** the announcement's settings — a reading borrows only their volume */
     fleet(): SpeakConfig;
+    /** U-205 — the reading's own voice, speed, Read aloud length and code (`agentFarm.alerts.reading`) */
+    reading(): ReadingPrefs;
     /** A chosen voice wins; Auto ('') takes an installed voice of the text's language, with that language's inserted words. */
     speechFor(want: string, text: string): Promise<{ voice: string; words: SpeechPhrases }>;
     dialogue: Pick<DialogueSpeaker, 'speak' | 'speaking' | 'state' | 'act' | 'setRate'>;
@@ -62,17 +66,19 @@ export async function readNow(deps: ReaderDeps, args: Record<string, unknown>, s
     }
     const sessionId = conv ? conv.sessionId : '';
     const fleet = deps.fleet();
-    const how = await deps.speechFor((sessionId && deps.voiceOf(sessionId)) || fleet.voice, raw);
+    const prefs = deps.reading();
+    const how = await deps.speechFor(readingVoiceWant(sessionId ? deps.voiceOf(sessionId) : '', prefs), raw);
+    const words = readingWords(how.words, prefs);
     // U-199 — each step's paragraphs carry its key, so the page marks the step being read
     const paras: string[] = [], keys: string[] = [];
     for (const s of segments) {
-        const ps = readingParagraphs(s.text, true, how.words);
+        const ps = readingParagraphs(s.text, true, words);
         paras.push(...ps);
         keys.push(...ps.map(() => s.key));
     }
     if (!paras.length) { throw new BridgeRefusal('nothing in it can be spoken', { step: 'text' }); }
     const chars = paras.join(' ').length;
-    const run = deps.dialogue.speak(paras, { ...fleet, voice: how.voice }, { timeoutMs: readingTimeoutMs(chars) });
+    const run = deps.dialogue.speak(paras, { ...fleet, voice: how.voice, rate: prefs.rate }, { timeoutMs: readingTimeoutMs(chars) });
     deps.readingNow.start(sessionId, run, { surface, ...where, ...(segments.length > 1 ? { keys } : {}) });
     return {
         reading: true, sessionId, label: conv ? conv.label : '', ...where, steps: segments.length,
@@ -128,7 +134,7 @@ export function registerReaderOps(bridge: BridgeRegistry, deps: ReaderDeps): voi
             op: 'alerts.readNow',
             describe: 'READ THIS NOW — read one answer, one turn, one step or a text of your own out loud on this machine, once. '
                 + 'Unlike `alerts.read` (a session\'s switch that reads every turn as it ends, cut to the timeline\'s quote length) this reads the WHOLE text, cleaned for speech '
-                + '(markdown, code, links), in the conversation\'s own voice or the fleet\'s. It is NOT silenced by Mute all, Quiet hours or Silent — an ask is a choice, not noise. '
+                + '(markdown, code, links), in the conversation\'s own voice, else the reading\'s voice, speed and way of saying code (`alerts.readingSettings`). It is NOT silenced by Mute all, Quiet hours or Silent — an ask is a choice, not noise. '
                 + 'There is one reading at a time: this cuts short whatever is being read, and anything newer cuts this. Stop it with `alerts.reading action=stop`. '
                 + 'args: sessionId? (id, 8-character prefix or transcript path; required unless text) + exactly one of: msg? (a step\'s key, as `sessions.read` lists it), '
                 + 'turn? (1-based — that turn\'s answer; with whole=true the whole turn: what was asked and everything the agent said in words), '

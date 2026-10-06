@@ -81,6 +81,7 @@ const reader = {
     },
     voiceOf: () => '',
     fleet: () => ({ on: false, voice: '', rate: 0, volume: 100, events: [], template: '' }),
+    reading: () => ({ voice: '', rate: 0, length: 'first', code: 'size' }),
     speechFor: async w => ({ voice: w, words: EN_PHRASES }),
     dialogue: {
         speaking: true, get state() { return at; },

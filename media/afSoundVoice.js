@@ -39,6 +39,10 @@
         html.af-phone .svgap { margin-left:0; }
         html.af-phone .svline #alertspeakvoice { flex:1 1 100%; min-width:0; max-width:100%; }
         html.af-phone .svreader { white-space:normal; overflow-wrap:anywhere; }
+        .svsub { margin:14px 0 4px; font-weight:600; }
+        .svsub .muted { font-weight:normal; }
+        .svline #readvoice { flex:1 1 300px; min-width:180px; max-width:420px; }
+        html.af-phone .svline #readvoice { flex:1 1 100%; min-width:0; max-width:100%; }
     </style>`;
 
     /** The voice picker — the setting is always shown, even when no voice on this machine answers to it. */
@@ -132,9 +136,60 @@
         </div>`;
     }
 
+    // U-205 — how an answer sounds when it is READ, apart from the sentence above: voice, speed, Read aloud's length, code
+    const READ_DEFAULT = { voice: '', rate: 0, length: 'first', code: 'size' };
+    const sample = () => [t('This is how an answer is read aloud. Here is a short piece of code:'),
+        '```', 'npm run build', 'npm test', '```', // i18n-exempt: the sample's code, said by its size or skipped, never shown
+        t('That was the whole sample.')].join('\n');
+
+    function readingVoiceBox(sp, rd) {
+        const chosen = String(rd.voice || '');
+        if (!sp.voicesLoaded) { return `<select id="readvoice" disabled>${C.option('', t('reading this machine\'s voices…'))}</select>`; }
+        const bad = chosen && !rd.resolvedName && !sp.voicesError;
+        const unknown = chosen && !rd.resolvedName
+            ? C.option(chosen, bad ? t('⚠ {voice} — no voice answers to that', { voice: chosen }) : chosen, { selected: true }) : '';
+        const tip = chosen ? t('Every reading is voiced by {voice}', { voice: rd.resolved || chosen })
+            : [t('Auto — each reading is voiced in its own language'), ...autoLines(sp)].join('\n');
+        return `<select id="readvoice" title="${C.esc(tip + '\n\n' + t('A conversation\'s own voice always wins over this one.'))}">
+            ${C.option('', t('Auto — match the text\'s language'), { selected: !chosen })}
+            ${unknown}${(sp.voices || []).map(v => C.option(v.name, v.label, { selected: v.name === (rd.resolvedName || chosen) })).join('')}</select>`;
+    }
+
+    function reading(al) {
+        const rd = Object.assign({}, READ_DEFAULT, al.reading || {});
+        const pick = (id, value, opts, tip) => `<select id="${id}" title="${C.esc(tip)}">${opts.map(([v, label]) =>
+            C.option(v, label, { selected: v === value })).join('')}</select>`;
+        return `<div class="svwrap">
+            <div class="svsub">${C.esc(t('Reading'))} <span class="muted">${C.esc(t('— a message\'s 🔊, Read Last Answer, Read Selection and Read aloud'))}</span></div>
+            <div class="svrow"><span class="svlbl">${C.esc(t('Voice'))}</span><span class="svline">
+                ${readingVoiceBox(al.speak || {}, rd)}
+                ${slider('readrate', t('Speed'), -10, 10, rd.rate, t('Reading speed: {v}', { v: rd.rate }) + '\n\n' + t('−10 slow to 10 fast, apart from the sentence\'s speed: a long answer is often listened to faster.'))}
+            </span></div>
+            <div class="svrow"><span class="svlbl">${C.esc(t('Length'))}</span><span class="svline">
+                ${pick('readlength', rd.length, [['first', t('Read aloud reads the first part, then says there is more')], ['whole', t('Read aloud reads the whole answer')]],
+                    t('How much of an answer Read aloud reads when a turn ends. A reading you ask for always reads all of it.'))}
+            </span></div>
+            <div class="svrow"><span class="svlbl">${C.esc(t('Code'))}</span><span class="svline">
+                ${pick('readcode', rd.code, [['size', t('Say its size — “a 3-line code block”')], ['skip', t('Skip it silently')]],
+                    t('What a reading says where the answer has code, an error trace, a log or JSON.'))}
+                <button class="secondary small" id="readhear" title="${C.esc(t('Read a short sample with these settings — a sentence, two lines of code, a sentence. Sound: Stop Reading ends it.'))}">${C.esc(t('▶ Hear it'))}</button>
+            </span></div>
+        </div>`;
+    }
+
+    function wireReading(vscode) {
+        const send = patch => vscode.postMessage({ type: 'alertReading', patch });
+        const on = (id, type, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(type, () => fn(el)); } };
+        on('readvoice', 'change', el => send({ voice: el.value }));
+        on('readrate', 'change', el => send({ rate: Number(el.value) }));
+        on('readlength', 'change', el => send({ length: el.value }));
+        on('readcode', 'change', el => send({ code: el.value }));
+        on('readhear', 'click', () => vscode.postMessage({ type: 'readAloud', sessionId: '', surface: 'sound', pick: { text: sample() } }));
+    }
+
     /** What is new on this section; the rest is afSoundWire.js's, by the same ids. */
     function wireVoice(vscode) {
-        ['alertspeakrate', 'alertspeakvol'].forEach(id => {
+        ['alertspeakrate', 'alertspeakvol', 'readrate'].forEach(id => {
             const el = document.getElementById(id);
             const out = document.getElementById(id + 'val');
             if (el && out) { el.addEventListener('input', () => { out.textContent = el.value; }); }
@@ -158,5 +213,5 @@
             })));
     }
 
-    window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { voice, wireVoice });
+    window.AFSoundCard = Object.assign(window.AFSoundCard || {}, { voice, wireVoice, reading, wireReading });
 })();

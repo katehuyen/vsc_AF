@@ -26,7 +26,7 @@
 import { EVENT_LABEL, type AlertEvent } from './alertVoices';
 import type { PlayerCandidate } from './turnAlerts';
 import { EN_PHRASES, type SpeechPhrases } from './speechPhrases';
-import { sayBlocks, sayJson, sayRefs, tableRows } from './speechShapes';
+import { sayBlocks, sayJson, sayRefs, spokenStop, tableRows } from './speechShapes';
 
 export interface SpeakConfig {
     on: boolean;
@@ -621,7 +621,7 @@ function paragraphsOf(blocks: string[], said: string): string[] {
  *  they will look at the screen for the code itself. */
 function codeBlockSaid(body: string, words: SpeechPhrases): string {
     const lines = String(body ?? '').replace(/\n+$/, '').split('\n').length;
-    return `\n${words.codeBlock(lines)}.\n`;
+    return `\n${spokenStop(words.codeBlock(lines))}\n`;
 }
 
 /** A token an ear can use: a path keeps its last segment, because the segments

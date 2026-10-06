@@ -63,8 +63,10 @@ eq('…the permission too', read('developer', A.askFrom(undefined, 'Bash', 'npm 
 const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
 const fn = ext.slice(ext.indexOf('function readTurnAloud('), ext.indexOf('function askOfSession('));
 ok('readTurnAloud takes the question edge and reads the ask, not the half answer',
-    /event !== 'turn-ready' && event !== 'question'/.test(fn) && /askSpoken\(live\.labelOf\(s\), ask, how\.words\)/.test(fn));
-ok('…the voice chosen by the question\'s own words', /speechFor\(own \|\| fleet\.voice, sense\)/.test(fn));
+    /event !== 'turn-ready' && event !== 'question'/.test(fn) && /const words = readingWords\(how\.words, prefs\)/.test(fn)
+    && /askSpoken\(live\.labelOf\(s\), ask, words\)/.test(fn));
+// U-205 — the session's own voice, else the reading's ('' = Auto), chosen by the question's own words
+ok('…the voice chosen by the question\'s own words', /speechFor\(readingVoiceWant\(turnAlerts\.speechVoiceFor\(s\.sessionId\), prefs\), sense\)/.test(fn));
 ok('…and a question and the turn that follows it are two readings, not one', /read:\$\{event\}:/.test(fn));
 ok('the ask comes from the Console card first, else the session\'s last tool start',
     /pendingAsk[\s\S]{0,120}askFrom\(card\)[\s\S]{0,260}kind === 'toolStart'/.test(ext.slice(ext.indexOf('function askOfSession(')).slice(0, 700)));

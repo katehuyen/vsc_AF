@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.873.0 - Reading settings of their own on the Sound page (2026-10-06)
+
+- **Sound page ▸ Voice ▸ Reading** - how an answer sounds when it is read
+  aloud, set apart from the announcement that says who:
+  - **Voice** - Auto (each reading in an installed voice of its own
+    language) or a voice of your choosing. A conversation's own voice still
+    wins.
+  - **Speed** - its own, separate from the announcement's: a long answer is
+    often listened to faster.
+  - **Length** - Read aloud at the end of a turn reads the first part and
+    says there is more, or the whole answer. A reading you ask for always
+    reads all of it.
+  - **Code** - a code block, an error trace, a log or JSON is said by its
+    size ("a 3-line code block") or skipped without a word.
+  - **Hear it** reads a short sample with the settings.
+- Every reading uses them: a message's speaker, Read Last Answer, Read
+  Selection and Read aloud. The Settings page's sound line names what you
+  changed.
+- **Readings no longer borrow the announcement's voice and speed.** If you had
+  picked a voice for the announcement, readings now use Auto until you pick
+  one under Reading.
+- **For agents:** `alerts.readingSettings` reads and sets them (`voice`,
+  `rate`, `length`, `code`) and can play the sample; `alerts.status` carries
+  them.
+
 ## 3.872.0 - Read the text you selected (2026-10-06)
 
 - **Sound: Read Selection** - select a passage anywhere in Agent Farm (a

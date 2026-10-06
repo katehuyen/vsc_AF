@@ -88,6 +88,12 @@ export interface AlertsPage {
     sessionEvents: string[];
     /** U-212 — the tones' level, 0–100 */
     toneVolume: number;
+    /** U-205 — the reading's own settings; `resolved` is the installed voice `voice` reaches ('' = Auto or none) */
+    reading: {
+        voice: string; rate: number; length: string; code: string;
+        defaults: { voice: string; rate: number; length: string; code: string };
+        resolved: string; resolvedName: string;
+    };
     /** U-213 — the events that happen across the farm, tied to no session */
     fleetEvents: string[];
     /** U-213 — "why didn't I hear it?" for each of them, from core/soundWhy.ts */

@@ -380,6 +380,8 @@ import { Baton, batonRelayOf, isLive, normalizeLegCeiling, normalizeMaxLegs, ope
 import { registerBatonOps, stopBatons } from './core/batonBridge';
 import { applyLastLeg, lastLegSaid, registerLastLegOp } from './core/batonLastLegOp';
 import { ReaderDeps, readingAct, readNow, registerReaderOps } from './core/readerOps';
+import { parseReadingPatch, READING_DEFAULT, READING_SAMPLE, readingLimit, readingPrefsOf, readingVoiceWant, readingWords, type ReadingPrefs } from './core/readingPrefs';
+import { readingTimeoutMs } from './core/reader';
 import { readLastAnswer } from './core/readLast';
 import { readSelection } from './core/readSelection';
 import { say, saidWhy, sayText } from './core/uiSentence';
@@ -2259,6 +2261,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  value captured at activation would need a restart to be heard. */
     const speakCfg = (): SpeakConfig =>
         speakConfig(cfg().get<Partial<SpeakConfig>>('alerts.speak', {}));
+    // U-205 — a reading's own voice, speed, Read aloud length and code; read on every reading, never cached
+    const readingCfg = (): ReadingPrefs => readingPrefsOf(cfg().get('alerts.reading'));
+    const alertsSetReading = async (args: Record<string, unknown>): Promise<ReadingPrefs> => {
+        const p = parseReadingPatch(args);
+        if (!p.ok) { throw new Error(p.error); }
+        const next = readingPrefsOf({ ...readingCfg(), ...p.patch });
+        await cfg().update('alerts.reading', next, vscode.ConfigurationTarget.Global);
+        FarmSettingsPanel.refreshIfOpen();
+        return next;
+    };
     /**
      * ‼️ A-25 — ONE FUNCTION WRITES THE ANNOUNCEMENT SETTING, and the card, the
      * right-click and the `alerts.speak` op all go through it.
@@ -2840,6 +2852,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             fleetEvents: [...FLEET_EVENTS],
             fleetWhy: Object.fromEntries(FLEET_EVENTS.map(event => [event, soundWhy(soundWhyFor(undefined, event))])),
             toneVolume: toneVolume(),
+            // U-205 — the reading's own settings, and the installed voice its name reaches
+            reading: (() => {
+                const r = readingCfg();
+                const hit = matchVoice(speechVoices?.voices ?? [], r.voice);
+                return { ...r, defaults: READING_DEFAULT, resolved: hit ? voiceLabel(hit) : '', resolvedName: hit?.name ?? '' };
+            })(),
             /**
              * ‼️ A-25 — THE ANNOUNCEMENT, ON THE CARD THAT ALREADY SAYS WHICH
              * TONE. `agentFarm.alerts.speak` was a raw JSON box: seven fields,
@@ -3224,16 +3242,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (ask ? !askSpoken(live.labelOf(s), ask, phrasesFor('en')) : !sanitizeForSpeech(said ?? '')) { return; }
         // One turn = one reading, on the reader's OWN key (see `readDedupe`).
         if (!readDedupe.shouldFire(s.sessionId, `read:${event}:${s.prompts}:${s.toolCalls}`)) { return; }
-        // ‼️ THE SAME VOICE CHAIN THE ANNOUNCEMENT USES — the session answers
-        // first, and having no opinion falls through to the fleet rather than
-        // to silence. The fleet's `on` and `events` are NOT consulted: those
-        // govern the announcement ("Codex is waiting for you"), and this switch
-        // was thrown on this conversation by hand.
+        // The session's own voice answers first, then the reading's (U-205: Auto
+        // = the text's language), never silence. The fleet's `on` and `events`
+        // are NOT consulted: those govern the announcement ("Codex is waiting
+        // for you"), and this switch was thrown on this conversation by hand.
         const fleet = speakCfg();
-        const own = turnAlerts.speechVoiceFor(s.sessionId);
-        void speechFor(own || fleet.voice, sense).then(how => {
-            const text = ask ? askSpoken(live.labelOf(s), ask, how.words) : said ?? '';
-            readingNow.start(s.sessionId, dialogue.speak(speechParagraphs(text, undefined, how.words), { ...fleet, voice: how.voice }));
+        const prefs = readingCfg();
+        void speechFor(readingVoiceWant(turnAlerts.speechVoiceFor(s.sessionId), prefs), sense).then(how => {
+            const words = readingWords(how.words, prefs);
+            const paras = speechParagraphs(ask ? askSpoken(live.labelOf(s), ask, words) : said ?? '', readingLimit(prefs, false), words);
+            if (!paras.length) { return; }
+            readingNow.start(s.sessionId, dialogue.speak(paras, { ...fleet, voice: how.voice, rate: prefs.rate },
+                { timeoutMs: readingTimeoutMs(paras.join(' ').length) }));
         });
     }
 
@@ -12528,6 +12548,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'alerts.readingSettings',
+            describe: 'U-205 — HOW A READING SOUNDS (`agentFarm.alerts.reading`), apart from the announcement\'s voice and speed. Every reading uses it: one asked for (`alerts.readNow`, a 🔊, Read Last Answer, Read Selection) and Read aloud at a turn\'s end. A conversation\'s own voice still wins over `voice`; the volume is the announcement\'s. Read it with no args. args: voice? ("" = Auto — each reading in an installed voice of its own language; or an installed voice\'s name, as `alerts.speak` lists them), rate? (-10…10), length? (first = Read aloud reads the first part and says there is more · whole = the whole answer; a reading somebody asks for is always whole), code? (size = a code block, error trace, log or JSON is said by its size · skip = left out without a word), play? (true — read a short sample with the settings afterwards, through the one reading channel), text? (the sample to read instead)',
+            handler: async (args) => {
+                const raw = args as Record<string, unknown>;
+                const changed = Object.keys(READING_DEFAULT).some(k => raw[k] !== undefined);
+                const reading = changed ? await alertsSetReading(raw) : readingCfg();
+                const play = raw.play === true || raw.play === 'true';
+                return {
+                    reading, changed, defaults: READING_DEFAULT,
+                    played: play ? await readNow(readerDeps, { text: optStr(args, 'text')?.trim() || READING_SAMPLE }, 'bridge') : null
+                };
+            }
+        },
+        {
             op: 'alerts.resolve',
             describe: '‼️ WHY THAT SOUND — the machine answer to the one question a sound feature has to be able to answer. Names the voice an event would play, WHICH STEP chose it (`origin`: session > agent > settings > default), the file, and whether it can be played here. `skipped` lists the steps that had an answer and were passed over WITH THE REASON — a missing file falls through to the step below rather than going silent, and a skip nobody reported is indistinguishable from a step nobody had set. Reads only; nothing is played. args: event? (' + ALERT_EVENTS.join('|') + ', default turn-ready), sessionId? (full id or 8-char prefix of a live session — resolves that lane\'s own choice and its agent\'s)',
             handler: (args) => {
@@ -12605,7 +12639,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.read',
-            describe: 'CANLI DİYALOG OKUYUCU — read ONE conversation\'s answers out loud as each turn ends. A tone says news arrived and the announcement says whose; this says WHAT, so a user across the room hears the answer instead of walking back to read it. ‼️ PER SESSION AND ONLY PER SESSION: there is no fleet-wide "read everything", because eight agents reading over each other is a crowd, not a cockpit. `sessionId` with no `on` TOGGLES. ‼️ IT IS NOT PART OF `alerts.on` OR THE ♪ BOXES — a session with every box unticked still reads when you ask it to, and a muted fleet does not silence it: this switch was thrown on this conversation BY HAND, and the mute exists to stop noise nobody chose. It reads the `turn-ready` edge (the answer) and the `question` edge — there it reads the QUESTION, never the half answer: the parked AskUserQuestion with its options ("developer asks: … Options: …"), or the tool waiting for permission ("developer wants to run: npm test"); a session ending would repeat the turn already read. Markdown, code fences and links are stripped first (`sanitizeForSpeech`), and the text is cut at the same 1200 characters the timeline quotes, with "There is more." spoken when it did not fit. The voice is this session\'s own (`alerts.speak { sessionId, voice }`) and falls through to the fleet\'s, never to silence. ‼️ ONE READER FOR THE WINDOW: a newer answer cuts short an older one still being read, on purpose. args: sessionId? (full id or 8-char prefix; required unless `stop`), on? (default: toggle), stop? (cut the reading happening RIGHT NOW short and change no setting — the panic button, and it needs no sessionId because there is only ever one reading)',
+            describe: 'CANLI DİYALOG OKUYUCU — read ONE conversation\'s answers out loud as each turn ends. A tone says news arrived and the announcement says whose; this says WHAT, so a user across the room hears the answer instead of walking back to read it. ‼️ PER SESSION AND ONLY PER SESSION: there is no fleet-wide "read everything", because eight agents reading over each other is a crowd, not a cockpit. `sessionId` with no `on` TOGGLES. ‼️ IT IS NOT PART OF `alerts.on` OR THE ♪ BOXES — a session with every box unticked still reads when you ask it to, and a muted fleet does not silence it: this switch was thrown on this conversation BY HAND, and the mute exists to stop noise nobody chose. It reads the `turn-ready` edge (the answer) and the `question` edge — there it reads the QUESTION, never the half answer: the parked AskUserQuestion with its options ("developer asks: … Options: …"), or the tool waiting for permission ("developer wants to run: npm test"); a session ending would repeat the turn already read. Markdown, code fences and links are cleaned for speech first (`sanitizeForSpeech`), and the reading follows `alerts.readingSettings`: by default it reads the first part and says "There is more." when the answer did not fit (length=whole reads all of it; code=skip leaves code out). The voice is this session\'s own (`alerts.speak { sessionId, voice }`), else the reading\'s, never silence. ‼️ ONE READER FOR THE WINDOW: a newer answer cuts short an older one still being read, on purpose. args: sessionId? (full id or 8-char prefix; required unless `stop`), on? (default: toggle), stop? (cut the reading happening RIGHT NOW short and change no setting — the panic button, and it needs no sessionId because there is only ever one reading)',
             handler: async (args) => {
                 if ((args as { stop?: unknown }).stop) {
                     const was = alertsStopReading();
@@ -17804,7 +17838,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         },
         voiceOf: id => turnAlerts.speechVoiceFor(id),
-        fleet: speakCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
+        fleet: speakCfg, reading: readingCfg, speechFor, dialogue, readingNow, stop: alertsStopReading
     };
     registerReaderOps(bridge, readerDeps);
     const readingControl = (action: 'toggle' | 'next' | 'prev'): void => {
@@ -28600,6 +28634,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         // U-181 — the Console's ■, the same function `alerts.read stop` runs
         alertsStopReading: async () => { alertsStopReading(); },
+        // U-205 — the Sound page's Reading rows, the function `alerts.readingSettings` writes through
+        alertsSetReading: async (patch) => { await alertsSetReading(patch); },
         // U-200 — a message's 🔊 and Read last answer: the one reading channel
         reader: readerDeps
     };
