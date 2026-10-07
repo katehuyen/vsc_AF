@@ -118,9 +118,16 @@ export interface Baton {
     byUser?: boolean;
     /** S-128 — on the opener of a RUNNING leg only: ⑂ Pass now was said into it, when and by whom */
     passNow?: BatonLastLeg;
+    /** S-140 — on the opener of a RUNNING leg only: the user paused the chain (chainPause.ts) */
+    pause?: ChainPauseMark;
+    /** S-140 — on a waiting baton only: the chain is paused, so it stays at the door until chains.resume */
+    hold?: ChainPauseMark;
     createdAt: number;
     updatedAt: number;
 }
+
+/** S-140 — here: the leg stops in place, unpassed; pass: the leg passes and its successor waits for chains.resume. */
+export interface ChainPauseMark { mode: 'here' | 'pass'; at: number; by: string; why?: string; words?: string }
 
 /** Terminal states: nothing moves out of them. */
 export const BATON_DONE: readonly BatonState[] = ['started', 'stopped', 'refused', 'done', 'failed'];
