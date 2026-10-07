@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { FCM_SECRET } from './fcm';
 
 /**
  * B2 — Secrets vault: API keys and site credentials live in VS Code
@@ -47,8 +48,8 @@ export interface SecretInfo {
 
 export type SecretMetaPatch = { description?: string; agents?: string[]; farmOnly?: boolean };
 
-/** Secrets only Agent Farm itself uses: moved into the farm-only scope once, if their scope was never chosen. */
-export const FARM_ONLY_ADOPT = ['TYPESAFE_API_KEY'];
+/** Secrets only Agent Farm itself uses: a new one starts farm-only (secretsPanel.ts), an older one whose scope was never chosen is moved there once. */
+export const FARM_ONLY_ADOPT = ['TYPESAFE_API_KEY', FCM_SECRET];
 
 export class SecretsVault {
     private cache = new Map<string, string>();

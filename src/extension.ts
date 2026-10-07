@@ -522,7 +522,9 @@ import { remoteOps } from './core/remoteOps';
 import { CARD_AUDIT_KINDS, CARD_AUDIT_ROWS } from './core/remoteCard';
 import { firewallGuard } from './core/firewallWin';
 import type { RemoteDevicesHost } from './panels/toolboxRemote';
-import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type RemotePort } from './remote';
+import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type FeatureAnswer, type RemotePort } from './remote';
+import { FCM_SECRET, fcmSenderFrom } from './core/fcm';
+import { PhoneWaker } from './core/phoneWake';
 import { RemoteViews } from './panels/remoteViews';
 import { remotePages, sessionPageTarget } from './panels/remotePages';
 import {
@@ -21377,6 +21379,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         routesUsing: (name: string) => providerKeys.refsTo(name).map(id => ({ id, label: routeLabel(id) })),
         readers: (name: string) => secretReaders(name, {
             telegram: TELEGRAM_SECRET,
+            wake: FCM_SECRET,
             kapici: (k => k ? [k] : KEY_CANDIDATES.map(c => c.name))(kapiciSettings((k, d) => cfg().get(k, d)).keyName),
             ...(cfg().get<string>('embeddingsProvider', 'off') !== 'off' ? { embeddings: embeddingsSecretName() } : {}),
             media: cfg().get<string>('mediaAuthSecret', 'FAL_KEY'),
@@ -31499,6 +31502,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const remoteEmit = (events: RemoteEvent[]) => {
         for (const raw of events) { const e = withQuiet(raw, remoteQuietOf); for (const l of remoteListeners) { l(e); } }
     };
+    // X-451 — a phone with no socket open is woken by a content-free FCM message (core/phoneWake.ts)
+    const wakeSender = fcmSenderFrom(() => vault.get(FCM_SECRET));
+    const wakeFeature = (): FeatureAnswer => { const s = wakeSender(); return 'error' in s ? { allowed: false, reason: s.error } : { allowed: true }; };
     let remoteFarm: { id: string; name: string } | undefined;
     // The Sessions page's sources: one object for the desktop tab and every phone view.
     const sessionsPageDeps = (): SessionsPageDeps => ({
@@ -31607,13 +31613,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error ?? `${op} failed` };
         },
         subscribe: l => { remoteListeners.add(l); return () => { remoteListeners.delete(l); }; },
-        can: allOpen,
+        can: f => (f === 'remote.wake' ? wakeFeature() : allOpen(f)),
         storageDir: () => remoteDir,
         resourceDir: () => path.join(context.extensionUri.fsPath, 'media'),
         views: () => remoteViews,
         log: line => console.log('Agent Farm ' + line)
     };
     const remote = createRemoteControl(remotePort);
+    const phoneWaker = new PhoneWaker({ targets: all => remote.wakeTargets(all), sender: wakeSender,
+        forget: (d, t) => remote.forgetWake(d, t), farmId: () => remotePort.farm().id, now: Date.now, log: remotePort.log });
+    remoteListeners.add(e => { void phoneWaker.onEvent(e); });
     let remoteLive = false;
     let remoteConsoleMemo = EMPTY_CONSOLE_MEMO, remoteNeedsMemo = EMPTY_NEEDS_MEMO, remoteQuotaMemo = EMPTY_QUOTA_MEMO;
     let remoteNeedsTimer: NodeJS.Timeout | undefined;
@@ -31758,7 +31767,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         audit: q => remote.audit(q),
         firewall: async () => (await firewall.check()) ?? { state: 'absent', note: 'only Windows has this firewall check' },
         allowFirewall,
-        farmName: () => remote.status().farm.name
+        farmName: () => remote.status().farm.name,
+        wakeReady: () => { const f = wakeFeature(); return f.allowed ? { ready: true } : { ready: false, reason: f.reason }; },
+        wakeTest: device => phoneWaker.test(device)
     }));
 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {

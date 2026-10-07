@@ -31,6 +31,8 @@ export interface Device {
     revoked: boolean;
     lastSeen?: number;
     lastAddress?: string;
+    /** X-451 — the phone's FCM registration token: a content-free wake when its socket is gone */
+    wakeToken?: string;
 }
 
 export type ScopeChange = { ok: true; device: Device; from: string } | { ok: false; error: string };
@@ -88,11 +90,22 @@ export class DeviceBook {
         return { ok: true, device: d, from };
     }
 
+    /** X-451 — the device's own wake token ('' clears it); a revoked or unknown device gets none. */
+    setWakeToken(id: string, token: string): boolean {
+        const d = this.devices.get(id);
+        if (!d || d.revoked) { return false; }
+        const t = String(token ?? '').trim();
+        if ((d.wakeToken ?? '') === t) { return true; }
+        if (t) { d.wakeToken = t; } else { delete d.wakeToken; }
+        this.save();
+        return true;
+    }
+
     /** Revokes one device, or every device when `id` is omitted; returns how many changed. */
     revoke(id?: string): number {
         let n = 0;
         for (const d of this.devices.values()) {
-            if ((id === undefined || d.id === id) && !d.revoked) { d.revoked = true; n++; }
+            if ((id === undefined || d.id === id) && !d.revoked) { d.revoked = true; delete d.wakeToken; n++; }
         }
         if (n) { this.save(); }
         return n;

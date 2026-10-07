@@ -15,6 +15,7 @@ import { resourcePage } from './server/resources';
 import { EventLog } from './server/eventLog';
 import { createRemoteServer, type RemoteServer } from './server/host';
 import { CallMemory } from './server/callMemory';
+import { selfOp } from './server/selfOps';
 
 export const AUDIT_FILE = 'audit.jsonl';
 
@@ -50,7 +51,8 @@ export async function startRemoteHost(port: RemotePort, at: ListenAt, log?: Audi
         farm, cert, devices,
         events: new EventLog(path.join(dir, 'events.json'), undefined, undefined, line => port.log(line)),
         calls: new CallMemory(path.join(dir, 'calls.json'), { log: line => port.log(line) }),
-        callOp: auditedCalls(scopeGated((op, args, caller) => port.callOp(op, args, caller)), audit),
+        callOp: auditedCalls(scopeGated((op, args, caller) =>
+            Promise.resolve(selfOp(devices, op, args, caller) ?? port.callOp(op, args, caller))), audit),
         features: () => featureMap(f => port.can(f)),
         views,
         page,

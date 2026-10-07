@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
-import { SecretsVault } from '../core/secrets';
+import { FARM_ONLY_ADOPT, SecretsVault } from '../core/secrets';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -147,10 +147,14 @@ export class SecretsPanel {
         const ticked = Array.isArray(raw.agents)
             ? (raw.agents as unknown[]).map(String).filter(Boolean) : [];
         // X-487 — exactly one of three: every agent, the chosen ones, or Agent Farm alone
-        const choice = s('reach') || (raw.farmOnly === true ? 'farm' : ticked.length ? 'some' : 'all');
+        const picked = s('reach') || (raw.farmOnly === true ? 'farm' : ticked.length ? 'some' : 'all');
+        // a key only Agent Farm reads starts farm-only; its row can widen it once it exists
+        const adopted = !editing && FARM_ONLY_ADOPT.includes(name) && picked !== 'farm';
+        const choice = adopted ? 'farm' : picked;
         const farmOnly = choice === 'farm';
         const agents = choice === 'some' ? ticked : [];
         const reach = farmOnly ? 'Farm only: Agent Farm reads it itself and no agent\'s task receives it.'
+            + (adopted ? ' Open its row to let agents have it too.' : '')
             : agents.length ? agents.length + ' agent(s) may use it.' : '';
 
         if (!name) { return this.say('It needs a name — that name is the environment variable and the {secret:NAME} reference.'); }

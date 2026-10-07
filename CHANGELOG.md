@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.892.0 - A sleeping phone is woken when the farm needs you, and nothing of what happened passes through Google (2026-10-08)
+
+- **The Agent Farm app can be woken.** A phone that has been idle for a
+  while lets its connection go to save battery. When something the farm
+  would ring for happens — a question, a permission, a finished turn, a
+  notice, a quota warning — and a paired phone has no connection open,
+  Agent Farm now sends it a wake through Firebase Cloud Messaging. The
+  wake carries only the farm's id: the phone connects and reads what it
+  missed over its own encrypted channel, so the question itself never
+  goes through Google. An event your quiet rules silence wakes no one,
+  and a phone is woken at most once in a short gap however many events
+  come in.
+- **It needs one key from you.** Create a Firebase service account key
+  that may only send messages, and store the whole key file in Secrets
+  as `FCM_SERVICE_ACCOUNT_JSON`. The Secrets page keeps that name
+  farm-only, so no agent's task ever receives it. Without the key
+  nothing is sent and the phone is told why.
+- **Check it from anywhere:** `remote.status` now says whether a phone
+  can be woken, `remote.devices` shows which phones gave a wake token,
+  and the new `remote.wake.test` sends one test wake and reports each
+  phone's answer. A phone whose token has expired is told to register
+  again on its next connection.
+
 ## 3.891.0 - The phone reaches Agent Farm while VS Code is closed, and the headless service starts again (2026-10-08)
 
 - **The installed headless service works again.** It could not start at

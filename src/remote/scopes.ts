@@ -12,10 +12,12 @@
  * Derived from the op's name, failing upward: an op is `read` only when its
  * verb is a known looking verb, and anything unrecognised needs `manage`, so a
  * new write op is never readable by accident. Admin namespaces need admin even
- * to look — their reads carry configuration.
+ * to look — their reads carry configuration. A self op (server/selfOps.ts)
+ * writes only the caller's own record, so every scope may call it.
  */
 import { SCOPES } from './contract';
 import type { OpResult, RemoteCaller } from './port';
+import { SELF_OPS } from './server/selfOps';
 
 export type Scope = 'read' | 'answer' | 'manage' | 'admin';
 
@@ -35,7 +37,7 @@ export function requiredScope(op: string): Scope {
     const ns = dot < 0 ? op : op.slice(0, dot);
     const verb = op.slice(op.lastIndexOf('.') + 1);
     if (ANSWER_OPS.has(op)) { return 'answer'; }
-    if (OPEN_FARM_OPS.has(op)) { return 'read'; }
+    if (OPEN_FARM_OPS.has(op) || SELF_OPS.has(op)) { return 'read'; }
     if (MANAGE_FARM_OPS.has(op)) { return 'manage'; }
     if (ADMIN_NAMESPACES.has(ns)) { return 'admin'; }
     if (READ_VERBS.has(verb)) { return 'read'; }

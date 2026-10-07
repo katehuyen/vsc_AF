@@ -33,11 +33,17 @@ export interface RemoteStatus {
 export interface DeviceRow {
     id: string; name: string; scope: string; user: string; pairedAt: number; revoked: boolean;
     lastSeen?: number; lastAddress?: string;
+    /** X-451 — the phone gave a wake token (the token itself never leaves the host's file). */
+    wake?: true;
 }
+
+/** X-451 — a phone to wake: paired, holding a token, with no socket open here. */
+export interface WakeTarget { device: string; name: string; token: string }
 
 const rowOf = (d: Device): DeviceRow => ({
     id: d.id, name: d.name, scope: d.scope, user: d.user, pairedAt: d.pairedAt, revoked: d.revoked,
     ...(d.lastSeen ? { lastSeen: d.lastSeen } : {}), ...(d.lastAddress ? { lastAddress: d.lastAddress } : {}),
+    ...(d.wakeToken ? { wake: true as const } : {}),
 });
 
 export interface RemoteControl {
@@ -49,6 +55,10 @@ export interface RemoteControl {
     /** A fresh one-time pairing link, or an error when not listening. */
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     devices(): DeviceRow[];
+    /** X-451 — phones a wake could reach; none while not listening, since a woken phone would find no one. `all` = with an open socket too. */
+    wakeTargets(all?: boolean): WakeTarget[];
+    /** X-451 — FCM said this token is dead: dropped, unless the phone has registered a newer one meanwhile. */
+    forgetWake(device: string, token: string): void;
     revoke(id?: string): number;
     /** Another scope for a paired device; its open sockets hold it at once. */
     setScope(id: string, scope: string): { ok: true; device: DeviceRow; from: string } | { ok: false; error: string };
@@ -112,6 +122,16 @@ export function createRemoteControl(port: RemotePort): RemoteControl {
             return { link: running.server.pairingLink(addresses), addresses };
         },
         devices: () => book().list().map(rowOf),
+        wakeTargets: all => {
+            if (!running) { return []; }
+            const open = new Set(running.server.callers().map(c => c.device));
+            return running.devices.list().flatMap(d => !d.revoked && d.wakeToken && (all || !open.has(d.id))
+                ? [{ device: d.id, name: d.name, token: d.wakeToken }] : []);
+        },
+        forgetWake: (device, token) => {
+            const b = book();
+            if (b.get(device)?.wakeToken === token) { b.setWakeToken(device, ''); }
+        },
         revoke: id => {
             const b = book();
             const hit = b.list().filter(d => !d.revoked && (id === undefined || d.id === id));

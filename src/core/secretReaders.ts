@@ -15,6 +15,8 @@
 export interface SecretReaderSources {
     /** The vault name the phone bridge reads its bot token from. */
     telegram: string;
+    /** The vault name the phone wake reads its Firebase service account key from. */
+    wake?: string;
     /** agentFarm.kapici.keyName, else every candidate Kapıcı tries in turn. */
     kapici: string[];
     /** The embeddings key name — only while embeddings are on. */
@@ -31,6 +33,7 @@ export function secretReaders(name: string, s: SecretReaderSources): string[] {
     const out: string[] = [];
     if (!name) { return out; }
     if (name === s.telegram) { out.push('the phone bridge (Telegram bot token)'); }
+    if (s.wake && name === s.wake) { out.push('the phone wake (Firebase service account key)'); }
     if (s.kapici.includes(name)) { out.push('Gatekeeper, the decision gate'); }
     if (s.embeddings && name === s.embeddings) { out.push('search embeddings (agentFarm.embeddingsSecret)'); }
     if (name === s.media) { out.push('media generation (agentFarm.mediaAuthSecret)'); }

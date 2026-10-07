@@ -1,5 +1,5 @@
 /**
- * The phone host on the bridge: remote.status / listen / pair / firewall / devices / revoke / scope / audit.
+ * The phone host on the bridge: remote.status / listen / pair / firewall / devices / revoke / scope / audit / wake.test.
  * The handlers only check arguments and call what the extension hands in — the
  * same calls the Devices card makes — so they are dispatched in tests as they are.
  */
@@ -22,6 +22,9 @@ export interface RemoteOpsDeps {
     allowFirewall(): Promise<object>;
     /** the farm's name, as a phone sees it */
     farmName(): string;
+    /** X-451 — can the farm wake a phone (the key in Secrets), and why not. */
+    wakeReady(): { ready: boolean; reason?: string };
+    wakeTest(device?: string): Promise<object[] | { error: string }>;
 }
 
 export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
@@ -30,8 +33,26 @@ export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
             op: 'remote.status',
             describe: 'The phone host: listening?, mode (agentFarm.remote.listen: off|local|lan|tailscale), host, port, '
                 + 'the addresses a pairing QR names, the certificate fingerprint, open sockets, farm id/name, and why it is '
-                + 'not listening. args: none',
-            handler: () => ({ ...d.status(), mode: d.mode() })
+                + 'not listening, and wake { ready, reason? } — whether a phone with no socket open can be woken (it needs a '
+                + 'Firebase service account key in Secrets). args: none',
+            handler: () => ({ ...d.status(), mode: d.mode(), wake: d.wakeReady() })
+        },
+        {
+            op: 'remote.wake.test',
+            describe: 'Send a test wake now to every paired phone that gave a wake token (or the one named), socket open or not: a '
+                + 'content-free FCM message carrying only the farm id. Proves the Secrets key and the phone\'s token end to end. '
+                + 'Returns sent [{ device, name, ok, error?, gone? }] (gone = FCM says the token is dead; it is dropped and the '
+                + 'phone registers again on its next connection). Refused without a key, or with no phone to wake. args: device?',
+            handler: async (args) => {
+                const device = optStr(args, 'device');
+                const r = await d.wakeTest(device || undefined);
+                if ('error' in r) { need(false, r.error); }
+                const sent = r as object[];
+                need(sent.length > 0, device
+                    ? `${device} holds no wake token, or the phone host is not listening`
+                    : 'no phone to wake: none has given a wake token, or the phone host is not listening');
+                return { sent };
+            }
         },
         {
             op: 'remote.listen',
@@ -73,8 +94,8 @@ export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
         },
         {
             op: 'remote.devices',
-            describe: 'The paired phones: id, name, scope (read|answer|manage|admin), user, pairedAt, lastSeen?, lastAddress?, revoked. '
-                + 'Works while not listening. args: none',
+            describe: 'The paired phones: id, name, scope (read|answer|manage|admin), user, pairedAt, lastSeen?, lastAddress?, revoked, '
+                + 'wake? (true = it gave a wake token). Works while not listening. args: none',
             handler: () => ({ devices: d.devices() })
         },
         {

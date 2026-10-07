@@ -14,6 +14,8 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
 (async () => {
     const calls = [];
     let listening = false;
+    let wakeKey = false;
+    const wakeOf = [{ device: 'd1', name: 'Pixel', ok: true }];
     const deps = {
         mode: () => 'lan',
         status: () => ({ listening, sockets: 0, mode: 'WRONG' }),
@@ -25,7 +27,10 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
         audit: q => { calls.push(['audit', q]); if ((q.what || []).includes('nope')) { throw new Error('what is one or more of pair, call'); } return [{ ts: 1, what: 'call' }]; },
         firewall: async () => { calls.push(['firewall']); return { state: 'closed', canFix: true }; },
         allowFirewall: async () => { calls.push(['allow']); return { ok: true, verdict: { state: 'open' } }; },
-        farmName: () => 'Ev'
+        farmName: () => 'Ev',
+        wakeReady: () => (wakeKey ? { ready: true } : { ready: false, reason: 'no key in Secrets' }),
+        wakeTest: async device => { calls.push(['wake', device]); return !wakeKey ? { error: 'no key in Secrets' }
+            : wakeOf.filter(t => !device || t.device === device); }
     };
     const reg = new BridgeRegistry();
     reg.register(remoteOps(deps));
@@ -50,6 +55,17 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
 
     let r = await call('remote.status');
     ok('status: the settings mode, over the host\'s status', r.ok && r.result.mode === 'lan' && r.result.listening === false);
+
+    ok('X-451 status: whether a phone can be woken, and why not', r.result.wake.ready === false && r.result.wake.reason === 'no key in Secrets');
+    r = await call('remote.wake.test');
+    ok('X-451 a test wake without a key is refused with the reason', !r.ok && /no key in Secrets/.test(r.error) && JSON.stringify(calls.pop()) === '["wake",null]');
+    wakeKey = true;
+    r = await call('remote.wake.test');
+    ok('a test wake reports each phone it reached', r.ok && r.result.sent.length === 1 && r.result.sent[0].ok && (await call('remote.status')).result.wake.ready
+        && JSON.stringify(calls.pop()) === '["wake",null]');
+    r = await call('remote.wake.test', { device: 'd9' });
+    ok('a device holding no token is refused by name, not answered with nothing', !r.ok && /d9 holds no wake token/.test(r.error) && JSON.stringify(calls.pop()) === '["wake","d9"]');
+    ok('the catalog names remote.wake.test', names.includes('remote.wake.test'));
 
     r = await call('remote.listen', { mode: 'tailscale' });
     ok('listen passes the mode, no port when none given', r.ok && r.result.listening && JSON.stringify(calls.pop()) === '["listen","tailscale",null]');
@@ -120,7 +136,10 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
     ok('the firewall guard watches the program that listens', /firewallGuard\(\{ exe: process\.execPath, port: \(\) => remoteCfg\(\)\.port \}\)/.test(src));
     ok('listening where a phone reaches re-reads the firewall and offers the fix once', /if \(remoteLive && phoneModes\(c\.mode\)\) \{\s*const fw = await firewall\.check\(\);\s*if \(warn && fw\?\.state === 'closed' && fw\.canFix && !firewallAsked\)/.test(src));
     ok('the card and the ops share one allow', /revoke: id => remote\.revoke\(id\),\s*allowFirewall\s*\};/.test(src)
-        && /firewall: async \(\) => [^\n]*\n\s*allowFirewall,\s*farmName: \(\) => remote\.status\(\)\.farm\.name\s*\}\)\);/.test(src));
+        && /firewall: async \(\) => [^\n]*\n\s*allowFirewall,\s*farmName: \(\) => remote\.status\(\)\.farm\.name,/.test(src));
+    ok('X-451 the op and the phone\'s welcome read one wake gate, the test wake the one waker',
+        /wakeReady: \(\) => \{ const f = wakeFeature\(\);/.test(src) && /can: f => \(f === 'remote\.wake' \? wakeFeature\(\) : allOpen\(f\)\)/.test(src)
+        && /wakeTest: device => phoneWaker\.test\(device\)/.test(src) && /remoteListeners\.add\(e => \{ void phoneWaker\.onEvent\(e\); \}\)/.test(src));
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

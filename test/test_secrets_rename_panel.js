@@ -110,6 +110,17 @@ const LABELS = { openrouter: 'OpenRouter', 'openrouter-r1': 'OpenRouter R1', kim
     ok('‼️ a rename Agent Farm cannot follow says so: the fixed lookup still asks for the old name',
         r.ok === true && /Agent Farm still looks for "TELEGRAM_BOT_TOKEN" for: the phone bridge/.test(r.text) && !/now use/.test(r.text));
 
+    // ---------- X-451 — a key only Agent Farm reads starts farm-only, whatever reach the new card had ----------
+    const FCM = 'FCM_SERVICE_ACCOUNT_JSON';
+    const fcmRow = () => vault.list().find(s => s.name === FCM);
+    r = await save({ mode: 'new', name: FCM, value: '{"type":"service_account"}', reach: 'all' });
+    ok('‼️ X-451 a new key only Agent Farm reads starts farm-only: no agent task receives it',
+        r.ok === true && fcmRow().farmOnly && !(FCM in vault.env('a1')) && /Open its row to let agents have it too/.test(r.text));
+    r = await save({ mode: 'edit', from: FCM, name: FCM, reach: 'all' });
+    ok('…and its row can widen it: an edit is the person\'s own choice', r.ok === true && !fcmRow().farmOnly && FCM in vault.env('a1'));
+    r = await save({ mode: 'new', name: 'OTHER_KEY', value: 'v', reach: 'all' });
+    ok('any other new key keeps the reach it was given', r.ok === true && !vault.list().find(s => s.name === 'OTHER_KEY').farmOnly);
+
     // ---------- the host wires the panel to these two, not to a copy of them ----------
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('extension.ts: routesUsing and renamed are ProviderKeys.refsTo / followRename',
