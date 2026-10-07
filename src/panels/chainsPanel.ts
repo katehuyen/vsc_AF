@@ -30,6 +30,8 @@ export interface ChainsDeps {
     startNow(batonId: string): { ok: true } | { ok: false; why: string; say?: SayPart[] };
     /** baton.setLegs — the legs menu for this chain, asked on the surface that pressed (S-125: a phone answers it there) */
     ceiling(chainId: string, on: Pick<PanelHost, 'ask' | 'remote'>): Promise<void>;
+    /** S-141 — chains.pause / chains.resume: the pause menu for this chain, asked on the surface that pressed */
+    pause(chainId: string, on: Pick<PanelHost, 'ask'>): Promise<void>;
     /** chains.continue */
     cont(q: { chain: string; prompt?: string; why?: string }): ChainsAnswer;
     /** chains.end — closing a working leg is asked on the surface that pressed */
@@ -138,6 +140,13 @@ export class ChainsPanel {
             case 'ceiling': {
                 if (!chain) { return; }
                 await this.deps.ceiling(chain, this.host);
+                this.refresh();
+                return;
+            }
+            // S-141 — a right-click on ⑂⊣ (or on a paused row's ▶ / ↻): pause the chain, or continue it
+            case 'pauseMenu': {
+                if (!chain) { return; }
+                await this.deps.pause(chain, this.host);
                 this.refresh();
                 return;
             }

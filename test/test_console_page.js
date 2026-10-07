@@ -1413,6 +1413,21 @@ const intentOf = (o) => Object.assign({
     posted.length = 0;
     if (els['c-baton-lastleg'].listeners.contextmenu) { els['c-baton-lastleg'].listeners.contextmenu(rclick); }
     ok('…a locked brake opens no legs menu (the chain ended there)', !/Right-click:/.test(status()) && posted.length === 0);
+    // S-141 — a right-click on ⑂→ / ✕⑂ is the pause menu, asked of the host; never VS Code's own
+    push(data(CONVO.slice(), { batonView: leg('off') }));
+    ok('S-141: ⑂→ names the pause right-click while the leg can be paused', /Right-click: pause the chain — a short break in place/.test(status()));
+    let held = 0;
+    const rc = { preventDefault: () => { held++; }, stopPropagation: () => { held++; } };
+    posted.length = 0;
+    els['c-baton-pass'].listeners.contextmenu(rc);
+    ok('…its right-click asks the host for THIS card\'s pause menu', held === 2 && posted.length === 1 && posted[0].type === 'batonPause' && posted[0].id === 'cs1');
+    push(data(CONVO.slice(), { batonView: Object.assign(leg('off'), { paused: 'here' }) }));
+    ok('…paused in place: it says Continue instead', /Paused — right-click: ▶ Continue, or switch/.test(status()) && !/Right-click: pause the chain/.test(status()));
+    push(data(CONVO.slice(), { batonView: Object.assign(leg('passed', true), { paused: 'pass' }) }));
+    posted.length = 0;
+    els['c-baton-stop'].listeners.contextmenu(rc);
+    ok('✕⑂ of a held successor says Continue, and its right-click asks the same menu',
+        /Paused — right-click: ▶ Continue; the waiting leg goes through the door/.test(status()) && posted.length === 1 && posted[0].type === 'batonPause');
     ok('the pressed state has its own colour and frame, not only an attribute',
         /#c-status \.stchip\.lastleg\.on \{[^}]*editorWarning-foreground/.test(allHtml()));
 

@@ -9,6 +9,7 @@
 import { Baton, isLive, openerOf } from './baton';
 import { chainMaxLegs, isSeal } from './batonSeal';
 import { BrakeState, brakeStateOf } from './batonLastLeg';
+import { pauseHeld } from './chainPause';
 import { stamp } from './aftime';
 
 /** S-99 — the mark a leg the user made the chain's last carries after its number, wherever the number is drawn. */
@@ -29,6 +30,8 @@ export interface BatonCardView {
     brake?: BrakeState;
     /** S-103 — the chain's leg ceiling (0 = none), when the caller gave the setting's */
     max?: number;
+    /** S-141 — the chain is paused (chainPause.ts): this leg in place, or at the pass / its successor held */
+    paused?: 'here' | 'pass';
 }
 
 const short = (id: string | undefined): string => String(id ?? '').slice(0, 8);
@@ -175,9 +178,15 @@ export function batonCardView(list: readonly Baton[], sessionId: string, fallbac
     lines.push(stoppable
         ? 'Brake: ✕⑂ Stop chain on the card — recorded, never deleted.'
         : 'The chain ends when the work is done and nobody passes.');
+    // S-141 — paused: this leg in place or at its pass, or the successor it passed to held at the door
+    const pause = left && isLive(left) ? pauseHeld(list, left) : brake === 'off' ? opener?.pause : undefined;
+    if (pause) {
+        lines.push(`Paused by ${pause.by}: ${pause.mode === 'here' ? 'a short break in place — ▶ Continue (right-click ⑂→) resumes this same session.'
+            : 'the next leg waits at the door until ▶ Continue (right-click ⑂→ or ✕⑂, or the Chains page).'}`);
+    }
     return {
         chainId, leg, chip: `⑂ ${leg}${last ? LAST_LEG_MARK : ''}`,
-        head: `Baton relay — leg ${leg}${last ? ' · last leg' : ''}${left && isLive(left) ? ' · successor waiting' : ''}`,
-        lines, stoppable, ...(brake ? { brake } : {}), ...(max !== undefined ? { max } : {})
+        head: `Baton relay — leg ${leg}${last ? ' · last leg' : ''}${left && isLive(left) ? ' · successor waiting' : ''}${pause ? ' · paused' : ''}`,
+        lines, stoppable, ...(brake ? { brake } : {}), ...(max !== undefined ? { max } : {}), ...(pause ? { paused: pause.mode } : {})
     };
 }

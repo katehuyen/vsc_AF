@@ -660,6 +660,23 @@ parentheses is no obstacle and a commented-out copy does not count.
   commit. A title with a `${…}` in it cannot be pinned; give the guard a plain
   title.
 
+## A pause reads only its own fields (S-139)
+
+The relay's Pause / Continue (`chains.pause` · `chains.resume`, `src/core/chainPause.ts`) is two optional
+fields on a baton — `pause` on a running leg's opener, `hold` on a waiting baton — and every condition it
+adds reads ONLY them: the door's one question is `pauseHeld`, asked first in `BatonRunner.release()` (every
+successor opening passes through it: session end, the sweep and its boot pass, `startNow`, the failsafe's
+rescue, an engine pass, `chains.continue`); the barren brake's exemption reads `pause.mode === 'pass'`; the
+board's quiet signals read `row.paused`. A record without them takes the path it took before — which is why
+the relay's own tests were not edited for it, and must not be. A `here` mark never holds an ordinary pass
+(only the failsafe's rescue of a leg that died paused in place), and it is fresh only while nothing ran in
+the session after it (`hereFresh`), so a forgotten mark cannot hide a real hang. The order reaches the leg
+through ⑂ Pass now's channel (its Console card), never a hook: an idle agent calls no tool. An agent pausing
+ITSELF is told nothing (the bridge envelope's `from.sessionId`) — its answer is its order — so a leg's own
+confirmation cannot loop. A new road that opens a successor goes through `release()`, or asks `pauseHeld` itself.
+
+---
+
 ## The wiring gate — a callback that defaults to a no-op can be left off (X-267)
 
 **What happened.** `ConsoleHost` was given a ninth constructor parameter,

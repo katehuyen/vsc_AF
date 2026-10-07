@@ -5977,6 +5977,10 @@
                 if (v && v.chainId) { vscode.postMessage({ type: 'batonStopChain', chainId: v.chainId }); }
             });
             byId('c-baton-pass', 'click', () => vscode.postMessage({ type: 'batonPassNow', id: DATA.selected }));
+            // S-141 — a right-click on ⑂→ or ✕⑂ is the pause menu (a break in place · pass and pause · continue), never VS Code's own
+            for (const pid of ['c-baton-pass', 'c-baton-stop']) {
+                byId(pid, 'contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'batonPause', id: DATA.selected }); });
+            }
             byId('c-baton-attach', 'click', () => { relayOpen = relayOpen === DATA.selected ? '' : DATA.selected; paint(); });
             byId('c-baton-lastleg', 'click', () => {
                 const v = s && s.batonView;
@@ -6189,7 +6193,10 @@
                 'Stops every waiting or parked baton of chain ' + v.chainId + ', so no further leg opens.',
                 'Nothing is deleted: the chain\'s record keeps each one as stopped, with the reason.',
                 'A successor row that has not started yet (queued, or parked on a reset) is cancelled with it.',
-                'A run a baton already opened keeps running — end it on its own card.'
+                'A run a baton already opened keeps running — end it on its own card.',
+                window.AFTip.GAP,
+                v.paused ? t('Paused — right-click: ▶ Continue; the waiting leg goes through the door.')
+                    : t('Right-click: hold the waiting leg until you continue the chain.')
             ]), 'tip-batonstop', 'Stop chain');
     }
 
@@ -6237,7 +6244,9 @@
                     'Sends this run the handover order now — the one its context line would have sent: '
                         + 'commit the clean progress, pass the baton and end.',
                     'The next leg opens once this session has ended.',
-                    'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.'
+                    'A run that has already passed is told to end; one whose chain was stopped is told to write its handover note.',
+                    ...(s.batonView.paused ? [T.GAP, t('Paused — right-click: ▶ Continue, or switch a break in place to pass and pause.')]
+                        : s.batonView.brake === 'off' ? [T.GAP, t('Right-click: pause the chain — a short break in place (this session stays), or pass and pause (the next leg waits for you).')] : [])
                 ]), 'tip-batonpass', 'Pass now');
         }
         return cardTip(`<button class="stchip" id="c-baton-attach" aria-label="Attach relay"${relayOpen === s.id ? ' aria-expanded="true"' : ''}>⑂+</button>`,

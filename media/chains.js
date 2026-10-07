@@ -45,6 +45,8 @@
     function focusOn(id) { chip = ''; open.add(id); ask(id); focus = id; render(); }
 
     function liveWord(r) {
+        const p = r.paused;
+        if (p) { return t(p.held ? N_('paused — waits for you') : p.closed ? N_('paused in place — closed by a restart') : p.mode === 'here' ? N_('paused in place') : N_('pauses at the pass')); }
         if (r.state === 'parked' && r.wakeAt) { return t('wakes {time}', { time: T.clock(r.wakeAt) }); }
         if (r.state === 'waiting') { return t('waits for leg {n} to end', { n: r.leg - 1 }); }
         if (r.state !== 'running') { return ''; }
@@ -65,8 +67,10 @@
     function stateCell(r) {
         const warn = r.signals.length ? '<span class="ch-warn">⚠</span>' : '';
         const lines = [t('Why: {why}', { why: r.why }), T.tip(r.since, 'Since'),
+            ...(r.paused ? [t('Paused by {by}', { by: r.paused.by }), T.tip(r.paused.at, 'Paused')] : []),
             ...(r.signals.length ? [TIP.GAP, ...r.signals.map(s => `⚠ ${t(SIGNAL[s.kind] || s.kind)}: ${s.why}`)] : [])];
-        return TIP.cell('ch-st', '', `${warn}<span class="ch-g">${GLYPH[r.state] || '·'}</span> <span class="ch-sw">${esc(t(r.state))}</span>`,
+        const mark = r.paused ? '<span class="ch-g">⏸</span>' : '';
+        return TIP.cell('ch-st', '', `${warn}${mark}<span class="ch-g">${GLYPH[r.state] || '·'}</span> <span class="ch-sw">${esc(t(r.state))}</span>`,
             `${GLYPH[r.state] || ''} ${t(r.state)}`, TIP.lines(lines));
     }
 
@@ -110,20 +114,27 @@
         return TIP.cell('ch-wide', '', `${esc(n.account)} · ${esc(n.model || '—')}`, t('The next leg opens on'), TIP.lines(lines));
     }
 
-    function act(r, type, glyph, label, why, attrs) {
-        return TIP.wrap(`<button class="ch-act" data-act="${type}" data-chain="${esc(r.chainId)}" ${attrs || ''} aria-label="${esc(t(label))}">${glyph}</button>`, t(label), t(why), 'ch-actw');
+    function act(r, type, glyph, label, why, attrs, more) {
+        return TIP.wrap(`<button class="ch-act" data-act="${type}" data-chain="${esc(r.chainId)}" ${attrs || ''} aria-label="${esc(t(label))}">${glyph}</button>`,
+            t(label), t(why) + (more ? ' ' + t(more) : ''), 'ch-actw');
     }
 
+    // S-141 — a right-click on these is the pause menu; a held row's ⏭ reads ▶ Resume (the same start, which also ends the pause)
+    const MENU = 'data-pausemenu="1"';
     function actsCell(r) {
         const a = r.acts;
+        const p = r.paused;
         return '<td class="ch-acts">' + [
-            a.now ? act(r, 'now', '⏭', 'Start now', 'The waiting leg goes through the door now instead of waiting.', `data-baton="${esc(a.now)}"`) : '',
+            a.now ? (p && p.held
+                ? act(r, 'now', '▶', N_('Resume'), N_('The chain is paused: its next leg goes through the door now, and the pause ends.'), `data-baton="${esc(a.now)}" ${MENU}`)
+                : act(r, 'now', '⏭', 'Start now', 'The waiting leg goes through the door now instead of waiting.', `data-baton="${esc(a.now)}"`)) : '',
             a.stop ? act(r, 'stop', L.SYM.stop, 'Stop chain', 'Stops the waiting or parked baton; no further leg opens. Nothing is deleted.') : '',
             a.lastLeg ? act(r, 'lastLeg', L.SYM.lastLeg, r.lastLeg ? 'Release last leg' : 'Last leg',
                 r.lastLeg ? 'Braked now. Press to let the leg pass the baton at its handover line again.' : 'The running leg writes the handover note instead of passing.',
-                `data-session="${esc(r.sessionId)}" data-on="${!r.lastLeg}" aria-pressed="${!!r.lastLeg}"`) : '',
+                `data-session="${esc(r.sessionId)}" data-on="${!r.lastLeg}" aria-pressed="${!!r.lastLeg}" ${MENU}`, N_('Right-click: pause the chain, or continue it.')) : '',
             a.legs ? act(r, 'ceiling', '⇕', 'Leg ceiling', 'How many legs this chain may run.') : '',
-            a.cont ? act(r, 'continue', '↻', 'Continue', 'Opens a new leg from the last handover words, or from what you write.') : '',
+            a.cont ? act(r, 'continue', '↻', 'Continue', 'Opens a new leg from the last handover words, or from what you write.',
+                p ? MENU : '', p ? N_('Right-click: ▶ Continue from where the paused leg stopped.') : '') : '',
             a.end ? act(r, 'end', L.SYM.end, 'End chain', 'Marks the chain finished on purpose; the current leg writes its note instead of passing.') : '',
             r.sessionId ? act(r, 'open', '↗', 'Open session', 'The current leg\'s transcript.', `data-session="${esc(r.sessionId)}"`) : ''
         ].join('') + '</td>';
@@ -261,6 +272,7 @@
             if (a === 'open') { post('openSession', { sessionId: el.dataset.session }); return; }
             post(a, { chainId: id, batonId: el.dataset.baton, sessionId: el.dataset.session, on: el.dataset.on === 'true' });
         }));
+        document.querySelectorAll('[data-pausemenu]').forEach(el => el.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); post('pauseMenu', { chainId: el.dataset.chain }); }));
         document.querySelectorAll('[data-copy]').forEach(el => el.addEventListener('click', ev => {
             ev.stopPropagation();
             window.AFCtx.copy(el.dataset.copy);

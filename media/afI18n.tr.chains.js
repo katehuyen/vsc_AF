@@ -173,5 +173,21 @@
     'Finished': 'Bitti',
     'Handover words': 'Devir sözleri',
     'Copy the handover words': 'Devir sözlerini kopyala',
-    'Account: {rule} → {slot}': 'Hesap: {rule} → {slot}'
+    'Account: {rule} → {slot}': 'Hesap: {rule} → {slot}',
+    // S-141 — Pause / Continue (the Chains page and the Console card's ⑂→ / ✕⑂)
+    'Resume': 'Devam et',
+    'The chain is paused: its next leg goes through the door now, and the pause ends.': 'Zincir duraklatıldı: sıradaki halka şimdi kapıdan geçer ve duraklatma biter.',
+    'Right-click: pause the chain, or continue it.': 'Sağ tık: zinciri duraklat ya da devam ettir.',
+    'Right-click: ▶ Continue from where the paused leg stopped.': 'Sağ tık: ▶ duraklatılan halkanın kaldığı yerden devam et.',
+    'paused — waits for you': 'duraklatıldı — seni bekliyor',
+    'paused in place — closed by a restart': 'yerinde duraklatıldı — yeniden başlatmada kapandı',
+    'paused in place': 'yerinde duraklatıldı',
+    'pauses at the pass': 'devirde duraklayacak',
+    'Paused by {by}': 'Duraklatan: {by}',
+    'Paused': 'Duraklatıldı',
+    'Paused — right-click: ▶ Continue; the waiting leg goes through the door.': 'Duraklatıldı — sağ tık: ▶ Devam et; bekleyen halka kapıdan geçer.',
+    'Right-click: hold the waiting leg until you continue the chain.': 'Sağ tık: bekleyen halkayı sen zinciri devam ettirene kadar kapıda tut.',
+    'Paused — right-click: ▶ Continue, or switch a break in place to pass and pause.': 'Duraklatıldı — sağ tık: ▶ Devam et ya da yerinde arayı "devret ve duraklat"a çevir.',
+    'Right-click: pause the chain — a short break in place (this session stays), or pass and pause (the next leg waits for you).':
+        'Sağ tık: zinciri duraklat — yerinde kısa ara (bu oturum kalır) ya da devret ve duraklat (sıradaki halka seni bekler).'
 });

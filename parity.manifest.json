@@ -1418,6 +1418,16 @@
       ]
     },
     {
+      "capability": "chainsPanel.ts#pauseMenu",
+      "ui": [
+        "page:chainsPanel.ts#pauseMenu"
+      ],
+      "ops": [
+        "chains.pause",
+        "chains.resume"
+      ]
+    },
+    {
       "capability": "chainsPanel.ts#continue",
       "ui": [
         "page:chainsPanel.ts#continue"
@@ -1740,6 +1750,16 @@
       ],
       "ops": [
         "baton.setLegs"
+      ]
+    },
+    {
+      "capability": "consolePanel.ts#batonPause",
+      "ui": [
+        "page:consolePanel.ts#batonPause"
+      ],
+      "ops": [
+        "chains.pause",
+        "chains.resume"
       ]
     },
     {

@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.884.0 - Pause and Continue a relay chain (2026-10-07)
+
+- **Pause a relay chain without ending it.** One command, two modes:
+  **⏸ Short break in place** - the running leg finishes the step it is on,
+  commits, writes where it stopped and ends its turn without passing; its
+  card stays open, and **▶ Continue** resumes the same session with its
+  context, account and cache. **⏸⑂ Pass and pause** - for a restart, a long
+  break or the night: the leg passes as usual, and the next leg waits at the
+  door until you continue. It never starts by itself - not after a restart,
+  not on the sweep that runs when VS Code opens.
+- **No new buttons.** Right-click **⑂→ Pass now** or **✕⑂ Stop chain** on a
+  Console card, or the chain's **⑂⊣** on the Chains page: a small menu offers
+  the two pauses and Continue. Once a context or quota HANDOVER order has
+  reached the leg, only "pass and pause" is offered (that leg must pass).
+- **The Chains page shows it.** A paused chain carries ⏸ in its state and
+  says "paused - waits for you" or "paused in place"; a held row's ⏭ Start
+  now reads **▶ Resume** (the same start, which also ends the pause). A
+  paused chain raises no "hanging" or "stuck waiting" alarm, and the
+  stuck-items cleanup leaves it alone; typing into a card paused in place
+  ends the pause, and the ordinary hanging rule comes back.
+- **Agents can do it too:** `chains.pause` (session or chain, mode here or
+  pass) and `chains.resume`. When you ask an agent in chat for a break, it
+  pauses itself instead of holding the card with a question.
+- Chains nobody paused run exactly as before.
+
 ## 3.883.0 - High Contrast themes: buttons, focus and selections are visible (2026-10-07)
 
 - **High Contrast and High Contrast Light:** buttons were plain text there -

@@ -389,11 +389,14 @@ import { readSelection } from './core/readSelection';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
+import { pauseHeld, pausedSessions } from './core/chainPause';
+import { ChainPauseDeps, registerChainPauseOps } from './core/chainPauseOps';
 import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endHanging, endOnBoard, endRecords, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
 import { legFactsSnapshot } from './core/chainLegFacts';
 import { chainLegLines, chainsPageData } from './core/chainsPage';
 import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
 import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
+import { pickChainPause } from './batonPauseUi';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, markPassNow, passNowText } from './core/batonAttach';
@@ -18044,10 +18047,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const batonBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 88);
     context.subscriptions.push(batonBar);
     // S-101 — what a restart does not clear: the status-bar chip, the once-a-day notice and farm.cleanup
+    // S-140 — a paused chain's leg and held successor wait for the user, so the cleanup does not count them as stuck
+    const pausedNow = (): Set<string> => { try { return pausedSessions(boardNow(chainBoardDeps)); } catch { return new Set(); } };
     const stale = wireStale(context, bridge, {
-        tasks: () => taskManager.tasks,
-        cards: () => consoleHost.list(),
-        batons: () => batonStore.all(),
+        tasks: () => { const p = pausedNow(); return taskManager.tasks.filter(t => !p.has(t.hostedSessionId || t.runSessionId || '')); },
+        cards: () => { const p = pausedNow(); return consoleHost.list().filter(c => !p.has(c.sessionId ?? '')); },
+        batons: () => { const all = batonStore.all(); return all.filter(b => !pauseHeld(all, b)); },
         // S-127 — the board is built further down and reads every live surface; the cleanup must still count the rest
         chains: () => { try { return boardNow(chainBoardDeps); } catch { return []; } },
         cancelTask: id => { const t = taskManager.tasks.find(x => x.id === id); if (t) { taskManager.cancelTask(t); } },
@@ -18114,17 +18119,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         }
     };
+    // the HANDOVER order that reached a session (its context or quota line) — S-90's ender and S-140's pause ask the same
+    const handoverOrderOf = (sid: string): { what: string; ts: number } | undefined => {
+        const rec = contextGuard.record(sid);
+        const q = rec?.quota?.handover;
+        if (q) { return { what: `QUOTA HANDOVER ${q.pct}%`, ts: q.ts }; }
+        return rec?.handover ? { what: `CONTEXT HANDOVER ${rec.handover.pct}%`, ts: rec.handover.ts } : undefined;
+    };
     const batonEnder = new PassedLegEnder({
         batons: () => batonStore.all(),
         facts: b => batonLegFacts(b.from.sessionId),
         // ‼️ S-90 — a leg told to hand over that rests without passing is ended too
         factsOf: batonLegFacts,
-        handoverOf: sid => {
-            const rec = contextGuard.record(sid);
-            const q = rec?.quota?.handover;
-            if (q) { return { what: `QUOTA HANDOVER ${q.pct}%`, ts: q.ts }; }
-            return rec?.handover ? { what: `CONTEXT HANDOVER ${rec.handover.pct}%`, ts: rec.handover.ts } : undefined;
-        },
+        handoverOf: handoverOrderOf,
         closeCard: (id, why) => { consoleHost.close(id, { reason: why }); ConsolePanel.refreshIfOpen(); },
         kill: pid => killPid(pid),
         sweep: () => { batonRunner.sweep(); updateBatonBar(); },
@@ -18187,6 +18194,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
     registerChainBoardOps(bridge, chainBoardDeps);
+    // ‼️ S-140 — Pause / Continue for a relay chain (chainPauseOps.ts): the order goes through ⑂ Pass now's channel, the leg's Console card
+    const chainPauseDeps: ChainPauseDeps = {
+        store: batonStore, board: chainBoardDeps, orders: () => contextGuard.orders(), handoverOf: handoverOrderOf, now: () => Date.now(),
+        tell: (sid, text) => {
+            const card = consoleHost.list().find(c => c.sessionId === sid && c.status !== 'ended' && c.status !== 'error');
+            const r = card ? consoleHost.send(card.id, text) : undefined;
+            if (!r || r.refused) { return { said: false, why: r?.refused || `no live Console card holds session ${sid.slice(0, 8)}` }; }
+            ConsolePanel.refreshIfOpen();
+            return { said: true };
+        }
+    };
+    registerChainPauseOps(bridge, chainPauseDeps);
     context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
@@ -30382,6 +30401,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const stamped = markPassNow(batonStore.all(), sessionId, 'the user (Console card)', Date.now());
             if (stamped) { batonStore.put(stamped); }
         },
+        batonPause: (sessionId: string, ask: PanelAsk) => pickChainPause(chainPauseDeps, { sessionId }, 'the user (Console card)', ask),
         batonMaxLegs: () => normalizeMaxLegs(cfg().get<unknown>('batonMaxHops')),
         batonStopChain: (chainId: string) => stopBatons(batonStore, batonStore.chain(chainId).filter(isLive),
             'stopped by the user — ✕ on the Console card', Date.now(), batonBoard, cancelSuccessorRow).length,
@@ -31417,6 +31437,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return r.ok ? { ok: true } : { ok: false, why: r.why };
         },
         ceiling: (chainId, on) => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n), { ask: on.ask, remote: on.remote }),
+        pause: (chainId, on) => pickChainPause(chainPauseDeps, { chainId }, 'the user (Chains page)', on.ask),
         cont: q => {
             const r = continueOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
             return r.ok ? { ok: true, text: r.sentence, say: r.say } : { ok: false, text: r.why, say: r.say };

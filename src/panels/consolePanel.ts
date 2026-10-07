@@ -513,6 +513,8 @@ export interface ConsoleDeps {
     /** S-82 — ⑂ Pass now: the handover order for this runner, worded for its relay (passNowText) */
     batonPassNowText?(sessionId: string): string;
     batonPassNowSaid?(sessionId: string): void;
+    /** S-141 — a right-click on ⑂→ / ✕⑂: the pause menu for this session's chain (chains.pause / chains.resume) */
+    batonPause?(sessionId: string, ask: PanelHost['ask']): Promise<void>;
     /** the fleet's leg ceiling (agentFarm.batonMaxHops), for the empty max-legs boxes */
     batonMaxLegs?(): number;
     /** S-77 — the card's ✕: every live baton of the chain stops, recorded (`stopBatons`). Answers how many. */
@@ -2888,6 +2890,14 @@ export class ConsolePanel {
                 const r = await this.deps.batonAttach(s.sessionId, str('account'), msg.maxHops);
                 void (r.ok ? this.surface.ask.info(`Agent Farm: ${r.sentence}`)
                     : this.surface.ask.warn(`Agent Farm: ${r.why}`));
+                this.refresh();
+                break;
+            }
+            // S-141 — a right-click on ⑂→ / ✕⑂: the pause menu (chains.pause / chains.resume's bodies), asked where it was pressed
+            case 'batonPause': {
+                const s = host.get(str('id'));
+                if (!s?.sessionId || !this.deps.batonPause) { break; }
+                await this.deps.batonPause(s.sessionId, this.surface.ask);
                 this.refresh();
                 break;
             }

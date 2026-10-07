@@ -13,6 +13,7 @@
 import { Baton, BatonState, BrakeKind, isLive, successorSurface } from './baton';
 import { chainMaxLegs } from './batonSeal';
 import { ChainLink, chainIndex, linkOf } from './chainMembership';
+import { ChainPaused, pausedOf } from './chainPause';
 import type { FaultEpisode } from './engineFaultWatch';
 
 export type ChainState = 'running' | 'waiting' | 'parked' | 'done' | 'stopped' | 'refused' | 'failed';
@@ -102,6 +103,8 @@ export interface ChainRow {
     rescue?: string;
     /** the store has dropped this chain's batons; only its links are left */
     trimmed: boolean;
+    /** S-140 — the user paused the chain (chainPause.ts pausedOf); absent = not paused */
+    paused?: ChainPaused;
     signals: ChainSignal[];
 }
 
@@ -129,7 +132,9 @@ function signalsOf(row: ChainRow, top: Baton | undefined, f: LegFacts | undefine
     const out: ChainSignal[] = [];
     const { now, thresholds: t } = input;
     const sid = row.sessionId;
-    if (row.state === 'running' && sid && f) {
+    // S-140 — a leg paused in place (a fresh mark) is not hanging, and a held successor is not stuck: both wait for the user
+    const inPlace = row.paused?.mode === 'here' && !row.paused.held;
+    if (!inPlace && row.state === 'running' && sid && f) {
         if (f.alive && f.idleSince !== undefined && now - f.idleSince >= t.hangMs) {
             out.push({
                 kind: 'hanging', since: f.idleSince, sessionId: sid,
@@ -144,14 +149,14 @@ function signalsOf(row: ChainRow, top: Baton | undefined, f: LegFacts | undefine
                 });
             }
         }
-    } else if (row.state === 'running' && sid && !f && now - row.since >= t.hangMs) {
+    } else if (!inPlace && row.state === 'running' && sid && !f && now - row.since >= t.hangMs) {
         // unknown never reads as gone, but a record nothing has moved past the threshold must not sit silent
         out.push({
             kind: 'hanging', since: row.since, sessionId: sid,
             why: `leg ${row.leg} (session ${short(sid)}) is known nowhere — no card, no process, no watcher, no transcript — and the record has not moved since`
         });
     }
-    if (row.state === 'waiting' && now - row.since >= t.waitMs) {
+    if (row.state === 'waiting' && !row.paused?.held && now - row.since >= t.waitMs) {
         out.push({
             kind: 'stuck-wait', since: row.since, sessionId: sid,
             why: `the next leg still waits for session ${short(sid)} to end — ${row.why}`
@@ -209,6 +214,7 @@ export function chainBoard(input: BoardInput): ChainRow[] {
         const stamps = [...chainLinks.map(l => l.createdAt), ...own.map(b => b.createdAt)];
         const agentId = top?.from.agentId;
         const agentName = f?.agentName ?? first?.agentName ?? (agentId ? agentId.split(/[\\/]/).pop() : undefined);
+        const paused = pausedOf(input.batons, top, f);
         const row: ChainRow = {
             chainId, state, bucket: bucketOf(state),
             why: top?.why ?? `${link.state} — only the chain's links are left on record`,
@@ -237,6 +243,7 @@ export function chainBoard(input: BoardInput): ChainRow[] {
             ...(top?.brake ? { brake: top.brake } : {}),
             ...(top?.rescue ? { rescue: top.rescue } : {}),
             trimmed: !own.length,
+            ...(paused ? { paused } : {}),
             signals: []
         };
         row.signals = signalsOf(row, top, f, input);

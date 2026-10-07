@@ -23,6 +23,7 @@ import { LegEndWatch, NoticeLevel } from './batonLegEnd';
 import { markStored } from './batonLegFacts';
 import type { FolderRead } from './legRoots';
 import { BatonStore } from './batonStore';
+import { heldNotice, pauseHeld, unpause } from './chainPause';
 import { LaunchManifest } from './launchManifest';
 import type { PassCause } from './passCause';
 
@@ -281,7 +282,7 @@ export class BatonRunner {
      * that just freed an account or lifted a ceiling wants.
      */
     startNow(b: Baton, by: string): { ok: true; baton: Baton } | { ok: false; why: string } {
-        if (b.state === 'waiting-end') { return { ok: true, baton: this.release(b, `started now by ${by}, before the session ended`) }; }
+        if (b.state === 'waiting-end') { return { ok: true, baton: this.release(this.unhold(b), `started now by ${by}, before the session ended`) }; }
         if (b.state !== 'parked') { return { ok: false, why: `a baton that is ${b.state} cannot be started now.` }; }
         if (!b.taskId) { return { ok: true, baton: this.release(b, `started now by ${by}`) }; }
         const answer = this.deps.nudge?.(b.taskId);
@@ -312,6 +313,8 @@ export class BatonRunner {
     /** The session is over: through the door, and the baton records what the door did. */
     private release(baton: Baton, why: string): Baton {
         const b = this.hang(baton);
+        const held = this.held(b);
+        if (held) { return held; }
         this.log(`baton ${b.id}: released — ${why}`);
         let answer: DoorAnswer;
         try { answer = this.deps.door(b); } catch (e) {
@@ -343,6 +346,26 @@ export class BatonRunner {
         }
         return this.move(b, 'parked', `${why}; task ${answer.taskId} is on the board — ${answer.held || 'waiting for the pump to start it'}`,
             { taskId: answer.taskId }) ?? b;
+    }
+
+    /** S-140 — a paused chain's successor stays at the door (chainPause.ts): recorded and said once, then simply kept. */
+    private held(b: Baton): Baton | undefined {
+        const m = pauseHeld(this.deps.store.all(), b);
+        if (!m || b.hold) { return m ? b : undefined; }
+        const kept: Baton = { ...b, hold: m };
+        this.deps.store.put(kept);
+        this.log(`baton ${b.id}: held at the door — chain ${b.chainId} is paused (${m.mode}, by ${m.by})`);
+        const n = heldNotice(kept, m);
+        try { this.deps.notify?.(n.title, n.body, `baton:${b.id}:paused`, 2, 'info'); } catch { /* best effort */ }
+        return kept;
+    }
+
+    /** S-140 — the user's explicit start is also the end of a pause. */
+    private unhold(b: Baton): Baton {
+        if (!pauseHeld(this.deps.store.all(), b)) { return b; }
+        const free = unpause(this.deps.store.all(), b);
+        this.deps.store.put(...free);
+        return free.find(x => x.id === b.id) ?? b;
     }
 
     private move(b: Baton, to: Baton['state'], why: string, patch: Partial<Pick<Baton, 'taskId' | 'toSessionId' | 'wakeAt'>> = {}): Baton | undefined {

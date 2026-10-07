@@ -53,7 +53,9 @@ export function batonBrake(draft: Baton, prior: readonly Baton[], maxLegs: numbe
     const prev = legOf(draft.hop - 1);
     const h1 = prev?.head;
     const h2 = legOf(draft.hop - 2)?.head;
-    if (h1 === head && h2 === head && !draft.starved && !prev?.starved) {
+    // S-140 — a pass the user asked for with "pass and pause" is not a chain spinning either
+    const pausing = opener?.chainId === draft.chainId && opener.pause?.mode === 'pass';
+    if (h1 === head && h2 === head && !draft.starved && !prev?.starved && !pausing) {
         const roots = headsRoots(head);
         return {
             kind: 'barren',
