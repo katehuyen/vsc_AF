@@ -135,6 +135,22 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
                 const gone = this._html;
                 this._html = v;
                 if (this.id === 'app') { elCache.clear(); active = null; return; }
+                // ‼️ U-224 — A REGION #app DREW FILLED is rewritten IN #app, as a browser
+                // does: kept apart, the old children stayed in html() beside the new ones
+                // and one control came back twice, so every handler ran twice. A slot #app
+                // leaves EMPTY keeps its own html exactly as before.
+                const span = !this._inApp && els.app ? regionIn(els.app._html, this.raw) : null;
+                const at = this._inApp ? regionIn(els.app._html, this.raw) : span && span.to > span.from ? span : null;
+                if (at) {
+                    const old = els.app._html.slice(at.from, at.to);
+                    els.app._html = els.app._html.slice(0, at.from) + v + els.app._html.slice(at.to);
+                    this._inApp = true;
+                    for (const raw of old.match(TAG_RE) || []) {
+                        elCache.delete(raw);
+                        if (active && active.raw === raw) { active = null; }
+                    }
+                    return;
+                }
                 for (const raw of gone.match(TAG_RE) || []) { elCache.delete(raw); }
             },
             // A real element knows its own id, and a page that asks the focused
@@ -224,7 +240,22 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
      *  has been given. The pieces never overlap — a slot's own markup is empty
      *  in its parent's html. */
     const html = () => getEl('app')._html
-        + Object.keys(els).map(k => (k === 'app' ? '' : (els[k]._html || ''))).join('');
+        + Object.keys(els).map(k => (k === 'app' || els[k]._inApp ? '' : (els[k]._html || ''))).join('');
+
+    /** Where the children of the element opened by `raw` sit in `doc`: { from, to }, or null. */
+    function regionIn(doc, raw) {
+        const at = raw ? doc.indexOf(raw) : -1;
+        if (at < 0) { return null; }
+        const tag = /^<([a-z]+\d?)/.exec(raw)[1];
+        const re = new RegExp(`<${tag}\\b|</${tag}>`, 'g');
+        re.lastIndex = at + raw.length;
+        let depth = 1, m;
+        while ((m = re.exec(doc))) {
+            depth += m[0][1] === '/' ? -1 : 1;
+            if (!depth) { return { from: at + raw.length, to: m.index }; }
+        }
+        return null;
+    }
 
     /**
      * A CSS-ish selector over the rendered markup.

@@ -467,6 +467,7 @@ export function htmlShell(
     const blPlace = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afBlPlace.js'));
     // U-224 — the settings ranker, the one settings.list q asks too.
     const setSearch = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingSearch.js'));
+    const setResults = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingResults.js'));
     // U-191 — the four run categories as a bar, for any page listing runs.
     const runCategory = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunCategory.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
@@ -715,6 +716,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${colFit}"></script>
 <script nonce="${nonce}" src="${blPlace}"></script>
 <script nonce="${nonce}" src="${setSearch}"></script>
+<script nonce="${nonce}" src="${setResults}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${runCategory}"></script>
 <script nonce="${nonce}" src="${script}"></script>

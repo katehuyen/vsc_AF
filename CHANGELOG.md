@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.887.0 - Settings search shows ranked results (2026-10-07)
+
+- **Searching the Settings page now gives you a ranked list of results.**
+  Type in the box and the page shows only the sections that have a match,
+  the best match first, with "N settings" at the top. Each result says which
+  section it lives in, and the words you typed are highlighted in its name
+  and description. You change a setting right there in the results.
+- **Typing no longer rebuilds the page under your hands.** Only the results
+  are redrawn, a moment after you stop typing, so the box keeps your caret
+  and the page stays responsive on its long list.
+- **Keys:** press **/** or **Ctrl+F** anywhere on the page to jump to the
+  search box, **Esc** to clear it, and **Down arrow** to go to the first
+  result's control.
+- **Changed (n):** a new button beside the box shows only the settings you
+  have changed from their default - together with the search too.
+- When nothing matches, the page says so by your query's own words, with a
+  **Show all settings** button.
+- **New command: Agent Farm: Find Setting…** - pick any setting by its name,
+  section or key from the command palette, and the Settings page opens on it.
+  A link to a setting the current search hides now clears the search first.
+
 ## 3.886.0 - The session sound panel keeps long voice names inside (2026-10-07)
 
 - **The "Say who in" box no longer runs out of the session sound panel.**

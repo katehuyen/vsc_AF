@@ -2916,6 +2916,16 @@
       ]
     },
     {
+      "capability": "findSetting",
+      "ui": [
+        "cmd:agentfarm.findSetting"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "A QuickPick over the settings list that opens the Settings page on the chosen row (agentfarm.openFarmSettings with focus); it changes nothing. An agent reads the same list, ranked, with settings.list q."
+      }
+    },
+    {
       "capability": "fireTrigger",
       "ui": [
         "cmd:agentfarm.fireTrigger"

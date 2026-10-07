@@ -6,7 +6,8 @@
     const C = window.AFCharts;
     let DATA = window.__DATA__;
     let filter = '';
-    let saveOpen = false;          // "Save current as…" inline input visibility
+    let changedOnly = false;       // U-224 — the Changed (n) chip
+    let saveOpen = false;         // "Save current as…" inline input visibility
     const errors = {};             // key -> validation error from the host
     // A-25 — the installed-voice list costs a PowerShell process, so the card
     // asks for it ONCE per open page. The answer arrives as a redraw and a
@@ -95,11 +96,11 @@
         } catch { return String(v); }
     }
 
-    /** U-224 — is this row in? The ranker's decision (media/afSettingSearch.js), the one settings.list q asks:
-     *  its name, the words people use for it, its key, its section, its options and its description. */
-    function matches(it, place) {
-        return !filter || window.AFSettingSearch.match(filter)(Object.assign({}, it, { place }));
-    }
+    /** U-224 — a row's text with the query's hits marked; which rows are in, and in what order,
+     *  is AFSettingResults.view's (the ranker settings.list q asks too). */
+    const hit = s => (filter ? window.AFSettingSearch.mark(s, filter, C.esc) : C.esc(s));
+    // U-224 — typing redraws #setbody only; the box under the hand is never replaced.
+    const bodySoon = window.AFSettingResults.throttle(() => render(true), 120);
 
     /**
      * ‼️ U-143 — A WHOLE SECTION ANSWERS THE FILTER WITH THE PAGE'S OWN GRAMMAR.
@@ -1112,12 +1113,13 @@
         return `<div class="setitem${it.modified ? ' modified' : ''}" data-item="${C.esc(it.key)}"
             ${window.AFCtx.row('afSettingRow', { setKey: it.key, afModified: !!it.modified })}
             title="${C.esc(window.AFCtx.hint(it.key + ' — default: ' + fmtDefault(it.default)))}">
+            ${window.AFSettingResults.placeHtml(it, C.esc)}
             <div class="sethead">
-                <span class="setname">${C.esc(shortKey(it.key))}</span>
+                <span class="setname">${hit(shortKey(it.key))}</span>
                 ${it.modified ? `<span class="moddot" title="Changed from default (${C.esc(fmtDefault(it.default))})"></span>
                     <button class="reset" data-reset="${C.esc(it.key)}" title="Reset to default: ${C.esc(fmtDefault(it.default))}">↺</button>` : ''}
             </div>
-            <div class="setdesc">${C.esc(it.description || '')}</div>
+            <div class="setdesc">${hit(it.description || '')}</div>
             <div class="setctl">${controlHtml(it)}</div>
             ${/* X-193 — a scalar path says where it points, for the same reason
                   each row of a list does. A list draws its own lines per row, so
@@ -2232,7 +2234,9 @@
         }).join('') + stuck;
     }
 
-    function render() {
+    /** `bodyOnly` (U-224): rewrite #setbody alone and skip every binding outside it — the
+     *  header, the setting sets bar and the search box keep theirs, and the box keeps the caret. */
+    function render(bodyOnly) {
         // ‼️ U-139 — THE PLACE ON THE PAGE SURVIVES THE REDRAW.
         //
         // render() replaces the whole of #app, and this page is the longest in
@@ -2247,20 +2251,41 @@
         let keepY = 0;
         try { keepY = window.scrollY || (document.documentElement || {}).scrollTop || 0; }
         catch (e) { /* stub DOM */ }
-        const cats = DATA.categories
-            .map(c => ({ ...c, items: c.items.filter(it => matches(it, c.label)) }))
-            .filter(c => c.items.length);
+        const R = window.AFSettingResults;
+        const found = R.view(DATA.categories, filter, changedOnly);
+        const cats = found.cats;
         const total = DATA.categories.reduce((a, c) => a + c.items.length, 0);
         const modified = DATA.categories.reduce((a, c) => a + c.items.filter(i => i.modified).length, 0);
         // Built once: the section decides for itself whether the filter leaves it
         // on screen, and the nav link must not offer to scroll to a heading that
-        // is not there.
-        const docOpenHtml = docOpenSection();
-        const foldersHtml = foldersSection();
-        const claudeHtml = claudeSection();
-        const enginesHtml = enginesSection();
+        // is not there. None of the four is a changed setting, so Changed hides them.
+        const docOpenHtml = changedOnly ? '' : docOpenSection();
+        const foldersHtml = changedOnly ? '' : foldersSection();
+        const claudeHtml = changedOnly ? '' : claudeSection();
+        const enginesHtml = changedOnly ? '' : enginesSection();
+        const asked = !!String(filter).trim() || changedOnly;
 
-        document.getElementById('app').innerHTML = `
+        const body = `${asked && found.count ? R.countHtml(found.count, C.esc) : ''}
+            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}</div>
+            ${enginesHtml}
+            ${claudeHtml}
+            ${foldersHtml}
+            ${docOpenHtml}
+            ${cats.map(c => `
+                <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
+                ${c.id === 'prompts' ? promptsSection(c)
+                    : c.id === 'wiki' ? wikiSection(c)
+                        : c.id === 'superpowers' ? superpowersSection(c)
+                            : c.id === 'live' ? alertsSection(c)
+                                : c.id === 'access' ? accessSection(c)
+                                    : c.id === 'sentry' ? sentrySection(c)
+                                        : c.id === 'discipline' ? disciplineSection(c)
+                                        : c.id === 'kapici' && window.AFKapici ? window.AFKapici.section(DATA.kapici, C) + c.items.map(itemHtml).join('')
+                                        : c.id === 'flow' ? window.AFFlexSettings.html(DATA.flex, C, errors.flex)
+                                            : c.items.map(itemHtml).join('')}`).join('')
+            || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : R.emptyHtml(filter, changedOnly, C.esc, found.error))}`;
+        if (bodyOnly) { document.getElementById('setbody').innerHTML = body; }
+        else { document.getElementById('app').innerHTML = `
             <style>
                 .profbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0;
                     padding:8px 10px; border:1px solid var(--vscode-panel-border); border-radius:6px; }
@@ -2272,6 +2297,11 @@
                     text-decoration:none; opacity:.8; }
                 .catnav a:hover { opacity:1; }
                 h2.cat { margin:22px 0 4px; }
+                .setplace { font-size:11px; color:var(--vscode-descriptionForeground); margin-bottom:2px; }
+                .setcount { font-size:12px; color:var(--vscode-descriptionForeground); margin:2px 0 6px; }
+                .setempty { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:16px 0; }
+                .setchip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
+                    border-color:var(--vscode-button-background); }
                 .setitem { padding:10px 12px; margin:6px 0; border-radius:5px;
                     border:1px solid var(--vscode-widget-border, #3333); }
                 .setitem.modified { border-left:3px solid var(--vscode-textLink-foreground); }
@@ -2496,29 +2526,13 @@
                 guide: 'dashboard'
             })}
             ${profileBar()}
-            <div class="searchbar" style="margin:10px 0; position:relative">
+            <div class="searchbar" style="margin:10px 0; position:relative; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(filter)}" style="width:100%; max-width:420px; padding:6px 8px"
-                    title="${C.esc(window.AFQuery.tip('Searched against every setting key and its description.'))}">
+                    title="${C.esc(window.AFQuery.tip('Searched against each setting\'s name, the words people use for it, its key, its section, its options and its description; the best match comes first. / or Ctrl+F comes back here.'))}">
+                ${R.chipHtml(modified, changedOnly, C.esc)}
             </div>
-            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}</div>
-            ${enginesHtml}
-            ${claudeHtml}
-            ${foldersHtml}
-            ${docOpenHtml}
-            ${cats.map(c => `
-                <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
-                ${c.id === 'prompts' ? promptsSection(c)
-                    : c.id === 'wiki' ? wikiSection(c)
-                        : c.id === 'superpowers' ? superpowersSection(c)
-                            : c.id === 'live' ? alertsSection(c)
-                                : c.id === 'access' ? accessSection(c)
-                                    : c.id === 'sentry' ? sentrySection(c)
-                                        : c.id === 'discipline' ? disciplineSection(c)
-                                        : c.id === 'kapici' && window.AFKapici ? window.AFKapici.section(DATA.kapici, C) + c.items.map(itemHtml).join('')
-                                        : c.id === 'flow' ? window.AFFlexSettings.html(DATA.flex, C, errors.flex)
-                                            : c.items.map(itemHtml).join('')}`).join('')
-            || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
-        `;
+            <div id="setbody">${body}</div>
+        `; }
 
         // -- wiring --
         if (window.AFKapici) { window.AFKapici.wire(m => vscode.postMessage(m)); }
@@ -2532,11 +2546,11 @@
                 if (e && e.key === 'Enter' && el.blur) { el.blur(); }
             });
         };
-        window.AFHeader.wire(vscode);
+        if (!bodyOnly) { window.AFHeader.wire(vscode); }
         // X-456 — the phone's own reach and port: shown on a phone, changed on the PC (settingsPhone.ts).
         (DATA.phoneLocked || []).forEach(k => ['data-set', 'data-reset'].forEach(a =>
             document.querySelectorAll(`[${a}="${k}"]`).forEach(el => { el.disabled = true; })));
-        const openJson = document.getElementById('opensettingsjson');
+        const openJson = !bodyOnly && document.getElementById('opensettingsjson');
         if (openJson) {
             openJson.addEventListener('click', () => vscode.postMessage({ type: 'openSettingsJson' }));
         }
@@ -2602,40 +2616,53 @@
             el.addEventListener('change', () => vscode.postMessage({
                 type: 'spDefault', agent: el.dataset.spagent, on: el.checked
             })));
-        const filterEl = document.getElementById('filter');
-        filterEl.addEventListener('input', () => {
-            // the box is a QUERY, not a substring — media/afQuery.js. Kept as
-            // typed: the grammar decides its own case handling.
-            filter = filterEl.value;
-            /*
-             * ‼️ U-143 — THE CARET GOES BACK WHERE IT WAS, NOT TO THE END.
-             * Every keystroke redraws #app, which destroys this box and builds
-             * a new one, so the caret has to be put back by hand. Putting it at
-             * the end made the box append-only: fixing a typo in the middle of a
-             * query threw the caret past the last character on the very next
-             * letter typed, and a query is exactly the kind of text you edit in
-             * the middle.
-             */
-            const at = filterEl.selectionStart, to = filterEl.selectionEnd;
-            render();
-            const el = document.getElementById('filter');
-            el.focus();
-            const end = el.value.length;
-            el.setSelectionRange(Math.min(at == null ? end : at, end),
-                Math.min(to == null ? end : to, end));
-        });
-        filterEl.addEventListener('keydown', ev => {
-            if (ev.key !== 'Escape' || !filterEl.value) { return; }
-            ev.preventDefault();
-            filterEl.value = '';
-            filterEl.dispatchEvent(new Event('input', { bubbles: true }));
-        });
-        window.AFFilter.clearable(filterEl);
-        // the wrapper takes the box's place, so it takes the box's width too
-        const clrWrap = filterEl.parentNode;
-        if (clrWrap && clrWrap.className === 'af-clr') {
-            clrWrap.style.width = '100%';
-            clrWrap.style.maxWidth = '420px';
+        const filterEl = !bodyOnly && document.getElementById('filter');
+        if (filterEl) {
+            filterEl.addEventListener('input', () => {
+                // the box is a QUERY, not a substring — media/afQuery.js. Kept as
+                // typed: the grammar decides its own case handling.
+                filter = filterEl.value;
+                // ‼️ U-143/U-224 — the box is never rebuilt while it is typed in, so the
+                // caret stays wherever the reader put it: only #setbody is redrawn.
+                bodySoon();
+            });
+            filterEl.addEventListener('keydown', ev => {
+                if (ev.key === 'ArrowDown') {
+                    const first = window.AFSettingResults.firstControl(document);
+                    if (first) { ev.preventDefault(); first.focus(); }
+                    return;
+                }
+                if (ev.key !== 'Escape' || !filterEl.value) { return; }
+                ev.preventDefault();
+                filterEl.value = '';
+                filterEl.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            window.AFFilter.clearable(filterEl);
+            // the wrapper takes the box's place, so it takes the box's width too
+            const clrWrap = filterEl.parentNode;
+            if (clrWrap && clrWrap.className === 'af-clr') {
+                clrWrap.style.width = '100%';
+                clrWrap.style.maxWidth = '420px';
+            }
+        }
+        const chip = !bodyOnly && document.getElementById('setchanged');
+        if (chip) {
+            chip.addEventListener('click', () => {
+                changedOnly = !changedOnly;
+                render();
+                const again = document.getElementById('setchanged');
+                if (again) { again.focus(); }
+            });
+        }
+        const showAll = document.getElementById('setclear');
+        if (showAll) {
+            showAll.addEventListener('click', () => {
+                filter = '';
+                changedOnly = false;
+                render();
+                const box = document.getElementById('filter');
+                if (box) { box.focus(); }
+            });
         }
         document.querySelectorAll('.catnav a').forEach(a =>
             a.addEventListener('click', () => {
@@ -3111,54 +3138,57 @@
             });
         }
 
-        // profiles
-        const sel = document.getElementById('profsel');
-        document.getElementById('profapply').addEventListener('click', () => {
-            if (sel && sel.value) { vscode.postMessage({ type: 'applyProfile', name: sel.value }); }
-        });
-        document.getElementById('profdel').addEventListener('click', () => {
-            if (sel && sel.value) { vscode.postMessage({ type: 'deleteProfile', name: sel.value }); }
-        });
-        document.getElementById('profsave').addEventListener('click', () => {
-            saveOpen = !saveOpen;
-            render();
-            const inp = document.getElementById('profname');
-            if (inp) { inp.focus(); }
-        });
-        const confirm = document.getElementById('profconfirm');
-        if (confirm) {
-            const send = () => {
+        // The setting sets bar and #app itself sit outside #setbody: a body-only redraw keeps their bindings.
+        if (!bodyOnly) {
+            // profiles
+            const sel = document.getElementById('profsel');
+            document.getElementById('profapply').addEventListener('click', () => {
+                if (sel && sel.value) { vscode.postMessage({ type: 'applyProfile', name: sel.value }); }
+            });
+            document.getElementById('profdel').addEventListener('click', () => {
+                if (sel && sel.value) { vscode.postMessage({ type: 'deleteProfile', name: sel.value }); }
+            });
+            document.getElementById('profsave').addEventListener('click', () => {
+                saveOpen = !saveOpen;
+                render();
                 const inp = document.getElementById('profname');
-                if (inp && inp.value.trim()) {
-                    vscode.postMessage({ type: 'saveProfile', name: inp.value.trim() });
-                    saveOpen = false;
-                }
-            };
-            confirm.addEventListener('click', send);
-            document.getElementById('profname').addEventListener('keydown', ev => { if (ev.key === 'Enter') { send(); } });
-        }
-        document.getElementById('profexport').addEventListener('click', () => vscode.postMessage({ type: 'exportProfiles' }));
-        document.getElementById('profimport').addEventListener('click', () => vscode.postMessage({ type: 'importProfiles' }));
+                if (inp) { inp.focus(); }
+            });
+            const confirm = document.getElementById('profconfirm');
+            if (confirm) {
+                const send = () => {
+                    const inp = document.getElementById('profname');
+                    if (inp && inp.value.trim()) {
+                        vscode.postMessage({ type: 'saveProfile', name: inp.value.trim() });
+                        saveOpen = false;
+                    }
+                };
+                confirm.addEventListener('click', send);
+                document.getElementById('profname').addEventListener('keydown', ev => { if (ev.key === 'Enter') { send(); } });
+            }
+            document.getElementById('profexport').addEventListener('click', () => vscode.postMessage({ type: 'exportProfiles' }));
+            document.getElementById('profimport').addEventListener('click', () => vscode.postMessage({ type: 'importProfiles' }));
 
-        // hold background refreshes while a field has focus
-        const app = document.getElementById('app');
-        if (app.addEventListener) {
-            app.addEventListener('focusin', ev => {
-                const t = ev.target;
-                // ‼️ U-143 — A `<select>` HOLDS THE REFRESH TOO. An open
-                // dropdown is a control the reader is in the middle of using,
-                // and a background push redraws #app underneath it: the list
-                // shuts and the choice is lost, with nothing on screen saying
-                // why. The guard named the two boxes and forgot the third
-                // control that can be open when the data arrives.
-                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
-                    editing = true;
-                }
-            });
-            app.addEventListener('focusout', () => {
-                editing = false;
-                if (pendingData) { DATA = pendingData; pendingData = null; ccRawLanded(); draw(); }
-            });
+            // hold background refreshes while a field has focus
+            const app = document.getElementById('app');
+            if (app.addEventListener) {
+                app.addEventListener('focusin', ev => {
+                    const t = ev.target;
+                    // ‼️ U-143 — A `<select>` HOLDS THE REFRESH TOO. An open
+                    // dropdown is a control the reader is in the middle of using,
+                    // and a background push redraws #app underneath it: the list
+                    // shuts and the choice is lost, with nothing on screen saying
+                    // why. The guard named the two boxes and forgot the third
+                    // control that can be open when the data arrives.
+                    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+                        editing = true;
+                    }
+                });
+                app.addEventListener('focusout', () => {
+                    editing = false;
+                    if (pendingData) { DATA = pendingData; pendingData = null; ccRawLanded(); draw(); }
+                });
+            }
         }
 
         // U-139 — see the top of render(): put the page back where the reader
@@ -3171,7 +3201,14 @@
     }
 
     function focusKey(key) {
-        const el = document.querySelector(`[data-item="${key}"]`);
+        let el = document.querySelector(`[data-item="${key}"]`);
+        // U-224 — a row the query or the Changed chip hides is shown: the search gives way to the link.
+        if (!el && (filter || changedOnly)) {
+            filter = '';
+            changedOnly = false;
+            render();
+            el = document.querySelector(`[data-item="${key}"]`);
+        }
         if (!el) { return; }
         if (el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
         el.classList.add('flash');
@@ -3219,6 +3256,8 @@
 
     // ‼️ ONCE, at module scope — render() rebinds every control on every change.
     window.AFCtx.listen(ctxDo);
+    // U-224 — '/' or Ctrl+F reaches the search box from anywhere on the page; once, for the same reason.
+    window.AFSettingResults.keys(document, () => document.getElementById('filter'));
 
     // ‼️ M-33 — A HOST PUSH WAITS FOR THE READER'S HANDS; THE PAGE'S OWN
     // RENDERS DO NOT. render() replaces the whole of #app, so a repaint that

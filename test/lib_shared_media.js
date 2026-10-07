@@ -191,7 +191,9 @@ const SHARED = [
     // afBlPlace.js — the place box at the foot of the backlog's ▲/▼ step menu (U-240).
     'afBlPlace.js',
     // afSettingSearch.js — the settings ranker, shared with settings.list q (U-224).
-    'afSettingSearch.js'];
+    'afSettingSearch.js',
+    // afSettingResults.js — the Settings page's results view, count, Changed chip and keys (U-224).
+    'afSettingResults.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'theme-phone.css', 'afRemote.js'];

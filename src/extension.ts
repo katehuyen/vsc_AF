@@ -131,6 +131,7 @@ import {
     afConfig, cfgRefusal, cfgValue, cfgValueRaw, installSettingsDoor, patchUserSetting
 } from './core/settingsDoor';
 import { registerSettingsOps } from './core/settingsBridge';
+import { findSetting } from './findSetting';
 import { registerFlexOps } from './core/flexBridge';
 import { setWorkflowFlex } from './core/flexWorkflow';
 import { costReady, matchTaskSession } from './core/taskcost';
@@ -41361,6 +41362,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (arg?: { focus?: string }) => {
                 FarmSettingsPanel.show(farmSettingsDeps(), arg && typeof arg === 'object' ? arg.focus : undefined);
             }),
+        vscode.commands.registerCommand('agentfarm.findSetting', () => findSetting(settingsCategories)),
 
         vscode.commands.registerCommand('agentfarm.buildSemanticIndex', async () => {
             if (embeddingsCfg().provider === 'off') {

@@ -63,7 +63,10 @@ const keys = (q, n) => S.rank(items, q).slice(0, n).map(r => r.item.key);
     const page = fs.readFileSync(path.join(ROOT, 'media/settings.js'), 'utf8');
     const host = fs.readFileSync(path.join(ROOT, 'out/core/settingSearch.js'), 'utf8');
     ok('‼️ one ranker: the host loads the page\'s own file', /media['"],\s*['"]afSettingSearch\.js/.test(host));
-    ok('…and the page asks it whether a row is in', /window\.AFSettingSearch\.match\(filter\)/.test(page));
+    const view = fs.readFileSync(path.join(ROOT, 'media/afSettingResults.js'), 'utf8');
+    ok('…and the page asks it which rows are in and in what order (the results view ranks)',
+        /const R = window\.AFSettingResults;/.test(page) && /R\.view\(DATA\.categories, filter, changedOnly\)/.test(page)
+        && /search\(\)\.rank\(/.test(view));
     ok('…and keeps no word list of its own for a key', !/const (PROMPT|WIKI|SP|TG|AUTOANSWER)_TERMS = '/.test(page));
     ok('the host side ranks the same way', rankSettings(items, 'port').slice(0, 3).map(r => r.item.key).sort().join()
         === keys('port', 3).sort().join());

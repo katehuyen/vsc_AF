@@ -369,7 +369,8 @@ const { charts } = require('./lib_charts_stub.js');
     const filterEl = getEl('filter');
     filterEl.value = 'psikolog';
     filterEl.listeners.input();
-    const fhtml = getEl('app')._html;
+    // U-224 — typing redraws #setbody alone, so the answer is in that region
+    const fhtml = getEl('setbody')._html;
     ok('filter keeps the root containing the match, drops others',
         fhtml.includes('D:/zone/agent/ajanlar') && !fhtml.includes('D:/solo'));
 }
@@ -484,11 +485,11 @@ const { charts } = require('./lib_charts_stub.js');
     filterEl.value = 'kalıp';
     filterEl.listeners.input();
     ok('filtering by what the feature IS (not its key) keeps the section',
-        getEl('app')._html.includes('id="cat-prompts"'));
+        getEl('setbody')._html.includes('id="cat-prompts"'));
     filterEl.value = 'right-click';
     filterEl.listeners.input();
     ok('…and so does the gesture it hangs off',
-        getEl('app')._html.includes('id="cat-prompts"'));
+        getEl('setbody')._html.includes('id="cat-prompts"'));
 }
 
 // ============================================ X-54 — budgets, and whose farm this is
