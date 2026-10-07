@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.891.0 - The phone reaches Agent Farm while VS Code is closed, and the headless service starts again (2026-10-08)
+
+- **The installed headless service works again.** It could not start at
+  all: the copy Agent Farm installed could not find the rest of its own
+  code, so schedules and watch triggers did not run while VS Code was
+  closed. The installed copy is now a small launcher that always runs the
+  service of the Agent Farm version you have. An existing installation is
+  repaired the next time VS Code starts, and runs from your next sign-in.
+- **The phone app stays connected while VS Code is closed.** When the
+  phone connection is on and you close VS Code, the headless service
+  answers the phone on the same address with the same pairing, so the
+  phone does not have to pair again. It can tell the phone since when
+  Agent Farm has been closed, and show the last state Agent Farm saved and
+  how old it is.
+- **Open Agent Farm from the phone.** The phone can ask the service to
+  start VS Code (a phone allowed to manage, which is the default). Once VS
+  Code is up, it takes the phone connection back and the phone has the
+  full Agent Farm again. The phone app's button for this comes with its
+  next update.
+- **No false alarm when VS Code starts.** While the service is still
+  handing the connection back, Agent Farm tries again quietly for about a
+  minute before it warns you.
+
 ## 3.890.0 - The phone follows the farm's alert rules, and a question goes to one channel (2026-10-08)
 
 - **A question no longer reaches you twice.** While a phone that may answer

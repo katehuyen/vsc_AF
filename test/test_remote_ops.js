@@ -24,7 +24,8 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
         setScope: (id, scope) => { calls.push(['scope', id, scope]); return id === 'd1' ? { ok: true, device: { id, scope }, from: 'manage' } : { ok: false, error: 'no paired device ' + id }; },
         audit: q => { calls.push(['audit', q]); if ((q.what || []).includes('nope')) { throw new Error('what is one or more of pair, call'); } return [{ ts: 1, what: 'call' }]; },
         firewall: async () => { calls.push(['firewall']); return { state: 'closed', canFix: true }; },
-        allowFirewall: async () => { calls.push(['allow']); return { ok: true, verdict: { state: 'open' } }; }
+        allowFirewall: async () => { calls.push(['allow']); return { ok: true, verdict: { state: 'open' } }; },
+        farmName: () => 'Ev'
     };
     const reg = new BridgeRegistry();
     reg.register(remoteOps(deps));
@@ -34,6 +35,11 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
     const names = JSON.stringify(ops.result);
     ok('all seven ops are in the catalog', ['remote.status', 'remote.listen', 'remote.pair', 'remote.devices', 'remote.revoke',
         'remote.firewall', 'remote.firewall.allow'].every(o => names.includes(o)));
+    // X-449 — with VS Code running, the away ops say so and start nothing
+    const away = await call('farm.away');
+    ok('‼️ farm.away here: not away, the farm named', away.ok && away.result.away === false && away.result.farm === 'Ev' && names.includes('farm.away'));
+    const open = await call('farm.open');
+    ok('farm.open here: already running, nothing started', open.ok && open.result.already === true && open.result.opening === false && names.includes('farm.open'));
 
     let f = await call('remote.firewall');
     ok('firewall reads the verdict and changes nothing', f.ok && f.result.state === 'closed' && JSON.stringify(calls.pop()) === '["firewall"]');
@@ -114,7 +120,7 @@ const { remoteOps } = require(path.join(OUT, 'remoteOps.js'));
     ok('the firewall guard watches the program that listens', /firewallGuard\(\{ exe: process\.execPath, port: \(\) => remoteCfg\(\)\.port \}\)/.test(src));
     ok('listening where a phone reaches re-reads the firewall and offers the fix once', /if \(remoteLive && phoneModes\(c\.mode\)\) \{\s*const fw = await firewall\.check\(\);\s*if \(warn && fw\?\.state === 'closed' && fw\.canFix && !firewallAsked\)/.test(src));
     ok('the card and the ops share one allow', /revoke: id => remote\.revoke\(id\),\s*allowFirewall\s*\};/.test(src)
-        && /firewall: async \(\) => [^\n]*\n\s*allowFirewall\s*\}\)\);/.test(src));
+        && /firewall: async \(\) => [^\n]*\n\s*allowFirewall,\s*farmName: \(\) => remote\.status\(\)\.farm\.name\s*\}\)\);/.test(src));
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

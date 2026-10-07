@@ -63,3 +63,14 @@ export function listenPlan(mode: ListenMode, table: NetTable): ListenPlan {
 export function pairAddresses(plan: ListenPlan, port: number): string[] {
     return plan.listen ? plan.addresses.map(a => `${a}:${port}`) : [];
 }
+
+/** X-449 — what the extension tells the headless service about the phone (it cannot read VS Code settings). */
+export const REMOTE_CONFIG_FILE = 'remote-config.json';
+/** How many times VS Code asks for the port again, a retry apart, while the service lets go of it. */
+export const PORT_RETRIES = 3;
+export const PORT_RETRY_MS = 20_000;
+
+/** The port is taken (the service may still hold it after VS Code was away): try again, quietly, a few times. */
+export function retryPort(reason: string | undefined, attempt: number): boolean {
+    return /already in use/.test(reason ?? '') && attempt < PORT_RETRIES;
+}

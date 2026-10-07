@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { full as afFull } from '../core/aftime';
 import { headlessAccountPlan } from '../core/accountStore';
+import { serviceRemoteFor } from './serviceRemote';
 
 interface ServiceConfig {
     agents: { id: string; name: string; dir: string }[];
@@ -425,10 +426,14 @@ function syncWebServer(): void {
     }
 }
 
+// X-449 — the phone's host while VS Code is away (serviceRemote.ts)
+const phoneHost = serviceRemoteFor(storageDir, heartbeatFile, snapshotFile, log);
+
 // ---------- main loop ----------
 
 function tick(): void {
     syncWebServer();
+    void phoneHost.sync(vscodeAlive());
     if (vscodeAlive()) { return; }
     const store = readStore();
     const cfgSvc = readConfig();

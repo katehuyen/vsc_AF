@@ -517,7 +517,7 @@ import {
     QUOTA_WARN_PCT, type QuotaMemo, type RemoteEvent, withQuiet
 } from './core/remoteEvents';
 import { AnswerSoonDue, AnswerSoonMemo, answerSoonEvent, answerSoonSeconds, minutesLeft } from './core/answerSoon';
-import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
+import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, PORT_RETRY_MS, REMOTE_CONFIG_FILE, retryPort, type ListenMode } from './core/remoteListen';
 import { remoteOps } from './core/remoteOps';
 import { CARD_AUDIT_KINDS, CARD_AUDIT_ROWS } from './core/remoteCard';
 import { firewallGuard } from './core/firewallWin';
@@ -650,8 +650,9 @@ import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import {
-    hookTargets, InfraBridgeDeps, installService, registerInfraOps, removeService, serviceState
+    hookTargets, InfraBridgeDeps, installService, registerInfraOps, removeService, serviceFiles, serviceState
 } from './core/infraBridge';
+import { repairLauncher } from './core/serviceLauncher';
 import { clearPort, portHolder } from './core/portScan';
 import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
@@ -5924,6 +5925,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             fs.writeFileSync(path.join(context.globalStorageUri.fsPath, 'service-config.json'),
                 JSON.stringify({
                     agents: agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })),
+                    // the installed launcher (serviceLauncher.ts) runs this build's service
+                    serviceScript: path.join(context.extensionPath, 'out', 'service', 'farmService.js'),
                     extraArgs: cfg().get<string>('taskExtraArgs', ''),
                     maxConcurrent: 1,
                     /**
@@ -28346,6 +28349,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         seenModels: () => [...new Set(index.allWithExternal().flatMap(s => s.models ?? []))].sort()
     };
     registerInfraOps(bridge, infraDeps);
+    // an installed service whose copy is not today's launcher could not start (serviceLauncher.ts): it is repaired here
+    if (repairLauncher(serviceFiles(infraDeps).script)) { console.log('[Agent Farm] the installed headless service launcher was repaired; it runs at the next sign-in'); }
 
     // ---------- B-9: reports, exports and session diagnosis ----------
     // Every document this extension produces existed only as a thing to look
@@ -31203,7 +31208,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const writeWebSnapshot = () => {
         const w = webCfg();
-        if (!w.enabled) { return; }
+        // X-449 — the phone's host shows the same snapshot while VS Code is away
+        if (!w.enabled && cfg().get<string>('remote.listen', 'off') === 'off') { return; }
         const now = Date.now();
         const rows = buildPortfolioRows({
             extensionUri: context.extensionUri,
@@ -31685,8 +31691,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : vscode.window.showWarningMessage('Agent Farm: ' + (r.cancelled ? 'nothing changed — Windows asked for permission and the answer was No.' : r.error)));
     };
     /** Listen where the settings say — or stop — and warn when a chosen mode could not listen. */
-    const applyRemote = async (warn = true) => {
+    let remoteRetry: NodeJS.Timeout | undefined;
+    context.subscriptions.push({ dispose: () => { if (remoteRetry) { clearTimeout(remoteRetry); } } });
+    const applyRemote = async (warn = true, attempt = 0) => {
+        if (remoteRetry) { clearTimeout(remoteRetry); remoteRetry = undefined; }
         const c = remoteCfg();
+        // X-449 — the headless service hosts the phone while VS Code is away, on what this file says
+        try {
+            fs.mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
+            fs.writeFileSync(path.join(context.globalStorageUri.fsPath, REMOTE_CONFIG_FILE), JSON.stringify({ mode: c.mode, port: c.port, codeExe: process.execPath }), 'utf8');
+        } catch { /* storage unavailable */ }
         const plan = listenPlan(c.mode, os.networkInterfaces());
         const st = !taskRunner
             ? await remote.apply(null, 'another window runs the task queue; it hosts the phone')
@@ -31699,7 +31713,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const fw = await firewall.check();
             if (warn && fw?.state === 'closed' && fw.canFix && !firewallAsked) { firewallAsked = true; void offerFirewall(fw.text); }
         }
-        if (warn && taskRunner && c.mode !== 'off' && !st.listening) {
+        // X-449 — the service lets go of the port on its next tick once this window's heartbeat is fresh
+        const held = taskRunner && plan.listen && !st.listening && retryPort(st.reason, attempt);
+        if (held) { remoteRetry = setTimeout(() => { void applyRemote(warn, attempt + 1); }, PORT_RETRY_MS); }
+        if (warn && !held && taskRunner && c.mode !== 'off' && !st.listening) {
             void vscode.window.showWarningMessage(`Agent Farm: the phone host is not listening — ${st.reason ?? 'unknown reason'}`);
         }
         return { mode: c.mode, ...st };
@@ -31740,7 +31757,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         setScope: (id, scope) => remote.setScope(id, scope),
         audit: q => remote.audit(q),
         firewall: async () => (await firewall.check()) ?? { state: 'absent', note: 'only Windows has this firewall check' },
-        allowFirewall
+        allowFirewall,
+        farmName: () => remote.status().farm.name
     }));
 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {

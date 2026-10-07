@@ -26,7 +26,9 @@ const READ_VERBS = new Set([
     'peek', 'preview', 'show', 'stats', 'catalog', 'ops', 'ping', 'whoami', 'versions', 'waits', 'trace',
 ]);
 /** Farm-level looks a phone makes on connect; everything else in `farm` is admin. */
-const OPEN_FARM_OPS = new Set(['farm.ping', 'farm.health', 'farm.ops']);
+const OPEN_FARM_OPS = new Set(['farm.ping', 'farm.health', 'farm.ops', 'farm.away']);
+/** X-449 — starting VS Code from the phone is the phone's own default scope, not admin. */
+const MANAGE_FARM_OPS = new Set(['farm.open']);
 
 export function requiredScope(op: string): Scope {
     const dot = op.indexOf('.');
@@ -34,6 +36,7 @@ export function requiredScope(op: string): Scope {
     const verb = op.slice(op.lastIndexOf('.') + 1);
     if (ANSWER_OPS.has(op)) { return 'answer'; }
     if (OPEN_FARM_OPS.has(op)) { return 'read'; }
+    if (MANAGE_FARM_OPS.has(op)) { return 'manage'; }
     if (ADMIN_NAMESPACES.has(ns)) { return 'admin'; }
     if (READ_VERBS.has(verb)) { return 'read'; }
     return 'manage';

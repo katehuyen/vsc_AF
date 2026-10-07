@@ -20,6 +20,8 @@ export interface RemoteOpsDeps {
     audit(q: RemoteAuditQuery): object[];
     firewall(): Promise<object>;
     allowFirewall(): Promise<object>;
+    /** the farm's name, as a phone sees it */
+    farmName(): string;
 }
 
 export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
@@ -118,6 +120,19 @@ export function remoteOps(d: RemoteOpsDeps): BridgeOpSpec[] {
                 need(device || all, 'Pass device (an id from remote.devices) or all:true.');
                 return { revoked: d.revoke(all ? undefined : device) };
             }
+        },
+        // X-449 — the two ops a phone asks of a farm whose VS Code may be closed (src/service/serviceRemote.ts answers them then)
+        {
+            op: 'farm.away',
+            describe: 'Is Agent Farm away? Here it is running, so away:false. While VS Code is closed the headless service answers the '
+                + 'phone instead: away:true, since when, and the last snapshot with its age. args: none',
+            handler: () => ({ away: false, farm: d.farmName() })
+        },
+        {
+            op: 'farm.open',
+            describe: 'Start Agent Farm from a phone. Here it is already running, so nothing starts; while VS Code is closed the '
+                + 'headless service starts it. args: none',
+            handler: () => ({ opening: false, already: true, farm: d.farmName() })
         }
     ];
 }

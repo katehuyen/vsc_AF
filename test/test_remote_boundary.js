@@ -3,8 +3,8 @@
 // src/remote reaches Agent Farm only through the RemotePort it is handed:
 // every import inside it is a relative path that stays inside src/remote, or a
 // node builtin — never 'vscode', never a package, never ../core. And the rest
-// of the extension enters it only from src/extension.ts, only through its
-// index. A breach is red here, not a code-review remark.
+// of the extension enters it only from src/extension.ts (and the headless
+// service's phone host, src/service/serviceRemote.ts), only through its index. A breach is red here, not a code-review remark.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -73,15 +73,16 @@ for (const file of remoteFiles) {
     }
 }
 
-// ---------- OUTSIDE: only src/extension.ts enters, and only by the index ----------
-const entry = path.join(SRC, 'extension.ts');
+// ---------- OUTSIDE: only the two hosts enter, and only by the index ----------
+// X-449 — the headless service hosts the phone while VS Code is away: its one module is the second door
+const entries = [path.join(SRC, 'extension.ts'), path.join(SRC, 'service', 'serviceRemote.ts')];
 for (const file of walk(SRC).filter(f => !inside(f, REMOTE))) {
     const rel = path.relative(ROOT, file).replace(/\\/g, '/');
     for (const s of specifiers(fs.readFileSync(file, 'utf8'))) {
         if (!s.startsWith('.')) { continue; }
         const abs = path.resolve(path.dirname(file), s);
         if (!inside(abs, REMOTE)) { continue; }
-        ok(`${rel}: only src/extension.ts may import src/remote ('${s}')`, file === entry);
+        ok(`${rel}: only src/extension.ts and src/service/serviceRemote.ts may import src/remote ('${s}')`, entries.includes(file));
         ok(`${rel}: enters src/remote by its index ('${s}')`, abs === REMOTE || abs === path.join(REMOTE, 'index'));
     }
 }

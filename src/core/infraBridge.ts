@@ -8,6 +8,7 @@ import {
     syncHooksToAccounts
 } from './hooksInstaller';
 import { PriceRule } from './pricing';
+import { serviceLauncher } from './serviceLauncher';
 
 /**
  * Working-infrastructure bridge ops (B-8).
@@ -140,7 +141,7 @@ export async function installService(
     const files = serviceFiles(deps);
     const before = await serviceState(deps);
     fs.mkdirSync(deps.storageDir(), { recursive: true });
-    fs.copyFileSync(deps.serviceSource(), files.script);
+    fs.writeFileSync(files.script, serviceLauncher(), 'utf8');
     deps.writeServiceConfig();
     fs.writeFileSync(files.cmd,
         `@echo off\r\nnode "${files.script}" --storage "${deps.storageDir()}" >> "${files.log}" 2>&1\r\n`,
