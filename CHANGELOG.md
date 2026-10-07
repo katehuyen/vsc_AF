@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.886.0 - The session sound panel keeps long voice names inside (2026-10-07)
+
+- **The "Say who in" box no longer runs out of the session sound panel.**
+  Windows voice names are long ("Microsoft David - English (United States)
+  · en-US · onecore"), and the box used to grow to the longest of them and
+  push past the panel's right edge. It now fills its line and no more; a
+  long name is cut inside the box, and the full list still opens when you
+  click it.
+
 ## 3.885.0 - Move a backlog item straight to a place in the queue (2026-10-07)
 
 - **Send a backlog item to any place in the queue in one go.** The menu that
