@@ -836,7 +836,7 @@
     /** U-155 — the rules Kapıcı can ask, which layer won, and the files that failed to load. */
     function kapiciTab() {
         const K = DATA.kapici || { rules: [], problems: [] };
-        const broken = (K.problems || []).map(p => `<li><code>${esc(p.file || p.layer || '?')}</code> — <span style="color:var(--vscode-charts-red,#f14c4c)">${esc(p.error)}</span></li>`).join('');
+        const broken = (K.problems || []).map(p => `<li><code>${esc(p.file || p.layer || '?')}</code> — <span style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))">${esc(p.error)}</span></li>`).join('');
         return `<p class="muted small">Gatekeeper answers a yes/no, a choice or a score from a rule, without a model. A rule file in an agent root's _KAPICI folder (or the folder Farm Settings names) replaces a built-in one with the same id.</p>`
             + (window.AFKapici ? window.AFKapici.rules(K.rules, C) : '')
             + (broken ? `<h3>Rule files that did not load</h3><ul class="small">${broken}</ul>` : '');
@@ -924,16 +924,16 @@
                 .tb .exprow td { background: var(--vscode-editorWidget-background, rgba(128,128,128,.06)); }
                 .mini { background: none; border: 1px solid var(--vscode-widget-border, #666); border-radius: 4px;
                         color: inherit; cursor: pointer; font-size: 11px; padding: 1px 7px; margin-left: 4px; }
-                .mini:hover { border-color: var(--vscode-charts-blue, #3794ff); color: var(--vscode-charts-blue, #3794ff); }
-                .mini.danger:hover { border-color: var(--vscode-charts-red, #f14c4c); color: var(--vscode-charts-red, #f14c4c); }
+                .mini:hover { border-color: var(--vscode-charts-blue, #3794ff); color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+                .mini.danger:hover { border-color: var(--vscode-charts-red, #f14c4c); color: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
                 .mini.add { border-color: var(--vscode-charts-green, #4caf50); }
-                .mini.warn { color: var(--vscode-charts-orange, #d18616); }
-                .warn-t { color: var(--vscode-charts-orange, #d18616); }
+                .mini.warn { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
+                .warn-t { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
                 .tag { font-size: 10px; border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; opacity: .75; }
-                .tag.agent { color: var(--vscode-charts-blue, #3794ff); }
-                .tag.on { color: var(--vscode-charts-green, #4caf50); }
-                .tag.off { color: var(--vscode-charts-orange, #d18616); }
-                .use { color: var(--vscode-charts-green, #4caf50); font-weight: 700; }
+                .tag.agent { color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+                .tag.on { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+                .tag.off { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
+                .use { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); font-weight: 700; }
                 .seg .cnt { opacity: calc(1 - .4 * var(--af-dimk, 1)); font-size: 10px; }
                 .tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
                 .tb-card { cursor: pointer; }
@@ -946,8 +946,8 @@
                    question and the path is the evidence. */
                 .hkfiles { display: flex; flex-direction: column; gap: 2px; width: 100%; }
                 .hkfile { align-items: baseline; display: flex; font-size: 11px; gap: 7px; }
-                .hkmark.ok { color: var(--vscode-charts-green, #4caf50); }
-                .hkmark.no { color: var(--vscode-charts-orange, #d18616); }
+                .hkmark.ok { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+                .hkmark.no { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
                 .hkscope { flex: 0 0 92px; opacity: .8; }
                 .hkpath { font-family: var(--vscode-editor-font-family); opacity: calc(1 - .4 * var(--af-dimk, 1));
                           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

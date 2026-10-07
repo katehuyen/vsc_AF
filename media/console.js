@@ -345,8 +345,8 @@
            told, told to stop, and a crossing that never reached the run (✕,
            which the view puts on the chip). */
         .ctxsig { font-weight:600; letter-spacing:.2px;
-            color:var(--vscode-editorWarning-foreground, #cca700); }
-        .ctxsig.stop, .ctxsig.bad { color:var(--vscode-errorForeground, #f14c4c); }
+            color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); }
+        .ctxsig.stop, .ctxsig.bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground, #f14c4c)); }
         /* An order that was obeyed is not a warning any more. */
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
         /* S-77: the relay leg is information, not a warning. */
@@ -366,7 +366,7 @@
             color:var(--vscode-textLink-foreground); cursor:pointer; }
         #c-status .stchip:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#5a5d5e50); }
         /* S-99: the last-leg brake is a toggle, so its pressed state is drawn, not implied. */
-        #c-status .stchip.lastleg.on { opacity:1; color:var(--vscode-editorWarning-foreground,#cca700);
+        #c-status .stchip.lastleg.on { opacity:1; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
             background:var(--vscode-inputValidation-warningBackground,#cca70026);
             box-shadow:inset 0 0 0 1px var(--vscode-editorWarning-foreground,#cca700); }
         #c-status .stchip.lastleg:disabled { cursor:default; opacity:.7; }
@@ -384,7 +384,7 @@
             background:var(--vscode-input-background); color:var(--vscode-input-foreground); }
         /* B-23: searches the bridge guard stopped. A rule that held is not an
            alarm, so the warning colour and not the error one. */
-        .bgsig { font-weight:600; color:var(--vscode-editorWarning-foreground, #cca700); }
+        .bgsig { font-weight:600; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); }
         /* ---- whose turn is it (see phaseOf) --------------------------------
            A card carries its phase three ways at once — a coloured edge, a dot
            and a WORD — so it survives a light theme, a colourblind reader and a
@@ -423,7 +423,7 @@
             font-size:11px; cursor:pointer; opacity:0; transition:opacity .12s;
             color:var(--vscode-descriptionForeground,#888); }
         .srow:hover .srowx { opacity:.55; }
-        .srowx:hover { opacity:1; color:var(--vscode-errorForeground,#f48771); }
+        .srowx:hover { opacity:1; color:var(--af-ink-errorForeground, var(--vscode-errorForeground,#f48771)); }
         .cdotc:hover { opacity:1; transform:scale(1.15); }
         /* A colour that has been chosen is not a hint — it stays at full strength
            whatever the pointer is doing, or the whole point (glanceability) is
@@ -464,18 +464,18 @@
             background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 7%, transparent); }
         .srow.p-you .dot { background:var(--vscode-charts-green,#4caf50);
             box-shadow:0 0 0 3px color-mix(in srgb, var(--vscode-charts-green,#4caf50) 22%, transparent); }
-        .srow.p-you .phase { color:var(--vscode-charts-green,#4caf50); font-weight:600; }
+        .srow.p-you .phase { color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50)); font-weight:600; }
         /* BLOCKED — the same ball, heavier: nothing moves until you decide. */
         .srow.p-blocked { border-left-color:var(--vscode-editorWarning-foreground,#cca700);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 9%, transparent); }
         .srow.p-blocked .dot { background:var(--vscode-editorWarning-foreground,#cca700);
             box-shadow:0 0 0 3px color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 22%, transparent); }
-        .srow.p-blocked .phase { color:var(--vscode-editorWarning-foreground,#cca700); font-weight:600; }
+        .srow.p-blocked .phase { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); font-weight:600; }
         /* AGENT WORKING — the one state that moves, because it really is moving.
            A slow breath (1.8s), opacity only: no layout, no colour flashing. */
         .srow.p-agent { border-left-color:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 60%, transparent); }
         .srow.p-agent .dot { background:var(--vscode-charts-blue,#3794ff); animation:afbreath 1.8s ease-in-out infinite; }
-        .srow.p-agent .phase { color:var(--vscode-charts-blue,#3794ff); }
+        .srow.p-agent .phase { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
         @keyframes afbreath { 0%,100% { opacity:1; } 50% { opacity:.35; } }
         /* WAITING ON BACKGROUND (U-148) — alive but not yours: its own colour
            and a slow deep breath, so it is never read as working or your turn. */
@@ -492,7 +492,7 @@
         /* the count above the cards: the nudge you can click, never a popup */
         .callout { display:flex; align-items:center; gap:7px; width:100%; text-align:left;
             margin:6px 0 2px; font-size:11px; padding:5px 9px; border-radius:7px;
-            color:var(--vscode-charts-green,#4caf50); font-weight:600;
+            color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50)); font-weight:600;
             background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 10%, transparent);
             border:1px solid color-mix(in srgb, var(--vscode-charts-green,#4caf50) 35%, transparent); }
         .callout:hover { background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 18%, transparent); }
@@ -575,10 +575,10 @@
         .working .wrow { display:flex; gap:6px; align-items:baseline; min-width:0; }
         .working b { color:var(--vscode-foreground); font-weight:600;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .working .spin { color:var(--vscode-charts-blue,#3794ff); font-size:13px; }
+        .working .spin { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); font-size:13px; }
         /* the finished turn's summary sits in the same strip, deliberately
            quieter and motionless — a settled number, not a live one */
-        .working .dspin { color:var(--vscode-charts-green,#89d185); font-size:12px; }
+        .working .dspin { color:var(--af-ink-charts-green, var(--vscode-charts-green,#89d185)); font-size:12px; }
         /* the second row: still right-aligned. It is allowed to WRAP rather than
            be cut — the figures are the reason the strip grew a second line, so
            losing their tail again would undo the change. */
@@ -597,7 +597,7 @@
         .working .wbgnow { color:var(--vscode-charts-purple,#b180d7); font-weight:600; }
         .working .wbgx { background:none; border:0; padding:0 2px; margin-left:2px; cursor:pointer;
             color:var(--vscode-descriptionForeground); font-size:11px; line-height:1; vertical-align:baseline; }
-        .working .wbgx:hover { color:var(--vscode-errorForeground,#f48771); }
+        .working .wbgx:hover { color:var(--af-ink-errorForeground, var(--vscode-errorForeground,#f48771)); }
         /* ---- the resume section: a header row, a miniature filter, the rows --
            Everything here is sized for a 250px column: 10px type, one-line
            controls, and every box allowed to shrink (min-width:0) so nothing
@@ -636,14 +636,14 @@
            fastest way out: it is next to the thing that caused it, not at the
            bottom of a list you have to scroll to. */
         .rhead .rfilter.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
-        .rhead .rclear.on { color:var(--vscode-editorWarning-foreground,#cca700);
+        .rhead .rclear.on { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
             border-color:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 55%, transparent);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 14%, transparent); }
         /* nothing to clear: there, so the row never changes shape, but plainly
            not pressable */
         .rhead .rclear:disabled { opacity:.3; cursor:default; }
         .rfiltered { flex:none; font-size:10px; padding:1px 6px; border-radius:8px; white-space:nowrap;
-            color:var(--vscode-editorWarning-foreground,#cca700);
+            color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 14%, transparent); }
         .rpanel { gap:4px !important; padding:6px; border-radius:6px;
             border:1px solid var(--vscode-widget-border,#4443); }
@@ -691,7 +691,7 @@
             font-size:10px; opacity:.7; padding:1px 2px 0; }
         .backhead { font-size:10px; opacity:.7; margin:8px 0 2px; text-transform:uppercase; letter-spacing:.4px; }
         .srow.back { border-style:dashed; }
-        .srow.back .only { background:none; border:none; opacity:.5; cursor:pointer; font-size:11px; padding:0 3px; }
+        .srow.back .only { background:none; border:none; opacity:calc(1 - .5 * var(--af-dimk, 1)); cursor:pointer; font-size:11px; padding:0 3px; color:var(--af-bare-fg, var(--vscode-button-foreground)); }
         .srow.back .only:hover { opacity:1; }
         /* the show-filter lives in the composer, at the BOTTOM of the page, so
            its menu opens upwards instead of off the edge */
@@ -740,8 +740,8 @@
             border:1px solid var(--vscode-widget-border,#4446); border-radius:4px; color:inherit;
             font-size:11px; line-height:1; padding:2px 5px; cursor:pointer; }
         .msg .macts button:hover { background:var(--vscode-toolbar-hoverBackground,#8883); }
-        .msg .macts .readb.on { color:var(--vscode-charts-blue,#3794ff); border-color:var(--vscode-charts-blue,#3794ff); }
-        .msg .macts .mcopy.done { color:var(--vscode-charts-green,#3fb950); }
+        .msg .macts .readb.on { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); border-color:var(--vscode-charts-blue,#3794ff); }
+        .msg .macts .mcopy.done { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); }
         .talk .msg:has(.readb.on) { background:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 16%, transparent); border-radius:6px; }
         .msg.user .body { background:color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
             border-radius:7px; padding:6px 9px; }
@@ -750,7 +750,7 @@
         .msg.user.steer .body { border-left:2px solid var(--vscode-charts-blue,#3794ff); }
         .msg.user.steer .who::after { content:' ↯'; }
         .msg.tool .body { font-size:11px; opacity:.85; font-family:var(--vscode-editor-font-family, monospace); }
-        .msg.err .body { color:var(--vscode-errorForeground); }
+        .msg.err .body { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
         .msg.sys .body { font-size:11px; opacity:calc(1 - .3 * var(--af-dimk, 1)); font-style:italic; }
         /* ‼️ K-23 — the way further back, IN the row that says there is one.
            That row is faded italic commentary; an action wearing the same
@@ -915,7 +915,7 @@
         /* …and unusable is not off: the switch cannot be honoured at all, and a
            control that looks merely unticked would be a lie about why. */
         .pchip.sw.broken { opacity:.5; background:none;
-            color:var(--vscode-editorWarning-foreground,#c90);
+            color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#c90));
             border-color:var(--vscode-editorWarning-foreground,#c90); cursor:help; }
         /* A session already running wears its answer; it cannot be changed
            under a system prompt that was written at spawn. */
@@ -942,7 +942,7 @@
             border:1px solid var(--vscode-widget-border,#4444); }
         .ehint:hover { opacity:1; }
         /* an engine that cannot run is the one case the mark itself must show */
-        .ehint.bad { opacity:.9; color:var(--vscode-editorWarning-foreground,#cca700);
+        .ehint.bad { opacity:.9; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
             border-color:var(--vscode-editorWarning-foreground,#cca700); }
         /* "no price" is a FACT, not a missing value — quiet, never alarming */
         .noprice { opacity:.6; font-style:italic; }
@@ -988,7 +988,7 @@
         .chip .kd { font-size:9px; padding:0 4px; border-radius:6px; opacity:.8;
             border:1px solid var(--vscode-widget-border,#4443); }
         .chip .x { cursor:pointer; opacity:.6; padding:0 2px; }
-        .chip .x:hover { opacity:1; color:var(--vscode-charts-red,#e51400); }
+        .chip .x:hover { opacity:1; color:var(--af-ink-charts-red, var(--vscode-charts-red,#e51400)); }
         /* the whole composer is the drop target — a small one would be a game */
         .composer.drop { outline:2px dashed var(--vscode-focusBorder,#007fd4); outline-offset:3px; }
         /**
@@ -1176,8 +1176,8 @@
            colour says it has not happened yet, and both are drawn ONLY while a
            swap is pending, so the row is unchanged for everybody else. */
         .crow .axisw .pendmark { flex:none; font-size:11px; font-weight:600;
-            color:var(--vscode-charts-yellow,#cca700); }
-        .crow .axisw.pend > select { color:var(--vscode-charts-yellow,#cca700); font-weight:600; }
+            color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700)); }
+        .crow .axisw.pend > select { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700)); font-weight:600; }
         .owned { opacity:.5; }
         .owned .n::after { content:' · open elsewhere'; font-weight:400; opacity:.8; }
         .empty { padding:26px 12px; color:var(--vscode-descriptionForeground); font-size:12px; }

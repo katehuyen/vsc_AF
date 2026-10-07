@@ -149,7 +149,7 @@
             : '';
         const srcTag = external ? `<span class="badge warn" title="registered from a watched/external folder">${C.esc(item.source)}</span>` : '';
         const pickTag = bare ? '' : item.selectedCount
-            ? `<span class="badge" style="color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)" title="kept in triage">✓ kept</span>`
+            ? `<span class="badge" style="color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50));border-color:var(--vscode-charts-green,#4caf50)" title="kept in triage">✓ kept</span>`
             : item.rejectedCount
                 ? '<span class="badge muted" title="dropped in triage">✗ dropped</span>'
                 : '<span class="badge warn" title="nobody has judged this yet">unjudged</span>';

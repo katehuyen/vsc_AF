@@ -252,12 +252,12 @@
                 .air-tool code { flex:none; }
                 .mini { background:none; border:1px solid var(--vscode-widget-border,#666); border-radius:4px;
                         color:inherit; cursor:pointer; font-size:11px; padding:1px 7px; }
-                .mini:hover { border-color: var(--vscode-charts-blue,#3794ff); color: var(--vscode-charts-blue,#3794ff); }
-                .mini.danger:hover { border-color: var(--vscode-charts-red,#f14c4c); color: var(--vscode-charts-red,#f14c4c); }
+                .mini:hover { border-color: var(--vscode-charts-blue,#3794ff); color: var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
+                .mini.danger:hover { border-color: var(--vscode-charts-red,#f14c4c); color: var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
                 .mini.add { border-color: var(--vscode-charts-green,#4caf50); }
                 .tag { font-size:10px; border:1px solid currentColor; border-radius:8px; padding:0 6px; opacity:.8; }
-                .tag.on { color: var(--vscode-charts-green,#4caf50); }
-                .tag.off { color: var(--vscode-charts-orange,#d18616); }
+                .tag.on { color: var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50)); }
+                .tag.off { color: var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616)); }
                 html.af-phone [data-do="add-root"], html.af-phone [data-do="add-media"], html.af-phone [data-open-ui], html.af-phone [data-reveal] { display:none; }
                 html.af-phone [data-openconfig] { pointer-events:none; } html.af-phone .air-tools { grid-template-columns: 1fr; } html.af-phone .air-tool, html.af-phone .air-conn { flex-wrap: wrap; } html.af-phone .air-conn > a { min-width: 0; max-width: 100%; } html.af-phone .air-conn code { max-width: 100%; }
             </style>

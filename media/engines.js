@@ -599,7 +599,7 @@
                 .engname { font-weight:600; font-size:14px; }
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
                     cursor:help; border:1px solid var(--vscode-widget-border,#4446); }
-                .engbadge.b-ok { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
+                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
                 .engbadge.b-warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
                 /* ‼️ X-172 — the sign-in chip. Quieter than the state badge beside
                    it on purpose: the badge answers "can this run at all", which is
@@ -613,7 +613,7 @@
                     cursor:help; border:1px dashed var(--vscode-widget-border,#4446); opacity:.8; }
                 .engacct.a-on { border-style:solid; opacity:1;
                     border-color:var(--vscode-charts-blue,#4a9eff);
-                    color:var(--vscode-charts-blue,#4a9eff); }
+                    color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#4a9eff)); }
                 .engbill { font-size:12px; opacity:.75; margin-top:6px; max-width:820px; }
                 .engnext { font-size:12px; margin-top:5px; max-width:820px; }
                 .engdetail { margin-top:2px; }
@@ -622,14 +622,14 @@
                    was measured against the provider */
                 .engv { margin-top:8px; padding:6px 9px; border-radius:5px; font-size:12px;
                     background:var(--vscode-textCodeBlock-background,#2b2b2b); }
-                .engv.good { color:var(--vscode-charts-green,#3fb950); }
-                .engv.bad { color:var(--vscode-charts-red,#f14c4c); }
+                .engv.good { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); }
+                .engv.bad { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
                 /* ‼️ U-59 — "not attempted" is its own colour, and it is NOT red.
                    Red says the engine was asked and failed; this row says the
                    check declined to spend money and is handing the choice back,
                    on a card whose line above it may well read "Ready". Yellow is
                    the palette's word for "your move", which is exactly this. */
-                .engv.held { color:var(--vscode-charts-yellow,#cca700); }
+                .engv.held { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700)); }
                 .engv.none, .engv.testing { opacity:.7; }
                 .engage { opacity:.6; font-size:11px; margin-left:4px; }
                 .engerr { margin-top:4px; font-family:var(--vscode-editor-font-family,monospace);
@@ -660,7 +660,7 @@
                 /* ‼️ THE TWO SIDES ARE NOT GOOD AND BAD. Neither owner is the
                    error state — the whole point is that each is right for its
                    own engine — so they read as two categories, not a verdict. */
-                .poown.o-af { background:var(--vscode-charts-blue,#3794ff); color:#fff; border-color:transparent; }
+                .poown.o-af { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; border-color:transparent; }
                 .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:#fff; border-color:transparent; }
                 .powhy { opacity:.5; }
                 /* the two that hold a URL and a tier map need to show what was
@@ -671,7 +671,7 @@
                     padding:8px 11px; margin-bottom:8px; }
                 .pokey { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help; white-space:nowrap;
                     border:1px solid var(--vscode-widget-border,#4446); }
-                .pokey.k-yes { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
+                .pokey.k-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
                 /* "no key" is the step you are ON, not a failure — the same
                    reading the ⊘ verdict row above gets. */
                 .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
@@ -686,19 +686,19 @@
                 .pohchip { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help;
                     white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
                 .pohchip.h-cfg { opacity:.75; }
-                .pohchip.h-yes { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
-                .pohchip.h-no { background:var(--vscode-charts-red,#f85149); color:#fff; border-color:transparent; }
+                .pohchip.h-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
+                .pohchip.h-no { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:#fff; border-color:transparent; }
                 /* unknown is an ANSWER, so it is drawn rather than left blank --
                    and it is not amber: nothing is wrong, nothing was read. */
                 .pohchip.h-un { opacity:.6; font-style:italic; }
                 .pohchip.h-none { opacity:.55; }
-                .pohchip.h-ok { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
-                .pohchip.h-bad { background:var(--vscode-charts-red,#f85149); color:#fff; border-color:transparent; }
+                .pohchip.h-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
+                .pohchip.h-bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:#fff; border-color:transparent; }
                 /* nothing was called: the user's move, not a failure -- the same
                    yellow "no key" wears above. */
                 .pohchip.h-held { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
                 .pohchip.h-old { background:var(--vscode-charts-orange,#d18616); color:#000; border-color:transparent; }
-                .pohprob { margin-top:4px; font-size:11px; color:var(--vscode-charts-red,#f85149); }
+                .pohprob { margin-top:4px; font-size:11px; color:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); }
                 .pohnote { margin-top:4px; font-size:11px; opacity:.7; }
                 /* X-305 — the policies view's own rules: one copy, in
                    media/afPolicies.js, so the Accounts page draws the same section. */

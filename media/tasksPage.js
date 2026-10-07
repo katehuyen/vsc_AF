@@ -4076,16 +4076,16 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .spacer { flex:1 1 auto; }
                 .btngroup { display:inline-flex; gap:3px; }
                 .pill { font-size:11px; border-radius:10px; padding:1px 9px; border:1px solid var(--vscode-widget-border,#4444); }
-                .pill.go { color:var(--vscode-charts-green,#3fb950); border-color:currentColor; }
-                .pill.warn { color:var(--vscode-editorWarning-foreground,#cca700); border-color:currentColor; }
-                .pill.stop { color:var(--vscode-errorForeground,#f85149); border-color:currentColor; font-weight:700; }
-                .pill.ok { color:var(--vscode-charts-green,#3fb950); border-color:currentColor; }
+                .pill.go { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); border-color:currentColor; }
+                .pill.warn { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); border-color:currentColor; }
+                .pill.stop { color:var(--af-ink-errorForeground, var(--vscode-errorForeground,#f85149)); border-color:currentColor; font-weight:700; }
+                .pill.ok { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); border-color:currentColor; }
                 .stats { font-size:12px; }
                 .stat { display:inline-flex; gap:5px; align-items:center; padding:1px 9px; border-radius:5px; }
                 .stat[role=button] { cursor:pointer; }
                 .stat[role=button]:hover { background:var(--vscode-list-hoverBackground); }
-                .stat.hot { color:var(--vscode-editorWarning-foreground,#cca700); }
-                .bad { color:var(--vscode-errorForeground,#f85149); }
+                .stat.hot { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
+                .bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground,#f85149)); }
                 .tabs { display:flex; gap:4px; align-items:center; margin:0 0 10px;
                     border-bottom:1px solid var(--vscode-panel-border); }
                 .tab { padding:7px 18px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
@@ -4120,7 +4120,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .bulk { display:flex; gap:6px; align-items:center; margin:0 0 8px; padding:5px 10px;
                     border:1px solid var(--vscode-focusBorder); border-radius:6px; }
                 .bulk[hidden] { display:none; }
-                .mini.danger:hover { border-color: var(--vscode-charts-red,#f14c4c); color: var(--vscode-charts-red,#f14c4c); }
+                .mini.danger:hover { border-color: var(--vscode-charts-red,#f14c4c); color: var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
                 .cmdbar { display:flex; gap:6px; margin:0 0 10px; }
                 .cmdbar[hidden], .tabs [hidden], .toolbar [hidden] { display:none !important; }
                 .cmdbar input { flex:1; }
@@ -4147,7 +4147,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .ntbaton label > span { opacity:.75; }
                 .ntbaton select { min-width:220px; max-width:360px; }
                 .ntbaton input[type=number] { width:96px; }
-                .ntf em { font-style:normal; opacity:.75; color:var(--vscode-editorWarning-foreground,#cca700); }
+                .ntf em { font-style:normal; opacity:.75; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
                 .ntf select, .ntf input { padding:3px 6px; }
                 .ntf select.inh { opacity:.6; }
                 ${window.AFFlexPromote ? window.AFFlexPromote.css() : ''}
@@ -4187,7 +4187,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .ntround > button { flex:0 0 auto; margin-top:3px; }
                 .ntmsg { font-size:12px; margin:6px 0; padding:5px 10px; border-radius:5px;
                     background:var(--vscode-editorWidget-background, rgba(128,128,128,.08)); }
-                .ntmsg.warn { color:var(--vscode-editorWarning-foreground,#cca700);
+                .ntmsg.warn { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
                     border:1px solid currentColor; }
                 /* A section heading inside the form. The form is long enough
                    that "When", "Brakes" and "Steps" have to be findable at a
@@ -4260,7 +4260,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                    badge. Same warning colour as the badge so the two read as one
                    statement, and allowed a second line: a reason that is cut to
                    an ellipsis nobody can complete is the hiding this replaced. */
-                td.state .held { color:var(--vscode-editorWarning-foreground,#cca700);
+                td.state .held { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
                     max-width:11rem; margin:2px auto 0; line-height:1.3;
                     white-space:normal; overflow-wrap:anywhere; }
                 .rowtitle { display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
@@ -4283,7 +4283,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .rowtitle[data-taskform]:hover b { text-decoration:underline; }
                 /* ‼️ M-7 — a schedule whose time has passed and which has not run.
                    Loud, because the whole complaint was that nothing said so. */
-                .overdue { color:var(--vscode-editorWarning-foreground,#cca700);
+                .overdue { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
                     font-weight:600; }
                 .notrunner { border:1px solid var(--vscode-editorWarning-foreground,#cca700);
                     border-radius:7px; padding:7px 11px; margin:0 0 10px; font-size:12px;
@@ -4291,7 +4291,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 /* A read-only form is a READOUT of a form, and must not look like
                    one you can type into — every control is dead and says so. */
                 .ntbox.ro input, .ntbox.ro select, .ntbox.ro textarea { opacity:.75; }
-                .roflag { font-size:11px; color:var(--vscode-editorWarning-foreground,#cca700); }
+                .roflag { font-size:11px; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
                 /* The form said nothing when a kind change moved it to the other
                    tab, and a page repainting with your form elsewhere reads as
                    "it did not work". */
@@ -4331,7 +4331,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 html.af-phone .toolbar .tbf .afms { flex:0 0 auto; min-width:0; }
                 html.af-phone .toolbar input[type=search] { flex:0 0 160px; width:160px; }
                 .badge { font-size:10px; border:1px solid var(--vscode-panel-border); border-radius:3px; padding:0 5px; }
-                .badge.warn { color:var(--vscode-editorWarning-foreground,#cca700); border-color:currentColor; }
+                .badge.warn { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); border-color:currentColor; }
                 button.mini { font-size:10px; padding:1px 6px; }
                 /* the switch: a real on/off control, not a word that changes */
                 .sw { width:34px; height:18px; border-radius:9px; border:1px solid var(--vscode-widget-border,#666);

@@ -31,11 +31,11 @@ export const QUOTA_FIGURES: readonly QuotaFigureDef[] = [
     },
     {
         id: 'left', setting: 'quotaStyle.left', cls: 'afq-left', label: 'Time left',
-        fallback: 'color: var(--vscode-charts-green, #89d185); font-weight: 600;'
+        fallback: 'color: var(--af-ink-charts-green, var(--vscode-charts-green, #89d185)); font-weight: 600;'
     },
     {
         id: 'reset', setting: 'quotaStyle.reset', cls: 'afq-reset', label: 'Reset time',
-        fallback: 'color: var(--vscode-charts-blue, #75beff);'
+        fallback: 'color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #75beff));'
     }
 ];
 

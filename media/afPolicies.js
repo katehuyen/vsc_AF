@@ -455,7 +455,7 @@
             cursor:help; border:1px dashed var(--vscode-widget-border,#4446); opacity:.8; }
         .polsec .engacct.a-on { border-style:solid; opacity:1;
             border-color:var(--vscode-charts-blue,#4a9eff);
-            color:var(--vscode-charts-blue,#4a9eff); }
+            color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#4a9eff)); }
         /* X-305 -- what a rule comes to now. The chip is the sign-in
            chip's twin (.engacct), because it is the same kind of fact:
            on whose plan. a-on is the blue outline the standing chip
@@ -465,7 +465,7 @@
         .polsec .polnow { cursor:help; }
         .polsec .polnow.a-no { border-style:solid; opacity:1;
             border-color:var(--vscode-charts-yellow,#d7ba7d);
-            color:var(--vscode-charts-yellow,#d7ba7d); }
+            color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d)); }
         .polsec .poltab td { vertical-align:middle; }
         .polsec .polstep { white-space:nowrap; }
         .polsec .polstepbox { border:1px dashed var(--vscode-widget-border,#4446); border-radius:6px;

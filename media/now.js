@@ -161,8 +161,8 @@
                 .nw-check { flex-shrink:0; }
                 .nw-tipw { display:block; }
                 .nw-st { font-size:11px; opacity:.8; margin-left:4px; }
-                .nw-st.working { color:var(--vscode-charts-green, #3a3); opacity:1; }
-                .nw-st.error { color:var(--vscode-errorForeground); opacity:1; }
+                .nw-st.working { color:var(--af-ink-charts-green, var(--vscode-charts-green, #3a3)); opacity:1; }
+                .nw-st.error { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); opacity:1; }
                 .nw-more { font-size:12px; padding:4px; opacity:.85; }
                 .nw-cost { font-size:22px; font-weight:600; margin:2px 0 8px; }
                 .nw-q { display:flex; gap:8px; align-items:center; margin:4px 0; font-size:12px; }
@@ -180,7 +180,7 @@
                 .nw-boxrow textarea { flex:1; min-width:0; min-height:32px; max-height:120px; resize:none; font:inherit; }
                 .nw-boxrow button { min-height:32px; }
                 .nw-note { font-size:12px; margin-bottom:4px; }
-                .nw-note.bad { color:var(--vscode-errorForeground); }
+                .nw-note.bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
                 @media (max-width:520px) {
                     .nw-grid { grid-template-columns:1fr; }
                     .nw-boxrow { flex-wrap:wrap; }

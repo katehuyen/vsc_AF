@@ -243,9 +243,9 @@
             /* U-84 — the Telegram bridge card. One tone vocabulary, used by the
                overview dot, the tab badge and the settings card, so the three
                can never disagree. */
-            .svc-dot.t-ok, .svc-badge.t-ok { color: var(--vscode-charts-green, #4caf50); }
-            .svc-dot.t-bad, .svc-badge.t-bad { color: var(--vscode-charts-red, #f14c4c); }
-            .svc-dot.t-warn, .svc-badge.t-warn { color: var(--vscode-charts-orange, #d18616); }
+            .svc-dot.t-ok, .svc-badge.t-ok { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+            .svc-dot.t-bad, .svc-badge.t-bad { color: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
+            .svc-dot.t-warn, .svc-badge.t-warn { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
             .svc-dot.t-off, .svc-badge.t-off { opacity: .55; }
             .svc-badge { font-size: 11px; border: 1px solid currentColor; border-radius: 8px; padding: 0 7px; margin-left: 6px; }
             .svc-card { display: block; }
@@ -278,22 +278,22 @@
             .svc-chip { align-items: center; border: 1px solid var(--vscode-widget-border, #666); border-radius: 8px;
                         display: inline-flex; font-size: 11px; gap: 3px; padding: 0 3px 0 7px; }
             .svc-x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; opacity: .6; padding: 0 3px; }
-            .svc-x:hover { color: var(--vscode-charts-red, #f14c4c); opacity: 1; }
+            .svc-x:hover { color: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); opacity: 1; }
             .svc-budget { align-items: center; display: inline-flex; gap: 6px; }
             .svc-bar { background: var(--vscode-widget-border, #4443); border-radius: 3px; display: inline-block; height: 6px; overflow: hidden; width: 70px; }
             .svc-bar i { background: var(--vscode-charts-green, #4caf50); display: block; height: 100%; }
             .svc-bar i.over { background: var(--vscode-charts-red, #f14c4c); }
             .svc-msg { border-left: 2px solid currentColor; font-size: 12px; margin: 0 0 8px; padding: 2px 8px; }
-            .svc-msg.ok { color: var(--vscode-charts-green, #4caf50); }
-            .svc-msg.bad { color: var(--vscode-charts-red, #f14c4c); }
+            .svc-msg.ok { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+            .svc-msg.bad { color: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
             /* The figure strip: one line, four facts, no control — the form the
                card takes where the settings rows own the controls. */
             .svc-facts { border-top: 1px solid var(--vscode-widget-border, #4443); display: flex; flex-wrap: wrap;
                          font-size: 11px; gap: 4px 14px; padding-top: 7px; }
             .svc-fact { align-items: center; display: inline-flex; gap: 5px; opacity: .8; }
             .svc-fact b { font-weight: 600; opacity: 1; }
-            .svc-y { color: var(--vscode-charts-green, #4caf50); }
-            .svc-n { color: var(--vscode-charts-orange, #d18616); }
+            .svc-y { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+            .svc-n { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
             html.af-phone .svc-row { flex-wrap: wrap; gap: 4px 10px; }
             html.af-phone .svc-lbl { flex: 1 1 100%; padding-top: 0; }
             html.af-phone .svc-val { min-width: 0; max-width: 100%; }

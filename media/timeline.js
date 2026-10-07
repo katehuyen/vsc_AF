@@ -283,7 +283,7 @@
             const r = t.result || {};
             if (!r.ok) {
                 return `<div class="sub" style="margin-top:2px">⏱ <b>${C.esc(who)}</b> ${id} — ` +
-                    `<span style="color:var(--vscode-charts-red,#f14c4c)">not run</span>` +
+                    `<span style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))">not run</span>` +
                     ` <span class="muted">${C.esc(r.error || 'unknown reason')}</span></div>`;
             }
             const branches = r.branches || [];
@@ -1623,7 +1623,7 @@
 
         let listenerHtml;
         if (listener.state === 'listening') {
-            listenerHtml = `<span class="badge" style="color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)">● listening on 127.0.0.1:${listener.port}</span>`;
+            listenerHtml = `<span class="badge" style="color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50));border-color:var(--vscode-charts-green,#4caf50)">● listening on 127.0.0.1:${listener.port}</span>`;
         } else if (listener.state === 'port-in-use') {
             listenerHtml = `<span class="badge err">port in use — another window may own the listener</span>`;
         } else if (listener.state === 'disabled') {
@@ -1691,7 +1691,7 @@
                 <div class="sub tip-host" style="margin-top:${st.money ? '2' : '6'}px">${tip(st.work, workTip(s))}</div>
                 <div class="sub tip-host" style="margin-top:2px">${tip(st.time, timeTip(s))}</div>
                 ${where ? `<div class="sub tip-host" style="margin-top:2px">${where}</div>` : ''}
-                ${gone ? `<div class="sub" style="margin-top:4px;color:var(--vscode-editorWarning-foreground,#cca700)">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page, card and swim lane together.</div>` : ''}
+                ${gone ? `<div class="sub" style="margin-top:4px;color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700))">⚠ No live process owns this session — it is over, its hooks just never said so. <b>Clear</b> takes it off this page, card and swim lane together.</div>` : ''}
                 <div class="btnrow">
                     ${tip(`<button class="secondary" data-focusterm="${C.esc(s.agentName)}" data-sid="${C.esc(s.sessionId)}">⌨ Terminal</button>`, {
                         head: 'Jump to this session\'s terminal window',

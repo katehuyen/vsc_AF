@@ -27,17 +27,17 @@ blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8
 /* X-112 — the same figure over a run that filled NO plan window. It is still
    the plan formula, so it keeps the glyph and the number; what it loses is the
    claim to a limit, and the reader must be able to see that without hovering. */
-.wtok.offplan { opacity: .78; color: var(--vscode-charts-orange, #d18616); border-bottom: 1px dotted currentColor; }
+.wtok.offplan { opacity: .78; color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); border-bottom: 1px dotted currentColor; }
 .usdmix { white-space: nowrap; cursor: help; border-bottom: 1px dotted var(--vscode-charts-orange, #d18616); }
 /* Step kind (see charts.js STEP_KIND): one glyph, colour-coded by where the
    cost comes from — model time is warm, free local work is cool, and the row
    that merely brings a result back is dimmed. A chip, never a headline. */
 .skind { display: inline-block; width: 1.1em; text-align: center; cursor: help; opacity: .8; }
-.sk-think, .sk-say { color: var(--vscode-charts-orange, #d18616); opacity: 1; }
-.sk-local { color: var(--vscode-charts-blue, #3794ff); }
+.sk-think, .sk-say { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); opacity: 1; }
+.sk-local { color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
 .sk-mcp { color: var(--vscode-charts-purple, #b180d7); }
-.sk-web { color: var(--vscode-charts-green, #4caf50); }
-.sk-subagent { color: var(--vscode-charts-yellow, #cca700); }
+.sk-web { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+.sk-subagent { color: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); }
 .sk-harness { color: var(--vscode-descriptionForeground, #999); }
 .sk-result, .sk-none { opacity: .45; }
 .skleg { margin-right: .9em; white-space: nowrap; font-size: 11px; opacity: .8; cursor: help; }
@@ -73,8 +73,8 @@ blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8
     display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px;
     border: 1px solid var(--vscode-widget-border, #4444); opacity: .85; margin-left: 4px;
 }
-.badge.err { color: var(--vscode-errorForeground); border-color: var(--vscode-errorForeground); }
-.badge.warn { color: var(--vscode-editorWarning-foreground, #cca700); border-color: var(--vscode-editorWarning-foreground, #cca700); }
+.badge.err { color: var(--af-ink-errorForeground, var(--vscode-errorForeground)); border-color: var(--vscode-errorForeground); }
+.badge.warn { color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); border-color: var(--vscode-editorWarning-foreground, #cca700); }
 
 button, .btn {
     font-family: inherit; font-size: 12px;
@@ -147,13 +147,13 @@ td.num, th.num { text-align: right; }
 .msg .meta .readb + .copyb { margin-left: 0; }
 .msg:hover .meta .copyb, .msg .meta .copyb:focus,
 .msg:hover .meta .readb, .msg .meta .readb:focus, .msg .meta .readb.on { opacity: 1; }
-.msg .meta .readb.on { color: var(--vscode-charts-blue, #3794ff); border-color: var(--vscode-charts-blue, #3794ff); }
+.msg .meta .readb.on { color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); border-color: var(--vscode-charts-blue, #3794ff); }
 .msg .meta .copyb:hover, .msg .meta .readb:hover { color: var(--vscode-foreground);
     background: var(--vscode-toolbar-hoverBackground, #8882);
     border-color: var(--vscode-widget-border, #4443); }
 /* The receipt outlives the pointer leaving the row — otherwise the one frame
    that says "it worked" is the frame you have already moved away from. */
-.msg .meta .copyb.done { opacity: 1; color: var(--vscode-charts-green, #3fb950); }
+.msg .meta .copyb.done { opacity: 1; color: var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); }
 .msg pre { margin: 4px 0 0; max-height: 300px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .msg .body { white-space: pre-wrap; word-break: break-word; }
 details summary { cursor: pointer; opacity: .8; font-size: 12px; }
@@ -273,7 +273,7 @@ mark {
 }
 .tatool:hover { background: var(--vscode-list-hoverBackground); }
 .tatool.done {
-    color: var(--vscode-charts-green, #4caf50);
+    color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50));
     border-color: var(--vscode-charts-green, #4caf50);
 }
 
@@ -542,9 +542,9 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .afb-selall { display: inline-flex; gap: 3px; align-items: center; font-size: 11px; opacity: .85; cursor: pointer; }
 .afb-cb { flex-shrink: 0; margin: 0; cursor: pointer; }
 .afb-x { flex: 0 0 auto; padding: 1px 6px; min-width: 0; opacity: .55; }
-.afb-x:hover:not([disabled]) { opacity: 1; color: var(--vscode-editorError-foreground, #e51400); }
+.afb-x:hover:not([disabled]) { opacity: 1; color: var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
 .afb-x[disabled] { opacity: .2; cursor: default; }
-.afb-trash { color: var(--vscode-editorError-foreground, #e51400); }
+.afb-trash { color: var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
 .afb-bar button.danger:hover { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color: var(--vscode-editorError-foreground, #e51400); }
 .afb-age { flex-shrink: 0; font-size: 11px; opacity: .6; white-space: nowrap; }
 .afb-day { margin: 12px 0 4px; font-size: 11px; opacity: .6; text-transform: uppercase; letter-spacing: .04em; }
@@ -566,7 +566,7 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .aff { display: flex; flex-direction: column; gap: 3px; flex: 1 1 150px; min-width: 140px; font-size: 11px; }
 .aff.wide { flex: 1 1 100%; }
 .aff > span { opacity: .75; }
-.aff em { font-style: normal; opacity: .75; color: var(--vscode-editorWarning-foreground, #cca700); }
+.aff em { font-style: normal; opacity: .75; color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); }
 .aff select, .aff input { padding: 3px 6px; }
 .aff input.mono { font-family: var(--vscode-editor-font-family, monospace); }
 .aff textarea {
@@ -593,7 +593,7 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     font-size: 12px; margin: 6px 0; padding: 5px 10px; border-radius: 5px;
     background: var(--vscode-editorWidget-background, rgba(128, 128, 128, .08));
 }
-.affmsg.warn { color: var(--vscode-editorWarning-foreground, #cca700); border: 1px solid currentColor; }
+.affmsg.warn { color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); border: 1px solid currentColor; }
 /* The list a form holds. An object whose content is a LIST gets a list editor,
    not a wizard — you cannot be asked for item four without being shown one to
    three. */
@@ -644,14 +644,14 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
    is a colour that disagrees per page" this component exists to prevent. So the
    hue is published as `--af-engc` on anything carrying `af-engc <id>`
    (`AFEngine.cls`), and the badge is simply its first reader. */
-.af-engc.claude { --af-engc: var(--vscode-charts-orange, #d18616); }
+.af-engc.claude { --af-engc: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
 .af-engc.codex { --af-engc: var(--vscode-charts-purple, #b180d7); }
-.af-engc.gemini { --af-engc: var(--vscode-charts-blue, #3794ff); }
+.af-engc.gemini { --af-engc: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
 .af-engc.other { --af-engc: var(--vscode-descriptionForeground, #9d9d9d); }
 .af-eng {
     flex: none; display: inline-block; font-size: 9px; line-height: 15px;
     padding: 0 5px; border-radius: 7px; white-space: nowrap;
-    border: 1px solid currentColor; opacity: .9;
+    border: 1px solid currentColor; opacity: calc(1 - .1 * var(--af-dimk, 1));
     color: var(--af-engc, var(--vscode-descriptionForeground, #9d9d9d));
 }
 /* ‼️ X-110 - WHICH PROVIDER SERVED IT, beside the engine badge and never inside
@@ -672,24 +672,24 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
    later - lands in one of six derived slots by a hash of its own id, so it is
    the same colour on every page rather than a colour that depends on where it
    happened to sit in a list. */
-.af-provc.anthropic { --af-provc: var(--vscode-charts-green, #89d185); }
-.af-provc.anthropic-api { --af-provc: var(--vscode-charts-blue, #3794ff); }
-.af-provc.kimi { --af-provc: var(--vscode-charts-yellow, #cca700); }
+.af-provc.anthropic { --af-provc: var(--af-ink-charts-green, var(--vscode-charts-green, #89d185)); }
+.af-provc.anthropic-api { --af-provc: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+.af-provc.kimi { --af-provc: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); }
 .af-provc.minimax { --af-provc: var(--vscode-charts-purple, #b180d7); }
 /* ‼️ AND NOT RED, ON ANY OF THEM. This extension signals a fault in red
    everywhere, so a provider that happened to hash onto it would read as a broken
    route rather than as a named one - the same lesson U-49 taught the engine
    palette about green. Five slots rather than six is the price. */
-.af-provc.p0 { --af-provc: var(--vscode-charts-orange, #d18616); }
-.af-provc.p1 { --af-provc: var(--vscode-charts-blue, #3794ff); }
+.af-provc.p0 { --af-provc: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
+.af-provc.p1 { --af-provc: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
 .af-provc.p2 { --af-provc: var(--vscode-charts-purple, #b180d7); }
-.af-provc.p3 { --af-provc: var(--vscode-charts-yellow, #cca700); }
-.af-provc.p4 { --af-provc: var(--vscode-charts-green, #89d185); }
+.af-provc.p3 { --af-provc: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); }
+.af-provc.p4 { --af-provc: var(--af-ink-charts-green, var(--vscode-charts-green, #89d185)); }
 .af-provc.none { --af-provc: var(--vscode-descriptionForeground, #9d9d9d); }
 .af-prov {
     flex: none; display: inline-block; font-size: 9px; line-height: 15px;
     padding: 0 5px; border-radius: 7px; white-space: nowrap;
-    border: 1px dashed currentColor; opacity: .9;
+    border: 1px dashed currentColor; opacity: calc(1 - .1 * var(--af-dimk, 1));
     color: var(--af-provc, var(--vscode-descriptionForeground, #9d9d9d));
 }
 /* ‼️ A RUN THAT CHANGED PROVIDER IS NOT ONE CHIP. Naming one of them over a run
@@ -718,7 +718,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     flex: none; display: inline-block; font-size: 9px; line-height: 15px;
     padding: 0 5px; border-radius: 7px; white-space: nowrap; max-width: 120px;
     overflow: hidden; text-overflow: ellipsis; vertical-align: bottom;
-    border: 1px solid currentColor; opacity: .7;
+    border: 1px solid currentColor; opacity: calc(1 - .3 * var(--af-dimk, 1));
     color: var(--vscode-descriptionForeground, #9d9d9d);
 }
 /* …and a card whose NEXT message moves to another sign-in says so on the mark
@@ -726,7 +726,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
    turn that you have to open a card to find is a promise the reader will not
    know was made. */
 .af-acct.af-acct-next {
-    opacity: 1; color: var(--vscode-charts-yellow, #cca700);
+    opacity: 1; color: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700));
 }
 /* ‼️ Antigravity is NOT green (U-49). Green is this extension's own signal —
    the live dot, an OK engine card, an assistant message, an active agent — so
@@ -735,7 +735,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
    both Google, so a shared hue would blur exactly the two engines a session list
    most needs to tell apart. Red is the remaining chart hue, it is the furthest
    thing from green, and it is legible against orange and purple at 9px. */
-.af-engc.agy { --af-engc: var(--vscode-charts-red, #f14c4c); }
+.af-engc.agy { --af-engc: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
 /* ‼️ OpenCode is the fifth, and it is the one badge whose hue the user picked by
    hand (U-72) — so it is written as a literal `rgb()` and NOT as a chart
    variable: a theme is free to move `--vscode-charts-*`, and the point of a
@@ -884,7 +884,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
 /* A command whose whole job is to open a menu. The glyph marks the row; the
    sentence is a line in the panel, because a hover over a list being arrowed
    through covers the rows being compared. */
-.af-sltui { flex: none; font-size: 10px; opacity: .7; color: var(--vscode-charts-yellow, #cca700); }
+.af-sltui { flex: none; font-size: 10px; opacity: .7; color: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); }
 .af-slwarn {
     padding: 5px 10px; font-size: 10.5px; line-height: 1.35;
     border-top: 1px solid var(--vscode-widget-border, #4443);
@@ -993,7 +993,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     border-color: var(--vscode-widget-border, #4444);
 }
 .afw-tn.cut:hover { opacity: .8; }
-.afw-of-cut { color: var(--vscode-editorWarning-foreground, #d19a66); opacity: .85; }
+.afw-of-cut { color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #d19a66)); opacity: .85; }
 .afw-clear {
     background: transparent; color: inherit; border: none; cursor: pointer;
     font-size: 10px; opacity: .7; text-decoration: underline; padding: 0 0 0 4px;
@@ -1001,7 +1001,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
 .afw-clear:hover { opacity: 1; }
 .afw-hint { font-size: 10px; opacity: .45; }
 /* An inferred number says so IN the row it is in, not in a log nobody reads. */
-.afw-guess { color: var(--vscode-editorWarning-foreground, #d19a66); cursor: help; }
+.afw-guess { color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #d19a66)); cursor: help; }
 .afw-label {
     font-size: 10px; opacity: .5; white-space: nowrap; overflow: hidden;
     text-overflow: ellipsis; font-family: var(--vscode-editor-font-family);
@@ -1035,7 +1035,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
    contrast in both themes rather than being a hex that only works in dark. */
 .afc-chip.whole {
     background: var(--vscode-inputValidation-warningBackground, #352a05);
-    color: var(--vscode-editorWarning-foreground, #cca700);
+    color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700));
     box-shadow: inset 0 0 0 1px var(--vscode-inputValidation-warningBorder, #b89500);
 }
 .afc-x {
@@ -1087,7 +1087,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
 }
 .afw-box input[type="text"] { padding: 3px 6px; font-size: 11px; }
-.afw-err { font-size: 10px; color: var(--vscode-errorForeground); }
+.afw-err { font-size: 10px; color: var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
 .afw-foot { display: flex; align-items: center; gap: 8px; }
 .afw-note { flex: 1 1 auto; font-size: 9px; opacity: .5; line-height: 1.25; }
 /* U-120: what this window is NOT. A popover that adds topics and a cockpit that
@@ -1100,7 +1100,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
    about to close itself, and a form still on screen invites a second press. */
 .afw-done {
     font-size: 11px; padding: 6px 2px 2px;
-    color: var(--vscode-testing-iconPassed, #89d185);
+    color: var(--af-ink-testing-iconPassed, var(--vscode-testing-iconPassed, #89d185));
 }
 
 /* U-167 - a relay chain on a session's page (media/afChainNav.js) */

@@ -1229,7 +1229,7 @@
         .grow { flex:1 1 auto; }
         /* X-241 — the auto-refresh switch: lit while on, grey while off */
         .acauto.a-on { border-color:var(--vscode-charts-blue,#4a9eff);
-            color:var(--vscode-charts-blue,#4a9eff); }
+            color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#4a9eff)); }
         .acauto.a-off { opacity:.55; }
         .englede { max-width:820px; margin:0 0 14px; font-size:12px; opacity:.8; }
         /* ‼️ X-172 — accounts. The card, the head and the body are the
@@ -1256,14 +1256,14 @@
            a label and not a control, so it carries no border and no fill. */
         .acpin { font-size:10px; white-space:nowrap; cursor:help; max-width:220px;
             overflow:hidden; text-overflow:ellipsis;
-            color:var(--vscode-charts-blue,#3794ff); }
+            color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
         /* X-258 -- who is ON it now. GREEN because it is the one fact on this
            card about something ALIVE; the blue beside it is configuration and
            the yellow is a warning, so three kinds of statement wear three
            colours rather than competing for one. */
         .acbusy { font-size:10px; white-space:nowrap; cursor:help; max-width:240px;
             overflow:hidden; text-overflow:ellipsis;
-            color:var(--vscode-charts-green,#89d185); }
+            color:var(--af-ink-charts-green, var(--vscode-charts-green,#89d185)); }
         /* X-258 -- where it stands in the ROTATION. A bordered pill, because it
            is a position in a line and not a label: the shape is what keeps it
            from being read as another status word.
@@ -1283,12 +1283,12 @@
             border-color:var(--vscode-widget-border,#4446); }
         .acbad.warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
             border-color:transparent; }
-        .acbad.bad { background:var(--vscode-charts-red,#f14c4c); color:#fff;
+        .acbad.bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff;
             border-color:transparent; }
         /* X-282 — one account filed twice: its own badge, not a verdict, so the
            verdict count stays one per card */
         .acdup { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
-            background:var(--vscode-charts-red,#f14c4c); color:#fff; cursor:help; }
+            background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff; cursor:help; }
         .acuuid { font-family:var(--vscode-editor-font-family,monospace); }
         /* X-219 — the one control that answers that badge wears the badge's
            colour: a dead sign-in and its remedy are one fact, said twice. */
@@ -1311,7 +1311,7 @@
             color:var(--vscode-button-secondaryForeground,#ccc);
             transition:background .12s ease, border-color .12s ease; }
         .acsel:hover { border-color:var(--vscode-focusBorder,#3794ff); }
-        .acsel.on { background:var(--vscode-charts-blue,#3794ff); color:#fff;
+        .acsel.on { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
             border-color:transparent; }
         /* ‼️ X-206 — the refresh button IS the queue indicator. A second
            badge beside it would say the same thing twice and take the
@@ -1329,7 +1329,7 @@
            already made, this is not done yet" state on the page */
         .acref.queued { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
             border-color:transparent; font-weight:600; }
-        .acref.reading { background:var(--vscode-charts-blue,#3794ff); color:#fff;
+        .acref.reading { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
             border-color:transparent; animation:acspin 1.1s linear infinite; }
         @keyframes acspin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
         .acgrp { display:flex; align-items:center; gap:8px; margin:12px 0 5px;
@@ -1372,8 +1372,8 @@
            the reader came for was the one thing they had to hunt for. */
         .acwp { flex:none; width:34px; text-align:right; font-size:12px;
             font-weight:600; font-variant-numeric:tabular-nums; }
-        .acwp.warn { color:var(--vscode-charts-yellow,#cca700); }
-        .acwp.hot { color:var(--vscode-charts-red,#f14c4c); }
+        .acwp.warn { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700)); }
+        .acwp.hot { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
         .acwp.old { opacity:.45; text-decoration:line-through; }
         .acwrow .progress { flex:1; margin-top:0; height:7px; }
         /* U-144 — this window's own clock, on this window's own row. The span
@@ -1388,7 +1388,7 @@
         .acwr { min-width:170px; font-size:11px; font-variant-numeric:tabular-nums;
             white-space:nowrap; }
         .acwc { opacity:.6; margin-left:5px; }
-        .acwr.stale, .acwr.stale .afq-left, .acwr.stale .afq-reset { color:var(--vscode-charts-red,#f14c4c); }
+        .acwr.stale, .acwr.stale .afq-left, .acwr.stale .afq-reset { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
         .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
         .acnone { margin-top:6px; font-size:12px; }
         /* X-252 — the day's spend, on the card's own ruler under the

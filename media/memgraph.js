@@ -474,7 +474,7 @@
 
             const chips =
                 `<span class="badge">${g.nodes.length} records</span>` +
-                `<span class="badge" style="color:var(--vscode-charts-blue,#3794ff);border-color:var(--vscode-charts-blue,#3794ff)">${g.links.filter(l => !l.broken).length} links</span>` +
+                `<span class="badge" style="color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff));border-color:var(--vscode-charts-blue,#3794ff)">${g.links.filter(l => !l.broken).length} links</span>` +
                 (brokenLinks.length ? `<span class="badge err">${brokenLinks.length} broken</span>` : '') +
                 (islands.length ? `<span class="badge warn">${islands.length} islands</span>` : '') +
                 (notIndexed.length ? `<span class="badge warn">${notIndexed.length} not in index</span>` : '');
@@ -482,7 +482,7 @@
             const lists = `
                 <div class="row">
                     ${brokenLinks.length ? `<div class="card"><h3>Broken links</h3><p class="muted small">The [[target]] resolves to no file — a typo, or a note not written yet.</p>${brokenLinks.map(l =>
-                        `<div class="sub">• ${C.esc(l.from)} → <span style="color:var(--vscode-charts-red,#f14c4c)">[[${C.esc(l.to)}]]</span></div>`).join('')}</div>` : ''}
+                        `<div class="sub">• ${C.esc(l.from)} → <span style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))">[[${C.esc(l.to)}]]</span></div>`).join('')}</div>` : ''}
                     ${islands.length ? `<div class="card"><h3>Islands</h3><p class="muted small">Notes with no links in or out — weave them into the fabric or archive them.</p>${islands.map(n =>
                         `<div class="sub">• ${fileName(n)}${n.recalls ? '' : ' <span class="muted">(not recalled 30d)</span>'}</div>`).join('')}</div>` : ''}
                     ${hubs.length ? `<div class="card"><h3>Hubs</h3><p class="muted small">The most linked-to notes — the centers of knowledge.</p>${hubs.map(n =>

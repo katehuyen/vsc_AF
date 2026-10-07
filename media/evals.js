@@ -234,8 +234,8 @@
 
         document.getElementById('app').innerHTML = `
             <style>
-                .ok { color: var(--vscode-charts-green,#4caf50); }
-                .stop { color: var(--vscode-charts-red,#f14c4c); }
+                .ok { color: var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50)); }
+                .stop { color: var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
                 .cnt { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:10px; }
                 table.grid { width:100%; border-collapse:collapse; }
                 table.grid th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px;

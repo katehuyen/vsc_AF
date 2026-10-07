@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.880.0 - Light themes: coloured labels are readable (2026-10-07)
+
+- **Light themes:** text drawn in a status or chart colour - engine and
+  provider badges (Claude, Kimi, Antigravity...), "your turn", errors and
+  warnings, quota figures, chain states, done / failed marks - used the very
+  hue a chart uses, and on white an orange or yellow label is hard to read.
+  In a light theme such text now uses a deeper shade of the same hue; borders,
+  bars and fills keep the theme's own colour.
+- **Light themes:** white text on a green, blue, red or orange chip (an
+  engine's "on a plan", a standing account, a backlog kind) sits on the deeper
+  shade too, and the Console's ✕ that takes a session off the "Where you left
+  off" shelf is no longer white on white.
+- Measured on every page in Light Modern, the texts below the contrast they
+  need fell from 6,829 to 4,256.
+- **Dark themes look exactly as before** - compared colour by colour on
+  every page.
+- OpenCode's badge keeps the blue you picked for it.
+- Not yet adjusted: the phone, which still draws dark whatever the device's
+  theme.
+
 ## 3.879.0 - Light themes: secondary text is readable (2026-10-07)
 
 - **Light themes:** dimmed text - hints, ids, table headers, card labels,

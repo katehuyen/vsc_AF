@@ -7,3 +7,27 @@
    The same opacity costs far more contrast on white than on a dark ground (.65 reads 5.1:1
    in Dark Modern, 3.97:1 in Light Modern), so light keeps the hierarchy at a fraction of it. */
 body.vscode-light { --af-dimk: .4; }
+
+/* Coloured text names its ink first and the VS Code colour of the same name as the fallback
+   (color: var(--af-ink-charts-orange, <that colour>)). A chart hue is chosen to
+   be seen, not read (orange on white is 2.9:1); light reads the same hue mixed toward the editor's
+   text colour, each only as far as 5:1 on a widget ground and 4.5:1 on its own 15% tint needs.
+   Borders and fills keep VS Code's hue, except a fill under white text, which takes the ink too;
+   an engine's or provider's hue is one hue, ink included. */
+body.vscode-light {
+    --af-ink-charts-green: color-mix(in srgb, var(--vscode-charts-green) 75%, var(--vscode-editor-foreground));
+    --af-ink-charts-yellow: color-mix(in srgb, var(--vscode-charts-yellow) 55%, var(--vscode-editor-foreground));
+    --af-ink-editorWarning-foreground: color-mix(in srgb, var(--vscode-editorWarning-foreground) 55%, var(--vscode-editor-foreground));
+    --af-ink-charts-red: color-mix(in srgb, var(--vscode-charts-red) 80%, var(--vscode-editor-foreground));
+    --af-ink-editorError-foreground: color-mix(in srgb, var(--vscode-editorError-foreground) 80%, var(--vscode-editor-foreground));
+    --af-ink-errorForeground: color-mix(in srgb, var(--vscode-errorForeground) 60%, var(--vscode-editor-foreground));
+    --af-ink-charts-blue: color-mix(in srgb, var(--vscode-charts-blue) 65%, var(--vscode-editor-foreground));
+    --af-ink-charts-orange: color-mix(in srgb, var(--vscode-charts-orange) 50%, var(--vscode-editor-foreground));
+    --af-ink-testing-iconPassed: color-mix(in srgb, var(--vscode-testing-iconPassed) 35%, var(--vscode-editor-foreground));
+    --af-ink-testing-iconQueued: color-mix(in srgb, var(--vscode-testing-iconQueued) 40%, var(--vscode-editor-foreground));
+    --af-ink-inputValidation-warningBorder: color-mix(in srgb, var(--vscode-inputValidation-warningBorder) 50%, var(--vscode-editor-foreground));
+}
+
+/* A button drawn without its fill still inherits the button's text colour, white in every
+   theme: on a light page it vanishes. Its text takes the page's foreground there. */
+body.vscode-light { --af-bare-fg: var(--vscode-foreground); }

@@ -90,7 +90,7 @@
             .flexh { font-size:1em; margin:10px 0 2px; }
             .flexsave { display:flex; gap:6px; align-items:center; }
             .flexsave input { width:220px; }
-            .flexerr { color:var(--vscode-errorForeground); margin:4px 0; }
+            .flexerr { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); margin:4px 0; }
             .flexlist { display:flex; flex-wrap:wrap; gap:4px; max-width:640px; }
             .flexword { display:inline-flex; align-items:center; border:1px solid var(--vscode-input-border, rgba(128,128,128,.5)); border-radius:10px; padding:0 2px 0 8px; font-size:11px; }
             .flexwordt { cursor:pointer; }

@@ -467,16 +467,16 @@
                 <td class="num" data-label="Tokens">~${C.fmtTok(f.tokens)}</td>
                 <td class="num" data-label="Modified">${relTime(f.mtime)}</td>
                 <td class="num" data-label="Recalls 30d">${f.recalls === -1 ? '<span class="muted" title="index — loads every session">index</span>'
-                    : f.recalls > 0 ? `<span style="color:var(--vscode-charts-green,#4caf50)">×${f.recalls}</span>`
+                    : f.recalls > 0 ? `<span style="color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50))">×${f.recalls}</span>`
                     : '<span class="muted">0</span>'}</td>
             </tr>`).join('');
 
         // X2 — one card answering "is this agent's mind lean and actually used?"
         const ch = DATA.contextHealth;
-        const warn = v => v > 0 ? `<span style="color:var(--vscode-charts-yellow,#cca700)">${v}</span>` : '0';
+        const warn = v => v > 0 ? `<span style="color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700))">${v}</span>` : '0';
         const dutyRead = ch.duties.active === 0 ? '—'
             : ch.duties.lastReadTs ? relTime(ch.duties.lastReadTs)
-            : (ch.duties.sessionsThisWeek > 0 ? '<span style="color:var(--vscode-charts-red,#f14c4c)">never</span>' : 'never');
+            : (ch.duties.sessionsThisWeek > 0 ? '<span style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))">never</span>' : 'never');
         const healthHtml = `
             <div class="card">
                 <h3>Context health <a data-guide="hafiza-yonetimi">?</a></h3>
@@ -492,8 +492,8 @@
 
         // Task health — how reliably does delegated work come back?
         const th = DATA.taskHealth;
-        const red = t => `<span style="color:var(--vscode-charts-red,#f14c4c)">${t}</span>`;
-        const green = t => `<span style="color:var(--vscode-charts-green,#4caf50)">${t}</span>`;
+        const red = t => `<span style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))">${t}</span>`;
+        const green = t => `<span style="color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50))">${t}</span>`;
         const fmtDur = ms => {
             const sec = Math.round(ms / 1000);
             return sec < 90 ? `~${sec}s` : `~${Math.round(sec / 60)}m`;
@@ -559,7 +559,7 @@
                     <tr><th>Model (regex)</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache write</th><th class="num">Cache read</th><th></th></tr>
                     ${priceRows || '<tr><td colspan="6" class="muted">No rules — add one below.</td></tr>'}
                 </table></div>
-                ${unpriced.length ? `<div class="sub" style="color:var(--vscode-charts-yellow,#cca700)">Seen here with no rule (counted as $0): ${unpriced.map(C.esc).join(', ')}</div>` : ''}
+                ${unpriced.length ? `<div class="sub" style="color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700))">Seen here with no rule (counted as $0): ${unpriced.map(C.esc).join(', ')}</div>` : ''}
                 <div class="btnrow" style="margin-top:8px">
                     <button class="secondary" id="paddrow">Add model</button>
                     <button id="psave">Save rates</button>

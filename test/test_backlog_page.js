@@ -1915,13 +1915,13 @@ function pickParent(r, code) {
     ok('an item that is not in the queue is not coloured at all — it is not waiting its turn',
         !/q-top|q-rest/.test(grip('P-1')));
     ok('both bands are one hue, the queue\'s own green — here and in the strip',
-        /\.pj-bl-grip\.q-top \{ color:var\(--vscode-charts-green/.test(r.html())
+        /\.pj-bl-grip\.q-top \{ color:var\(--af-ink-charts-green, var\(--vscode-charts-green/.test(r.html())
         && /\.pj-bl-nextn \{[\s\S]{0,220}?background:var\(--vscode-charts-green/.test(r.html()));
     ok('…and the strip\'s number is legible on any theme, because its text takes the '
         + 'editor background rather than a fixed colour',
         /\.pj-bl-nextn \{[\s\S]{0,400}?color:var\(--vscode-editor-background/.test(r.html()));
     ok('past the default the number drops the fill and keeps the hue, half lit',
-        /\.pj-bl-nextb\.past \.pj-bl-nextn \{[\s\S]{0,140}?color:var\(--vscode-charts-green/.test(r.html()));
+        /\.pj-bl-nextb\.past \.pj-bl-nextn \{[\s\S]{0,140}?color:var\(--af-ink-charts-green, var\(--vscode-charts-green/.test(r.html()));
 }
 
 // ---------- capture takes a type ----------

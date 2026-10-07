@@ -125,7 +125,7 @@
         const usedRows = rows.filter(r => agents.some(a => r.cells[a.id] && r.cells[a.id].calls > 0)).length;
         const deadRows = rows.length - usedRows;
         const chips = `<span class="badge">${rows.length} total</span>
-            <span class="badge" style="color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)">${usedRows} used (30d)</span>` +
+            <span class="badge" style="color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50));border-color:var(--vscode-charts-green,#4caf50)">${usedRows} used (30d)</span>` +
             (deadRows ? `<span class="badge warn">${deadRows} unused (30d)</span>` : '');
         const head = `<tr><th class="name">${title}</th>` +
             agents.map(a => `<th class="agent" title="${C.esc(a.name)}">${C.esc(a.name.length > 10 ? a.name.slice(0, 9) + '…' : a.name)}</th>`).join('') +
@@ -204,7 +204,7 @@
             const title = row.title.length > 60 ? row.title.slice(0, 59) + '…' : row.title;
             return `<tr>
                 <td class="name" ${rowCtx(row, 'task', '')}><button class="rowname" title="${C.esc(row.title)} — click for the full task history — ${window.AFCtx.HINT}" data-taskhist="1">${C.esc(title)}</button>
-                    <span class="tag">${SOURCE_TAG[row.source] || row.source}</span>${row.alwaysFails ? ' <span class="dead" style="color:var(--vscode-charts-red,#f14c4c)" title="its last runs all failed">●</span>' : ''}</td>` +
+                    <span class="tag">${SOURCE_TAG[row.source] || row.source}</span>${row.alwaysFails ? ' <span class="dead" style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))" title="its last runs all failed">●</span>' : ''}</td>` +
                 agents.map(a => taskCellHtml(row.cells[a.id], row, a)).join('') +
             '</tr>';
         }).join('');
@@ -230,22 +230,22 @@
                     border-radius: 10px; min-width: 30px; font-weight: 700; font-size: 11px;
                 }
                 .matrix .pill.idle { opacity: 0.45; }
-                .matrix .pill.off { color: var(--vscode-charts-orange, #d18616); }
+                .matrix .pill.off { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
                 .matrix .pill.fail {
                     background: var(--vscode-charts-red, #f14c4c); color: var(--vscode-editor-background, #000);
                     border-radius: 10px; min-width: 30px; font-weight: 700; font-size: 11px;
                 }
                 .matrix .pill.mixed {
-                    color: var(--vscode-charts-orange, #d18616); font-weight: 700; font-size: 11px;
+                    color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); font-weight: 700; font-size: 11px;
                     box-shadow: 0 0 0 1px var(--vscode-charts-orange, #d18616); border-radius: 10px;
                 }
                 .matrix .pill.divg { box-shadow: 0 0 0 2px var(--vscode-charts-orange, #d18616); border-radius: 10px; }
                 .matrix .pill.duty { font-size: 11px; opacity: 0.85; }
                 .matrix .copyhere { opacity: 0.25; font-size: 13px; }
-                .matrix .copyhere:hover { opacity: 1; color: var(--vscode-charts-blue, #3794ff); }
+                .matrix .copyhere:hover { opacity: 1; color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
                 .matrix .absent span { opacity: 0.2; }
                 .tag { font-size: 10px; border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; opacity: 0.7; }
-                .dead { color: var(--vscode-charts-yellow, #cca700); font-size: 9px; vertical-align: middle; }
+                .dead { color: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); font-size: 9px; vertical-align: middle; }
                 .chips .badge { margin-left: 6px; font-weight: 400; }
                 html.af-phone .matrix th.name, html.af-phone .matrix td.name { min-width: 120px; max-width: 132px; overflow-wrap: anywhere; position: sticky; left: 0; z-index: 1; background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background)); }
             </style>

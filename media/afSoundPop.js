@@ -47,7 +47,7 @@
             .sp-line select { flex:1 1 auto; }
             .sp-foot { display:flex; gap:6px; align-items:center; margin-top:10px; }
             .sp-foot .sp-nav { margin-left:auto; }
-            .sp-err { color:var(--vscode-errorForeground); margin:6px 0; }`;
+            .sp-err { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); margin:6px 0; }`;
         document.head.appendChild(el);
     }
 

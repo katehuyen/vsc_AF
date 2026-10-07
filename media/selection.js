@@ -52,7 +52,7 @@
                 <div class="btnrow">
                     <button id="confirm" ${canConfirm ? '' : 'disabled'}>Use selected</button>
                     <button class="secondary" id="cancel"${answered ? ' disabled' : ''}>Cancel</button>
-                    <span class="badge" style="${canConfirm ? 'color:var(--vscode-charts-green,#4caf50);border-color:var(--vscode-charts-green,#4caf50)' : ''}">${chosen.size} selected</span>
+                    <span class="badge" style="${canConfirm ? 'color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50));border-color:var(--vscode-charts-green,#4caf50)' : ''}">${chosen.size} selected</span>
                 </div>
             </div>
             ${note ? `<div class="card"><p class="${answered ? 'muted' : 'err'}">${C.esc(note)}</p></div>` : ''}

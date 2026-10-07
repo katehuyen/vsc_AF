@@ -209,7 +209,7 @@
         .tmsg { display:flex; gap:8px; align-items:baseline; }
         .trole { flex:none; width:64px; font-size:10px; opacity:.65; text-align:right; text-transform:uppercase; }
         .ttext { white-space:pre-wrap; word-break:break-word; }
-        .tmsg.err .ttext { color:var(--vscode-charts-red, #f14c4c); }
+        .tmsg.err .ttext { color:var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
         .tmsg.tool .ttext { opacity:.8; font-family:var(--vscode-editor-font-family, monospace); font-size:11px; }
         .tmsg.assistant .trole { color:var(--vscode-textLink-foreground); opacity:.9; }
         /* U-176 — on a phone a row is a card (media/afMobile.js): a figure sits beside its label */

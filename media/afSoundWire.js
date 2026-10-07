@@ -35,8 +35,8 @@
                 /* audit B-05 — a fallback is a warning (something still rings);
                    an armed event nothing can play is SILENCE, found first. */
                 .alertplays { font-size:11px; margin-top:2px; }
-                .alertplays.bad { color:var(--vscode-charts-yellow, #d7ba7d); }
-                .alertplays.silent { color:var(--vscode-errorForeground); }
+                .alertplays.bad { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #d7ba7d)); }
+                .alertplays.silent { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
                 .alertorigin { font-family:var(--vscode-font-family); opacity:.55; font-size:10px; }
                 /* A-22 — the gate strip. ONE LINE above the table: three
                    authorities and what they add up to right now, in the order
@@ -59,7 +59,7 @@
                    its causes is read as a fourth unrelated control. */
                 .alertgatestate { white-space:nowrap;
                     border-bottom:1px dotted var(--vscode-widget-border, #4444); }
-                .alertgatestate.off { color:var(--vscode-charts-yellow, #d7ba7d); }
+                .alertgatestate.off { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #d7ba7d)); }
                 .alertmuteseswrap { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
                 .alertmuteseslbl { opacity:.6; font-size:11px; white-space:nowrap;
                     border-bottom:1px dotted var(--vscode-widget-border, #4444); }

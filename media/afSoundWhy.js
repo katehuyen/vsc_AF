@@ -54,8 +54,8 @@
             .wyl { display:block; margin:1px 0; }
             .wytest .wyl { display:inline; }
             .wym { display:inline-block; width:1.2em; text-align:center; }
-            .wyl.ok .wym, .wytest .wyl.ok { color:var(--vscode-testing-iconPassed, #73c991); }
-            .wyl.no, .wyl.no .wym { color:var(--vscode-errorForeground, #f48771); }
+            .wyl.ok .wym, .wytest .wyl.ok { color:var(--af-ink-testing-iconPassed, var(--vscode-testing-iconPassed, #73c991)); }
+            .wyl.no, .wyl.no .wym { color:var(--af-ink-errorForeground, var(--vscode-errorForeground, #f48771)); }
             .wyl.info { opacity:.8; }
             .wytest { margin-top:6px; }
         </style>

@@ -244,10 +244,10 @@
         .a2a-s-any { opacity:.6; }
         .a2a-state { font-size:11px; padding:1px 7px; border-radius:9px; white-space:nowrap; border:1px solid var(--vscode-panel-border); }
         .a2a-st-queued { color:var(--vscode-foreground); }
-        .a2a-st-claimed, .a2a-st-running { color:var(--vscode-testing-iconQueued, #d4a72c); border-color:currentColor; }
-        .a2a-st-done { color:var(--vscode-testing-iconPassed, #3fb950); }
-        .a2a-st-failed { color:var(--vscode-errorForeground); }
-        .a2a-st-blocked { color:var(--vscode-editorWarning-foreground, #d4a72c); font-weight:600; }
+        .a2a-st-claimed, .a2a-st-running { color:var(--af-ink-testing-iconQueued, var(--vscode-testing-iconQueued, #d4a72c)); border-color:currentColor; }
+        .a2a-st-done { color:var(--af-ink-testing-iconPassed, var(--vscode-testing-iconPassed, #3fb950)); }
+        .a2a-st-failed { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
+        .a2a-st-blocked { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #d4a72c)); font-weight:600; }
         .a2a-st-cancelled { opacity:.6; }
         .a2a-cat { flex-shrink:0; }
         .a2a-flag { font-size:11px; opacity:.8; flex-shrink:0; white-space:nowrap; }

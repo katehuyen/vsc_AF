@@ -403,8 +403,8 @@
         .pu-bar { margin-top:9px; }
         .pu-bar .pu-t { display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12px; }
         .pu-bar .pu-t strong { font-size:13px; }
-        .pu-bar .pu-t strong.warn { color:var(--vscode-charts-yellow,#cca700); }
-        .pu-bar .pu-t strong.hot { color:var(--vscode-charts-red,#f14c4c); }
+        .pu-bar .pu-t strong.warn { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700)); }
+        .pu-bar .pu-t strong.hot { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
         .pu-bar .progress { margin-top:3px; }
     </style>`;
 

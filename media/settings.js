@@ -2322,7 +2322,7 @@
                 .setpath { flex:1 0 100%; font-size:11px; font-family:var(--vscode-editor-font-family);
                     color:var(--vscode-descriptionForeground); opacity:.9;
                     overflow-wrap:anywhere; margin:1px 0 0 18px; }
-                .setpath.bad { color:var(--vscode-editorWarning-foreground, var(--vscode-errorForeground)); opacity:1; }
+                .setpath.bad { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, var(--vscode-errorForeground))); opacity:1; }
                 .setgroup { margin:14px 0 0; padding-left:10px;
                     border-left:2px solid var(--vscode-widget-border, #3333); }
                 .setgrouph { margin:0 0 2px; font-size:12px; letter-spacing:.02em; }
@@ -2341,7 +2341,7 @@
                    (the vault Obsidian has open) and can change under the user,
                    which the solid chip beside it would not say. */
                 .pathvar.derived { border-style:dotted;
-                    color:var(--vscode-charts-blue,#3794ff); }
+                    color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
                 .setljson { font-size:11px; opacity:.85; }
                 /* U-110 — a pair reads left to right: the name, the arrow that
                    says which way it points, the value, the ✕. The name box is
@@ -2384,7 +2384,7 @@
                 .setfdesc { font-size:10px; color:var(--vscode-descriptionForeground);
                     display:block; flex:1 1 auto; min-width:0;
                     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                .req { color:var(--vscode-errorForeground); font-weight:600; }
+                .req { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); font-weight:600; }
                 .setrows { display:flex; flex-direction:column; gap:6px; }
                 .settbl { border-collapse:collapse; font-size:11px; width:100%; table-layout:fixed; }
                 .settbl th { text-align:left; padding:2px 6px 4px 0; font-weight:600;
@@ -2400,8 +2400,8 @@
                     border:1px solid var(--vscode-widget-border, #4444);
                     color:var(--vscode-descriptionForeground);
                 }
-                .seterr { font-size:11px; color:var(--vscode-errorForeground); margin-top:4px; }
-                .setinforce { font-size:11px; color:var(--vscode-editorWarning-foreground); margin-top:4px; }
+                .seterr { font-size:11px; color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); margin-top:4px; }
+                .setinforce { font-size:11px; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground)); margin-top:4px; }
                 .setitem.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 .rootbadge { font-size:10px; padding:1px 8px; border-radius:8px; white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
@@ -2453,7 +2453,7 @@
                 .setitem.eng-off { border-left-color:var(--vscode-descriptionForeground, #888); opacity:.75; }
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4446); }
-                .engbadge.b-ok { background:var(--vscode-charts-green, #3fb950); color:#fff; border-color:transparent; }
+                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); color:#fff; border-color:transparent; }
                 .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:#000; border-color:transparent; }
                 .engnext { font-size:12px; margin-top:4px; max-width:760px; }
                 .engdetail { margin-top:2px; }
@@ -2463,8 +2463,8 @@
                 .wikifiles { margin:6px 0 4px; }
                 .wikifile { display:flex; gap:8px; align-items:baseline; font-size:11px; padding:1px 0; }
                 .wikimark { flex:none; width:12px; text-align:center; font-weight:600; }
-                .wikimark.ok { color:var(--vscode-charts-green, #3fb950); }
-                .wikimark.no { color:var(--vscode-charts-red, #f85149); }
+                .wikimark.ok { color:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); }
+                .wikimark.no { color:var(--af-ink-charts-red, var(--vscode-charts-red, #f85149)); }
                 .wikirel { flex:0 0 210px; font-family:var(--vscode-editor-font-family); }
                 .wikipath { flex:1 1 auto; opacity:.5; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; font-family:var(--vscode-editor-font-family); }

@@ -605,31 +605,31 @@
         html.af-phone .nt-title { flex:1 1 calc(100% - 80px); white-space:normal; }
         html.af-phone .nt-body { padding-left:12px; }
         button.danger:hover { background:var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color:var(--vscode-editorError-foreground, #e51400); }
-        .nt-trashic { color:var(--vscode-editorError-foreground, #e51400); }
+        .nt-trashic { color:var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
         /* Small, deliberately subdued mark riding in front of "Clear read" —
            reddish like the trash icon so both read as "this deletes things",
            but muted so it doesn't compete with the trash icon's alarm. */
-        .nt-cleardot { color:var(--vscode-editorError-foreground, #e51400); opacity:.55; font-size:8px; vertical-align:1px; }
-        .nt-undo { color:var(--vscode-charts-yellow, #e2c08d); }
+        .nt-cleardot { color:var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); opacity:.55; font-size:8px; vertical-align:1px; }
+        .nt-undo { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #e2c08d)); }
         .nt-row { display:flex; gap:8px; align-items:center; padding:8px 10px; cursor:pointer; }
         .nt-row:hover { background:var(--vscode-list-hoverBackground); }
         .nt-caret { width:12px; opacity:.7; flex-shrink:0; }
         .nt-ico { flex-shrink:0; }
         .nt-title { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
         .nt-lb { font-size:9px; font-weight:700; border-radius:3px; padding:1px 4px; flex-shrink:0; border:1px solid var(--vscode-panel-border); opacity:.85; }
-        .lb-2 { color:var(--vscode-charts-blue, #3794ff); } .lb-3 { color:var(--vscode-charts-orange, #e9a700); }
-        .lb-4 { color:var(--vscode-editorError-foreground, #e51400); border-color:var(--vscode-editorError-foreground, #e51400); }
+        .lb-2 { color:var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); } .lb-3 { color:var(--af-ink-charts-orange, var(--vscode-charts-orange, #e9a700)); }
+        .lb-4 { color:var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); border-color:var(--vscode-editorError-foreground, #e51400); }
         .nt-tags, .nt-stars, .nt-pin { flex-shrink:0; }
         .nt-stars { letter-spacing:1px; }
-        .nt-star { cursor:pointer; opacity:calc(1 - .45 * var(--af-dimk, 1)); } .nt-star.on { color:var(--vscode-charts-yellow, #e2c08d); opacity:1; }
+        .nt-star { cursor:pointer; opacity:calc(1 - .45 * var(--af-dimk, 1)); } .nt-star.on { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #e2c08d)); opacity:1; }
         .nt-pin { cursor:pointer; opacity:.3; filter:grayscale(1); } .nt-pin:hover { opacity:.7; } .nt-pin.on { opacity:1; filter:none; }
         .nt-meta { margin-left:auto; flex-shrink:0; white-space:nowrap; }
         .nt-x { flex:0 0 auto; padding:1px 6px; min-width:0; opacity:.55; }
-        .nt-x:hover { opacity:1; color:var(--vscode-editorError-foreground, #e51400); }
+        .nt-x:hover { opacity:1; color:var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
         .nt-udot { color:var(--vscode-button-background); }
         .nt-badge { font-size:10px; border-radius:8px; padding:1px 7px; flex-shrink:0; border:1px solid var(--vscode-panel-border); }
-        .nt-badge.ok { color:var(--vscode-charts-green, #89d185); }
-        .nt-badge.warn { color:var(--vscode-charts-orange, #e9a700); border-color:var(--vscode-charts-orange, #e9a700); }
+        .nt-badge.ok { color:var(--af-ink-charts-green, var(--vscode-charts-green, #89d185)); }
+        .nt-badge.warn { color:var(--af-ink-charts-orange, var(--vscode-charts-orange, #e9a700)); border-color:var(--vscode-charts-orange, #e9a700); }
         .nt-badge.rep { cursor:default; }
         .nt-report { display:flex; gap:8px; align-items:center; margin:8px 0; padding:6px 8px; border-left:3px solid var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); border-radius:4px; }
         .nt-report .nt-reppath { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

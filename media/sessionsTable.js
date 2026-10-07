@@ -366,7 +366,7 @@
         .pinbtn { background:transparent; border:0; cursor:pointer; padding:0 2px; font-size:11px;
             line-height:1; color:var(--vscode-foreground); opacity:calc(1 - .75 * var(--af-dimk, 1)); }
         .pinbtn:hover { opacity:.8; }
-        .pinbtn.on { opacity:1; color:var(--vscode-charts-yellow, #d7ba7d); }
+        .pinbtn.on { opacity:1; color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #d7ba7d)); }
         .stag { font-size:9px; padding:0 5px; margin-left:4px; border-radius:7px; white-space:nowrap;
             border:1px solid var(--vscode-widget-border, #4444); opacity:.8; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;

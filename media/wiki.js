@@ -834,7 +834,7 @@
                 .wk-vault.bad { border-color:var(--vscode-editorWarning-foreground,#cca700); }
                 .wk-vlabel { opacity:.7; }
                 .wk-vault code { font-size:11px; opacity:.85; }
-                .wk-vault code.bad, .wk-file.bad { color:var(--vscode-editorWarning-foreground,#cca700); }
+                .wk-vault code.bad, .wk-file.bad { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
                 .wk-file { cursor:pointer; text-decoration:none; color:var(--vscode-textLink-foreground); }
                 .wk-file:hover { text-decoration:underline; }
                 /* ‼️ U-122: the root is a PATH you can press, so it is drawn as
@@ -875,14 +875,14 @@
                     border-radius:2px; }
                 .wk-state { white-space:nowrap; width:1%; }
                 .wk-st { opacity:.9; }
-                tr.wk-compiled .wk-st { color:var(--vscode-charts-green,#4caf50); }
-                tr.wk-compiling .wk-st { color:var(--vscode-charts-blue,#3794ff); }
+                tr.wk-compiled .wk-st { color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50)); }
+                tr.wk-compiling .wk-st { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
                 /* X-58: waiting, and the last run over it produced nothing.
                    Red on the state cell only — the row is still ordinary work,
                    and tinting the whole line would read as an error to fix
                    rather than a mark to compile again. */
-                tr.wk-failed .wk-st { color:var(--vscode-charts-red,#f14c4c); }
-                .wk-retry { color:var(--vscode-charts-red,#f14c4c); }
+                tr.wk-failed .wk-st { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
+                .wk-retry { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
                 tr.wk-dropped { opacity:.55; }
                 /* U-92: the row editor. A row of its own under the mark it is
                    about, because three fields do not fit in one 180px cell —
@@ -917,7 +917,7 @@
                 .wk-tn.cut { opacity:.5; text-decoration:line-through; background:transparent;
                     color:var(--vscode-descriptionForeground,#888);
                     border-color:var(--vscode-widget-border,#4444); }
-                .wk-turns.cut { color:var(--vscode-editorWarning-foreground,#d19a66); }
+                .wk-turns.cut { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#d19a66)); }
                 .wk-fix { margin-left:2px; }
                 .wk-sess { white-space:nowrap; width:1%; cursor:pointer; }
                 .wk-sess code { font-size:11px; }
@@ -942,12 +942,12 @@
                     font-size:11px; padding:0 3px; border-radius:4px; }
                 .wk-seed:hover { background:var(--vscode-toolbar-hoverBackground,#8882);
                     border-color:var(--vscode-widget-border,#4443); }
-                tr.wk-untriaged .wk-st { color:var(--vscode-charts-green,#89d185); }
+                tr.wk-untriaged .wk-st { color:var(--af-ink-charts-green, var(--vscode-charts-green,#89d185)); }
                 /* No resting opacity — the light theme's own green is already
                    at the edge of readable and dimming it would put the one
                    thing on the page that is asking to be pressed below it. */
                 .wk-seedcat { font-style:italic; cursor:pointer;
-                    color:var(--vscode-charts-green,#89d185); }
+                    color:var(--af-ink-charts-green, var(--vscode-charts-green,#89d185)); }
                 .wk-topics:hover .wk-seedcat { text-decoration:underline; }
                 .wk-rawf.sel { background:var(--vscode-button-background);
                     color:var(--vscode-button-foreground); }
@@ -973,7 +973,7 @@
                    breathes instead — the same signal the Console uses for a
                    turn in flight, and off for a reader who asked for less
                    motion. */
-                .wk-run, tr.wk-compiling .wk-st { color:var(--vscode-charts-blue,#3794ff);
+                .wk-run, tr.wk-compiling .wk-st { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff));
                     animation:wk-breathe 1.9s ease-in-out infinite; }
                 @keyframes wk-breathe { 0%,100% { opacity:1; } 50% { opacity:.45; } }
                 @media (prefers-reduced-motion: reduce) {
@@ -982,7 +982,7 @@
                 /* U-95: the bulk group, which only exists while rows are ticked. */
                 .wk-bulk { display:inline-flex; gap:6px; padding-left:8px; margin-left:2px;
                     border-left:1px solid var(--vscode-widget-border,#4443); }
-                .wk-del:hover { color:var(--vscode-errorForeground,#f14c4c); }
+                .wk-del:hover { color:var(--af-ink-errorForeground, var(--vscode-errorForeground,#f14c4c)); }
                 /* U-95: the strip that stands between a press and a real run. */
                 .wk-ask { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:11px;
                     padding:6px 10px; margin:0 0 8px; border-radius:5px;

@@ -131,18 +131,18 @@
                 .dots { letter-spacing: 2px; opacity: .6; }
                 .mini { background: none; border: 1px solid var(--vscode-widget-border, #666); border-radius: 4px;
                         color: inherit; cursor: pointer; font-size: 11px; padding: 1px 7px; margin-left: 6px; }
-                .mini:hover { border-color: var(--vscode-charts-blue, #3794ff); color: var(--vscode-charts-blue, #3794ff); }
-                .mini.danger:hover { border-color: var(--vscode-charts-red, #f14c4c); color: var(--vscode-charts-red, #f14c4c); }
+                .mini:hover { border-color: var(--vscode-charts-blue, #3794ff); color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+                .mini.danger:hover { border-color: var(--vscode-charts-red, #f14c4c); color: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
                 .mini.add { border-color: var(--vscode-charts-green, #4caf50); font-size: 12px; padding: 3px 12px; margin: 0; }
                 .tag { font-size: 10px; border: 1px solid currentColor; border-radius: 8px; padding: 0 6px; opacity: .85; white-space: nowrap; }
-                .tag.all { color: var(--vscode-charts-green, #4caf50); }
-                .tag.agent { color: var(--vscode-charts-blue, #3794ff); }
-                .tag.missing { color: var(--vscode-charts-orange, #d18616); text-decoration: line-through; }
+                .tag.all { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+                .tag.agent { color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+                .tag.missing { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); text-decoration: line-through; }
                 .tag.none, .tag.missing { }
-                .tag.none { color: var(--vscode-charts-orange, #d18616); }
+                .tag.none { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
                 .tag.farm { color: var(--vscode-charts-purple, #b180d7); }
-                .tag.route { color: var(--vscode-charts-blue, #3794ff); }
-                .tag.reader { color: var(--vscode-charts-yellow, #cca700); }
+                .tag.route { color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+                .tag.reader { color: var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); }
                 .tb tr.secformrow td { background: none; padding: 4px 0 10px; }
                 .secpick { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
             </style>

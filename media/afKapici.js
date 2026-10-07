@@ -15,7 +15,7 @@
     const pct = x => Math.round((Number(x) || 0) * 100) + '%';
     const T = () => window.AFTip;
     const CHIP = 'display:inline-block;padding:0 5px;border-radius:3px;font-size:11px;line-height:16px;white-space:nowrap;';
-    const tint = ok => (ok ? 'background:rgba(76,175,80,.18);color:var(--vscode-charts-green,#4caf50)' : 'background:rgba(241,76,76,.16);color:var(--vscode-charts-red,#f14c4c)');
+    const tint = ok => (ok ? 'background:rgba(76,175,80,.18);color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50))' : 'background:rgba(241,76,76,.16);color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))');
 
     function word(k) { return k.outcome || (k.fallback ? k.fallback + ' path' : k.passed ? 'pass' : 'reject'); }
 
@@ -48,7 +48,7 @@
                 ...(K.candidates || []).map(c => 'Looked for: ' + c.name + ' — ' + (c.present ? 'present' : 'missing')),
                 key.present ? '' : '\nWithout a key every question goes down its rule\'s failure path — nothing breaks, and nothing is asked of a model.'
             ]), 'tip-kpc-key');
-        const rulesHtml = T().wrap(`<span>${Number(K.rules) || 0} rule(s)${problems.length ? ` · <b style="color:var(--vscode-charts-red,#f14c4c)">${problems.length} broken</b>` : ''}</span>`,
+        const rulesHtml = T().wrap(`<span>${Number(K.rules) || 0} rule(s)${problems.length ? ` · <b style="color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))">${problems.length} broken</b>` : ''}</span>`,
             'Rules — ' + (Number(K.rules) || 0), T().lines([
                 ...(K.rulesDirs || []).map(d => 'Folder: ' + d),
                 ...problems.map(p => 'Broken: ' + (p.file || p.layer || '?') + ' — ' + p.error),

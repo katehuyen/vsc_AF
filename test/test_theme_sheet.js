@@ -27,10 +27,17 @@ ok('‼️ …and sets only --af-* variables — it restyles no element itself' 
 const names = [...new Set(decls.map(d => d.split(':')[0].trim()))];
 
 // Every use in the pages, with its fallback.
-const media = fs.readdirSync(path.join(ROOT, 'media')).filter(f => /\.(js|css)$/.test(f) && f !== 'theme.css');
+const media = fs.readdirSync(path.join(ROOT, 'media')).filter(f => /\.(js|css)$/.test(f) && f !== 'theme.css').map(f => 'media/' + f);
+const srcTs = [];
+(function walkTs(dir) {
+    for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+        const p = dir + '/' + e.name;
+        if (e.isDirectory()) { walkTs(p); } else if (/\.ts$/.test(e.name)) { srcTs.push(p); }
+    }
+})('src');
 const uses = [];
-for (const f of media) {
-    const src = read('media/' + f);
+for (const f of media.concat(srcTs)) {
+    const src = read(f);
     for (const m of src.matchAll(/var\(\s*(--af-[\w-]+)\s*(,\s*[^)]*)?\)/g)) {
         if (names.includes(m[1])) { uses.push({ f, name: m[1], fallback: (m[2] || '').replace(/^,\s*/, ''), at: src.slice(Math.max(0, m.index - 40), m.index + m[0].length + 2) }); }
     }
@@ -42,6 +49,15 @@ ok('‼️ every use names the dark value as its fallback' + (bare.length ? ' �
 const dim = uses.filter(u => u.name === '--af-dimk');
 const malformed = dim.filter(u => !/opacity\s*:\s*calc\(1 - \.\d+ \* var\(--af-dimk, 1\)\)/.test(u.at));
 ok('every dimmed text is written calc(1 - D * var(--af-dimk, 1)), so dark keeps its own D' + (malformed.length ? ' — not: ' + malformed.map(u => u.f + ': ' + u.at.trim()).join(' | ') : ''), dim.length > 0 && malformed.length === 0);
+
+// --af-ink-X: coloured text is var(--af-ink-X, var(--vscode-X …)) — dark falls back to the very
+// variable the page used before, and light's ink is that same variable mixed darker.
+const inks = names.filter(n => n.startsWith('--af-ink-'));
+const wrongFb = uses.filter(u => u.name.startsWith('--af-ink-') && !new RegExp('^var\\(--vscode-' + u.name.slice(9) + '(,|$)').test(u.fallback));
+ok('every ink falls back to the VS Code variable of its own name' + (wrongFb.length ? ' — not: ' + wrongFb.map(u => u.f + ': ' + u.at.trim()).join(' | ') : ''), inks.length > 0 && wrongFb.length === 0);
+const inkDecl = decls.filter(d => d.startsWith('--af-ink-'));
+const strayInk = inkDecl.filter(d => { const n = d.split(':')[0].trim().slice(9); return !d.includes('var(--vscode-' + n + ')'); });
+ok('…and the layer derives each ink from that same variable' + (strayInk.length ? ' — not: ' + strayInk.join(' | ') : ''), inkDecl.length > 0 && strayInk.length === 0);
 
 // Every page shell links it after common.css, inside the head (the quota style keeps its place
 // right after common.css — test_quota_style.js; the layer only sets variables, so its order among

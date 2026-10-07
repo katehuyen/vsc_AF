@@ -3423,7 +3423,7 @@ const intentOf = (o) => Object.assign({
     ok('‼️ a pending swap is on the BOX, not only in the hover',
         /class="af-tipw axisw pend"/.test(html())
         && /<span class="pendmark" aria-hidden="true">→<\/span>/.test(html())
-        && /\.crow \.axisw\.pend > select \{ color:var\(--vscode-charts-yellow/.test(html()));
+        && /\.crow \.axisw\.pend > select \{ color:var\(--af-ink-charts-yellow, var\(--vscode-charts-yellow/.test(html()));
     ok('…the box shows what the NEXT message will run as',
         /<option value="work-1"[^>]*selected/.test(html())
         && /^Account: work@studio\b/.test(panelOf('c-account-live').head));

@@ -16,7 +16,7 @@
     const CSS = '<style>'
         + '.svs{margin:6px 0 10px;border:1px solid var(--vscode-panel-border,#444);border-radius:4px;font-size:12px;color:var(--vscode-foreground)}'
         + '.svs-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 8px;border-bottom:1px solid var(--vscode-panel-border,#444)}'
-        + '.svs-t{font-weight:600}.svs-cost{color:var(--vscode-charts-yellow,#cca700);font-weight:600}'
+        + '.svs-t{font-weight:600}.svs-cost{color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#cca700));font-weight:600}'
         + '.svs-live{padding:0 6px;border-radius:8px;border:1px solid var(--vscode-charts-purple,#b180d7);color:var(--vscode-foreground)}'
         + '.svs-btn{margin-left:auto;cursor:pointer;background:none;border:1px solid var(--vscode-button-border,var(--vscode-panel-border,#666));color:var(--vscode-foreground);border-radius:3px;padding:0 6px}'
         + '.svr{display:grid;grid-template-columns:22px 30px 16px minmax(0,1fr) 40px 64px minmax(60px,110px);gap:6px;align-items:center;padding:2px 8px}'

@@ -916,7 +916,14 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   `opacity: calc(1 - D * var(--af-dimk, 1))` with `D` the dark dimming — the
   same opacity costs far more contrast on white (`.65` = 5.1:1 in Dark Modern,
   3.97:1 in Light Modern). A dimming that means a STATE (disabled, hover-reveal,
-  hidden) keeps its plain opacity.
+  hidden) keeps its plain opacity. Coloured TEXT is
+  `color: var(--af-ink-X, var(--vscode-X, …))`: a chart hue is chosen to be
+  seen, not read (orange on white is 2.9:1), and light's ink is the same hue
+  mixed toward `--vscode-editor-foreground` (always dark in a light theme;
+  `--vscode-foreground` is a light grey in Light+). Borders and fills keep the
+  hue; a tone variable that is also a text colour (`--af-engc`, `--ch-tone`)
+  is wrapped where it is defined, so the tone stays one hue. A colour the user
+  picked by hand (OpenCode's badge) is not re-inked without asking.
 - **‼️ The light theme's contrast debt may only shrink, the dark theme may not
   move.** `test_theme_audit.js` holds every page to `themeaudit.manifest.json`;
   lower it with `node test/theme_audit.js --write-budget` when a page improves.

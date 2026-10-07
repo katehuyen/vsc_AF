@@ -557,7 +557,7 @@ const by = (list, id) => list.find(e => e.id === id);
                 const fx = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'engines.js'), 'utf8');
                 ok('‼️ …and the page draws it as a third state, in its own colour, with its own mark',
                     /v\.refused \? 'held'/.test(fx) && /v\.refused \? '⊘ '/.test(fx)
-                    && /\.engv\.held \{ color:var\(--vscode-charts-yellow/.test(fx));
+                    && /\.engv\.held \{ color:var\(--af-ink-charts-yellow, var\(--vscode-charts-yellow/.test(fx));
                 ok('…and its hover says the engine was never asked, rather than timing a failure',
                     /the engine was never asked/.test(fx));
             }

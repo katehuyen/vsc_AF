@@ -1097,7 +1097,7 @@
                     font-size:.85em; line-height:1; vertical-align:baseline;
                     color:var(--vscode-foreground); opacity:.3; }
                 .pinstar:hover { opacity:.75; }
-                .pinstar.on { opacity:1; color:var(--vscode-charts-yellow, #d7ba7d); }
+                .pinstar.on { opacity:1; color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #d7ba7d)); }
                 /* The labels the same marks store carries — shown, not editable
                    here: one place owns setting them (the row's right-click). */
                 .htag { font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
@@ -1109,7 +1109,7 @@
                     font:inherit; color:inherit; opacity:.85; }
                 .idcopy:hover { opacity:1; color:var(--vscode-textLink-foreground);
                     text-decoration:underline; }
-                .idcopy.done { color:var(--vscode-charts-green, #4caf50); opacity:1;
+                .idcopy.done { color:var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); opacity:1;
                     text-decoration:none; }
                 /* Timeline click-through: briefly spotlight the message we jumped to. */
                 .msg.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
@@ -1129,8 +1129,8 @@
                 .ctxcard:hover .ctxglyph { opacity:.9; }
                 /* S-64: the discipline signal, under the gauge it belongs to. */
                 .ctxsigline { font-weight:600; letter-spacing:.2px; margin-top:2px;
-                    color:var(--vscode-editorWarning-foreground, #cca700); }
-                .ctxsigline.stop, .ctxsigline.bad { color:var(--vscode-errorForeground, #f14c4c); }
+                    color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); }
+                .ctxsigline.stop, .ctxsigline.bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground, #f14c4c)); }
                 /* An order that was obeyed is not a warning any more — the loud
                    colours stay for the states somebody may still have to act on. */
                 .ctxsigline.done { color:var(--vscode-descriptionForeground); font-weight:500; }
@@ -1161,8 +1161,8 @@
                 .ctxact button:disabled { opacity:.6; cursor:default; }
                 .ctxstatus { font-size:10px; opacity:.75; line-height:1.4; }
                 /* Files changed (B3): the session's own hunks, old above new. */
-                .plus { color:var(--vscode-charts-green, #4caf50); }
-                .minus { color:var(--vscode-charts-red, #f14c4c); }
+                .plus { color:var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
+                .minus { color:var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); }
                 .hunkbox { margin:6px 0 12px; }
                 .hunkhead { font-size:10px; opacity:.7; margin-bottom:3px; }
                 .hunk { margin:0; padding:5px 8px; font-size:11px; line-height:1.45; overflow-x:auto;

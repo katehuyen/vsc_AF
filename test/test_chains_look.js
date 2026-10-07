@@ -39,7 +39,7 @@ ok('…and never a leg with room left, or a chain that has ended', !/⑂⊣/.tes
 ok('a colour family per state', L.tone(row('running', 1, 6)) === 'run' && L.tone(row('waiting', 1, 6)) === 'hold'
     && L.tone(row('parked', 1, 6)) === 'hold' && L.tone(row('done', 1, 6)) === 'ok' && L.tone(row('failed', 1, 6)) === 'off');
 ok('‼️ anything going wrong is drawn over the state\'s own colour', L.tone(row('done', 1, 6, { signals: [{ kind: 'cut' }] })) === 'attn');
-ok('attention is not the waiting colour', /\.t-attn \{ --ch-tone:var\(--vscode-charts-orange/.test(L.CSS) && /\.t-hold \{ --ch-tone:var\(--vscode-charts-yellow/.test(L.CSS));
+ok('attention is not the waiting colour', /\.t-attn \{ --ch-tone:var\(--af-ink-charts-orange, var\(--vscode-charts-orange/.test(L.CSS) && /\.t-hold \{ --ch-tone:var\(--af-ink-charts-yellow, var\(--vscode-charts-yellow/.test(L.CSS));
 
 // ---------- symbols ----------
 const page = read('media/chains.js');

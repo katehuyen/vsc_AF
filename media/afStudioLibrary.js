@@ -55,7 +55,7 @@
                 ${select('sl-success', 'Outcome', v.success || '', r.success || '', [['', 'passed + failed'], ['passed', 'passed'], ['failed', 'failed']], 'Only the files that passed, only the failed ones, or both.')}
                 ${tip(`<span class="muted small sl-note">${esc(lib.note || '')}</span>`, 'Where the wall reads', why)}
             </div>
-            ${lib.error ? `<div class="sub" style="color:var(--vscode-errorForeground)">${esc(lib.error)}</div>` : ''}`;
+            ${lib.error ? `<div class="sub" style="color:var(--af-ink-errorForeground, var(--vscode-errorForeground))">${esc(lib.error)}</div>` : ''}`;
     }
 
     /** One card's record strip — figures only, the meaning on hover. */

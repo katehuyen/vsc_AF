@@ -43,11 +43,11 @@
         .ch-chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
         .ch-chip { min-height:28px; padding:2px 10px; border-radius:14px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); cursor:pointer; }
         .ch-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
-        .ch-chip.warn b { color:var(--vscode-editorWarning-foreground, orange); }
+        .ch-chip.warn b { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, orange)); }
         .ch-chip.on.warn b { color:inherit; }
         .ch-note { margin:4px 0 8px; font-size:12px; }
         .ch-bulk { margin:0 0 8px; }
-        .ch-note.bad { color:var(--vscode-errorForeground); }
+        .ch-note.bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
         .ch-tab td { vertical-align:middle; }
         .ch-row { cursor:pointer; }
         .ch-row:hover { background:var(--vscode-list-hoverBackground); }
@@ -55,11 +55,11 @@
         .ch-row.t-run > td:first-child, .ch-row.t-hold > td:first-child { box-shadow:inset 3px 0 0 var(--ch-tone); }
         .ch-row.t-attn > td:first-child { box-shadow:inset 3px 0 0 var(--ch-tone); }
         .ch-row.focus { box-shadow:inset 3px 0 0 var(--vscode-focusBorder, #007fd4); }
-        .t-run { --ch-tone:var(--vscode-charts-blue, #3794ff); }
-        .t-hold { --ch-tone:var(--vscode-charts-yellow, #cca700); }
-        .t-ok { --ch-tone:var(--vscode-charts-green, #89d185); }
+        .t-run { --ch-tone:var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
+        .t-hold { --ch-tone:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #cca700)); }
+        .t-ok { --ch-tone:var(--af-ink-charts-green, var(--vscode-charts-green, #89d185)); }
         .t-off { --ch-tone:var(--vscode-descriptionForeground, #999); }
-        .t-attn { --ch-tone:var(--vscode-charts-orange, #d18616); }
+        .t-attn { --ch-tone:var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
         .ch-st { white-space:nowrap; color:var(--ch-tone); }
         .ch-warn { margin-right:3px; }
         .ch-name { max-width:340px; min-width:120px; }
@@ -73,8 +73,8 @@
         .ch-steps .s-ran { color:var(--ch-tone); }
         .ch-steps .s-cur { margin:0 1px; }
         .ch-steps .s-left { opacity:.5; }
-        .ch-brake { color:var(--vscode-editorWarning-foreground, #e8a33d); white-space:nowrap; }
-        .ch-live.working { color:var(--vscode-charts-green, #3a3); }
+        .ch-brake { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #e8a33d)); white-space:nowrap; }
+        .ch-live.working { color:var(--af-ink-charts-green, var(--vscode-charts-green, #3a3)); }
         .ch-live.gone { opacity:.7; }
         .ch-acts { white-space:nowrap; text-align:right; }
         .ch-actw { display:inline-block; }

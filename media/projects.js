@@ -1757,7 +1757,7 @@
                     border:none; padding:0; color:inherit; }
                 button.pj-trk-stat { cursor:pointer; text-decoration:underline dotted; }
                 .pj-trk-stat b { font-size:13px; opacity:1; }
-                .pj-trk-stat.warn b { color:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-stat.warn b { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#d29922)); }
                 .pj-trk-views { display:inline-flex; gap:2px; }
                 .pj-trk-view { font-size:12px; padding:3px 10px; border-radius:5px; cursor:pointer;
                     background:none; color:inherit; border:1px solid transparent; }
@@ -1774,17 +1774,17 @@
                    instead of growing off the window. */
                 .pj-trk-item { border:1px solid var(--vscode-widget-border,#4443); border-radius:6px;
                     padding:7px 10px; margin-bottom:7px; position:relative;
-                    --stc:var(--vscode-charts-blue,#3794ff);
+                    --stc:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff));
                     border-left:3px solid var(--stc); }
-                .pj-trk-item.st-open { --stc:var(--vscode-charts-blue,#3794ff); }
-                .pj-trk-item.st-doing { --stc:var(--vscode-charts-yellow,#d7ba7d);
+                .pj-trk-item.st-open { --stc:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
+                .pj-trk-item.st-doing { --stc:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d));
                     background:color-mix(in srgb, var(--stc) 8%, transparent); }
                 /* Settled work keeps its hue and loses its voice: the rule is
                    still green, faintly, so a closed card is recognisable — but
                    it is the open and the moving ones that carry the page. */
                 .pj-trk-item.st-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 38%, transparent); }
                 .pj-trk-item.st-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 35%, transparent); }
-                .pj-trk-item.st-gone { --stc:var(--vscode-editorWarning-foreground,#d29922); }
+                .pj-trk-item.st-gone { --stc:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#d29922)); }
                 /* Reconstructed rather than watched — the one thing a reader has
                    to be able to see before trusting a row (see TRK_SOURCES). */
                 .pj-trk-item.backfilled { border-top-color:color-mix(in srgb, var(--vscode-charts-purple,#b180d7) 55%, transparent);
@@ -1819,7 +1819,7 @@
                     color:var(--stc,inherit); }
                 .pj-trk-state.s-done { opacity:.7; }
                 .pj-trk-state.s-gone { border-color:var(--vscode-editorWarning-foreground,#d29922);
-                    color:var(--vscode-editorWarning-foreground,#d29922); }
+                    color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#d29922)); }
                 .pj-trk-sum { font-size:11px; opacity:.7; white-space:nowrap; }
                 /* ‼️ THE WORDS WRAP TO THE CARD, THEY DO NOT RUN OFF IT (A-5).
                    display:block is the load-bearing word: wrapping the text
@@ -1869,13 +1869,13 @@
                    the quiet majority (touch) carries no hue at all. */
                 .pj-trk-ev { font-size:10px; padding:1px 6px; border-radius:8px; opacity:.85;
                     border:1px solid var(--vscode-widget-border,#4443); white-space:nowrap; }
-                .pj-trk-ev.e-done { opacity:1; color:var(--vscode-charts-green,#3fb950);
+                .pj-trk-ev.e-done { opacity:1; color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950));
                     border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent);
                     background:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 10%, transparent); }
-                .pj-trk-ev.e-cancelled { opacity:.9; color:var(--vscode-charts-red,#f14c4c);
+                .pj-trk-ev.e-cancelled { opacity:.9; color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c));
                     border-color:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 50%, transparent);
                     background:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 9%, transparent); }
-                .pj-trk-ev.e-doing { background:var(--vscode-charts-blue,#3794ff); color:#fff;
+                .pj-trk-ev.e-doing { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
                     border-color:transparent; opacity:1; }
                 .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
                     border-color:transparent; opacity:1; }
@@ -1885,7 +1885,7 @@
                    work, but outlined rather than filled: it is the quietest
                    thing that can be true of a code, and every item has exactly
                    one of them. */
-                .pj-trk-ev.e-opened { opacity:1; color:var(--vscode-charts-green,#3fb950);
+                .pj-trk-ev.e-opened { opacity:1; color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950));
                     border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 40%, transparent); }
                 /* The work TYPE, in the backlog's own hues — the one place the
                    two pages deliberately share a palette, because a #bug is
@@ -1914,7 +1914,7 @@
                 .pj-trk-close { margin-top:5px; padding-left:8px; font-size:12px; opacity:.95;
                     border-left:2px solid var(--vscode-charts-green,#3fb950); }
                 .pj-trk-close b { font-size:10px; text-transform:uppercase; letter-spacing:.06em;
-                    color:var(--vscode-charts-green,#3fb950); margin-right:5px; }
+                    color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); margin-right:5px; }
                 /* …and the mark that says a chip HAS one. Without it a chip
                    carrying a paragraph and a chip carrying nothing were the
                    same eleven pixels. */
@@ -1944,8 +1944,8 @@
                     border-left:3px solid var(--stc); }
                 .pj-trk-tl.e-done { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 55%, transparent); }
                 .pj-trk-tl.e-cancelled { --stc:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 55%, transparent); }
-                .pj-trk-tl.e-doing { --stc:var(--vscode-charts-blue,#3794ff); }
-                .pj-trk-tl.e-reopen { --stc:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-trk-tl.e-doing { --stc:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
+                .pj-trk-tl.e-reopen { --stc:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d)); }
                 .pj-trk-tl.e-opened { --stc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 35%, transparent); }
                 .pj-trk-tl:hover { background:var(--vscode-list-hoverBackground); }
                 /* ‼️ A COLUMN IS AS WIDE AS ITS OWN WIDEST VALUE, AND NOT A PIXEL
@@ -2014,7 +2014,7 @@
                 .pj-trk-scode.c-gap { border-style:dashed;
                     border-color:color-mix(in srgb, var(--vscode-editorWarning-foreground,#d29922) 70%, transparent); }
                 .pj-trk-scodee { opacity:.6; font-size:10px; }
-                .pj-trk-m.closed { color:var(--vscode-charts-green,#3fb950); opacity:1;
+                .pj-trk-m.closed { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); opacity:1;
                     border-color:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 60%, transparent); }
                 /* ‼️ ON THE GAPS VIEW THE COLOUR ANSWERS THE CARD'S OWN QUESTION.
                    Five cards, each a KIND of hole, and every one of them was
@@ -2030,8 +2030,8 @@
                 .pj-trk-gaps .pj-card { margin-bottom:10px;
                     --gpc:var(--vscode-widget-border,#4443); border-left:3px solid var(--gpc); }
                 .pj-trk-gaps .pj-card.gp-ok { --gpc:color-mix(in srgb, var(--vscode-charts-green,#3fb950) 50%, transparent); }
-                .pj-trk-gaps .pj-card.gp-warn { --gpc:var(--vscode-editorWarning-foreground,#d29922); }
-                .pj-trk-gaps .pj-card.gp-doubt { --gpc:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-trk-gaps .pj-card.gp-warn { --gpc:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#d29922)); }
+                .pj-trk-gaps .pj-card.gp-doubt { --gpc:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d)); }
                 .pj-trk-gaps .pj-card.gp-fill { --gpc:var(--vscode-charts-purple,#b180d7); }
                 .pj-trk-gaps .pj-card.gp-none { --gpc:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 45%, transparent); }
                 .pj-trk-gaps .gp-n { color:var(--gpc); font-weight:600; }
@@ -2100,7 +2100,7 @@
                 .pj-held { font-size:10px; opacity:.75; padding:0 5px; border-radius:8px;
                     background:var(--vscode-textCodeBlock-background,#8881); }
                 .pj-via { font-size:10px; opacity:.7; font-style:italic; }
-                .pj-udot { color:var(--vscode-charts-blue,#3794ff); font-size:9px; vertical-align:2px; }
+                .pj-udot { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); font-size:9px; vertical-align:2px; }
                 .pj-spark { margin:4px 0 8px; opacity:.85; }
                 /* ‼️ A CHART IS CAPPED. The bar chart returns an SVG with a
                    viewBox and no height, so it fills whatever it is given — one
@@ -2141,7 +2141,7 @@
                 .pj-bf-title { display:flex; gap:8px; align-items:baseline; min-width:0; }
                 .pj-bf-t { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .pj-bf-to { font-size:12px; margin:2px 0 1px; }
-                .pj-bf-cont { font-size:11px; color:var(--vscode-editorWarning-foreground,#cca700); }
+                .pj-bf-cont { font-size:11px; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
                 .pj-bf-sigs { margin:2px 0 0; padding-left:16px; }
                 .pj-bf-sig { font-size:11px; opacity:.8; }
                 .pj-bf-sig.s-files { opacity:.95; }
@@ -2283,7 +2283,7 @@
                    the row carries a ▶ started badge with it. */
                 .pj-bl-row.doing { border-left-color:var(--vscode-charts-yellow,#d7ba7d);
                     background:var(--vscode-editor-selectionHighlightBackground,#d7ba7d18); }
-                .pj-bl-m.started { color:var(--vscode-charts-yellow,#d7ba7d); opacity:1; cursor:help; }
+                .pj-bl-m.started { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d)); opacity:1; cursor:help; }
                 /* the chip itself is declared with the Track's, so the two pages
                    cannot drift — see the code-chip note above */
                 .pj-bl-code.unfiled { background:none; }
@@ -2299,8 +2299,8 @@
                     font-size:11px; padding:0 4px; border-radius:4px; opacity:.75; min-width:22px; }
                 .pj-bl-badge:hover { opacity:1; background:var(--vscode-toolbar-hoverBackground,#8882); }
                 .pj-bl-m { opacity:.6; font-size:11px; white-space:nowrap; }
-                .pj-bl-m.blocked { color:var(--vscode-editorWarning-foreground); opacity:.9; }
-                .pj-bl-m.warn { color:var(--vscode-editorWarning-foreground); opacity:1; cursor:help; }
+                .pj-bl-m.blocked { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground)); opacity:.9; }
+                .pj-bl-m.warn { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground)); opacity:1; cursor:help; }
                 /* ‼️ COMPOSITION IS NOT DEPENDENCY, SO IT IS NOT THE ⛔ COLOUR.
                    The blocked mark is a warning — something is in the way — and
                    an item being PART of something is neither a problem nor a
@@ -2310,7 +2310,7 @@
                     font:inherit; padding:0 3px; border-radius:4px; cursor:pointer; opacity:1; }
                 .pj-bl-m.partof:hover, .pj-bl-m.parts:hover {
                     background:var(--vscode-toolbar-hoverBackground,#8882); }
-                .pj-bl-m.parts { color:var(--vscode-charts-green,#3fb950); opacity:.85; }
+                .pj-bl-m.parts { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); opacity:.85; }
                 /* Nothing left open under it: still a way into the family, but
                    it is a fact about the past rather than work waiting. */
                 .pj-bl-m.parts.allclosed { color:inherit; opacity:.55; }
@@ -2369,7 +2369,7 @@
                    state you can only turn off by finding the button again is a
                    state nobody turns off. */
                 .pj-bl-act.on { visibility:visible; opacity:1;
-                    color:var(--vscode-charts-yellow,#d7ba7d);
+                    color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d));
                     border-color:var(--vscode-charts-yellow,#d7ba7d); }
                 /* ‼️ U-60 — THE ONE BUTTON THAT IS A PICTURE, so it is turned
                    OFF by draining it rather than by dimming it. ⛔ is an emoji
@@ -2517,7 +2517,7 @@
                 .pj-bl-ppt { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; }
                 .pj-bl-ppe { flex:0 0 auto; font-size:10px; opacity:.6; }
-                .pj-bl-ppn { flex:0 0 auto; font-size:10px; color:var(--vscode-charts-green,#3fb950); }
+                .pj-bl-ppn { flex:0 0 auto; font-size:10px; color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); }
                 .pj-bl-ppnone { display:block; padding:6px 8px; font-size:11px; opacity:.7; }
                 /* The line's hover panel is measured against the LIST, not against
                    the line: a box 760px wide anchored to a row inside a 340px
@@ -2544,7 +2544,7 @@
                 .pj-bl-capr .pj-bl-atsel.wants { border-color:var(--vscode-editorWarning-foreground,#cca700); }
                 .pj-bl-atwarn { flex:0 1 auto; margin-left:auto; font-size:10px; white-space:nowrap;
                     overflow:hidden; text-overflow:ellipsis;
-                    color:var(--vscode-editorWarning-foreground,#cca700); }
+                    color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
                 .pj-bl-atwarn + .pj-bl-atsel { margin-left:6px; }
                 /* THE QUEUE STRIP. Entries are buttons because they do two things
                    — jump, and move — and a thing that only looked like a label
@@ -2604,12 +2604,12 @@
                 .pj-bl-nextp { opacity:.75; font-size:10px; }
                 .pj-bl-nextb .pj-bl-code { opacity:1; }
                 .pj-bl-stale { font-size:10px; margin-left:8px; cursor:help;
-                    color:var(--vscode-editorWarning-foreground); }
+                    color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground)); }
                 /* Past the op's default: still the user's queue, just not what an
                    agent takes unasked — so it is dimmed, not hidden. */
                 .pj-bl-nextb.past { opacity:.9; }
                 .pj-bl-nextb.past .pj-bl-nextn { background:none; font-weight:400; opacity:.6;
-                    color:var(--vscode-charts-green,#3fb950); }
+                    color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); }
                 .pj-bl-nextb.past .pj-bl-code { opacity:.7; }
                 .pj-bl-nextb.past:hover { opacity:1; }
                 /* The heading says the two things that CHANGE; the standing
@@ -2628,11 +2628,11 @@
                 /* The work type is an axis, not decoration: it gets a colour so a
                    list of two hundred rows can be read by shape, and the same
                    colour on the filter chip so the two are obviously one thing. */
-                .pj-bl-kind.t-bug { background:var(--vscode-charts-red,#f14c4c); color:#fff; }
+                .pj-bl-kind.t-bug { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff; }
                 .pj-bl-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:#fff; }
-                .pj-bl-kind.t-feat { background:var(--vscode-charts-blue,#3794ff); color:#fff; }
-                .pj-bl-kind.t-ux { background:var(--vscode-charts-green,#3fb950); color:#fff; }
-                .pj-bl-kind.t-perf { background:var(--vscode-charts-orange,#d18616); color:#fff; }
+                .pj-bl-kind.t-feat { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; }
+                .pj-bl-kind.t-ux { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; }
+                .pj-bl-kind.t-perf { background:var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616)); color:#fff; }
                 .pj-bl-kind.t-secu { background:var(--vscode-terminal-ansiCyan,#11a8cd); color:#fff; }
                 .pj-bl-kind.t-chore, .pj-bl-kind.t-debt, .pj-bl-kind.t-doc, .pj-bl-kind.t-idea {
                     background:var(--vscode-charts-yellow,#d7ba7d); color:#000; }
@@ -2684,7 +2684,7 @@
                 /* Unfiled: a coloured filing glyph rather than the words "file it
                    under an area…", which were a whole sentence on every uncoded
                    row. The sentence moved into the hover. */
-                .pj-bl-badge.filed { color:var(--vscode-charts-yellow,#d7ba7d); opacity:1; font-size:13px; }
+                .pj-bl-badge.filed { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d)); opacity:1; font-size:13px; }
                 .pj-bl-badge.filed:hover { outline:1px solid var(--vscode-focusBorder); }
                 .pj-bl-row.dragging { opacity:.4; }
                 .pj-bl-row.drop-before { box-shadow:inset 0 2px 0 var(--vscode-focusBorder); }
@@ -2701,9 +2701,9 @@
                 /* The same two bands as the strip — see blBand. A position that
                    was green up there and grey down here would read as two
                    different numbers. */
-                .pj-bl-grip.q-top { color:var(--vscode-charts-green,#3fb950);
+                .pj-bl-grip.q-top { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950));
                     font-weight:600; opacity:.9; }
-                .pj-bl-grip.q-rest { color:var(--vscode-charts-green,#3fb950); opacity:.5; }
+                .pj-bl-grip.q-rest { color:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); opacity:.5; }
                 .pj-bl-row:hover .pj-bl-grip.q-top { opacity:1; }
                 .pj-bl-row:hover .pj-bl-grip.q-rest { opacity:.8; }
                 .pj-bl-more { background:none; border:none; color:var(--vscode-textLink-foreground);
@@ -2742,7 +2742,7 @@
                 .pj-bl-fline { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px; }
                 .pj-bl-fline:last-child { margin-bottom:0; }
                 .pj-bl-flab { font-size:11px; opacity:.6; flex:0 0 74px; }
-                .pj-bl-count.narrowed { color:var(--vscode-charts-yellow,#d7ba7d); }
+                .pj-bl-count.narrowed { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow,#d7ba7d)); }
                 .pj-docs { display:flex; gap:14px; align-items:flex-start; }
                 .pj-doc-tree { flex:0 0 260px; max-height:60vh; overflow:auto;
                     border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:6px 4px; }

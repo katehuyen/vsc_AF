@@ -5083,10 +5083,10 @@
                    theme-color background with hardcoded white text is not). */
                 .mchip.ok, .mchip.bad, .mchip.live, .mchip.wait {
                     background:transparent; border:1px solid currentColor; }
-                .mchip.ok { color:var(--vscode-testing-iconPassed, #2d7d46); }
-                .mchip.bad { color:var(--vscode-errorForeground, #d13438); }
+                .mchip.ok { color:var(--af-ink-testing-iconPassed, var(--vscode-testing-iconPassed, #2d7d46)); }
+                .mchip.bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground, #d13438)); }
                 .mchip.live { color:var(--vscode-textLink-foreground); }
-                .mchip.wait { color:var(--vscode-editorWarning-foreground, #b58900); }
+                .mchip.wait { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900)); }
                 .mchip.team, .mchip.ro { opacity:.85; }
                 /* U-64: the mode badge. Outline like the status chips and drawn
                    ONLY on an adaptive run — classic is the default and a badge
@@ -5112,7 +5112,7 @@
                    Nothing at all when every dimension fell through to the CLI —
                    a mark on every row is a mark that says nothing. */
                 .pmark { margin-left:4px; font-size:9px; opacity:.75; cursor:default; }
-                .pmark.bad { color:var(--vscode-errorForeground, #d13438); opacity:1; font-weight:600; }
+                .pmark.bad { color:var(--af-ink-errorForeground, var(--vscode-errorForeground, #d13438)); opacity:1; font-weight:600; }
                 .pname { white-space:nowrap; }
                 .nowstrip { display:flex; align-items:center; gap:7px; margin:8px 0; padding:7px 10px;
                     border-radius:5px; font-size:12px;
@@ -5228,7 +5228,7 @@
                 .sprompt textarea { width:100%; max-width:760px; padding:5px 8px; }
                 .swhy { font-size:12px; }
                 .dim { color:var(--vscode-descriptionForeground); font-size:12px; }
-                .formerr { color:var(--vscode-errorForeground, #f66); font-size:12px; margin-bottom:6px; }
+                .formerr { color:var(--af-ink-errorForeground, var(--vscode-errorForeground, #f66)); font-size:12px; margin-bottom:6px; }
                 button.ghost { background:transparent; color:var(--vscode-foreground);
                     border:1px solid var(--vscode-panel-border, rgba(128,128,128,.45)); }
                 .mtable { width:100%; border-collapse:collapse; margin-top:8px; }
@@ -5344,13 +5344,13 @@
                    refused to do. Both are sentences, so both take the whole
                    width of the fold rather than squeezing in beside a select. */
                 .profnote, .fperr { flex-basis:100%; font-size:11px; margin:0; }
-                .profnote { color:var(--vscode-editorWarning-foreground, #b58900); }
-                .fperr { color:var(--vscode-errorForeground); }
+                .profnote { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900)); }
+                .fperr { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); }
                 .narrowask { margin:6px 0 8px; padding:8px; border-radius:4px;
-                    font-size:12px; color:var(--vscode-editorWarning-foreground, #b58900);
+                    font-size:12px; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900));
                     border:1px solid currentColor; }
                 .narrownote { font-size:11px; opacity:.8; flex-basis:100%;
-                    color:var(--vscode-editorWarning-foreground, #b58900); }
+                    color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900)); }
                 .fixedval { display:block; margin-top:3px; padding:5px 8px;
                     border:1px dashed color-mix(in srgb, var(--vscode-foreground) 30%, transparent);
                     border-radius:3px; opacity:.85; white-space:nowrap; }
@@ -5377,7 +5377,7 @@
                 .limrow { display:flex; gap:14px; flex-wrap:wrap; }
                 .limfield { font-size:11px; }
                 .limfield input { width:90px; display:block; margin-top:3px; }
-                .ferr { color:var(--vscode-errorForeground); font-size:12px; margin:8px 0; }
+                .ferr { color:var(--af-ink-errorForeground, var(--vscode-errorForeground)); font-size:12px; margin:8px 0; }
                 /* U-103 — every refusal at once, so the list is a list. */
                 .fplist { margin:4px 0 0; padding-left:18px; }
                 .fplist li { margin:2px 0; }
@@ -5406,7 +5406,7 @@
                 .advbody { padding-left:14px; border-left:2px solid var(--vscode-panel-border, rgba(128,128,128,.25)); }
                 /* ---- U-64: the adaptive run detail ---- */
                 .mchip.req { background:transparent; border:1px solid currentColor;
-                    color:var(--vscode-editorWarning-foreground, #b58900); }
+                    color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900)); }
                 .mchip.ver, .mchip.phase, .mchip.adv, .mchip.conv, .mchip.council {
                     background:transparent; border:1px solid var(--vscode-widget-border, #5555);
                     color:var(--vscode-descriptionForeground); padding:0 5px; }
@@ -5437,7 +5437,7 @@
                 .gin { font-size:10px; opacity:.75; }
                 .guideform { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px; }
                 .guideform textarea { flex:1 1 320px; max-width:520px; padding:5px 8px; }
-                .grow.pend { color:var(--vscode-editorWarning-foreground, #b58900); }
+                .grow.pend { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900)); }
                 .unmet { margin:4px 0; display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; }
                 /* ---- U-65: the conversation room ---- */
                 .cvfilter { font-size:11px; margin:2px 0 6px; opacity:.85; }
@@ -5477,8 +5477,8 @@
                 .cvtext { font-size:11px; margin:2px 0 0 20px; white-space:pre-wrap;
                     color:var(--vscode-descriptionForeground, #999); }
                 .mchip.cvi { background:transparent; border:1px solid currentColor; opacity:.9; }
-                .mchip.cvi.challenge, .mchip.cvi.question { color:var(--vscode-editorWarning-foreground, #b58900); }
-                .mchip.cvi.concede, .mchip.cvi.response { color:var(--vscode-testing-iconPassed, #2d7d46); }
+                .mchip.cvi.challenge, .mchip.cvi.question { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #b58900)); }
+                .mchip.cvi.concede, .mchip.cvi.response { color:var(--af-ink-testing-iconPassed, var(--vscode-testing-iconPassed, #2d7d46)); }
                 .mchip.cvi.vote, .mchip.cvi.synthesis { color:var(--vscode-textLink-foreground); }
                 .mchip.lane { background:transparent; border:1px dotted var(--vscode-widget-border, #5555);
                     opacity:.7; font-size:9px; }
@@ -5493,13 +5493,13 @@
                     border:1px solid var(--vscode-widget-border, #5555); white-space:nowrap; }
                 .lchip.busy { border-color:var(--vscode-textLink-foreground); color:var(--vscode-textLink-foreground); }
                 .lchip.alert { border-color:var(--vscode-inputValidation-warningBorder, #b89500);
-                    color:var(--vscode-inputValidation-warningBorder, #d0a500); }
+                    color:var(--af-ink-inputValidation-warningBorder, var(--vscode-inputValidation-warningBorder, #d0a500)); }
                 .lchip.quiet { opacity:.6; }
                 .lvbody { max-height:220px; overflow:auto; border:1px solid var(--vscode-widget-border, #3333);
                     border-radius:5px; padding:4px 8px; }
                 .lerow { font-size:11px; padding:2px 0; border-bottom:1px dotted var(--vscode-widget-border, #2a2a2a); cursor:pointer; }
                 .lerow:hover { background:var(--vscode-list-hoverBackground); }
-                .lerow.alert { color:var(--vscode-inputValidation-warningBorder, #d0a500); }
+                .lerow.alert { color:var(--af-ink-inputValidation-warningBorder, var(--vscode-inputValidation-warningBorder, #d0a500)); }
                 /* B-02.3 — this row is a TABLE row and its name may not be one
                    the composer already owns. It was .srow, which the mission
                    form above declares display:flex; a table row turned into a
