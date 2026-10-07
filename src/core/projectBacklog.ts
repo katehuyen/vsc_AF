@@ -941,8 +941,7 @@ export function parseBacklog(text: string): BacklogSummary {
         // because that is where somebody can act on it — and `tidy` carries it
         // home for them.
         if (it.archived && isLive(it.state)) {
-            warnOn(it, 'this line is under the archive heading but is still '
-                + `${it.state} — the archive is history, so it is hidden from the list it belongs in (tidy carries it home)`);
+            warnOn(it, `this line is closed or gone from the file, but is still ${it.state} under the archive heading`);
         }
         if (!it.code) { continue; }
         if (seen.has(it.code)) { warnOn(it, `code ${it.code} is used more than once`); }
