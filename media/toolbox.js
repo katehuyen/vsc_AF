@@ -913,7 +913,7 @@
         document.getElementById('app').innerHTML = `
             <style>
                 .tb { border-collapse: collapse; width: 100%; }
-                .tb th { text-align: left; font-size: 11px; opacity: .7; padding: 4px 8px; }
+                .tb th { text-align: left; font-size: 11px; opacity: calc(1 - .3 * var(--af-dimk, 1)); padding: 4px 8px; }
                 .tb td { padding: 4px 8px; vertical-align: top; }
                 .tb tr:hover td { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.08)); }
                 .tb td.nm { font-weight: 600; white-space: nowrap; }
@@ -934,7 +934,7 @@
                 .tag.on { color: var(--vscode-charts-green, #4caf50); }
                 .tag.off { color: var(--vscode-charts-orange, #d18616); }
                 .use { color: var(--vscode-charts-green, #4caf50); font-weight: 700; }
-                .seg .cnt { opacity: .6; font-size: 10px; }
+                .seg .cnt { opacity: calc(1 - .4 * var(--af-dimk, 1)); font-size: 10px; }
                 .tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
                 .tb-card { cursor: pointer; }
                 .tb-card:hover { outline: 1px solid var(--vscode-charts-blue, #3794ff); }
@@ -949,7 +949,7 @@
                 .hkmark.ok { color: var(--vscode-charts-green, #4caf50); }
                 .hkmark.no { color: var(--vscode-charts-orange, #d18616); }
                 .hkscope { flex: 0 0 92px; opacity: .8; }
-                .hkpath { font-family: var(--vscode-editor-font-family); opacity: .6;
+                .hkpath { font-family: var(--vscode-editor-font-family); opacity: calc(1 - .4 * var(--af-dimk, 1));
                           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                 .tb-num { font-size: 26px; font-weight: 700; }
                 .tb-cat { font-weight: 600; margin: 2px 0; }

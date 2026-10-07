@@ -49,7 +49,7 @@ async function run(theme, list, bin, width) {
             const file = await render(page, theme, out);
             if (!file || !fs.existsSync(file)) { result[page] = { error: 'no render' }; continue; }
             const r = await new Promise(res => setImmediate(() => res(audit(file, bin))));
-            result[page] = r.error ? { error: r.error } : { texts: r.texts, low: r.low.length, fingerprint: r.fingerprint, worst: r.low.slice(0, 3) };
+            result[page] = r.error ? { error: r.error } : { texts: r.texts, low: r.low.length, fingerprint: r.fingerprint, worst: r.low.slice(0, 3), unread: r.unread };
         }
     };
     await Promise.all(Array.from({ length: width }, worker));
@@ -75,7 +75,10 @@ async function main() {
         process.exitCode = moved.length ? 1 : 0;
         return;
     }
-    for (const p of list) { console.log(`${p.padEnd(22)} ${r[p].error ? 'ERROR ' + r[p].error : `${r[p].low} low of ${r[p].texts}`}`); }
+    for (const p of list) {
+        const unread = r[p].unread && r[p].unread.length ? ` · colours it cannot read: ${r[p].unread.join(' ')}` : '';
+        console.log(`${p.padEnd(22)} ${r[p].error ? 'ERROR ' + r[p].error : `${r[p].low} low of ${r[p].texts}${unread}`}`);
+    }
     if (process.argv.includes('--write-budget')) {
         const budget = { theme, pages: Object.fromEntries(list.filter(p => !r[p].error).map(p => [p, r[p].low])) };
         fs.writeFileSync(MANIFEST, JSON.stringify(budget, null, 1) + '\n', 'utf8');

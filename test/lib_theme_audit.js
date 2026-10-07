@@ -6,6 +6,8 @@
 //   · a FINGERPRINT of every element's computed colours (text, background, four borders,
 //     shadow, outline, opacity) — two renders with the same fingerprint draw the same colours.
 // The light theme is held to the first; the dark theme to the second, unchanged.
+// A colour it cannot read is listed (`unread`), never skipped: color-mix() computes to
+// color(srgb …), and reading only rgb() once dropped those texts and grounds unseen.
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -17,13 +19,14 @@ const MARK = 'AF-THEME-AUDIT';
 
 /** Runs inside the page; returns { texts, low, fp, elements }. */
 const PROBE = `(function(){
-  function parse(c){var m=/rgba?\\(([^)]+)\\)/.exec(c||'');if(!m){return null;}var p=m[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);return {r:p[0],g:p[1],b:p[2],a:p.length>3?p[3]:1};}
+  function parse(c){var m=/rgba?\\(([^)]+)\\)/.exec(c||''),k=1;if(!m){m=/^color\\(srgb ([^)]+)\\)$/.exec(c||'');k=255;}if(!m){return null;}var p=m[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);return {r:p[0]*k,g:p[1]*k,b:p[2]*k,a:p.length>3?p[3]:1};}
   function over(t,u){var a=t.a+u.a*(1-t.a);if(!a){return {r:0,g:0,b:0,a:0};}return {r:(t.r*t.a+u.r*u.a*(1-t.a))/a,g:(t.g*t.a+u.g*u.a*(1-t.a))/a,b:(t.b*t.a+u.b*u.a*(1-t.a))/a,a:a};}
-  function behind(el){var layers=[];for(var e=el;e;e=e.parentElement){var c=parse(getComputedStyle(e).backgroundColor);if(c&&c.a>0){layers.push(c);if(c.a>=1){break;}}}
+  function unread(c){if(out.unread.indexOf(c)<0){out.unread.push(c);}}
+  function behind(el){var layers=[];for(var e=el;e;e=e.parentElement){var raw=getComputedStyle(e).backgroundColor,c=parse(raw);if(!c){unread(raw);}if(c&&c.a>0){layers.push(c);if(c.a>=1){break;}}}
     var acc={r:255,g:255,b:255,a:1};for(var i=layers.length-1;i>=0;i--){acc=over(layers[i],acc);}return acc;}
   function lum(c){function f(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b);}
   function ratio(a,b){var x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);}
-  var out={texts:0,low:[],elements:0},fp=[];
+  var out={texts:0,low:[],elements:0,unread:[]},fp=[];
   var all=document.querySelectorAll('.rndr-page *');
   for(var i=0;i<all.length;i++){var el=all[i],cs=getComputedStyle(el);
     fp.push([el.tagName,cs.color,cs.backgroundColor,cs.borderTopColor,cs.borderRightColor,cs.borderBottomColor,cs.borderLeftColor,cs.boxShadow,cs.outlineColor,cs.opacity].join('|'));
@@ -33,7 +36,7 @@ const PROBE = `(function(){
     if(op===0){continue;}
     var txt='';for(var m=el.firstChild;m;m=m.nextSibling){if(m.nodeType===3){txt+=m.data;}}
     if(/^[\\p{Extended_Pictographic}\\uFE0F\\u200D\\s]+$/u.test(txt)){continue;}
-    var fg=parse(cs.color);if(!fg){continue;}var bg=behind(el);fg.a*=op;var k=ratio(over(fg,bg),bg);
+    var fg=parse(cs.color);if(!fg){unread(cs.color);continue;}var bg=behind(el);fg.a*=op;var k=ratio(over(fg,bg),bg);
     var size=parseFloat(cs.fontSize),bold=Number(cs.fontWeight)>=700,need=size>=18.66||(size>=14&&bold)?3:4.5;
     out.texts++;
     if(k<need){out.low.push({i:i,text:txt.trim().slice(0,40),ratio:Math.round(k*100)/100,need:need,color:cs.color,bg:'rgb('+Math.round(bg.r)+','+Math.round(bg.g)+','+Math.round(bg.b)+')',where:el.tagName.toLowerCase()+(el.className&&typeof el.className==='string'?'.'+el.className.trim().split(/\\s+/).join('.'):'')});}
@@ -46,7 +49,10 @@ function audit(htmlFile, bin) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-theme-audit-'));
     try {
         const page = path.join(tmp, 'page.html');
-        const html = fs.readFileSync(htmlFile, 'utf8').replace('</body>', '<script>window.addEventListener("load",function(){var out;'
+        // A pulse caught mid-frame made the same page fingerprint differently run to run (U-237):
+        // the declared styles are measured, not a moment of an animation.
+        const html = fs.readFileSync(htmlFile, 'utf8').replace('</body>', '<style>*,*::before,*::after{animation:none!important;transition:none!important}</style>'
+            + '<script>window.addEventListener("load",function(){var out;'
             + 'try{out=JSON.stringify(' + PROBE + ');}catch(e){out=JSON.stringify({error:String(e&&e.message||e)});}'
             + 'document.body.innerHTML="<pre id=\\"' + MARK + '\\"></pre>";document.getElementById("' + MARK + '").textContent=out;});</script></body>');
         fs.writeFileSync(page, html, 'utf8');

@@ -190,7 +190,7 @@ const SHARED = [
     'afColFit.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
-const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'afRemote.js'];
+const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'afRemote.js'];
 
 const read = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'utf8');
 

@@ -211,6 +211,8 @@ function main() {
     }
 
     const css = fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8');
+    // U-237 — the theme layer, after the shared styles as the shells link it
+    const themeLayer = fs.readFileSync(path.join(ROOT, 'media', 'theme.css'), 'utf8');
     // U-154 — the shell's quota-figure rules, right after common.css as htmlShell puts them
     const quotaCss = require(path.join(ROOT, 'out', 'core', 'quotaStyle.js'))
         .quotaStyleCss(k => (fixture.quotaStyle || {})[k]);
@@ -299,6 +301,7 @@ function main() {
 ${themeCss(theme)}
 ${css}
 ${quotaCss}
+${themeLayer}
 /* the renderer's own frame — nothing here belongs to the extension */
 body { margin: 0; padding: 0 0 60px;
     background: var(--vscode-editor-background); color: var(--vscode-foreground);

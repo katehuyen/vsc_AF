@@ -996,7 +996,7 @@
                 .wk-aspace { flex:1 1 auto; }
                 .wk-act { white-space:nowrap; width:1%; text-align:right; }
                 .wk-act .mini { background:none; border:1px solid transparent; color:inherit; cursor:pointer;
-                    font-size:11px; padding:1px 5px; border-radius:4px; opacity:.55; }
+                    font-size:11px; padding:1px 5px; border-radius:4px; opacity:calc(1 - .45 * var(--af-dimk, 1)); }
                 .wktable tbody tr:hover .mini { opacity:1; }
                 .wk-act .mini:hover { background:var(--vscode-toolbar-hoverBackground,#8882);
                     border-color:var(--vscode-widget-border,#4443); }

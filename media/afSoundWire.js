@@ -20,7 +20,7 @@
                 .alerttonebox { display:flex; gap:4px; align-items:center; }
                 .alerttonebox select { flex:1 1 auto; min-width:0; }
                 .alerttonebox button { flex:none; padding:0 6px; min-width:0; }
-                .alertnone { opacity:.45; } .alertnlbl { opacity:.75; white-space:nowrap; } .alertnboth { display:flex; gap:10px; justify-content:center; }
+                .alertnone { opacity:calc(1 - .55 * var(--af-dimk, 1)); } .alertnlbl { opacity:.75; white-space:nowrap; } .alertnboth { display:flex; gap:10px; justify-content:center; }
                 .alertonlbl { display:flex; gap:6px; align-items:center; cursor:pointer;
                     overflow:hidden; }
                 /* ‼️ .settbl input is width:100% — right for a text cell and

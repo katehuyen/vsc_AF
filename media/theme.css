@@ -1,0 +1,9 @@
+/* The theme layer (U-237): the values that differ by VS Code theme kind, and nothing else.
+   Every rule is keyed on the class VS Code puts on a webview's body and only sets --af-*
+   variables; every use carries the dark value as its var() fallback, so the dark theme is
+   the fallback by construction and is never restyled from here (test_theme_sheet.js). */
+
+/* Dimmed text is written opacity: calc(1 - D * var(--af-dimk, 1)), D being the dark dimming.
+   The same opacity costs far more contrast on white than on a dark ground (.65 reads 5.1:1
+   in Dark Modern, 3.97:1 in Light Modern), so light keeps the hierarchy at a fraction of it. */
+body.vscode-light { --af-dimk: .4; }

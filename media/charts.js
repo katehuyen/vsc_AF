@@ -338,12 +338,12 @@
         days.forEach((day, i) => {
             if (i % step !== 0 && i !== days.length - 1) return;
             const x = padL + (innerW / days.length) * i + bw / 2;
-            labels += `<text x="${x.toFixed(1)}" y="${H - 8}" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.6">${esc(day.slice(5))}</text>`;
+            labels += `<text x="${x.toFixed(1)}" y="${H - 8}" font-size="9" text-anchor="middle" fill="currentColor" style="opacity:calc(1 - .4 * var(--af-dimk, 1))">${esc(day.slice(5))}</text>`;
         });
         const gridLines = [0.25, 0.5, 0.75, 1].map(f => {
             const y = padT + innerH * (1 - f);
             return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="currentColor" opacity="0.08"/>` +
-                `<text x="${padL - 5}" y="${y + 3}" font-size="9" text-anchor="end" fill="currentColor" opacity="0.5">${fmt(max * f)}</text>`;
+                `<text x="${padL - 5}" y="${y + 3}" font-size="9" text-anchor="end" fill="currentColor" style="opacity:calc(1 - .5 * var(--af-dimk, 1))">${fmt(max * f)}</text>`;
         }).join('');
         const legend = series.map((s, i) =>
             `<span><i style="background:${PALETTE[i % PALETTE.length]}"></i>${esc(s.name)}</span>`).join('');
@@ -394,9 +394,9 @@
             const y = i * rowH + 3;
             const w = Math.max(1, (item.value / max) * (W - labelW - valueW - 12));
             const color = opts.color || PALETTE[i % PALETTE.length];
-            rows += `<text x="${labelW - 8}" y="${y + 12}" font-size="11" text-anchor="end" fill="currentColor" opacity="0.8">${esc(item.name.length > 22 ? item.name.slice(0, 21) + '…' : item.name)}</text>` +
+            rows += `<text x="${labelW - 8}" y="${y + 12}" font-size="11" text-anchor="end" fill="currentColor" style="opacity:calc(1 - .2 * var(--af-dimk, 1))">${esc(item.name.length > 22 ? item.name.slice(0, 21) + '…' : item.name)}</text>` +
                 `<rect x="${labelW}" y="${y}" width="${w.toFixed(1)}" height="15" rx="2" fill="${color}"><title>${esc(item.name)}: ${fmt(item.value)}</title></rect>` +
-                `<text x="${labelW + w + 6}" y="${y + 12}" font-size="11" fill="currentColor" opacity="0.7">${fmt(item.value)}</text>`;
+                `<text x="${labelW + w + 6}" y="${y + 12}" font-size="11" fill="currentColor" style="opacity:calc(1 - .3 * var(--af-dimk, 1))">${fmt(item.value)}</text>`;
         });
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${rows}</svg>`;
     }
@@ -416,7 +416,7 @@
         const max = Math.max(1, ...heat);
         let cells = '';
         for (let d = 0; d < 7; d++) {
-            cells += `<text x="${padL - 6}" y="${padT + d * (cell + gap) + 12}" font-size="9" text-anchor="end" fill="currentColor" opacity="0.6">${days[d]}</text>`;
+            cells += `<text x="${padL - 6}" y="${padT + d * (cell + gap) + 12}" font-size="9" text-anchor="end" fill="currentColor" style="opacity:calc(1 - .4 * var(--af-dimk, 1))">${days[d]}</text>`;
             for (let h = 0; h < 24; h++) {
                 const v = heat[d * 24 + h];
                 const op = v === 0 ? 0.06 : 0.15 + 0.85 * (v / max);
@@ -425,7 +425,7 @@
         }
         let hours = '';
         for (let h = 0; h < 24; h += 4) {
-            hours += `<text x="${padL + h * (cell + gap)}" y="${padT - 5}" font-size="9" fill="currentColor" opacity="0.6">${String(h).padStart(2, '0')}</text>`;
+            hours += `<text x="${padL + h * (cell + gap)}" y="${padT - 5}" font-size="9" fill="currentColor" style="opacity:calc(1 - .4 * var(--af-dimk, 1))">${String(h).padStart(2, '0')}</text>`;
         }
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${hours}${cells}</svg>`;
     }

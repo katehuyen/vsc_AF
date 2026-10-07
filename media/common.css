@@ -19,11 +19,11 @@ pre { background: var(--vscode-textCodeBlock-background); padding: 10px; border-
 hr { border: none; border-top: 1px solid var(--vscode-widget-border, #4443); margin: 20px 0; }
 blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8px 0; padding: 4px 12px; opacity: .9; }
 
-.muted { opacity: .65; }
+.muted { opacity: calc(1 - .35 * var(--af-dimk, 1)); }
 /* The weighted-token twin that rides beside every raw token figure (⚖).
    Dimmed and a size down so it reads as an annotation on the number it
    follows, never as a competing headline — see charts.js fmtTokW. */
-.wtok { opacity: .62; font-size: .88em; white-space: nowrap; margin-left: .35em; cursor: help; }
+.wtok { opacity: calc(1 - .38 * var(--af-dimk, 1)); font-size: .88em; white-space: nowrap; margin-left: .35em; cursor: help; }
 /* X-112 — the same figure over a run that filled NO plan window. It is still
    the plan formula, so it keeps the glyph and the number; what it loses is the
    claim to a limit, and the reader must be able to see that without hovering. */
@@ -56,8 +56,8 @@ blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8
     min-width: 150px;
 }
 .card .kpi { font-size: 22px; font-weight: 700; margin: 2px 0; }
-.card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; opacity: .65; }
-.card .sub { font-size: 11px; opacity: .7; }
+.card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; opacity: calc(1 - .35 * var(--af-dimk, 1)); }
+.card .sub { font-size: 11px; opacity: calc(1 - .3 * var(--af-dimk, 1)); }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 
@@ -105,7 +105,7 @@ button.secondary:disabled:hover { background: var(--vscode-button-secondaryBackg
 
 .tablewrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
-th { text-align: left; font-weight: 600; opacity: .75; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--vscode-widget-border, #4443); white-space: nowrap; }
+th { text-align: left; font-weight: 600; opacity: calc(1 - .25 * var(--af-dimk, 1)); padding: 5px 10px 5px 0; border-bottom: 1px solid var(--vscode-widget-border, #4443); white-space: nowrap; }
 td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--vscode-widget-border, #2222); vertical-align: top; }
 tr.click { cursor: pointer; }
 svg .mark { cursor: pointer; } /* timeline marks/segments click through to the session */
@@ -277,7 +277,7 @@ mark {
     border-color: var(--vscode-charts-green, #4caf50);
 }
 
-.footnote { margin-top: 30px; font-size: 11px; opacity: .55; }
+.footnote { margin-top: 30px; font-size: 11px; opacity: calc(1 - .45 * var(--af-dimk, 1)); }
 
 /* Guide layout */
 body.guide { display: flex; gap: 0; padding: 0; height: 100vh; overflow: hidden; }

@@ -415,7 +415,7 @@
             dots += `<g class="node"${ON_PHONE_HOST ? '' : ` data-open="${C.esc(n.path)}" style="cursor:pointer"`} ` +
                 window.AFCtx.row('afMemoryRow', { memPath: n.path, memName: n.name, agentId: agentId }) + '>' +
                 `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${fill}"${ring} opacity="0.9"><title>${C.esc(tip)}</title></circle>` +
-                `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" text-anchor="${anchor}" fill="currentColor" opacity="0.85">${C.esc(short(n.name))}<title>${C.esc(tip)}</title></text></g>`;
+                `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" text-anchor="${anchor}" fill="currentColor" style="opacity:calc(1 - .15 * var(--af-dimk, 1))">${C.esc(short(n.name))}<title>${C.esc(tip)}</title></text></g>`;
         }
         return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${edges}${dots}</svg>`;
     }

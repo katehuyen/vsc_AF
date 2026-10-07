@@ -122,7 +122,7 @@
                 .sec-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
                 .sec-tools .searchbar { margin: 0; }
                 .tb { border-collapse: collapse; width: 100%; }
-                .tb th { text-align: left; font-size: 11px; opacity: .7; padding: 5px 8px; }
+                .tb th { text-align: left; font-size: 11px; opacity: calc(1 - .3 * var(--af-dimk, 1)); padding: 5px 8px; }
                 .tb td { padding: 6px 8px; vertical-align: top; border-top: 1px solid var(--vscode-widget-border, #4443); }
                 .tb tr:hover td { background: var(--vscode-list-hoverBackground, rgba(128,128,128,.08)); }
                 .tb td.nm { font-weight: 600; white-space: nowrap; font-family: var(--vscode-editor-font-family, monospace); }

@@ -117,7 +117,7 @@
     let testEvent = 'turn-ready';
 
     const STYLE = `<style>
-        .sid { font-weight:400; opacity:.6; font-size:11px; }
+        .sid { font-weight:400; opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:11px; }
         .slink { cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px; }
         .slink:hover { color:var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
         .pathlink { cursor:pointer; }
@@ -1236,7 +1236,7 @@
             const ts = from + (winMs / 6) * i;
             const xx = x(ts);
             out += `<line x1="${xx}" y1="${padT - 6}" x2="${xx}" y2="${H - 6}" stroke="currentColor" opacity="0.07"/>` +
-                `<text x="${xx}" y="${padT - 10}" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.55">${fmtClock(ts)}</text>`;
+                `<text x="${xx}" y="${padT - 10}" font-size="9" text-anchor="middle" fill="currentColor" style="opacity:calc(1 - .45 * var(--af-dimk, 1))">${fmtClock(ts)}</text>`;
         }
 
         lanes.forEach((lane, i) => {
@@ -1308,9 +1308,9 @@
             out += `<g class="lanelabel">` +
                 `<circle class="${C.esc(window.AFEngine.cls(laneEng))}" cx="7.5" cy="${y + 10}" r="3.5"` +
                 ` fill="var(--af-engc, currentColor)" opacity="0.95"/>` +
-                `<text x="16" y="${y + 13}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" opacity="0.85">${C.esc(name.length > nameMax ? name.slice(0, nameMax - 1) + '…' : name)}</text>` +
+                `<text x="16" y="${y + 13}" font-size="11" font-weight="600" text-anchor="start" fill="currentColor" style="opacity:calc(1 - .15 * var(--af-dimk, 1))">${C.esc(name.length > nameMax ? name.slice(0, nameMax - 1) + '…' : name)}</text>` +
                 (sidLine
-                    ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" opacity="0.55">${C.esc(sidLine)}</text>`
+                    ? `<text class="lane-sid" x="16" y="${y + 24}" font-size="9.5" text-anchor="start" fill="currentColor" style="opacity:calc(1 - .45 * var(--af-dimk, 1))">${C.esc(sidLine)}</text>`
                     : '') + '</g>';
             hots.push(hotHtml(
                 { left: 0, top: ((y - 2) / H) * 100, height: (30 / H) * 100, width: (labelW / W) * 100 },
@@ -1549,11 +1549,11 @@
             const ts = from + (winMs / 6) * i;
             const xx = labelW + ((W - labelW - 8) / 6) * i;
             out += `<line x1="${xx}" y1="${padT - 6}" x2="${xx}" y2="${H - 6}" stroke="currentColor" opacity="0.07"/>` +
-                `<text x="${xx}" y="${padT - 10}" font-size="9" text-anchor="middle" fill="currentColor" opacity="0.55">${fmtTick(ts, winMs)}</text>`;
+                `<text x="${xx}" y="${padT - 10}" font-size="9" text-anchor="middle" fill="currentColor" style="opacity:calc(1 - .45 * var(--af-dimk, 1))">${fmtTick(ts, winMs)}</text>`;
         }
         lanes.forEach((lane, li) => {
             const y0 = padT + li * rowH + rowH - 6; // baseline
-            out += `<text x="${labelW - 10}" y="${padT + li * rowH + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" opacity="0.85">${C.esc(lane.name.length > 14 ? lane.name.slice(0, 13) + '…' : lane.name)}</text>`;
+            out += `<text x="${labelW - 10}" y="${padT + li * rowH + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" style="opacity:calc(1 - .15 * var(--af-dimk, 1))">${C.esc(lane.name.length > 14 ? lane.name.slice(0, 13) + '…' : lane.name)}</text>`;
             out += `<line x1="${labelW}" y1="${y0}" x2="${W - 8}" y2="${y0}" stroke="currentColor" opacity="0.12"/>`;
             lane.buckets.forEach((b, bi) => {
                 const total = b[0] + b[1] + b[3];
@@ -1597,7 +1597,7 @@
         let out = '';
         visible.forEach((run, i) => {
             const y = padT + i * rowH;
-            out += `<text x="${labelW - 10}" y="${y + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" opacity="0.85">${C.esc(run.title.length > 18 ? run.title.slice(0, 17) + '…' : run.title)}</text>`;
+            out += `<text x="${labelW - 10}" y="${y + rowH / 2 + 3}" font-size="11" font-weight="600" text-anchor="end" fill="currentColor" style="opacity:calc(1 - .15 * var(--af-dimk, 1))">${C.esc(run.title.length > 18 ? run.title.slice(0, 17) + '…' : run.title)}</text>`;
             out += `<line x1="${labelW}" y1="${y + rowH / 2}" x2="${W - 8}" y2="${y + rowH / 2}" stroke="currentColor" opacity="0.1"/>`;
             run.steps.forEach((s, si) => {
                 if (!s.startedAt) return;

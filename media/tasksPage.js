@@ -4089,11 +4089,11 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .tabs { display:flex; gap:4px; align-items:center; margin:0 0 10px;
                     border-bottom:1px solid var(--vscode-panel-border); }
                 .tab { padding:7px 18px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
-                    background:transparent; color:var(--vscode-foreground); opacity:.6; font-size:13px; cursor:pointer; }
+                    background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:13px; cursor:pointer; }
                 .tab:hover { opacity:.9; background:var(--vscode-list-hoverBackground); }
                 .tab.on { opacity:1; font-weight:600; border-bottom-color:var(--vscode-textLink-foreground);
                     background:var(--vscode-editorWidget-background); }
-                .tab-n { opacity:.55; font-weight:400; font-size:11px; }
+                .tab-n { opacity:calc(1 - .45 * var(--af-dimk, 1)); font-weight:400; font-size:11px; }
                 .toolbar { display:flex; gap:6px 12px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
                 /* U-145: two blocks. A wrapping row breaks a line on each item's basis, so the
                    filter block's basis is ZERO and its floor is its min-content (the search at
@@ -4238,13 +4238,13 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .tablewrap { overflow-x:auto; }
                 table.grid { width:100%; border-collapse:collapse; table-layout:auto; }
                 table.grid th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px;
-                    opacity:.65; font-weight:600; padding:4px 10px; border-bottom:1px solid var(--vscode-panel-border); }
+                    opacity:calc(1 - .35 * var(--af-dimk, 1)); font-weight:600; padding:4px 10px; border-bottom:1px solid var(--vscode-panel-border); }
                 table.grid td { padding:7px 10px; border-bottom:1px solid var(--vscode-panel-border); vertical-align:top; }
                 th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
                 th.sortable:hover { color:var(--vscode-textLink-foreground); }
                 th.tick, td.tick { width:1%; white-space:nowrap; padding-right:0; }
                 th.expand, td.expand { width:1%; white-space:nowrap; padding-left:4px; padding-right:4px;
-                    cursor:pointer; opacity:.6; }
+                    cursor:pointer; opacity:calc(1 - .4 * var(--af-dimk, 1)); }
                 td.expand:hover { opacity:1; }
                 td.num, th.num { text-align:right; white-space:nowrap; width:1%; }
                 td.acts, th.acts { white-space:nowrap; text-align:right; width:1%; }

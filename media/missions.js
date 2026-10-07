@@ -5232,7 +5232,7 @@
                 button.ghost { background:transparent; color:var(--vscode-foreground);
                     border:1px solid var(--vscode-panel-border, rgba(128,128,128,.45)); }
                 .mtable { width:100%; border-collapse:collapse; margin-top:8px; }
-                .mtable th { text-align:left; font-size:11px; opacity:.7; padding:4px 8px; }
+                .mtable th { text-align:left; font-size:11px; opacity:calc(1 - .3 * var(--af-dimk, 1)); padding:4px 8px; }
                 .mtable td { padding:4px 8px; border-top:1px solid var(--vscode-widget-border, #3333); font-size:12px; }
                 /* X-466 - a 360px phone: a run is a card (table[data-afcards], media/afMobile.js), an open
                    run's inner tables scroll in place, a sentry condition's controls wrap, the history strip
@@ -5373,7 +5373,7 @@
                    slot as the select it stands in for, or the row above and the
                    row below stop being columns (B-02.2). */
                 .tmnone { flex:1 1 132px; min-width:96px; max-width:168px;
-                    text-align:center; opacity:.45; font-size:12px; cursor:default; }
+                    text-align:center; opacity:calc(1 - .55 * var(--af-dimk, 1)); font-size:12px; cursor:default; }
                 .limrow { display:flex; gap:14px; flex-wrap:wrap; }
                 .limfield { font-size:11px; }
                 .limfield input { width:90px; display:block; margin-top:3px; }

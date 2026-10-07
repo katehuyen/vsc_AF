@@ -279,6 +279,7 @@ export class GuidePanel {
         const nonce = getNonce();
         const web = this.host.webview;
         const css = web.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'common.css'));
+        const themeCss = web.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'theme.css'));
         // X-456 — on a phone: its acquireVsCodeApi first, the page drawn for a narrow screen.
         const phone = this.host.remote;
         const phoneHead = phone
@@ -295,6 +296,7 @@ export class GuidePanel {
 <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${web.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">${phoneHead}
 <link rel="stylesheet" href="${css}">
+<link rel="stylesheet" href="${themeCss}">
 <style>
 /* In-guide search (E3): 1900 lines of manual are only useful if you can find
    the paragraph you need. The box filters the table of contents to the

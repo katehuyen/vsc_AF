@@ -247,11 +247,11 @@
     const TAB_STYLE = `<style>
         .af-tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); align-items:flex-end; }
         .af-tab { padding:7px 16px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
-            background:transparent; color:var(--vscode-foreground); opacity:.65; font-size:13px; cursor:pointer; }
+            background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .35 * var(--af-dimk, 1)); font-size:13px; cursor:pointer; }
         .af-tab:hover { opacity:.9; background:var(--vscode-list-hoverBackground); }
         .af-tab.on { opacity:1; font-weight:600; border-bottom-color:var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); }
-        .af-tab .af-tab-n { opacity:.8; font-weight:400; }
-        .af-tab .af-tab-grey { opacity:.55; font-weight:400; font-size:12px; }
+        .af-tab .af-tab-n { opacity:calc(1 - .2 * var(--af-dimk, 1)); font-weight:400; }
+        .af-tab .af-tab-grey { opacity:calc(1 - .45 * var(--af-dimk, 1)); font-weight:400; font-size:12px; }
         .af-tab-sep { width:1px; height:18px; margin:0 6px 8px; background:var(--vscode-panel-border); opacity:.8; }
     </style>`;
 

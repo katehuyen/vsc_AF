@@ -236,10 +236,10 @@
             <style>
                 .ok { color: var(--vscode-charts-green,#4caf50); }
                 .stop { color: var(--vscode-charts-red,#f14c4c); }
-                .cnt { opacity:.6; font-size:10px; }
+                .cnt { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:10px; }
                 table.grid { width:100%; border-collapse:collapse; }
                 table.grid th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px;
-                    opacity:.65; font-weight:600; padding:4px 10px; border-bottom:1px solid var(--vscode-panel-border); }
+                    opacity:calc(1 - .35 * var(--af-dimk, 1)); font-weight:600; padding:4px 10px; border-bottom:1px solid var(--vscode-panel-border); }
                 table.grid td { padding:7px 10px; border-bottom:1px solid var(--vscode-panel-border); vertical-align:top; }
                 td.num, th.num { text-align:right; white-space:nowrap; width:1%; }
                 td.acts, th.acts { text-align:right; white-space:nowrap; width:1%; }

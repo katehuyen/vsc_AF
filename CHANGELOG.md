@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.879.0 - Light themes: secondary text is readable (2026-10-07)
+
+- **Light themes:** dimmed text - hints, ids, table headers, card labels,
+  tab names, chart axes - was faded as strongly as in a dark theme, and on a
+  white page that fell below a readable contrast. In a light theme it is now
+  dimmed less: still clearly secondary, but readable. Measured on every page
+  in Light Modern, the texts below the WCAG contrast they need fell from
+  15,703 to 6,829.
+- **Dark themes look exactly as before** - every colour of every element on
+  every page was compared before and after.
+- Not yet adjusted: coloured labels (engine names, status colours) and the
+  phone, which still draws dark whatever the device's theme.
+
 ## 3.878.0 - The daily briefing is read aloud for free when no fal.ai model is set (2026-10-07)
 
 - **Sound: Speak Daily Briefing** works without a fal.ai account. With

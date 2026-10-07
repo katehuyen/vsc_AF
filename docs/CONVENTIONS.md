@@ -906,6 +906,27 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   the rich scene is the one somebody already built to demo the feature.
 - **Check the light theme too** (`--light`). `color-mix` over a dark fallback
   and `color:#fff` on a chip are the two that fail there and only there.
+- **‼️ A value that must differ by theme goes through the theme layer
+  (`media/theme.css`, U-237) — never a `body.vscode-light .x { … }` override.**
+  The layer only sets `--af-*` variables under a body theme class; the page
+  rule uses them with the dark value as the fallback, so the cascade between
+  rules is the same in every theme and dark is untouched by construction
+  (`test_theme_sheet.js`). An override fights specificity instead: it silently
+  beat `.tip-host.muted { opacity: 1 }`. Dimmed text is
+  `opacity: calc(1 - D * var(--af-dimk, 1))` with `D` the dark dimming — the
+  same opacity costs far more contrast on white (`.65` = 5.1:1 in Dark Modern,
+  3.97:1 in Light Modern). A dimming that means a STATE (disabled, hover-reveal,
+  hidden) keeps its plain opacity.
+- **‼️ The light theme's contrast debt may only shrink, the dark theme may not
+  move.** `test_theme_audit.js` holds every page to `themeaudit.manifest.json`;
+  lower it with `node test/theme_audit.js --write-budget` when a page improves.
+  Before a light change take `--snapshot <file>` (dark fingerprints of every
+  colour of every element) and after it `--compare <file>` must say unchanged.
+  Animations and transitions are frozen while measuring: a pulse caught
+  mid-frame made the same page fingerprint differently run to run. And a
+  colour the audit cannot read fails it rather than being skipped:
+  `color-mix()` computes to `color(srgb …)`, and an `rgb()`-only reader once
+  dropped every such text and ground unseen.
 - **‼️ Render again before you shoot — `shoot_page.js` photographs whatever
   render is on disk.** A mutation run (a guard's own test calls `render_page`)
   leaves `dist/render/<fixture>.html` drawn with the MUTANT stylesheet; restore

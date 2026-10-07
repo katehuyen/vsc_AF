@@ -384,6 +384,7 @@ export function htmlShell(
 ): string {
     const nonce = getNonce();
     const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'common.css'));
+    const themeCss = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'theme.css'));
     const charts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'charts.js'));
     // shared components (page header/toolbar + filter controls + the right-click
     // contract, general and session-shaped + a text box's four tools + sessions
@@ -627,6 +628,7 @@ export function htmlShell(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${css}">
 <style id="afq-style">${quotaStyleCss(k => afConfig().get(k))}</style>
+<link rel="stylesheet" href="${themeCss}">
 <title>${title}</title>
 </head>
 <body>

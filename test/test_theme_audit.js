@@ -25,6 +25,8 @@ const budget = JSON.parse(fs.readFileSync(path.join(__dirname, 'themeaudit.manif
     const r = await run('light', list, bin, 3);
     const broken = list.filter(p => r[p].error);
     ok('every page renders and is measured in the light theme' + (broken.length ? ' — not: ' + broken.join(', ') : ''), broken.length === 0);
+    const unread = list.filter(p => !r[p].error && r[p].unread.length);
+    ok('‼️ every colour on every page is read — none skipped unseen' + (unread.length ? ' — not: ' + unread.map(p => p + ' ' + r[p].unread.join(' ')).join(' · ') : ''), unread.length === 0);
     const over = [], under = [];
     for (const p of list) {
         if (r[p].error) { continue; }

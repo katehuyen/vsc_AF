@@ -364,7 +364,7 @@
            on every row (click to shelve), filled on the ones you keep. */
         .pincell { width:20px; text-align:center; }
         .pinbtn { background:transparent; border:0; cursor:pointer; padding:0 2px; font-size:11px;
-            line-height:1; color:var(--vscode-foreground); opacity:.25; }
+            line-height:1; color:var(--vscode-foreground); opacity:calc(1 - .75 * var(--af-dimk, 1)); }
         .pinbtn:hover { opacity:.8; }
         .pinbtn.on { opacity:1; color:var(--vscode-charts-yellow, #d7ba7d); }
         .stag { font-size:9px; padding:0 5px; margin-left:4px; border-radius:7px; white-space:nowrap;
@@ -399,7 +399,7 @@
         /* the turn list is nested content: no tint, indented under its row */
         tr.sessturns > td { padding-left:12px; }
         .turnmini { margin:4px 0 10px; font-size:11px; width:auto; min-width:340px; }
-        .turnmini th { font-size:10px; opacity:.7; }
+        .turnmini th { font-size:10px; opacity:calc(1 - .3 * var(--af-dimk, 1)); }
         .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
         .turnmini td { border-bottom-color:var(--vscode-widget-border, #1111); }

@@ -499,7 +499,7 @@
         .callout .cdot { width:7px; height:7px; border-radius:50%; flex:none;
             background:var(--vscode-charts-green,#4caf50); }
         .callout .cage { margin-left:auto; font-weight:400; opacity:.8; }
-        .srow .sid { font-weight:400; opacity:.6; font-size:10px; flex:none; }
+        .srow .sid { font-weight:400; opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:10px; flex:none; }
         /* outside the flex identity line (the resume rows) there is no gap to
            inherit, so the id gets its own breathing space */
         .srow .m .nm + .sid { margin-left:4px; }
@@ -545,7 +545,7 @@
            separates the note from the lines it is about, while the wrapper's own
            border already draws the line above it, and a border-top here would
            only double that one. (U-133 round 3) */
-        .hiddenote { flex:none; font-size:10px; opacity:.6; padding:3px 6px;
+        .hiddenote { flex:none; font-size:10px; opacity:calc(1 - .4 * var(--af-dimk, 1)); padding:3px 6px;
             border-bottom:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-editor-background); }
         .hiddenote:empty { display:none; }
@@ -582,7 +582,7 @@
         /* the second row: still right-aligned. It is allowed to WRAP rather than
            be cut — the figures are the reason the strip grew a second line, so
            losing their tail again would undo the change. */
-        .working .wmeta { align-self:flex-end; max-width:100%; opacity:.75;
+        .working .wmeta { align-self:flex-end; max-width:100%; opacity:calc(1 - .25 * var(--af-dimk, 1));
             text-align:right; white-space:normal; }
         /* the model + effort field: the only part of the meta line that is not
            a measurement but the REASON for one, so it is the one part allowed a
@@ -719,7 +719,7 @@
         .crow .afms > .tip-free, .crow .afms > .afms-btn { display:flex; min-width:0; max-width:100%; }
         .crow .afms-btn { max-width:100%; min-width:0; box-sizing:border-box; }
         .msg { margin:8px 10px; display:flex; gap:9px; align-items:flex-start; }
-        .msg .who { flex:none; width:56px; font-size:10px; opacity:.65; padding-top:3px; text-transform:uppercase; }
+        .msg .who { flex:none; width:56px; font-size:10px; opacity:calc(1 - .35 * var(--af-dimk, 1)); padding-top:3px; text-transform:uppercase; }
         /* the step-kind chip lives in this gutter (see messageHtml): the column
            is sized for a 10px word, so the glyph is given back its own size and
            the gutter's dimming is undone — a mark you scan a thousand rows by
@@ -751,7 +751,7 @@
         .msg.user.steer .who::after { content:' ↯'; }
         .msg.tool .body { font-size:11px; opacity:.85; font-family:var(--vscode-editor-font-family, monospace); }
         .msg.err .body { color:var(--vscode-errorForeground); }
-        .msg.sys .body { font-size:11px; opacity:.7; font-style:italic; }
+        .msg.sys .body { font-size:11px; opacity:calc(1 - .3 * var(--af-dimk, 1)); font-style:italic; }
         /* ‼️ K-23 — the way further back, IN the row that says there is one.
            That row is faded italic commentary; an action wearing the same
            clothes reads as part of the sentence, so the button keeps its own
@@ -760,7 +760,7 @@
             padding:1px 8px; border-radius:10px; margin-left:2px; white-space:nowrap; }
         .msg.sys .older[disabled] { opacity:.5; }
         .msg.sys .af-tipw { display:inline-block; vertical-align:baseline; }
-        .msg.res .body { font-size:11px; opacity:.7; border-top:1px dashed var(--vscode-widget-border,#4443); padding-top:5px; }
+        .msg.res .body { font-size:11px; opacity:calc(1 - .3 * var(--af-dimk, 1)); border-top:1px dashed var(--vscode-widget-border,#4443); padding-top:5px; }
         .filechip { display:inline-block; font-size:10px; padding:1px 7px; margin-left:6px; border-radius:8px;
             cursor:pointer; border:1px solid var(--vscode-widget-border,#4444); }
         .filechip:hover { background:var(--vscode-list-hoverBackground); }
@@ -894,12 +894,12 @@
         /* the spacing lives on the SLOT, not on the chip: the chip is inside an
            AFTip wrapper now, and margin on an inline trigger does nothing */
         #c-project { margin-bottom:6px; }
-        .pchip { font-size:10px; opacity:.85; cursor:help;
+        .pchip { font-size:10px; opacity:calc(1 - .15 * var(--af-dimk, 1)); cursor:help;
             display:inline-flex; align-items:center; gap:6px; padding:2px 7px; border-radius:9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
         .pchip.none { opacity:.45; background:none; color:inherit; }
-        .pchip-hint { opacity:.6; font-style:italic; }
+        .pchip-hint { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-style:italic; }
         /* X-133 — the Superpowers switch sits ON THE SAME LINE as the project
            chip because they are two halves of one appended system prompt: what
            this session is told about, and how it is expected to work. Drawn as
@@ -938,7 +938,7 @@
            mark spilling out of it (measured). */
         .ehintw { flex:none; display:inline-flex; align-items:center; }
         .ehint { display:inline-block; font-size:10px; width:14px; height:14px; line-height:13px;
-            text-align:center; border-radius:50%; cursor:help; opacity:.6;
+            text-align:center; border-radius:50%; cursor:help; opacity:calc(1 - .4 * var(--af-dimk, 1));
             border:1px solid var(--vscode-widget-border,#4444); }
         .ehint:hover { opacity:1; }
         /* an engine that cannot run is the one case the mark itself must show */

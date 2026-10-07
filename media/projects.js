@@ -2045,7 +2045,7 @@
                    the chips inside it are measured against it (tip-block). */
                 .pj-card { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:10px 12px; margin-bottom:12px;
                     position:relative; }
-                .pj-card-h { font-size:11px; text-transform:uppercase; opacity:.6; margin-bottom:8px; }
+                .pj-card-h { font-size:11px; text-transform:uppercase; opacity:calc(1 - .4 * var(--af-dimk, 1)); margin-bottom:8px; }
                 .pj-now, .pj-next { display:flex; flex-direction:column; gap:1px; padding:4px 0; }
                 /* a part is a project of its own — it reads and behaves as a row
                    you press, not as a figure in somebody else's card */
@@ -2064,7 +2064,7 @@
                 /* timeline */
                 .pj-chips-row { display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
                 .pj-chip { font-size:11px; padding:2px 9px; border-radius:11px; cursor:pointer;
-                    border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; opacity:.5; }
+                    border:1px solid var(--vscode-widget-border,#4443); background:none; color:inherit; opacity:calc(1 - .5 * var(--af-dimk, 1)); }
                 .pj-chip.on { opacity:1; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
                 .pj-feed { display:flex; flex-direction:column; }
                 .pj-ev { display:grid; grid-template-columns:18px minmax(0,2fr) minmax(0,1.6fr) 90px 62px 74px;

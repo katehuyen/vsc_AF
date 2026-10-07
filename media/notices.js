@@ -621,7 +621,7 @@
         .lb-4 { color:var(--vscode-editorError-foreground, #e51400); border-color:var(--vscode-editorError-foreground, #e51400); }
         .nt-tags, .nt-stars, .nt-pin { flex-shrink:0; }
         .nt-stars { letter-spacing:1px; }
-        .nt-star { cursor:pointer; opacity:.55; } .nt-star.on { color:var(--vscode-charts-yellow, #e2c08d); opacity:1; }
+        .nt-star { cursor:pointer; opacity:calc(1 - .45 * var(--af-dimk, 1)); } .nt-star.on { color:var(--vscode-charts-yellow, #e2c08d); opacity:1; }
         .nt-pin { cursor:pointer; opacity:.3; filter:grayscale(1); } .nt-pin:hover { opacity:.7; } .nt-pin.on { opacity:1; filter:none; }
         .nt-meta { margin-left:auto; flex-shrink:0; white-space:nowrap; }
         .nt-x { flex:0 0 auto; padding:1px 6px; min-width:0; opacity:.55; }

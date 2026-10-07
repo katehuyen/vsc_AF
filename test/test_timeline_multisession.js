@@ -130,7 +130,7 @@ ok('‼️ the row carries its session id, under the agent name',
     /<text class="lane-sid" x="16" y="46" font-size="9\.5"[^>]*>\(S1\)<\/text>/.test(lastHtml));
 ok('…each row its own', /<text class="lane-sid"[^>]*>\(S2\)<\/text>/.test(lastHtml));
 ok('…and it is part of the label group, so it is drawn with the name',
-    /<g class="lanelabel">[\s\S]{0,2500}?class="lane-sid"[\s\S]{0,120}?\(S1\)/.test(lastHtml));
+    /<g class="lanelabel">[\s\S]{0,2500}?<text class="lane-sid"[^>]*>\(S1\)<\/text>/.test(lastHtml));
 ok('…set in monospace, because ids are read against each other',
     /\.lane-sid \{ font-family:var\(--vscode-editor-font-family/.test(lastHtml));
 // A packed row holds several sessions in sequence: naming one of them without
