@@ -477,7 +477,7 @@ const PROPS = manifest.contributes.configuration.properties;
     // drawing, so nothing here is a second copy of that list.
     ok('‼️ …and an account map is keyed by ENGINE, which is its own source',
         of('activeAccounts').keySource === 'engine'
-        && /return \(DATA\.engines \|\| \[\]\)\.map\(e => e\.id\)/.test(page));
+        && /return \((?:X\.)?DATA\.engines \|\| \[\]\)\.map\(e => e\.id\)/.test(page));
 
     ok('‼️ the page chooses the pair editor from the SHAPE, like every other one',
         /it\.shape\.kind === 'map'\) \{ return mapHtml\(it\); \}/.test(page));

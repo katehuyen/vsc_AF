@@ -195,7 +195,13 @@ const SHARED = [
     // afSettingResults.js — the Settings page's results view, count, Changed chip and keys (U-224).
     'afSettingResults.js',
     // afSettingList.js — the Settings page's shape panel and plain-list editor, split out of settings.js (U-225).
-    'afSettingList.js'];
+    'afSettingList.js',
+    // afSettingFields.js / afSettingForms.js — its field boxes and its form and table editors (U-225).
+    'afSettingFields.js',
+    'afSettingForms.js',
+    // afSettingMap.js / afSettingItem.js — its name → value pairs editor and one setting row with its control (U-225).
+    'afSettingMap.js',
+    'afSettingItem.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'theme-phone.css', 'afRemote.js'];

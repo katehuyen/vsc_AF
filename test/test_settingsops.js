@@ -690,7 +690,7 @@ const { charts } = require('./lib_charts_stub.js');
     ok('…and a key with nothing to refuse carries no note',
         SO.buildSettingsModel({ 'agentFarm.budgetsUnlimited': props['agentFarm.budgetsUnlimited'] },
             () => true)[0].items[0].refusal === undefined);
-    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     ok('the page actually draws it', /it\.refusal/.test(page));
 
     // --- and every reader is behind the door, not beside it ---
@@ -778,7 +778,7 @@ const { charts } = require('./lib_charts_stub.js');
     ok('S-82: editPresentation multilineText marks the item multiline', !!tpl && tpl.multiline === true);
     ok('…and filed under the handover discipline', cats.some(c => c.id === 'discipline' && c.items.includes(tpl)));
     ok('…a plain string is not', !items.find(i => i.key === 'agentFarm.agentsRoot').multiline);
-    const page = require('fs').readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     ok('…and the page draws it as a textarea that saves like any other box (data-set)',
         /if \(it\.multiline\) \{[\s\S]{0,200}<textarea id="\$\{id\}" data-set=/.test(page));
     ok('…in its own group of the discipline page', /keys: \['batonHandoverTemplate', 'batonInjectedDirective'\]/.test(page));

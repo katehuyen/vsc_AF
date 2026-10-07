@@ -358,7 +358,7 @@ console.log('\n== S-80 — the ORDER is a setting; the lead words are the law\'s
     ok('…and the words are a FORM of six boxes, derived from the schema rather than a JSON textarea',
         ((cats[0].items.find(i => i.key === 'agentFarm.disciplineOrders') || {}).shape || {}).kind === 'form');
 
-    const setjs = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+    const setjs = require('./lib_settings_source').settingsPageSource();
     ok('the settings page gives the section its own two groups',
         /c\.id === 'discipline' \? disciplineSection\(c\)/.test(setjs) && /const DISCIPLINE_GROUPS = \[/.test(setjs));
     ok('‼️ a field whose own default is a SENTENCE gets a box it fits in, derived from the schema',
