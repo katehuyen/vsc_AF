@@ -187,7 +187,9 @@ const SHARED = [
     // sessionsTable.js's list when it DRAWS, so a page using it loads that too.
     'afRunCategory.js',
     // afColFit.js — a share column never narrower than the fact it holds (U-192).
-    'afColFit.js'];
+    'afColFit.js',
+    // afBlPlace.js — the place box at the foot of the backlog's ▲/▼ step menu (U-240).
+    'afBlPlace.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'theme-phone.css', 'afRemote.js'];

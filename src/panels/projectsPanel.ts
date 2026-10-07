@@ -116,7 +116,7 @@ export interface ProjectsPanelDeps {
         { error?: string };
     /** Nudge it `by` places through the QUEUE, or send it to one end of the whole
      *  queue. No line moves, so it crosses areas; the code does not change. */
-    backlogMove(id: string, code: string, dir: string, by?: number): { error?: string; note?: string };
+    backlogMove(id: string, code: string, dir: string, by?: number, to?: number): { error?: string; note?: string };
     /** Drop it directly before or after another code in the queue — the drag. */
     backlogReorder(id: string, code: string, dest: string, place: string): { error?: string; note?: string };
     /** Replace the whole queue in one call — the strip's drag.
@@ -721,7 +721,7 @@ export class ProjectsPanel {
                 const code = String(msg.code ?? '').trim().toUpperCase();
                 if (!code) { break; }
                 const res = this.deps.backlogMove(id, code, String(msg.dir ?? 'up'),
-                    typeof msg.by === 'number' ? msg.by : undefined);
+                    typeof msg.by === 'number' ? msg.by : undefined, typeof msg.to === 'number' ? msg.to : undefined);
                 this.done(res.error, res.error ? undefined : (res.note ?? 'Moved.'));
                 break;
             }

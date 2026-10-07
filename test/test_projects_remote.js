@@ -85,6 +85,7 @@ const deps = {
     sessionTurns: () => [],
     suggestFolder: name => 'D:\\v\\' + name,
     backlogAdd: (id, input) => { calls.push('backlogAdd:' + id + ':' + input.text); return { code: 'P-9' }; },
+    backlogMove: (id, code, dir, by, to) => { calls.push(['backlogMove', id, code, dir, by, to].join(':')); return {}; },
     backlogState: logged('backlogState'), planCheck: logged('planCheck'), savePeople: () => { calls.push('savePeople'); return undefined; },
     remove: id => { calls.push('remove:' + id); },
     // everything below opens something on the PC
@@ -149,6 +150,10 @@ const alive = setInterval(() => undefined, 1000);
     await settle();
     ok('a manage device adds to the backlog, and hears how it went', calls.includes('backlogAdd:p1:telefondan not')
         && toM.some(m => m.type === 'result' && /P-9/.test(String(m.ok))));
+    views.message(manager, 'm1', { type: 'backlogMove', id: 'p1', code: 'k-1', to: 33 });
+    await settle();
+    ok('U-240 — a place in the queue reaches the host as one: the code and the place, no steps',
+        calls.includes('backlogMove:p1:K-1:up::33'));
 
     pcSide.length = 0;
     views.message(manager, 'm1', { type: 'delete', id: 'p1', name: 'Tarla Projesi' });

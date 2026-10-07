@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.885.0 - Move a backlog item straight to a place in the queue (2026-10-07)
+
+- **Send a backlog item to any place in the queue in one go.** The menu that
+  opens when you rest on a row's ▲ or ▼ now ends in a small place box:
+  `▼ [place] ▲ ✓`. It shows the row's own place; the small ▲ ▼ beside it or
+  the mouse wheel over it set the place (▲ is up the queue, a smaller number,
+  the way the menu reads), and nothing moves until you press **✓** or
+  **Enter**, so a wheel turned over the box changes nothing by itself. You
+  can also click into the box and type the number. A place past either end
+  lands on that end; a box with no number in it goes back to the row's place.
+  Moving from #3 to #80 is now one gesture instead of a dozen presses or a
+  long drag.
+- The menu does not get any wider for it, and the box keeps its menu open
+  while you type in it.
+- A place you set but have not sent yet survives the page redrawing itself
+  (another session finishing, a file change) - the box no longer falls back
+  to the row's own place between two clicks.
+- Agents already had this as `projects.backlog.move` with `to`; the page now
+  sends the same move.
+
 ## 3.884.0 - Pause and Continue a relay chain (2026-10-07)
 
 - **Pause a relay chain without ending it.** One command, two modes:

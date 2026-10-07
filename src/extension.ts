@@ -36440,8 +36440,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * rather than queued by line — the row offers 🗂 for that, and
                  * the code it hands out is permanent anyway.
                  */
-                backlogMove: (id: string, code: string, dir: string, by?: number) =>
-                    edit(id, text => moveInQueue(text, code,
+                backlogMove: (id: string, code: string, dir: string, by?: number, to?: number) =>
+                    edit(id, text => to !== undefined ? placeInQueue(text, code, to) : moveInQueue(text, code,
                         BACKLOG_MOVES.includes(dir as BacklogMoveDir) ? dir as BacklogMoveDir : 'up', by)),
                 backlogReorder: (id: string, code: string, dest: string, place: string) =>
                     edit(id, text => dropInQueue(text, code, dest,

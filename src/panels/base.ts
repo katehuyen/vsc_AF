@@ -463,6 +463,8 @@ export function htmlShell(
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     // U-192 — a share column never narrower than the fact it holds.
     const colFit = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afColFit.js'));
+    // U-240 — the place box at the foot of the backlog's ▲/▼ step menu.
+    const blPlace = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afBlPlace.js'));
     // U-191 — the four run categories as a bar, for any page listing runs.
     const runCategory = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunCategory.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
@@ -709,6 +711,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${ask}"></script>
 <script nonce="${nonce}" src="${voice}"></script>
 <script nonce="${nonce}" src="${colFit}"></script>
+<script nonce="${nonce}" src="${blPlace}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${runCategory}"></script>
 <script nonce="${nonce}" src="${script}"></script>

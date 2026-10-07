@@ -2413,5 +2413,64 @@ function pickParent(r, code) {
     ok('a file with no archive is not offered the chip', !/data-act="blArch"/.test(r2.html()));
 }
 
+// ---------- U-240 — the place box at the foot of the step menu (media/afBlPlace.js)
+{
+    const d = data();
+    d.tabData.backlog.queue = ['P-2', 'K-1', 'P-1'];
+    const r = run(d);
+    const placeSrc = fs.readFileSync(path.resolve(__dirname, '../media/afBlPlace.js'), 'utf8');
+    let box = r.all('[data-blplace-in="K-1:down"]')[0];
+    ok('‼️ U-240 — the step menu ends in a place box holding the row\'s own place, bounded by the queue',
+        !!box && box.value === '2' && box.dataset.blmax === '3' && r.all('[data-blplace-in="K-1:up"]').length === 1);
+    const step = by => r.all('[data-blplacestep="' + by + '"]').find(e => e.dataset.blplace === 'K-1:down');
+    step('-1').click();
+    ok('▴ sets the box one place up the queue — a smaller number, the way ▲ reads — and moves nothing',
+        box.value === '1' && !r.posted.some(m => m.type === 'backlogMove'));
+    step('-1').click();
+    ok('…and stops at the front', box.value === '1');
+    step('1').click();
+    ok('▾ goes the other way', box.value === '2');
+    box.fire('wheel', { deltaY: 100 });
+    box.fire('wheel', { deltaY: 100 });
+    box.fire('wheel', { deltaY: 100 });
+    ok('the wheel sets it too, down the queue for a turn down, and stops at the back',
+        box.value === '3' && !r.posted.some(m => m.type === 'backlogMove'));
+    box.fire('wheel', { deltaY: -100 });
+    ok('…and up for a turn up', box.value === '2');
+    step('-1').click();
+    r.els('blarea').find(e => e.dataset.blarea === '').click();        // a host push between two presses
+    const drawn = r.all('[data-blplace-in="K-1:down"]')[0];
+    ok('‼️ a place set and not sent survives a repaint, in its own box only',
+        drawn.value === '1' && r.all('[data-blplace-in="K-1:up"]')[0].value === '2'
+        && r.all('[data-blplace-in="P-2:down"]')[0].value === '1' && r.all('[data-blplace-in="P-1:down"]')[0].value === '3');
+    step('1').click();
+    ok('…and the next press goes on from it', r.all('[data-blplace-in="K-1:down"]')[0].value === '2');
+    box = drawn;
+    box.value = '3';
+    r.all('[data-blplace-go="K-1:down"]')[0].click();
+    const go = r.posted.filter(m => m.type === 'backlogMove').pop();
+    ok('‼️ ✓ moves it to that place, by CODE, as one message with no steps in it',
+        !!go && go.code === 'K-1' && go.to === 3 && go.by === undefined && go.dir === undefined);
+    // Moves only: this stub matches a class-only selector on every element, so the header's .af-refresh click rides along.
+    const moves = () => r.posted.filter(m => m.type === 'backlogMove').length;
+    const n = moves();
+    box.value = '2';
+    r.all('[data-blplace-go="K-1:down"]')[0].click();
+    ok('…and a box still on the row\'s own place sends nothing', moves() === n);
+    box.value = '99';
+    box.fire('keydown', { key: 'Enter' });
+    const typed = r.posted.filter(m => m.type === 'backlogMove').pop();
+    ok('a typed place moves on Enter, and one past the end lands on the end', typed.to === 3 && box.value === '3');
+    box.value = 'x';
+    box.fire('change');
+    ok('a box with no number in it goes back to the row\'s own place', box.value === '2');
+    const place = (/<span class="pj-bl-place">[\s\S]*?<\/span>/.exec(r.html()) || [''])[0];
+    ok('the box and its buttons are spans, buttons and an input — a row stays one flat div',
+        !!place && !/<div/.test(place) && /<input type="number"/.test(place));
+    ok('every word of it goes through t() (U-189)',
+        /t\('One place further down the queue \(a bigger number\)'\)/.test(placeSrc)
+        && /t\('Move it to the place in the box'\)/.test(placeSrc));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

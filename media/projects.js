@@ -2760,7 +2760,7 @@
                 .pj-doc-text { max-height:58vh; overflow:auto; white-space:pre-wrap; word-break:break-word;
                     font-size:12px; padding:10px 12px; border-radius:7px;
                     background:var(--vscode-textCodeBlock-background,#8881); }
-            </style>
+            </style>${window.AFBlPlace.style}
             ${window.AFHeader.html({
                 page: 'projects',
                 title: 'Projects',
@@ -4851,7 +4851,7 @@
                               filter chip, host push and keystroke. */''}
                         ${blMenuOpen('parent', key)
                     ? blMenuHtml('parent', key, blParentRows(rel.all, i.code || ''), i.parent || '', true) : ''}</span>
-                    ${queueAt ? blStepHtml('up', queueAt) + blStepHtml('down', queueAt) : ''}
+                    ${queueAt ? blStepHtml('up', queueAt, i.code) + blStepHtml('down', queueAt, i.code) : ''}
                 </span>
             </span>
         </div>`;
@@ -5028,7 +5028,7 @@
      * is no second button for "a lot": the common act keeps its single click and
      * the rare one stops being eleven of them.
      */
-    function blStepHtml(dir, at) {
+    function blStepHtml(dir, at, code) {
         const up = dir === 'up';
         const glyph = up ? '▲' : '▼';
         const end = up ? 'top' : 'bottom';
@@ -5042,7 +5042,8 @@
         return `<span class="pj-bl-step${up ? ' move' : ''}">
             <button class="pj-bl-act" data-blmove="${dir}" data-blby="1"
                 title="${up ? 'Up' : 'Down'} one place in the queue (now #${at}). Rest on it for bigger jumps.">${glyph}</button>
-            <span class="pj-bl-steps">${rows}</span>
+            <span class="pj-bl-steps">${rows}${window.AFBlPlace.html({ key: code + ':' + dir, at,
+                max: ((td().backlog || {}).queue || []).length })}</span>
         </span>`;
     }
 
@@ -7528,6 +7529,11 @@
                     ...(el.dataset.blby ? { by: Number(el.dataset.blby) } : {})
                 });
             }));
+        // U-240 — the place box at the foot of those menus: the same message, with the place instead of a step.
+        window.AFBlPlace.wire({ move: (el, to) => {
+            const p = sel();
+            vscode.postMessage({ type: 'backlogMove', id: p ? p.id : '', code: blRow(el).dataset.code || '', to });
+        } });
         document.querySelectorAll('[data-blmore]').forEach(el =>
             el.addEventListener('click', () => {
                 const key = blRow(el).dataset.key;
