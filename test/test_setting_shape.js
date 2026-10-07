@@ -163,7 +163,7 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('…and a scalar setting carries none',
         items.find(i => i.key === 'agentFarm.livePort').shape === undefined);
 
-    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     ok('the page draws it under the JSON box, beside Apply', /shapeHtml\(it\)/.test(page));
     ok('‼️ …as an AFTip and not a title, because a field table is text that has to'
         + ' be scrollable and enterable (docs/CONVENTIONS.md)',
@@ -214,7 +214,7 @@ const PROPS = manifest.contributes.configuration.properties;
         lists.every(([, sh]) => sh.itemAllowed === undefined
             || (Array.isArray(sh.itemAllowed) && sh.itemAllowed.length > 0)));
 
-    const page = fs2.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     ok('‼️ the page chooses the editor from the SHAPE, never from a key list — a'
         + ' setting added tomorrow gets it with nobody touching that file',
         /it\.shape && !jsonMode\[it\.key\]/.test(page)
@@ -280,7 +280,7 @@ const PROPS = manifest.contributes.configuration.properties;
 // ---------------------------------------------------------------------------
 {
     const fs3 = require('fs');
-    const page = fs3.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     const shaped = Object.entries(PROPS)
         .map(([k, p]) => [k, S.shapeOf(p)]).filter(([, s]) => !!s);
     const forms = shaped.filter(([, s]) => s.kind === 'form');
@@ -427,7 +427,7 @@ const PROPS = manifest.contributes.configuration.properties;
 // ---------------------------------------------------------------------------
 {
     const fs4 = require('fs');
-    const page = fs4.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     const of = (k) => S.shapeOf(PROPS['agentFarm.' + k]);
 
     // ‼️ THE CENSUS IS OVER RULES, NOT OVER A COUNT. It used to assert there
