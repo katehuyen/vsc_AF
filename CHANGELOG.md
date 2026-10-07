@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.889.0 - A relay leg the engine cut is asked once to go on (2026-10-08)
+
+- **A relay chain no longer stalls when the engine cuts a leg's turn by
+  itself.** When a turn ends as interrupted although nothing in Agent Farm
+  asked it to stop, the leg used to sit idle for ever and the chain waited
+  with it. Now Agent Farm sends that leg one "continue" message in the same
+  session, within about a minute, and tells you on Notices.
+- **A stop you asked for is never answered with a nudge.** Esc, the stop
+  button, the card's Interrupt Turn, the phone, Telegram or the bridge all
+  record who stopped the turn, and such a turn is left exactly as it is.
+- **Only a chain that still flows is nudged.** A leg that already passed the
+  baton, a Last leg, a chain you ended, a leg told to hand over, and a leg
+  paused in place are left alone. If you typed into the session after the
+  cut, nothing is sent.
+- **No loops.** If the turn the nudge opened is cut too, it is not asked a
+  second time: Notices says the chain waits for you.
+
 ## 3.888.0 - Change the account of a running relay chain (2026-10-07)
 
 - **You can now change which account a relay chain's next legs open on,

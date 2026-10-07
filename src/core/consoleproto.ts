@@ -721,6 +721,8 @@ export interface ConsoleSessionState {
         thinking?: number;
         /** how it ended, in one word: 'done' | 'interrupted' | 'failed' */
         outcome: 'done' | 'interrupted' | 'failed';
+        /** X-483 — the engine ended it in silence with no stop asked (NO_STOP_ASKED); absent otherwise */
+        engineCut?: true;
         /** what it was thinking with — see turnModel; '' when never known */
         model?: string;
         effort?: string;
@@ -1703,6 +1705,7 @@ export function reduceEvent(
                     steps: state.turnSteps || undefined,
                     thinking: state.turnThinking || undefined,
                     outcome: !isError ? 'done' : interrupted ? 'interrupted' : 'failed',
+                    ...(stop === NO_STOP_ASKED ? { engineCut: true as const } : {}),
                     model: state.turnModel, effort: state.turnEffort
                 },
                 sessionId: typeof o.session_id === 'string' ? o.session_id : state.sessionId

@@ -410,6 +410,7 @@ import { lastUserSaidAt, PassedLegCard, PassedLegEnder, PassedLegFacts } from '.
 import { BatonRunner } from './core/batonRunner';
 import { faultText } from './core/engineFault';
 import { EngineFaultWatch } from './core/engineFaultWatch';
+import { EngineCutWatch, cutCardOf } from './core/engineCutNudge';
 import { faultOpts, registerFaultOps } from './core/engineFaultOps';
 import { stayInForceNote, stayPctOf } from './core/stayAccount';
 import { MisplacedWatch } from './core/misplaced';
@@ -18162,6 +18163,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         log: l => console.log(`[Agent Farm] ${l}`)
     });
     registerFaultOps(bridge, engineFaults, () => faultOpts(ownSetting));
+    // ‼️ X-483 — a leg the engine cut with no stop asked is asked once to go on (engineCutNudge.ts)
+    const engineCuts = new EngineCutWatch({
+        batons: () => batonStore.all(),
+        cards: () => { try { return consoleHost.list().filter(c => !!c.sessionId).map(cutCardOf); } catch { return []; } },
+        handover: sid => !!handoverOrderOf(sid),
+        nudge: (id, text) => { const r = consoleHost.send(id, text); if (!r || r.refused) { return false; } ConsolePanel.refreshIfOpen(); return true; },
+        say: (title, body, key, level, type) => { noticesStore.add({ agentName: 'agent-farm', title, body, type, level, sourceKey: key }); NoticesPanel.refreshIfOpen(); updateNoticesBadge(); },
+        log: l => console.log(`[Agent Farm] ${l}`)
+    });
     // ‼️ S-121 — the chain board: every chain from the record, and continue / end (chainBoardOps.ts)
     const chainBoardDeps: ChainBoardOpsDeps = {
         store: batonStore,
@@ -18258,7 +18268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!noticesStore.notices.some(x => x.sourceKey === key)) { postNewsOnce(key, n); }
         }
     };
-    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); engineFaults.check(); misplacedWatch.sweep(); }, 60_000);
+    const batonSweep = setInterval(() => { batonRunner.sweep(); updateBatonBar(); batonEnder.check(); engineFaults.check(); engineCuts.check(); misplacedWatch.sweep(); }, 60_000);
     const chainBellSweep = setInterval(chainBell, 60_000);
     context.subscriptions.push({ dispose: () => { clearTimeout(batonBootSweep); clearInterval(batonSweep); clearInterval(chainBellSweep); } });
 
