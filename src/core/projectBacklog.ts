@@ -941,7 +941,7 @@ export function parseBacklog(text: string): BacklogSummary {
         // because that is where somebody can act on it — and `tidy` carries it
         // home for them.
         if (it.archived && isLive(it.state)) {
-            warnOn(it, `this line is closed or gone from the file, but is still ${it.state} under the archive heading`);
+            warnOn(it, `this line is closed, archived, or not in this backlog / file`);
         }
         if (!it.code) { continue; }
         if (seen.has(it.code)) { warnOn(it, `code ${it.code} is used more than once`); }
