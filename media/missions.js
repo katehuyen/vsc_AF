@@ -5388,7 +5388,7 @@
                 .segbtn { font-size:12px; padding:4px 14px; border:0; cursor:pointer; white-space:nowrap;
                     background:transparent; color:var(--vscode-foreground); }
                 .segbtn + .segbtn { border-left:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
-                .segbtn.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+                .segbtn.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none); }
                 /* U-102 — the pool scope sits on the Pool heading line rather
                    than on a row of its own: it is a property of that list, and a
                    heading is where a list says what it contains. */

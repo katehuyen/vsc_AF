@@ -625,7 +625,7 @@
                        shut, or a list that shuffles looks like a bug. */
         .rhead .rfilter.ordon { border-color:var(--vscode-charts-blue,#3794ff);
             background:color-mix(in srgb, var(--vscode-charts-blue,#3794ff) 16%, transparent); }
-        .rhead .rfilter.ordon.on { background:var(--vscode-button-background); }
+        .rhead .rfilter.ordon.on { background:var(--vscode-button-background); box-shadow:var(--af-hc-pick, none); }
         .rnote { font-size:10px; opacity:.7; line-height:1.35; }
         /* Two buttons, two different things to know at a glance:
              ⌕ lit  = the panel is open (you are looking at the controls)
@@ -635,7 +635,7 @@
            looked exactly like the whole list. The clear button is also the
            fastest way out: it is next to the thing that caused it, not at the
            bottom of a list you have to scroll to. */
-        .rhead .rfilter.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        .rhead .rfilter.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none); }
         .rhead .rclear.on { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700));
             border-color:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 55%, transparent);
             background:color-mix(in srgb, var(--vscode-editorWarning-foreground,#cca700) 14%, transparent); }
@@ -669,7 +669,7 @@
             background:transparent; color:var(--vscode-foreground); opacity:.7;
             border:1px solid var(--vscode-widget-border,#4444); }
         .rchip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
-            opacity:1; border-color:transparent; }
+            opacity:1; border-color:transparent; box-shadow:var(--af-hc-pick, none); }
         /* ‼️ A LOCK YOU HAVE TO SQUINT AT IS NOT A STATE. 🔒 and 🔓 differ by a
            few pixels of shackle at 10px, and both were drawn the same weight —
            so "is the count pinned?" could only be answered by opening the

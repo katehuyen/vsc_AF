@@ -137,6 +137,14 @@ function resolver(theme, reg, field) {
             const f = splitTop(e.slice(1, -1)).map(p => [p.slice(0, p.indexOf(':')).trim(), p.slice(p.indexOf(':') + 1)]).find(([n]) => n === field);
             return f ? expr(f[1], depth, pos) : undefined;
         }
+        // the high-contrast kinds write a colour as a method chain: Color.fromHex("#0F4A85").transparent(.1)
+        const hex = /^[\w$]+\.fromHex\("(#[0-9a-fA-F]{3,8})"\)$/.exec(e);
+        if (hex) { return hex[1].toLowerCase(); }
+        const chained = /^(.+)\.transparent\(([\d.]+)\)$/.exec(e);
+        if (chained) {
+            const base = expr(chained[1], depth, pos);
+            return typeof base === 'string' && base.startsWith('#') ? transparent(base, Number(chained[2])) : undefined;
+        }
         const tr = /^[\w$]+\(([\w$.]+|"#[0-9a-fA-F]+"),\s*([\d.]+)\)$/.exec(e);
         if (tr && reg.transparentFn && e.startsWith(reg.transparentFn + '(')) {
             const base = expr(tr[1], depth, pos);

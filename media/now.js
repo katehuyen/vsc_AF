@@ -151,7 +151,7 @@
                 .nw-row { display:flex; gap:8px; align-items:flex-start; padding:6px 4px; border-top:1px solid var(--vscode-panel-border); min-height:40px; }
                 .nw-row:first-of-type { border-top:0; }
                 .nw-row:hover { background:var(--vscode-list-hoverBackground); }
-                .nw-row.sel { background:var(--vscode-list-inactiveSelectionBackground); border-left:3px solid var(--vscode-focusBorder); }
+                .nw-row.sel { background:var(--vscode-list-inactiveSelectionBackground); border-left:3px solid var(--vscode-focusBorder); box-shadow:var(--af-hc-pick, none); }
                 .nw-row.read { opacity:.7; }
                 .nw-ic { width:22px; text-align:center; flex-shrink:0; }
                 .nw-main { flex:1; min-width:0; }

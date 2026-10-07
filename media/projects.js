@@ -1603,7 +1603,7 @@
                 .pj-group { font-size:11px; text-transform:uppercase; opacity:calc(1 - .4 * var(--af-dimk, 1)); margin:12px 0 4px; }
                 .pj-item { display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:5px; cursor:pointer; }
                 .pj-item:hover { background:var(--vscode-list-hoverBackground); }
-                .pj-item.on { background:var(--vscode-list-activeSelectionBackground); color:var(--vscode-list-activeSelectionForeground); }
+                .pj-item.on { background:var(--vscode-list-activeSelectionBackground); color:var(--vscode-list-activeSelectionForeground); box-shadow:var(--af-hc-pick, none); }
                 /* a part: indented, with a rule joining it to its parent so the
                    nesting survives a list of forty rows */
                 .pj-item-part { margin-left:12px; padding-left:10px;
@@ -1763,7 +1763,7 @@
                     background:none; color:inherit; border:1px solid transparent; }
                 .pj-trk-view:hover { background:var(--vscode-list-hoverBackground); }
                 .pj-trk-view.on { background:var(--vscode-list-activeSelectionBackground);
-                    color:var(--vscode-list-activeSelectionForeground); font-weight:600; }
+                    color:var(--vscode-list-activeSelectionForeground); font-weight:600; box-shadow:var(--af-hc-pick, none); }
                 .pj-trk-sep { width:1px; align-self:stretch; margin:0 4px;
                     background:var(--vscode-panel-border); }
                 /* ‼️ position:relative — THE CARD IS WHAT ITS HOVERS ARE MEASURED
@@ -1877,7 +1877,7 @@
                     background:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 9%, transparent); }
                 .pj-trk-ev.e-doing { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
                     border-color:transparent; opacity:1; }
-                .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+                .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000);
                     border-color:transparent; opacity:1; }
                 .pj-trk-ev.e-touch { opacity:.6; }
                 /* X-135 — the birth of the item. Drawn in the same family as
@@ -2126,7 +2126,7 @@
                 .pj-unassigned[role="button"] { cursor:pointer; }
                 .pj-unassigned[role="button"]:hover { background:var(--vscode-list-hoverBackground); opacity:1; }
                 .pj-unassigned.on { background:var(--vscode-list-activeSelectionBackground);
-                    color:var(--vscode-list-activeSelectionForeground); opacity:1; }
+                    color:var(--vscode-list-activeSelectionForeground); opacity:1; box-shadow:var(--af-hc-pick, none); }
                 .pj-bf-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap;
                     margin:0 0 10px; padding-bottom:9px;
                     border-bottom:1px solid var(--vscode-panel-border); }
@@ -2135,7 +2135,7 @@
                     border-left:2px solid var(--vscode-charts-green,#3fb950);
                     background:var(--vscode-editorWidget-background); }
                 .pj-bf-row.contested { border-left-color:var(--vscode-editorWarning-foreground,#cca700); }
-                .pj-bf-row.on { background:color-mix(in srgb, var(--vscode-button-background) 14%, transparent); }
+                .pj-bf-row.on { background:color-mix(in srgb, var(--vscode-button-background) 14%, transparent); box-shadow:var(--af-hc-pick, none); }
                 .pj-bf-pick { flex:none; padding-top:2px; }
                 .pj-bf-body { flex:1; min-width:0; }
                 .pj-bf-title { display:flex; gap:8px; align-items:baseline; min-width:0; }
@@ -2632,10 +2632,10 @@
                 .pj-bl-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:#fff; }
                 .pj-bl-kind.t-feat { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; }
                 .pj-bl-kind.t-ux { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; }
-                .pj-bl-kind.t-perf { background:var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616)); color:#fff; }
+                .pj-bl-kind.t-perf { background:var(--af-fill-charts-orange, var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616))); color:#fff; }
                 .pj-bl-kind.t-secu { background:var(--vscode-terminal-ansiCyan,#11a8cd); color:#fff; }
                 .pj-bl-kind.t-chore, .pj-bl-kind.t-debt, .pj-bl-kind.t-doc, .pj-bl-kind.t-idea {
-                    background:var(--vscode-charts-yellow,#d7ba7d); color:#000; }
+                    background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); }
                 .pj-bl-kind.settable { cursor:pointer; border:none; font-family:inherit; }
                 .pj-bl-kind.settable:hover { outline:1px solid var(--vscode-focusBorder); }
                 .pj-bl-kind.none { background:none; border:1px dashed var(--vscode-widget-border,#4446);
@@ -2661,7 +2661,7 @@
                     padding:3px 7px; border-radius:4px; }
                 .pj-bl-mi:hover { background:var(--vscode-list-hoverBackground); }
                 .pj-bl-mi.on { background:var(--vscode-list-activeSelectionBackground);
-                    color:var(--vscode-list-activeSelectionForeground); }
+                    color:var(--vscode-list-activeSelectionForeground); box-shadow:var(--af-hc-pick, none); }
                 .pj-bl-mig { flex:0 0 30px; opacity:.85; font-size:11px; }
                 .pj-bl-mil { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; }
@@ -2751,7 +2751,7 @@
                 .pj-doc-row.dir { cursor:default; opacity:.75; }
                 .pj-doc-row:not(.dir):hover { background:var(--vscode-list-hoverBackground); }
                 .pj-doc-row.on { background:var(--vscode-list-activeSelectionBackground);
-                    color:var(--vscode-list-activeSelectionForeground); }
+                    color:var(--vscode-list-activeSelectionForeground); box-shadow:var(--af-hc-pick, none); }
                 .pj-doc-g { opacity:.7; }
                 .pj-doc-n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .pj-doc-r { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85;

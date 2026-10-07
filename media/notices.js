@@ -560,7 +560,7 @@
         .nt-controls select, .nt-controls input { padding:3px 6px; }
         #nt-search { min-width:180px; }
         .af-chip { padding:3px 10px; border-radius:12px; }
-        .af-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        .af-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none); }
         button.secondary.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:inset 0 0 0 1px var(--vscode-focusBorder, #007fd4); font-weight:600; }
         button.secondary.on:hover { background:var(--vscode-button-hoverBackground); }
         .nt-card { border:1px solid var(--vscode-panel-border); border-left-width:3px; border-radius:6px; margin:6px 0; overflow:hidden; }
@@ -572,7 +572,7 @@
         .nt-card.lvl-3 .nt-title, .nt-card.lvl-4 .nt-title { font-weight:700; }
         .nt-card.read .nt-title { font-weight:400; opacity:.78; }
         .nt-card.pinned { background:var(--vscode-editorWidget-background); }
-        .nt-card.sel { background:color-mix(in srgb, var(--vscode-button-background) 12%, transparent); }
+        .nt-card.sel { background:color-mix(in srgb, var(--vscode-button-background) 12%, transparent); box-shadow:var(--af-hc-pick, none); }
         .nt-cb { flex-shrink:0; margin:0; cursor:pointer; }
         .nt-grp { display:inline-flex; gap:6px; align-items:center; padding-right:8px; margin-right:2px; border-right:1px solid var(--vscode-panel-border); }
         .nt-grp:last-child { border-right:none; }

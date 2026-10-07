@@ -42,7 +42,7 @@
     const CSS = `
         .ch-chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
         .ch-chip { min-height:28px; padding:2px 10px; border-radius:14px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); cursor:pointer; }
-        .ch-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
+        .ch-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; box-shadow:var(--af-hc-pick, none); }
         .ch-chip.warn b { color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, orange)); }
         .ch-chip.on.warn b { color:inherit; }
         .ch-note { margin:4px 0 8px; font-size:12px; }
@@ -51,7 +51,7 @@
         .ch-tab td { vertical-align:middle; }
         .ch-row { cursor:pointer; }
         .ch-row:hover { background:var(--vscode-list-hoverBackground); }
-        .ch-row.open { background:var(--vscode-list-inactiveSelectionBackground); }
+        .ch-row.open { background:var(--vscode-list-inactiveSelectionBackground); box-shadow:var(--af-hc-pick, none); }
         .ch-row.t-run > td:first-child, .ch-row.t-hold > td:first-child { box-shadow:inset 3px 0 0 var(--ch-tone); }
         .ch-row.t-attn > td:first-child { box-shadow:inset 3px 0 0 var(--ch-tone); }
         .ch-row.focus { box-shadow:inset 3px 0 0 var(--vscode-focusBorder, #007fd4); }

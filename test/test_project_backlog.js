@@ -932,8 +932,8 @@ const FAMILY = [
     const diag = B.parseBacklog(stranded);
     const warnOf = code => (diag.items.find(i => i.code === code) || {}).warn || '';
     ok('‼️ X-134(c): an open line under 🗄 is DIAGNOSED on its own line',
-        /under the archive heading but is still open/.test(warnOf('K-3'))
-        && /still doing/.test(warnOf('K-4')));
+        /closed, archived, or not in this backlog/.test(warnOf('K-3'))
+        && /closed, archived, or not in this backlog/.test(warnOf('K-4')));
     ok('…and a closed one is not — it is exactly where it belongs',
         !warnOf('K-2') && !warnOf('K-5'));
 
@@ -959,7 +959,7 @@ const FAMILY = [
     const homeless = '## 🗄 Archive\n- [ ] Z-1 open, and Z has no heading\n';
     ok('‼️ …but an item whose area has no heading is left alone, warned rather than relocated',
         B.tidyBacklogFile(homeless).reseated.length === 0
-        && /under the archive heading/.test(B.parseBacklog(homeless).items[0].warn || ''));
+        && /closed, archived, or not in this backlog/.test(B.parseBacklog(homeless).items[0].warn || ''));
 
     // ---- (d) only [x] and [-] ever move ----
     const mixed = '## K — Console\n- [ ] K-1 open\n- [/] K-2 doing\n- [x] K-3 done\n- [-] K-4 cancelled\n';
@@ -1017,7 +1017,7 @@ const FAMILY = [
         back.text.indexOf('K-3 still done') > back.text.indexOf('## 🗄 Archive'));
     ok('…so the parse has one diagnosis left, not none and not three',
         B.parseBacklog(back.text).items
-            .filter(i => /under the archive heading/.test(i.warn || ''))
+            .filter(i => /closed, archived, or not in this backlog/.test(i.warn || ''))
             .map(i => i.code).join() === 'S-9');
 
     // The returned item has to describe where the line IS now, or a caller that

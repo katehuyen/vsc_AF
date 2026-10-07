@@ -191,12 +191,14 @@ function main() {
     const args = process.argv.slice(2);
     const name = args[0];
     if (!name || name.startsWith('--')) {
-        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light] [--scene N] [--scenes] [--scale N] [--phone [land]]');
+        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light | --hc | --hc-light] [--scene N] [--scenes] [--scale N] [--phone [land]]');
         return;
     }
     const wIdx = args.indexOf('--width');
     const width = wIdx >= 0 ? Number(args[wIdx + 1]) : 1400;
-    const light = args.indexOf('--light') >= 0;
+    // the theme the render was drawn in: its file suffix and the flag that draws it (render_page.js)
+    const kind = args.indexOf('--light') >= 0 ? ['.light', ' --light'] : args.indexOf('--hc-light') >= 0 ? ['.hclight', ' --hc-light']
+        : args.indexOf('--hc') >= 0 ? ['.hc', ' --hc'] : ['', ''];
     const listOnly = args.indexOf('--scenes') >= 0;
     const sIdx = args.indexOf('--scene');
     const scene = sIdx >= 0 ? Number(args[sIdx + 1]) : 0;
@@ -207,8 +209,8 @@ function main() {
         process.exitCode = 1;
         return;
     }
-    const html = path.join(RENDER, `${name}${light ? '.light' : ''}.html`);
-    const renderCmd = `node test/render_page.js ${name}${light ? ' --light' : ''}`;
+    const html = path.join(RENDER, `${name}${kind[0]}.html`);
+    const renderCmd = `node test/render_page.js ${name}${kind[1]}`;
     if (!fs.existsSync(html)) {
         // ‼️ NAME THE --light TOO. The two themes are two files, and a message
         // that always said "render <name>" sent people to re-render the dark one
@@ -255,7 +257,7 @@ function main() {
     }
     const phone = phoneSize(args);
     const png = html.replace(/\.html$/, `${scene > 0 ? `.s${scene}` : ''}${phone ? '.' + phone.tag : ''}.png`);
-    const tmp = path.join(RENDER, `.shoot-${name}${light ? '.light' : ''}.html`);
+    const tmp = path.join(RENDER, `.shoot-${name}${kind[0]}.html`);
     const page = instrument(fs.readFileSync(html, 'utf8'), scene);
     fs.writeFileSync(tmp, phone ? phoneWrap(page, phone, '', name) : page, 'utf8');
     const url = 'file:///' + tmp.replace(/\\/g, '/');

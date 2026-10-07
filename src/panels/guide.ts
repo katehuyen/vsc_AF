@@ -328,7 +328,7 @@ body.guide.searching #content h3 { scroll-margin-top: 46px; }
 #langbar button:hover { opacity: 1; }
 #langbar button.active {
     opacity: 1; border-color: var(--vscode-button-background);
-    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none);
 }
 </style>
 <title>${escapeHtml(r.title)}</title>

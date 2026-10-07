@@ -238,9 +238,9 @@
         .a2a-from { flex-shrink:0; font-size:11.5px; opacity:.85; white-space:nowrap; }
         .a2a-age { flex-shrink:0; font-size:11px; opacity:calc(1 - .4 * var(--af-dimk, 1)); white-space:nowrap; }
         .a2a-coords { display:inline-flex; gap:4px; flex-wrap:wrap; }
-        .a2a-chip { font-size:10.5px; padding:1px 6px; border-radius:9px; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); white-space:nowrap; opacity:.85; }
+        .a2a-chip { font-size:10.5px; padding:1px 6px; border-radius:9px; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); white-space:nowrap; opacity:.85; box-shadow:var(--af-hc-ring, none); }
         .a2a-chip.a2a-c-strict { text-transform:uppercase; font-size:9.5px; letter-spacing:.04em; }
-        .a2a-s-hard { background:var(--vscode-inputValidation-errorBackground); }
+        .a2a-s-hard { background:var(--vscode-inputValidation-errorBackground); color:var(--af-validation-fg, var(--vscode-badge-foreground)); }
         .a2a-s-any { opacity:.6; }
         .a2a-state { font-size:11px; padding:1px 7px; border-radius:9px; white-space:nowrap; border:1px solid var(--vscode-panel-border); }
         .a2a-st-queued { color:var(--vscode-foreground); }
@@ -283,7 +283,7 @@
         .a2a-plus { flex-shrink:0; width:20px; height:20px; padding:0; line-height:1; font-size:13px; border-radius:50%;
             opacity:0; transition:opacity .12s; background:transparent; color:var(--vscode-foreground); border:1px solid var(--vscode-panel-border); }
         .a2a-card:hover .a2a-plus, .a2a-plus:focus, .a2a-plus.on { opacity:1; }
-        .a2a-plus.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
+        .a2a-plus.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; box-shadow:var(--af-hc-pick, none); }
         .a2a-cockpit { padding:0 10px 10px 28px; }
         .a2a-cockpit .affbox { margin:0; }
         .a2a-chainchip { cursor:pointer; }
@@ -292,8 +292,8 @@
         .a2a-pin { cursor:pointer; opacity:.25; filter:grayscale(1); font-size:12px; }
         .a2a-pin:hover { opacity:.7; } .a2a-pin.on { opacity:1; filter:none; }
         .a2a-card.pinned { border-color:var(--vscode-focusBorder); }
-        .a2a-card.sel { background:var(--vscode-list-inactiveSelectionBackground); }
-        .a2a-bmode.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+        .a2a-card.sel { background:var(--vscode-list-inactiveSelectionBackground); box-shadow:var(--af-hc-pick, none); }
+        .a2a-bmode.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none); }
         .a2a-chainbar { display:flex; gap:8px; align-items:center; margin:10px 0 2px; padding:5px 10px; border-radius:6px;
             border:1px solid var(--vscode-focusBorder); background:var(--vscode-editorWidget-background); font-size:12px; }
         .a2a-chainbar .a2a-chainid { font-weight:600; }

@@ -5,7 +5,10 @@
  * its colour fingerprint.
  *
  *   node test/theme_audit.js                       light: low texts per page
- *   node test/theme_audit.js --theme dark          the same in dark
+ *   node test/theme_audit.js --theme <kind>        the same in dark / hc-dark / hc-light; a high-contrast
+ *                                                  kind also counts its LOST EDGES (a box the dark theme
+ *                                                  draws whose edge there is below 3:1), and its
+ *                                                  --write-budget writes test/themeaudit.hc.manifest.json
  *   node test/theme_audit.js --snapshot <file>     write every page's DARK fingerprint
  *   node test/theme_audit.js --compare <file>      ‼️ the dark theme against that snapshot —
  *                                                  take one before a light-theme change, compare after
@@ -22,8 +25,10 @@ const { audit } = require('./lib_theme_audit');
 const ROOT = path.join(__dirname, '..');
 const FIXTURES = path.join(__dirname, 'fixtures');
 const MANIFEST = path.join(__dirname, 'themeaudit.manifest.json');
-const FLAG = { dark: [], light: ['--light'] };
-const SUFFIX = { dark: '', light: '.light' };
+const HC_MANIFEST = path.join(__dirname, 'themeaudit.hc.manifest.json');
+const HC = ['hc-dark', 'hc-light'];
+const FLAG = { dark: [], light: ['--light'], 'hc-dark': ['--hc'], 'hc-light': ['--hc-light'] };
+const SUFFIX = { dark: '', light: '.light', 'hc-dark': '.hc', 'hc-light': '.hclight' };
 
 function arg(name) { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] || '' : null; }
 function pages() {
@@ -49,12 +54,20 @@ async function run(theme, list, bin, width) {
             const file = await render(page, theme, out);
             if (!file || !fs.existsSync(file)) { result[page] = { error: 'no render' }; continue; }
             const r = await new Promise(res => setImmediate(() => res(audit(file, bin))));
-            result[page] = r.error ? { error: r.error } : { texts: r.texts, low: r.low.length, fingerprint: r.fingerprint, worst: r.low.slice(0, 3), unread: r.unread };
+            result[page] = r.error ? { error: r.error } : { texts: r.texts, low: r.low.length, fingerprint: r.fingerprint, worst: r.low.slice(0, 3), unread: r.unread, boxes: r.boxes, edges: r.edges };
         }
     };
     await Promise.all(Array.from({ length: width }, worker));
     try { fs.rmSync(out, { recursive: true, force: true }); } catch { /* still held */ }
     return result;
+}
+
+/** U-239 — what a high-contrast kind loses: each box the dark theme draws (a fill or a line) whose edge
+ *  there is below 3:1, or that is no box there at all — [index, edge x100, box, where]. */
+function lost(dark, hc) {
+    if (!dark || !hc || dark.error || hc.error) { return []; }
+    const there = new Map(hc.edges.map(e => [e[0], e]));
+    return dark.edges.filter(e => e[2]).map(e => there.get(e[0]) || [e[0], 100, 0, e[3]]).filter(e => e[1] < 300);
 }
 
 async function main() {
@@ -63,6 +76,7 @@ async function main() {
     const snap = arg('--snapshot'), cmp = arg('--compare');
     const theme = snap || cmp ? 'dark' : (arg('--theme') || 'light');
     const r = await run(theme, list, bin, 3);
+    const base = HC.includes(theme) ? await run('dark', list, bin, 3) : null;
     if (snap) {
         fs.writeFileSync(snap, JSON.stringify(Object.fromEntries(Object.entries(r).map(([p, v]) => [p, v.fingerprint || v.error])), null, 1) + '\n', 'utf8');
         console.log(`dark fingerprints of ${list.length} page(s) → ${snap}`);
@@ -77,9 +91,15 @@ async function main() {
     }
     for (const p of list) {
         const unread = r[p].unread && r[p].unread.length ? ` · colours it cannot read: ${r[p].unread.join(' ')}` : '';
-        console.log(`${p.padEnd(22)} ${r[p].error ? 'ERROR ' + r[p].error : `${r[p].low} low of ${r[p].texts}${unread}`}`);
+        const edges = base ? ` · ${lost(base[p], r[p]).length} lost edge(s)` : '';
+        console.log(`${p.padEnd(22)} ${r[p].error ? 'ERROR ' + r[p].error : `${r[p].low} low of ${r[p].texts}${edges}${unread}`}`);
     }
-    if (process.argv.includes('--write-budget')) {
+    if (base && process.argv.includes('--write-budget')) {
+        const hc = fs.existsSync(HC_MANIFEST) ? JSON.parse(fs.readFileSync(HC_MANIFEST, 'utf8')) : {};
+        hc[theme] = Object.fromEntries(list.filter(p => !r[p].error && !base[p].error).map(p => [p, [r[p].low, lost(base[p], r[p]).length]]));
+        fs.writeFileSync(HC_MANIFEST, JSON.stringify(hc, null, 1) + '\n', 'utf8');
+        console.log('→ ' + HC_MANIFEST);
+    } else if (process.argv.includes('--write-budget')) {
         const budget = { theme, pages: Object.fromEntries(list.filter(p => !r[p].error).map(p => [p, r[p].low])) };
         fs.writeFileSync(MANIFEST, JSON.stringify(budget, null, 1) + '\n', 'utf8');
         console.log('→ ' + MANIFEST);
@@ -87,4 +107,4 @@ async function main() {
 }
 
 if (require.main === module) { main(); }
-module.exports = { run, pages };
+module.exports = { run, pages, lost, HC, HC_MANIFEST };

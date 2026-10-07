@@ -199,7 +199,7 @@
                     border:1px solid var(--vscode-panel-border); border-radius:6px; }
                 .need-row.urgent { border-left:4px solid var(--vscode-editorWarning-foreground); }
                 .need-row.warn { border-left:4px solid var(--vscode-charts-orange, orange); }
-                .need-row.sel { background:var(--vscode-list-inactiveSelectionBackground); }
+                .need-row.sel { background:var(--vscode-list-inactiveSelectionBackground); box-shadow:var(--af-hc-pick, none); }
                 /* An opened row is tall; centring its caret and buttons against
                    a page of text puts them in the middle of nowhere. */
                 .need-row.open { align-items:flex-start; }

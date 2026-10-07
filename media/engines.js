@@ -600,7 +600,7 @@
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
                     cursor:help; border:1px solid var(--vscode-widget-border,#4446); }
                 .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
-                .engbadge.b-warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
+                .engbadge.b-warn { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 /* ‼️ X-172 — the sign-in chip. Quieter than the state badge beside
                    it on purpose: the badge answers "can this run at all", which is
                    the louder question; this answers "on whose plan", which the
@@ -674,7 +674,7 @@
                 .pokey.k-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
                 /* "no key" is the step you are ON, not a failure — the same
                    reading the ⊘ verdict row above gets. */
-                .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
+                .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 /* X-114 -- route health. The chips are read left to right as
                    three separate answers, so they are not one traffic light:
                    configured is neutral, available carries the colour, and
@@ -696,7 +696,7 @@
                 .pohchip.h-bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:#fff; border-color:transparent; }
                 /* nothing was called: the user's move, not a failure -- the same
                    yellow "no key" wears above. */
-                .pohchip.h-held { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
+                .pohchip.h-held { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 .pohchip.h-old { background:var(--vscode-charts-orange,#d18616); color:#000; border-color:transparent; }
                 .pohprob { margin-top:4px; font-size:11px; color:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); }
                 .pohnote { margin-top:4px; font-size:11px; opacity:.7; }

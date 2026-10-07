@@ -1082,7 +1082,7 @@
                     background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .25 * var(--af-dimk, 1));
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
-                    border-color:transparent; opacity:1; }
+                    border-color:transparent; opacity:1; box-shadow:var(--af-hc-pick, none); }
                 .searchbar .clearbtn { position:absolute; right:4px; top:50%; transform:translateY(-50%);
                     background:transparent; border:none; padding:2px 6px; cursor:pointer;
                     font-size:12px; line-height:1; color:var(--vscode-descriptionForeground); }

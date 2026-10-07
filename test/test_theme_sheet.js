@@ -51,13 +51,22 @@ const malformed = dim.filter(u => !/opacity\s*:\s*calc\(1 - \.\d+ \* var\(--af-d
 ok('every dimmed text is written calc(1 - D * var(--af-dimk, 1)), so dark keeps its own D' + (malformed.length ? ' — not: ' + malformed.map(u => u.f + ': ' + u.at.trim()).join(' | ') : ''), dim.length > 0 && malformed.length === 0);
 
 // --af-ink-X: coloured text is var(--af-ink-X, var(--vscode-X …)) — dark falls back to the very
-// variable the page used before, and light's ink is that same variable mixed darker.
+// variable the page used before, and light's ink is that same variable mixed darker. A hue the
+// user picked by hand (OpenCode's badge) has no VS Code variable: its ink falls back to the
+// literal, the same literal at every use, and the layer mixes that literal — never a VS Code
+// colour's name with a literal behind it.
+const vscodeNames = new Set(Object.values(require('./theme_vars.json').themes).flatMap(Object.keys));
 const inks = names.filter(n => n.startsWith('--af-ink-'));
-const wrongFb = uses.filter(u => u.name.startsWith('--af-ink-') && !new RegExp('^var\\(--vscode-' + u.name.slice(9) + '(,|$)').test(u.fallback));
-ok('every ink falls back to the VS Code variable of its own name' + (wrongFb.length ? ' — not: ' + wrongFb.map(u => u.f + ': ' + u.at.trim()).join(' | ') : ''), inks.length > 0 && wrongFb.length === 0);
+const closed = s => s + ')'.repeat(Math.max(0, (s.match(/\(/g) || []).length - (s.match(/\)/g) || []).length));
+const literalOf = n => {
+    const fbs = [...new Set(uses.filter(u => u.name === n).map(u => closed(u.fallback.trim())))];
+    return fbs.length === 1 && /^(rgb\(|#[0-9a-f]{3,8}$)/i.test(fbs[0]) && !vscodeNames.has(n.slice(9)) ? fbs[0] : null;
+};
+const wrongFb = uses.filter(u => u.name.startsWith('--af-ink-') && !new RegExp('^var\\(--vscode-' + u.name.slice(9) + '(,|$)').test(u.fallback) && !literalOf(u.name));
+ok('every ink falls back to the VS Code variable of its own name, or a hand-picked hue to its one literal' + (wrongFb.length ? ' — not: ' + wrongFb.map(u => u.f + ': ' + u.at.trim()).join(' | ') : ''), inks.length > 0 && wrongFb.length === 0);
 const inkDecl = decls.filter(d => d.startsWith('--af-ink-'));
-const strayInk = inkDecl.filter(d => { const n = d.split(':')[0].trim().slice(9); return !d.includes('var(--vscode-' + n + ')'); });
-ok('…and the layer derives each ink from that same variable' + (strayInk.length ? ' — not: ' + strayInk.join(' | ') : ''), inkDecl.length > 0 && strayInk.length === 0);
+const strayInk = inkDecl.filter(d => { const n = d.split(':')[0].trim(); const lit = literalOf(n); return !d.includes(lit || 'var(--vscode-' + n.slice(9) + ')'); });
+ok('…and the layer derives each ink from that same dark value' + (strayInk.length ? ' — not: ' + strayInk.join(' | ') : ''), inkDecl.length > 0 && strayInk.length === 0);
 
 // Every page shell links it after common.css, inside the head (the quota style keeps its place
 // right after common.css — test_quota_style.js; the layer only sets variables, so its order among

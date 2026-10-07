@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.883.0 - High Contrast themes: buttons, focus and selections are visible (2026-10-07)
+
+- **High Contrast and High Contrast Light:** buttons were plain text there -
+  those themes give a button no colour of its own, so nothing marked it as
+  something to press. Every button now carries the theme's border, the
+  keyboard focus is VS Code's own solid focus line, and a selected chip,
+  tab or row carries the theme's selection border, so what is picked stays
+  visible.
+- **High Contrast Light** gets the light theme's readable shades too: faded
+  and coloured text there now read as they do in Light (texts below the
+  contrast they need, measured on every page: 7,414 to 2,476).
+- **High Contrast:** the Claude badge and the other orange labels were too
+  dark to read on black; they now read clearly.
+- **Light themes:** the OpenCode badge reads a deeper shade of its blue, as
+  you chose; in dark themes it is your blue, unchanged.
+- **Dark themes look exactly as before** - compared colour by colour on
+  every page.
+
 ## 3.882.0 - On the phone, pages follow the device's light or dark theme (2026-10-07)
 
 - **Phone app and browser:** a page opened from the phone was always dark,

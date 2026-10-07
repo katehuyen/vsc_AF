@@ -1281,7 +1281,7 @@
         .acbad { cursor:help; }
         .acbad.ok { background:transparent; color:var(--vscode-descriptionForeground,#9d9d9d);
             border-color:var(--vscode-widget-border,#4446); }
-        .acbad.warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+        .acbad.warn { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000);
             border-color:transparent; }
         .acbad.bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff;
             border-color:transparent; }
@@ -1327,7 +1327,7 @@
         .acref:hover { border-color:var(--vscode-focusBorder,#3794ff); }
         /* waiting wears the same yellow as every other "your move is
            already made, this is not done yet" state on the page */
-        .acref.queued { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+        .acref.queued { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000);
             border-color:transparent; font-weight:600; }
         .acref.reading { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
             border-color:transparent; animation:acspin 1.1s linear infinite; }

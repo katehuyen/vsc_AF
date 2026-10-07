@@ -2454,7 +2454,7 @@
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4446); }
                 .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); color:#fff; border-color:transparent; }
-                .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:#000; border-color:transparent; }
+                .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 .engnext { font-size:12px; margin-top:4px; max-width:760px; }
                 .engdetail { margin-top:2px; }
                 /* wiki — the three files a compile needs, read as a checklist:

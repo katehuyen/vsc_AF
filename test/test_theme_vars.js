@@ -1,7 +1,7 @@
 // U-235 — a render is only a measurement of the product if it gets the variables VS Code
 // really gives a webview. test/theme_vars.json is read off the installed VS Code
 // (tools/theme_vars.js); this holds it to the pages: every variable media/ and src/ use is
-// accounted for in every theme kind, Dark and Light have nothing unresolved, and the renderer
+// accounted for in every theme kind, no kind has anything unresolved, and the renderer
 // draws with exactly that table and the body class VS Code puts on.
 'use strict';
 const fs = require('fs');
@@ -33,9 +33,12 @@ for (const k of KINDS) {
     const missing = [...used].filter(v => !(v in T.themes[k]) && !T.none[k].includes(v) && !T.unresolved[k].includes(v));
     ok(`${k}: every variable the pages use is in the table (rerun tools/theme_vars.js when this fails)` + (missing.length ? ' — missing: ' + missing.join(' ') : ''), missing.length === 0);
 }
-ok('‼️ Dark and Light resolve every variable — nothing in them is a guess', T.unresolved.dark.length === 0 && T.unresolved.light.length === 0);
+ok('‼️ every kind resolves every variable — nothing in them is a guess' + KINDS.filter(k => T.unresolved[k].length).map(k => ' — ' + k + ': ' + T.unresolved[k].join(' ')).join(''),
+    KINDS.every(k => T.unresolved[k].length === 0));
+ok('…the high-contrast kinds\' method chains included (Color.fromHex(…).transparent(a), Color.white.transparent(a))',
+    T.themes['hc-light']['list-hoverBackground'] === '#0f4a851a' && T.themes['hc-dark']['list-hoverBackground'] === '#ffffff1a');
 ok('…and what VS Code itself leaves unset there is only that (no colour: the page\'s fallback applies)',
-    ['dark', 'light'].every(k => T.none[k].every(v => ['contrastBorder', 'inputValidation-warningForeground'].includes(v))));
+    ['dark', 'light'].every(k => T.none[k].every(v => ['contrastBorder', 'contrastActiveBorder', 'inputValidation-warningForeground'].includes(v))));
 ok('the values are VS Code\'s own, theme by theme (registry defaults included)',
     T.themes.light['charts-green'] === '#388a34' && T.themes.dark['charts-green'] === '#89d185'
     && T.themes.light['editor-background'] === '#ffffff' && T.themes['hc-dark']['contrastBorder'] === '#6fc3df');

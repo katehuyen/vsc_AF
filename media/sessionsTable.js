@@ -312,7 +312,7 @@
             background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .25 * var(--af-dimk, 1));
             border:1px solid var(--vscode-widget-border, #4444); }
         .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
-            border-color:transparent; opacity:1; }
+            border-color:transparent; opacity:1; box-shadow:var(--af-hc-pick, none); }
         .af-fpanel { display:flex; flex-direction:column; gap:6px; margin:2px 0 8px;
             padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:5px; }
         .af-frow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }

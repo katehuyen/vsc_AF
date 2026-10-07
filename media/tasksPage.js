@@ -4154,7 +4154,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .ntf input[type=number] { font-family:inherit; font-size:13px; color:var(--vscode-input-foreground);
                     background:var(--vscode-input-background); border:1px solid var(--vscode-input-border, transparent); border-radius:4px; }
                 /* M-45 - the wake editor: the preset the set IS, and one condition per row */
-                .chip.on { opacity:1; border-color:var(--vscode-focusBorder); background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent); }
+                .chip.on { opacity:1; border-color:var(--vscode-focusBorder); background:color-mix(in srgb,var(--vscode-button-background) 32%,transparent); box-shadow:var(--af-hc-pick, none); }
                 .wkchips { display:flex; gap:4px; align-items:center; margin:2px 0 6px; }
                 .wkchips .chip { color:var(--vscode-foreground); }
                 /* U-193 - a phone-wide form wraps the row instead of pushing its last box off the screen */
@@ -4209,7 +4209,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                     counter-increment:wfs; }
                 .wfstep + .wfstep { border-top:1px solid var(--vscode-panel-border); }
                 .wfstep:hover { background:var(--vscode-list-hoverBackground); }
-                .wfstep.on { background:var(--vscode-list-activeSelectionBackground, rgba(128,128,255,.12)); }
+                .wfstep.on { background:var(--vscode-list-activeSelectionBackground, rgba(128,128,255,.12)); box-shadow:var(--af-hc-pick, none); }
                 .wfstep::before { content:counter(wfs) "."; opacity:.55; min-width:1.4em; text-align:right; }
                 .wfsteps { counter-reset:wfs; }
                 .wfsi { font-size:14px; line-height:1.2; }

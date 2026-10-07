@@ -863,7 +863,7 @@
                    and everything that could grow is an AFTip instead. */
                 .wktable td, .wktable th { padding:3px 9px 3px 0; font-size:11.5px; }
                 .wktable td { vertical-align:middle; }
-                .wktable tr.sel td { background:var(--vscode-list-inactiveSelectionBackground); }
+                .wktable tr.sel td { background:var(--vscode-list-inactiveSelectionBackground); box-shadow:var(--af-hc-pick-row, none); }
                 .wktable tbody tr:hover td { background:var(--vscode-list-hoverBackground); }
                 .wk-pick { width:20px; }
                 .wk-nobox { opacity:.3; }
@@ -950,7 +950,7 @@
                     color:var(--af-ink-charts-green, var(--vscode-charts-green,#89d185)); }
                 .wk-topics:hover .wk-seedcat { text-decoration:underline; }
                 .wk-rawf.sel { background:var(--vscode-button-background);
-                    color:var(--vscode-button-foreground); }
+                    color:var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none); }
                 /* The editor's scope line for a file: the strip's replacement,
                    not its absence. */
                 .wk-rawinfo { font-size:11px; opacity:.8; cursor:help; }

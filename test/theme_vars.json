@@ -1,7 +1,7 @@
 {
  "vscode": "1.103.2",
- "generated": "2026-10-06",
- "vars": 65,
+ "generated": "2026-10-07",
+ "vars": 66,
  "themes": {
   "dark": {
    "badge-background": "#616161",
@@ -146,6 +146,7 @@
    "charts-purple": "#b180d7",
    "charts-red": "#f48771",
    "charts-yellow": "#ffd370",
+   "contrastActiveBorder": "#f38518",
    "contrastBorder": "#6fc3df",
    "descriptionForeground": "#ffffffb3",
    "dropdown-background": "#000000",
@@ -167,6 +168,7 @@
    "inputValidation-infoBackground": "#000000",
    "inputValidation-warningBackground": "#000000",
    "inputValidation-warningBorder": "#6fc3df",
+   "list-hoverBackground": "#ffffff1a",
    "menu-background": "#000000",
    "menu-border": "#6fc3df",
    "menu-foreground": "#ffffff",
@@ -199,6 +201,7 @@
    "charts-purple": "#652d90",
    "charts-red": "#b5200d",
    "charts-yellow": "#895503",
+   "contrastActiveBorder": "#006bbd",
    "contrastBorder": "#0f4a85",
    "descriptionForeground": "#292929b3",
    "dropdown-background": "#ffffff",
@@ -221,9 +224,13 @@
    "inputValidation-warningBackground": "#ffffff",
    "inputValidation-warningBorder": "#0f4a85",
    "inputValidation-warningForeground": "#292929",
+   "list-activeSelectionBackground": "#0f4a851a",
+   "list-hoverBackground": "#0f4a851a",
+   "list-inactiveSelectionBackground": "#0f4a851a",
    "menu-background": "#ffffff",
    "menu-border": "#0f4a85",
    "menu-foreground": "#292929",
+   "menu-selectionBackground": "#0f4a851a",
    "menu-separatorBackground": "#0f4a85",
    "panel-border": "#0f4a85",
    "progressBar-background": "#0f4a85",
@@ -241,10 +248,12 @@
  },
  "none": {
   "dark": [
+   "contrastActiveBorder",
    "contrastBorder",
    "inputValidation-warningForeground"
   ],
   "light": [
+   "contrastActiveBorder",
    "contrastBorder",
    "inputValidation-warningForeground"
   ],
@@ -280,14 +289,7 @@
  "unresolved": {
   "dark": [],
   "light": [],
-  "hc-dark": [
-   "list-hoverBackground"
-  ],
-  "hc-light": [
-   "list-activeSelectionBackground",
-   "list-hoverBackground",
-   "list-inactiveSelectionBackground",
-   "menu-selectionBackground"
-  ]
+  "hc-dark": [],
+  "hc-light": []
  }
 }

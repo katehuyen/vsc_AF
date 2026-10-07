@@ -5,8 +5,9 @@
 
 /* Dimmed text is written opacity: calc(1 - D * var(--af-dimk, 1)), D being the dark dimming.
    The same opacity costs far more contrast on white than on a dark ground (.65 reads 5.1:1
-   in Dark Modern, 3.97:1 in Light Modern), so light keeps the hierarchy at a fraction of it. */
-body.vscode-light { --af-dimk: .4; }
+   in Dark Modern, 3.97:1 in Light Modern), so light keeps the hierarchy at a fraction of it.
+   High Contrast Light is a light ground too: every light rule here names it beside Light. */
+body.vscode-light, body.vscode-high-contrast-light { --af-dimk: .4; }
 
 /* Coloured text names its ink first and the VS Code colour of the same name as the fallback
    (color: var(--af-ink-charts-orange, <that colour>)). A chart hue is chosen to
@@ -14,7 +15,7 @@ body.vscode-light { --af-dimk: .4; }
    text colour, each only as far as 5:1 on a widget ground and 4.5:1 on its own 15% tint needs.
    Borders and fills keep VS Code's hue, except a fill under white text, which takes the ink too;
    an engine's or provider's hue is one hue, ink included. */
-body.vscode-light {
+body.vscode-light, body.vscode-high-contrast-light {
     --af-ink-charts-green: color-mix(in srgb, var(--vscode-charts-green) 75%, var(--vscode-editor-foreground));
     --af-ink-charts-yellow: color-mix(in srgb, var(--vscode-charts-yellow) 55%, var(--vscode-editor-foreground));
     --af-ink-editorWarning-foreground: color-mix(in srgb, var(--vscode-editorWarning-foreground) 55%, var(--vscode-editor-foreground));
@@ -26,8 +27,39 @@ body.vscode-light {
     --af-ink-testing-iconPassed: color-mix(in srgb, var(--vscode-testing-iconPassed) 35%, var(--vscode-editor-foreground));
     --af-ink-testing-iconQueued: color-mix(in srgb, var(--vscode-testing-iconQueued) 40%, var(--vscode-editor-foreground));
     --af-ink-inputValidation-warningBorder: color-mix(in srgb, var(--vscode-inputValidation-warningBorder) 50%, var(--vscode-editor-foreground));
+    /* a hue the user picked by hand has no VS Code variable: its ink mixes the literal itself */
+    --af-ink-opencode: color-mix(in srgb, rgb(60, 135, 255) 50%, var(--vscode-editor-foreground));
+}
+
+/* High contrast (hc-light carries the class too) sets no button fill and no selection fill: a control
+   is drawn by its edge, focus by VS Code's own solid line, and a selected item by the active-border ring
+   VS Code draws round its own selection there (a table cell takes the row's top and bottom of it). */
+body.vscode-high-contrast {
+    --af-button-edge: 1px solid var(--vscode-button-border);
+    --af-focus-line: var(--vscode-focusBorder);
+    --af-focus-style: solid;
+    --af-hc-pick: inset 0 0 0 1px var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+    --af-hc-pick-row: inset 0 1px 0 var(--vscode-contrastActiveBorder, var(--vscode-focusBorder)), inset 0 -1px 0 var(--vscode-contrastActiveBorder, var(--vscode-focusBorder));
+    /* a chip drawn by a badge fill, which High Contrast sets to its ground, takes the theme's border */
+    --af-hc-ring: inset 0 0 0 1px var(--vscode-contrastBorder);
+}
+
+/* High Contrast's dark kind keeps one chart hue too dark to read on its black ground: its ink is the light
+   rule mirrored, the hue mixed toward the editor's text colour (white there). A fill under white text keeps
+   the hue itself (--af-fill-X), since lightening it would cost the white text instead. */
+body.vscode-high-contrast:not(.vscode-high-contrast-light) {
+    --af-ink-charts-orange: color-mix(in srgb, var(--vscode-charts-orange) 75%, var(--vscode-editor-foreground));
+    --af-fill-charts-orange: var(--vscode-charts-orange);
+}
+
+/* High Contrast's light kind turns two grounds VS Code fills elsewhere: its yellow is dark, so the black text
+   set on it turns to the page ground; its validation backgrounds are white, so a chip's white text set on
+   one takes the page's text colour. */
+body.vscode-high-contrast-light {
+    --af-on-charts-yellow: var(--vscode-editor-background);
+    --af-validation-fg: var(--vscode-foreground);
 }
 
 /* A button drawn without its fill still inherits the button's text colour, white in every
    theme: on a light page it vanishes. Its text takes the page's foreground there. */
-body.vscode-light { --af-bare-fg: var(--vscode-foreground); }
+body.vscode-light, body.vscode-high-contrast-light { --af-bare-fg: var(--vscode-foreground); }

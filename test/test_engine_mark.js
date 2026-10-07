@@ -92,14 +92,15 @@ const E = sandbox.window.AFEngine;
     // ‼️ U-72 — THE ONE EXCEPTION, NAMED, SO A SECOND ONE CANNOT ARRIVE QUIETLY.
     // The palette is VS Code's own so it survives a theme change; a hue the user
     // picked by hand is the opposite promise — it must NOT move when the theme
-    // does, so it is written as a literal. Both rules are real, so the list of
+    // does, so its dark value is the literal itself (a light theme reads that same
+    // literal mixed darker, --af-ink-<id>, by the user's choice). Both rules are real, so the list of
     // ids allowed to hold a literal is spelt out: an engine added with a colour
     // of its own fails here until somebody says whose decision that was.
     const HANDPICKED = { opencode: 'rgb(60, 135, 255)' };
     ok('the palette is VS Code\'s own, so it survives a theme change',
         E.known.every(id => /var\(--vscode-/.test(hue(id)) || id in HANDPICKED));
     ok('‼️ …and a hand-picked hue is exactly the value that was picked',
-        Object.keys(HANDPICKED).every(id => hue(id) === HANDPICKED[id]));
+        Object.keys(HANDPICKED).every(id => hue(id) === `var(--af-ink-${id}, ${HANDPICKED[id]})`));
     // The badge must READ the variable, or the whole indirection is decoration.
     ok('the badge resolves the variable rather than declaring a colour of its own',
         /\.af-eng\s*\{[^}]*color:\s*var\(--af-engc/.test(CSS));

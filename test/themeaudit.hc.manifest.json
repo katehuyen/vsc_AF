@@ -1,0 +1,446 @@
+{
+ "hc-dark": {
+  "a2anotes": [
+   4,
+   9
+  ],
+  "accounts": [
+   67,
+   27
+  ],
+  "a2atasks": [
+   47,
+   24
+  ],
+  "airtable": [
+   10,
+   15
+  ],
+  "agentdetail": [
+   12,
+   1
+  ],
+  "analysis": [
+   18,
+   37
+  ],
+  "alertsettings": [
+   9,
+   3
+  ],
+  "capabilities": [
+   44,
+   0
+  ],
+  "backlog": [
+   109,
+   122
+  ],
+  "chains": [
+   102,
+   1
+  ],
+  "dashboard": [
+   13,
+   8
+  ],
+  "dashboard_phone": [
+   13,
+   8
+  ],
+  "console": [
+   446,
+   535
+  ],
+  "disciplinesettings": [
+   9,
+   3
+  ],
+  "engines": [
+   21,
+   18
+  ],
+  "enginespanel": [
+   539,
+   218
+  ],
+  "evals": [
+   13,
+   0
+  ],
+  "jsonsettings": [
+   24,
+   12
+  ],
+  "flowsettings": [
+   6,
+   2
+  ],
+  "living": [
+   9,
+   0
+  ],
+  "kapicisettings": [
+   32,
+   8
+  ],
+  "memgraph": [
+   11,
+   0
+  ],
+  "needs": [
+   14,
+   0
+  ],
+  "missions_phone": [
+   80,
+   137
+  ],
+  "missions": [
+   80,
+   137
+  ],
+  "notices_phone": [
+   6,
+   0
+  ],
+  "notices": [
+   6,
+   2
+  ],
+  "parts": [
+   11,
+   48
+  ],
+  "now": [
+   6,
+   0
+  ],
+  "portfolio": [
+   4,
+   3
+  ],
+  "planusage": [
+   75,
+   16
+  ],
+  "queue": [
+   0,
+   11
+  ],
+  "projects": [
+   7,
+   26
+  ],
+  "search": [
+   23,
+   120
+  ],
+  "queue_phone": [
+   0,
+   18
+  ],
+  "selection": [
+   1,
+   6
+  ],
+  "secrets": [
+   5,
+   7
+  ],
+  "sentrysettings": [
+   76,
+   4
+  ],
+  "sessionviewer": [
+   78,
+   62
+  ],
+  "sessions": [
+   47,
+   0
+  ],
+  "sound": [
+   85,
+   33
+  ],
+  "sessionviewer_phone": [
+   68,
+   54
+  ],
+  "studio": [
+   0,
+   14
+  ],
+  "spsettings": [
+   17,
+   7
+  ],
+  "taskanalytics": [
+   11,
+   1
+  ],
+  "templates": [
+   6,
+   3
+  ],
+  "tgsettings": [
+   31,
+   5
+  ],
+  "timeline": [
+   18,
+   16
+  ],
+  "toolbox": [
+   27,
+   49
+  ],
+  "track": [
+   50,
+   124
+  ],
+  "turns": [
+   0,
+   60
+  ],
+  "wiki": [
+   79,
+   186
+  ],
+  "wikisettings": [
+   14,
+   9
+  ],
+  "work": [
+   8,
+   26
+  ],
+  "tasks": [
+   169,
+   252
+  ]
+ },
+ "hc-light": {
+  "a2anotes": [
+   12,
+   7
+  ],
+  "accounts": [
+   32,
+   6
+  ],
+  "a2atasks": [
+   34,
+   12
+  ],
+  "airtable": [
+   10,
+   15
+  ],
+  "agentdetail": [
+   12,
+   14
+  ],
+  "analysis": [
+   1,
+   41
+  ],
+  "alertsettings": [
+   9,
+   3
+  ],
+  "capabilities": [
+   48,
+   2
+  ],
+  "backlog": [
+   81,
+   122
+  ],
+  "chains": [
+   0,
+   0
+  ],
+  "dashboard": [
+   3,
+   7
+  ],
+  "dashboard_phone": [
+   3,
+   7
+  ],
+  "console": [
+   852,
+   623
+  ],
+  "disciplinesettings": [
+   9,
+   3
+  ],
+  "engines": [
+   24,
+   15
+  ],
+  "enginespanel": [
+   130,
+   145
+  ],
+  "evals": [
+   13,
+   0
+  ],
+  "jsonsettings": [
+   34,
+   10
+  ],
+  "flowsettings": [
+   6,
+   2
+  ],
+  "living": [
+   18,
+   0
+  ],
+  "kapicisettings": [
+   24,
+   8
+  ],
+  "memgraph": [
+   0,
+   0
+  ],
+  "needs": [
+   14,
+   0
+  ],
+  "missions_phone": [
+   132,
+   63
+  ],
+  "missions": [
+   132,
+   63
+  ],
+  "notices_phone": [
+   13,
+   0
+  ],
+  "notices": [
+   15,
+   0
+  ],
+  "parts": [
+   16,
+   52
+  ],
+  "now": [
+   6,
+   0
+  ],
+  "portfolio": [
+   13,
+   19
+  ],
+  "planusage": [
+   8,
+   24
+  ],
+  "queue": [
+   2,
+   1
+  ],
+  "projects": [
+   10,
+   26
+  ],
+  "search": [
+   23,
+   154
+  ],
+  "queue_phone": [
+   3,
+   1
+  ],
+  "selection": [
+   1,
+   0
+  ],
+  "secrets": [
+   40,
+   7
+  ],
+  "sentrysettings": [
+   50,
+   4
+  ],
+  "sessionviewer": [
+   30,
+   32
+  ],
+  "sessions": [
+   0,
+   108
+  ],
+  "sound": [
+   13,
+   28
+  ],
+  "sessionviewer_phone": [
+   28,
+   28
+  ],
+  "studio": [
+   0,
+   9
+  ],
+  "spsettings": [
+   38,
+   6
+  ],
+  "taskanalytics": [
+   10,
+   3
+  ],
+  "templates": [
+   3,
+   6
+  ],
+  "tgsettings": [
+   21,
+   5
+  ],
+  "timeline": [
+   74,
+   18
+  ],
+  "toolbox": [
+   25,
+   55
+  ],
+  "track": [
+   65,
+   142
+  ],
+  "turns": [
+   0,
+   0
+  ],
+  "wiki": [
+   66,
+   73
+  ],
+  "wikisettings": [
+   23,
+   8
+  ],
+  "work": [
+   0,
+   26
+  ],
+  "tasks": [
+   247,
+   253
+  ]
+ }
+}

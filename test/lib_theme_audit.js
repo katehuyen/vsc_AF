@@ -26,10 +26,27 @@ const PROBE = `(function(){
     var acc={r:255,g:255,b:255,a:1};for(var i=layers.length-1;i>=0;i--){acc=over(layers[i],acc);}return acc;}
   function lum(c){function f(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b);}
   function ratio(a,b){var x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);}
-  var out={texts:0,low:[],elements:0,unread:[]},fp=[];
+  function opac(el){var op=1;for(var e=el;e;e=e.parentElement){op*=Number(getComputedStyle(e).opacity);}return op;}
+  function where(el){return el.tagName.toLowerCase()+(el.className&&typeof el.className==='string'?'.'+el.className.trim().split(/\\s+/).join('.'):'');}
+  /* A BOX is a fill that differs from its ground or a drawn line (an inset box-shadow is one); its EDGE is the
+     stronger of fill-to-ground and line-to-ground, and needs 3:1 to be seen (WCAG 1.4.11, which exempts a
+     disabled control). Every box and every
+     control is listed [index, edge x100, box 0/1, where]: the same fixture draws the same elements in every
+     theme, so a box in one theme can be looked up in another by its index. */
+  function edge(el,cs){var r=el.getBoundingClientRect();if(r.width<8||r.height<8||cs.visibility==='hidden'||el.disabled===true){return;}var op=opac(el);if(!op){return;}
+    var gr=el.parentElement?behind(el.parentElement):{r:255,g:255,b:255,a:1};
+    var ctl=/^(BUTTON|SELECT|TEXTAREA)$/.test(el.tagName)||(el.tagName==='INPUT'&&!/^(checkbox|radio|range|color|hidden|file)$/.test(el.type));
+    var own=parse(cs.backgroundColor),fill=1,line=0,drawn=false;if(own&&own.a>0){own.a*=op;fill=ratio(over(own,gr),gr);}
+    function seen(c){if(c&&c.a>0){drawn=true;c.a*=op;line=Math.max(line,ratio(over(c,gr),gr));}}
+    var S=['Top','Right','Bottom','Left'];for(var s=0;s<4;s++){var st=cs['border'+S[s]+'Style'];if(parseFloat(cs['border'+S[s]+'Width'])>=1&&st!=='none'&&st!=='hidden'){seen(parse(cs['border'+S[s]+'Color']));}}
+    var sh=/^(rgba?\\([^)]*\\)|color\\(srgb [^)]*\\)) 0px 0px 0px ([\\d.]+)px inset/.exec(cs.boxShadow||'');if(sh&&parseFloat(sh[2])>=1){seen(parse(sh[1]));}
+    var box=drawn||fill>=1.05;if(!box&&!ctl){return;}if(box){out.boxes++;}var k=Math.max(fill,line);
+    out.edges.push([i,Math.round(k*100),box?1:0,where(el)]);}
+  var out={texts:0,low:[],elements:0,unread:[],boxes:0,edges:[]},fp=[];
   var all=document.querySelectorAll('.rndr-page *');
   for(var i=0;i<all.length;i++){var el=all[i],cs=getComputedStyle(el);
     fp.push([el.tagName,cs.color,cs.backgroundColor,cs.borderTopColor,cs.borderRightColor,cs.borderBottomColor,cs.borderLeftColor,cs.boxShadow,cs.outlineColor,cs.opacity].join('|'));
+    edge(el,cs);
     var own=false;for(var n=el.firstChild;n;n=n.nextSibling){if(n.nodeType===3&&n.data.trim()){own=true;break;}}
     if(!own){continue;}var r=el.getBoundingClientRect();if(!r.width||!r.height||cs.visibility==='hidden'){continue;}
     var op=1;for(var e=el;e;e=e.parentElement){op*=Number(getComputedStyle(e).opacity);}

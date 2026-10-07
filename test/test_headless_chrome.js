@@ -73,7 +73,9 @@ const hc = require('./headless_chrome');
             /\.find\(n => fs\.statSync\(path\.join\(media, n\)\)\.mtimeMs > renderedAt\)/.test(src)
             && /is OLDER than media\//.test(src));
         ok('…and the command it names re-renders the SAME theme it was asked for',
-            /const renderCmd = `node test\/render_page\.js \$\{name\}\$\{light \? ' --light' : ''\}`/.test(src)
+            /const html = path\.join\(RENDER, `\$\{name\}\$\{kind\[0\]\}\.html`\)/.test(src)
+            && /const renderCmd = `node test\/render_page\.js \$\{name\}\$\{kind\[1\]\}`/.test(src)
+            && /\['\.light', ' --light'\]/.test(src) && /\['\.hc', ' --hc'\]/.test(src) && /\['\.hclight', ' --hc-light'\]/.test(src)
             && !/run: node test\/render_page\.js \$\{name\}`/.test(src));
     }
 }
