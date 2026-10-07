@@ -1,6 +1,6 @@
 /**
  * S-141 — THE PAUSE MENU behind a right-click on the Console card's ⑂→ Pass now
- * and ✕⑂ Stop chain and on the Chains page's ⑂⊣: the rows chainPauseMenu.ts
+ * and ✕⑂ Stop chain, and behind the Chains page's own ⏸: the rows chainPauseMenu.ts
  * derives, written by chains.pause / chains.resume's own bodies. Asked on the
  * surface that pressed, so a phone's view answers it on the phone.
  */

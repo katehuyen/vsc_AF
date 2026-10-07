@@ -1418,12 +1418,20 @@
       ]
     },
     {
-      "capability": "chainsPanel.ts#pauseMenu",
+      "capability": "chainsPanel.ts#pause",
       "ui": [
-        "page:chainsPanel.ts#pauseMenu"
+        "page:chainsPanel.ts#pause"
       ],
       "ops": [
-        "chains.pause",
+        "chains.pause"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#resume",
+      "ui": [
+        "page:chainsPanel.ts#resume"
+      ],
+      "ops": [
         "chains.resume"
       ]
     },

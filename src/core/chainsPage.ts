@@ -14,6 +14,7 @@ import { chainAccountOf } from './chainAccount';
 import { leftBy } from './batonLastLeg';
 import { BoardCounts, ChainRow, LegFacts, boardCounts, newerRecord } from './chainBoard';
 import { lastWords } from './chainControl';
+import { pauseChoices } from './chainPauseMenu';
 import { LegEnd, legEndOf } from './chainLegEnd';
 import type { ChainIndex } from './chainMembership';
 
@@ -32,6 +33,10 @@ export interface ChainActs {
     end: boolean;
     /** S-143 chains.setAccount — a leg runs or a successor waits at the door, so the next legs' account can be set */
     account: boolean;
+    /** S-141 chains.pause — not paused, and the pause menu has a way to pause it */
+    pause: boolean;
+    /** S-141 chains.resume — paused; the press continues it */
+    resume: boolean;
 }
 
 /** S-128 — `words`: the chain's newest handover words, so the page's search reaches them */
@@ -48,11 +53,14 @@ export interface ChainsData {
 const ACTIVE = new Set(['running', 'waiting', 'parked']);
 
 export function chainActs(row: ChainRow, batons: readonly Baton[]): ChainActs {
-    if (row.trimmed) { return { stop: false, lastLeg: false, legs: false, cont: false, end: false, account: false }; }
+    if (row.trimmed) { return { stop: false, lastLeg: false, legs: false, cont: false, end: false, account: false, pause: false, resume: false }; }
     const live = batons.filter(b => b.chainId === row.chainId && isLive(b)).sort(newerRecord);
     const active = ACTIVE.has(row.state);
     const runningAt = row.state === 'running' && !!row.sessionId;
+    const menu = pauseChoices(row, false);
     return {
+        pause: !row.paused && menu.length > 0,
+        resume: menu.some(c => c.act === 'resume'),
         stop: live.length > 0,
         ...(live[0] ? { now: live[0].id } : {}),
         lastLeg: runningAt && (row.live === 'working' || row.live === 'idle'),

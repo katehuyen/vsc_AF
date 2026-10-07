@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.893.0 - The Chains page pauses with its own button (2026-10-08)
+
+- **A chain that can pause has its own ⏸ on the Chains page.** Press it
+  and choose how: a short break in place (the session stays and carries
+  on later), or pass and pause (the next leg waits at the door for you).
+  A waiting successor can be held the same way.
+- **A paused chain shows ▶ Resume in the same place.** One press
+  continues it the way it was paused — the held leg goes through the
+  door, a break in place is told to carry on, a pause not yet reached is
+  cancelled — and the page says what happened.
+- **⑂⊣ Last leg is only the brake again.** Nothing on the Chains page
+  answers a right-click any more. The Console card keeps its own
+  right-click menu on ⑂→ and ✕⑂ unchanged.
+
 ## 3.892.0 - A sleeping phone is woken when the farm needs you, and nothing of what happened passes through Google (2026-10-08)
 
 - **The Agent Farm app can be woken.** A phone that has been idle for a

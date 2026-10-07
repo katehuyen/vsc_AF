@@ -125,22 +125,22 @@
             t(label), t(why) + (more ? ' ' + t(more) : ''), 'ch-actw');
     }
 
-    // S-141 — a right-click on these is the pause menu; a held row's ⏭ reads ▶ Resume (the same start, which also ends the pause)
-    const MENU = 'data-pausemenu="1"';
+    // S-141 — ⏸ asks how to pause (a break in place, or pass and pause); a paused row's ▶ continues it in the way it was paused
+    const RESUME = p => p.held ? N_('The waiting leg goes through the door now, and the pause ends.') : p.closed ? N_('Reopens the chain from the words the leg left at the pause.')
+        : p.mode === 'here' ? N_('RESUME is said into the same session; it carries on where it stopped.') : N_('The pause is cancelled before the pass: the leg passes as usual and the next leg opens at once.');
     function actsCell(r) {
         const a = r.acts;
         const p = r.paused;
         return '<td class="ch-acts">' + [
-            a.now ? (p && p.held
-                ? act(r, 'now', '▶', N_('Resume'), N_('The chain is paused: its next leg goes through the door now, and the pause ends.'), `data-baton="${esc(a.now)}" ${MENU}`)
-                : act(r, 'now', '⏭', 'Start now', 'The waiting leg goes through the door now instead of waiting.', `data-baton="${esc(a.now)}"`)) : '',
+            a.resume && p ? act(r, 'resume', '▶', N_('Resume'), RESUME(p))
+                : a.pause ? act(r, 'pause', '⏸', N_('Pause'), N_('Pause the chain: a short break in place, or pass and pause — you choose.')) : '',
+            a.now && !(p && p.held) ? act(r, 'now', '⏭', 'Start now', 'The waiting leg goes through the door now instead of waiting.', `data-baton="${esc(a.now)}"`) : '',
             a.stop ? act(r, 'stop', L.SYM.stop, 'Stop chain', 'Stops the waiting or parked baton; no further leg opens. Nothing is deleted.') : '',
             a.lastLeg ? act(r, 'lastLeg', L.SYM.lastLeg, r.lastLeg ? 'Release last leg' : 'Last leg',
                 r.lastLeg ? 'Braked now. Press to let the leg pass the baton at its handover line again.' : 'The running leg writes the handover note instead of passing.',
-                `data-session="${esc(r.sessionId)}" data-on="${!r.lastLeg}" aria-pressed="${!!r.lastLeg}" ${MENU}`, N_('Right-click: pause the chain, or continue it.')) : '',
+                `data-session="${esc(r.sessionId)}" data-on="${!r.lastLeg}" aria-pressed="${!!r.lastLeg}"`) : '',
             a.legs ? act(r, 'ceiling', '⇕', 'Leg ceiling', 'How many legs this chain may run.') : '',
-            a.cont ? act(r, 'continue', '↻', 'Continue', 'Opens a new leg from the last handover words, or from what you write.',
-                p ? MENU : '', p ? N_('Right-click: ▶ Continue from where the paused leg stopped.') : '') : '',
+            a.cont ? act(r, 'continue', '↻', 'Continue', 'Opens a new leg from the last handover words, or from what you write.') : '',
             a.end ? act(r, 'end', L.SYM.end, 'End chain', 'Marks the chain finished on purpose; the current leg writes its note instead of passing.') : '',
             r.sessionId ? act(r, 'open', '↗', 'Open session', 'The current leg\'s transcript.', `data-session="${esc(r.sessionId)}"`) : ''
         ].join('') + '</td>';
@@ -278,7 +278,6 @@
             if (a === 'open') { post('openSession', { sessionId: el.dataset.session }); return; }
             post(a, { chainId: id, batonId: el.dataset.baton, sessionId: el.dataset.session, on: el.dataset.on === 'true' });
         }));
-        document.querySelectorAll('[data-pausemenu]').forEach(el => el.addEventListener('contextmenu', ev => { ev.preventDefault(); ev.stopPropagation(); post('pauseMenu', { chainId: el.dataset.chain }); }));
         document.querySelectorAll('[data-copy]').forEach(el => el.addEventListener('click', ev => {
             ev.stopPropagation();
             window.AFCtx.copy(el.dataset.copy);

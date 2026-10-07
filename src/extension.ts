@@ -391,7 +391,7 @@ import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
 import { registerChainOps } from './core/chainOps';
 import { pauseHeld, pausedSessions } from './core/chainPause';
-import { ChainPauseDeps, registerChainPauseOps } from './core/chainPauseOps';
+import { ChainPauseDeps, registerChainPauseOps, resumeChain } from './core/chainPauseOps';
 import { boardNow, boardThresholds, ChainBoardOpsDeps, continueOnBoard, endHanging, endOnBoard, endRecords, LegClose, LegConfirm, registerChainBoardOps } from './core/chainBoardOps';
 import { legFactsSnapshot } from './core/chainLegFacts';
 import { chainLegLines, chainsPageData } from './core/chainsPage';
@@ -31467,6 +31467,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         ceiling: (chainId, on) => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n), { ask: on.ask, remote: on.remote }),
         pause: (chainId, on) => pickChainPause(chainPauseDeps, { chainId }, 'the user (Chains page)', on.ask),
+        resume: chainId => {
+            const r = resumeChain(chainPauseDeps, { chain: chainId, by: 'the user (Chains page)' });
+            return r.ok ? { ok: true, text: r.sentence, say: r.say } : { ok: false, text: r.why, say: r.say };
+        },
         account: (chainId, on) => pickChainAccount(chainAccountDeps, chainId, 'the user (Chains page)', on.ask),
         cont: q => {
             const r = continueOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
