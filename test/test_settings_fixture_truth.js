@@ -60,7 +60,7 @@ ok(`the settings page has fixtures to check (${fixtures.length}): ${fixtures.joi
  * anybody remembering.
  */
 const CARD_KEYS = (() => {
-    const src = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+    const src = require('./lib_settings_source').settingsPageSource();
     const at = src.indexOf('const ALERT_CARD_KEYS = [');
     if (at < 0) { return null; }
     const end = src.indexOf('];', at);

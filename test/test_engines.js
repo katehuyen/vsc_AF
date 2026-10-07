@@ -332,7 +332,7 @@ const by = (list, id) => list.find(e => e.id === id);
 {
     const fs = require('fs');
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
+    const js = require('./lib_settings_source').settingsPageSource();
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsPanel.ts'), 'utf8');
 
     ok('the matrix reaches Farm Settings', /engines: \(\) => engineMatrix\(\)/.test(ext)
@@ -460,7 +460,7 @@ const by = (list, id) => list.find(e => e.id === id);
                 && /no sign-in needed/.test(shared));
             ok('‼️ …and BOTH surfaces ask the same component instead of each keeping a copy',
                 /AFEngine\.authBadge\(/.test(pagejs)
-                && /AFEngine\.authBadge\(/.test(fsx.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8')));
+                && /AFEngine\.authBadge\(/.test(require('./lib_settings_source').settingsPageSource()));
             ok('‼️ …and the button stops offering itself as the repair',
                 /Add paid providers/.test(pagejs)
                 && /builtin \? 'Add paid providers' : 'Sign in with a plan'/.test(pagejs));

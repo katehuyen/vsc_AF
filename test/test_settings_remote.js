@@ -159,7 +159,7 @@ const alive = setInterval(() => undefined, 1000);
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('the phone opens Settings from the palette\'s own deps', /settings: host => FarmSettingsPanel\.openOn\(host, farmSettingsDeps\(\)\)/.test(ext)
         && /FarmSettingsPanel\.show\(farmSettingsDeps\(\), /.test(ext) && /const farmSettingsDeps = \(\): FarmSettingsDeps => \(\{/.test(ext));
-    const page = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     ok('‼️ the PC\'s pickers, editors, terminals, folders, links and the raw file are not drawn on a phone',
         ['[data-browse]', '[data-lbrowse]', '#rootadd', '[data-rootreveal]', '#ccopen', '#ccrawbox', '#profexport', '#profimport',
             '#opensettingsjson', '[data-engcmd]', '[data-engkey]', '[data-engdocs]', '#openengines', '#openaccounts', '#promptspick',

@@ -474,6 +474,11 @@ export function htmlShell(
     const setForms = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingForms.js'));
     const setMap = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingMap.js'));
     const setItem = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingItem.js'));
+    const setFolders = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingFolders.js'));
+    const setClaude = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingClaude.js'));
+    const setDocs = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingDocs.js'));
+    const setWiki = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWiki.js'));
+    const setAccess = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingAccess.js'));
     // U-191 — the four run categories as a bar, for any page listing runs.
     const runCategory = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunCategory.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
@@ -728,6 +733,11 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${setForms}"></script>
 <script nonce="${nonce}" src="${setMap}"></script>
 <script nonce="${nonce}" src="${setItem}"></script>
+<script nonce="${nonce}" src="${setFolders}"></script>
+<script nonce="${nonce}" src="${setClaude}"></script>
+<script nonce="${nonce}" src="${setDocs}"></script>
+<script nonce="${nonce}" src="${setWiki}"></script>
+<script nonce="${nonce}" src="${setAccess}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${runCategory}"></script>
 <script nonce="${nonce}" src="${script}"></script>

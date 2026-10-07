@@ -197,7 +197,7 @@ async function bridgeOps() {
     ok('…and a named argument still outranks the setting',
         /optStr\(args, 'engine'\) \|\| \(deps\.defaultEngine/.test(wiki));
 
-    const page = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+    const page = require('./lib_settings_source').settingsPageSource();
     ok('the section is drawn for the wiki category, like prompts before it',
         /c\.id === 'wiki' \? wikiSection\(c\)/.test(page));
     ok('‼️ the page says the one thing a text box cannot: a compile refuses without the law',

@@ -201,7 +201,13 @@ const SHARED = [
     'afSettingForms.js',
     // afSettingMap.js / afSettingItem.js — its name → value pairs editor and one setting row with its control (U-225).
     'afSettingMap.js',
-    'afSettingItem.js'];
+    'afSettingItem.js',
+    // afSettingFolders/Claude/Docs/Wiki/Access.js — its section builders (U-225).
+    'afSettingFolders.js',
+    'afSettingClaude.js',
+    'afSettingDocs.js',
+    'afSettingWiki.js',
+    'afSettingAccess.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'theme-phone.css', 'afRemote.js'];

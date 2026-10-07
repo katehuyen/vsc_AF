@@ -51,7 +51,7 @@ const props = Object.assign({}, ...(Array.isArray(pkg) ? pkg : [pkg]).map(c => c
 ok('each figure\'s setting is contributed as a string that defaults to empty',
     Q.QUOTA_FIGURES.every(f => props['agentFarm.' + f.setting] && props['agentFarm.' + f.setting].type === 'string'
         && props['agentFarm.' + f.setting].default === ''));
-const settingsJs = read('media', 'settings.js');
+const settingsJs = require('./lib_settings_source').settingsPageSource();
 ok('Farm Settings draws the three together under one heading, with a sample line in the real classes',
     /<h3 class="setgrouph">Quota figures<\/h3>/.test(settingsJs)
     && Q.QUOTA_FIGURES.every(f => settingsJs.includes(`<span class="${f.cls}">`)));

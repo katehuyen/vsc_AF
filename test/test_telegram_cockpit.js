@@ -234,7 +234,7 @@ const T = require(path.join(ROOT, 'out', 'core', 'telegramCockpit.js'));
     // And the page draws it from one file too — a second card in HTML is the
     // same defect one layer up.
     for (const p of ['toolbox.js', 'settings.js']) {
-        const src = fs.readFileSync(path.join(ROOT, 'media', p), 'utf8');
+        const src = p === 'settings.js' ? require('./lib_settings_source').settingsPageSource() : fs.readFileSync(path.join(ROOT, 'media', p), 'utf8');
         ok(`media/${p} draws the card with the shared component`,
             /window\.AFTelegram\.card\(/.test(src));
     }

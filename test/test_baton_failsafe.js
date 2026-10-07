@@ -120,7 +120,7 @@ console.log('\n== the setting, and the wiring ==');
         && F.EMERGENCY_TEMPLATE_VARS.every(v => new RegExp('\\{' + v + '\\}[^"]*').test(pj.split('"agentFarm.batonEmergencyTemplate"')[1].split('"agentFarm.')[0])));
     ok('…filed under Handover Discipline, in its own group of the page',
         /batonEmergencyTemplate: 'discipline'/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8'))
-        && /keys: \['batonEmergencyTemplate'\]/.test(fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8')));
+        && /keys: \['batonEmergencyTemplate'\]/.test(require('./lib_settings_source').settingsPageSource()));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('the door reads it, and the runner is given the failsafe\'s sources',
         /emergencyTemplate: cfg\(\)\.get<string>\('batonEmergencyTemplate', ''\)/.test(ext)

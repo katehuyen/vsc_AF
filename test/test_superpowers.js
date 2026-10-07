@@ -323,7 +323,7 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
             S.superpowersDefaultFor('DEVELOPER', store) === true
             && S.superpowersDefaultFor('Asistan', store) === false);
 
-        const set = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+        const set = require('./lib_settings_source').settingsPageSource();
         ok('the section is drawn for its own category, as the wiki one is',
             /c\.id === 'superpowers' \? superpowersSection\(c\)/.test(set));
         ok('‼️ the page says the one thing a text box cannot: without the hook a session gets NOTHING',

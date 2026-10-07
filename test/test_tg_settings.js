@@ -141,7 +141,7 @@ const of = (id) => V.find(v => v.id === id).data;
 // ---------------------------------------------------------------------------
 {
     const fs = require('fs');
-    const settings = fs.readFileSync(path.join(ROOT, 'media', 'settings.js'), 'utf8');
+    const settings = require('./lib_settings_source').settingsPageSource();
     const toolbox = fs.readFileSync(path.join(ROOT, 'media', 'toolbox.js'), 'utf8');
     for (const [name, src] of [['settings.js', settings], ['toolbox.js', toolbox]]) {
         ok(`media/${name} draws the card with the shared component`,
