@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.888.0 - Change the account of a running relay chain (2026-10-07)
+
+- **You can now change which account a relay chain's next legs open on,
+  while the chain is running.** On the Chains page, the account in the
+  **Next** column is a button whenever a leg is running or a successor is
+  waiting at the door. Click it and pick a rule (such as @emptiest or
+  @round-robin, or one of your named rules) or one of your stored accounts.
+- **The next leg opens on what you picked**, even when the relay would
+  otherwise keep it on its predecessor's account. From that leg on, the
+  usual rules apply again.
+- **A rule moves between accounts; a single account holds every later leg
+  to it.** If you pick one account and it fills up, the next leg waits until
+  it resets.
+- The Next cell's details now say who set the account and when.
+- A leg already parked waiting for an account to reset keeps the account on
+  its queued task; the page offers the button again once that leg runs.
+- **New bridge op `chains.setAccount`** (chain or session, account): without
+  an account it reports what the next legs open on and the choices; with one
+  it sets it. Chains you do not change run exactly as before.
+
 ## 3.887.0 - Settings search shows ranked results (2026-10-07)
 
 - **Searching the Settings page now gives you a ranked list of results.**

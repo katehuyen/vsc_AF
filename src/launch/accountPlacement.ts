@@ -261,15 +261,16 @@ export function accountPlacement(d: PlacementDeps) {
      * The relay door's account: the predecessor's slot, the measured cause, the S-106 stay, and — every account full
      * RIGHT NOW — the park (first reset + the safety buffer; a preview, the round-robin cursor does not move).
      */
-    const successorPlacement = (b: Baton, agentId: string) => {
+    const successorPlacement = (b: Baton, agentId: string, ruled?: string) => {
         const was = legSlotOf(b);
         // X-462 — the account the plan limit walled is full until it turns over, whatever its last figure says
         if (b.fault === 'limit' && was) { try { d.markWalled(was); } catch { /* the stay rule still refuses it */ } }
         // X-462 — a pass the plan limit forced never keeps the successor on the walled account
         // X-472 — classified again at the door, raised by what the pass recorded; the stay reads that verdict
         const cause = passCauseOf({ sessionId: b.from.sessionId, slot: was, fault: b.fault, recorded: b.cause });
-        const stay = handoverStay(was, cause);
-        if (stay.stay) { d.log(`baton ${b.id}: ${stay.why}`); }
+        // S-143 — the user set the chain's account for this leg (chainAccount.ts accountRuled): no stay overrides it
+        const stay: StayVerdict = ruled ? { stay: false, why: ruled } : handoverStay(was, cause);
+        if (stay.stay || ruled) { d.log(`baton ${b.id}: ${stay.why}`); }
         // S-73 — every account full RIGHT NOW: the row is written with the first reset + the safety buffer as its notBefore
         const pick = launchAccountPick({ engine: b.from.engine, account: stay.stay ? stay.slotId : b.want.account, agentId, model: b.inherit.model });
         const park = pick.refusal && pick.resetsAt

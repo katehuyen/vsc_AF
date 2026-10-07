@@ -675,6 +675,19 @@ through ⑂ Pass now's channel (its Console card), never a hook: an idle agent c
 ITSELF is told nothing (the bridge envelope's `from.sessionId`) — its answer is its order — so a leg's own
 confirmation cannot loop. A new road that opens a successor goes through `release()`, or asks `pauseHeld` itself.
 
+## A chain's account rule reads only its own fields (S-143)
+
+The user's change of a flowing chain's account (`chains.setAccount`, `src/core/chainAccount.ts`) writes
+`want.account` where the relay already reads it — the running leg's opener (`passBaton` copies it), a
+waiting baton (the door places by it) — plus two optional fields: `want.pinned` (a single account kept
+by every later pass the way a pool is) and `rule` (`on: 'leg' | 'door'`, who and when). The only new
+condition is the door's one question, `accountRuled`: a baton with its own `door` mark, or one passed by
+an opener with a `leg` mark, opens on its `want.account` instead of the S-106 stay — once, because the
+leg it opens carries no `leg` mark of its own. A record without these fields takes the path it took
+before: `passBaton`'s pool test still sees only a policy, and the door still asks the stay. A leg already
+parked on its task row is refused (the row holds its account). A new road that copies a baton's `want`
+copies it whole, so the pin travels; a new door asks `accountRuled` before it asks the stay.
+
 ---
 
 ## The wiring gate — a callback that defaults to a no-op can be left off (X-267)

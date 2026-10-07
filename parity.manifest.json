@@ -1428,6 +1428,15 @@
       ]
     },
     {
+      "capability": "chainsPanel.ts#account",
+      "ui": [
+        "page:chainsPanel.ts#account"
+      ],
+      "ops": [
+        "chains.setAccount"
+      ]
+    },
+    {
       "capability": "chainsPanel.ts#continue",
       "ui": [
         "page:chainsPanel.ts#continue"

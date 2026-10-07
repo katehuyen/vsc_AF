@@ -10,7 +10,7 @@
  * ‼️ PURE — no file, no clock, no setting is read here. The thresholds arrive as
  * arguments, so the numbers live in settings and never in this file.
  */
-import { Baton, BatonState, BrakeKind, isLive, successorSurface } from './baton';
+import { Baton, BatonState, BrakeKind, ChainAccountRule, isLive, successorSurface } from './baton';
 import { chainMaxLegs } from './batonSeal';
 import { ChainLink, chainIndex, linkOf } from './chainMembership';
 import { ChainPaused, pausedOf } from './chainPause';
@@ -96,7 +96,7 @@ export interface ChainRow {
     lastAt: number;
     wakeAt?: number;
     /** the setup the next leg opens on; absent when only links are left */
-    next?: { account: string; surface: string; model?: string; effort?: string };
+    next?: { account: string; surface: string; model?: string; effort?: string; rule?: ChainAccountRule };
     totals: { legs: number; cost: number; tokens: number; ms: number };
     brake?: BrakeKind;
     /** the failsafe opened the newest hop for a leg that ended without passing: why */
@@ -234,7 +234,7 @@ export function chainBoard(input: BoardInput): ChainRow[] {
             ...(top?.state === 'parked' && top.wakeAt ? { wakeAt: top.wakeAt } : {}),
             ...(top ? {
                 next: {
-                    account: top.want.account, surface: successorSurface(top),
+                    account: top.want.account, surface: successorSurface(top), ...(top.rule ? { rule: top.rule } : {}),
                     ...(top.inherit.model ? { model: top.inherit.model } : {}),
                     ...(top.inherit.effort ? { effort: top.inherit.effort } : {})
                 }

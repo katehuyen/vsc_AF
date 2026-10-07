@@ -32,6 +32,8 @@ export interface ChainsDeps {
     ceiling(chainId: string, on: Pick<PanelHost, 'ask' | 'remote'>): Promise<void>;
     /** S-141 — chains.pause / chains.resume: the pause menu for this chain, asked on the surface that pressed */
     pause(chainId: string, on: Pick<PanelHost, 'ask'>): Promise<void>;
+    /** S-143 — chains.setAccount: the account picker for this chain's next legs, asked on the surface that pressed */
+    account(chainId: string, on: Pick<PanelHost, 'ask'>): Promise<void>;
     /** chains.continue */
     cont(q: { chain: string; prompt?: string; why?: string }): ChainsAnswer;
     /** chains.end — closing a working leg is asked on the surface that pressed */
@@ -147,6 +149,12 @@ export class ChainsPanel {
             case 'pauseMenu': {
                 if (!chain) { return; }
                 await this.deps.pause(chain, this.host);
+                this.refresh();
+                return;
+            }
+            case 'account': {
+                if (!chain) { return; }
+                await this.deps.account(chain, this.host);
                 this.refresh();
                 return;
             }

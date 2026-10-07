@@ -10,6 +10,7 @@
  * Pure: the host hands in the board, the batons, the index and the facts.
  */
 import { Baton, isLive, openerOf } from './baton';
+import { chainAccountOf } from './chainAccount';
 import { leftBy } from './batonLastLeg';
 import { BoardCounts, ChainRow, LegFacts, boardCounts, newerRecord } from './chainBoard';
 import { lastWords } from './chainControl';
@@ -29,6 +30,8 @@ export interface ChainActs {
     cont: boolean;
     /** chains.end — the chain has not ended */
     end: boolean;
+    /** S-143 chains.setAccount — a leg runs or a successor waits at the door, so the next legs' account can be set */
+    account: boolean;
 }
 
 /** S-128 — `words`: the chain's newest handover words, so the page's search reaches them */
@@ -45,7 +48,7 @@ export interface ChainsData {
 const ACTIVE = new Set(['running', 'waiting', 'parked']);
 
 export function chainActs(row: ChainRow, batons: readonly Baton[]): ChainActs {
-    if (row.trimmed) { return { stop: false, lastLeg: false, legs: false, cont: false, end: false }; }
+    if (row.trimmed) { return { stop: false, lastLeg: false, legs: false, cont: false, end: false, account: false }; }
     const live = batons.filter(b => b.chainId === row.chainId && isLive(b)).sort(newerRecord);
     const active = ACTIVE.has(row.state);
     const runningAt = row.state === 'running' && !!row.sessionId;
@@ -55,7 +58,8 @@ export function chainActs(row: ChainRow, batons: readonly Baton[]): ChainActs {
         lastLeg: runningAt && (row.live === 'working' || row.live === 'idle'),
         legs: active,
         cont: !live.length && (row.state !== 'running' || row.live === 'idle' || row.live === 'gone'),
-        end: active
+        end: active,
+        account: !!chainAccountOf(batons, row.chainId)?.settable
     };
 }
 

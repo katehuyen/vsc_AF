@@ -80,6 +80,8 @@
         .ch-actw { display:inline-block; }
         .ch-act { min-width:28px; min-height:28px; padding:0 4px; margin-left:2px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); border-radius:4px; cursor:pointer; }
         .ch-act:hover { background:var(--vscode-toolbar-hoverBackground, #8883); }
+        .ch-next { padding:0; min-height:0; font:inherit; background:transparent; color:inherit; border:0; border-bottom:1px dashed var(--vscode-descriptionForeground, #8888); border-radius:0; cursor:pointer; }
+        .ch-next:hover { background:var(--vscode-toolbar-hoverBackground, #8883); }
         .ch-act[aria-pressed=true] { background:var(--vscode-inputValidation-warningBackground, #a606); border-color:var(--vscode-editorWarning-foreground, orange); }
         .ch-sub > td { padding:4px 8px 8px 24px; background:var(--vscode-editorWidget-background, transparent); }
         .ch-legs { table-layout:fixed; }

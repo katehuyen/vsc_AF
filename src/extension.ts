@@ -398,6 +398,9 @@ import { chainLegLines, chainsPageData } from './core/chainsPage';
 import { ChainsPanel, type ChainsDeps } from './panels/chainsPanel';
 import { LegsUiDeps, pickChainLegs } from './batonLegsUi';
 import { pickChainPause } from './batonPauseUi';
+import { pickChainAccount } from './batonAccountUi';
+import { accountRuled } from './core/chainAccount';
+import { ChainAccountDeps, registerChainAccountOps } from './core/chainAccountOps';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, markPassNow, passNowText } from './core/batonAttach';
@@ -17934,7 +17937,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 sessionId: opener.from.sessionId, engine: opener.from.engine || 'claude', agentName: agent.name
             })));
             // X-475 — the predecessor's slot, the measured cause, the stay and the park (accountPlacement.ts)
-            const { stay, park } = successorPlacement(b, agent.id);
+            const { stay, park } = successorPlacement(b, agent.id, accountRuled(batonStore.all(), b));
             // S-129 — the predecessor's own row still holds the seat for the beat it takes to close
             const after = taskManager.tasks.find(t => t.status === 'running' && successorSessionOf(t) === b.from.sessionId)?.id;
             const row = successorRow(b, {
@@ -18207,6 +18210,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
     registerChainPauseOps(bridge, chainPauseDeps);
+    // S-143 — the account a flowing chain's next legs open on (chainAccount.ts): read by the pass and the door, never by the leg
+    const chainAccountDeps: ChainAccountDeps = {
+        store: batonStore, now: () => Date.now(), choices: engine => accountRowsFor(engine),
+        refusal: (account, engine) => accountRefusal(account, storedAccounts(), engine, accountPolicies())
+    };
+    registerChainAccountOps(bridge, chainAccountDeps);
     context.subscriptions.push(batonStore.onDidChange(() => { updateBatonBar(); ConsolePanel.refreshIfOpen(); batonEnder.poke(); }));
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.batonMaxHops')) { updateBatonBar(); }
@@ -31439,6 +31448,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         ceiling: (chainId, on) => pickChainLegs(batonLegsDeps, { chainId }, (c, n) => applyChainLegs(batonLegsDeps, c, n), { ask: on.ask, remote: on.remote }),
         pause: (chainId, on) => pickChainPause(chainPauseDeps, { chainId }, 'the user (Chains page)', on.ask),
+        account: (chainId, on) => pickChainAccount(chainAccountDeps, chainId, 'the user (Chains page)', on.ask),
         cont: q => {
             const r = continueOnBoard(chainBoardDeps, { ...q, by: 'the user (Chains page)' });
             return r.ok ? { ok: true, text: r.sentence, say: r.say } : { ok: false, text: r.why, say: r.say };

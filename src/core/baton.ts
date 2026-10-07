@@ -55,6 +55,8 @@ export interface BatonInherit {
 export interface BatonWant {
     surface: BatonSurfaceWant;
     account: string;
+    /** S-143 — the user made this single account the chain's rule: every later pass keeps it, as it keeps a pool */
+    pinned?: boolean;
 }
 
 /** S-96 — who set the brake on a running leg, and when. Removing it is the whole release. */
@@ -122,12 +124,17 @@ export interface Baton {
     pause?: ChainPauseMark;
     /** S-140 — on a waiting baton only: the chain is paused, so it stays at the door until chains.resume */
     hold?: ChainPauseMark;
+    /** S-143 — the user set want.account here: on a running leg's opener (leg) or a waiting baton (door) (chainAccount.ts) */
+    rule?: ChainAccountRule;
     createdAt: number;
     updatedAt: number;
 }
 
 /** S-140 — here: the leg stops in place, unpassed; pass: the leg passes and its successor waits for chains.resume. */
 export interface ChainPauseMark { mode: 'here' | 'pass'; at: number; by: string; why?: string; words?: string }
+
+/** S-143 — who set the chain's account rule, when, and on which record. */
+export interface ChainAccountRule { at: number; by: string; on: 'leg' | 'door' }
 
 /** Terminal states: nothing moves out of them. */
 export const BATON_DONE: readonly BatonState[] = ['started', 'stopped', 'refused', 'done', 'failed'];
@@ -298,7 +305,8 @@ export function passBaton(input: PassInput): PassResult {
     const parent = openerOf(input.prior, src.from.sessionId);
     // ‼️ S-81 — A CHAIN'S POOL IS SET ONCE (its first leg's seal, or its first
     // pass) AND NEVER LEFT: a leg naming another account does not move it.
-    const pool = parent && isPolicyId(parent.want.account) ? parent.want.account : '';
+    // S-143 — a single account the user pinned is kept the same way; an unpinned one is not a pool
+    const pool = parent && (isPolicyId(parent.want.account) || parent.want.pinned) ? parent.want.account : '';
     const asked = s(input.account);
     const draft: Baton = {
         id: newBatonId(input.now, rnd),
@@ -307,7 +315,7 @@ export function passBaton(input: PassInput): PassResult {
         prompt,
         from: src.from,
         inherit: src.inherit,
-        want: { surface: want as BatonSurfaceWant, account: pool || asked || BATON_DEFAULT_ACCOUNT },
+        want: { surface: want as BatonSurfaceWant, account: pool || asked || BATON_DEFAULT_ACCOUNT, ...(pool && parent?.want.pinned ? { pinned: true } : {}) },
         state: 'armed',
         why: 'recorded',
         ...(s(input.note) ? { note: s(input.note) } : {}),

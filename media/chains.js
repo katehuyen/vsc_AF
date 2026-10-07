@@ -110,8 +110,14 @@
         const n = r.next;
         if (!n) { return '<td class="ch-wide muted">—</td>'; }
         const lines = [t('Account: {account}', { account: n.account }), t('Surface: {surface}', { surface: n.surface }),
-            n.model ? t('Model: {model}', { model: n.model }) : '', n.effort ? t('Effort: {effort}', { effort: n.effort }) : ''];
-        return TIP.cell('ch-wide', '', `${esc(n.account)} · ${esc(n.model || '—')}`, t('The next leg opens on'), TIP.lines(lines));
+            n.model ? t('Model: {model}', { model: n.model }) : '', n.effort ? t('Effort: {effort}', { effort: n.effort }) : '',
+            n.rule ? t('Account set by: {by} · {when}', { by: n.rule.by, when: T.ago(n.rule.at) }) : '',
+            r.acts.account ? t('Click the account to change it for the next legs.') : ''];
+        // S-143 — while a leg runs or a successor waits, the account is the control that changes it (chains.setAccount)
+        const account = r.acts.account
+            ? `<button class="ch-next" data-act="account" data-chain="${esc(r.chainId)}" aria-label="${esc(t('Change account'))}">${esc(n.account)}</button>`
+            : esc(n.account);
+        return TIP.cell('ch-wide', '', `${account} · ${esc(n.model || '—')}`, t('The next leg opens on'), TIP.lines(lines));
     }
 
     function act(r, type, glyph, label, why, attrs, more) {

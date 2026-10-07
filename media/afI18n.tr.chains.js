@@ -189,5 +189,8 @@
     'Right-click: hold the waiting leg until you continue the chain.': 'Sağ tık: bekleyen halkayı sen zinciri devam ettirene kadar kapıda tut.',
     'Paused — right-click: ▶ Continue, or switch a break in place to pass and pause.': 'Duraklatıldı — sağ tık: ▶ Devam et ya da yerinde arayı "devret ve duraklat"a çevir.',
     'Right-click: pause the chain — a short break in place (this session stays), or pass and pause (the next leg waits for you).':
-        'Sağ tık: zinciri duraklat — yerinde kısa ara (bu oturum kalır) ya da devret ve duraklat (sıradaki halka seni bekler).'
+        'Sağ tık: zinciri duraklat — yerinde kısa ara (bu oturum kalır) ya da devret ve duraklat (sıradaki halka seni bekler).',
+    'Account set by: {by} · {when}': 'Hesabı belirleyen: {by} · {when}',
+    'Click the account to change it for the next legs.': 'Sonraki halkaların hesabını değiştirmek için hesaba tıkla.',
+    'Change account': 'Hesabı değiştir'
 });

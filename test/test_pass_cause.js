@@ -48,7 +48,7 @@ console.log('\n== one verdict, every reader ==');
     ok('‼️ the stay reads the verdict, not the order flag (contextGuard …quota.handover is gone from it)',
         /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(place) && !/quotaHandover: !!\(sid && (contextGuard\.record|d\.guard)\(sid\)\?\.quota\?\.handover\)/.test(ext + place));
     ok('the relay door and the sentry\'s next round both classify through passCauseOf before they stay',
-        /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*const stay = handoverStay\(was, cause\);/.test(place)
+        /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*\/\/ S-143[^\n]*\n\s*const stay: StayVerdict = ruled \? \{ stay: false, why: ruled \} : handoverStay\(was, cause\);/.test(place)
         && /stay: handoverStay\(finishedTask\.account, passCauseOf\(\{ sessionId: successorSessionOf\(finishedTask\), slot: finishedTask\.account \}\)\)/.test(ext));
     ok('the pass and the runner record it (causeOf), and the old starved derivation is gone',
         (ext.match(/causeOf: \(b, agentPct\) => passCauseOf\(/g) || []).length === 2 && !/legStarvedOf|starvedWhy/.test(ext)

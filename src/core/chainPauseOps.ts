@@ -60,7 +60,7 @@ export interface ChainPauseDeps {
 }
 
 /** A full session id from a full id or a prefix that names one session on record. */
-function fullSession(list: readonly Baton[], q: string | undefined): string {
+export function fullSession(list: readonly Baton[], q: string | undefined): string {
     const s = String(q ?? '').trim();
     if (!s) { return ''; }
     const ids = new Set<string>();
