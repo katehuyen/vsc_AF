@@ -207,7 +207,15 @@ const SHARED = [
     'afSettingClaude.js',
     'afSettingDocs.js',
     'afSettingWiki.js',
-    'afSettingAccess.js'];
+    'afSettingAccess.js',
+    // afSettingPage/Wire/WireList/WireShapes.js — the page around #setbody and what its controls do (U-225).
+    'afSettingPage.js',
+    'afSettingWire.js',
+    'afSettingWireList.js',
+    'afSettingWireShapes.js',
+    // afSettingNav.js / afSettingInbox.js — going to one setting, the right-click menu, and the host's messages (U-225).
+    'afSettingNav.js',
+    'afSettingInbox.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'theme-phone.css', 'afRemote.js'];

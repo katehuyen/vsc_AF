@@ -19,9 +19,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const MEDIA = path.join(__dirname, '..', 'media');
 const files = fs.readdirSync(MEDIA).filter(f => f.endsWith('.js'));
-// U-225 — a media/afSetting*.js part is the Settings page split across files, so it is read as that page
-const read = f => (/^afSetting\w*\.js$/.test(f) ? require('./lib_settings_source').settingsPageSource()
-    : fs.readFileSync(path.join(MEDIA, f), 'utf8'));
+// U-225 — settings.js and its media/afSetting*.js parts are one page split across files, so each is read as that page
+const read = require('./lib_settings_source').mediaSource;
 
 // ---- nobody hand-rolls a match any more -----------------------------------
 // The shape that keeps coming back, in every page that forgot the component

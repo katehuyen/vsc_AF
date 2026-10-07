@@ -12,4 +12,9 @@ function settingsPageSource() {
     return ['settings.js', ...parts].map(f => fs.readFileSync(path.join(MEDIA, f), 'utf8')).join('\n');
 }
 
-module.exports = { settingsPageSource };
+/** What a sweep over media/*.js reads for one file: settings.js or one of its parts reads as the whole page. */
+function mediaSource(file) {
+    return /^(settings|afSetting\w*)\.js$/.test(file) ? settingsPageSource() : fs.readFileSync(path.join(MEDIA, file), 'utf8');
+}
+
+module.exports = { settingsPageSource, mediaSource };

@@ -87,16 +87,16 @@ const src = f => fs.readFileSync(path.join(ROOT, 'media', f), 'utf8');
 
 // ---------- Settings ----------
 {
-    const s = src('settings.js');
+    const s = require('./lib_settings_source').settingsPageSource();
     ok('Settings: the push draws through keeping under the guard',
         /const draw = window\.AFRepaint\.keeping\(render\);\s*const repaint = window\.AFRepaint\.guard\(draw\);/.test(s));
     ok('‼️ …so does the redraw when focus leaves with a held push, and a refused raw Apply',
         /if \(pendingData\) \{ DATA = pendingData; pendingData = null; ccRawLanded\(\); draw\(\); \}/.test(s)
-        && /errors\['cc:' \+ ev\.data\.id\] = ev\.data\.error;\s*if \(ev\.data\.id === '__raw__'\) \{ ccRawSent = null; \}\s*draw\(\);/.test(s));
+        && /errors\['cc:' \+ ev\.data\.id\] = ev\.data\.error;\s*if \(ev\.data\.id === '__raw__'\) \{ (?:X\.)?ccRawSent = null; \}\s*(?:X\.)?draw\(\);/.test(s));
     ok('…an Apply remembers the file it was written over; a push that changed the file hands the box back to it',
-        /ccRawSent = \{ was: DATA\.claude \? String\(DATA\.claude\.raw\) : '' \};\s*vscode\.postMessage\(\{ type: 'ccRaw'/.test(s)
+        /ccRawSent = \{ was: (?:X\.)?DATA\.claude \? String\((?:X\.)?DATA\.claude\.raw\) : '' \};\s*vscode\.postMessage\(\{ type: 'ccRaw'/.test(s)
         && /if \(ta && now !== ccRawSent\.was\) \{ ta\.value = ta\.defaultValue; \}/.test(s)
-        && /DATA = \{ \.\.\.DATA, \.\.\.ev\.data\.data \};\s*ccRawLanded\(\);/.test(s));
+        && /DATA = \{ \.\.\.(?:X\.)?DATA, \.\.\.ev\.data\.data \};\s*ccRawLanded\(\);/.test(s));
     const host = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
     ok('…which is what the host does: a refusal is ccError with no push, a write is a push',
         /if \(!v\.ok\) \{\s*void this\.host\.webview\.postMessage\(\{ type: 'ccError', id: '__raw__', error: v\.error \}\);\s*break;/.test(host));

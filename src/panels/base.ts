@@ -479,6 +479,12 @@ export function htmlShell(
     const setDocs = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingDocs.js'));
     const setWiki = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWiki.js'));
     const setAccess = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingAccess.js'));
+    const setPage = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingPage.js'));
+    const setWire = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWire.js'));
+    const setWireList = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWireList.js'));
+    const setWireShapes = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWireShapes.js'));
+    const setNav = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingNav.js'));
+    const setInbox = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingInbox.js'));
     // U-191 — the four run categories as a bar, for any page listing runs.
     const runCategory = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunCategory.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
@@ -738,6 +744,12 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${setDocs}"></script>
 <script nonce="${nonce}" src="${setWiki}"></script>
 <script nonce="${nonce}" src="${setAccess}"></script>
+<script nonce="${nonce}" src="${setPage}"></script>
+<script nonce="${nonce}" src="${setWire}"></script>
+<script nonce="${nonce}" src="${setWireList}"></script>
+<script nonce="${nonce}" src="${setWireShapes}"></script>
+<script nonce="${nonce}" src="${setNav}"></script>
+<script nonce="${nonce}" src="${setInbox}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${runCategory}"></script>
 <script nonce="${nonce}" src="${script}"></script>

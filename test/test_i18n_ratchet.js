@@ -11,6 +11,7 @@
 // What counts: a run of two plain words in a literal's text once tags, <style>
 // blocks and CSS declarations are stripped — plus the title / placeholder /
 // aria-label / alt values inside its tags. A heuristic; only the DELTA matters.
+// A directive ('use strict') is never interface text, so a file split in two does not grow the sum.
 // A literal that is not interface text (a log line, a font name) carries
 // `i18n-exempt` in a comment on its own line.
 //
@@ -64,8 +65,9 @@ function bareCount(file) {
     const lines = src.split('\n');
     let n = 0;
     const visit = node => {
-        if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node)
-            || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+        const directive = ts.isStringLiteral(node) && node.text === 'use strict' && ts.isExpressionStatement(node.parent);
+        if (!directive && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node)
+            || ts.isTemplateMiddle(node) || ts.isTemplateTail(node))) {
             const line = lines[sf.getLineAndCharacterOfPosition(node.getStart(sf)).line] || '';
             if (!/i18n-exempt/.test(line) && !wired(node) && isUiText(node.text)) { n++; }
         }
@@ -105,6 +107,7 @@ ok('a class list, a CSS block, a single word and an id are not', !isUiText('<div
 {
     const tmp = path.join(require('os').tmpdir(), 'af-i18n-ratchet-probe.js');
     fs.writeFileSync(tmp, [
+        "'use strict';",
         "const a = t('Open the note');",
         "const b = 'Open the note';",
         "const c = `<b>${t('Stop chain')}</b>`;",
@@ -112,7 +115,7 @@ ok('a class list, a CSS block, a single word and an id are not', !isUiText('<div
         "const e = { label: N_('Leg ceiling') };",
         "console.log('loaded the page'); // i18n-exempt"
     ].join('\n'));
-    ok('the counter skips what t() is handed, an N_ declaration and an exempt line, and counts the rest', bareCount(tmp) === 2);
+    ok('the counter skips a directive, what t() is handed, an N_ declaration and an exempt line, and counts the rest', bareCount(tmp) === 2);
     fs.unlinkSync(tmp);
 }
 

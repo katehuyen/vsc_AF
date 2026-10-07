@@ -238,7 +238,8 @@ const AFRepaint = sandbox.window.AFRepaint;
     };
     const missing = [];
     for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
-        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        // U-225 — a Settings part reads as the whole page it belongs to (its push goes through the page's guard)
+        const src = require('./lib_settings_source').mediaSource(f);
         // Does this file answer a host `data` push at all?
         if (!/type === 'data'\)/.test(src)) { continue; }
         if (EXCEPT[f]) {

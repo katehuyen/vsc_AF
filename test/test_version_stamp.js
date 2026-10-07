@@ -49,7 +49,9 @@ const read = p => fs.readFileSync(path.join(ROOT, p), 'utf8');
 // ---------- the two pages, and only them ----------
 {
     const media = fs.readdirSync(path.join(ROOT, 'media')).filter(f => f.endsWith('.js'));
-    const asking = media.filter(f => /\n\s*version: true,/.test(read('media/' + f)));
+    // U-225 — a media/afSetting*.js part is Farm Settings itself (the header is drawn by afSettingPage.js)
+    const page = f => (/^afSetting\w*\.js$/.test(f) ? 'settings.js' : f);
+    const asking = [...new Set(media.filter(f => /\n\s*version: true,/.test(read('media/' + f))).map(page))];
     ok(`exactly Dashboard and Farm Settings ask (got ${asking.join(', ')})`,
         asking.length === 2 && asking.includes('dashboard.js') && asking.includes('settings.js'));
 }
