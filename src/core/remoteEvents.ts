@@ -16,6 +16,7 @@
  * `remoteSpoken.ts`); `ui` is the interface's language, for a text with no sign
  * of its own.
  */
+import type { Silence } from './alertGate';
 import { askFrom, type SpokenAsk } from './askSpoken';
 import type { ConsoleSessionState } from './consoleproto';
 import { blockingCount, needKey, type NeedItem } from './needs';
@@ -155,4 +156,23 @@ export function noticeEvent(n: { id: string; title: string; level: number; agent
     return { type: 'notice.posted', data: {
         id: n.id, title: n.title, level: n.level, agent: n.agentName, ...withSpoken(noticeSpoken(n.title, ui))
     } };
+}
+
+// ---- X-445: the PC's alert gate rides on the phone's alerts --------------------
+
+/** The events a phone may ring for; the rest only change what it shows. */
+export const ALERTING_EVENTS: ReadonlySet<string> = new Set(['ask.opened', 'ask.answersSoon', 'permission.opened', 'turn.finished', 'notice.posted', 'quota.warn']);
+
+/**
+ * ‼️ X-445 — the phone is one of the farm's alert channels, so the gate that
+ * silences the PC (the 🔇, a session muted on its own, quiet hours) is asked
+ * for it too: an alerting event the gate silences carries `quiet` — shown on
+ * the phone, never rung — with the reasons and the PC's own sentence. An event
+ * the gate lets through is left exactly as it was. `session` is the event's
+ * own `session` field (a Console card id or an engine session id).
+ */
+export function withQuiet(e: RemoteEvent, silenceOf: (session?: string) => Silence): RemoteEvent {
+    if (!ALERTING_EVENTS.has(e.type)) { return e; }
+    const s = silenceOf(typeof e.data.session === 'string' && e.data.session ? e.data.session : undefined);
+    return s.silent ? { type: e.type, data: { ...e.data, quiet: { reasons: s.reasons, detail: s.detail ?? '' } } } : e;
 }

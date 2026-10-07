@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.890.0 - The phone follows the farm's alert rules, and a question goes to one channel (2026-10-08)
+
+- **A question no longer reaches you twice.** While a phone that may answer
+  questions is connected to Agent Farm, a session waiting on a question sends
+  it to the phone only; Telegram no longer posts the same question as well.
+  With no such phone connected, Telegram carries it as before. A phone paired
+  as read-only does not count, because it cannot answer. Turn reports still
+  go to both.
+- **The phone now knows when the farm would stay silent.** When the farm is
+  muted (the 🔇 in the status bar), a session is muted on its own, or quiet
+  hours are on, every alert sent to the phone (a question, a permission
+  request, a finished turn, a notice, a quota warning, a question about to
+  answer itself) says so, with the reason. The phone app can then show it
+  without ringing; alerts the farm would ring for are sent exactly as before.
+
 ## 3.889.0 - A relay leg the engine cut is asked once to go on (2026-10-08)
 
 - **A relay chain no longer stalls when the engine cuts a leg's turn by

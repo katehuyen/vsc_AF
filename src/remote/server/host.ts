@@ -41,6 +41,8 @@ export interface RemoteServer {
     /** A pairing link with a fresh one-time code for these host:port addresses. */
     pairingLink(addresses: string[]): string;
     sessions(): number;
+    /** The devices behind the welcomed sockets, one per socket. */
+    callers(): RemoteCaller[];
 }
 
 export function createRemoteServer(d: HostDeps): RemoteServer {
@@ -136,5 +138,6 @@ export function createRemoteServer(d: HostDeps): RemoteServer {
             v: CONTRACT_VERSION, farm: d.farm.id, name: d.farm.name, code: d.devices.newCode(), fp: d.cert.fingerprint, addresses,
         }),
         sessions: () => live.size,
+        callers: () => [...live].flatMap(s => (s.caller ? [s.caller] : [])),
     };
 }

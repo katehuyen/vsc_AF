@@ -104,27 +104,27 @@
       "example": { "count": 2, "top": { "kind": "permission", "title": "developer: Bash" } }
     },
     "ask.opened": {
-      "fields": { "session": "string", "agent": "string", "askId": "string", "question": "string", "options": "array", "spoken": "object?" },
+      "fields": { "session": "string", "agent": "string", "askId": "string", "question": "string", "options": "array", "spoken": "object?", "quiet": "object?" },
       "example": { "session": "4f567a07", "agent": "developer", "askId": "q1", "question": "Hangisi?", "options": [{ "label": "A" }, { "label": "B" }], "spoken": { "text": "developer soruyor: Hangisi? Seçenekler: A, B.", "lang": "tr" } }
     },
     "ask.answersSoon": {
-      "fields": { "session": "string", "agent": "string", "askId": "string", "dueAt": "number", "minutes": "number", "spoken": "object?" },
+      "fields": { "session": "string", "agent": "string", "askId": "string", "dueAt": "number", "minutes": "number", "spoken": "object?", "quiet": "object?" },
       "example": { "session": "4f567a07", "agent": "developer", "askId": "q1", "dueAt": 1790760120000, "minutes": 2, "spoken": { "text": "developer's question answers itself in 2 minutes.", "lang": "en" } }
     },
     "permission.opened": {
-      "fields": { "session": "string", "agent": "string", "permId": "string", "tool": "string", "summary": "string", "key": "string", "spoken": "object?" },
+      "fields": { "session": "string", "agent": "string", "permId": "string", "tool": "string", "summary": "string", "key": "string", "spoken": "object?", "quiet": "object?" },
       "example": { "session": "4f567a07", "agent": "developer", "permId": "p1", "tool": "Bash", "summary": "git status", "key": "permission|4f567a07-1c2d-4e5f-8a9b-0c1d2e3f4a5b", "spoken": { "text": "developer wants to run: git status.", "lang": "en" } }
     },
     "turn.finished": {
-      "fields": { "session": "string", "agent": "string", "title": "string", "summary": "string", "spoken": "object?" },
+      "fields": { "session": "string", "agent": "string", "title": "string", "summary": "string", "spoken": "object?", "quiet": "object?" },
       "example": { "session": "4f567a07", "agent": "developer", "title": "ANDROID", "summary": "Sözleşme yazıldı.", "spoken": { "text": "Sözleşme yazıldı.", "lang": "tr" } }
     },
     "notice.posted": {
-      "fields": { "id": "string", "title": "string", "level": "number", "agent": "string", "spoken": "object?" },
+      "fields": { "id": "string", "title": "string", "level": "number", "agent": "string", "spoken": "object?", "quiet": "object?" },
       "example": { "id": "n_12", "title": "Rapor hazır", "level": 2, "agent": "developer", "spoken": { "text": "Rapor hazır.", "lang": "tr" } }
     },
     "quota.warn": {
-      "fields": { "engine": "string", "percent": "number", "window": "string" },
+      "fields": { "engine": "string", "percent": "number", "window": "string", "quiet": "object?" },
       "example": { "engine": "claude", "percent": 91, "window": "5h" }
     },
     "session.ended": {
@@ -147,6 +147,7 @@
     "Event seq numbers only grow. hello.resumeAfter asks for every event after that seq; when they are no longer kept the host sends one gap frame, then the rest.",
     "A contract version the other side does not speak ends the socket with refuse reason contract, naming the version it needs.",
     "Secrets never travel: no frame carries a secret value, only whether one exists.",
+    "An alerting event (ask.opened, ask.answersSoon, permission.opened, turn.finished, notice.posted, quota.warn) the farm's alert gate silences right now carries quiet { reasons: [fleet | session | quiet-hours], detail }: the farm would not ring for it, and the reasons say which rule; a client that follows the farm's alert rules shows it without ringing. An event without quiet is one the farm would ring for.",
     "permission.opened.key is the Needs You row key (needKey): a client answers with call needs.act { key, action: permission-allow | permission-deny } and never builds the key itself; console.answer answers questions only.",
     "welcome.session authorizes /view and /res for that device only while its socket is open; the host forgets it when the socket closes, and a client never stores it.",
     "spoken { text, lang } is what the host's own reader says for the event: text already cleaned for a voice and cut to the event's length, lang the BCP-47 primary tag of the language it is in. A client that reads aloud reads it as is and picks a voice for lang; it is absent when there is nothing to say, and a client falls back to its own reading then."

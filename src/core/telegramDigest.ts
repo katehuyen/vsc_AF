@@ -265,6 +265,16 @@ export function digestEvents(
     return { memo: { turnAt, askId }, events };
 }
 
+/**
+ * ‼️ X-445 — ONE QUESTION, ONE CHANNEL. While a phone that may answer is
+ * connected to the farm this window hosts, a card waiting on a question is the
+ * phone's: it gets that question as ask.opened (remoteEvents.ts, the same
+ * condition), so Telegram does not carry it too. Turn reports are not questions.
+ */
+export function digestYieldsToPhone(state: Pick<ConsoleSessionState, 'pendingAsk'>, phonesAnswering: number): boolean {
+    return phonesAnswering > 0 && !!state.pendingAsk?.questions.length;
+}
+
 /** Drop what the host no longer has, so the memo does not grow with history (X-127). */
 export function forgetMemo(memo: DigestMemo, liveIds: string[]): DigestMemo {
     const keep = new Set(liveIds);

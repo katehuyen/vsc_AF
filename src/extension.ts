@@ -510,11 +510,11 @@ import {
 } from './core/messaging';
 import { answerCallbackQuery, createForumTopic, getMe, isForumChat, sendMessage, TelegramPoller } from './core/telegram';
 import {
-    DigestKeyboard, DigestMemo, digestEvents, digestText, EMPTY_MEMO, forgetMemo, keyboardFor, parseTap, tapAnswer
+    DigestKeyboard, DigestMemo, digestEvents, digestText, digestYieldsToPhone, EMPTY_MEMO, forgetMemo, keyboardFor, parseTap, tapAnswer
 } from './core/telegramDigest';
 import {
     consoleEvents, EMPTY_CONSOLE_MEMO, EMPTY_NEEDS_MEMO, EMPTY_QUOTA_MEMO, needsEvents, noticeEvent, quotaEvents,
-    QUOTA_WARN_PCT, type QuotaMemo, type RemoteEvent
+    QUOTA_WARN_PCT, type QuotaMemo, type RemoteEvent, withQuiet
 } from './core/remoteEvents';
 import { AnswerSoonDue, AnswerSoonMemo, answerSoonEvent, answerSoonSeconds, minutesLeft } from './core/answerSoon';
 import { DEFAULT_REMOTE_PORT, isListenMode, listenPlan, type ListenMode } from './core/remoteListen';
@@ -31488,8 +31488,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Only the runner window listens, so two windows never race for the port.
     const remoteDir = path.join(context.globalStorageUri.fsPath, 'remote');
     const remoteListeners = new Set<(e: RemoteEvent) => void>();
+    // X-445 — the PC's alert gate is asked for the phone too: a Console card id is read as its engine session
+    const remoteQuietOf = (session?: string) => alertSilence(session ? consoleHost.get(session)?.sessionId ?? session : undefined);
     const remoteEmit = (events: RemoteEvent[]) => {
-        for (const e of events) { for (const l of remoteListeners) { l(e); } }
+        for (const raw of events) { const e = withQuiet(raw, remoteQuietOf); for (const l of remoteListeners) { l(e); } }
     };
     let remoteFarm: { id: string; name: string } | undefined;
     // The Sessions page's sources: one object for the desktop tab and every phone view.
@@ -32304,6 +32306,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!r.events.length || !poller) { return; }
         const audience = chatAudience(id, chatRoutable().length);
         if (!audience.length) { return; }
+        // X-445 — a question goes to one channel: the connected phone's, not Telegram's too
+        if (digestYieldsToPhone(s, remote.answering())) { return; }
         const text = digestText(s, chatDigestCtx(s));
         const keyboard = keyboardFor(s);
         for (const chat of audience) { void chatSend(chat, text, id, keyboard); }

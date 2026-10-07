@@ -6,6 +6,7 @@
  */
 import * as path from 'path';
 import type { RemotePort } from './port';
+import { scopeAtLeast } from './scopes';
 import { AUDIT_FILE, startRemoteHost, type RunningRemote } from './serve';
 import { AUDIT_KINDS, AuditLog, type AuditEntry, type AuditQuery } from './server/auditLog';
 import { DeviceBook, type Device } from './server/devices';
@@ -43,6 +44,8 @@ export interface RemoteControl {
     /** target null = stop; `reason` says why for the status line. */
     apply(target: ListenTarget | null, reason?: string): Promise<RemoteStatus>;
     status(): RemoteStatus;
+    /** X-445 — open phone connections whose device may answer a question (scope answer or more). */
+    answering(): number;
     /** A fresh one-time pairing link, or an error when not listening. */
     pairingLink(): { link: string; addresses: string[] } | { error: string };
     devices(): DeviceRow[];
@@ -102,6 +105,7 @@ export function createRemoteControl(port: RemotePort): RemoteControl {
             return p;
         },
         status,
+        answering: () => (running?.server.callers() ?? []).filter(c => scopeAtLeast(c.scope, 'answer')).length,
         pairingLink: () => {
             if (!running || !target) { return { error: `not listening (${reason ?? 'stopped'}) - set agentFarm.remote.listen first` }; }
             const addresses = target.addresses.map(a => `${a}:${running!.port}`);
