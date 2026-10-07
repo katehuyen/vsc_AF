@@ -87,7 +87,7 @@
             .sshead #ssfilter { flex:0 1 200px; min-width:120px; }
             .sstbl td, .sstbl th { padding:2px 8px 2px 0; white-space:nowrap; vertical-align:middle; }
             .sstbl select { min-width:0; padding:0 4px; height:22px; }
-            .ssalsob { padding:0 5px; min-width:0; opacity:.45; border-radius:10px; margin-right:3px; }
+            .ssalsob { padding:0 5px; min-width:0; opacity:calc(1 - .55 * var(--af-dimk, 1)); border-radius:10px; margin-right:3px; }
             .ssalsob.on, .sstab.on { opacity:1; border-color:var(--vscode-focusBorder, #4448); }
             .sstab { opacity:.6; }
             .ssread input { margin:0; width:auto; }

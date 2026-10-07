@@ -309,7 +309,7 @@
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
         .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
-            background:transparent; color:var(--vscode-foreground); opacity:.75;
+            background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .25 * var(--af-dimk, 1));
             border:1px solid var(--vscode-widget-border, #4444); }
         .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
             border-color:transparent; opacity:1; }
@@ -370,7 +370,7 @@
         .stag { font-size:9px; padding:0 5px; margin-left:4px; border-radius:7px; white-space:nowrap;
             border:1px solid var(--vscode-widget-border, #4444); opacity:.8; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
-            background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
+            background:transparent; opacity:calc(1 - .3 * var(--af-dimk, 1)); border:1px solid var(--vscode-widget-border, #4444);
             color:var(--vscode-foreground); }
         .fold:hover { opacity:1; }
         /* Session rows are tinted and accent-edged so that once a row is

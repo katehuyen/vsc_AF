@@ -2336,7 +2336,7 @@
                     font-family:var(--vscode-editor-font-family); }
                 /* A variable with nothing behind it cancels any path that uses
                    it — the one case worth marking, so it is marked. */
-                .pathvar.empty { opacity:.5; border-style:dashed; }
+                .pathvar.empty { opacity:calc(1 - .5 * var(--af-dimk, 1)); border-style:dashed; }
                 /* X-308 — a value nobody typed: it works, but it was DERIVED
                    (the vault Obsidian has open) and can change under the user,
                    which the solid chip beside it would not say. */

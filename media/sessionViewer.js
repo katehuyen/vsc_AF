@@ -1055,7 +1055,7 @@
                 .turnhdr .turnsel input { cursor:pointer; margin:0; }
                 .turnhdr .turnnav { display:flex; gap:4px; }
                 .turnhdr .tnav { font-size:11px; padding:0 7px; line-height:17px; cursor:pointer;
-                    border-radius:3px; background:transparent; opacity:.7;
+                    border-radius:3px; background:transparent; opacity:calc(1 - .3 * var(--af-dimk, 1));
                     border:1px solid var(--vscode-widget-border, #4444);
                     color:var(--vscode-foreground); }
                 .turnhdr .tnav:hover { opacity:1; }
@@ -1079,7 +1079,7 @@
                 .turnbox table { margin-top:6px; }
                 .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
                 .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
-                    background:transparent; color:var(--vscode-foreground); opacity:.75;
+                    background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .25 * var(--af-dimk, 1));
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
                     border-color:transparent; opacity:1; }
@@ -1119,12 +1119,12 @@
                    easy to miss); the ⛁ glyph is the always-visible affordance. */
                 .actcard { cursor:help; }
                 .actkey { display:inline-block; width:13px; height:13px; line-height:13px; text-align:center;
-                    border-radius:50%; font-size:9px; opacity:.55; vertical-align:middle;
+                    border-radius:50%; font-size:9px; opacity:calc(1 - .45 * var(--af-dimk, 1)); vertical-align:middle;
                     border:1px solid var(--vscode-descriptionForeground,#888); }
                 .actcard:hover .actkey { opacity:1; }
                 .ctxcard { position:relative; cursor:pointer; }
                 .ctxglyph { position:absolute; top:9px; right:11px; z-index:2;
-                    font-size:13px; line-height:1; opacity:.45; pointer-events:none;
+                    font-size:13px; line-height:1; opacity:calc(1 - .55 * var(--af-dimk, 1)); pointer-events:none;
                     color:var(--vscode-foreground); }
                 .ctxcard:hover .ctxglyph { opacity:.9; }
                 /* S-64: the discipline signal, under the gauge it belongs to. */

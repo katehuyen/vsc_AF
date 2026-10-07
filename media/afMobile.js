@@ -65,7 +65,7 @@
         + '.af-sheet-go{display:block;width:100%;text-align:left;min-height:44px;margin:2px 0;background:none;border:0;'
         + 'border-bottom:1px solid var(--vscode-panel-border);color:inherit;padding:6px 4px}'
         + '.af-sheet-go.on{font-weight:600}'
-        + '.af-sheet-go small{display:block;opacity:.7;font-weight:400;margin-top:2px}'
+        + '.af-sheet-go small{display:block;opacity:calc(1 - .3 * var(--af-dimk, 1));font-weight:400;margin-top:2px}'
         + '.af-sheet-t{white-space:pre-wrap;word-break:break-word;user-select:text;margin:0;font:inherit}'
         + '.af-sheet-sub{opacity:.8;margin-bottom:6px}'
         // A dense table marked data-afcards is a list of cards: the lead cell on its own line,

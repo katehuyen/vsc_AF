@@ -51,7 +51,7 @@
                 .alertgatelbl input[type=checkbox] { margin:0; flex:none; width:auto; }
                 .alertgatebar { width:1px; align-self:stretch;
                     background:var(--vscode-widget-border, #4444); }
-                .alertgatedash { opacity:.6; }
+                .alertgatedash { opacity:calc(1 - .4 * var(--af-dimk, 1)); }
                 .alertqtime { width:52px; flex:none; text-align:center;
                     font-family:var(--vscode-editor-font-family); }
                 /* Beside the two switches, NOT pushed to the far edge: this is

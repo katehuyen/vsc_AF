@@ -231,12 +231,12 @@
         .a2a-day { margin:14px 0 4px; font-size:11px; opacity:.6; text-transform:uppercase; letter-spacing:.04em; }
         .a2a-card { border:1px solid var(--vscode-panel-border); border-radius:6px; margin:4px 0; background:var(--vscode-editorWidget-background); }
         .a2a-card.a2a-focus { outline:2px solid var(--vscode-focusBorder); }
-        .a2a-card.a2a-closed { opacity:.6; }
+        .a2a-card.a2a-closed { opacity:calc(1 - .4 * var(--af-dimk, 1)); }
         .a2a-line { display:flex; gap:8px; align-items:center; padding:6px 10px; cursor:pointer; flex-wrap:wrap; }
         .a2a-line:hover { background:var(--vscode-list-hoverBackground); }
         .a2a-title { font-weight:600; flex:1 1 220px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .a2a-from { flex-shrink:0; font-size:11.5px; opacity:.85; white-space:nowrap; }
-        .a2a-age { flex-shrink:0; font-size:11px; opacity:.6; white-space:nowrap; }
+        .a2a-age { flex-shrink:0; font-size:11px; opacity:calc(1 - .4 * var(--af-dimk, 1)); white-space:nowrap; }
         .a2a-coords { display:inline-flex; gap:4px; flex-wrap:wrap; }
         .a2a-chip { font-size:10.5px; padding:1px 6px; border-radius:9px; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); white-space:nowrap; opacity:.85; }
         .a2a-chip.a2a-c-strict { text-transform:uppercase; font-size:9.5px; letter-spacing:.04em; }

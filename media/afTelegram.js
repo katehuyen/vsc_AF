@@ -277,7 +277,7 @@
             .svc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
             .svc-chip { align-items: center; border: 1px solid var(--vscode-widget-border, #666); border-radius: 8px;
                         display: inline-flex; font-size: 11px; gap: 3px; padding: 0 3px 0 7px; }
-            .svc-x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; opacity: .6; padding: 0 3px; }
+            .svc-x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; opacity: calc(1 - .4 * var(--af-dimk, 1)); padding: 0 3px; }
             .svc-x:hover { color: var(--af-ink-charts-red, var(--vscode-charts-red, #f14c4c)); opacity: 1; }
             .svc-budget { align-items: center; display: inline-flex; gap: 6px; }
             .svc-bar { background: var(--vscode-widget-border, #4443); border-radius: 3px; display: inline-block; height: 6px; overflow: hidden; width: 70px; }
@@ -290,7 +290,7 @@
                card takes where the settings rows own the controls. */
             .svc-facts { border-top: 1px solid var(--vscode-widget-border, #4443); display: flex; flex-wrap: wrap;
                          font-size: 11px; gap: 4px 14px; padding-top: 7px; }
-            .svc-fact { align-items: center; display: inline-flex; gap: 5px; opacity: .8; }
+            .svc-fact { align-items: center; display: inline-flex; gap: 5px; opacity: calc(1 - .2 * var(--af-dimk, 1)); }
             .svc-fact b { font-weight: 600; opacity: 1; }
             .svc-y { color: var(--af-ink-charts-green, var(--vscode-charts-green, #4caf50)); }
             .svc-n { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }

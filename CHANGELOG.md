@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.881.0 - Light themes: the rest of the faded text is readable (2026-10-07)
+
+- **Light themes:** the faded text that 3.879.0 left - "required" marks,
+  chips, ages and day headings on the boards, the Engines panel's health
+  chips, the wiki's notes, the transcript's turn arrows, chain steps, the
+  Projects page's groups and backlog kinds - is dimmed less in a light
+  theme, the same way: still secondary, but readable. Measured on every page
+  in Light Modern, the texts below the contrast they need fell from 4,256 to
+  3,020 (15,703 before 3.879.0).
+- **Dark themes look exactly as before** - compared colour by colour on
+  every page.
+- What stays faint on purpose: disabled buttons and the tools that only
+  light up under the pointer.
+
 ## 3.880.0 - Light themes: coloured labels are readable (2026-10-07)
 
 - **Light themes:** text drawn in a status or chart colour - engine and

@@ -1600,7 +1600,7 @@
                    measured at 283px while the rule said 240. */
                 .pj-list { flex:0 0 160px; min-width:0; }
                 .pj-list .btnrow { flex-wrap:wrap; }
-                .pj-group { font-size:11px; text-transform:uppercase; opacity:.6; margin:12px 0 4px; }
+                .pj-group { font-size:11px; text-transform:uppercase; opacity:calc(1 - .4 * var(--af-dimk, 1)); margin:12px 0 4px; }
                 .pj-item { display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:5px; cursor:pointer; }
                 .pj-item:hover { background:var(--vscode-list-hoverBackground); }
                 .pj-item.on { background:var(--vscode-list-activeSelectionBackground); color:var(--vscode-list-activeSelectionForeground); }
@@ -1612,7 +1612,7 @@
                 .pj-dot { width:8px; height:8px; border-radius:50%; background:var(--vscode-panel-border); flex-shrink:0; }
                 .pj-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .pj-badge { opacity:.9; }
-                .pj-unassigned { margin-top:14px; padding:6px 8px; border-top:1px solid var(--vscode-panel-border); font-size:12px; opacity:.8; }
+                .pj-unassigned { margin-top:14px; padding:6px 8px; border-top:1px solid var(--vscode-panel-border); font-size:12px; opacity:calc(1 - .2 * var(--af-dimk, 1)); }
                 .pj-main { flex:1; min-width:0; }
                 /* the phone (media/afMobile.js): one column, the list above the
                    open project and scrolled on its own, a form one field wide */
@@ -1918,7 +1918,7 @@
                 /* …and the mark that says a chip HAS one. Without it a chip
                    carrying a paragraph and a chip carrying nothing were the
                    same eleven pixels. */
-                .pj-trk-notemark { margin-left:4px; opacity:.75; }
+                .pj-trk-notemark { margin-left:4px; opacity:calc(1 - .25 * var(--af-dimk, 1)); }
                 /* ‼️ X-36 — this item has been asked for before. Purple, which
                    is nothing else on this page: it is not a warning and not a
                    state, it is a COUNT of how many times we have been here. */
@@ -1961,7 +1961,7 @@
                    has. The +Npx is the padding and border the box adds around
                    its characters; ch resolves against each column's own
                    font-size, which is why it is applied on the column itself. */
-                .pj-trk-tltime { font-size:11px; opacity:.6; white-space:nowrap;
+                .pj-trk-tltime { font-size:11px; opacity:calc(1 - .4 * var(--af-dimk, 1)); white-space:nowrap;
                     flex:0 0 calc(var(--tl-time, 5) * 1ch + 2px);
                     font-variant-numeric:tabular-nums; }
                 /* ‼️ THE COLUMN IS WHATEVER IS THE FLEX CHILD, AND THAT CHANGES
@@ -1989,7 +1989,7 @@
                 .pj-trk-tl .pj-trk-turn { white-space:nowrap; text-align:left;
                     flex:0 0 calc(var(--tl-sid, 12) * 1ch + 18px);
                     overflow:hidden; text-overflow:ellipsis; }
-                .pj-trk-tlwho { font-size:11px; opacity:.6; white-space:nowrap;
+                .pj-trk-tlwho { font-size:11px; opacity:calc(1 - .4 * var(--af-dimk, 1)); white-space:nowrap;
                     flex:0 0 calc(var(--tl-who, 9) * 1ch + 2px);
                     overflow:hidden; text-overflow:ellipsis; }
                 .pj-trk-tlnote { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis;
@@ -2059,7 +2059,7 @@
                 .pj-money { display:flex; gap:22px; flex-wrap:wrap; }
                 .pj-money span { display:flex; flex-direction:column; }
                 .pj-money b { font-size:16px; }
-                .pj-money small { opacity:.6; font-size:11px; }
+                .pj-money small { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:11px; }
                 .pj-money-top { margin:4px 0 10px; }
                 /* timeline */
                 .pj-chips-row { display:flex; gap:5px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
@@ -2221,7 +2221,7 @@
                 .pj-plan-item { display:flex; align-items:baseline; gap:7px; padding:3px 6px;
                     border-radius:4px; cursor:pointer; font-size:13px; }
                 .pj-plan-item:hover { background:var(--vscode-list-hoverBackground); }
-                .pj-plan-item.done .pj-plan-t { opacity:.55; text-decoration:line-through; }
+                .pj-plan-item.done .pj-plan-t { opacity:calc(1 - .45 * var(--af-dimk, 1)); text-decoration:line-through; }
                 .pj-plan-t { flex:1; min-width:0; }
                 .pj-plan-m { opacity:.6; font-size:11px; white-space:nowrap; }
                 /* backlog */
@@ -2288,12 +2288,12 @@
                    cannot drift — see the code-chip note above */
                 .pj-bl-code.unfiled { background:none; }
                 .pj-bl-t { flex:1; min-width:0; }
-                .pj-bl-kind { font-size:10px; padding:0 5px; border-radius:8px; opacity:.85; white-space:nowrap;
+                .pj-bl-kind { font-size:10px; padding:0 5px; border-radius:8px; opacity:calc(1 - .15 * var(--af-dimk, 1)); white-space:nowrap;
                     background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
                 /* WHO wrote the line is not WHAT the work is, so it does not
                    wear a work-type colour: outlined, quiet, and a hover that
                    says which of the two it is. See BL_ORIGIN_TIP. */
-                .pj-bl-kind.origin { background:none; opacity:.6; cursor:help;
+                .pj-bl-kind.origin { background:none; opacity:calc(1 - .4 * var(--af-dimk, 1)); cursor:help;
                     border:1px solid var(--vscode-widget-border,#4446); color:inherit; }
                 .pj-bl-badge { background:none; border:none; color:inherit; cursor:pointer;
                     font-size:11px; padding:0 4px; border-radius:4px; opacity:.75; min-width:22px; }
@@ -2639,7 +2639,7 @@
                 .pj-bl-kind.settable { cursor:pointer; border:none; font-family:inherit; }
                 .pj-bl-kind.settable:hover { outline:1px solid var(--vscode-focusBorder); }
                 .pj-bl-kind.none { background:none; border:1px dashed var(--vscode-widget-border,#4446);
-                    color:inherit; opacity:.45; }
+                    color:inherit; opacity:calc(1 - .55 * var(--af-dimk, 1)); }
                 /* A ROW MENU. Anchored to the badge that opened it rather than to
                    pointer coordinates: the row is the only thing that knows where
                    it is, and a menu positioned from a click event lands in the

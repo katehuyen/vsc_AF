@@ -850,7 +850,7 @@
                 /* ‼️ A door that opens nothing does not look like a door. */
                 .wk-dead { cursor:default; text-decoration:none; }
                 .wk-dead:hover { text-decoration:none; }
-                .wk-vsep { opacity:.4; margin:0 2px; }
+                .wk-vsep { opacity:calc(1 - .6 * var(--af-dimk, 1)); margin:0 2px; }
                 .wk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
                 /* U-121: the table's own toolbar, under the filters that decide
                    what is in the table and over the ticks that decide what is in
@@ -874,7 +874,7 @@
                     outline:1px solid var(--vscode-charts-red,#e51400); outline-offset:1px;
                     border-radius:2px; }
                 .wk-state { white-space:nowrap; width:1%; }
-                .wk-st { opacity:.9; }
+                .wk-st { opacity:calc(1 - .1 * var(--af-dimk, 1)); }
                 tr.wk-compiled .wk-st { color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50)); }
                 tr.wk-compiling .wk-st { color:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); }
                 /* X-58: waiting, and the last run over it produced nothing.
@@ -898,7 +898,7 @@
                 .wk-eline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
                 .wk-elabel { flex:0 0 46px; font-size:10px; opacity:.55; cursor:help; text-align:right; }
                 .wk-enote { flex:1 1 320px; max-width:520px; padding:2px 6px; font-size:12px; }
-                .wk-emade { font-size:11px; opacity:.7; }
+                .wk-emade { font-size:11px; opacity:calc(1 - .3 * var(--af-dimk, 1)); }
                 .wk-editor .afc { flex:1 1 320px; max-width:420px; position:relative; }
                 /* X-58's strip, in the editor: everything is IN and a press
                    takes one OUT, struck through so it cannot read as "not
@@ -961,7 +961,7 @@
                 .wk-chip:hover { outline:1px solid var(--vscode-focusBorder); }
                 .wk-more { opacity:.6; font-size:10.5px; }
                 .wk-label { max-width:44ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                .wk-note { opacity:.6; font-style:italic; }
+                .wk-note { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-style:italic; }
                 .wk-when { white-space:nowrap; opacity:.75; width:1%; }
                 .wk-pages { max-width:26ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .wk-page { cursor:pointer; color:var(--vscode-textLink-foreground); text-decoration:none; }

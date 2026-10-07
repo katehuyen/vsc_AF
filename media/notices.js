@@ -624,7 +624,7 @@
         .nt-star { cursor:pointer; opacity:calc(1 - .45 * var(--af-dimk, 1)); } .nt-star.on { color:var(--af-ink-charts-yellow, var(--vscode-charts-yellow, #e2c08d)); opacity:1; }
         .nt-pin { cursor:pointer; opacity:.3; filter:grayscale(1); } .nt-pin:hover { opacity:.7; } .nt-pin.on { opacity:1; filter:none; }
         .nt-meta { margin-left:auto; flex-shrink:0; white-space:nowrap; }
-        .nt-x { flex:0 0 auto; padding:1px 6px; min-width:0; opacity:.55; }
+        .nt-x { flex:0 0 auto; padding:1px 6px; min-width:0; opacity:calc(1 - .45 * var(--af-dimk, 1)); }
         .nt-x:hover { opacity:1; color:var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
         .nt-udot { color:var(--vscode-button-background); }
         .nt-badge { font-size:10px; border-radius:8px; padding:1px 7px; flex-shrink:0; border:1px solid var(--vscode-panel-border); }

@@ -498,7 +498,7 @@
         .callout:hover { background:color-mix(in srgb, var(--vscode-charts-green,#4caf50) 18%, transparent); }
         .callout .cdot { width:7px; height:7px; border-radius:50%; flex:none;
             background:var(--vscode-charts-green,#4caf50); }
-        .callout .cage { margin-left:auto; font-weight:400; opacity:.8; }
+        .callout .cage { margin-left:auto; font-weight:400; opacity:calc(1 - .2 * var(--af-dimk, 1)); }
         .srow .sid { font-weight:400; opacity:calc(1 - .4 * var(--af-dimk, 1)); font-size:10px; flex:none; }
         /* outside the flex identity line (the resume rows) there is no gap to
            inherit, so the id gets its own breathing space */
@@ -898,7 +898,7 @@
             display:inline-flex; align-items:center; gap:6px; padding:2px 7px; border-radius:9px;
             border:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
-        .pchip.none { opacity:.45; background:none; color:inherit; }
+        .pchip.none { opacity:calc(1 - .55 * var(--af-dimk, 1)); background:none; color:inherit; }
         .pchip-hint { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-style:italic; }
         /* X-133 — the Superpowers switch sits ON THE SAME LINE as the project
            chip because they are two halves of one appended system prompt: what
@@ -984,10 +984,10 @@
             border:1px solid var(--vscode-widget-border,#4443); border-radius:10px;
             background:var(--vscode-input-background); max-width:100%; }
         .chip .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
-        .chip .sz { opacity:.55; }
-        .chip .kd { font-size:9px; padding:0 4px; border-radius:6px; opacity:.8;
+        .chip .sz { opacity:calc(1 - .45 * var(--af-dimk, 1)); }
+        .chip .kd { font-size:9px; padding:0 4px; border-radius:6px; opacity:calc(1 - .2 * var(--af-dimk, 1));
             border:1px solid var(--vscode-widget-border,#4443); }
-        .chip .x { cursor:pointer; opacity:.6; padding:0 2px; }
+        .chip .x { cursor:pointer; opacity:calc(1 - .4 * var(--af-dimk, 1)); padding:0 2px; }
         .chip .x:hover { opacity:1; color:var(--af-ink-charts-red, var(--vscode-charts-red,#e51400)); }
         /* the whole composer is the drop target — a small one would be a game */
         .composer.drop { outline:2px dashed var(--vscode-focusBorder,#007fd4); outline-offset:3px; }
@@ -1153,7 +1153,7 @@
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .qwait .qline .qtext::before { content:'· '; opacity:.6; }
         .qwait .qbtn { flex:none; background:none; border:none; cursor:pointer; padding:0 3px;
-            font-size:11px; line-height:1; opacity:.55; color:var(--vscode-foreground); }
+            font-size:11px; line-height:1; opacity:calc(1 - .45 * var(--af-dimk, 1)); color:var(--vscode-foreground); }
         .qwait .qbtn:hover { opacity:1; }
         .linkish { background:none; border:none; padding:0; font:inherit; cursor:pointer;
             color:var(--vscode-textLink-foreground); text-decoration:underline; }

@@ -27,7 +27,7 @@ blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8
 /* X-112 — the same figure over a run that filled NO plan window. It is still
    the plan formula, so it keeps the glyph and the number; what it loses is the
    claim to a limit, and the reader must be able to see that without hovering. */
-.wtok.offplan { opacity: .78; color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); border-bottom: 1px dotted currentColor; }
+.wtok.offplan { opacity: calc(1 - .22 * var(--af-dimk, 1)); color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); border-bottom: 1px dotted currentColor; }
 .usdmix { white-space: nowrap; cursor: help; border-bottom: 1px dotted var(--vscode-charts-orange, #d18616); }
 /* Step kind (see charts.js STEP_KIND): one glyph, colour-coded by where the
    cost comes from — model time is warm, free local work is cool, and the row
@@ -71,7 +71,7 @@ blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8
 
 .badge {
     display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px;
-    border: 1px solid var(--vscode-widget-border, #4444); opacity: .85; margin-left: 4px;
+    border: 1px solid var(--vscode-widget-border, #4444); opacity: calc(1 - .15 * var(--af-dimk, 1)); margin-left: 4px;
 }
 .badge.err { color: var(--af-ink-errorForeground, var(--vscode-errorForeground)); border-color: var(--vscode-errorForeground); }
 .badge.warn { color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); border-color: var(--vscode-editorWarning-foreground, #cca700); }
@@ -490,7 +490,7 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .af-tipw.tip-act:not(.tip-free):hover > .af-tip { transition-delay: .6s; }
 .af-tiph {
     display: block; margin-bottom: 6px; padding-bottom: 5px;
-    font-size: 10px; opacity: .6; white-space: normal;
+    font-size: 10px; opacity: calc(1 - .4 * var(--af-dimk, 1)); white-space: normal;
     border-bottom: 1px solid var(--vscode-widget-border, #4443);
 }
 /* The subject, read before the paragraph: small head (state) · title (what this is) · body. */
@@ -541,13 +541,13 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .afb-bar { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .afb-selall { display: inline-flex; gap: 3px; align-items: center; font-size: 11px; opacity: .85; cursor: pointer; }
 .afb-cb { flex-shrink: 0; margin: 0; cursor: pointer; }
-.afb-x { flex: 0 0 auto; padding: 1px 6px; min-width: 0; opacity: .55; }
+.afb-x { flex: 0 0 auto; padding: 1px 6px; min-width: 0; opacity: calc(1 - .45 * var(--af-dimk, 1)); }
 .afb-x:hover:not([disabled]) { opacity: 1; color: var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
 .afb-x[disabled] { opacity: .2; cursor: default; }
 .afb-trash { color: var(--af-ink-editorError-foreground, var(--vscode-editorError-foreground, #e51400)); }
 .afb-bar button.danger:hover { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); border-color: var(--vscode-editorError-foreground, #e51400); }
-.afb-age { flex-shrink: 0; font-size: 11px; opacity: .6; white-space: nowrap; }
-.afb-day { margin: 12px 0 4px; font-size: 11px; opacity: .6; text-transform: uppercase; letter-spacing: .04em; }
+.afb-age { flex-shrink: 0; font-size: 11px; opacity: calc(1 - .4 * var(--af-dimk, 1)); white-space: nowrap; }
+.afb-day { margin: 12px 0 4px; font-size: 11px; opacity: calc(1 - .4 * var(--af-dimk, 1)); text-transform: uppercase; letter-spacing: .04em; }
 
 /* -------------------------------------------------------------------- AFForm
    ‼️ THE PAGE MAKES THE OBJECT — media/afForm.js, docs/CONVENTIONS.md.
@@ -566,7 +566,7 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .aff { display: flex; flex-direction: column; gap: 3px; flex: 1 1 150px; min-width: 140px; font-size: 11px; }
 .aff.wide { flex: 1 1 100%; }
 .aff > span { opacity: .75; }
-.aff em { font-style: normal; opacity: .75; color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); }
+.aff em { font-style: normal; opacity: calc(1 - .25 * var(--af-dimk, 1)); color: var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground, #cca700)); }
 .aff select, .aff input { padding: 3px 6px; }
 .aff input.mono { font-family: var(--vscode-editor-font-family, monospace); }
 .aff textarea {

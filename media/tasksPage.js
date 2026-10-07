@@ -4147,7 +4147,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .ntbaton label > span { opacity:.75; }
                 .ntbaton select { min-width:220px; max-width:360px; }
                 .ntbaton input[type=number] { width:96px; }
-                .ntf em { font-style:normal; opacity:.75; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
+                .ntf em { font-style:normal; opacity:calc(1 - .25 * var(--af-dimk, 1)); color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground,#cca700)); }
                 .ntf select, .ntf input { padding:3px 6px; }
                 .ntf select.inh { opacity:.6; }
                 ${window.AFFlexPromote ? window.AFFlexPromote.css() : ''}
@@ -4319,7 +4319,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
                 .dprompt pre { white-space:pre-wrap; word-break:break-word; margin:3px 0 0; padding:7px 9px;
                     background:var(--vscode-textCodeBlock-background, rgba(128,128,128,.09)); border-radius:5px;
                     max-height:190px; overflow:auto; font-size:11.5px; }
-                .empty { text-align:center; opacity:.6; padding:22px 8px; }
+                .empty { text-align:center; opacity:calc(1 - .4 * var(--af-dimk, 1)); padding:22px 8px; }
                 .lede { font-size:12px; opacity:.8; margin:0 0 9px; max-width:78ch; line-height:1.5; }
                 /* X-456 - on a phone the table is the page: the lede steps aside, and the filters and the
                    list actions are one line each, scrolled sideways, instead of four rows over the table. */

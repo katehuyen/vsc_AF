@@ -1387,7 +1387,7 @@
         .acwgrid > .acwrow { display:contents; }
         .acwr { min-width:170px; font-size:11px; font-variant-numeric:tabular-nums;
             white-space:nowrap; }
-        .acwc { opacity:.6; margin-left:5px; }
+        .acwc { opacity:calc(1 - .4 * var(--af-dimk, 1)); margin-left:5px; }
         .acwr.stale, .acwr.stale .afq-left, .acwr.stale .afq-reset { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
         .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
         .acnone { margin-top:6px; font-size:12px; }

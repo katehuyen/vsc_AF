@@ -5161,7 +5161,7 @@
                 /* The percentage is the figure that decides which account goes
                    next, so it travels ON the chip - but it is a second-order
                    fact next to whose account it is, and it is dimmed to say so. */
-                .spool-pct { opacity:.6; font-variant-numeric:tabular-nums; margin-left:3px; }
+                .spool-pct { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-variant-numeric:tabular-nums; margin-left:3px; }
                 .spool-chip.on .spool-pct { opacity:.85; }
                 /* ‼️ The tick ORDER is a real input (tiered walks engines in it),
                    so it is drawn. An input the reader cannot see is not an input. */
@@ -5289,7 +5289,7 @@
                     color:var(--vscode-foreground); }
                 .chip { font-size:11px; padding:2px 10px; cursor:pointer; border-radius:10px;
                     background:transparent; color:var(--vscode-foreground);
-                    border:1px solid var(--vscode-widget-border, #4444); opacity:.85; }
+                    border:1px solid var(--vscode-widget-border, #4444); opacity:calc(1 - .15 * var(--af-dimk, 1)); }
                 .chip:hover { opacity:1; }
                 .chip.on { border-color:var(--vscode-textLink-foreground); color:var(--vscode-textLink-foreground); opacity:1; }
                 .rundetail > td { padding:8px 12px 14px; }

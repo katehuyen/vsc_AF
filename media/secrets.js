@@ -128,7 +128,7 @@
                 .tb td.nm { font-weight: 600; white-space: nowrap; font-family: var(--vscode-editor-font-family, monospace); }
                 .tb td.act { white-space: nowrap; text-align: right; }
                 .tb td.desc { max-width: 320px; }
-                .dots { letter-spacing: 2px; opacity: .6; }
+                .dots { letter-spacing: 2px; opacity: calc(1 - .4 * var(--af-dimk, 1)); }
                 .mini { background: none; border: 1px solid var(--vscode-widget-border, #666); border-radius: 4px;
                         color: inherit; cursor: pointer; font-size: 11px; padding: 1px 7px; margin-left: 6px; }
                 .mini:hover { border-color: var(--vscode-charts-blue, #3794ff); color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }

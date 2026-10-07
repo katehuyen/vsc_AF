@@ -142,7 +142,7 @@
     const STYLE = `<style>
         .chiprow { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:8px 0; }
         .chip { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
-            background:transparent; color:var(--vscode-foreground); opacity:.75;
+            background:transparent; color:var(--vscode-foreground); opacity:calc(1 - .25 * var(--af-dimk, 1));
             border:1px solid var(--vscode-widget-border, #4444); }
         .chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
             border-color:transparent; opacity:1; }
@@ -165,7 +165,7 @@
         .origcell .hgl { font-size:9px; margin-left:-1px; }
         .origcell.mission { opacity:1; }
         .fold { font-size:10px; padding:0 6px; line-height:16px; cursor:pointer; border-radius:3px;
-            background:transparent; opacity:.7; border:1px solid var(--vscode-widget-border, #4444);
+            background:transparent; opacity:calc(1 - .3 * var(--af-dimk, 1)); border:1px solid var(--vscode-widget-border, #4444);
             color:var(--vscode-foreground); }
         .fold:hover { opacity:1; }
         tr.turnrow > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent);
@@ -203,7 +203,7 @@
         .tag { font-size:10px; padding:1px 6px; margin-right:4px; border-radius:8px; white-space:nowrap;
             background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); opacity:.85; }
         .badge { font-size:10px; padding:1px 6px; border-radius:8px;
-            border:1px solid var(--vscode-widget-border, #4444); opacity:.8; }
+            border:1px solid var(--vscode-widget-border, #4444); opacity:calc(1 - .2 * var(--af-dimk, 1)); }
         /* the fold-open turn content */
         .turnbox { margin:4px 0 10px; font-size:12px; display:flex; flex-direction:column; gap:4px; }
         .tmsg { display:flex; gap:8px; align-items:baseline; }
