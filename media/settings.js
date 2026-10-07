@@ -95,21 +95,10 @@
         } catch { return String(v); }
     }
 
-    // What a person types looking for the auto-answer rows, whose keys say neither.
-    const AUTOANSWER_TERMS = 'soru sorular question questions ask askuserquestion timeout zaman aşımı '
-        + 'otomatik cevap yanıt answer unanswered default pick choose wait';
-
-    function matches(it) {
-        if (!filter) { return true; }
-        // The saved-prompts row answers to the words a person would actually
-        // type looking for it — its own key and description say "snippets file"
-        // and nothing about right-clicking Send (see PROMPT_TERMS).
-        const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS
-            : /^agentFarm\.wiki/.test(it.key) ? ' ' + WIKI_TERMS
-                : /^agentFarm\.superpowers/.test(it.key) ? ' ' + SP_TERMS
-                    : /^agentFarm\.telegram/.test(it.key) ? ' ' + TG_TERMS
-                        : /^agentFarm\.console\.autoAnswer/.test(it.key) ? ' ' + AUTOANSWER_TERMS : '';
-        return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
+    /** U-224 — is this row in? The ranker's decision (media/afSettingSearch.js), the one settings.list q asks:
+     *  its name, the words people use for it, its key, its section, its options and its description. */
+    function matches(it, place) {
+        return !filter || window.AFSettingSearch.match(filter)(Object.assign({}, it, { place }));
     }
 
     /**
@@ -1716,8 +1705,7 @@
      * If the list is there, the Console picker has the same list. If it is not,
      * the reason is written here in words, next to the button that fixes it.
      */
-    const PROMPT_TERMS = 'saved prompts snippet snippets template templates kalıp kalip prompt file '
-        + 'console send right-click paste markdown fence block phrases reuse boilerplate';
+    const PROMPT_TERMS = window.AFSettingSearch.termsOf('agentFarm.promptSnippetsFile');
 
     function promptsSection(cat) {
         const p = DATA.prompts;
@@ -1812,8 +1800,7 @@
      * of portable variables, and it is also how a variable that did not resolve
      * is seen to be a typo rather than a missing folder.
      */
-    const WIKI_TERMS = 'wiki knowledge base kb 00_WIKI vault obsidian anayasa constitution rules '
-        + 'index log compile candidate category categories portable path root';
+    const WIKI_TERMS = window.AFSettingSearch.termsOf('agentFarm.wiki');
 
     /**
      * ‼️ X-193 — THE SENTRY, AS FOUR QUESTIONS RATHER THAN THIRTEEN BOXES.
@@ -2058,8 +2045,7 @@
      * can change under it, so it is drawn as a default rather than as a choice
      * and the row says which it is.
      */
-    const SP_TERMS = 'superpowers skills discipline tdd debugging brainstorming plan hook '
-        + 'SKILL.md using-superpowers engineering agent default portable path root';
+    const SP_TERMS = window.AFSettingSearch.termsOf('agentFarm.superpowers');
 
     function superpowersSection(cat) {
         const sp = DATA.superpowers;
@@ -2178,8 +2164,7 @@
      * settings at all (connect a token, ask Telegram who this bot is).
      * `media/afTelegram.js` draws it, the same file the Toolbox draws it from.
      */
-    const TG_TERMS = 'telegram bot phone mobile chat bridge remote token botfather '
-        + 'allowlist chat id budget ceiling daily usd getMe poller polling';
+    const TG_TERMS = window.AFSettingSearch.termsOf('agentFarm.telegram');
 
     function accessSection(cat) {
         const items = (cat && cat.items) || [];
@@ -2263,7 +2248,7 @@
         try { keepY = window.scrollY || (document.documentElement || {}).scrollTop || 0; }
         catch (e) { /* stub DOM */ }
         const cats = DATA.categories
-            .map(c => ({ ...c, items: c.items.filter(matches) }))
+            .map(c => ({ ...c, items: c.items.filter(it => matches(it, c.label)) }))
             .filter(c => c.items.length);
         const total = DATA.categories.reduce((a, c) => a + c.items.length, 0);
         const modified = DATA.categories.reduce((a, c) => a + c.items.filter(i => i.modified).length, 0);

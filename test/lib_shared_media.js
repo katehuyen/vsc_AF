@@ -189,7 +189,9 @@ const SHARED = [
     // afColFit.js — a share column never narrower than the fact it holds (U-192).
     'afColFit.js',
     // afBlPlace.js — the place box at the foot of the backlog's ▲/▼ step menu (U-240).
-    'afBlPlace.js'];
+    'afBlPlace.js',
+    // afSettingSearch.js — the settings ranker, shared with settings.list q (U-224).
+    'afSettingSearch.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css', 'theme.css', 'theme-phone.css', 'afRemote.js'];

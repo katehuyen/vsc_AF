@@ -116,6 +116,15 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         ok('…while an ordinary value does, with its reload flag',
             port.value === 8377 && port.reloadRequired === true && port.modified === false);
 
+        // U-224 — q is the page's ranker: the grammar, and the results best first
+        const byQ = await reg.dispatch('settings.list', { q: 'port' });
+        ok('‼️ settings.list q answers with the page\'s ranker: results best first, each with its section',
+            byQ.ok && byQ.result.results.length > 0 && byQ.result.results[0].key === 'agentFarm.livePort'
+            && typeof byQ.result.results[0].section === 'string' && byQ.result.total === byQ.result.results.length);
+        const notQ = await reg.dispatch('settings.list', { q: 'port -live' });
+        ok('…in the page\'s grammar', notQ.ok && !notQ.result.results.some(r => r.key === 'agentFarm.livePort'));
+        const badQ = await reg.dispatch('settings.list', { q: 'a)' });
+        ok('…and a query that does not parse is refused in words', !badQ.ok && /\)/.test(String(badQ.error)));
         const mod = await reg.dispatch('settings.list', { modified: true });
         ok('modified:true is the "what has somebody changed here" read',
             mod.ok && mod.result.total === 3);
