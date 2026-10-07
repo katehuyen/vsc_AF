@@ -282,6 +282,7 @@ export class GuidePanel {
         const themeCss = web.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'theme.css'));
         // X-456 — on a phone: its acquireVsCodeApi first, the page drawn for a narrow screen.
         const phone = this.host.remote;
+        const phoneCss = phone ? `\n<link rel="stylesheet" href="${web.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'theme-phone.css'))}">` : '';
         const phoneHead = phone
             ? '\n<meta name="viewport" content="width=device-width, initial-scale=1.0">'
             : '';
@@ -296,7 +297,7 @@ export class GuidePanel {
 <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src ${web.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">${phoneHead}
 <link rel="stylesheet" href="${css}">
-<link rel="stylesheet" href="${themeCss}">
+<link rel="stylesheet" href="${themeCss}">${phoneCss}
 <style>
 /* In-guide search (E3): 1900 lines of manual are only useful if you can find
    the paragraph you need. The box filters the table of contents to the

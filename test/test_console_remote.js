@@ -126,6 +126,8 @@ const alive = setInterval(() => undefined, 1000);
     ok('its page loads from /res/, the Console\'s own script too', page.includes('src="/res/console.js"')
         && page.includes('href="/res/common.css"') && !/vscode-webview:|file:\/\//.test(page));
     ok('the phone\'s acquireVsCodeApi comes first', page.indexOf('/res/afRemote.js') > 0 && page.indexOf('/res/afRemote.js') < page.indexOf('window.__DATA__'));
+    ok('U-238 — the phone\'s page carries the light sheet, after the theme layer',
+        page.indexOf('href="/res/theme.css"') > 0 && page.indexOf('href="/res/theme-phone.css"') > page.indexOf('href="/res/theme.css"'));
     ok('no desktop tab was made for a phone', tabs.length === 0);
 
     views.message(reader, 'c1', { type: 'refresh' });

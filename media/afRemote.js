@@ -13,7 +13,17 @@
 (function () {
     'use strict';
     if (typeof window.acquireVsCodeApi === 'function') { return; }
-    var key = 'afRemoteState:' + location.pathname + location.search;
+    // U-238 — VS Code tells a webview its theme with a body class; the phone has its own: a light
+    // device puts vscode-light on the body (media/theme-phone.css, media/theme.css key on it), live.
+    (function followDeviceTheme() {
+        var mq = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: light)') : null;
+        var body = typeof document !== 'undefined' && document.body;
+        if (!mq || !body || !body.classList) { return; }
+        var apply = function () { body.classList.toggle('vscode-light', mq.matches === true); };
+        apply();
+        if (typeof mq.addEventListener === 'function') { mq.addEventListener('change', apply); } else if (typeof mq.addListener === 'function') { mq.addListener(apply); }
+    })();
+    var key ='afRemoteState:' + location.pathname + location.search;
     var api = null;
     var READS = { openSession: true, 'open-transcript': true, chainGo: true, accountOpenSession: true };
     function readOf(m) {

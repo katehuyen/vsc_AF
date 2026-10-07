@@ -177,6 +177,10 @@ function main() {
     console.log(`VS Code ${version}: ${vars.length} variables · ` + Object.keys(KINDS).map(k => `${k} ${Object.keys(out.themes[k]).length} (none ${out.none[k].length}, unresolved ${out.unresolved[k].length})`).join(' · '));
     for (const k of Object.keys(KINDS)) { if (out.unresolved[k].length) { console.log(`  ${k} unresolved: ${out.unresolved[k].join(' ')}`); } }
     console.log(OUT);
+    // U-238 — the phone's light sheet is the same table, so it is rewritten with it
+    const phone = path.join(ROOT, 'media', 'theme-phone.css');
+    fs.writeFileSync(phone, require('./theme_phone').phoneSheet(out), 'utf8');
+    console.log(phone);
 }
 
 main();

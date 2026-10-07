@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.882.0 - On the phone, pages follow the device's light or dark theme (2026-10-07)
+
+- **Phone app and browser:** a page opened from the phone was always dark,
+  whatever the device's theme. When the device (or the browser) is in a light
+  theme, pages now draw in VS Code's Light Modern colours, with the light
+  theme's readable shades from 3.879.0-3.881.0; switching the device's theme
+  switches the open page at once.
+- In a dark theme nothing changes - the phone looks exactly as before.
+- The app's own frame (bars around the page) following the device theme is a
+  phone-app update of its own.
+
 ## 3.881.0 - Light themes: the rest of the faded text is readable (2026-10-07)
 
 - **Light themes:** the faded text that 3.879.0 left - "required" marks,

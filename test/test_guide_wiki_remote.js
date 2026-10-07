@@ -113,6 +113,7 @@ const alive = setInterval(() => undefined, 1000);
     ok('…its page loads from /res/ with the phone\'s acquireVsCodeApi before its own script',
         g.includes('href="/res/common.css"') && g.indexOf('src="/res/afRemote.js"') > 0
         && g.indexOf('src="/res/afRemote.js"') < g.indexOf('acquireVsCodeApi()'));
+    ok('U-238 — …and the light sheet the phone switches on', g.includes('href="/res/theme-phone.css"'));
     ok('…drawn for a phone, scrolled to the heading', /<html lang="\w+" class="af-phone">/.test(g) && g.includes('name="viewport"')
         && g.includes('"hizli-baslangic"'));
     ok('…a link is copied on the phone rather than opened on the PC', /PHONE\) \{ vscode\.postMessage\(\{ type: 'afClipboard'/.test(g));
