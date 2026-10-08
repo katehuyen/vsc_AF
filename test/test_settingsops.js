@@ -106,6 +106,11 @@ const { charts } = require('./lib_charts_stub.js');
     ok('bad number rejected', SO.sanitizeValue({ type: 'number' }, 'abc').ok === false);
     ok('boolean from checkbox', SO.sanitizeValue({ type: 'boolean' }, true).value === true && SO.sanitizeValue({ type: 'boolean' }, 'false').value === false);
     ok('enum enforced', SO.sanitizeValue({ type: 'string', enum: ['a', 'b'] }, 'c').ok === false && SO.sanitizeValue({ type: 'string', enum: ['a', 'b'] }, 'b').value === 'b');
+    ok('a number outside the schema bounds is refused with the bound, one inside is kept (U-227)',
+        SO.sanitizeValue({ type: 'number', minimum: 5, maximum: 10 }, '4').error === 'must be at least 5'
+        && SO.sanitizeValue({ type: 'number', minimum: 5, maximum: 10 }, 11).error === 'must be at most 10'
+        && SO.sanitizeValue({ type: 'number', minimum: 5, maximum: 10 }, '7').value === 7
+        && SO.sanitizeValue({ type: 'number' }, -3).value === -3);
     ok('array JSON parses', JSON.stringify(SO.sanitizeValue({ type: 'array' }, '[1,2]').value) === '[1,2]');
     ok('array rejects an object', SO.sanitizeValue({ type: 'array' }, '{"x":1}').ok === false);
     ok('object rejects an array', SO.sanitizeValue({ type: 'object' }, '[1]').ok === false);
@@ -214,7 +219,9 @@ const { charts } = require('./lib_charts_stub.js');
     const html = getEl('app')._html;
     ok('modified setting marked + resettable', html.includes('class="setitem srow modified"') && html.includes('data-reset="agentFarm.livePort"'));
     ok('the description panel carries the full key and the default', html.includes('Key: agentFarm.livePort') && /Default: 0\b/.test(html));
-    ok('enum renders as a select with options', /<select[^>]*data-set="agentFarm.guideLanguage"/.test(html) && html.includes('<option value="tr"'));
+    ok('a two-choice enum renders as a radiogroup whose every choice saves (U-227)',
+        /class="setseg" role="radiogroup"/.test(html) && /<input type="radio" name="c-guideLanguage-\w+" value="tr" data-set="agentFarm.guideLanguage">/.test(html)
+        && /value="en" data-set="agentFarm.guideLanguage" checked>/.test(html));
     ok('array renders as JSON editor with apply', html.includes('data-json="agentFarm.agentRoots"') && html.includes('data-apply="agentFarm.agentRoots"'));
     ok('profile bar lists the saved set', html.includes('work (2)') && html.includes('id="profapply"'));
     ok('unmodified setting has no reset button', !html.includes('data-reset="agentFarm.liveMonitor"'));

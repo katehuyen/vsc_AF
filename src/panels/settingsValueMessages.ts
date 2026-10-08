@@ -88,8 +88,10 @@ export async function handleSettingsValueMessage(msg: { type: string; [k: string
         // into it and the ↺ buttons remove keys from it, so a reader who
         // wants to read it, paste a block in, or repair a value the schema
         // refuses should not have to know the command palette.
+        // U-227 — from a row's right-click menu it carries the key, and VS Code opens the file there
         case 'openSettingsJson':
-            void vscode.commands.executeCommand('workbench.action.openSettingsJson');
+            void vscode.commands.executeCommand('workbench.action.openSettingsJson',
+                ...(typeof msg.key === 'string' && msg.key ? [{ revealSetting: { key: msg.key } }] : []));
             break;
         case 'saveProfile': {
             const name = String(msg.name ?? '').trim();

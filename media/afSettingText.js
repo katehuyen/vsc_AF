@@ -61,18 +61,23 @@
 
     /**
      * The description panel's lines (MIRROR): what the setting holds now and its default, a gap, the
-     * description, a gap, its key — and that a change takes a reload, when the model says so. `gap` is
+     * description, what each choice means, a gap, its key — and that a change takes a reload, when the model says so. `gap` is
      * AFTip.GAP; the caller joins with AFTip.lines, which drops the empty ones.
      */
     function panelLines(it, nameOf, gap) {
         const now = valueText(it.value, it.unit, it.zeroMeans);
         const desc = plain(it.description || '', nameOf).trim();
+        // what each choice means, when the schema says it (enumDescriptions), one line each
+        const opts = (it.enum || []).map((o, i) => [o, plain((it.enumDescriptions || [])[i] || '', nameOf).trim()])
+            .filter(p => p[1]).map(([o, d]) => (o === '' ? t('Not set') : o) + ': ' + d);
         return [
             it.modified ? t('Now: {now} · Default: {def}', { now, def: valueText(it.default, it.unit, it.zeroMeans) })
                 : t('Now: {now} (the default)', { now }),
             gap,
             desc,
-            desc ? gap : '',
+            desc && opts.length ? gap : '',
+            ...opts,
+            desc || opts.length ? gap : '',
             it.reloadRequired ? t('Key: {key} · Needs reload', { key: it.key }) : t('Key: {key}', { key: it.key })
         ];
     }

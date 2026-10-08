@@ -136,6 +136,11 @@ export interface SettingSpec {
     values?: string;
     /** S-82 — the schema's own `editPresentation: multilineText`: a text box, not a one-line field */
     multiline?: true;
+    /** U-227 — a number's bounds as the schema states them; the box carries them and sanitizeValue holds them */
+    minimum?: number;
+    maximum?: number;
+    /** U-227 — one sentence per `enum` member, in its order (the schema's enumDescriptions) */
+    enumDescriptions?: string[];
 }
 
 export interface SettingItem extends SettingSpec {
@@ -253,7 +258,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 /** Build the section → group → row model from the live schema + current values, filed by the catalog. */
 export function buildSettingsModel(
-    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown; editPresentation?: unknown }>,
+    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown; editPresentation?: unknown; enumDescriptions?: unknown; markdownEnumDescriptions?: unknown }>,
     valueOf: (key: string) => unknown,
     notes: SettingRowNotes = {}
 ): SettingsCategory[] {
@@ -271,6 +276,12 @@ export function buildSettingsModel(
             ...(p['x-af-browse'] === 'file' ? { browse: 'file' as const } : {}),
             ...(p['x-af-browse'] === 'folder' ? { browse: 'folder' as const } : {}),
             ...(p.editPresentation === 'multilineText' ? { multiline: true as const } : {}),
+            ...(typeof p.minimum === 'number' ? { minimum: p.minimum } : {}),
+            ...(typeof p.maximum === 'number' ? { maximum: p.maximum } : {}),
+            ...(() => {
+                const d = p.enumDescriptions ?? p.markdownEnumDescriptions;
+                return Array.isArray(d) ? { enumDescriptions: d.map(x => String(x ?? '')) } : {};
+            })(),
             // U-84 — a picker whose options only the host knows. Read here for
             // the reason the shape below is: asked for on the page, it would be
             // a thing the NEXT surface that lists settings does without.
@@ -293,7 +304,7 @@ export function buildSettingsModel(
 
 /** Parse + validate a raw string from the page into a typed setting value. */
 export function sanitizeValue(
-    spec: { type: string; enum?: string[] },
+    spec: { type: string; enum?: string[]; minimum?: number; maximum?: number },
     raw: unknown
 ): { ok: true; value: unknown } | { ok: false; error: string } {
     switch (spec.type) {
@@ -302,6 +313,9 @@ export function sanitizeValue(
         case 'number': {
             const n = Number(raw);
             if (!isFinite(n)) { return { ok: false, error: 'not a number' }; }
+            // U-227 — the schema's bounds; VS Code would only flag the file, the page and the bridge refuse
+            if (typeof spec.minimum === 'number' && n < spec.minimum) { return { ok: false, error: `must be at least ${spec.minimum}` }; }
+            if (typeof spec.maximum === 'number' && n > spec.maximum) { return { ok: false, error: `must be at most ${spec.maximum}` }; }
             return { ok: true, value: n };
         }
         case 'array':

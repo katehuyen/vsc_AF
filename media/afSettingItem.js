@@ -4,11 +4,37 @@
     'use strict';
     let X, C, errors, jsonMode, jsonDraft, shortKey, fmtDefault, hit, shapeHtml, pathLine, listHtml, formHtml, rowsHtml, mapHtml, BACK;
 
+    /** U-227 — up to this many choices are drawn side by side, every one visible; more go in a list. */
+    const SEG_MAX = 4;
+    // a radio group is one per document by its name: a render puts several drawings of the page in one
+    // document, and a shared name would leave a checked choice in only the last of them
+    const SEG_RUN = Math.random().toString(36).slice(2, 7);
+    let segSeq = 0;
+
+    /** A pick-one of two to four: radios in a radiogroup, each carrying data-set, so a pick saves the way a list does. */
+    function segHtml(it, id) {
+        const name = `${id}-${SEG_RUN}${++segSeq}`;
+        const cur = String(it.value ?? '');
+        // a stored value no option names is drawn as itself, never dropped onto the first option
+        const opts = cur !== '' && it.enum.indexOf(cur) < 0 ? it.enum.concat([cur]) : it.enum;
+        return `<span class="setseg" role="radiogroup" id="${id}" aria-label="${C.esc(it.label || shortKey(it.key))}">${opts.map(o =>
+            `<label class="setsego"><input type="radio" name="${name}" value="${C.esc(o)}" data-set="${C.esc(it.key)}"${cur === o ? ' checked' : ''}><span>${C.esc(o === '' ? t('Not set') : o)}</span></label>`).join('')}</span>`;
+    }
+
+    /** A number in its box, its unit beside it ($ in front) and the schema's bounds on the box. */
+    function numberHtml(it, id) {
+        const lim = (typeof it.minimum === 'number' ? ` min="${it.minimum}"` : '') + (typeof it.maximum === 'number' ? ` max="${it.maximum}"` : '');
+        const box = `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}"${lim}>`;
+        const unit = it.unit ? `<span class="setunit">${C.esc(it.unit)}</span>` : '';
+        return `<span class="setnum">${it.unit === '$' ? unit + box : box + unit}</span>`;
+    }
+
     function controlHtml(it) {
         const id = `c-${shortKey(it.key)}`;
         if (it.type === 'boolean') {
-            return `<input type="checkbox" id="${id}" data-set="${C.esc(it.key)}"${it.value ? ' checked' : ''}>`;
+            return `<input type="checkbox" role="switch" class="setswitch" id="${id}" data-set="${C.esc(it.key)}"${it.value ? ' checked' : ''} aria-label="${C.esc(it.label || shortKey(it.key))}">`;
         }
+        if (it.enum && it.enum.length && it.enum.length <= SEG_MAX) { return segHtml(it, id); }
         if (it.enum && it.enum.length) {
             // U-130 — the box CUTS a long enum value and the popup belongs to
             // the OS, so the name goes on the option itself. The one fact the
@@ -63,9 +89,7 @@
                     : ''
             })).join('')}</select>`;
         }
-        if (it.type === 'number') {
-            return `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:110px">`;
-        }
+        if (it.type === 'number') { return numberHtml(it, id); }
         // ‼️ U-108/U-109 — a shape the schema describes gets the editor that
         // fits it rather than a JSON box, unless the user asked for the box.
         // Derived from `shape.kind`, never from a list of keys.
@@ -111,7 +135,7 @@
                 placeholder="empty — the built-in text stays in charge"
                 style="width:100%; max-width:640px; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>`;
         }
-        return `<span class="setfield"><input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}">${browse}</span>`;
+        return `<span class="setfield"><input type="text" id="${id}" data-set="${C.esc(it.key)}" data-clr value="${C.esc(String(it.value ?? ''))}">${browse}</span>`;
     }
 
     const T = () => window.AFSettingText;
@@ -148,7 +172,7 @@
             ? `<button class="reset" data-reset="${C.esc(it.key)}" title="${C.esc(t('Reset to default: {d}', { d: fmtDefault(it.default) }))}">↺</button>` : ''}${it.reloadRequired ? `<span class="setreload">${C.esc(t('Reload'))}</span>` : ''}</span>`;
         const wide = isWide(it);
         return `<div class="setitem srow${it.modified ? ' modified' : ''}${wide ? ' wide' : ''}" data-item="${C.esc(it.key)}"
-            ${window.AFCtx.row('afSettingRow', { setKey: it.key, afModified: !!it.modified })}
+            ${window.AFCtx.row('afSettingRow', { setKey: it.key, afModified: !!it.modified, afJson: !!(it.shape && BACK[it.shape.kind] && !jsonMode[it.key]) })}
             title="${C.esc(window.AFCtx.hint())}">
             <div class="setl">
                 ${window.AFSettingResults.placeHtml(it, C.esc)}

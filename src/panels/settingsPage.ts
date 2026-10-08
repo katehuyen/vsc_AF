@@ -277,7 +277,10 @@ export class SettingsPage {
             return '';
         }
         const s = sanitizeValue(
-            { type: Array.isArray(spec.type) ? String(spec.type[0]) : String(spec.type ?? 'string'), enum: Array.isArray(spec.enum) ? spec.enum.map(String) : undefined },
+            {
+                type: Array.isArray(spec.type) ? String(spec.type[0]) : String(spec.type ?? 'string'), enum: Array.isArray(spec.enum) ? spec.enum.map(String) : undefined,
+                ...(typeof spec.minimum === 'number' ? { minimum: spec.minimum } : {}), ...(typeof spec.maximum === 'number' ? { maximum: spec.maximum } : {})
+            },
             value);
         if (!s.ok) { return s.error; }
         await vscode.workspace.getConfiguration().update(key, s.value, vscode.ConfigurationTarget.Global);

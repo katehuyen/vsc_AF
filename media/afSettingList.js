@@ -242,8 +242,6 @@
                     title="Add one more entry to this list.">+ add</button>
                 <button class="secondary small" data-lapply="${C.esc(it.key)}"
                     title="Save this list — or press Enter in any row. Until then, nothing here has changed the setting.">Save the list</button>
-                <a href="#" class="setljson" data-ljson="${C.esc(it.key)}"
-                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
                 ${/* ‼️ NO Example HERE. It writes into the JSON textarea, and in this
                       view there is no textarea to write into — the button would look
                       live and do nothing, which is the dead control this whole

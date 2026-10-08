@@ -40,7 +40,10 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     // Per section: the x each simple row's control column starts at. Per row: the narrowest name column, a
     // simple row whose control column is not under its name column on a phone, and any markdown mark left in
     // its text — the closed description panel included (a ``` fence the text tells the reader to type is content).
-    const EXPR = `(()=>{const o={rows:0,wide:0,xs:{},minName:1e9,sideBySide:0,raw:[],over:document.documentElement.scrollWidth-innerWidth};
+    const EXPR = `(()=>{const o={rows:0,wide:0,xs:{},minName:1e9,sideBySide:0,raw:[],over:document.documentElement.scrollWidth-innerWidth,
+segs:document.querySelectorAll('.srow .setseg[role=radiogroup]').length,segOff:[...document.querySelectorAll('.srow .setseg')].filter(g=>g.querySelectorAll('input:checked').length!==1).length,
+switches:document.querySelectorAll('.srow input[role=switch]').length,units:document.querySelectorAll('.srow .setnum .setunit').length,
+bareBoxes:document.querySelectorAll('.srow .setctl > input[type=number], .srow .setctl > input[type=checkbox]:not([role=switch])').length};
 document.querySelectorAll('h2.cat').forEach(h=>{let el=h.nextElementSibling;const xs=new Set();
 while(el&&el.tagName!=='H2'){el.querySelectorAll('.setitem.srow:not(.wide) > .setr').forEach(r=>xs.add(Math.round(r.getBoundingClientRect().left)));el=el.nextElementSibling;}
 o.xs[h.id]=[...xs];});
@@ -52,7 +55,7 @@ return o;})()`;
     const measure = (fixture, extra) => {
         try { return JSON.parse(node([path.join('test', 'measure_page.js'), fixture, EXPR].concat(extra || []))); } catch { return null; }
     };
-    const PAGES = ['disciplinesettings', 'sentrysettings', 'jsonsettings', 'kapicisettings'];
+    const PAGES = ['disciplinesettings', 'sentrysettings', 'jsonsettings', 'kapicisettings', 'tgsettings'];
     PAGES.forEach(f => node([path.join('test', 'render_page.js'), f]));
     const all = PAGES.map(f => measure(f));
     for (const [i, f] of PAGES.entries()) {
@@ -64,8 +67,12 @@ return o;})()`;
         ok(`${f}: the control sits beside the name, and the name column keeps its 240px` + (d && d.minName < 1e9 ? ` (narrowest ${d.minName}px)` : ''),
             !!d && (d.rows === d.wide || d.minName >= 240) && d.sideBySide === d.rows - d.wide);
         ok(`‼️ ${f}: no markdown mark is left in anything a row draws` + (d && d.raw.length ? ': ' + d.raw.slice(0, 8).join(', ') : ''), !!d && d.raw.length === 0);
+        ok(`${f}: every choice of two to four shows exactly one picked` + (d && d.segOff ? ` (${d.segOff} not)` : ''), !!d && d.segOff === 0);
+        ok(`${f}: no bare number box or check box — a number has its unit wrapper, a yes/no is a switch`, !!d && d.bareBoxes === 0);
     }
     const sum = (a, k) => a.reduce((n, x) => n + (x ? x[k] : 0), 0);
+    ok(`the fixtures draw the three standard controls (${sum(all, 'segs')} choices, ${sum(all, 'switches')} switches, ${sum(all, 'units')} units)`,
+        sum(all, 'segs') > 0 && sum(all, 'switches') > 0 && sum(all, 'units') > 0);
     ok(`the fixtures between them draw simple and wide rows (${sum(all, 'rows')} rows, ${sum(all, 'wide')} wide)`,
         sum(all, 'wide') > 3 && sum(all, 'rows') - sum(all, 'wide') > 10);
 

@@ -249,7 +249,8 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('‼️ THE JSON BOX DOES NOT GO AWAY. A value the schema cannot describe is'
         + ' always possible, and removing the escape hatch would be a worse trap'
         + ' than the one this replaced',
-        /data-ljson=/.test(page) && /list: \['llist',/.test(page));
+        /function listToJson\(key\)/.test(page) && /list: X\.listToJson, form: X\.formToJson, rows: X\.rowsToJson, map: X\.mapToJson/.test(page)
+        && /list: \['llist',/.test(page));
     ok('…and switching either way keeps what was typed, or says why it cannot',
         /listDraft\[key\] = v\.map/.test(page)
         && /does not parse, so it cannot be shown as rows/.test(page));
@@ -380,7 +381,7 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('‼️ THE JSON BOX DOES NOT GO AWAY for these either, and the way back is'
         + ' declared once per shape rather than written out three times',
         /form: \['fform',/.test(page) && /rows: \['rtable',/.test(page)
-        && /data-fjson=/.test(page) && /data-rjson=/.test(page));
+        && /function formToJson\(key\)/.test(page) && /function rowsToJson\(key\)/.test(page));
     ok('…and a JSON that does not parse is refused rather than turned into rows'
         + ' of braces',
         /does not parse, so it cannot be shown as fields/.test(page));

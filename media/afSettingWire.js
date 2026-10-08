@@ -140,6 +140,9 @@
             });
             enterLetsGo(el);
         });
+        // U-227 — a row's one-line text or path box empties with its ✕, and emptying it saves as typing would
+        document.querySelectorAll('[data-clr]').forEach(el =>
+            window.AFFilter.clearable(el, box => box.dispatchEvent(new Event('change'))));
         /**
          * ‼️ U-139 — ENTER LETS GO OF A SCALAR BOX, WHICH IS HOW IT SAVES.
          *

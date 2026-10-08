@@ -216,11 +216,11 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
         },
         {
             op: 'settings.set',
-            describe: '‼️ WRITE ONE AGENT FARM SETTING, at user (global) scope. The SCHEMA is the allowlist: an undeclared key is refused, and the value goes through the same validation the page does — a number that is not a number, a string outside an enum, malformed JSON for an array or object are all refused with the reason rather than written. `dryRun:true` returns the value it WOULD write. args: key, value, dryRun?',
+            describe: '‼️ WRITE ONE AGENT FARM SETTING, at user (global) scope. The SCHEMA is the allowlist: an undeclared key is refused, and the value goes through the same validation the page does — a number that is not a number or is outside the schema minimum/maximum, a string outside an enum, malformed JSON for an array or object are all refused with the reason rather than written. `dryRun:true` returns the value it WOULD write. args: key, value, dryRun?',
             handler: async (args) => {
                 const it = specOf(argStr(args, 'key'));
                 need('value' in args, 'Pass a `value` — settings.reset is how you clear one.');
-                const s = sanitizeValue({ type: it.type, enum: it.enum }, args.value);
+                const s = sanitizeValue({ type: it.type, enum: it.enum, minimum: it.minimum, maximum: it.maximum }, args.value);
                 need(s.ok, `${it.key}: ${(s as { ok: false; error: string }).error}`);
                 const value = (s as { ok: true; value: unknown }).value;
                 if (args.dryRun === true) {

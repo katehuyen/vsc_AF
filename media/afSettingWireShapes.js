@@ -41,27 +41,8 @@
             }));
         document.querySelectorAll('[data-rapply]').forEach(btn =>
             btn.addEventListener('click', () => applyRows(btn.dataset.rapply)));
-        // Into the JSON box and back, for both shapes. What is on screen goes
-        // WITH it either way: switching view is not a reason to lose a typed
-        // cell, and a JSON that does not parse is refused rather than turned
-        // into rows of braces.
-        document.querySelectorAll('[data-fjson]').forEach(el =>
-            el.addEventListener('click', (ev) => {
-                ev.preventDefault();
-                const key = el.dataset.fjson;
-                jsonDraft[key] = boxText(looseEntry(shapeFields(key), readForm(key)));
-                jsonMode[key] = true;
-                render();
-            }));
-        document.querySelectorAll('[data-rjson]').forEach(el =>
-            el.addEventListener('click', (ev) => {
-                ev.preventDefault();
-                const key = el.dataset.rjson;
-                const fields = shapeFields(key);
-                jsonDraft[key] = boxText(readRows(key).map(c => looseEntry(fields, c)));
-                jsonMode[key] = true;
-                render();
-            }));
+        // Back from the JSON box (into it: formToJson / rowsToJson below), for both shapes.
+        // A JSON that does not parse is refused rather than turned into rows of braces.
         document.querySelectorAll('[data-fform]').forEach(el =>
             el.addEventListener('click', (ev) => {
                 ev.preventDefault();
@@ -112,23 +93,6 @@
             }));
         document.querySelectorAll('[data-mapply]').forEach(btn =>
             btn.addEventListener('click', () => applyMap(btn.dataset.mapply)));
-        document.querySelectorAll('[data-mjson]').forEach(el =>
-            el.addEventListener('click', (ev) => {
-                ev.preventDefault();
-                const key = el.dataset.mjson;
-                const item = allItems().find(i => i.key === key);
-                const f = mapField(item.shape);
-                const loose = {};
-                for (const p of readMap(key)) {
-                    const name = String(p.k).trim();
-                    if (!name) { continue; }
-                    const r = readField(f, p.v);
-                    loose[name] = r.skip ? '' : (r.err ? String(p.v) : r.v);
-                }
-                jsonDraft[key] = boxText(loose);
-                jsonMode[key] = true;
-                render();
-            }));
         document.querySelectorAll('[data-mpairs]').forEach(el =>
             el.addEventListener('click', (ev) => {
                 ev.preventDefault();
@@ -218,9 +182,39 @@
             }));
     }
 
+    // U-227 — a form, a table or the pairs as JSON, from the row's right-click menu. What is on screen goes WITH
+    // it: switching view is not a reason to lose a typed cell.
+    function formToJson(key) {
+        jsonDraft[key] = boxText(looseEntry(shapeFields(key), readForm(key)));
+        jsonMode[key] = true;
+        render();
+    }
+
+    function rowsToJson(key) {
+        const fields = shapeFields(key);
+        jsonDraft[key] = boxText(readRows(key).map(c => looseEntry(fields, c)));
+        jsonMode[key] = true;
+        render();
+    }
+
+    function mapToJson(key) {
+        const item = allItems().find(i => i.key === key);
+        const f = mapField(item.shape);
+        const loose = {};
+        for (const p of readMap(key)) {
+            const name = String(p.k).trim();
+            if (!name) { continue; }
+            const r = readField(f, p.v);
+            loose[name] = r.skip ? '' : (r.err ? String(p.v) : r.v);
+        }
+        jsonDraft[key] = boxText(loose);
+        jsonMode[key] = true;
+        render();
+    }
+
     window.AFSettingWireShapes = function (ctx) {
         X = ctx;
         ({ allItems, applyForm, applyMap, applyRows, boxText, cellsOf, errors, exampleText, fieldText, formDraft, jsonDraft, jsonMode, jsonSent, listDraft, looseEntry, mapDraft, mapField, parseBox, readField, readForm, readMap, readRows, render, rowsDraft, shapeFields, shortKey, vscode } = ctx);
-        return { wireShapes };
+        return { wireShapes, formToJson, rowsToJson, mapToJson };
     };
 })();

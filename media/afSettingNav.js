@@ -38,6 +38,17 @@
             case 'stOpenUi':
                 vscode.postMessage({ type: 'openSettingsUi', key: String(ctx.setKey || '') });
                 return;
+            // U-227 — the file every box writes into, at this key
+            case 'stShowJson':
+                vscode.postMessage({ type: 'openSettingsJson', key: String(ctx.setKey || '') });
+                return;
+            // U-227 — a list, form, table or pairs editor as its raw JSON; the editor's own view-switch, so what is typed goes along
+            case 'stJson': {
+                const it = X.allItems().find(x => x.key === ctx.setKey);
+                const go = it && it.shape && { list: X.listToJson, form: X.formToJson, rows: X.rowsToJson, map: X.mapToJson }[it.shape.kind];
+                if (go) { go(it.key); }
+                return;
+            }
             case 'stCopy': {
                 if (arg === 'key') { window.AFCtx.copy(ctx.setKey); return; }
                 // The settings live inside their categories, not in a flat list.

@@ -28,7 +28,7 @@ export interface FarmSettingsDeps extends AlertMessageDeps {
      *  `x-af-browse` is how a setting declares itself a path and earns a
      *  Browse… button (see SettingSpec.browse for why not `format`). */
     schema(): Record<string, {
-        type?: unknown; enum?: unknown; default?: unknown;
+        type?: unknown; enum?: unknown; default?: unknown; minimum?: unknown; maximum?: unknown;
         description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
     }>;
     /** X-470 — THE settings model, assembled once by the host (values through cfgValueRaw, a value refused in

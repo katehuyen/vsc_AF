@@ -29,6 +29,22 @@ const el = (p, id) => p.sandbox.document.getElementById(id);
 const btn = (p, attr, key) =>
     p.query(`[data-${attr}]`).find(b => b.dataset[attr] === key);
 
+/** U-227 — 'Edit it as JSON' is on the row's right-click menu: the relay the menu sends the page. */
+const asJson = (p, key) => p.send({ type: 'afctx', act: 'stJson', ctx: { setKey: key } });
+
+{
+    const p = open();
+    const ctx = p.contexts().filter(c => c.webviewSection === 'afSettingRow');
+    const of = key => ctx.find(c => c.setKey === key) || {};
+    ok('U-227 — a row with a list, form, table or pairs editor offers "Edit it as JSON" on its right-click',
+        of('agentFarm.taskRetry').afJson === true && of('agentFarm.browserAllowHosts').afJson === true
+        && of('agentFarm.budgets').afJson === true);
+    ok('…and the row itself no longer carries the link', !/>Edit as JSON</.test(p.html()));
+    asJson(p, 'agentFarm.budgets');
+    const now = p.contexts().find(c => c.setKey === 'agentFarm.budgets') || {};
+    ok('…which a row already showing its JSON box does not offer', now.afJson === false && /data-json="agentFarm.budgets"/.test(p.html()));
+}
+
 // ---------------------------------------------------------------------------
 // the form — one object whose sixteen fields the manifest declares
 // ---------------------------------------------------------------------------
@@ -197,7 +213,7 @@ const btn = (p, attr, key) =>
 {
     const p = open();
     el(p, 'f-taskRetry-capMin').value = '99';
-    btn(p, 'fjson', 'agentFarm.taskRetry').click();
+    asJson(p, 'agentFarm.taskRetry');
     ok('‼️ the JSON box is one click away and comes back — a value the schema'
         + ' cannot describe is always possible',
         !!el(p, 'c-taskRetry'));
@@ -233,7 +249,7 @@ const btn = (p, attr, key) =>
 {
     const p = open();
     el(p, 'l-browserAllowHosts-0').value = 'yazildi.ama.kaydedilmedi';
-    btn(p, 'ljson', 'agentFarm.browserAllowHosts').click();
+    asJson(p, 'agentFarm.browserAllowHosts');
     ok('‼️ a LIST switched to JSON carries what was typed into the box, rather'
         + ' than replacing it with what was last saved',
         /yazildi\.ama\.kaydedilmedi/.test(el(p, 'c-browserAllowHosts').value));
@@ -315,7 +331,7 @@ const btn = (p, attr, key) =>
     const moved = [];
     p.sandbox.window.scrollY = 900;
     p.sandbox.window.scrollTo = (x, y) => { moved.push(y); };
-    btn(p, 'ljson', 'agentFarm.browserAllowHosts').click();
+    asJson(p, 'agentFarm.browserAllowHosts');
     ok('‼️ "Edit as JSON" leaves the reader where they were standing — a redraw'
         + ' that jumps to the top is read as a link that did nothing',
         moved.length === 1 && moved[0] === 900);
@@ -356,7 +372,7 @@ const btn = (p, attr, key) =>
 // ---------------------------------------------------------------------------
 {
     const p = open();
-    btn(p, 'ljson', 'agentFarm.browserAllowHosts').click();
+    asJson(p, 'agentFarm.browserAllowHosts');
     el(p, 'c-browserAllowHosts').value = '["one.example", "two.example"]';
     btn(p, 'apply', 'agentFarm.browserAllowHosts').click();
     ok('applying the raw JSON sends the text to the host',
@@ -373,7 +389,7 @@ const btn = (p, attr, key) =>
         && !/id="c-browserAllowHosts"/.test(p.html()));
 
     const pbad = open();
-    btn(pbad, 'ljson', 'agentFarm.browserAllowHosts').click();
+    asJson(pbad, 'agentFarm.browserAllowHosts');
     el(pbad, 'c-browserAllowHosts').value = '["broken", ';
     btn(pbad, 'apply', 'agentFarm.browserAllowHosts').click();
     pbad.send({
@@ -391,7 +407,7 @@ const btn = (p, attr, key) =>
     // it only removes a key and cannot be refused. Leaving `jsonMode` set there
     // kept the setting a textarea with nothing left in it to show.
     const pr = open();
-    btn(pr, 'ljson', 'agentFarm.browserAllowHosts').click();
+    asJson(pr, 'agentFarm.browserAllowHosts');
     ok('the raw box is up before the reset',
         /id="c-browserAllowHosts"/.test(pr.html()));
     btn(pr, 'reset', 'agentFarm.browserAllowHosts').click();
@@ -465,6 +481,12 @@ const btn = (p, attr, key) =>
     open1.click();
     ok('…and pressing it asks the host for that file',
         p.last() && p.last().type === 'openSettingsJson');
+    p.send({ type: 'afctx', act: 'stShowJson', ctx: { setKey: 'agentFarm.budgets' } });
+    ok('U-227 — "Show it in settings.json" on a row asks for the file AT that key',
+        p.last() && p.last().type === 'openSettingsJson' && p.last().key === 'agentFarm.budgets');
+    const host = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsValueMessages.ts'), 'utf8');
+    ok('…and the host opens it there (VS Code\'s own revealSetting)',
+        /'workbench\.action\.openSettingsJson',\s*\.\.\.\(typeof msg\.key === 'string' && msg\.key \? \[\{ revealSetting: \{ key: msg\.key \} \}\] : \[\]\)/.test(host));
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +590,7 @@ const btn = (p, attr, key) =>
 {
     const p = open();
     el(p, 'm-budgets-0-v').value = '77';
-    btn(p, 'mjson', 'agentFarm.budgets').click();
+    asJson(p, 'agentFarm.budgets');
     ok('‼️ a map switched to JSON carries what was typed, rather than replacing it'
         + ' with what was last saved',
         /"developer": 77/.test(el(p, 'c-budgets').value));

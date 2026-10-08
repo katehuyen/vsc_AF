@@ -1,7 +1,7 @@
 {
  "vscode": "1.103.2",
- "generated": "2026-10-07",
- "vars": 66,
+ "generated": "2026-10-08",
+ "vars": 67,
  "themes": {
   "dark": {
    "badge-background": "#616161",
@@ -20,6 +20,7 @@
    "charts-purple": "#b180d7",
    "charts-red": "#f14c4c",
    "charts-yellow": "#cca700",
+   "checkbox-border": "#3c3c3c",
    "descriptionForeground": "#9d9d9d",
    "dropdown-background": "#313131",
    "editor-background": "#1f1f1f",
@@ -85,6 +86,7 @@
    "charts-purple": "#652d90",
    "charts-red": "#e51400",
    "charts-yellow": "#bf8803",
+   "checkbox-border": "#cecece",
    "descriptionForeground": "#3b3b3b",
    "dropdown-background": "#ffffff",
    "editor-background": "#ffffff",
@@ -146,6 +148,7 @@
    "charts-purple": "#b180d7",
    "charts-red": "#f48771",
    "charts-yellow": "#ffd370",
+   "checkbox-border": "#6fc3df",
    "contrastActiveBorder": "#f38518",
    "contrastBorder": "#6fc3df",
    "descriptionForeground": "#ffffffb3",
@@ -201,6 +204,7 @@
    "charts-purple": "#652d90",
    "charts-red": "#b5200d",
    "charts-yellow": "#895503",
+   "checkbox-border": "#0f4a85",
    "contrastActiveBorder": "#006bbd",
    "contrastBorder": "#0f4a85",
    "descriptionForeground": "#292929b3",

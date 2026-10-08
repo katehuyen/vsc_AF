@@ -147,8 +147,6 @@
                     title="Add one more name → value pair.">+ add</button>
                 <button class="secondary small" data-mapply="${C.esc(it.key)}"
                     title="Save these pairs. Until you press it, nothing here has changed the setting.">Save the pairs</button>
-                <a href="#" class="setljson" data-mjson="${C.esc(it.key)}"
-                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
                 ${shapeHtml(it, true)}
             </div>
         </div>`;

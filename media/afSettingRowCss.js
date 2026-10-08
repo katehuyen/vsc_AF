@@ -30,8 +30,33 @@
             .setreload { font-size:10px; padding:0 6px; border-radius:8px; white-space:nowrap;
                 border:1px solid var(--vscode-widget-border, #4444); color:var(--vscode-descriptionForeground); }
             .setfield { display:flex; gap:6px; align-items:center; }
-            .setfield input { flex:1 1 auto; min-width:0; }
+            .setfield > input { flex:1 1 auto; min-width:0; }
+            .setfield .af-clr { flex:1 1 auto; min-width:0; }
             .srow > .setpath { grid-column:1 / -1; }
+            .setswitch { appearance:none; -webkit-appearance:none; position:relative; width:30px; height:16px; margin:0;
+                vertical-align:middle; cursor:pointer; border-radius:8px; background:var(--vscode-input-background);
+                border:1px solid var(--vscode-checkbox-border, var(--vscode-input-border, var(--vscode-widget-border, #8888))); }
+            .setswitch::before { content:''; position:absolute; top:2px; left:2px; width:10px; height:10px;
+                border-radius:50%; background:var(--vscode-descriptionForeground); transition:left .12s; }
+            .setswitch:checked { background:var(--vscode-button-background);
+                border-color:var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, var(--vscode-button-background))); }
+            .setswitch:checked::before { left:16px; background:var(--vscode-button-foreground); }
+            .setswitch:focus-visible, .setsego > input:focus-visible + span { outline:1px solid var(--vscode-focusBorder); outline-offset:1px; }
+            .setswitch:disabled, .setsego > input:disabled + span { opacity:.5; cursor:default; }
+            .setseg { display:inline-flex; flex-wrap:wrap; max-width:100%; border-radius:4px; overflow:hidden;
+                border:1px solid var(--vscode-checkbox-border, var(--vscode-input-border, var(--vscode-widget-border, #8888))); }
+            .setsego { position:relative; display:inline-flex; }
+            .setsego > input { position:absolute; opacity:0; width:1px; height:1px; margin:0; pointer-events:none; }
+            .setsego > span { padding:2px 10px; font-size:12px; cursor:pointer; white-space:nowrap;
+                background:var(--vscode-input-background); color:var(--vscode-input-foreground, var(--vscode-foreground));
+                box-shadow:inset 0 0 0 1px var(--vscode-contrastBorder, transparent); }
+            .setsego + .setsego > span { border-left:1px solid var(--vscode-checkbox-border, var(--vscode-input-border, var(--vscode-widget-border, #8888))); }
+            .setsego > input:checked + span { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
+                box-shadow:inset 0 0 0 1px var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); }
+            .setsego > input:checked + span::before { content:'\\2713  '; }
+            .setnum { display:inline-flex; align-items:center; gap:5px; }
+            .setnum > input { width:110px; }
+            .setunit { font-size:11px; color:var(--vscode-descriptionForeground); }
             @media (max-width:700px) {
                 .setitem.srow { grid-template-columns:minmax(0, 1fr); row-gap:6px; }
             }`;

@@ -105,21 +105,6 @@
         });
         document.querySelectorAll('[data-lapply]').forEach(btn =>
             btn.addEventListener('click', () => applyList(btn.dataset.lapply)));
-        document.querySelectorAll('[data-ljson]').forEach(el =>
-            el.addEventListener('click', (ev) => {
-                ev.preventDefault();
-                // What is on screen goes INTO the JSON box: switching view is
-                // not a reason to lose what was typed.
-                const key = el.dataset.ljson;
-                const item = allItems().find(i => i.key === key);
-                const numeric = item && item.shape
-                    && (item.shape.itemType === 'number' || item.shape.itemType === 'integer');
-                jsonDraft[key] = boxText(readList(key)
-                    .map(v => String(v).trim()).filter(v => v !== '')
-                    .map(v => (numeric && Number.isFinite(Number(v)) ? Number(v) : v)));
-                jsonMode[key] = true;
-                render();
-            }));
         document.querySelectorAll('[data-llist]').forEach(el =>
             el.addEventListener('click', (ev) => {
                 ev.preventDefault();
@@ -162,9 +147,22 @@
             }));
     }
 
+    /** U-227 — the list as JSON, from the row's right-click menu. What is on screen goes INTO the JSON box:
+     *  switching view is not a reason to lose what was typed. */
+    function listToJson(key) {
+        const item = allItems().find(i => i.key === key);
+        const numeric = item && item.shape
+            && (item.shape.itemType === 'number' || item.shape.itemType === 'integer');
+        jsonDraft[key] = boxText(readList(key)
+            .map(v => String(v).trim()).filter(v => v !== '')
+            .map(v => (numeric && Number.isFinite(Number(v)) ? Number(v) : v)));
+        jsonMode[key] = true;
+        render();
+    }
+
     window.AFSettingWireList = function (ctx) {
         X = ctx;
         ({ allItems, applyForm, applyList, applyMap, applyRows, boxText, errors, jsonDraft, jsonMode, listDraft, readList, render, shortKey, vscode } = ctx);
-        return { wireList };
+        return { wireList, listToJson };
     };
 })();

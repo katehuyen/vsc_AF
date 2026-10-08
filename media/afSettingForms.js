@@ -200,8 +200,6 @@
             <div class="setjrow">
                 <button class="secondary small" data-fapply="${C.esc(it.key)}"
                     title="Save this object. Until you press it, nothing here has changed the setting. A field left empty is left out, so its own default keeps applying.">Save the form</button>
-                <a href="#" class="setljson" data-fjson="${C.esc(it.key)}"
-                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
                 ${shapeHtml(it, true)}
             </div>
         </div>`;
@@ -254,8 +252,6 @@
                     title="Add one more entry to this list.">+ add</button>
                 <button class="secondary small" data-rapply="${C.esc(it.key)}"
                     title="Save this table. Until you press it, nothing here has changed the setting.">Save the table</button>
-                <a href="#" class="setljson" data-rjson="${C.esc(it.key)}"
-                    title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
                 ${shapeHtml(it, true)}
             </div>
         </div>`;

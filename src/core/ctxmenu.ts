@@ -1167,9 +1167,19 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'stOpenUi', title: "Open it in VS Code's settings editor", act: 'stOpenUi',
         when: SETTING_ROW, group: '1_open@1'
     },
+    // U-227 — the file every box on the page writes into, opened at this key
+    {
+        id: 'stShowJson', title: 'Show it in settings.json', act: 'stShowJson',
+        when: SETTING_ROW, group: '1_open@2'
+    },
     {
         id: 'stReset', title: 'Reset it to its default', act: 'stReset',
         when: `${SETTING_ROW} && afModified`, group: '2_edit@1'
+    },
+    // U-227 — a list, form, table or pairs editor as its raw JSON (the row keeps only the editor itself)
+    {
+        id: 'stJson', title: 'Edit it as JSON', act: 'stJson',
+        when: `${SETTING_ROW} && afJson`, group: '2_edit@2'
     },
     {
         id: 'stCopyKey', title: 'Copy its setting key', act: 'stCopy:key',
