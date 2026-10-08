@@ -21,12 +21,17 @@
             `<label class="setsego"><input type="radio" name="${name}" value="${C.esc(o)}" data-set="${C.esc(it.key)}"${cur === o ? ' checked' : ''}><span>${C.esc(o === '' ? t('Not set') : o)}</span></label>`).join('')}</span>`;
     }
 
-    /** A number in its box, its unit beside it ($ in front) and the schema's bounds on the box. */
+    /** A number in its box, its unit beside it ($ in front) and the schema's bounds on the box. A number whose
+     *  0 means off (the catalog's zeroMeans) gets a switch in front: off is 0 and the box rests. */
     function numberHtml(it, id) {
         const lim = (typeof it.minimum === 'number' ? ` min="${it.minimum}"` : '') + (typeof it.maximum === 'number' ? ` max="${it.maximum}"` : '');
-        const box = `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}"${lim}>`;
+        const zero = it.zeroMeans === 'off';
+        const off = zero && Number(it.value) === 0;
+        const box = `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}"${lim}${off ? ' disabled' : ''}>`;
         const unit = it.unit ? `<span class="setunit">${C.esc(it.unit)}</span>` : '';
-        return `<span class="setnum">${it.unit === '$' ? unit + box : box + unit}</span>`;
+        const sw = zero ? `<input type="checkbox" role="switch" class="setswitch" data-zero="${C.esc(it.key)}"${off ? '' : ' checked'}
+            aria-label="${C.esc(t('{name}: on or off', { name: it.label || shortKey(it.key) }))}">` : '';
+        return `<span class="setnum">${sw}${it.unit === '$' ? unit + box : box + unit}</span>`;
     }
 
     function controlHtml(it) {

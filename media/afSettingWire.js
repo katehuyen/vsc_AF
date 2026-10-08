@@ -7,7 +7,7 @@
     function wirePage(bodyOnly, enterLetsGo) {
         if (!bodyOnly) { window.AFHeader.wire(vscode); }
         // X-456 — the phone's own reach and port: shown on a phone, changed on the PC (settingsPhone.ts).
-        (X.DATA.phoneLocked || []).forEach(k => ['data-set', 'data-reset'].forEach(a =>
+        (X.DATA.phoneLocked || []).forEach(k => ['data-set', 'data-reset', 'data-zero'].forEach(a =>
             document.querySelectorAll(`[${a}="${k}"]`).forEach(el => { el.disabled = true; })));
         const openJson = !bodyOnly && document.getElementById('opensettingsjson');
         if (openJson) {
@@ -143,6 +143,16 @@
         // U-227 — a row's one-line text or path box empties with its ✕, and emptying it saves as typing would
         document.querySelectorAll('[data-clr]').forEach(el =>
             window.AFFilter.clearable(el, box => box.dispatchEvent(new Event('change'))));
+        // U-227 — a number whose 0 means off: off writes 0; on brings back its default, or opens the box for a figure
+        document.querySelectorAll('[data-zero]').forEach(sw => sw.addEventListener('change', () => {
+            const key = sw.dataset.zero;
+            const box = document.getElementById('c-' + X.shortKey(key));
+            const def = Number((X.allItems().find(i => i.key === key) || {}).default) || 0;
+            delete errors[key];
+            if (!sw.checked) { vscode.postMessage({ type: 'set', key, value: 0 }); }
+            else if (def) { vscode.postMessage({ type: 'set', key, value: def }); }
+            else if (box) { box.disabled = false; box.focus(); }
+        }));
         /**
          * ‼️ U-139 — ENTER LETS GO OF A SCALAR BOX, WHICH IS HOW IT SAVES.
          *

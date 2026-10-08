@@ -15,7 +15,7 @@ export const projects: CatalogSection = {
         projectsArchiveRoot: { group: 'folders' },
         projectSkeleton: { group: 'newProject' },
         projectTemplates: { group: 'newProject' },
-        projectStaleDays: { group: 'digest', tier: 'basic', unit: 'days' },
+        projectStaleDays: { group: 'digest', tier: 'basic', unit: 'days', zeroMeans: 'off' },
         projectDigestDay: { group: 'digest', tier: 'basic', control: 'weekday' },
         projectDigestHour: { group: 'digest', tier: 'basic', control: 'hour' },
         projectContextExtra: { group: 'context' }

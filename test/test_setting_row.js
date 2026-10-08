@@ -22,6 +22,27 @@ ok('the name opens the description panel, and the row\'s right-click hint stays 
     /window\.AFTip\.wrap\(`<span class="setname">/.test(ITEM) && /'setnamew', 'title=""'/.test(ITEM));
 ok('a list, table, form, map or multi-line text is a wide row', /const isWide = it => !!it\.multiline \|\| it\.type === 'array' \|\| it\.type === 'object'/.test(ITEM));
 
+// A number whose 0 means off (the catalog's zeroMeans): a switch in front of the box, driven.
+{
+    const { runPage } = require('./lib_page_dom.js');
+    const fx = require('./fixtures/disciplinesettings.js');
+    const p = runPage(fx.script, fx.data());
+    const sw = key => p.query('[data-zero]').find(e => e.dataset.zero === key);
+    const off = sw('agentFarm.quotaConvergePct'), on = sw('agentFarm.contextConvergePct');
+    ok('a number whose 0 means off has a switch: off at 0, on at a figure',
+        !!off && !!on && off.checked === false && on.checked === true
+        && /id="c-quotaConvergePct"[^>]*disabled/.test(p.html()) && !/id="c-contextConvergePct"[^>]*disabled/.test(p.html()));
+    p.posted.length = 0;
+    on.checked = false; on.fire('change');
+    ok('…switching it off writes 0', JSON.stringify(p.last()) === JSON.stringify({ type: 'set', key: 'agentFarm.contextConvergePct', value: 0 }));
+    on.checked = true; on.fire('change');
+    ok('…switching it on brings back its default', JSON.stringify(p.last()) === JSON.stringify({ type: 'set', key: 'agentFarm.contextConvergePct', value: 35 }));
+    const before = p.posted.length;
+    off.checked = true; off.fire('change');
+    const box = p.sandbox.document.getElementById('c-quotaConvergePct');
+    ok('…and one whose default is off opens its box for a figure instead of writing one', p.posted.length === before && box && box.disabled === false);
+}
+
 const CANDIDATES = [
     process.env.AF_CHROME,
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',

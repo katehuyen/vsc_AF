@@ -43,10 +43,10 @@ export const handover: CatalogSection = {
         { id: 'board', label: 'Chain board', about: 'When the chain board marks a relay as needing your attention.' }
     ],
     rows: {
-        contextConvergePct: { group: 'when', unit: '%' },
-        contextHandoverPct: { group: 'when', tier: 'basic', unit: '%' },
-        quotaConvergePct: { group: 'when', unit: '%' },
-        quotaHandoverPct: { group: 'when', tier: 'basic', unit: '%' },
+        contextConvergePct: { group: 'when', unit: '%', zeroMeans: 'off' },
+        contextHandoverPct: { group: 'when', tier: 'basic', unit: '%', zeroMeans: 'off' },
+        quotaConvergePct: { group: 'when', unit: '%', zeroMeans: 'off' },
+        quotaHandoverPct: { group: 'when', tier: 'basic', unit: '%', zeroMeans: 'off' },
         quotaWeeklyHandoverPct: { group: 'when', tier: 'basic', unit: '%' },
         defaultAccountCeiling: { group: 'when', tier: 'basic', unit: '%' },
         defaultAccountWeeklyCeiling: { group: 'when', unit: '%' },
@@ -55,7 +55,7 @@ export const handover: CatalogSection = {
         batonHandoverTemplate: { group: 'legMessage' },
         batonInjectedDirective: { group: 'legMessage' },
         batonEmergencyTemplate: { group: 'emergency' },
-        contextHandoverStayAccountPct: { group: 'account', unit: '%' },
+        contextHandoverStayAccountPct: { group: 'account', unit: '%', zeroMeans: 'off' },
         batonFaultWaitHours: { group: 'faults', unit: 'h' },
         batonFlaggedPasses: { group: 'faults' },
         batonFlaggedModel: { group: 'faults' },

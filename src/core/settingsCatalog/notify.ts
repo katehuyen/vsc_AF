@@ -30,7 +30,7 @@ export const notify: CatalogSection = {
         'alerts.nudge': { group: 'sound' },
         'alerts.speak': { group: 'sound' },
         'alerts.reading': { group: 'sound' },
-        idleSessionNoticeMinutes: { group: 'reminders', unit: 'min' },
+        idleSessionNoticeMinutes: { group: 'reminders', unit: 'min', zeroMeans: 'off' },
         noticeStaleHours: { group: 'reminders', unit: 'h' },
         notifyWebhookUrl: { group: 'webhook' },
         notifyWebhookEvents: { group: 'webhook' }

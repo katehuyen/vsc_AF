@@ -39,9 +39,9 @@ export const sentry: CatalogSection = {
         sentryLeaderBudgetUsd: { group: 'leader', tier: 'basic', unit: '$' },
         sentryLeaderMaxUsd: { group: 'leader', unit: '$' },
         sentryLeaderMaxSeconds: { group: 'leader', unit: 's' },
-        sentryLeaderFailLimit: { group: 'leader' },
-        sentryFailureLimit: { group: 'stall' },
+        sentryLeaderFailLimit: { group: 'leader', zeroMeans: 'off' },
+        sentryFailureLimit: { group: 'stall', zeroMeans: 'off' },
         sentryIdlePollMin: { group: 'stall', unit: 'min' },
-        sentryStallMin: { group: 'stall', tier: 'basic', unit: 'min' }
+        sentryStallMin: { group: 'stall', tier: 'basic', unit: 'min', zeroMeans: 'off' }
     }
 };

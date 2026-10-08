@@ -166,7 +166,7 @@ const alive = setInterval(() => undefined, 1000);
             '#promptsopen', '#wikireveal', '#wikiopen', '#spreveal'].every(s => page.includes('html.af-phone ' + s))
         && /<details class="setitem" id="ccrawbox"/.test(page));
     ok('the reach and port rows are drawn but disabled on a phone',
-        /\((?:X\.)?DATA\.phoneLocked \|\| \[\]\)\.forEach\(k => \['data-set', 'data-reset'\]\.forEach/.test(page) && /el\.disabled = true;/.test(page));
+        /\((?:X\.)?DATA\.phoneLocked \|\| \[\]\)\.forEach\(k => \['data-set', 'data-reset', 'data-zero'\]\.forEach/.test(page) && /el\.disabled = true;/.test(page));
     ok('a form field stacks and an agent\'s chip wraps on a phone', /html\.af-phone \.setfrow \{ flex-wrap:wrap; \}/.test(page)
         && /html\.af-phone \.setfrow > input, html\.af-phone \.setfrow > select \{ flex:1 1 100%; \}/.test(page)
         && /html\.af-phone \.agchip \{ white-space:normal;/.test(page));
