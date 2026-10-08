@@ -10302,12 +10302,12 @@
         },
         "agentFarm.maxConcurrentTasks": {
           "type": "number",
-          "default": 2,
+          "default": 5,
           "description": "Maximum tasks running at once across the whole farm (0 = unlimited). Excess starts are deferred and launched automatically."
         },
         "agentFarm.maxConcurrentPerAgent": {
           "type": "number",
-          "default": 1,
+          "default": 0,
           "description": "Maximum tasks running at once per agent (0 = unlimited)."
         },
         "agentFarm.quotaGuardPercent": {

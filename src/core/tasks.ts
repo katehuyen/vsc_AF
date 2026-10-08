@@ -3605,8 +3605,8 @@ export class TaskManager implements vscode.Disposable {
         if (accountNo) {
             return { code: `account:missing:${(task.account ?? '').trim() || task.engine || 'claude'}`, reason: accountNo };
         }
-        const maxGlobal = this.opts.maxConcurrent?.() ?? 2;
-        const maxAgent = this.opts.maxConcurrentPerAgent?.() ?? 1;
+        const maxGlobal = this.opts.maxConcurrent?.() ?? 5;
+        const maxAgent = this.opts.maxConcurrentPerAgent?.() ?? 0;
         // The run being weighed is the one asking, so its own weight is added:
         // a 2-slot engine cannot start into a 2-slot fleet that is already busy,
         // and — deliberately — cannot start beside another of its own kind.
