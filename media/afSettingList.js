@@ -41,7 +41,7 @@
             for (const f of s.fields) {
                 lines.push(`  ${f.name}  ·  ${f.type}${f.required ? '  ·  required' : ''}`);
                 if (f.allowed && f.allowed.length) { lines.push(`      one of: ${f.allowed.join(' · ')}`); }
-                if (f.description) { lines.push(`      ${f.description}`); }
+                if (f.description) { lines.push(`      ${window.AFSettingText.plainIn(f.description, allItems())}`); }
             }
         }
         if (s.example !== undefined) {

@@ -212,8 +212,8 @@ const { charts } = require('./lib_charts_stub.js');
     vm.runInContext(code, sandbox); // render()
 
     const html = getEl('app')._html;
-    ok('modified setting marked + resettable', html.includes('class="setitem modified"') && html.includes('data-reset="agentFarm.livePort"'));
-    ok('tooltip carries full key + default', html.includes('agentFarm.livePort — default: 0'));
+    ok('modified setting marked + resettable', html.includes('class="setitem srow modified"') && html.includes('data-reset="agentFarm.livePort"'));
+    ok('the description panel carries the full key and the default', html.includes('Key: agentFarm.livePort') && /Default: 0\b/.test(html));
     ok('enum renders as a select with options', /<select[^>]*data-set="agentFarm.guideLanguage"/.test(html) && html.includes('<option value="tr"'));
     ok('array renders as JSON editor with apply', html.includes('data-json="agentFarm.agentRoots"') && html.includes('data-apply="agentFarm.agentRoots"'));
     ok('profile bar lists the saved set', html.includes('work (2)') && html.includes('id="profapply"'));

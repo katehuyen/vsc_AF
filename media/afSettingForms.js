@@ -193,8 +193,8 @@
                   */''}
                 ${f.description
                 ? window.AFTip.wrap(
-                    `<span class="setfdesc">${C.esc(f.description)}</span>`,
-                    f.name, f.description, 'setfdescw')
+                    `<span class="setfdesc">${C.esc(window.AFSettingText.plainIn(f.description, allItems()))}</span>`,
+                    f.name, window.AFSettingText.plainIn(f.description, allItems()), 'setfdescw')
                 : '<span class="setfdesc"></span>'}
             </div>`).join('')}
             <div class="setjrow">

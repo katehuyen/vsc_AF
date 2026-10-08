@@ -111,35 +111,59 @@
                 placeholder="empty — the built-in text stays in charge"
                 style="width:100%; max-width:640px; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(text)}</textarea>`;
         }
-        return `<span class="setpath"><input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:100%; max-width:420px">${browse}</span>`;
+        return `<span class="setfield"><input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}">${browse}</span>`;
     }
+
+    const T = () => window.AFSettingText;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const nameOf = key => (X.allItems().find(x => x.key === key) || {}).label;
 
     /** U-227 — the description as a person reads it: no **, ` or #agentFarm.x# marks; another setting by its name */
     function descOf(it) {
-        const nameOf = key => (X.allItems().find(x => x.key === key) || {}).label || window.AFSettingSearch.humanize(key);
-        return window.AFSettingText.plain(it.description || '', nameOf);
+        return T().plainIn(it.description || '', X.allItems());
+    }
+
+    /** A list, a table, a form, a map or several lines of text: its editor goes under the name, full width. */
+    const isWide = it => !!it.multiline || it.type === 'array' || it.type === 'object';
+
+    /** Under a query, a row whose name and summary carry no hit says where the hit is: its sentence, else its key. */
+    function whyHtml(it, sum) {
+        if (!String(X.filter || '').trim()) { return ''; }
+        const has = s => s.indexOf('<mark>') >= 0;
+        if (has(hit(it.label || '')) || has(hit(sum))) { return ''; }
+        const s = T().sentences(descOf(it)).map(hit).find(has) || (has(hit(it.key)) ? hit(it.key) : '');
+        return s ? `<div class="setwhy">${s}</div>` : '';
     }
 
     function itemHtml(it) {
         const err = errors[it.key];
-        return `<div class="setitem${it.modified ? ' modified' : ''}" data-item="${C.esc(it.key)}"
+        const label = it.label || window.AFSettingSearch.humanize(it.key);
+        const sum = it.summary || T().firstSentence(descOf(it));
+        // U-227 — the name opens the description panel (MIRROR): the value now and the default, the
+        // description, the key. title="" keeps the row's right-click hint off the panel's trigger.
+        const name = window.AFTip.wrap(`<span class="setname">${hit(label)}</span>`
+            + (it.modified ? '<span class="moddot"></span>' : '') + '<span class="setinfo" aria-hidden="true">ⓘ</span>',
+        '', window.AFTip.lines(T().panelLines(it, nameOf, window.AFTip.GAP)), 'setnamew', 'title=""', label);
+        const aside = `<span class="setaside">${it.modified
+            ? `<button class="reset" data-reset="${C.esc(it.key)}" title="${C.esc(t('Reset to default: {d}', { d: fmtDefault(it.default) }))}">↺</button>` : ''}${it.reloadRequired ? `<span class="setreload">${C.esc(t('Reload'))}</span>` : ''}</span>`;
+        const wide = isWide(it);
+        return `<div class="setitem srow${it.modified ? ' modified' : ''}${wide ? ' wide' : ''}" data-item="${C.esc(it.key)}"
             ${window.AFCtx.row('afSettingRow', { setKey: it.key, afModified: !!it.modified })}
-            title="${C.esc(window.AFCtx.hint(it.key + ' — default: ' + fmtDefault(it.default)))}">
-            ${window.AFSettingResults.placeHtml(it, C.esc)}
-            <div class="sethead">
-                <span class="setname">${hit(shortKey(it.key))}</span>
-                ${it.modified ? `<span class="moddot" title="Changed from default (${C.esc(fmtDefault(it.default))})"></span>
-                    <button class="reset" data-reset="${C.esc(it.key)}" title="Reset to default: ${C.esc(fmtDefault(it.default))}">↺</button>` : ''}
+            title="${C.esc(window.AFCtx.hint())}">
+            <div class="setl">
+                ${window.AFSettingResults.placeHtml(it, C.esc)}
+                <div class="sethead">${name}${wide ? aside : ''}</div>
+                ${sum ? `<div class="setsum">${hit(sum)}</div>` : ''}
+                ${whyHtml(it, sum)}
+                ${err ? `<div class="seterr">⚠ ${C.esc(err)}</div>` : ''}
+                ${!err && it.refusal ? `<div class="seterr">⚠ An entry for this key in your settings file is being ignored — ${C.esc(it.refusal)}</div>` : ''}
+                ${it.inForce ? `<div class="setinforce">${C.esc(it.inForce)}</div>` : ''}
             </div>
-            <div class="setdesc">${hit(descOf(it))}</div>
-            <div class="setctl">${controlHtml(it)}</div>
+            <div class="setr"><div class="setctl">${controlHtml(it)}</div>${wide ? '' : aside}</div>
             ${/* X-193 — a scalar path says where it points, for the same reason
                   each row of a list does. A list draws its own lines per row, so
                   drawing one here as well would be the fact twice. */
             it.browse && !it.shape ? pathLine(it.key, it.value) : ''}
-            ${err ? `<div class="seterr">⚠ ${C.esc(err)}</div>` : ''}
-            ${!err && it.refusal ? `<div class="seterr">⚠ An entry for this key in your settings file is being ignored — ${C.esc(it.refusal)}</div>` : ''}
-            ${it.inForce ? `<div class="setinforce">${C.esc(it.inForce)}</div>` : ''}
         </div>`;
     }
 

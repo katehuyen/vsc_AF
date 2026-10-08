@@ -204,6 +204,8 @@ const SHARED = [
     // afSettingMap.js / afSettingItem.js — its name → value pairs editor and one setting row with its control (U-225).
     'afSettingMap.js',
     'afSettingItem.js',
+    // afSettingRowCss.js — the look of one setting row: two columns, the control's at one x (U-227).
+    'afSettingRowCss.js',
     // afSettingFolders/Claude/Docs/Wiki/Access.js — its section builders (U-225).
     'afSettingFolders.js',
     'afSettingClaude.js',

@@ -106,8 +106,8 @@ const type = (p, q) => {
 
     // two body redraws later, a control still answers ONCE
     p.posted.length = 0;
-    ok('the hit is marked in the name and the description',
-        /class="setname">live<mark>Port<\/mark>/.test(p.html()) && /class="setdesc"><mark>Port<\/mark>/.test(p.html()));
+    ok('the hit is marked in the name and the summary',
+        /class="setname">[^<]*<mark>port<\/mark>/i.test(p.html()) && /class="setsum"><mark>Port<\/mark>/.test(p.html()));
     // (the shim reads a dot in a selector as a class, so the key is matched off the dataset)
     const box = p.query('[data-set]').filter(e => e.dataset.set === 'agentFarm.livePort');
     ok('one control per row after the body was redrawn twice', box.length === 1);

@@ -215,6 +215,7 @@
                 .spname { font-family:var(--vscode-editor-font-family); }
                 .spstate { font-size:10px; opacity:.5; }
                 .sprow.spdef .spname { opacity:.7; }
+                ${window.AFSettingRowCss.css()}
                 ${window.AFTelegram.css()}
                 ${window.AFFlexSettings.css()}
                 html.af-phone .setfrow { flex-wrap:wrap; }

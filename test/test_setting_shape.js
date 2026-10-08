@@ -405,14 +405,14 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('…while the FORM keeps every sentence beside its field, because a form is'
         + ' read once and carefully rather than across — and carries the whole of'
         + ' it in an AFTip, since the line is cut at the edge of the page',
-        /<span class="setfdesc">\$\{C\.esc\(f\.description\)\}<\/span>/.test(page)
-        && /f\.name, f\.description, 'setfdescw'/.test(page)
+        /<span class="setfdesc">\$\{C\.esc\(window\.AFSettingText\.plainIn\(f\.description, allItems\(\)\)\)\}<\/span>/.test(page)
+        && /f\.name, window\.AFSettingText\.plainIn\(f\.description, allItems\(\)\), 'setfdescw'/.test(page)
         && !/class="setfdesc" title=/.test(page));
     // ‼️ MIRROR (docs/CONVENTIONS.md) — a control narrow enough to cut its own
     // text puts its CURRENT value on the first line of its tooltip. A `when`
     // precondition in a sixth of a table is cut every single time.
     ok('‼️ …and a narrow box mirrors its OWN VALUE first, then what the field is',
-        /const mirror = \[text, f\.description, note\]\.filter\(Boolean\)\.join\('\\n\\n'\)/.test(page));
+        /const mirror = \[text, f\.description && window\.AFSettingText\.plainIn\(f\.description, allItems\(\)\), note\]\.filter\(Boolean\)\.join\('\\n\\n'\)/.test(page));
     ok('…and a required field is marked where it is asked for, in both',
         /f\.required \? '<b class="req">\*<\/b>' : ''/.test(page));
 }

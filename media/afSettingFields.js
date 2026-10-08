@@ -38,7 +38,7 @@
         const note = (f.type === 'string' || f.type === 'number' || f.type === 'integer'
             || f.type === 'boolean' || (f.allowed && f.allowed.length)) ? ''
             : `This field is ${f.type}, which has no single box: write its JSON here.`;
-        const mirror = [text, f.description, note].filter(Boolean).join('\n\n');
+        const mirror = [text, f.description && window.AFSettingText.plainIn(f.description, allItems()), note].filter(Boolean).join('\n\n');
         const a = `id="${id}" ${dataAttr}${mirror ? ` title="${C.esc(mirror)}"` : ''}`;
         // U-130 — the field's own hover is on the BOX (MIRROR, above); each
         // option carries its own name plus the one thing that option means
@@ -129,7 +129,7 @@
     function fieldTip(f) {
         const lines = [`${f.name}  ·  ${f.type}${f.required ? '  ·  required' : ''}`];
         if (f.allowed && f.allowed.length) { lines.push(`one of: ${f.allowed.join(' · ')}`); }
-        if (f.description) { lines.push(''); lines.push(f.description); }
+        if (f.description) { lines.push(''); lines.push(window.AFSettingText.plainIn(f.description, allItems())); }
         if (!f.required) {
             lines.push('');
             lines.push('Leave it empty and the field is left out — its own default stays in charge.');

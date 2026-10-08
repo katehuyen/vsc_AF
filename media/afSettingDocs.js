@@ -92,9 +92,9 @@
         const item = cat && cat.items && cat.items[0];
         const box = item ? `
             <div class="setctl" style="margin-top:8px">
-                <span class="setpath"><input type="text" data-set="${C.esc(item.key)}"
+                <span class="setfield"><input type="text" data-set="${C.esc(item.key)}"
                     placeholder="(nothing chosen — the built-in path below is used)"
-                    value="${C.esc(String(item.value ?? ''))}" style="width:100%; max-width:520px"></span>
+                    value="${C.esc(String(item.value ?? ''))}" style="max-width:520px"></span>
             </div>` : '';
         if (!p) { return box; }
 

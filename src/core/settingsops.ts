@@ -228,9 +228,21 @@ export function pathPreviews(
  * description rather than a hand-kept list — a list of keys goes stale the
  * first time somebody adds a setting and forgets it, and the description is
  * where the fact already lives.
+ *
+ * ‼️ U-227 — ONLY A SENTENCE THAT SAYS SO. The word alone was read as the fact, and all three
+ * descriptions it caught used it for something else ("survives a restart", "does not restart it",
+ * "parked before a window reload") — the row's Reload chip and settings.set would have told the
+ * reader a change needs a reload when none does.
  */
+const RELOAD_SAID = [
+    /\b(restart|reload)\s+(is\s+)?required\b/i,
+    /\b(requires?|needs?|takes?)\s+(a\s+|the\s+)?(window\s+)?(restart|reload)\b/i,
+    /\b(restart|reload)\s+the\s+(window|extension|editor|vs\s*code)\b/i,
+    /\btakes?\s+effect\s+(only\s+)?(after|on)\s+(a\s+|the\s+|next\s+)*(window\s+)?(restart|reload)\b/i
+];
 export function needsReload(description: string): boolean {
-    return /\b(restart|reload)\b/i.test(description ?? '');
+    const d = description ?? '';
+    return RELOAD_SAID.some(re => re.test(d));
 }
 
 /** Deep-enough equality for setting values (JSON-shaped data only). */
