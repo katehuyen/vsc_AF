@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.895.0 - Farm Settings: one row shape, standard controls, a description panel (2026-10-08)
+
+- **Every setting is one row of two columns** - its name and a one-line
+  summary on the left, its control in a fixed column on the right, so
+  the controls of a section line up under each other. Rows are parted by
+  a thin rule instead of each sitting in its own box; a list, table,
+  form or several lines of text get the full width under the name; on a
+  narrow window or a phone the two columns stack.
+- **The name is a name, not a key** - "Context handover pct" instead of
+  contextHandoverPct. Hover it (or the small info mark beside it) for
+  the description panel: what the setting holds now and its default,
+  the whole description, what each choice means, and the key itself.
+- **Standard controls** - a yes/no setting is a switch; a choice of two
+  to four is a row of buttons with the picked one marked; a number shows
+  its unit beside the box and keeps to the range its schema allows (a
+  value outside it is refused with the bound, on the page and from the
+  bridge alike); a text or path box empties with its ✕.
+- **No more markdown marks in descriptions** - bold marks, backticks and
+  references to other settings by key are drawn as plain words, in the
+  rows and in the editors' field notes alike.
+- **Right-click a setting** for "Show it in settings.json" (the file
+  opens at that key) and, on a list, form, table or pairs editor, "Edit
+  it as JSON".
+- **Fixed:** three settings were reported as needing a window reload
+  because their description merely mentioned one; only a description
+  that says a reload is required counts now. Number, time and multi-line
+  boxes wear the theme's input colours instead of white in the dark
+  theme.
+
 ## 3.894.0 - Farm Settings in sixteen sections, each in named groups (2026-10-08)
 
 - **Every setting now sits in one of sixteen sections** - General,
