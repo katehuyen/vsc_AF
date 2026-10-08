@@ -2,7 +2,7 @@
 // so every simple row of a section starts its control at one x; a wide editor under the name; the description
 // panel on the name; no markdown mark in anything drawn. Measured on the settings fixtures that between them
 // draw every kind of row — numbers, pick-one lists, paths, lists, forms, tables, multi-line text — on a desktop
-// and on a phone. (Every description of the manifest is checked without a page: test/test_setting_text.js.)
+// and on a phone; allsettings is the whole page, every setting of the manifest. (Every description of the manifest is checked without a page: test/test_setting_text.js.)
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -76,7 +76,7 @@ return o;})()`;
     const measure = (fixture, extra) => {
         try { return JSON.parse(node([path.join('test', 'measure_page.js'), fixture, EXPR].concat(extra || []))); } catch { return null; }
     };
-    const PAGES = ['disciplinesettings', 'sentrysettings', 'jsonsettings', 'kapicisettings', 'tgsettings'];
+    const PAGES = ['disciplinesettings', 'sentrysettings', 'jsonsettings', 'kapicisettings', 'tgsettings', 'allsettings'];
     PAGES.forEach(f => node([path.join('test', 'render_page.js'), f]));
     const all = PAGES.map(f => measure(f));
     for (const [i, f] of PAGES.entries()) {
@@ -97,7 +97,7 @@ return o;})()`;
     ok(`the fixtures between them draw simple and wide rows (${sum(all, 'rows')} rows, ${sum(all, 'wide')} wide)`,
         sum(all, 'wide') > 3 && sum(all, 'rows') - sum(all, 'wide') > 10);
 
-    for (const f of ['disciplinesettings', 'sentrysettings']) {
+    for (const f of ['disciplinesettings', 'sentrysettings', 'allsettings']) {
         const p = measure(f, ['--phone']);
         ok(`${f} on a phone: the control goes under the name` + (p ? ` (${p.sideBySide} side by side)` : ''), !!p && p.rows > 0 && p.sideBySide === 0);
         ok(`…and no row pushes the page wider than the screen` + (p ? ` (${p.over}px over)` : ''), !!p && p.over <= 0);
