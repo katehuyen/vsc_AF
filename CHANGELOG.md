@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.897.0 - Agents can bind a Farm Secret by its name (2026-10-08)
+
+- **A Farm Secret can be bound by name over the bridge** - an agent that
+  adds a provider route, sets up Gatekeeper or wires an MCP server can
+  now finish the job: `providers.bindSecret` (or `secretRef` on
+  `providers.add` / `providers.set`) signs a route in with a secret from
+  your vault, `kapici.bindSecret` makes one Gatekeeper's key, and
+  `mcp.servers.bindSecret` gives an agent's MCP server one as an
+  environment variable. Only the name travels: no value is ever read,
+  taken or made, and a name your vault does not hold is refused.
+- **You see every bind** - each one lands on Notices with who made it and
+  the address the key goes to. A route bound this way and moved later to
+  another address still has no key until you confirm it in the Engines
+  page.
+- **`secrets.list`** - every secret's name, description, scope and where
+  it is bound (routes, Gatekeeper, MCP servers, workflows), never its
+  value.
+
 ## 3.896.0 - Farm Settings: sections that open and close, Show more, Reset section (2026-10-08)
 
 - **Settings opens as a list of its sections, all closed** - every
