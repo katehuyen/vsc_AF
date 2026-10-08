@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.896.0 - Farm Settings: sections that open and close, Show more, Reset section (2026-10-08)
+
+- **Settings opens as a list of its sections, all closed** - every
+  section header fits on one screen with its name, how many of its
+  settings you changed, how many it holds, and its one-sentence
+  description on the ⓘ. A click (or Enter / Space) opens a section;
+  which sections are open is remembered while the page lives.
+- **A section shows its main settings first** - the rest wait behind
+  "Show n more settings" at its foot, and "Show fewer" folds them back.
+  Search and the Changed chip always look through every setting.
+- **The header tells you what is waiting inside** - "unsaved" when an
+  edit in a closed section is not applied yet (it is kept, not lost),
+  ⚠ when a value there was refused or is being ignored.
+- **Reset section…** - a section with changed settings offers to put
+  all of them back to their defaults; you are asked first, with the
+  count and their names. Agents can do the same over the bridge
+  (`settings.reset` with `section` or `keys`, and `dryRun` to see the
+  plan first).
+- **A cleaner top** - the title reads "Settings" with the setting and
+  changed counts under it; the search box, Changed, Expand all,
+  Collapse all and settings.json share one bar that stays in view; the
+  open section's header stays under it while you scroll. The Engines,
+  Claude Code, Agent folders and Open with cards now open their own
+  sections, and Setting sets is the last section.
+- **A link to one setting** (from another page) opens its section, and
+  its "more" when the setting waits there, and lights the row.
+- **Numbers whose 0 means "off"** carry a switch in front of their box:
+  off writes 0 and rests the box; on brings back the default, or opens
+  the box for a figure.
+
 ## 3.895.0 - Farm Settings: one row shape, standard controls, a description panel (2026-10-08)
 
 - **Every setting is one row of two columns** - its name and a one-line
