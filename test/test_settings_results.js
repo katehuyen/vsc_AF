@@ -17,7 +17,8 @@ const props = {};
 for (const c of [].concat(pkg.contributes.configuration)) { Object.assign(props, c.properties || {}); }
 const CHANGED = 'agentFarm.livePort';
 const model = () => buildSettingsModel(props, k => (k === CHANGED ? 12345 : props[k].default));
-const flat = model().flatMap(c => c.items.map(it => Object.assign({}, it, { place: c.label })));
+// U-226 — each row already carries its place (Section › Group), filed by the catalog
+const flat = model().flatMap(c => c.items);
 
 // ---------- the module ----------
 {
@@ -31,10 +32,10 @@ const flat = model().flatMap(c => c.items.map(it => Object.assign({}, it, { plac
     const order = port.cats.flatMap(c => c.items.map(it => it.key));
     ok('a query: the count is the ranker\'s', port.count === S.rank(flat, 'port').length && order.length === port.count);
     ok('…the best result\'s section comes first', port.cats[0].items[0].key === S.rank(flat, 'port')[0].item.key);
-    ok('…each result knows its section, for the location line',
-        port.cats.every(c => c.items.every(it => it.place === c.label)));
-    ok('…and the page\'s data is not touched', cats.every(c => c.items.every(it => it.place === undefined)));
-    ok('the location line names the section', R.placeHtml({ place: 'Live' }, String) === '<div class="setplace">Live</div>');
+    ok('…each result knows its section and group, for the location line',
+        port.cats.every(c => c.items.every(it => it.place === c.label + ' › ' + (c.groups.find(g => g.id === it.group) || {}).label)));
+    ok('…and the page\'s data is not touched', port.cats.every(c => c.items.every(it => !cats.some(m => m.items.includes(it)))));
+    ok('the location line names the section', R.placeHtml({ where: 'Live' }, String) === '<div class="setplace">Live</div>');
     ok('…and nothing outside a result', R.placeHtml({ key: 'x' }, String) === '');
     ok('Changed and a query together', R.view(cats, 'port', true).count === 1);
 }
@@ -84,6 +85,8 @@ const type = (p, q) => {
     const p = open();
     const before = p.sandbox.document.getElementById('filter');
     ok('the body is its own region', /<div id="setbody">/.test(p.html()));
+    // U-226 — every row carries its place now; only a RESULT draws it
+    ok('‼️ with no query no row draws a location line', !/class="setplace"/.test(p.html()));
     type(p, 'sound');
     ok('‼️ typing does not rebuild the search box (the same element, once in the page)',
         p.sandbox.document.getElementById('filter') === before && p.html().split('id="filter"').length === 2);

@@ -3,7 +3,7 @@
  * how often each consumer's shadow agreed) over its nine settings.
  *
  * The settings are built from the REAL manifest (every `agentFarm.kapici.*`
- * property, filed by the real category map), so a setting added later is in
+ * property, filed by the real settings catalog), so a setting added later is in
  * the picture without anybody editing this file. The status is the shape
  * `kapici.status` answers, taken from the live bridge.
  *
@@ -22,7 +22,7 @@ const model = (values) => {
     const props = {};
     for (const key of KEYS) { props[key] = PROPS[key]; }
     const cats = S.buildSettingsModel(props, key => (values[key] !== undefined ? values[key] : props[key].default));
-    return cats.filter(c => c.id === 'kapici');
+    return cats.filter(c => c.id === 'gatekeeper');
 };
 
 const status = (o) => Object.assign({

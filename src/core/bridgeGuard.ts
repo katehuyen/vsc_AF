@@ -252,7 +252,7 @@ export function bridgeGuardView(
         ' ', // AFTip.GAP — an empty string is dropped as no line at all
         'The agent tried to find a session\'s files by searching the disk. Agent Farm stopped the search '
         + 'and had the agent ask Agent Farm itself, which knows where every session is.',
-        'Nothing is needed from you. To switch the guard off: Farm Settings → Live Monitoring & Alerts → Bridge guard.'
+        'Nothing is needed from you. To switch the guard off: Farm Settings → Sessions → Permissions and guards → Bridge guard.'
     );
     return {
         count: n,

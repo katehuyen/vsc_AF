@@ -136,10 +136,9 @@
     };
     // U-225 — the page's parts (media/afSetting*.js) in load order; each reads what the ones before it gave, through X
     ['AFSettingList', 'AFSettingFields', 'AFSettingForms', 'AFSettingMap', 'AFSettingItem', 'AFSettingFolders',
-        'AFSettingClaude', 'AFSettingDocs', 'AFSettingWiki', 'AFSettingAccess', 'AFSettingPage', 'AFSettingWire',
+        'AFSettingClaude', 'AFSettingDocs', 'AFSettingWiki', 'AFSettingAccess', 'AFSettingSections', 'AFSettingPage', 'AFSettingWire',
         'AFSettingWireList', 'AFSettingWireShapes', 'AFSettingNav', 'AFSettingInbox'].forEach(p => Object.assign(X, window[p](X)));
-    const { itemHtml, foldersSection, claudeSection, enginesSection, docOpenSection, promptsSection, sentrySection,
-        disciplineSection, wikiSection, superpowersSection, accessSection, alertsSection, pageHtml,
+    const { foldersSection, claudeSection, enginesSection, docOpenSection, sectionHtml, pageHtml,
         wirePage, wireAgents, wireProfiles, wireList, wireShapes, focusKey, ctxDo, onMessage } = X;
 
     /** `bodyOnly` (U-224): rewrite #setbody alone and skip every binding outside it — the
@@ -174,23 +173,14 @@
         const asked = !!String(filter).trim() || changedOnly;
 
         const body = `${asked && found.count ? R.countHtml(found.count, C.esc) : ''}
-            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-cat="${c.id}">${C.esc(c.label)}</a>`).join('')}</div>
+            <div class="catnav">${enginesHtml ? '<a data-cat="engines">Engines</a>' : ''}${claudeHtml ? '<a data-cat="claude">Claude Code</a>' : ''}${foldersHtml ? '<a data-cat="folders">Agent folders</a>' : ''}${docOpenHtml ? '<a data-cat="docopen">Open with</a>' : ''}${cats.map(c => `<a data-sec="${c.id}">${C.esc(c.label)}</a>`).join('')}</div>
             ${enginesHtml}
             ${claudeHtml}
             ${foldersHtml}
             ${docOpenHtml}
             ${cats.map(c => `
-                <h2 class="cat" id="cat-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
-                ${c.id === 'prompts' ? promptsSection(c)
-                    : c.id === 'wiki' ? wikiSection(c)
-                        : c.id === 'superpowers' ? superpowersSection(c)
-                            : c.id === 'live' ? alertsSection(c)
-                                : c.id === 'access' ? accessSection(c)
-                                    : c.id === 'sentry' ? sentrySection(c)
-                                        : c.id === 'discipline' ? disciplineSection(c)
-                                        : c.id === 'kapici' && window.AFKapici ? window.AFKapici.section(DATA.kapici, C) + c.items.map(itemHtml).join('')
-                                        : c.id === 'flow' ? window.AFFlexSettings.html(DATA.flex, C, errors.flex)
-                                            : c.items.map(itemHtml).join('')}`).join('')
+                <h2 class="cat" id="sec-${c.id}">${C.esc(c.label)} <span class="muted small">${c.items.length}</span></h2>
+                ${sectionHtml(c)}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : R.emptyHtml(filter, changedOnly, C.esc, found.error))}`;
         if (bodyOnly) { document.getElementById('setbody').innerHTML = body; }
         else { document.getElementById('app').innerHTML = pageHtml(R, total, modified, body); }

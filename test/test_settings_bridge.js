@@ -129,6 +129,25 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         ok('modified:true is the "what has somebody changed here" read',
             mod.ok && mod.result.total === 3);
 
+        // U-226 — every row says where the Settings page files it; category takes a section, its name or an old id
+        const rows = list.result.categories.flatMap(c => c.items);
+        ok('U-226: every row carries its name, section, group, tier and place',
+            rows.every(r => r.label && r.section && r.group && (r.tier === 'basic' || r.tier === 'advanced') && r.place));
+        const sec = await reg.dispatch('settings.list', { category: 'monitor' });
+        ok('…category takes a section id', sec.ok && sec.result.section === 'monitor'
+            && sec.result.categories.every(c => c.id === 'monitor')
+            && sec.result.categories.flatMap(c => c.items).some(i => i.key === 'agentFarm.livePort'));
+        const legacy = await reg.dispatch('settings.list', { category: 'live' });
+        ok('…an old category id, answering with the section it moved to', legacy.ok && legacy.result.section === 'monitor');
+        const named = await reg.dispatch('settings.list', { category: 'Monitoring & Health' });
+        ok('…or the section\'s name', named.ok && named.result.section === 'monitor');
+        const nowhere = await reg.dispatch('settings.list', { category: 'nowhere' });
+        ok('…and a section that does not exist is refused, naming the ones that do',
+            !nowhere.ok && /notify/.test(String(nowhere.error)));
+        const oneRow = await reg.dispatch('settings.get', { key: 'livePort' });
+        ok('…and settings.get says the same of one row', oneRow.ok && oneRow.result.section === 'monitor'
+            && oneRow.result.group === 'live' && oneRow.result.tier === 'advanced' && oneRow.result.place === 'Monitoring & Health › Live sessions');
+
         const one = await reg.dispatch('settings.get', { key: 'guideLanguage' });
         ok('settings.get takes the key with or without the prefix',
             one.ok && one.result.key === 'agentFarm.guideLanguage' && one.result.enum.join() === 'en,tr');

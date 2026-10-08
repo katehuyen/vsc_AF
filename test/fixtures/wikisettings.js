@@ -11,9 +11,8 @@
  *   3. NOT THERE  — a path typed on another machine. Also the portable case:
  *                   what was typed sits above what it opened.
  */
-const settings = (items) => ([{
-    id: 'wiki', label: 'Wiki & Knowledge Base', items
-}]);
+// U-226 — filed by the catalog, as the host files them
+const settings = (items) => require('../../out/core/settingsops.js').groupIntoSections(items);
 
 const ITEMS = (root) => ([
     {

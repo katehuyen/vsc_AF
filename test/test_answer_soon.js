@@ -77,7 +77,7 @@ const pkg = JSON.parse(src('package.json'));
 const props = Object.assign({}, ...[].concat(pkg.contributes.configuration).map(c => c.properties || {}));
 const p = props[A.ANSWER_SOON_KEY];
 ok('the setting: seconds, default 120, 0 to half an hour', !!p && p.type === 'number' && p.default === 120 && p.minimum === 0 && p.maximum === 1800);
-ok('…in the live category', /'console\.autoAnswer\.remindSeconds': 'live'/.test(src('src/core/settingsops.ts')));
+ok('…in the Sessions section, beside the other unanswered-question settings', require('../out/core/settingsCatalog/index.js').catalogEntry('console.autoAnswer.remindSeconds').group === 'autoAnswer');
 ok('…and a flex point reached by settings.set', /setting\('console\.autoAnswer\.remindSeconds', N_\('Question timer reminder \(seconds before\)'\), 'number', 120, 'agentFarm\.console\.autoAnswer\.remindSeconds'/.test(src('media/afFlex.js')));
 
 console.log(`test_answer_soon: ${pass} passed, ${fail} failed`);

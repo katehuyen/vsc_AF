@@ -445,8 +445,8 @@ async function parity(svc, label) {
         const pkgDays = require(path.join(ROOT, 'package.json')).contributes.configuration.properties['agentFarm.searchToolTrailDays'];
         ok('X-131: package.json carries the setting, default 60, floor 0',
             pkgDays && pkgDays.default === 60 && pkgDays.minimum === 0);
-        ok('X-131: …and settingsops files it under search',
-            /searchToolTrailDays: 'search'/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8')));
+        ok('X-131: …and the catalog files it under Knowledge, with the other search settings',
+            require('../out/core/settingsCatalog/index.js').catalogEntry('searchToolTrailDays').section === 'knowledge' && require('../out/core/settingsCatalog/index.js').catalogEntry('searchToolTrailDays').group === require('../out/core/settingsCatalog/index.js').catalogEntry('embeddingsProvider').group);
         ok('X-131: …and the extension reads it live into the corpus',
             /toolTrailDays: \(\) => cfg\(\)\.get<number>\('searchToolTrailDays', 60\)/.test(
                 fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8')));

@@ -125,7 +125,8 @@
         }
         document.querySelectorAll('.catnav a').forEach(a =>
             a.addEventListener('click', () => {
-                const h = document.getElementById('cat-' + a.dataset.cat);
+                // a catalog section (data-sec) or one of the cards above them (data-cat)
+                const h = document.getElementById(a.dataset.sec ? 'sec-' + a.dataset.sec : 'cat-' + a.dataset.cat);
                 if (h && h.scrollIntoView) { h.scrollIntoView({ behavior: 'smooth' }); }
             }));
         document.querySelectorAll('[data-guide]').forEach(el =>

@@ -74,7 +74,7 @@ Arayüzde gördüğün her **?** düğmesi seni bu kılavuzun ilgili bölümüne
 | Bekleyen wiki işaretlerini gör, süz ve derle | Her sayfanın araç çubuğundaki `📚 Wiki` düğmesi, ya da komut paleti → `Agent Farm: Open Wiki` ([detay](#wiki-kokpiti)) |
 | Ortak anayasayı diğer motorlara yansıt | Toolbox başlığı → `⚖ Sync Constitution` (alt satır), ya da palet → `Agent Farm: Sync Constitution` |
 | Kapatınca yeni ID ile geri gelen oturumu durdur | Oturum kartı → `☠ Force kill`, ya da sağ tık → `Force Kill Session Tree` ([detay](#spare-oturumlar)) |
-| Günlük bütçeleri rakamları kaybetmeden tamamen kaldır | Ayarlar → Cost & Budgets → `budgetsUnlimited`, ya da `budgets` içinde `0` |
+| Günlük bütçeleri rakamları kaybetmeden tamamen kaldır | Ayarlar → Quota & Cost → Budgets → `budgetsUnlimited`, ya da `budgets` içinde `0` |
 | Tüm motorların turlarını incele | Sessions yanındaki `⤢ Open Turns page` ([detay](#turlar-sayfasi)) |
 | Zaman çizelgesinden tam metni kopyala | Çizelgedeki noktaya sağ tık → `Copy Corpus` ([detay](#canli-gozlem)) |
 
@@ -1280,7 +1280,7 @@ Normal (bayrak yarışında olmayan) bir oturum devir sınırına ulaşıp kapan
 #### Ayarlanabilir Disiplin Şablonları (DisciplineOrders)
 
 Eşikler ve fısıldanan emirler koda gömülü sabit metinler değildir:
-- Ayarlar sayfasında **Handover Discipline** kartından veya `sessions.contextGuard.set` köprü op'undan 8 farklı dalda özelleştirilebilir:
+- Ayarlar sayfasında **Handover & Relay** bölümünden veya `sessions.contextGuard.set` köprü op'undan 8 farklı dalda özelleştirilebilir:
   - `converge` / `handover`: Normal oturumlara giden toparlanma ve devir emirleri.
   - `relayConverge` / `relayHandover`: Baton rölesi koşan oturumlara giden fısıltılar (`baton.pass` yönlendirmesi).
   - `relayPassedConverge` / `relayPassedHandover`: Bayrağı zaten devretmiş ama turun bitmesini bekleyen oturumlara giden emirler.
@@ -3634,7 +3634,7 @@ Gürültü koruması: önceki hafta 0.50$'ın, bu hafta 1$'ın altındaysa uyar�
 
 ### Farm Settings sayfası (2.54.0)
 
-VS Code'un ayar arayüzünde kazı yapmana gerek yok: **Agent Farm: Farm Settings** (Dashboard'daki **⚙ Settings** düğmesi de) **tüm `agentFarm.*` ayarlarını** tek sayfada açar — alana göre gruplu (Core, Live Monitoring, Cost, Tasks, Media, Search, Multi-CLI, Health, Reports), filtre kutulu; her ayarın açıklaması adının altında, tam anahtar + varsayılan değeri tooltip'te. Boolean'lar onay kutusu, enum'lar açılır liste, liste/nesneler doğrulamalı JSON editörü — bozuk değer yazılmaz, satırın altında hatayla reddedilir. Varsayılandan farklı ayarlar işaretlidir ve tek tıkla **↺ reset** edilir. Değişiklikler anında kullanıcı ayarlarına kaydedilir; başka yerden yapılan düzenlemeler sayfaya canlı yansır.
+VS Code'un ayar arayüzünde kazı yapmana gerek yok: **Agent Farm: Farm Settings** (Dashboard'daki **⚙ Settings** düğmesi de) **tüm `agentFarm.*` ayarlarını** tek sayfada açar — ayar kataloğunun (`src/core/settingsCatalog/`) on altı bölümüne dağıtılmış — General, Projects, Agents, Engines & Accounts, Sessions, Notifications & Sound, Quota & Cost, Handover & Relay, Tasks & Queue, Monitoring & Health, Reports, Knowledge, Media & Studio, Sentry, Gatekeeper, Remote Access — her bölüm kendi adlı gruplarıyla çizilir, filtre kutulu; her ayarın açıklaması adının altında, tam anahtar + varsayılan değeri tooltip'te. Boolean'lar onay kutusu, enum'lar açılır liste, liste/nesneler doğrulamalı JSON editörü — bozuk değer yazılmaz, satırın altında hatayla reddedilir. Varsayılandan farklı ayarlar işaretlidir ve tek tıkla **↺ reset** edilir. Değişiklikler anında kullanıcı ayarlarına kaydedilir; başka yerden yapılan düzenlemeler sayfaya canlı yansır.
 
 Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çizer — gelecekte eklenen bir ayar kendiliğinden görünür.
 

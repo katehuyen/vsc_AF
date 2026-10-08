@@ -22,27 +22,6 @@
     /** A hit on part of a word, against a whole word. */
     const INSIDE = 0.2;
 
-    /**
-     * The words a person types looking for a setting whose key and text say neither.
-     * One table for every surface; the page's sections answer to the same words.
-     */
-    const TERMS = [
-        [/^agentFarm\.alerts\./, 'sound sounds ses tone tones ring beep chime voice speak announce say who read aloud quiet hours mute'], // i18n-exempt
-        [/^agentFarm\.promptSnippetsFile$/, 'saved prompts snippet snippets template templates kalıp kalip prompt file ' // i18n-exempt
-            + 'console send right-click paste markdown fence block phrases reuse boilerplate'], // i18n-exempt
-        [/^agentFarm\.wiki/, 'wiki knowledge base kb 00_WIKI vault obsidian anayasa constitution rules ' // i18n-exempt
-            + 'index log compile candidate category categories portable path root'], // i18n-exempt
-        [/^agentFarm\.superpowers/, 'superpowers skills discipline tdd debugging brainstorming plan hook ' // i18n-exempt
-            + 'SKILL.md using-superpowers engineering agent default portable path root'], // i18n-exempt
-        [/^agentFarm\.telegram/, 'telegram bot phone mobile chat bridge remote token botfather ' // i18n-exempt
-            + 'allowlist chat id budget ceiling daily usd getMe poller polling'], // i18n-exempt
-        [/^agentFarm\.console\.autoAnswer/, 'soru sorular question questions ask askuserquestion timeout zaman aşımı ' // i18n-exempt
-            + 'otomatik cevap yanıt answer unanswered default pick choose wait'] // i18n-exempt
-    ];
-    function termsOf(key) {
-        return TERMS.filter(([re]) => re.test(String(key || ''))).map(([, w]) => w).join(' ');
-    }
-
     /** 'agentFarm.alerts.stuckThresholdSeconds' → 'Stuck threshold seconds' — the name a key implies. */
     function humanize(key) {
         const last = String(key || '').split('.').pop() || '';
@@ -50,13 +29,17 @@
         return s ? s[0].toUpperCase() + s.slice(1) : '';
     }
 
-    /** A setting as the ranker reads it. `it`: { key, label?, summary?, description?, enum?, enumLabels?, place? }. */
+    /**
+     * A setting as the ranker reads it. `it`: { key, label?, summary?, description?, enum?, enumLabels?, place?, terms? }.
+     * `terms` — the words a person types for a setting whose key and text say neither — are the catalog's
+     * (src/core/settingsCatalog/), carried on the row, so every surface searches one table.
+     */
     function docOf(it) {
         const key = String(it.key || '');
         const split = key.replace(/^agentFarm\./, '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[._-]+/g, ' ');
         return {
             name: String(it.label || humanize(key)),
-            terms: [it.terms || '', termsOf(key)].join(' ').trim(),
+            terms: String(it.terms || ''),
             key: split + ' ' + key,
             summary: String(it.summary || ''),
             place: String(it.place || ''),
@@ -146,5 +129,5 @@
         return out + esc(s.slice(at));
     }
 
-    return { rank, match, mark, docOf, humanize, termsOf, WEIGHTS, INSIDE };
+    return { rank, match, mark, docOf, humanize, WEIGHTS, INSIDE };
 });

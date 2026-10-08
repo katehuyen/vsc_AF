@@ -208,6 +208,8 @@ const SHARED = [
     'afSettingDocs.js',
     'afSettingWiki.js',
     'afSettingAccess.js',
+    // afSettingSections.js — one catalog section drawn as its groups, cards handed to their parts (U-226).
+    'afSettingSections.js',
     // afSettingPage/Wire/WireList/WireShapes.js — the page around #setbody and what its controls do (U-225).
     'afSettingPage.js',
     'afSettingWire.js',

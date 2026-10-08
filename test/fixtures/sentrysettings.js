@@ -150,7 +150,7 @@ const base = (vault, vaultMeta) => ({
     claude: null, engines: null, engineModels: null, wiki: null, superpowers: null,
     alerts: null, telegram: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
-    categories: [{ id: 'sentry', label: 'Sentry — unattended campaigns', items: ITEMS() }],
+    categories: require('../../out/core/settingsops.js').groupIntoSections(ITEMS()),
     pathVars: VARS(vault, vaultMeta),
     pathPreview: {
         'agentFarm.handoverFolders': preview(FOLDERS, vault),

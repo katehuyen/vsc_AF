@@ -245,9 +245,7 @@ const base = (on, chosen, voices, skips, gate, speak) => ({
     focus: '', profiles: [], prompts: null, docOpen: null, folders: null,
     claude: null, engines: null, engineModels: null, wiki: null, superpowers: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
-    categories: [{
-        id: 'live', label: 'Live Monitoring & Alerts', items: ITEMS(on, chosen)
-    }],
+    categories: require('../../out/core/settingsops.js').groupIntoSections(ITEMS(on, chosen)),
     alerts: page(on, chosen, voices, skips, gate, speak)
 });
 

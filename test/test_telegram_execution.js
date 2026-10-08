@@ -179,8 +179,8 @@ const s = pkg.contributes.configuration.properties['agentFarm.telegram.whenBusy'
 ok('the setting is contributed with both values and queues by default',
     !!s && s.default === 'queue' && s.enum.join() === 'queue,steer');
 const cat = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsops.js').replace('.js', '.ts'), 'utf8');
-ok('…and filed under a category, so it does not leak into Other',
-    /'telegram\.whenBusy': 'access'/.test(cat));
+ok('…and filed in the catalog beside the other Telegram settings',
+    require('../out/core/settingsCatalog/index.js').catalogEntry('telegram.whenBusy').group === 'telegram' && !!cat);
 ok('the queue is on the bridge', /op: 'telegram\.inbox'/.test(ext));
 
 console.log(`test_telegram_execution: ${pass} passed, ${fail} failed`);

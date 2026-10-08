@@ -53,7 +53,7 @@ ok('each figure\'s setting is contributed as a string that defaults to empty',
         && props['agentFarm.' + f.setting].default === ''));
 const settingsJs = require('./lib_settings_source').settingsPageSource();
 ok('Farm Settings draws the three together under one heading, with a sample line in the real classes',
-    /<h3 class="setgrouph">Quota figures<\/h3>/.test(settingsJs)
+    Q.QUOTA_FIGURES.every(f => require('../out/core/settingsCatalog/index.js').catalogEntry(f.setting).group === 'quotaFigures')
     && Q.QUOTA_FIGURES.every(f => settingsJs.includes(`<span class="${f.cls}">`)));
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -7,6 +7,7 @@ import { CCItem } from './claudesettings';
 import { ENGINE_ENUM } from './consoleEngine';
 import { PreviewedPath } from './pathVars';
 import { rankSettings } from './settingSearch';
+import { resolveSectionId, SECTIONS } from './settingsCatalog/index';
 import {
     parseImportedProfiles, pathPreviews, sanitizeValue, SettingsCategory, SettingsProfile
 } from './settingsops';
@@ -120,7 +121,11 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
     };
 
     const itemOut = (it: SettingsCategory['items'][number]): Record<string, unknown> => ({
-        key: it.key, type: it.type, enum: it.enum ?? null,
+        key: it.key,
+        // U-226 — what the catalog says about it, as the Settings page reads it
+        label: it.label, summary: it.summary ?? null, section: it.section, group: it.group, tier: it.tier, place: it.place,
+        ...(it.unit ? { unit: it.unit } : {}),
+        type: it.type, enum: it.enum ?? null,
         value: maskIfSensitive(it.key, it.value),
         default: maskIfSensitive(it.key, it.default),
         modified: it.modified,
@@ -142,31 +147,35 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
     bridge.register([
         {
             op: 'settings.list',
-            describe: 'Every Agent Farm setting this build declares, by category, with its type, its current value, whether it differs from the default and whether changing it needs a window reload. ‼️ A credential-shaped key comes back MASKED with `masked:true` — the value is never read out over the bridge, and the Secrets vault is not here at all. `modified:true` narrows it to what somebody has actually changed, which is the useful read when comparing two machines. args: category?, q? (a query in the Settings page\'s own grammar — words, -word, a OR b, "a phrase" — over the name, the words people use for it, the key, its section, its options and its description; with q, `results` lists the matches BEST FIRST, the order the Settings page shows them in, each with its `section`), modified?',
+            describe: 'Every Agent Farm setting this build declares, by the Settings page\'s sections, each with its name, its one-line summary, its section, group and tier (basic rows show when a section opens, advanced ones behind "Show more"), `place` (Section › Group), its type, its current value, whether it differs from the default and whether changing it needs a window reload. ‼️ A credential-shaped key comes back MASKED with `masked:true` — the value is never read out over the bridge, and the Secrets vault is not here at all. `modified:true` narrows it to what somebody has actually changed, which is the useful read when comparing two machines. args: category? (a section: '
+                + SECTIONS.map(s => s.id).join(', ')
+                + ' — or its name, or a category id from before the sections, which answers with the section most of its keys moved to and says so in `section`), q? (a query in the Settings page\'s own grammar — words, -word, a OR b, "a phrase" — over the name, the words people use for it, the key, its section and group, its options and its description; with q, `results` lists the matches BEST FIRST, the order the Settings page shows them in), modified?',
             handler: (args) => {
-                const cat = optStr(args, 'category').toLowerCase();
+                const asked = optStr(args, 'category');
+                const section = asked.trim() ? resolveSectionId(asked) : undefined;
+                need(!asked.trim() || !!section, `"${asked}" is not a settings section — one of: ${SECTIONS.map(s => s.id).join(', ')}`);
                 const q = optStr(args, 'q');
                 const base = deps.categories()
-                    .filter(c => !cat || c.id === cat || c.label.toLowerCase() === cat)
+                    .filter(c => !section || c.id === section)
                     .map(c => ({ id: c.id, label: c.label, items: c.items.filter(it => args.modified !== true || it.modified) }));
                 // U-224 — the page's ranker, so the bridge and the page answer one query one way
-                const ranked = q.trim()
-                    ? rankSettings(base.flatMap(c => c.items.map(it => ({ ...it, place: c.label }))), q) : null;
+                const ranked = q.trim() ? rankSettings(base.flatMap(c => c.items), q) : null;
                 need(!ranked?.error, ranked?.error ?? '');
                 const kept = ranked ? new Set(ranked.map(r => r.item.key)) : null;
                 const cats = base
                     .map(c => ({ id: c.id, label: c.label, items: c.items.filter(it => !kept || kept.has(it.key)).map(itemOut) }))
                     .filter(c => c.items.length);
                 return {
+                    ...(section ? { section } : {}),
                     categories: cats,
                     total: cats.reduce((n, c) => n + c.items.length, 0),
-                    ...(ranked ? { results: ranked.map(r => ({ ...itemOut(r.item), section: r.item.place })) } : {})
+                    ...(ranked ? { results: ranked.map(r => itemOut(r.item)) } : {})
                 };
             }
         },
         {
             op: 'settings.get',
-            describe: 'One setting in full — its schema type, its allowed values if it has an enum, its default, what it is now and whether a reload is needed. The `agentFarm.` prefix is optional. args: key',
+            describe: 'One setting in full — its name, summary, section, group and tier as the Settings page files it, its schema type, its allowed values if it has an enum, its default, what it is now and whether a reload is needed. The `agentFarm.` prefix is optional. args: key',
             handler: (args) => itemOut(specOf(argStr(args, 'key')))
         },
         {

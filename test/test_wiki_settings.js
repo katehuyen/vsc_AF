@@ -167,9 +167,8 @@ async function bridgeOps() {
 {
     const so = fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8');
     ok('the wiki has its own settings section, and every wiki key is in it',
-        /\['wiki', 'Wiki & Knowledge Base'\]/.test(so)
-        && /wikiRoot: 'wiki'/.test(so) && /wikiEngine: 'wiki'/.test(so)
-        && /wikiModel: 'wiki'/.test(so) && /wikiEffort: 'wiki'/.test(so));
+        !!so && ['wikiRoot', 'wikiAgent', 'wikiEngine', 'wikiModel', 'wikiEffort'].every(k => require('../out/core/settingsCatalog/index.js').catalogEntry(k).group === 'wiki')
+        && require('../out/core/settingsCatalog/index.js').catalogKeys().filter(k => /^wiki/.test(k)).length === 5);
 
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     const props = pkg.contributes.configuration.properties;
@@ -198,8 +197,8 @@ async function bridgeOps() {
         /optStr\(args, 'engine'\) \|\| \(deps\.defaultEngine/.test(wiki));
 
     const page = require('./lib_settings_source').settingsPageSource();
-    ok('the section is drawn for the wiki category, like prompts before it',
-        /c\.id === 'wiki' \? wikiSection\(c\)/.test(page));
+    ok('the group is drawn by its own card, like the saved prompts',
+        /'knowledge\/wiki': g => X\.wikiSection\(g\)/.test(page));
     ok('‼️ the page says the one thing a text box cannot: a compile refuses without the law',
         /every compile refuses without it/.test(page));
     ok('all four gestures are wired',

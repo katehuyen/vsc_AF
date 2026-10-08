@@ -55,8 +55,11 @@ const keys = (q, n) => S.rank(items, q).slice(0, n).map(r => r.item.key);
         S.mark('livePort <x>', 'port', esc) === 'live<mark>Port</mark> &lt;x>');
     ok('…and leaves text with no query as plain escaped text', S.mark('a<b', '', esc) === 'a&lt;b');
     ok('the name a key implies', S.humanize('agentFarm.alerts.stuckThresholdSeconds') === 'Stuck threshold seconds');
+    // U-226 — the table is the catalog's, carried on every row the model builds
+    const alertsOn = require('../out/core/settingsops.js').groupIntoSections([{ key: 'agentFarm.alerts.on', type: 'boolean',
+        default: true, value: true, modified: false, description: '' }])[0].items[0];
     ok('the words people use live in one table: the sound settings answer to "sound" and "ses"',
-        /\bsound\b/.test(S.termsOf('agentFarm.alerts.on')) && /\bses\b/.test(S.termsOf('agentFarm.alerts.on')));
+        /\bsound\b/.test(alertsOn.terms) && /\bses\b/.test(alertsOn.terms) && S.rank([alertsOn], 'ses').length === 1);
 }
 
 {

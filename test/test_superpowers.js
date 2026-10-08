@@ -324,8 +324,8 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
             && S.superpowersDefaultFor('Asistan', store) === false);
 
         const set = require('./lib_settings_source').settingsPageSource();
-        ok('the section is drawn for its own category, as the wiki one is',
-            /c\.id === 'superpowers' \? superpowersSection\(c\)/.test(set));
+        ok('the group is drawn by its own card, as the wiki one is',
+            /'agents\/superpowers': g => X\.superpowersSection\(g\)/.test(set));
         ok('‼️ the page says the one thing a text box cannot: without the hook a session gets NOTHING',
             /given nothing at all from here/.test(set));
         ok('the hook is drawn as a checklist row, found or not',
@@ -347,7 +347,7 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
 
         const ops = fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.js').replace('.js', '.ts'), 'utf8');
         ok('both settings are filed under the section that can answer for them',
-            /superpowersPath: 'superpowers'/.test(ops) && /superpowersDefaults: 'superpowers'/.test(ops));
+            ['superpowersPath', 'superpowersDefaults'].every(k => require('../out/core/settingsCatalog/index.js').catalogEntry(k).group === 'superpowers') && !!ops);
 
         const par = JSON.parse(fs.readFileSync(path.join(ROOT, 'parity.manifest.json'), 'utf8'));
         const row = par.entries.find(e => e.capability === 'settingsSectionMessages.ts#spDefault');

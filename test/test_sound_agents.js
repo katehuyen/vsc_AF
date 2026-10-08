@@ -98,7 +98,7 @@ const src = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
     const props = Object.assign({}, ...[].concat(pkg.contributes.configuration).map(c => c.properties || {}));
     ok('the setting exists, an object of objects', props['agentFarm.alerts.agentVoices']
         && props['agentFarm.alerts.agentVoices'].type === 'object');
-    ok('…and is filed beside the other sound settings', /'alerts\.agentVoices': 'live'/.test(src('src/core/settingsops.ts')));
+    ok('…and is filed beside the other sound settings', require('../out/core/settingsCatalog/index.js').catalogEntry('alerts.agentVoices').group === 'sound');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

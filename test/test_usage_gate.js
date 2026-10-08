@@ -262,8 +262,8 @@ let coldService;
     const s = pkg.contributes.configuration.properties['agentFarm.planUsageMinIntervalSeconds'];
     ok('the setting is contributed', !!s && s.default === 10 && s.minimum === 5);
     ok('…and its description says what it is NOT (a beat)', /never causes an extra read/.test(s.description));
-    ok('…and it is filed, or it leaks into "Other"',
-        /planUsageMinIntervalSeconds: 'cost'/.test(SRC('core/settingsops.ts')));
+    ok('…and it is filed in the catalog, beside the other plan usage reads',
+        require('../out/core/settingsCatalog/index.js').catalogEntry('planUsageMinIntervalSeconds').group === 'planUsage');
 
     // The two services must name the token the SAME way or the gate is a
     // ledger with two pages. This is the one fact the whole design rests on.

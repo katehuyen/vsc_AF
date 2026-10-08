@@ -404,7 +404,7 @@ const rawDir = path.join(wikiRoot, '_RAW_');
         !!row && (row.ops || []).includes('wiki.compile.run'));
     const so = fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8');
     // X-57 — it is filed under the wiki's own section now, not Reports & Digest.
-    ok('the new setting is filed, not left to leak into Other', /wikiAgent: 'wiki'/.test(so));
+    ok('the new setting is filed in the Wiki group', require('../out/core/settingsCatalog/index.js').catalogEntry('wikiAgent').group === 'wiki' && !!so);
 }
 
 })().then(() => {

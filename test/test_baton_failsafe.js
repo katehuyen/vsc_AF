@@ -118,9 +118,9 @@ console.log('\n== the setting, and the wiring ==');
     ok('agentFarm.batonEmergencyTemplate is a multi-line text box that lists every variable',
         /"agentFarm\.batonEmergencyTemplate": \{\s*"type": "string",\s*"default": "",\s*"editPresentation": "multilineText"/.test(pj)
         && F.EMERGENCY_TEMPLATE_VARS.every(v => new RegExp('\\{' + v + '\\}[^"]*').test(pj.split('"agentFarm.batonEmergencyTemplate"')[1].split('"agentFarm.')[0])));
-    ok('…filed under Handover Discipline, in its own group of the page',
-        /batonEmergencyTemplate: 'discipline'/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8'))
-        && /keys: \['batonEmergencyTemplate'\]/.test(require('./lib_settings_source').settingsPageSource()));
+    ok('…filed under Handover & Relay, in a group of its own',
+        require('../out/core/settingsCatalog/index.js').catalogEntry('batonEmergencyTemplate').section === 'handover'
+        && require('../out/core/settingsCatalog/index.js').catalogKeys().filter(k => require('../out/core/settingsCatalog/index.js').catalogEntry(k).section === 'handover' && require('../out/core/settingsCatalog/index.js').catalogEntry(k).group === require('../out/core/settingsCatalog/index.js').catalogEntry('batonEmergencyTemplate').group).length === 1);
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('the door reads it, and the runner is given the failsafe\'s sources',
         /emergencyTemplate: cfg\(\)\.get<string>\('batonEmergencyTemplate', ''\)/.test(ext)

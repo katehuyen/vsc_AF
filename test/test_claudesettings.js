@@ -159,8 +159,8 @@ const { charts } = require('./lib_charts_stub.js');
     ok('Claude Code section rendered with nav chip', html.includes('Claude Code (claude CLI)') && html.includes('data-cat="claude"'));
     // U-150 (4) — beside Engines, never under "Other" at the foot of the page
     ok('U-150: the Claude Code card sits above the setting categories, its chip before theirs',
-        html.indexOf('id="cat-claude"') > 0 && html.indexOf('id="cat-claude"') < html.indexOf('id="cat-core"')
-        && html.indexOf('data-cat="claude"') < html.search(/data-cat="(?!engines|claude)/));
+        html.indexOf('id="cat-claude"') > 0 && html.indexOf('id="cat-claude"') < html.indexOf('id="sec-')
+        && html.indexOf('data-cat="claude"') < html.indexOf('data-sec="'));
     ok('the PowerShell-tip setting is there, checked', /data-ccset="psTool"[^>]*checked/.test(html));
     ok('set item shows the clear button, unset does not', html.includes('data-ccclear="model"') && !html.includes('data-ccclear="maxThinking"'));
     ok('file path + backup note shown', html.includes('C:/u/.claude/settings.json') && html.includes('.agentfarm-backup'));

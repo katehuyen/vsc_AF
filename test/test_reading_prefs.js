@@ -96,7 +96,7 @@ eq('skip keeps every sentence the agent wrote, in order', skipped,
         && FIELDS.every(k => node.properties[k] && JSON.stringify(node.properties[k].default) === JSON.stringify(P.READING_DEFAULT[k])));
     ok('…its choices are the core\'s', JSON.stringify(node.properties.length.enum) === JSON.stringify(P.READ_LENGTHS)
         && JSON.stringify(node.properties.code.enum) === JSON.stringify(P.READ_CODES));
-    ok('…in the live category', /'alerts\.reading': 'live'/.test(src('src/core/settingsops.ts')));
+    ok('…in the Sound group', require('../out/core/settingsCatalog/index.js').catalogEntry('alerts.reading').group === 'sound');
     const flex = src('media/afFlex.js');
     ok('a flex point per field, set on the setting and on the op', FIELDS.every(k => new RegExp(`reading\\('${k}', N_\\(`).test(flex))
         && /'setting:agentFarm\.alerts\.reading#' \+ field/.test(flex) && /'alerts\.readingSettings:' \+ field/.test(flex));

@@ -11,8 +11,8 @@ export interface SettingPick extends vscode.QuickPickItem { key: string }
 /** The palette's rows: name, section (and whether it is changed), key — in the page's own order. */
 export function settingPicks(categories: SettingsCategory[]): SettingPick[] {
     return categories.flatMap(c => c.items.map(it => ({
-        label: settingName(it.key),
-        description: c.label + (it.modified ? ' · changed' : ''),
+        label: it.label ?? settingName(it.key),
+        description: (it.place ?? c.label) + (it.modified ? ' · changed' : ''),
         detail: it.key,
         key: it.key
     })));

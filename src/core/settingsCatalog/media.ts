@@ -1,0 +1,53 @@
+import { CatalogSection } from './types';
+
+export const media: CatalogSection = {
+    id: 'media',
+    label: 'Media & Studio',
+    about: 'Media services, outputs, the library, the studio wall, publishing and the browser.',
+    groups: [
+        { id: 'services', label: 'Services and keys', about: 'The media services the tools call, and the names of their keys.' },
+        { id: 'outputs', label: 'Outputs and uploads', about: 'Where the tools write, how much is kept, and what is uploaded.' },
+        { id: 'library', label: 'Library', about: 'How files arriving in a media library are looked at and described.' },
+        { id: 'studio', label: 'Studio wall', about: 'Which library, stages and kinds the studio wall shows, and what counts as a success.' },
+        { id: 'airtable', label: 'Airtable inputs', about: 'Which Airtable records are offered as inputs, how many and in what order.' },
+        { id: 'publishing', label: 'Publishing', about: 'Where content is published, who approves it, and how its performance is read.' },
+        { id: 'browser', label: 'Browser', about: 'Which sites the browser may open, and whether you approve each visit.' }
+    ],
+    rows: {
+        mediaAuthSecret: { group: 'services', tier: 'basic' },
+        replicateAuthSecret: { group: 'services' },
+        mediaBaseUrl: { group: 'services' },
+        replicateBaseUrl: { group: 'services' },
+        outputsMaxMB: { group: 'outputs', tier: 'basic', unit: 'MB' },
+        ingestFolders: { group: 'outputs' },
+        mediaUploadAuto: { group: 'outputs' },
+        mediaUploadProvider: { group: 'outputs' },
+        mediaUploadRetentionDays: { group: 'outputs', unit: 'days' },
+        toolOutDir: { group: 'outputs' },
+        toolOverwrite: { group: 'outputs' },
+        libraryEnrich: { group: 'library' },
+        libraryEnrichScope: { group: 'library' },
+        libraryEnrichModel: { group: 'library' },
+        libraryEnrichVideoModel: { group: 'library' },
+        libraryEnrichEffort: { group: 'library' },
+        libraryEnrichSections: { group: 'library' },
+        libraryEnrichCap: { group: 'library' },
+        allInWhen: { group: 'library' },
+        allInUnsure: { group: 'library' },
+        studioLibraryBase: { group: 'studio' },
+        studioLibraryStages: { group: 'studio' },
+        studioLibraryKind: { group: 'studio' },
+        studioLibrarySuccess: { group: 'studio' },
+        studioLibraryPromote: { group: 'studio' },
+        airtableInputLimit: { group: 'airtable' },
+        airtableInputSort: { group: 'airtable' },
+        airtableInputStages: { group: 'airtable' },
+        publishApproval: { group: 'publishing', tier: 'basic' },
+        publishPlatforms: { group: 'publishing' },
+        contentCalendarDir: { group: 'publishing' },
+        metricsFields: { group: 'publishing' },
+        performanceBrief: { group: 'publishing' },
+        browserAllowHosts: { group: 'browser' },
+        browserApproval: { group: 'browser', tier: 'basic' }
+    }
+};

@@ -284,7 +284,7 @@
             <button class="mini wk-fix" id="wk-vinit"
                 title="Create the folder if it is not there and write whatever of -WIKI-ANAYASA-.md, index.md and log.md is missing. It only CREATES: a file already on disk is left exactly as it is, because the law is yours.">🛠 Start the wiki here</button>
             <button class="mini wk-fix secondary" id="wk-vsettings"
-                title="Open Settings ▸ Wiki & Knowledge Base — choose the folder, and see which files it holds">⚙ Choose the folder</button>`;
+                title="Open Settings ▸ Knowledge ▸ Wiki — choose the folder, and see which files it holds">⚙ Choose the folder</button>`;
         const cats = (v.categories || []).length;
         /**
          * ‼️ A DOOR THAT OPENS NOTHING IS NOT A DOOR. A folder that is not
@@ -510,7 +510,7 @@
             ${bit('effort', w.effort, 'the engine\'s own default effort')}
             <span class="wk-aspace"></span>
             <button id="wk-ago" title="Start the run now. ${n} mark(s) go into ONE run; nothing is compiled until it reports back with the pages it wrote.">▶ Start</button>
-            <button class="secondary" id="wk-achange" title="Open Settings ▸ Wiki & Knowledge Base, where these four live. Change them there and press Start again — a run started from the cockpit, the palette or the bridge must be the same run.">⚙ Change…</button>
+            <button class="secondary" id="wk-achange" title="Open Settings ▸ Knowledge ▸ Wiki, where these four live. Change them there and press Start again — a run started from the cockpit, the palette or the bridge must be the same run.">⚙ Change…</button>
             <button class="secondary" id="wk-acancel" title="Start nothing (Esc)">Cancel</button>
         </div>`;
     }

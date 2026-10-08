@@ -2,13 +2,16 @@
  * Farm Settings — pure model behind the rich settings page.
  *
  * The page is SCHEMA-DRIVEN: it renders whatever `package.json` contributes
- * under `agentFarm.*` (type, enum, default, description), so a setting added
- * tomorrow appears automatically — categories only give known keys a nicer
- * home; unknown ones land in "Other". No setting is ever listed here by hand
- * twice: this file only maps keys to groups and validates values.
+ * under `agentFarm.*` (type, enum, default, description). Where each key is
+ * filed and what a person reads about it is the catalog's
+ * (src/core/settingsCatalog/); a key without a record is still drawn, in its
+ * section's More group, and fails the catalog test by name.
  */
 import { PreviewedPath } from './pathVars';
 import { SchemaNode, SettingShape, shapeOf } from './settingShape';
+import { groupIntoSections } from './settingsCatalog/model';
+import type { Tier } from './settingsCatalog/types';
+export { groupIntoSections } from './settingsCatalog/model';
 export type { SchemaNode, SettingShape, ShapeField, ShapeKind } from './settingShape';
 export { exampleText, shapeOf } from './settingShape';
 
@@ -152,6 +155,18 @@ export interface SettingItem extends SettingSpec {
     /** X-470 — what the box ACTS at right now when another setting bounds it (the stay line above the
      *  Account ceiling acts at the ceiling). Said on the row, so the value written is never mistaken for the one in force. */
     inForce?: string;
+    /** U-226 — the catalog's answer for this key (src/core/settingsCatalog/), filled in by groupIntoSections */
+    section?: string;
+    group?: string;
+    tier?: Tier;
+    label?: string;
+    summary?: string;
+    unit?: string;
+    zeroMeans?: 'off';
+    control?: string;
+    terms?: string;
+    /** 'Section › Group', the line a search result names its home with */
+    place?: string;
 }
 
 /** The host's per-row notes, by name: the same notes reach the page and the bridge. */
@@ -160,225 +175,14 @@ export interface SettingRowNotes {
     inForceOf?: (key: string) => string | undefined;
 }
 
+/** A catalog section: its groups in order, and its rows ordered by group, then by the catalog. */
 export interface SettingsCategory {
     id: string;
     label: string;
+    about?: string;
+    groups?: { id: string; label: string; about: string }[];
     items: SettingItem[];
 }
-
-/** key (without the agentFarm. prefix) → category id. */
-const CATEGORY_OF: Record<string, string> = {
-    // core
-    agentRoots: 'core', excludeAgentDirs: 'core', claudeDir: 'core', extraClaudeDirs: 'core',
-    includeUnmatchedProjects: 'core', guideLanguage: 'core', newAgentModel: 'core',
-    agentEngineDefaults: 'core',
-    workArea: 'core',   // B-30 — the agents' scratch folder (core/workArea.ts)
-    modelAliases: 'core', launchDefaults: 'core', launchProfiles: 'core', flexPresets: 'flow', flexOverrides: 'flow', projects: 'core',
-    // projects — the umbrella everything else hangs under
-    projectsRoot: 'core', projectSkeleton: 'core', projectStaleDays: 'core',
-    projectsArchiveRoot: 'core', projectTemplates: 'core',
-    projectContextExtra: 'core',
-    projectDigestDay: 'core', projectDigestHour: 'core',
-    // display & labels
-    speakerLabelTemplate: 'display', speakerLabelCase: 'display', speakerLabelFallback: 'display',
-    consoleDropZone: 'display', language: 'display',
-    // saved prompts — a section of its own, because the setting is one path and
-    // the thing the user needs to see is what came OUT of that path
-    promptSnippetsFile: 'prompts',
-    // live monitoring & alerts
-    liveMonitor: 'live', livePort: 'live', activeThresholdSeconds: 'live',
-    stuckThresholdSeconds: 'live', notifyPermission: 'live', notifyStuck: 'live',
-    'quotaStyle.percent': 'live', 'quotaStyle.left': 'live', 'quotaStyle.reset': 'live',
-    notifyTurnEnd: 'live', notifyConsoleTurnEnd: 'live', idleSessionNoticeMinutes: 'live',
-    // K-43 — what happens to a question nobody is there to answer
-    'console.autoAnswer.enabled': 'live', 'console.autoAnswer.timeoutSeconds': 'live', 'console.autoAnswer.remindSeconds': 'live',
-    'console.autoAnswer.filter': 'live', 'console.autoAnswer.words': 'live',
-    // ‼️ A-18 — beside the notification switches ON PURPOSE, because the two are
-    // constantly confused: those open a VS Code notification, these play a
-    // sound. Filed apart, "I turned the sound off and a notification still
-    // arrives" reads as a bug rather than as the two settings it is.
-    'alerts.on': 'live', 'alerts.voices': 'live', 'alerts.agentVoices': 'live',
-    // A-22 — the gate. Filed beside the two boxes the same card replaces, so a
-    // search for "mute" or "quiet" lands on the card rather than beneath it.
-    'alerts.muted': 'live', 'alerts.quietHours': 'live', 'alerts.nudge': 'live',
-    'alerts.speak': 'live', 'alerts.toneVolume': 'live', 'alerts.reading': 'live',
-    // U-119 — what Allow/Reject type into a blocked session's terminal. It sits
-    // with the live monitor because that is what notices the block.
-    permissionAnswerKeys: 'live',
-    maxTranscriptMessages: 'live', contextWindowTokens: 'live', bridgeGuard: 'live', shellGuard: 'live',
-    /**
-     * ‼️ S-80 — THE HANDOVER RULE IS ITS OWN SECTION, and the words are the
-     * argument. The four percentages lived under Live Monitoring because each
-     * of them, one at a time, is "a threshold the monitor watches" — true about
-     * each and wrong about the set: they are not a monitor's sensitivity, they
-     * are the law a run is held to, and once the SENTENCE they deliver became
-     * editable too there was a subject here rather than four stray numbers.
-     * `contextWindowTokens` stays behind on purpose: it is the ceiling EVERY
-     * context figure is drawn against, not a line anybody is held to.
-     */
-    contextConvergePct: 'discipline', contextHandoverPct: 'discipline',
-    quotaConvergePct: 'discipline', quotaHandoverPct: 'discipline', quotaWeeklyHandoverPct: 'discipline',
-    disciplineOrders: 'discipline',
-    // S-78 — where a relay stops by itself: the same law, carried by a baton
-    batonMaxHops: 'discipline',
-    // S-82 — what every leg is told on top: the user's header and standing rule
-    batonHandoverTemplate: 'discipline', batonInjectedDirective: 'discipline', batonEmergencyTemplate: 'discipline',
-    batonFaultWaitHours: 'discipline', batonFlaggedPasses: 'discipline', batonFlaggedModel: 'discipline',
-    chainHangMinutes: 'discipline', chainWaitMinutes: 'discipline',
-    contextHandoverStayAccountPct: 'discipline', defaultAccountCeiling: 'discipline', defaultAccountWeeklyCeiling: 'discipline',
-    // ‼️ S-52 — beside the other two settings that say how a session's figures
-    // are READ rather than how they are drawn: this one decides when a pause
-    // stops being someone thinking and becomes someone away.
-    sessionBreakMin: 'live',
-    // cost & budgets
-    pricing: 'cost', budgets: 'cost', budgetsUnlimited: 'cost', windowTokenLimit: 'cost',
-    windowWeightedTokenLimit: 'cost', quotaWeightMode: 'cost', quotaWeights: 'cost',
-    quotaBrakeBasis: 'cost',
-    planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost', accountsAutoRefresh: 'cost',
-    agyUsageRefreshMinutes: 'cost', agyUsageActiveRefreshSeconds: 'cost',
-    planUsageMinIntervalSeconds: 'cost',
-    planUsageStatusBar: 'cost', planUsageWarnPercent: 'cost', planUsageDangerPercent: 'cost',
-    planUsageEngine: 'cost',
-    mediaBudgetMonthUSD: 'cost', mediaPricing: 'cost', trendAlertFactor: 'cost',
-    costAnomalyMinUsd: 'cost', forecastDays: 'cost', agentRowCostUnit: 'cost',
-    // tasks & automation
-    taskExtraArgs: 'tasks', externalTerminal: 'tasks', maxConcurrentTasks: 'tasks',
-    maxConcurrentPerAgent: 'tasks', quotaGuardPercent: 'tasks', queueAutoAdvance: 'tasks',
-    dispatchRules: 'tasks', dispatchClassifier: 'tasks', modelPolicy: 'tasks',
-    quotaDowngradePercent: 'tasks', quotaDowngradeModel: 'tasks',
-    judgeArgs: 'tasks', judgeUnjudged: 'tasks', judgeCompare: 'tasks',
-    'kapici.rulesDir': 'kapici', 'kapici.timeoutMs': 'kapici', 'kapici.providers': 'kapici', 'kapici.route': 'kapici', 'kapici.keyName': 'kapici', 'kapici.dispatch': 'kapici', 'kapici.retry': 'kapici', 'kapici.trigger': 'kapici', 'kapici.workflow': 'kapici',workflowPrevTextChars: 'tasks', workflowAskEscalation: 'tasks', toolOutDir: 'media', toolOverwrite: 'media', libraryEnrich: 'media', airtableInputStages: 'media', showrunner: 'tasks', workflowSpendCap: 'tasks', judgeLadder: 'tasks', airtableInputLimit: 'media', airtableInputSort: 'media', studioLibraryBase: 'media', studioLibraryStages: 'media', studioLibraryKind: 'media', studioLibrarySuccess: 'media', studioLibraryPromote: 'media', allInUnsure: 'media', allInWhen: 'media',libraryEnrichScope: 'media', libraryEnrichModel: 'media', libraryEnrichVideoModel: 'media', libraryEnrichEffort: 'media', libraryEnrichSections: 'media', libraryEnrichCap: 'media', mediaUploadAuto: 'media', mediaUploadProvider: 'media', mediaUploadRetentionDays: 'media', evalRunArgs: 'tasks', taskRetry: 'tasks',
-    /**
-     * ‼️ X-193 — THE SENTRY IS ITS OWN SECTION, and thirteen settings is the
-     * argument. They were filed under Tasks & Automation because each of them,
-     * one at a time, governs "an unattended runner rather than a prompt somebody
-     * pastes into a box" — which was right about each one and wrong about the
-     * set: a reader tuning an overnight campaign had to find the words it
-     * starts on, the folders it reads, the leader's leash and three thresholds
-     * scattered down a page about task concurrency and dispatch rules.
-     *
-     * ONE SUBJECT cuts the other way once a subject is big enough to be one.
-     * What stays behind is deliberate: `answerDir` is where an answer is
-     * WRITTEN and belongs to the work queue, and `automation.*` is the master
-     * gate over every unattended thing on this machine, not over this one.
-     */
-    sentryTemplatesFile: 'sentry',
-    sentryInstructionFiles: 'sentry',
-    handoverSources: 'sentry',
-    handoverFolders: 'sentry',
-    sentryLeaderEngine: 'sentry',
-    sentryLeaderModel: 'sentry',
-    sentryLeaderBudgetUsd: 'sentry',
-    sentryLeaderMaxSeconds: 'sentry',
-    sentryLeaderMaxUsd: 'sentry',
-    sentryLeaderFailLimit: 'sentry',
-    sentryFailureLimit: 'sentry',
-    sentryIdlePollMin: 'sentry',
-    sentryStallMin: 'sentry',
-    // media pipeline & browser
-    mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
-    mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',
-    browserAllowHosts: 'media', browserApproval: 'media', contentCalendarDir: 'media', publishApproval: 'media', publishPlatforms: 'media', metricsFields: 'media', performanceBrief: 'media',
-    // search & semantic
-    embeddingsProvider: 'search', embeddingsModel: 'search', embeddingsBaseUrl: 'search',
-    embeddingsSecret: 'search', semanticMaxSessions: 'search', searchToolTrailDays: 'search',
-    // multi-CLI
-    cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', agyHome: 'cli',
-    // ‼️ NOT a path like the three above: OpenCode publishes no transcript file,
-    // so what this switches is whether its CLI is RUN to read the history at all.
-    opencodeHistory: 'cli', relayFeeds: 'cli',
-    // ‼️ X-100 — the Anthropic-compatible ROUTES, filed with the engines rather
-    // than with the launch defaults above: it answers "which providers can this
-    // machine reach", not "what does a new session start as". No credential is
-    // in it — a route's key is in the OS keychain and never in a settings file,
-    // which is why this key can sit in an ordinary category at all.
-    providerProfiles: 'cli',
-    // ‼️ X-171 — the captured ACCOUNTS, filed with the engines for the same
-    // reason as the routes above: they answer "which sign-ins can this machine
-    // start a session as", not "what does a new session start as". No token is
-    // in either of them — the credentials stay in the account's own directory,
-    // which is why these can sit in an ordinary category at all.
-    accounts: 'cli', activeAccounts: 'cli', accountPolicies: 'cli',
-    // reaching the farm from outside this VS Code window
-    'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
-    'remote.listen': 'access', 'remote.port': 'access',
-    'telegram.enabled': 'access', 'telegram.allowedChats': 'access',
-    'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access', 'telegram.digest': 'access',
-    'telegram.whenBusy': 'access',
-    // health & insights
-    livingChecks: 'health', noticeStaleHours: 'health',
-    staleMemoryDays: 'health', contextBudgetTokens: 'health', permissionLint: 'health',
-    pulse: 'health', insightAutoDelegate: 'health', qualitySample: 'health',
-    qualitySamplesPerAgent: 'health', suggestScan: 'health', packGalleryRepos: 'health',
-    // reports, digest & outbound
-    dailyDigest: 'reports', weeklySummary: 'reports', autoReport: 'reports',
-    autoReportFolder: 'reports', autoReportDays: 'reports', autoReportIncludeOutputs: 'reports',
-    digestTtsModel: 'reports', digestTtsFolder: 'reports', reportDir: 'reports',
-    /**
-     * ‼️ X-188 — `vaultDir` sits with the folders that USE it rather than in a
-     * section of its own. It is one line answering "where do the things the
-     * agents write end up", which is this section's question; a `${vault}` that
-     * the reader has to go and find in another section is the split X-57 warned
-     * about when it moved the wiki root out of here for the opposite reason.
-     */
-    vaultDir: 'reports',
-    notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports',
-    // work queue (user→agent async channel) + its answer folder
-    answerDir: 'queue', 'queue.groupSize': 'queue', 'queue.maxAgeHours': 'queue',
-    'queue.targets': 'queue',
-    // A2A — the agent→agent channel, filed beside the user's queue (N-5)
-    'a2a.preferredGraceHours': 'queue',
-    /**
-     * ‼️ X-57 — THE WIKI GETS ITS OWN SECTION, AND THE REASON IS THE SAME ONE
-     * "Saved prompts" got one for.
-     *
-     * The root and the compiling agent used to sit under Reports & Digest, on
-     * the argument that both answer "where does what the agents produce end
-     * up". True, and useless: a path in a box cannot tell you whether the
-     * folder is a wiki at all, and the one file whose absence stops every
-     * compile (`-WIKI-ANAYASA-.md`) was invisible from this page. A section can
-     * read the folder and say so — see `wikiSection` in `media/settings.js`.
-     */
-    wikiRoot: 'wiki', wikiAgent: 'wiki',
-    wikiEngine: 'wiki', wikiModel: 'wiki', wikiEffort: 'wiki',
-    /**
-     * ‼️ X-136 — SUPERPOWERS GETS ITS OWN SECTION, FOR THE WIKI'S REASON.
-     *
-     * The path and the per-agent map sat under Core & Agents as two ordinary
-     * boxes, and one of them was a `Record<string, boolean>` — a JSON box with
-     * no way of knowing which names are legal, so the answer to "is the
-     * discipline on for this agent?" was to guess a spelling and hope. Neither
-     * box could say the thing that matters either: whether the folder holds the
-     * root hook, without which every session is given nothing at all. A section
-     * reads the folder and lists the agents by name — see `superpowersSection`
-     * in `media/settings.js`.
-     */
-    superpowersPath: 'superpowers',
-    superpowersDefaults: 'superpowers'
-};
-
-export const CATEGORY_LABELS: [string, string][] = [
-    ['core', 'Core & Agents'],
-    ['display', 'Display & Labels'],
-    ['prompts', 'Saved prompts'],
-    ['live', 'Live Monitoring & Alerts'],
-    ['discipline', 'Handover Discipline'],
-    ['cost', 'Cost & Budgets'],
-    ['tasks', 'Tasks & Automation'],
-    ['kapici', 'Gatekeeper — the decision gate'],
-    ['flow', 'Flow & Content — preferences and presets'],
-    ['sentry', 'Sentry — unattended campaigns'],
-    ['media', 'Media & Browser'],
-    ['search', 'Search & Semantic'],
-    ['cli', 'Multi-CLI'],
-    ['health', 'Health & Insights'],
-    ['reports', 'Reports & Digest'],
-    ['wiki', 'Wiki & Knowledge Base'],
-    ['superpowers', 'Superpowers & Engineering Discipline'],
-    ['queue', 'Work Queue'],
-    ['access', 'Access (web view · messaging)'],
-    ['other', 'Other']
-];
 
 /**
  * ‼️ X-193 — WHAT A PATH SETTING ACTUALLY OPENS, beside the row that holds it.
@@ -423,17 +227,15 @@ export function sameValue(a: unknown, b: unknown): boolean {
     try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }
 
-/** Build the category → items model from the live schema + current values. */
+/** Build the section → group → row model from the live schema + current values, filed by the catalog. */
 export function buildSettingsModel(
     properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown; editPresentation?: unknown }>,
     valueOf: (key: string) => unknown,
     notes: SettingRowNotes = {}
 ): SettingsCategory[] {
     const { refusalOf, inForceOf } = notes;
-    const byCat = new Map<string, SettingItem[]>();
+    const items: SettingItem[] = [];
     for (const [key, p] of Object.entries(properties)) {
-        const short = key.replace(/^agentFarm\./, '');
-        const cat = CATEGORY_OF[short] ?? 'other';
         const value = valueOf(key);
         const item: SettingItem = {
             key,
@@ -459,17 +261,9 @@ export function buildSettingsModel(
             ...(refusalOf?.(key) ? { refusal: refusalOf(key) } : {}),
             ...(inForceOf?.(key) ? { inForce: inForceOf(key) } : {})
         };
-        (byCat.get(cat) ?? byCat.set(cat, []).get(cat)!).push(item);
+        items.push(item);
     }
-    const out: SettingsCategory[] = [];
-    for (const [id, label] of CATEGORY_LABELS) {
-        const items = byCat.get(id);
-        if (items?.length) {
-            items.sort((a, b) => a.key.localeCompare(b.key));
-            out.push({ id, label, items });
-        }
-    }
-    return out;
+    return groupIntoSections(items);
 }
 
 /** Parse + validate a raw string from the page into a typed setting value. */

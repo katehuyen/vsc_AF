@@ -151,8 +151,8 @@ export interface FarmSettingsDeps extends AlertMessageDeps {
      * ‼️ U-84 — THE TELEGRAM BRIDGE, WHICH FOUR SETTINGS ROWS CANNOT REPORT ON.
      *
      * Reaching the farm from a phone is configured here — the switch, the
-     * allowlist, the ceiling and the default agent are all `access` category
-     * rows. What none of them can say is whether the thing WORKS: the token is
+     * allowlist, the ceiling and the default agent are all rows of the
+     * Telegram group (Remote Access). What none of them can say is whether the thing WORKS: the token is
      * in the secret vault, the day's spend is in `globalState`, and whether the
      * poller is alive is a fact about a running process. A page made of settings
      * rows is exactly where somebody goes to find out why their phone gets no

@@ -293,11 +293,9 @@ const engineModels = () => ({
 
 const base = () => ({
     focus: '', profiles: [], prompts: null, modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
-    categories: [{
-        id: 'live', label: 'Live', items: [
-            { key: 'agentFarm.livePort', type: 'number', default: 0, description: 'listener port', value: 9000, modified: true }
-        ]
-    }],
+    categories: require('../../out/core/settingsops.js').groupIntoSections([
+        { key: 'agentFarm.livePort', type: 'number', default: 0, description: 'listener port', value: 9000, modified: true }
+    ]),
     folders: folders(),
     engineModels: engineModels(),
     agentDefaultsEngine: 'claude',

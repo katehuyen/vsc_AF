@@ -354,13 +354,13 @@ console.log('\n== S-80 — the ORDER is a setting; the lead words are the law\'s
     for (const k of five) { only[k] = props[k]; }
     const cats = S.buildSettingsModel(only, (k) => only[k].default);
     eq('‼️ the five are ONE section of their own — not "Other", not scattered through Live Monitoring',
-        cats.map(c => `${c.id}:${c.items.length}`), ['discipline:5']);
+        cats.map(c => `${c.id}:${c.items.length}`), ['handover:5']);
     ok('…and the words are a FORM of six boxes, derived from the schema rather than a JSON textarea',
         ((cats[0].items.find(i => i.key === 'agentFarm.disciplineOrders') || {}).shape || {}).kind === 'form');
 
     const setjs = require('./lib_settings_source').settingsPageSource();
-    ok('the settings page gives the section its own two groups',
-        /c\.id === 'discipline' \? disciplineSection\(c\)/.test(setjs) && /const DISCIPLINE_GROUPS = \[/.test(setjs));
+    ok('the settings page gives the section its own groups, from the catalog',
+        /function sectionHtml\(c\)/.test(setjs) && require('../out/core/settingsCatalog/index.js').catalogEntry('contextHandoverPct').group !== require('../out/core/settingsCatalog/index.js').catalogEntry('disciplineOrders').group);
     ok('‼️ a field whose own default is a SENTENCE gets a box it fits in, derived from the schema',
         /String\(f\.default \|\| ''\)\.length > 80/.test(setjs) && /<textarea rows="3"/.test(setjs));
 

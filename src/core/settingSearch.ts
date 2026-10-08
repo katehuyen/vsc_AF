@@ -28,7 +28,6 @@ export interface RankedSetting<T extends SearchableSetting> {
 interface SettingSearchModule {
     rank<T extends SearchableSetting>(items: T[], q: string): RankedSetting<T>[] & { error?: string };
     match(q: string): (item: SearchableSetting) => boolean;
-    termsOf(key: string): string;
     humanize(key: string): string;
 }
 

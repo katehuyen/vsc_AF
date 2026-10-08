@@ -15,9 +15,8 @@
  * And the fourth thing only the matrix shows: an agent nobody named is ticked
  * because the BUILT-IN list says so, not because anybody chose it.
  */
-const settings = (items) => ([{
-    id: 'superpowers', label: 'Superpowers & Engineering Discipline', items
-}]);
+// U-226 — filed by the catalog, as the host files them
+const settings = (items) => require('../../out/core/settingsops.js').groupIntoSections(items);
 
 /**
  * ‼️ audit B-05 — THE ROWS ARE DERIVED FROM THE REAL MANIFEST, NOT TYPED HERE.

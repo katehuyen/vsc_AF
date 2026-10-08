@@ -479,6 +479,7 @@ export function htmlShell(
     const setDocs = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingDocs.js'));
     const setWiki = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWiki.js'));
     const setAccess = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingAccess.js'));
+    const setSections = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingSections.js'));
     const setPage = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingPage.js'));
     const setWire = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWire.js'));
     const setWireList = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingWireList.js'));
@@ -744,6 +745,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${setDocs}"></script>
 <script nonce="${nonce}" src="${setWiki}"></script>
 <script nonce="${nonce}" src="${setAccess}"></script>
+<script nonce="${nonce}" src="${setSections}"></script>
 <script nonce="${nonce}" src="${setPage}"></script>
 <script nonce="${nonce}" src="${setWire}"></script>
 <script nonce="${nonce}" src="${setWireList}"></script>

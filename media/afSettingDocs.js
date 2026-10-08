@@ -87,8 +87,6 @@
      * If the list is there, the Console picker has the same list. If it is not,
      * the reason is written here in words, next to the button that fixes it.
      */
-    const PROMPT_TERMS = window.AFSettingSearch.termsOf('agentFarm.promptSnippetsFile');
-
     function promptsSection(cat) {
         const p = X.DATA.prompts;
         const item = cat && cat.items && cat.items[0];

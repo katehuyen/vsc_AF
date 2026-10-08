@@ -768,9 +768,8 @@ const LIVE_PAYLOAD = {
         ok('…and it warns that the limit, not taste, is what sets the floor',
             /persistent HTTP 429/.test(props['agentFarm.planUsageActiveRefreshSeconds'].description)
             && /backoff/.test(props['agentFarm.planUsageActiveRefreshSeconds'].description));
-        ok('…and it belongs to the cost category like its siblings',
-            /planUsageActiveRefreshSeconds: 'cost'/.test(
-                fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsops.ts'), 'utf8')));
+        ok('…and it belongs to the plan usage group like its siblings',
+            require('../out/core/settingsCatalog/index.js').catalogEntry('planUsageActiveRefreshSeconds').group === 'planUsage');
         // ‼️ ONE function decides the beat; a second opinion is how two
         // surfaces end up showing figures read minutes apart
         ok('the TTL, the indicator and the card all read the one beat function',
@@ -901,9 +900,8 @@ const LIVE_PAYLOAD = {
             ok('…and Claude\'s own settings keep their defaults',
                 iProps['agentFarm.planUsageRefreshMinutes'].default === 5
                 && iProps['agentFarm.planUsageActiveRefreshSeconds'].default === 60);
-            ok('both sit in the cost category beside Claude\'s',
-                /agyUsageRefreshMinutes: 'cost', agyUsageActiveRefreshSeconds: 'cost'/.test(
-                    fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsops.ts'), 'utf8')));
+            ok('both sit in the plan usage group beside Claude\'s',
+                ['agyUsageRefreshMinutes', 'agyUsageActiveRefreshSeconds'].every(k => require('../out/core/settingsCatalog/index.js').catalogEntry(k).group === 'planUsage'));
             const flex = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFlex.js'), 'utf8');
             ok('‼️ both are flex points, each with its surface and bridge key',
                 /id: 'agyUsage\.idleMinutes'[^\n]*default: 240, min: 0/.test(flex)

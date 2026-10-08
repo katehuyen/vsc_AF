@@ -59,7 +59,7 @@ const base = (o) => ({
     claude: null, engines: null, engineModels: null, wiki: null, superpowers: null,
     alerts: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
-    categories: [{ id: 'access', label: 'Access & Remote', items: ITEMS(o) }],
+    categories: require('../../out/core/settingsops.js').groupIntoSections(ITEMS(o)),
     telegram: tg(o),
     valueSources: { agent: AGENTS }
 });

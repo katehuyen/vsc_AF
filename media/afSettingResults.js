@@ -28,7 +28,8 @@
             return { cats, count: cats.reduce((n, c) => n + c.items.length, 0) };
         }
         const flat = [];
-        base.forEach((c, ci) => c.items.forEach(it => flat.push({ ci, row: Object.assign({}, it, { place: c.label }) })));
+        // `where` marks a row as a RESULT, the only kind that draws its location line; every row has a `place`
+        base.forEach((c, ci) => c.items.forEach(it => flat.push({ ci, row: Object.assign({}, it, { place: it.place || c.label, where: it.place || c.label }) })));
         const ranked = search().rank(flat.map(f => f.row), q);
         const cats = [], at = new Map();
         ranked.forEach(r => {
@@ -39,10 +40,9 @@
         return { cats, count: ranked.length, error: ranked.error };
     }
 
-    /** The muted line naming where a result lives — Section › Group when the row knows its group. */
+    /** The muted line naming where a result lives — Section › Group, as the catalog files the row. */
     function placeHtml(it, esc) {
-        return it && it.place
-            ? `<div class="setplace">${esc(it.place)}${it.group ? ' › ' + esc(it.group) : ''}</div>` : '';
+        return it && it.where ? `<div class="setplace">${esc(it.where)}</div>` : '';
     }
 
     function countHtml(n, esc) {

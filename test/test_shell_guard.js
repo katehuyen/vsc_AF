@@ -82,9 +82,9 @@ ok('which rules stand where', G.shellGuardRules('claude').length === 4
         && /shellGuardRules\(e\)/.test(opBlock) && /catches:/.test(opBlock) && /forSession\(session\)/.test(opBlock));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     const props = pkg.contributes.configuration.properties || (pkg.contributes.configuration[0] || {}).properties || {};
-    ok('the guard is a setting, on by default, in the live category',
+    ok('the guard is a setting, on by default, beside the bridge guard',
         props['agentFarm.shellGuard'] && props['agentFarm.shellGuard'].default === true
-        && /shellGuard: 'live'/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8')));
+        && require('../out/core/settingsCatalog/index.js').catalogEntry('shellGuard').group === require('../out/core/settingsCatalog/index.js').catalogEntry('bridgeGuard').group);
     ok('the payload type carries the transcript path the engine is read from',
         /transcript_path\?: string;\s*\n?\s*\}\) => string \| undefined;/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'live.ts'), 'utf8')));
 }

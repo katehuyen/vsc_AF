@@ -74,7 +74,7 @@ Every **?** button you see in the UI brings you to the relevant section of this 
 | See, filter and compile the waiting wiki marks | The `📚 Wiki` button in any page's toolbar, or the command palette → `Agent Farm: Open Wiki` ([details](#wiki-kokpiti)) |
 | Mirror the shared constitution to the other engines | Toolbox header → `⚖ Sync Constitution` (second row), or the palette → `Agent Farm: Sync Constitution` |
 | Stop a session that comes straight back under a new id | Session card → `☠ Force kill`, or right-click → `Force Kill Session Tree` ([details](#spare-oturumlar)) |
-| Turn every daily budget off without losing the figures | Settings → Cost & Budgets → `budgetsUnlimited`, or a figure of `0` in `budgets` |
+| Turn every daily budget off without losing the figures | Settings → Quota & Cost → Budgets → `budgetsUnlimited`, or a figure of `0` in `budgets` |
 | Inspect turns across all 5 engines | Beside Sessions table → `⤢ Open Turns page` ([details](#turlar-sayfasi)) |
 | Copy full text directly from timeline | Right-click dot/tool on timeline → `Copy Corpus` ([details](#live-observation)) |
 
@@ -1233,7 +1233,7 @@ When a standard (non-relay) session reaches handover limits or closes after writ
 #### Configurable Discipline Templates
 
 Discipline sentences are fully decoupled data, not hardcoded strings:
-- Managed under Settings ▸ **Handover Discipline** or via `sessions.contextGuard.set` across eight branches:
+- Managed under Settings ▸ **Handover & Relay** or via `sessions.contextGuard.set` across eight branches:
   - `converge` / `handover`: Standard session wrap-up and handover orders.
   - `relayConverge` / `relayHandover`: Baton relay orders instructing the agent to invoke `baton.pass`.
   - `relayPassedConverge` / `relayPassedHandover`: Orders for legs that already passed and only need to await clean termination.
@@ -3581,7 +3581,7 @@ Noise protection: if the previous week is below $0.50 and this week below $1, no
 
 ### Farm Settings page (2.54.0)
 
-You don't have to dig through VS Code's settings UI: **Agent Farm: Farm Settings** (also the **⚙ Settings** button on the Dashboard) opens a single page with **every `agentFarm.*` setting**, grouped by area (Core, Live Monitoring, Cost, Tasks, Media, Search, Multi-CLI, Health, Reports), with a filter box, each setting's description under its name and the full key + default in the tooltip. Booleans are checkboxes, enums are dropdowns, lists/objects get a JSON editor with validation — a bad value is rejected with an inline error instead of being written. Settings changed from their default carry a marker and a one-click **↺ reset**. Changes save immediately to your user settings; edits made elsewhere show up here live.
+You don't have to dig through VS Code's settings UI: **Agent Farm: Farm Settings** (also the **⚙ Settings** button on the Dashboard) opens a single page with **every `agentFarm.*` setting**, filed by the settings catalog (`src/core/settingsCatalog/`) into sixteen sections — General, Projects, Agents, Engines & Accounts, Sessions, Notifications & Sound, Quota & Cost, Handover & Relay, Tasks & Queue, Monitoring & Health, Reports, Knowledge, Media & Studio, Sentry, Gatekeeper, Remote Access — each drawn as its named groups, with a filter box, each setting's description under its name and the full key + default in the tooltip. Booleans are checkboxes, enums are dropdowns, lists/objects get a JSON editor with validation — a bad value is rejected with an inline error instead of being written. Settings changed from their default carry a marker and a one-click **↺ reset**. Changes save immediately to your user settings; edits made elsewhere show up here live.
 
 The page is **schema-driven**: it renders whatever the extension manifest declares, so a setting added in a future version appears automatically.
 

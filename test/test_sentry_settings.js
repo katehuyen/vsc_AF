@@ -37,13 +37,9 @@ const byAttr = (p, attr, key) =>
 {
     const p = open(variant('sentrysettings'));
     const html = p.html();
-    ok('the sentry settings have a section of their own',
-        /Sentry — unattended campaigns/.test(html));
-    for (const t of ['Where it looks for the handover note',
-        'The words it starts the next session with',
-        'The leader, and its leash',
-        'When a round is going nowhere']) {
-        ok(`…grouped under "${t}"`, html.indexOf(t) > 0);
+    ok('the sentry settings have a section of their own', /id="sec-sentry"/.test(html));
+    for (const t of ['Handover note sources', 'Opening words', 'Leader', 'Stall rules']) {
+        ok(`…grouped under "${t}"`, html.indexOf(`<h3 class="setgrouph">${t}</h3>`) > 0);
     }
     ok('…and each group says what the question IS, not just what the keys are',
         /the first that answers wins/.test(html) && /a routine night costs nothing/.test(html));

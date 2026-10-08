@@ -47,7 +47,7 @@ const byAttr = (p, attr, key) =>
 // ---------------------------------------------------------------------------
 {
     const html = open(fx.inUse()).html();
-    const g = html.indexOf('id="stuck-warning"');
+    const g = html.indexOf('id="grp-monitor-stuck"');
     ok('‼️ a "Stuck warning" group holds the threshold and its alert', g >= 0 && /Stuck warning/.test(html)
         && html.indexOf('data-item="agentFarm.stuckThresholdSeconds"') > g && html.indexOf('data-item="agentFarm.notifyStuck"') > g);
     ok('…drawn once each, and it says 0 turns the warning off', (html.match(/data-item="agentFarm\.stuckThresholdSeconds"/g) || []).length === 1
@@ -58,7 +58,7 @@ const byAttr = (p, attr, key) =>
         && /unticked, only its card shows the mark/.test(html) && !/whatever the box says/.test(html) && !/the alert plays if it is on/.test(html));
     ok('…after the alert sounds card, as the threshold always was', html.indexOf('🔔 Alert sounds') < g);
     const plain = open(Object.assign(fx.inUse(), { alerts: undefined })).html();
-    ok('…also on a build that sends no alerts card', /id="stuck-warning"/.test(plain) && (plain.match(/data-item="agentFarm\.notifyStuck"/g) || []).length === 1);
+    ok('…also on a build that sends no alerts card', /id="grp-monitor-stuck"/.test(plain) && (plain.match(/data-item="agentFarm\.notifyStuck"/g) || []).length === 1);
 }
 
 // ---------------------------------------------------------------------------

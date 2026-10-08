@@ -1,5 +1,5 @@
-// Agent Farm — Farm Settings: the Superpowers, Access (Telegram and the bridge) and Alerts sections.
-// Split out of media/settings.js unchanged (U-225): the page hands its state in once, as X.
+// Agent Farm — Farm Settings: the Superpowers, Telegram and Sound groups, each drawn with its card.
+// Split out of media/settings.js (U-225): the page hands its state in once, as X; each takes its catalog group.
 (function () {
     'use strict';
     let X, C, itemHtml;
@@ -22,8 +22,6 @@
      * can change under it, so it is drawn as a default rather than as a choice
      * and the row says which it is.
      */
-    const SP_TERMS = window.AFSettingSearch.termsOf('agentFarm.superpowers');
-
     function superpowersSection(cat) {
         const sp = X.DATA.superpowers;
         const items = (cat && cat.items) || [];
@@ -141,8 +139,6 @@
      * settings at all (connect a token, ask Telegram who this bot is).
      * `media/afTelegram.js` draws it, the same file the Toolbox draws it from.
      */
-    const TG_TERMS = window.AFSettingSearch.termsOf('agentFarm.telegram');
-
     function accessSection(cat) {
         const items = (cat && cat.items) || [];
         const boxes = items.map(itemHtml).join('');
@@ -159,42 +155,13 @@
         }) + boxes;
     }
 
-    /** The Live category, with every alert-sound box replaced by ONE summary line
-     *  pointing at the Sound page (U-178), in their own place — beside the
-     *  notification switches, where the reader who confused the two will look. */
-    // U-158 — the stuck warning is one question (after how long, and whether it sounds), so it is one group
-    const STUCK_KEYS = ['agentFarm.stuckThresholdSeconds', 'agentFarm.notifyStuck'];
-
-    function stuckGroup(items) {
-        const mine = STUCK_KEYS.map(k => items.find(it => it.key === k)).filter(Boolean);
-        if (!mine.length) { return ''; }
-        return `<div class="setgroup" id="stuck-warning">
-                <h3 class="setgrouph">Stuck warning</h3>
-                <div class="setgroupwhy">Two different things. The <b>number</b> says WHEN: a working session silent for that many seconds is marked stalled and its card says so. 0 turns the warning off — nothing is ever marked stalled, so the box has nothing to announce. The <b>box</b> says whether you are told: ticked, the stalled session gets a Needs You row and a pop-up notification; unticked, only its card shows the mark.</div>
-                ${mine.map(itemHtml).join('')}
-            </div>`;
-    }
-
-    // U-154 — the three quota figures' looks are one question, shown on a sample line
-    const QUOTA_KEYS = ['agentFarm.quotaStyle.percent', 'agentFarm.quotaStyle.left', 'agentFarm.quotaStyle.reset'];
-
-    function quotaGroup(items) {
-        const mine = QUOTA_KEYS.map(k => items.find(it => it.key === k)).filter(Boolean);
-        if (!mine.length) { return ''; }
-        return `<div class="setgroup" id="quota-figures">
-                <h3 class="setgrouph">Quota figures</h3>
-                <div class="setgroupwhy">Percent used, time left and reset time are drawn in their own look on every page — accounts, engines, dashboard, console. Each box takes CSS declarations (colour, weight, font…); empty is the default. At 75% and 90% a percent takes the page's warning colour instead. A change repaints open pages at once.</div>
-                <div class="afq-sample">5h: <span class="afq-pct">42%</span> used · <span class="afq-left">2h 13m</span> left · resets <span class="afq-reset">09:40</span></div>
-                ${mine.map(itemHtml).join('')}
-            </div>`;
-    }
-
-    function alertsSection(cat) {
+    /** The Sound group, with every alert-sound box replaced by ONE summary line
+     *  pointing at the Sound page (U-178), in their own place — in the same
+     *  section as the notification switches, where the reader who confused the two will look. */
+    function alertsSection(group) {
         const al = X.DATA.alerts;
-        const all = (cat && cat.items) || [];
-        const items = all.filter(it => STUCK_KEYS.indexOf(it.key) < 0 && QUOTA_KEYS.indexOf(it.key) < 0);
-        const stuck = stuckGroup(all) + quotaGroup(all);
-        if (!al) { return items.map(itemHtml).join('') + stuck; }
+        const items = (group && group.items) || [];
+        if (!al) { return items.map(itemHtml).join(''); }
         // Whichever of the two the filter leaves standing draws the card, once.
         // Keyed on `alerts.on` alone, a search for "voice" would file the card
         // away with the box it replaced.
@@ -206,7 +173,7 @@
             if (drawn) { return ''; }
             drawn = true;
             return window.AFSoundCard.summary(al);
-        }).join('') + stuck;
+        }).join('');
     }
 
     window.AFSettingAccess = function (ctx) {

@@ -84,7 +84,7 @@ ok('0 is silence asked of MediaPlayer, not "unset"', at('win32', wav, 0)[0].env.
     const pkg = JSON.parse(src('package.json')).contributes.configuration;
     const node = (Array.isArray(pkg) ? pkg : [pkg]).map(c => c.properties['agentFarm.alerts.toneVolume']).find(Boolean);
     ok('the setting: 0–100, default 100', node && node.default === 100 && node.minimum === 0 && node.maximum === 100);
-    ok('…in the live category', /'alerts\.toneVolume': 'live'/.test(src('src/core/settingsops.ts')));
+    ok('…in the Sound group', require('../out/core/settingsCatalog/index.js').catalogEntry('alerts.toneVolume').group === 'sound');
 
     const seen = [];
     const deps = { alertsSetToneVolume: async v => { seen.push(['set', v]); }, alertsPlayVoice: async (id, v) => { seen.push(['play', id, v]); } };

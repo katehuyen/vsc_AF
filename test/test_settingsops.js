@@ -1,4 +1,4 @@
-// Farm Settings: schema-driven model (category coverage incl. auto "Other"),
+// Farm Settings: schema-driven model (where each key is filed: test_settings_catalog.js),
 // value sanitizing, profile snapshot/apply-plan/import — plus the settings page
 // rendering, edit routing and the focus deep-link.
 const fs = require('fs');
@@ -16,23 +16,8 @@ const { charts } = require('./lib_charts_stub.js');
     const pkg = require(path.join(__dirname, '..', 'package.json'));
     const props = pkg.contributes.configuration.properties;
     const model = SO.buildSettingsModel(props, () => undefined);
-    const listed = model.reduce((a, c) => a + c.items.length, 0);
-    ok('every manifest setting appears exactly once', listed === Object.keys(props).length);
-    const other = model.find(c => c.id === 'other');
-    ok('no known setting leaks into Other', !other || other.items.length === 0);
-    ok('categories come in declared order', model.every((c, i) =>
-        i === 0 || SO.CATEGORY_LABELS.findIndex(l => l[0] === c.id) > SO.CATEGORY_LABELS.findIndex(l => l[0] === model[i - 1].id)));
-
-    // the work-queue feature's settings live under their own category
-    const queue = model.find(c => c.id === 'queue');
-    ok('work queue settings categorised (not leaking to Other)', queue &&
-        ['agentFarm.answerDir', 'agentFarm.queue.groupSize', 'agentFarm.queue.maxAgeHours', 'agentFarm.queue.targets']
-            .every(k => queue.items.some(i => i.key === k)));
-
-    // a setting invented tomorrow lands in Other automatically
-    const m2 = SO.buildSettingsModel({ ...props, 'agentFarm.futureThing': { type: 'string', default: 'x', description: 'd' } }, () => undefined);
-    const other2 = m2.find(c => c.id === 'other');
-    ok('an unknown new setting lands in Other automatically', other2 && other2.items.some(i => i.key === 'agentFarm.futureThing'));
+    // U-226 — where each setting is filed (its section, its group, a key invented tomorrow) is the catalog's,
+    // and test/test_settings_catalog.js is its gate.
 
     // ‼️ S-11: "this one is a path" travels in the SCHEMA, like everything else
     // this page renders — a hand-written list of path keys on the page would go
@@ -75,10 +60,9 @@ const { charts } = require('./lib_charts_stub.js');
     // "Display & Labels" and was indistinguishable from a setting nobody had
     // filled in — which is exactly what it looked like for a week while VS Code
     // quietly refused to hand back its default.
-    const promptCat = model.find(c => c.id === 'prompts');
-    ok('‼️ the prompts file has a section of its own, not a row under Display',
-        promptCat && promptCat.items.length === 1
-        && promptCat.items[0].key === 'agentFarm.promptSnippetsFile');
+    const promptRows = model.flatMap(c => c.items).filter(i => i.section === 'general' && i.group === 'prompts');
+    ok('‼️ the prompts file has a group of its own, not a row under Display',
+        promptRows.length === 1 && promptRows[0].key === 'agentFarm.promptSnippetsFile');
 
     // ‼️ AND ITS DEFAULT IS NOT A PATH. The manifest default was the user's own
     // vault path and the feature depended on the settings registry serving it
@@ -396,12 +380,11 @@ const { charts } = require('./lib_charts_stub.js');
         }
         return els[id];
     }
-    const promptCat = {
-        id: 'prompts', label: 'Saved prompts', items: [{
-            key: 'agentFarm.promptSnippetsFile', type: 'string', browse: 'file',
-            default: '', description: 'the file', value: '', modified: false
-        }]
-    };
+    // U-226 — filed by the catalog, as the host files it: General › Saved prompts
+    const promptCat = SO.groupIntoSections([{
+        key: 'agentFarm.promptSnippetsFile', type: 'string', browse: 'file',
+        default: '', description: 'the file', value: '', modified: false
+    }])[0];
     const mkSandbox = (prompts, chosen) => {
         const cat = JSON.parse(JSON.stringify(promptCat));
         cat.items[0].value = chosen || '';
@@ -436,8 +419,8 @@ const { charts } = require('./lib_charts_stub.js');
             { label: 'Türkçe cevap', group: 'Review', text: 'Answer in Turkish, code in English.', line: 12 }
         ]
     });
-    ok('the section has its own heading and nav link',
-        html.includes('id="cat-prompts"') && html.includes('data-cat="prompts"'));
+    ok('the group has its own heading, and its section a nav link',
+        html.includes('id="grp-general-prompts"') && html.includes('data-sec="general"'));
     ok('‼️ the section shows what was READ, not just the path',
         html.includes('Kod incelemesi') && html.includes('Read the flow before you change it.')
         && html.includes('<b>2</b> prompt'));
@@ -485,11 +468,11 @@ const { charts } = require('./lib_charts_stub.js');
     filterEl.value = 'kalıp';
     filterEl.listeners.input();
     ok('filtering by what the feature IS (not its key) keeps the section',
-        getEl('setbody')._html.includes('id="cat-prompts"'));
+        getEl('setbody')._html.includes('id="grp-general-prompts"'));
     filterEl.value = 'right-click';
     filterEl.listeners.input();
     ok('…and so does the gesture it hangs off',
-        getEl('setbody')._html.includes('id="cat-prompts"'));
+        getEl('setbody')._html.includes('id="grp-general-prompts"'));
 }
 
 // ============================================ X-54 — budgets, and whose farm this is
@@ -776,12 +759,16 @@ const { charts } = require('./lib_charts_stub.js');
     const items = [].concat(...cats.map(c => c.items));
     const tpl = items.find(i => i.key === 'agentFarm.batonHandoverTemplate');
     ok('S-82: editPresentation multilineText marks the item multiline', !!tpl && tpl.multiline === true);
-    ok('…and filed under the handover discipline', cats.some(c => c.id === 'discipline' && c.items.includes(tpl)));
+    ok('…and filed under Handover & Relay', cats.some(c => c.id === 'handover' && c.items.includes(tpl)));
     ok('…a plain string is not', !items.find(i => i.key === 'agentFarm.agentsRoot').multiline);
     const page = require('./lib_settings_source').settingsPageSource();
     ok('…and the page draws it as a textarea that saves like any other box (data-set)',
         /if \(it\.multiline\) \{[\s\S]{0,200}<textarea id="\$\{id\}" data-set=/.test(page));
-    ok('…in its own group of the discipline page', /keys: \['batonHandoverTemplate', 'batonInjectedDirective'\]/.test(page));
+    const CAT = require('../out/core/settingsCatalog/index.js');
+    const legGroup = CAT.catalogEntry('batonHandoverTemplate').group;
+    ok('…in its own group of the handover section, beside the standing rule',
+        CAT.catalogKeys().filter(k => CAT.catalogEntry(k).section === 'handover' && CAT.catalogEntry(k).group === legGroup).sort().join()
+        === 'batonHandoverTemplate,batonInjectedDirective' && /function sectionHtml\(c\)/.test(page));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
