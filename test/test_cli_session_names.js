@@ -212,8 +212,8 @@ const { revealActionFor } = (() => {
     ok('an empty path is not a path', revealActionFor('', isDir) === 'missing');
 
     // no reveal call site may go back to the raw command — that is the bug
-    const files = ['src/extension.ts', 'src/panels/settingsPanel.ts', 'src/panels/toolboxPanel.ts',
-        'src/panels/airtablePanel.ts'];
+    const files = ['src/extension.ts', 'src/panels/settingsPanel.ts', 'src/panels/settingsSectionMessages.ts',
+        'src/panels/settingsAgentMessages.ts', 'src/panels/toolboxPanel.ts', 'src/panels/airtablePanel.ts'];
     const offenders = files.filter(f =>
         /revealFileInOS/.test(fs.readFileSync(path.join(__dirname, '..', f), 'utf8')));
     ok('every reveal goes through the shared helper', offenders.length === 0

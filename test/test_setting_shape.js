@@ -254,7 +254,7 @@ const PROPS = manifest.contributes.configuration.properties;
         /listDraft\[key\] = v\.map/.test(page)
         && /does not parse, so it cannot be shown as rows/.test(page));
 
-    const panel = fs2.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const panel = require('./lib_settings_source').settingsPanelSource();
     const row = panel.slice(panel.indexOf("case 'browseRow'"), panel.indexOf("case 'browse': {"));
     ok('‼️ the row picker SAVES NOTHING — it posts the path back to the page,'
         + ' because the list around that row is still being edited and saving here'

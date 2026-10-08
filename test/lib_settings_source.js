@@ -17,4 +17,10 @@ function mediaSource(file) {
     return /^(settings|afSetting\w*)\.js$/.test(file) ? settingsPageSource() : fs.readFileSync(path.join(MEDIA, file), 'utf8');
 }
 
-module.exports = { settingsPageSource, mediaSource };
+/** The page's host side as one text: src/panels/settingsPanel.ts and the settings*.ts modules split out of it. */
+function settingsPanelSource() {
+    return ['settingsPanel.ts', 'settingsDeps.ts', 'settingsPage.ts', 'settingsValueMessages.ts', 'settingsSectionMessages.ts',
+        'settingsAgentMessages.ts'].map(f => fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', f), 'utf8')).join('\n');
+}
+
+module.exports = { settingsPageSource, mediaSource, settingsPanelSource };

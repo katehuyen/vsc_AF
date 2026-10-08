@@ -315,7 +315,7 @@ export function resolveDefault(
  *
  * ‼️ AND IT IS PASSED THE ZERO RESOLUTION, never the box's own. "Default" means
  * "clear my choice", so the value beside it is what would apply AFTER the
- * clearing — see `resolvedZero` in panels/settingsPanel.ts.
+ * clearing — see `resolvedZero` in panels/settingsPage.ts.
  */
 export function defaultLabel(r: Resolution): string {
     return r.value ? `Default → ${r.value}` : 'Default';

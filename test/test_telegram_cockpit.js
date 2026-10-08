@@ -225,7 +225,7 @@ const T = require(path.join(ROOT, 'out', 'core', 'telegramCockpit.js'));
     ok('the shared panel module composes the card through the core',
         /telegramCard\(/.test(base));
     for (const p of ['toolboxPanel.ts', 'settingsPanel.ts']) {
-        const src = fs.readFileSync(path.join(ROOT, 'src', 'panels', p), 'utf8');
+        const src = p === 'settingsPanel.ts' ? require('./lib_settings_source').settingsPanelSource() : fs.readFileSync(path.join(ROOT, 'src', 'panels', p), 'utf8');
         ok(`${p} asks for the shared card rather than deriving one`,
             /telegramCardData\(/.test(src) && !/bridgeStatus\(/.test(src));
         ok(`${p} hands the card's messages to the shared handler`,

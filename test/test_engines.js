@@ -333,7 +333,7 @@ const by = (list, id) => list.find(e => e.id === id);
     const fs = require('fs');
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     const js = require('./lib_settings_source').settingsPageSource();
-    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const panel = require('./lib_settings_source').settingsPanelSource();
 
     ok('the matrix reaches Farm Settings', /engines: \(\) => engineMatrix\(\)/.test(ext)
         && /function enginesSection\(\)/.test(js) && /id="cat-engines"/.test(js));

@@ -151,12 +151,17 @@ const hostFunctions = () => {
     }
     return hostFns;
 };
+/** The panel files a panel file imports (`from './x'`) — where a handler module's panel keeps its methods. */
+const panelImports = (file) => [...sourceOf(file).matchAll(/from '\.\/([\w]+)'/g)].map(m => m[1] + '.ts');
 const wire = (body, file) => {
     let out = body;
     if (file && file.endsWith('.ts') && file !== 'extension.ts') {
+        // U-225 — a message module is handed its panel as `s` (settings*Messages.ts, accountsMessages.ts):
+        // `s.method(` is the panel's `this.method(`, and the method may live in a panel file it imports.
         const methods = methodBodies(file);
-        for (const m of body.matchAll(/\bthis\.([A-Za-z_$][\w$]*)\s*\(/g)) {
-            const b = methods.get(m[1]);
+        const imported = panelImports(file).map(methodBodies);
+        for (const m of body.matchAll(/\b(?:this|s)\.([A-Za-z_$][\w$]*)\s*\(/g)) {
+            const b = methods.get(m[1]) ?? imported.map(x => x.get(m[1])).find(Boolean);
             if (b) { out += '\n' + b; }
         }
     }

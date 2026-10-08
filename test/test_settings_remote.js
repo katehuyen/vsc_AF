@@ -147,11 +147,11 @@ const alive = setInterval(() => undefined, 1000);
     ok('a closed view leaves no instance behind', FarmSettingsPanel.phones.size === 0);
 
     // ---- the host's wiring and the phone's page ----
-    const src = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const src = require('./lib_settings_source').settingsPanelSource();
     ok('the desktop still gets the whole file; a phone gets none of it', /raw: this\.host\.remote \? '' : cc\.raw/.test(src));
     ok('‼️ a setting set applied from a phone leaves the reach and port alone and says so on the phone',
         /if \(error && phoneLocked\(step\.key\)\) \{ locked\.push\(step\.key\); \}/.test(src)
-        && /if \(locked\.length\) \{ void this\.host\.ask\.info\('Agent Farm: ' \+ lockedNote\(locked\)\); \}/.test(src));
+        && /if \(locked\.length\) \{ void (?:this|s)\.host\.ask\.info\('Agent Farm: ' \+ lockedNote\(locked\)\); \}/.test(src));
     ok('…and the Flow & Content card is handed the guarded writes on a phone, its skips told',
         /this\.deps\.flex && this\.host\.remote \? phoneFlex\(this\.deps\.flex, skipped\) : this\.deps\.flex/.test(src)
         && /if \(skipped\.length\) \{ flexError\(lockedNote\(skipped\)\); \}/.test(src));

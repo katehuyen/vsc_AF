@@ -6480,9 +6480,9 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#afnav",
+      "capability": "settingsSectionMessages.ts#afnav",
       "ui": [
-        "page:settingsPanel.ts#afnav"
+        "page:settingsSectionMessages.ts#afnav"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6490,27 +6490,27 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#agentAccount",
+      "capability": "settingsAgentMessages.ts#agentAccount",
       "ui": [
-        "page:settingsPanel.ts#agentAccount"
+        "page:settingsAgentMessages.ts#agentAccount"
       ],
       "ops": [
         "agents.defaults.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#agentDefaultsEngine",
+      "capability": "settingsAgentMessages.ts#agentDefaultsEngine",
       "ui": [
-        "page:settingsPanel.ts#agentDefaultsEngine"
+        "page:settingsAgentMessages.ts#agentDefaultsEngine"
       ],
       "ops": [
         "agents.defaults.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#agentEffort",
+      "capability": "settingsAgentMessages.ts#agentEffort",
       "ui": [
-        "page:settingsPanel.ts#agentEffort"
+        "page:settingsAgentMessages.ts#agentEffort"
       ],
       "ops": [
         "agents.exclude",
@@ -6518,27 +6518,27 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#agentExclude",
+      "capability": "settingsAgentMessages.ts#agentExclude",
       "ui": [
-        "page:settingsPanel.ts#agentExclude"
+        "page:settingsAgentMessages.ts#agentExclude"
       ],
       "ops": [
         "agents.exclude"
       ]
     },
     {
-      "capability": "settingsPanel.ts#agentInclude",
+      "capability": "settingsAgentMessages.ts#agentInclude",
       "ui": [
-        "page:settingsPanel.ts#agentInclude"
+        "page:settingsAgentMessages.ts#agentInclude"
       ],
       "ops": [
         "agents.include"
       ]
     },
     {
-      "capability": "settingsPanel.ts#agentModel",
+      "capability": "settingsAgentMessages.ts#agentModel",
       "ui": [
-        "page:settingsPanel.ts#agentModel"
+        "page:settingsAgentMessages.ts#agentModel"
       ],
       "ops": [
         "agents.exclude",
@@ -6546,18 +6546,18 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#applyProfile",
+      "capability": "settingsValueMessages.ts#applyProfile",
       "ui": [
-        "page:settingsPanel.ts#applyProfile"
+        "page:settingsValueMessages.ts#applyProfile"
       ],
       "ops": [
         "settings.sets.apply"
       ]
     },
     {
-      "capability": "settingsPanel.ts#browse",
+      "capability": "settingsValueMessages.ts#browse",
       "ui": [
-        "page:settingsPanel.ts#browse"
+        "page:settingsValueMessages.ts#browse"
       ],
       "exempt": {
         "kind": "file-picker",
@@ -6565,9 +6565,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#browseRow",
+      "capability": "settingsValueMessages.ts#browseRow",
       "ui": [
-        "page:settingsPanel.ts#browseRow"
+        "page:settingsValueMessages.ts#browseRow"
       ],
       "exempt": {
         "kind": "file-picker",
@@ -6575,18 +6575,18 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#ccClear",
+      "capability": "settingsAgentMessages.ts#ccClear",
       "ui": [
-        "page:settingsPanel.ts#ccClear"
+        "page:settingsAgentMessages.ts#ccClear"
       ],
       "ops": [
         "claude.settings.clear"
       ]
     },
     {
-      "capability": "settingsPanel.ts#ccOpenFile",
+      "capability": "settingsAgentMessages.ts#ccOpenFile",
       "ui": [
-        "page:settingsPanel.ts#ccOpenFile"
+        "page:settingsAgentMessages.ts#ccOpenFile"
       ],
       "ops": [
         "claude.settings",
@@ -6595,27 +6595,27 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#ccRaw",
+      "capability": "settingsAgentMessages.ts#ccRaw",
       "ui": [
-        "page:settingsPanel.ts#ccRaw"
+        "page:settingsAgentMessages.ts#ccRaw"
       ],
       "ops": [
         "claude.settings.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#ccSet",
+      "capability": "settingsAgentMessages.ts#ccSet",
       "ui": [
-        "page:settingsPanel.ts#ccSet"
+        "page:settingsAgentMessages.ts#ccSet"
       ],
       "ops": [
         "claude.settings.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#deleteProfile",
+      "capability": "settingsValueMessages.ts#deleteProfile",
       "ui": [
-        "page:settingsPanel.ts#deleteProfile"
+        "page:settingsValueMessages.ts#deleteProfile"
       ],
       "ops": [
         "settings.sets.delete",
@@ -6624,18 +6624,18 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#docOpenSet",
+      "capability": "settingsSectionMessages.ts#docOpenSet",
       "ui": [
-        "page:settingsPanel.ts#docOpenSet"
+        "page:settingsSectionMessages.ts#docOpenSet"
       ],
       "ops": [
         "docopen.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#engineCommand",
+      "capability": "settingsSectionMessages.ts#engineCommand",
       "ui": [
-        "page:settingsPanel.ts#engineCommand"
+        "page:settingsSectionMessages.ts#engineCommand"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6643,9 +6643,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#engineDocs",
+      "capability": "settingsSectionMessages.ts#engineDocs",
       "ui": [
-        "page:settingsPanel.ts#engineDocs"
+        "page:settingsSectionMessages.ts#engineDocs"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6653,9 +6653,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#engineKey",
+      "capability": "settingsSectionMessages.ts#engineKey",
       "ui": [
-        "page:settingsPanel.ts#engineKey"
+        "page:settingsSectionMessages.ts#engineKey"
       ],
       "exempt": {
         "kind": "secrets",
@@ -6663,18 +6663,18 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#exportProfiles",
+      "capability": "settingsValueMessages.ts#exportProfiles",
       "ui": [
-        "page:settingsPanel.ts#exportProfiles"
+        "page:settingsValueMessages.ts#exportProfiles"
       ],
       "ops": [
         "settings.sets.export"
       ]
     },
     {
-      "capability": "settingsPanel.ts#importProfiles",
+      "capability": "settingsValueMessages.ts#importProfiles",
       "ui": [
-        "page:settingsPanel.ts#importProfiles"
+        "page:settingsValueMessages.ts#importProfiles"
       ],
       "ops": [
         "settings.sets.apply",
@@ -6684,9 +6684,9 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#kapiciMcp",
+      "capability": "settingsSectionMessages.ts#kapiciMcp",
       "ui": [
-        "page:settingsPanel.ts#kapiciMcp"
+        "page:settingsSectionMessages.ts#kapiciMcp"
       ],
       "ops": [
         "kapici.mcp.register",
@@ -6694,9 +6694,9 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#openAccounts",
+      "capability": "settingsSectionMessages.ts#openAccounts",
       "ui": [
-        "page:settingsPanel.ts#openAccounts"
+        "page:settingsSectionMessages.ts#openAccounts"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6704,9 +6704,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#openAgent",
+      "capability": "settingsSectionMessages.ts#openAgent",
       "ui": [
-        "page:settingsPanel.ts#openAgent"
+        "page:settingsSectionMessages.ts#openAgent"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6714,9 +6714,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#openEngines",
+      "capability": "settingsSectionMessages.ts#openEngines",
       "ui": [
-        "page:settingsPanel.ts#openEngines"
+        "page:settingsSectionMessages.ts#openEngines"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6724,9 +6724,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#openGuide",
+      "capability": "settingsSectionMessages.ts#openGuide",
       "ui": [
-        "page:settingsPanel.ts#openGuide"
+        "page:settingsSectionMessages.ts#openGuide"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6734,9 +6734,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#openSecrets",
+      "capability": "settingsSectionMessages.ts#openSecrets",
       "ui": [
-        "page:settingsPanel.ts#openSecrets"
+        "page:settingsSectionMessages.ts#openSecrets"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6744,9 +6744,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#openSettingsJson",
+      "capability": "settingsValueMessages.ts#openSettingsJson",
       "ui": [
-        "page:settingsPanel.ts#openSettingsJson"
+        "page:settingsValueMessages.ts#openSettingsJson"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6754,9 +6754,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#openSettingsUi",
+      "capability": "settingsValueMessages.ts#openSettingsUi",
       "ui": [
-        "page:settingsPanel.ts#openSettingsUi"
+        "page:settingsValueMessages.ts#openSettingsUi"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6764,9 +6764,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#promptsOpen",
+      "capability": "settingsSectionMessages.ts#promptsOpen",
       "ui": [
-        "page:settingsPanel.ts#promptsOpen"
+        "page:settingsSectionMessages.ts#promptsOpen"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6774,18 +6774,18 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#promptsPick",
+      "capability": "settingsSectionMessages.ts#promptsPick",
       "ui": [
-        "page:settingsPanel.ts#promptsPick"
+        "page:settingsSectionMessages.ts#promptsPick"
       ],
       "ops": [
         "prompts.setFile"
       ]
     },
     {
-      "capability": "settingsPanel.ts#promptsReload",
+      "capability": "settingsSectionMessages.ts#promptsReload",
       "ui": [
-        "page:settingsPanel.ts#promptsReload"
+        "page:settingsSectionMessages.ts#promptsReload"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6793,18 +6793,18 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#promptsUseDefault",
+      "capability": "settingsSectionMessages.ts#promptsUseDefault",
       "ui": [
-        "page:settingsPanel.ts#promptsUseDefault"
+        "page:settingsSectionMessages.ts#promptsUseDefault"
       ],
       "ops": [
         "prompts.setFile"
       ]
     },
     {
-      "capability": "settingsPanel.ts#refresh",
+      "capability": "settingsSectionMessages.ts#refresh",
       "ui": [
-        "page:settingsPanel.ts#refresh"
+        "page:settingsSectionMessages.ts#refresh"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6812,18 +6812,18 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#reset",
+      "capability": "settingsValueMessages.ts#reset",
       "ui": [
-        "page:settingsPanel.ts#reset"
+        "page:settingsValueMessages.ts#reset"
       ],
       "ops": [
         "settings.reset"
       ]
     },
     {
-      "capability": "settingsPanel.ts#rootAdd",
+      "capability": "settingsAgentMessages.ts#rootAdd",
       "ui": [
-        "page:settingsPanel.ts#rootAdd"
+        "page:settingsAgentMessages.ts#rootAdd"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6831,27 +6831,27 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#rootCleanDupes",
+      "capability": "settingsAgentMessages.ts#rootCleanDupes",
       "ui": [
-        "page:settingsPanel.ts#rootCleanDupes"
+        "page:settingsAgentMessages.ts#rootCleanDupes"
       ],
       "ops": [
         "agents.roots.clean"
       ]
     },
     {
-      "capability": "settingsPanel.ts#rootRemove",
+      "capability": "settingsAgentMessages.ts#rootRemove",
       "ui": [
-        "page:settingsPanel.ts#rootRemove"
+        "page:settingsAgentMessages.ts#rootRemove"
       ],
       "ops": [
         "agents.roots.remove"
       ]
     },
     {
-      "capability": "settingsPanel.ts#rootReveal",
+      "capability": "settingsAgentMessages.ts#rootReveal",
       "ui": [
-        "page:settingsPanel.ts#rootReveal"
+        "page:settingsAgentMessages.ts#rootReveal"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6859,9 +6859,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#saveProfile",
+      "capability": "settingsValueMessages.ts#saveProfile",
       "ui": [
-        "page:settingsPanel.ts#saveProfile"
+        "page:settingsValueMessages.ts#saveProfile"
       ],
       "ops": [
         "settings.sets.delete",
@@ -6870,27 +6870,27 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#set",
+      "capability": "settingsValueMessages.ts#set",
       "ui": [
-        "page:settingsPanel.ts#set"
+        "page:settingsValueMessages.ts#set"
       ],
       "ops": [
         "settings.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#spDefault",
+      "capability": "settingsSectionMessages.ts#spDefault",
       "ui": [
-        "page:settingsPanel.ts#spDefault"
+        "page:settingsSectionMessages.ts#spDefault"
       ],
       "ops": [
         "superpowers.set"
       ]
     },
     {
-      "capability": "settingsPanel.ts#spRescan",
+      "capability": "settingsSectionMessages.ts#spRescan",
       "ui": [
-        "page:settingsPanel.ts#spRescan"
+        "page:settingsSectionMessages.ts#spRescan"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6898,9 +6898,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#spReveal",
+      "capability": "settingsSectionMessages.ts#spReveal",
       "ui": [
-        "page:settingsPanel.ts#spReveal"
+        "page:settingsSectionMessages.ts#spReveal"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6908,18 +6908,18 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#wikiInit",
+      "capability": "settingsSectionMessages.ts#wikiInit",
       "ui": [
-        "page:settingsPanel.ts#wikiInit"
+        "page:settingsSectionMessages.ts#wikiInit"
       ],
       "ops": [
         "wiki.init"
       ]
     },
     {
-      "capability": "settingsPanel.ts#wikiOpen",
+      "capability": "settingsSectionMessages.ts#wikiOpen",
       "ui": [
-        "page:settingsPanel.ts#wikiOpen"
+        "page:settingsSectionMessages.ts#wikiOpen"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6927,9 +6927,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#wikiRescan",
+      "capability": "settingsSectionMessages.ts#wikiRescan",
       "ui": [
-        "page:settingsPanel.ts#wikiRescan"
+        "page:settingsSectionMessages.ts#wikiRescan"
       ],
       "exempt": {
         "kind": "navigation",
@@ -6937,9 +6937,9 @@
       }
     },
     {
-      "capability": "settingsPanel.ts#wikiReveal",
+      "capability": "settingsSectionMessages.ts#wikiReveal",
       "ui": [
-        "page:settingsPanel.ts#wikiReveal"
+        "page:settingsSectionMessages.ts#wikiReveal"
       ],
       "exempt": {
         "kind": "navigation",

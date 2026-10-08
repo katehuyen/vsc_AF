@@ -794,7 +794,7 @@ Settings şeması da aynı anda genişletilir:
   `agentFarm.planUsageEngine` enum/enumDescription satırları;
 - gerekiyorsa transcript/config home override ayarı;
 - `agentFarm.agentEngineDefaults` örnek ve açıklaması;
-- `src/panels/settingsPanel.ts` fallback/listesi ve `media/settings.js` arama
+- `src/panels/settingsPage.ts` fallback/listesi ve `media/afSettingClaude.js` arama
   sözcükleri;
 - varsayılan model/effort/permission açıklamaları;
 - eski settings JSON’unda alan yokken Claude davranışının değişmediği migration
@@ -1368,7 +1368,7 @@ Bu tablo gelecekteki taramanın başlangıcıdır; çağrı zinciri yine okunur.
 | Sessions/Turns/Search/Viewer/Timeline | `src/panels/*`, `media/*` ilgili sayfalar |
 | Motor rozeti/etiketi | `media/afEngine.js` |
 | Motor renk paleti | `media/common.css` |
-| Settings enum/açıklamalar | `package.json`, `src/panels/settingsPanel.ts`, `media/settings.js` |
+| Settings enum/açıklamalar | `package.json`, `src/panels/settingsPage.ts`, `media/afSettingClaude.js` |
 | Modelden konuşmacı adı | `src/core/speaker.ts` |
 | Ürün anlatımı | `README.md`, `CHANGELOG.md`, `docs/BLUEPRINT.*`, `docs/MOTORLAR-TASARIM.tr.md` |
 

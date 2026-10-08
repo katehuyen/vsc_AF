@@ -579,7 +579,7 @@ const { charts } = require('./lib_charts_stub.js');
 
     ok('‼️ the budget door reads through the fallback, not the registry alone',
         /cfgValue<boolean>\('agentFarm\.budgetsUnlimited', false\)/.test(ext));
-    const panelSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const panelSrc = require('./lib_settings_source').settingsPanelSource();
     ok('…and every value the settings page draws comes through the same door',
         /buildSettingsModel\(\s*settingsSchema\(\), cfgValueRaw, settingRowNotes\)/.test(ext) && /refusalOf: cfgRefusal,/.test(ext)
         // X-470 — the page draws the host's ONE model; it once built its own through cfg.get and never saw a refusal

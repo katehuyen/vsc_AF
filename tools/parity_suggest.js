@@ -9,7 +9,7 @@
 // who just ran the gate already has); otherwise the gate is run here.
 //
 // Naming capabilities on the command line skips both:
-//   node tools/parity_suggest.js settingsPanel.ts#agentAccount
+//   node tools/parity_suggest.js settingsAgentMessages.ts#agentAccount
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');

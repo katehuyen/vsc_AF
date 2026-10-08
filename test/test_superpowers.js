@@ -339,7 +339,7 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
         ok('…and the reset is the ordinary one, so it cannot drift from the schema default',
             /data-reset="agentFarm\.superpowersPath"/.test(set));
 
-        const sp = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+        const sp = require('./lib_settings_source').settingsPanelSource();
         ok('the host reads the folder on every draw — it is edited by hand while the page is open',
             /superpowers: this\.deps\.superpowers\?\.\(\) \?\? null/.test(sp));
         ok('‼️ the box writes through the SHARED key rule, not its own',
@@ -350,7 +350,7 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
             /superpowersPath: 'superpowers'/.test(ops) && /superpowersDefaults: 'superpowers'/.test(ops));
 
         const par = JSON.parse(fs.readFileSync(path.join(ROOT, 'parity.manifest.json'), 'utf8'));
-        const row = par.entries.find(e => e.capability === 'settingsPanel.ts#spDefault');
+        const row = par.entries.find(e => e.capability === 'settingsSectionMessages.ts#spDefault');
         ok('the box that writes a setting is bound to its op, not exempted',
             !!row && (row.ops || []).includes('superpowers.set'));
     }

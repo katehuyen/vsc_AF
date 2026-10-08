@@ -36,9 +36,9 @@ const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8')
     ok('…with a hover that says what the page is', /id="openaccounts"[^>]*title="[^"]*captured sign-in/.test(h));
     p.query('#openaccounts')[0].click();
     ok('…and the press asks the host to open it', JSON.stringify(p.last()) === JSON.stringify({ type: 'openAccounts' }));
-    const src = read('src', 'panels', 'settingsPanel.ts');
+    const src = require('./lib_settings_source').settingsPanelSource();
     ok('the settings panel answers it through its own dep',
-        /case 'openAccounts':\s*this\.deps\.openAccounts\?\.\(\);/.test(src) && /openAccounts\?\(\): void;/.test(src));
+        /case 'openAccounts':\s*(?:this|s)\.deps\.openAccounts\?\.\(\);/.test(src) && /openAccounts\?\(\): void;/.test(src));
     ok('extension.ts hands that dep the Accounts page', /openAccounts: \(\) => \{ AccountsPanel\.show\(accountsPanelDeps\); \}/.test(read('src', 'extension.ts')));
 }
 

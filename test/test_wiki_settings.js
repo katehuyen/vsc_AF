@@ -205,12 +205,12 @@ async function bridgeOps() {
     ok('all four gestures are wired',
         ['wikiInit', 'wikiRescan', 'wikiReveal', 'wikiOpen'].every(g => page.includes(`'${g}'`)));
 
-    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const panel = require('./lib_settings_source').settingsPanelSource();
     ok('the host reads the folder on every draw — it is edited in Obsidian while the page is open',
         /wiki: this\.deps\.wikiHealth\?\.\(\) \?\? null/.test(panel));
 
     const par = JSON.parse(fs.readFileSync(path.join(ROOT, 'parity.manifest.json'), 'utf8'));
-    const row = par.entries.find(e => e.capability === 'settingsPanel.ts#wikiInit');
+    const row = par.entries.find(e => e.capability === 'settingsSectionMessages.ts#wikiInit');
     ok('the button that writes files is bound to its op, not exempted',
         !!row && (row.ops || []).includes('wiki.init'));
 }

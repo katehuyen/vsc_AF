@@ -120,10 +120,10 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         ok('every kapici setting is filed under it', !/'kapici\.[A-Za-z]+': 'tasks'/.test(ops) && (ops.match(/'kapici\.[A-Za-z]+': 'kapici'/g) || []).length === 9);
         ok('…and it has a name', /\['kapici', 'Gatekeeper — the decision gate'\]/.test(ops));
         ok('the page heads it with the status, then its settings', /c\.id === 'kapici' && window\.AFKapici \? window\.AFKapici\.section\(DATA\.kapici, C\) \+ c\.items\.map\(itemHtml\)/.test(read('media/settings.js')));
-        ok('the MCP button reaches the same function the op does', /case 'kapiciMcp':/.test(read('src/panels/settingsPanel.ts'))
+        ok('the MCP button reaches the same function the op does', /case 'kapiciMcp':/.test(require('./lib_settings_source').settingsPanelSource())
             && /kapiciMcp: \(on: boolean\) => \{\s*try \{ setKapiciMcp\(context\.globalStorageUri\.fsPath, on\); \}/.test(read('src/extension.ts'))
             && /mcp: kapiciMcpState\(context\.globalStorageUri\.fsPath\)/.test(read('src/extension.ts')));
-        ok('the vault button goes to the Secret vault', /case 'openSecrets':/.test(read('src/panels/settingsPanel.ts')) && /openSecrets: \(\) => \{ void vscode\.commands\.executeCommand\('agentfarm\.openSecrets'\); \}/.test(read('src/extension.ts')));
+        ok('the vault button goes to the Secret vault', /case 'openSecrets':/.test(require('./lib_settings_source').settingsPanelSource()) && /openSecrets: \(\) => \{ void vscode\.commands\.executeCommand\('agentfarm\.openSecrets'\); \}/.test(read('src/extension.ts')));
         const tb = read('media/toolbox.js');
         ok('the Toolbox tab, counted as nothing', /\{ id: 'kapici', label: 'Gatekeeper' \}/.test(tb) && /t\.id !== 'kapici'/.test(tb) && /state\.tab === 'kapici' \? kapiciTab\(\)/.test(tb));
         ok('fed by the same list kapici.rules answers', /kapici: deps\.kapiciRules \? deps\.kapiciRules\(\) : null/.test(read('src/panels/toolboxPanel.ts')) && /return host\.ruleList\(project\(args\)\);/.test(read('src/core/kapiciBridge.ts')));

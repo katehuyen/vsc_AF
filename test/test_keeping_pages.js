@@ -97,9 +97,9 @@ const src = f => fs.readFileSync(path.join(ROOT, 'media', f), 'utf8');
         /ccRawSent = \{ was: (?:X\.)?DATA\.claude \? String\((?:X\.)?DATA\.claude\.raw\) : '' \};\s*vscode\.postMessage\(\{ type: 'ccRaw'/.test(s)
         && /if \(ta && now !== ccRawSent\.was\) \{ ta\.value = ta\.defaultValue; \}/.test(s)
         && /DATA = \{ \.\.\.(?:X\.)?DATA, \.\.\.ev\.data\.data \};\s*ccRawLanded\(\);/.test(s));
-    const host = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    const host = require('./lib_settings_source').settingsPanelSource();
     ok('…which is what the host does: a refusal is ccError with no push, a write is a push',
-        /if \(!v\.ok\) \{\s*void this\.host\.webview\.postMessage\(\{ type: 'ccError', id: '__raw__', error: v\.error \}\);\s*break;/.test(host));
+        /if \(!v\.ok\) \{\s*void (?:this|s)\.host\.webview\.postMessage\(\{ type: 'ccError', id: '__raw__', error: v\.error \}\);\s*break;/.test(host));
 }
 
 // ---------- the pages that need nothing: their boxes are page state ----------
