@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.899.0 - Farm Settings speaks plainly: the first six sections (2026-10-08)
+
+- **Every setting in General, Projects, Agents, Engines & Accounts,
+  Sessions and Notifications & Sound has a name and a one-line summary**
+  instead of its raw key - "Notify when a turn ends", "Scratch folder",
+  "Answer questions on a timer".
+- **Choices read as words** - "Follow VS Code", "Match the page",
+  "Every option" instead of the stored value.
+- **Shorter, plainer descriptions** in these sections, on this page and in
+  VS Code's own Settings editor: at most a few sentences, another setting
+  named by its name, and no internal notes.
+
 ## 3.898.0 - Farm Settings: pick it, don't type it (2026-10-08)
 
 - **Settings whose right values are known are picked with the mouse** -
