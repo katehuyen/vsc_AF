@@ -111,7 +111,7 @@
    0
   ],
   "autoReport": [
-   96,
+   94,
    0
   ],
   "autoReportDays": [
@@ -239,7 +239,7 @@
    0
   ],
   "contextWindowTokens": [
-   392,
+   278,
    0
   ],
   "costAnomalyMinUsd": [
@@ -247,7 +247,7 @@
    0
   ],
   "dailyDigest": [
-   178,
+   170,
    0
   ],
   "defaultAccountCeiling": [
@@ -259,11 +259,11 @@
    0
   ],
   "digestTtsFolder": [
-   160,
+   158,
    0
   ],
   "digestTtsModel": [
-   404,
+   272,
    0
   ],
   "disciplineOrders": [
@@ -351,7 +351,7 @@
    0
   ],
   "insightAutoDelegate": [
-   380,
+   308,
    0
   ],
   "judgeArgs": [
@@ -527,7 +527,7 @@
    0
   ],
   "notifyStuck": [
-   239,
+   156,
    0
   ],
   "notifyTurnEnd": [
@@ -647,11 +647,11 @@
    0
   ],
   "pulse": [
-   192,
+   178,
    0
   ],
   "qualitySample": [
-   171,
+   168,
    0
   ],
   "qualitySamplesPerAgent": [
@@ -799,7 +799,7 @@
    0
   ],
   "sessionBreakMin": [
-   580,
+   320,
    0
   ],
   "shellGuard": [
@@ -827,7 +827,7 @@
    0
   ],
   "stuckThresholdSeconds": [
-   428,
+   297,
    0
   ],
   "studioLibraryBase": [
@@ -927,7 +927,7 @@
    0
   ],
   "weeklySummary": [
-   138,
+   133,
    0
   ],
   "wikiAgent": [

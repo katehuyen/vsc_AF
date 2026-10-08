@@ -9227,7 +9227,7 @@
         "agentFarm.contextWindowTokens": {
           "type": "number",
           "default": 0,
-          "description": "Context-window ceiling for every 'Context now' figure — the session viewer's gauge and the Ctx column's hover. 0 = ask the session: the window the engine itself stated (Codex reports one per turn), else the model's known window. A session whose window nobody states shows the raw token count without a percent rather than a percentage of Claude's. Set a value to force one ceiling everywhere."
+          "description": "The context window every \"Context now\" figure is measured against: the session viewer's gauge and the Ctx column's hover. 0 = the window the engine itself states (Codex reports one per turn), else the model's known one; with neither, the raw token count shows without a percent."
         },
         "agentFarm.contextConvergePct": {
           "type": "number",
@@ -9410,22 +9410,22 @@
           "type": "number",
           "default": 240,
           "minimum": 0,
-          "description": "Stuck warning — WHEN: a working session with no hook events for this many seconds is marked STALLED (its card says so; with notifyStuck on, Needs You gets a row and a notification pops up). A session waiting on its own work is not: a wait the Console shows in purple, or a command still inside the time limit it was given. Any value you like; 0 = never: no session is ever marked stalled, so notifyStuck has nothing to announce."
+          "description": "How long a working session can go without events before it is marked stalled; its card says so, and with \"Notify when a session stalls\" on you also get a Needs You row and a notification. A session waiting on its own work (a purple wait, a command inside its time limit) is not stalled. 0 = never."
         },
         "agentFarm.quotaStyle.percent": {
           "type": "string",
           "default": "",
-          "description": "How a quota's PERCENT is drawn on every page — CSS declarations, e.g. `color: #ff79c6; font-weight: 700`. Empty = the default (purple, semibold). At 75% and 90% the page's own warning colours still win."
+          "description": "How a quota's percent is drawn on every page, as CSS declarations, e.g. color: #ff79c6; font-weight: 700. Empty = the default (purple, semibold). At 75% and 90% the page's own warning colours still win."
         },
         "agentFarm.quotaStyle.left": {
           "type": "string",
           "default": "",
-          "description": "How a quota's TIME LEFT is drawn on every page — CSS declarations, e.g. `color: #89d185; font-weight: 700`. Empty = the default (green, semibold)."
+          "description": "How a quota's time left is drawn on every page, as CSS declarations, e.g. color: #89d185; font-weight: 700. Empty = the default (green, semibold)."
         },
         "agentFarm.quotaStyle.reset": {
           "type": "string",
           "default": "",
-          "description": "How a quota's RESET TIME is drawn on every page — CSS declarations, e.g. `color: #75beff; font-style: italic`. Empty = the default (blue)."
+          "description": "How a quota's reset time is drawn on every page, as CSS declarations, e.g. color: #75beff; font-style: italic. Empty = the default (blue)."
         },
         "agentFarm.notifyPermission": {
           "type": "boolean",
@@ -9435,7 +9435,7 @@
         "agentFarm.notifyStuck": {
           "type": "boolean",
           "default": true,
-          "description": "Stuck warning — WHETHER you are told: when a session is marked stalled, give it a Needs You row and pop up a notification. Off, only its card says STALLED — no Needs You row, no pop-up. Nothing to announce while stuckThresholdSeconds is 0."
+          "description": "When a session is marked stalled, give it a Needs You row and a notification. Off, only its card says stalled. Nothing to announce while \"Stuck after\" is 0."
         },
         "agentFarm.notifyTurnEnd": {
           "type": "boolean",
@@ -10647,7 +10647,7 @@
         "agentFarm.dailyDigest": {
           "type": "string",
           "default": "off",
-          "description": "Send a compact daily fleet scorecard to notifyWebhookUrl after this local time (HH:MM, e.g. \"21:30\"); \"off\" disables. No model call — plain data. Manual: 'Send Daily Digest Now'."
+          "description": "Send a compact fleet scorecard to the webhook after this local time each day (HH:MM, e.g. 21:30); off disables it. No model call. Send one by hand: Send Daily Digest Now."
         },
         "agentFarm.dispatchRules": {
           "type": "array",
@@ -10776,13 +10776,13 @@
         "agentFarm.digestTtsModel": {
           "type": "string",
           "default": "",
-          "description": "fal.ai TTS model id for the spoken daily briefing (e.g. an ElevenLabs TTS endpoint on fal — verify the exact id on fal.ai): with one, 'Speak Daily Briefing' saves the briefing as an audio file in agentFarm.digestTtsFolder (paid, uses your fal key). Empty: this computer reads the briefing aloud with its own voice, free — the Sound page's Reading voice and speed, and the reading player's pause and skip."
+          "description": "The fal.ai text-to-speech model the spoken daily briefing is recorded with (check the exact id on fal.ai); the file goes to \"Briefing audio folder\" and is paid from your fal key. Empty = this computer reads the briefing aloud for free, with the Sound page's reading voice."
         },
         "agentFarm.digestTtsFolder": {
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "description": "Folder the spoken briefing's audio file is saved into when agentFarm.digestTtsModel names a fal.ai model (e.g. a phone-synced folder). Empty = autoReportFolder."
+          "description": "Where the spoken briefing's audio is saved when \"Briefing voice model\" names a fal.ai model, e.g. a phone-synced folder. Empty = the automatic reports folder."
         },
         "agentFarm.modelPolicy": {
           "type": "array",
@@ -10911,7 +10911,7 @@
             "weekly"
           ],
           "default": "off",
-          "description": "Synthetic pulse checks: a fixed cheap prompt per agent + cheap judge verifies the answer matches the agent's identity (uses judgeArgs; small API cost per agent). Manual: 'Run Pulse Check Now'."
+          "description": "A fixed cheap prompt per agent, judged by a cheap model for whether the answer matches the agent's identity; a small API cost per agent. Run one by hand with Run Pulse Check Now."
         },
         "agentFarm.insightAutoDelegate": {
           "type": "array",
@@ -10919,7 +10919,7 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Insight categories that are **automatically delegated** to the insight's own agent as a headless task when they appear (warnings/errors only; 24h cooldown per problem; only the task-runner window queues them). Empty = off. Example: `[\"memory-index\", \"duties\", \"guardrail\"]`. Categories are shown next to each row in the Insights view. This spends agent time — enable deliberately."
+          "markdownDescription": "Insight categories **handed to the insight's own agent** as a headless task when they appear: warnings and errors only, once a day per problem, queued by the task-runner window. Empty = off. Example: `[\"memory-index\", \"duties\", \"guardrail\"]`; every row in Insights shows its category. This spends agent time."
         },
         "agentFarm.qualitySample": {
           "type": "string",
@@ -10929,7 +10929,7 @@
             "weekly"
           ],
           "default": "off",
-          "description": "Automatically sample recent session outputs and score them 1-5 with the cheap-model judge (uses judgeArgs; small API cost per sample). Manual: 'Sample Output Quality Now'."
+          "description": "Sample recent session outputs and score them 1–5 with the cheap-model judge, on a schedule; a small API cost per sample. Run one by hand with Sample Output Quality Now."
         },
         "agentFarm.qualitySamplesPerAgent": {
           "type": "number",
@@ -10948,7 +10948,7 @@
         "agentFarm.weeklySummary": {
           "type": "boolean",
           "default": false,
-          "description": "Once per ISO week, write a three-sentence human-language fleet summary (cheap model) as a notification — and into autoReportFolder if set."
+          "description": "Once per ISO week, a three-sentence fleet summary by a cheap model, as a notification and, when set, in the automatic reports folder."
         },
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",
@@ -10963,7 +10963,7 @@
             "weekly"
           ],
           "default": "off",
-          "description": "Automatically write a fleet report into autoReportFolder (checked hourly while VS Code is open)."
+          "description": "Write a fleet report into the automatic reports folder (checked hourly while VS Code is open)."
         },
         "agentFarm.autoReportFolder": {
           "type": "string",
@@ -11400,7 +11400,7 @@
           "type": "number",
           "default": 30,
           "minimum": 0,
-          "description": "How long, in minutes, a pause between two turns has to run before the session counts as PUT DOWN rather than thinking. A conversation you resume the next morning is one session with a night inside it, and the Duration column measured first message to last — so it read as a day and a half, and cost per hour was divided by your sleep. Only the stretch BETWEEN turns is taken off; a long round is the work itself and is never called absence. The wall clock is still on the cell, next to what was actually run. 0 switches the split off and Duration goes back to being first-to-last."
+          "description": "How long a pause between two turns runs before the session counts as put down rather than thinking. That stretch is taken off the Duration column, so a conversation resumed the next morning is not a day and a half long; a long turn is the work itself and is never taken off. 0 = Duration runs from first message to last."
         },
         "agentFarm.promptSnippetsFile": {
           "type": "string",

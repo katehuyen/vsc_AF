@@ -13,37 +13,126 @@ export const monitor: CatalogSection = {
         {
             // U-158 — the stuck warning is one question (after how long, and whether you are told), so its two keys are one group
             id: 'stuck', label: 'Stuck warning',
-            about: 'Two different things. The **number** says WHEN: a working session silent for that many seconds is marked stalled and its card says so. 0 turns the warning off — nothing is ever marked stalled, so the box has nothing to announce. The **box** says whether you are told: ticked, the stalled session gets a Needs You row and a pop-up notification; unticked, only its card shows the mark.'
+            about: 'When a silent working session is marked stalled, and whether you are told.'
         },
         {
             // U-154 — the three quota figures' looks are one question, shown on a sample line
             id: 'quotaFigures', label: 'Quota figures',
-            about: 'Percent used, time left and reset time are drawn in their own look on every page — accounts, engines, dashboard, console. Each box takes CSS declarations (colour, weight, font…); empty is the default. At 75% and 90% a percent takes the page\'s warning colour instead. A change repaints open pages at once.'
+            about: 'How a quota\'s percent, time left and reset time look on every page, as CSS.'
         },
         { id: 'health', label: 'Health checks', about: 'The checks that keep the agents\' memory, context and permissions in shape.' },
         { id: 'insights', label: 'Insights', about: 'The pulse, the quality samples and the suggestions drawn from past sessions.' }
     ],
     rows: {
-        liveMonitor: { group: 'live', tier: 'basic' },
-        livePort: { group: 'live' },
-        activeThresholdSeconds: { group: 'live', unit: 's' },
-        sessionBreakMin: { group: 'live', unit: 'min', zeroMeans: 'off' },
-        contextWindowTokens: { group: 'live', unit: 'tokens' },
-        maxTranscriptMessages: { group: 'live' },
-        stuckThresholdSeconds: { group: 'stuck', tier: 'basic', unit: 's', zeroMeans: 'off' },
-        notifyStuck: { group: 'stuck', tier: 'basic' },
-        'quotaStyle.percent': { group: 'quotaFigures' },
-        'quotaStyle.left': { group: 'quotaFigures' },
-        'quotaStyle.reset': { group: 'quotaFigures' },
-        livingChecks: { group: 'health', tier: 'basic' },
-        staleMemoryDays: { group: 'health', unit: 'days' },
-        contextBudgetTokens: { group: 'health', unit: 'tokens' },
-        permissionLint: { group: 'health' },
-        pulse: { group: 'insights', tier: 'basic' },
-        insightAutoDelegate: { group: 'insights' },
-        qualitySample: { group: 'insights' },
-        qualitySamplesPerAgent: { group: 'insights' },
-        suggestScan: { group: 'insights' },
-        packGalleryRepos: { group: 'insights' }
+        liveMonitor: {
+            group: 'live', tier: 'basic',
+            label: 'Live event listener',
+            summary: 'Receives Claude Code\'s live events on this machine.'
+        },
+        livePort: {
+            group: 'live',
+            label: 'Listener port',
+            summary: 'The port the live event listener listens on.'
+        },
+        activeThresholdSeconds: {
+            group: 'live', unit: 's',
+            label: 'Active within',
+            summary: 'How recently a transcript must change for its session to count as active.'
+        },
+        // Without it cost per hour was divided by the user's sleep. The wall clock stays on the cell, next to what
+        // was actually run.
+        sessionBreakMin: {
+            group: 'live', unit: 'min', zeroMeans: 'off',
+            label: 'Break after',
+            summary: 'How long a pause between turns lasts before it counts as a break.'
+        },
+        contextWindowTokens: {
+            group: 'live', unit: 'tokens',
+            label: 'Context window',
+            summary: 'The ceiling every Context now figure is measured against.'
+        },
+        maxTranscriptMessages: {
+            group: 'live',
+            label: 'Messages shown',
+            summary: 'How many messages the session viewer draws at most.'
+        },
+        stuckThresholdSeconds: {
+            group: 'stuck', tier: 'basic', unit: 's', zeroMeans: 'off',
+            label: 'Stuck after',
+            summary: 'How long a working session can stay silent before it is marked stalled.'
+        },
+        notifyStuck: {
+            group: 'stuck', tier: 'basic',
+            label: 'Notify when a session stalls',
+            summary: 'Adds a Needs You row and a notification when a session stalls.'
+        },
+        'quotaStyle.percent': {
+            group: 'quotaFigures',
+            label: 'Quota usage look',
+            summary: 'CSS for how a quota\'s percent is drawn on every page.'
+        },
+        'quotaStyle.left': {
+            group: 'quotaFigures',
+            label: 'Quota time-left look',
+            summary: 'CSS for how a quota\'s time left is drawn on every page.'
+        },
+        'quotaStyle.reset': {
+            group: 'quotaFigures',
+            label: 'Quota reset-time look',
+            summary: 'CSS for how a quota\'s reset time is drawn on every page.'
+        },
+        livingChecks: {
+            group: 'health', tier: 'basic',
+            label: 'Living page checks',
+            summary: 'Conditions the Living page watches, each read as needing attention when true.'
+        },
+        staleMemoryDays: {
+            group: 'health', unit: 'days',
+            label: 'Memory stale after',
+            summary: 'How long a memory file can go untouched before it is flagged.'
+        },
+        contextBudgetTokens: {
+            group: 'health', unit: 'tokens',
+            label: 'Context budget',
+            summary: 'The fixed context load above which an agent is warned.'
+        },
+        permissionLint: {
+            group: 'health',
+            label: 'Audit permission rules',
+            summary: 'Checks each agent\'s permission rules and reports findings in Insights.'
+        },
+        pulse: {
+            group: 'insights', tier: 'basic',
+            label: 'Pulse checks',
+            summary: 'A cheap scheduled prompt that checks each agent still answers as itself.',
+            options: { off: 'Off', nightly: 'Nightly', weekly: 'Weekly' }
+        },
+        insightAutoDelegate: {
+            group: 'insights',
+            label: 'Delegate insights automatically',
+            summary: 'Insight categories handed to their agent as a task when they appear.'
+        },
+        qualitySample: {
+            group: 'insights',
+            label: 'Quality sampling',
+            summary: 'Scores recent session outputs with a cheap judge on a schedule.',
+            options: { off: 'Off', daily: 'Daily', weekly: 'Weekly' }
+        },
+        qualitySamplesPerAgent: {
+            group: 'insights',
+            label: 'Samples per agent',
+            summary: 'How many unscored recent sessions per agent each sampling run scores.'
+        },
+        suggestScan: {
+            group: 'insights',
+            label: 'Suggest instruction rules',
+            summary: 'A weekly scan of your corrections that proposes CLAUDE.md rules.',
+            options: { off: 'Off', weekly: 'Weekly' }
+        },
+        packGalleryRepos: {
+            group: 'insights',
+            label: 'Pack gallery sources',
+            summary: 'Where agent packs are offered from: git addresses or local folders.'
+        }
     }
 };
