@@ -119,8 +119,9 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
         /await providerKeys\.delete\(id\);\s*await providerKeys\.bind\(id, \{ baseUrl: route\.baseUrl \?\? '', secretRef: name \}\);/.test(ext));
     ok('every surface sees a route through one builder (hasSecret, keyHint, secretRef, keyHeldFor)',
         /const publicProviderProfiles = \(\) => providerProfiles\(\)\.map\(publicRoute\);/.test(ext)
-        && (ext.match(/publicRoute\(w\.profile!\)/g) || []).length === 3 && !/publicProfiles\(\[w\.profile/.test(ext));
-    ok('‼️ no bridge op names a key or binds one', !ext.split(/\n\s*\{\s*\n\s*op: '/).filter(s => /^providers\./.test(s))
+        && (ext.match(/publicRoute\((w\.profile!|fresh)\)/g) || []).length === 3 && !/publicProfiles\(\[w\.profile/.test(ext));
+    // B-31 — a Farm Secret may be NAMED over the bridge, only through core/secretBinds.ts (test_bridge_secrets.js)
+    ok('‼️ no providers.* op types a key, confirms one or binds one except through bindRouteSecret', !ext.split(/\n\s*\{\s*\n\s*op: '/).filter(s => /^providers\./.test(s))
         .some(s => /providerKeys\.(bind|set)|useFarmSecretForRoute|confirmRouteKey/.test(s)));
 
     // ---------- X-495 — an Anthropic model on a third-party route is asked for by its alias ----------

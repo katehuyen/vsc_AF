@@ -666,6 +666,7 @@ import { registerStudioLibraryOps } from './core/studioLibraryOps';
 import { registerMediaUploadOps } from './core/mediaUploadBridge';
 import { KapiciHost, KEY_CANDIDATES, kapiciSettings, registerKapiciOps } from './core/kapiciBridge';
 import { secretReaders } from './core/secretReaders';
+import { bindRouteSecret, secretBindOps, SecretBindDeps, secretMissing } from './core/secretBinds';
 import { kapiciMcpState, registerKapiciMcpOps, setKapiciMcp, stageKapiciMcp } from './core/kapiciMcp';
 import { consumerMode } from './core/kapici/shadow';
 import { registerToolboxOps, removeToolboxItem } from './core/toolboxBridge';
@@ -24701,6 +24702,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await bumpRouteRevision(id);
         EnginesPanel.refreshIfOpen();
     };
+    /** B-31 — the same binds by name from the bridge (core/secretBinds.ts); each is announced on Notices. */
+    const secretBindDeps: SecretBindDeps = {
+        secrets: () => vault.list(),
+        routes: () => providerProfiles().map(p => ({ id: p.id, label: p.label || p.id, baseUrl: p.baseUrl })),
+        routesUsing: (name: string) => providerKeys.refsTo(name),
+        readers: (name: string) => secretsDeps.readers(name),
+        kapiciKeyName: () => kapiciSettings((k, d) => cfg().get(k, d)).keyName,
+        workflows: () => taskManager.workflows.map(w => ({ id: w.id, title: w.title, text: JSON.stringify(w) })),
+        getAgents: () => agents,
+        bindRoute: (id: string, name: string) => useFarmSecretForRoute(id, name),
+        setKapiciKey: async (name: string) => { await cfg().update('kapici.keyName', name, vscode.ConfigurationTarget.Global); },
+        announce: (title: string, body: string) => { noticesStore.add({ agentName: 'agent-farm', title, body, level: 1 }); }
+    };
     /** X-492 — a person says the key held for the old endpoint may go to the route's new one. */
     const confirmRouteKey = async (id: string): Promise<void> => {
         const route = providerProfiles().find(p => p.id === id);
@@ -24723,9 +24737,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * (`_REF/bridge.md` → the security exception). There is no bridge op for
      * this and there is not going to be one: the bridge is a plaintext
      * request/response file channel, and routing a credential through it would
-     * defeat the keychain it is on its way to. ‼️ X-488 — and the same holds for
-     * NAMING a Farm Secret or confirming a key at a new endpoint: both decide
-     * which host a key goes to, so both happen only here, in the host's picker.
+     * defeat the keychain it is on its way to. ‼️ X-492 — confirming a key at a
+     * new endpoint is human-only too. NAMING a Farm Secret is also a bridge op
+     * (B-31, core/secretBinds.ts): only the name travels, and each bind made
+     * there is announced on Notices with the endpoint it went to.
      */
     const askProviderSecret = async (id: string, label: string): Promise<void> => {
         const route = providerProfiles().find(p => p.id === id);
@@ -44194,6 +44209,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'No arguments.',
             handler: () => ({ rows: ownershipTable() })
         },
+        // B-31 — secrets.list, providers.bindSecret, kapici.bindSecret, mcp.servers.bindSecret
+        ...secretBindOps(secretBindDeps),
         {
             op: 'providers.list',
             describe: 'X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: id, '
@@ -44230,19 +44247,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'own way of signing in. A base URL must be https or http on loopback: a key sent '
                 + 'over plain http to another host travels in clear. The id is PERMANENT because the '
                 + 'credential is filed under it; it is 2-40 characters of lowercase letters, digits '
-                + 'and hyphens. ‼️ X-488 — WHICH key a route signs in with (its own, or a Farm Secret by '
-                + 'name) is chosen only in the Engines page and kept beside the keychain, not in the '
-                + 'route, so no call can point a secret at an endpoint. args: id, label?, providerId, '
-                + 'baseUrl?, authKind?, tiers? (object, tier → model id), description? (the owner\'s '
-                + 'note), engine? (claude). S-135 — the id of a removed route is refused: an id is given '
-                + 'once (providers.list → retired).',
-            handler: async (args) => {
+                + 'and hyphens. ‼️ X-488 / B-31 — WHICH key a route signs in with is kept beside the '
+                + 'keychain, not in the route: a key of its own is typed only in the Engines page; a Farm '
+                + 'Secret may be NAMED here (`secretRef`, refused unless the vault holds it) or with '
+                + 'providers.bindSecret — bound to the endpoint the route has then, and announced on '
+                + 'Notices. args: id, label?, providerId, baseUrl?, authKind?, tiers? (object, tier → '
+                + 'model id), description? (the owner\'s note), engine? (claude), secretRef?. S-135 — the '
+                + 'id of a removed route is refused: an id is given once (providers.list → retired).',
+            handler: async (args, from) => {
+                // B-31 — `secretRef` names a Farm Secret to sign in with; refused before anything is written
+                const ref = optStr(args, 'secretRef').trim();
+                need(!ref || vault.names().includes(ref), secretMissing(ref));
                 const w = addProfile(providerProfiles(), args as Record<string, unknown>,
                     Object.keys(ENGINES), retiredProviderIds());
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
+                const bound = ref ? await bindRouteSecret(secretBindDeps, w.profile!.id, ref, from) : undefined;
+                // a bind counts the revision up, so the answer is the route as stored now
+                const fresh = providerProfiles().find(p => p.id === w.profile!.id) ?? w.profile!;
                 EnginesPanel.refreshIfOpen();
-                return { added: publicRoute(w.profile!) };
+                return { added: publicRoute(fresh), ...(bound ? { bound } : {}) };
             }
         },
         {
@@ -44257,16 +44281,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the endpoint a person gave it for, so after a move the route answers hasSecret:false '
                 + 'with keyHeldFor naming the old endpoint, and runs nothing until a person confirms the '
                 + 'key in the Engines page (Change key). The same holds whatever wrote the change — this '
-                + 'op, settings.set or a hand edit. args: id, label?, providerId?, baseUrl?, authKind?, '
-                + 'tiers?, description?',
-            handler: async (args) => {
+                + 'op, settings.set or a hand edit — unless this same call names a Farm Secret '
+                + '(`secretRef`, B-31), which is then bound at the new endpoint and announced on Notices. '
+                + 'args: id, label?, providerId?, baseUrl?, authKind?, tiers?, description?, secretRef?',
+            handler: async (args, from) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
+                // B-31 — `secretRef` binds a Farm Secret at the endpoint the route has after this change
+                const ref = optStr(args, 'secretRef').trim();
+                need(!ref || vault.names().includes(ref), secretMissing(ref));
                 const w = setProfile(providerProfiles(), id, args as Record<string, unknown>,
                     Object.keys(ENGINES));
                 need(!w.refusal.length, w.refusal.join(' · '));
                 await writeProviderProfiles(w.list);
+                const bound = ref ? await bindRouteSecret(secretBindDeps, id, ref, from) : undefined;
+                const fresh = providerProfiles().find(p => p.id === id) ?? w.profile!;
                 EnginesPanel.refreshIfOpen();
-                return { profile: publicRoute(w.profile!) };
+                return { profile: publicRoute(fresh), ...(bound ? { bound } : {}) };
             }
         },
         {
