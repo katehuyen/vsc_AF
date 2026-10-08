@@ -87,6 +87,9 @@ for (const k of CAT.catalogKeys()) {
     if (e.unit !== undefined && (!CAT.UNITS.includes(e.unit) || !type.some(t => t === 'number' || t === 'integer'))) { unitBad.push(k); }
     if (e.control !== undefined && !CAT.CONTROLS.includes(e.control)) { controlBad.push(k); }
     if (e.zeroMeans !== undefined && e.zeroMeans !== 'off') { controlBad.push(k); }
+    // U-230 — an option label names a value the schema has, in at most three words
+    const en = ((PROPS['agentFarm.' + k] || {}).enum || []).map(String);
+    if (e.options && Object.entries(e.options).some(([o, l]) => !en.includes(o) || String(l).trim().split(/\s+/).length > 3)) { controlBad.push(k + ' (options)'); }
 }
 ok('a unit is one of the known ones, and only on a number' + list(unitBad), unitBad.length === 0);
 ok('a control hint is one of the known ones' + list(controlBad), controlBad.length === 0);

@@ -11,6 +11,9 @@
     const SEG_RUN = Math.random().toString(36).slice(2, 7);
     let segSeq = 0;
 
+    /** U-230 — a value as the catalog names it for a person (its `options`), else the value itself */
+    const optLabel = (it, o, empty) => (o === '' ? empty : t((it.options || {})[o] || o));
+
     /** A pick-one of two to four: radios in a radiogroup, each carrying data-set, so a pick saves the way a list does. */
     function segHtml(it, id) {
         const name = `${id}-${SEG_RUN}${++segSeq}`;
@@ -18,7 +21,7 @@
         // a stored value no option names is drawn as itself, never dropped onto the first option
         const opts = cur !== '' && it.enum.indexOf(cur) < 0 ? it.enum.concat([cur]) : it.enum;
         return `<span class="setseg" role="radiogroup" id="${id}" aria-label="${C.esc(it.label || shortKey(it.key))}">${opts.map(o =>
-            `<label class="setsego"><input type="radio" name="${name}" value="${C.esc(o)}" data-set="${C.esc(it.key)}"${cur === o ? ' checked' : ''}><span>${C.esc(o === '' ? t('Not set') : o)}</span></label>`).join('')}</span>`;
+            `<label class="setsego"><input type="radio" name="${name}" value="${C.esc(o)}" data-set="${C.esc(it.key)}"${cur === o ? ' checked' : ''}><span>${C.esc(optLabel(it, o, t('Not set')))}</span></label>`).join('')}</span>`;
     }
 
     /** A number in its box, its unit beside it ($ in front) and the schema's bounds on the box. A number whose
@@ -60,7 +63,7 @@
              * so it is written down, the same way the Claude-config picker
              * three hundred lines below already writes it.
              */
-            const label = (o) => o === '' ? '— not set —' : o;
+            const label = (o) => optLabel(it, o, '— not set —');
             const why = (o) => [
                 o === '' ? 'Left out of your settings, so whoever starts the work decides it.' : '',
                 String(it.default ?? '') === o ? `The default for ${shortKey(it.key)}.` : ''

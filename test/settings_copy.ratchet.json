@@ -1,0 +1,978 @@
+{
+ "about": "U-230 — per setting, its description's length and forbidden marks (‼️, #agentFarm., a Turkish letter); they may only fall. test/test_settings_copy.js --fix locks lower figures in.",
+ "max": 350,
+ "keys": {
+  "a2a.preferredGraceHours": [
+   359,
+   0
+  ],
+  "accountPolicies": [
+   349,
+   0
+  ],
+  "accounts": [
+   286,
+   0
+  ],
+  "accountsAutoRefresh": [
+   521,
+   0
+  ],
+  "activeAccounts": [
+   166,
+   0
+  ],
+  "activeThresholdSeconds": [
+   82,
+   0
+  ],
+  "agentEngineDefaults": [
+   327,
+   0
+  ],
+  "agentRoots": [
+   349,
+   0
+  ],
+  "agentRowCostUnit": [
+   166,
+   0
+  ],
+  "agyHome": [
+   259,
+   0
+  ],
+  "agyUsageActiveRefreshSeconds": [
+   324,
+   0
+  ],
+  "agyUsageRefreshMinutes": [
+   533,
+   0
+  ],
+  "airtableInputLimit": [
+   69,
+   0
+  ],
+  "airtableInputSort": [
+   62,
+   0
+  ],
+  "airtableInputStages": [
+   130,
+   0
+  ],
+  "alerts.agentVoices": [
+   209,
+   0
+  ],
+  "alerts.muted": [
+   293,
+   0
+  ],
+  "alerts.nudge": [
+   239,
+   0
+  ],
+  "alerts.on": [
+   318,
+   0
+  ],
+  "alerts.quietHours": [
+   275,
+   0
+  ],
+  "alerts.reading": [
+   271,
+   0
+  ],
+  "alerts.speak": [
+   334,
+   0
+  ],
+  "alerts.toneVolume": [
+   289,
+   0
+  ],
+  "alerts.voices": [
+   321,
+   0
+  ],
+  "allInUnsure": [
+   276,
+   0
+  ],
+  "allInWhen": [
+   234,
+   0
+  ],
+  "answerDir": [
+   249,
+   0
+  ],
+  "autoReport": [
+   96,
+   0
+  ],
+  "autoReportDays": [
+   52,
+   0
+  ],
+  "autoReportFolder": [
+   78,
+   0
+  ],
+  "autoReportIncludeOutputs": [
+   67,
+   0
+  ],
+  "batonEmergencyTemplate": [
+   1160,
+   1
+  ],
+  "batonFaultWaitHours": [
+   417,
+   0
+  ],
+  "batonFlaggedModel": [
+   275,
+   0
+  ],
+  "batonFlaggedPasses": [
+   470,
+   0
+  ],
+  "batonHandoverTemplate": [
+   822,
+   0
+  ],
+  "batonInjectedDirective": [
+   341,
+   0
+  ],
+  "batonMaxHops": [
+   373,
+   0
+  ],
+  "bridgeGuard": [
+   317,
+   0
+  ],
+  "browserAllowHosts": [
+   147,
+   0
+  ],
+  "browserApproval": [
+   119,
+   0
+  ],
+  "budgets": [
+   367,
+   0
+  ],
+  "budgetsUnlimited": [
+   229,
+   0
+  ],
+  "chainHangMinutes": [
+   491,
+   0
+  ],
+  "chainWaitMinutes": [
+   280,
+   0
+  ],
+  "claudeDir": [
+   69,
+   0
+  ],
+  "cliProfiles": [
+   286,
+   0
+  ],
+  "codexHome": [
+   103,
+   0
+  ],
+  "console.autoAnswer.enabled": [
+   317,
+   0
+  ],
+  "console.autoAnswer.filter": [
+   251,
+   0
+  ],
+  "console.autoAnswer.remindSeconds": [
+   257,
+   0
+  ],
+  "console.autoAnswer.timeoutSeconds": [
+   243,
+   0
+  ],
+  "console.autoAnswer.words": [
+   310,
+   0
+  ],
+  "consoleDropZone": [
+   190,
+   0
+  ],
+  "contentCalendarDir": [
+   434,
+   0
+  ],
+  "contextBudgetTokens": [
+   112,
+   0
+  ],
+  "contextConvergePct": [
+   414,
+   0
+  ],
+  "contextHandoverPct": [
+   224,
+   0
+  ],
+  "contextHandoverStayAccountPct": [
+   725,
+   0
+  ],
+  "contextWindowTokens": [
+   392,
+   0
+  ],
+  "costAnomalyMinUsd": [
+   121,
+   0
+  ],
+  "dailyDigest": [
+   178,
+   0
+  ],
+  "defaultAccountCeiling": [
+   866,
+   0
+  ],
+  "defaultAccountWeeklyCeiling": [
+   773,
+   0
+  ],
+  "digestTtsFolder": [
+   160,
+   0
+  ],
+  "digestTtsModel": [
+   404,
+   0
+  ],
+  "disciplineOrders": [
+   604,
+   0
+  ],
+  "dispatchClassifier": [
+   104,
+   0
+  ],
+  "dispatchRules": [
+   140,
+   0
+  ],
+  "embeddingsBaseUrl": [
+   86,
+   0
+  ],
+  "embeddingsModel": [
+   127,
+   0
+  ],
+  "embeddingsProvider": [
+   204,
+   0
+  ],
+  "embeddingsSecret": [
+   134,
+   0
+  ],
+  "evalRunArgs": [
+   157,
+   0
+  ],
+  "excludeAgentDirs": [
+   194,
+   0
+  ],
+  "externalTerminal": [
+   341,
+   0
+  ],
+  "extraClaudeDirs": [
+   176,
+   0
+  ],
+  "flexOverrides": [
+   321,
+   0
+  ],
+  "flexPresets": [
+   239,
+   0
+  ],
+  "forecastDays": [
+   62,
+   0
+  ],
+  "geminiDir": [
+   93,
+   0
+  ],
+  "guideLanguage": [
+   138,
+   0
+  ],
+  "handoverFolders": [
+   473,
+   0
+  ],
+  "handoverSources": [
+   1074,
+   0
+  ],
+  "idleSessionNoticeMinutes": [
+   219,
+   0
+  ],
+  "includeUnmatchedProjects": [
+   249,
+   0
+  ],
+  "ingestFolders": [
+   202,
+   0
+  ],
+  "insightAutoDelegate": [
+   380,
+   0
+  ],
+  "judgeArgs": [
+   83,
+   0
+  ],
+  "judgeCompare": [
+   173,
+   0
+  ],
+  "judgeLadder": [
+   434,
+   0
+  ],
+  "judgeUnjudged": [
+   155,
+   0
+  ],
+  "kapici.dispatch": [
+   117,
+   0
+  ],
+  "kapici.keyName": [
+   299,
+   0
+  ],
+  "kapici.providers": [
+   290,
+   0
+  ],
+  "kapici.retry": [
+   145,
+   0
+  ],
+  "kapici.route": [
+   46,
+   0
+  ],
+  "kapici.rulesDir": [
+   204,
+   0
+  ],
+  "kapici.timeoutMs": [
+   197,
+   0
+  ],
+  "kapici.trigger": [
+   229,
+   0
+  ],
+  "kapici.workflow": [
+   211,
+   0
+  ],
+  "language": [
+   257,
+   0
+  ],
+  "launchDefaults": [
+   311,
+   0
+  ],
+  "launchProfiles": [
+   245,
+   0
+  ],
+  "libraryEnrich": [
+   124,
+   0
+  ],
+  "libraryEnrichCap": [
+   213,
+   0
+  ],
+  "libraryEnrichEffort": [
+   39,
+   0
+  ],
+  "libraryEnrichModel": [
+   63,
+   0
+  ],
+  "libraryEnrichScope": [
+   57,
+   0
+  ],
+  "libraryEnrichSections": [
+   169,
+   0
+  ],
+  "libraryEnrichVideoModel": [
+   95,
+   0
+  ],
+  "liveMonitor": [
+   84,
+   0
+  ],
+  "livePort": [
+   86,
+   0
+  ],
+  "livingChecks": [
+   316,
+   0
+  ],
+  "maxConcurrentPerAgent": [
+   56,
+   0
+  ],
+  "maxConcurrentTasks": [
+   123,
+   0
+  ],
+  "maxTranscriptMessages": [
+   58,
+   0
+  ],
+  "mediaAuthSecret": [
+   90,
+   0
+  ],
+  "mediaBaseUrl": [
+   96,
+   0
+  ],
+  "mediaBudgetMonthUSD": [
+   103,
+   0
+  ],
+  "mediaPricing": [
+   108,
+   0
+  ],
+  "mediaUploadAuto": [
+   273,
+   0
+  ],
+  "mediaUploadProvider": [
+   48,
+   0
+  ],
+  "mediaUploadRetentionDays": [
+   153,
+   0
+  ],
+  "metricsFields": [
+   155,
+   0
+  ],
+  "modelAliases": [
+   201,
+   0
+  ],
+  "modelPolicy": [
+   163,
+   0
+  ],
+  "newAgentModel": [
+   318,
+   0
+  ],
+  "noticeStaleHours": [
+   174,
+   0
+  ],
+  "notifyConsoleTurnEnd": [
+   321,
+   0
+  ],
+  "notifyPermission": [
+   71,
+   0
+  ],
+  "notifyStuck": [
+   239,
+   0
+  ],
+  "notifyTurnEnd": [
+   58,
+   0
+  ],
+  "notifyWebhookEvents": [
+   59,
+   0
+  ],
+  "notifyWebhookUrl": [
+   177,
+   0
+  ],
+  "opencodeHistory": [
+   227,
+   0
+  ],
+  "outputsMaxMB": [
+   102,
+   0
+  ],
+  "packGalleryRepos": [
+   122,
+   0
+  ],
+  "performanceBrief": [
+   233,
+   0
+  ],
+  "permissionAnswerKeys": [
+   268,
+   0
+  ],
+  "permissionLint": [
+   126,
+   0
+  ],
+  "planUsageActiveRefreshSeconds": [
+   749,
+   0
+  ],
+  "planUsageDangerPercent": [
+   52,
+   0
+  ],
+  "planUsageEngine": [
+   311,
+   0
+  ],
+  "planUsageMinIntervalSeconds": [
+   831,
+   0
+  ],
+  "planUsageRefreshMinutes": [
+   597,
+   0
+  ],
+  "planUsageStatusBar": [
+   450,
+   0
+  ],
+  "planUsageWarnPercent": [
+   99,
+   0
+  ],
+  "pricing": [
+   70,
+   0
+  ],
+  "projectContextExtra": [
+   181,
+   0
+  ],
+  "projectDigestDay": [
+   270,
+   0
+  ],
+  "projectDigestHour": [
+   178,
+   0
+  ],
+  "projectSkeleton": [
+   317,
+   0
+  ],
+  "projectStaleDays": [
+   168,
+   0
+  ],
+  "projectTemplates": [
+   334,
+   0
+  ],
+  "projectsArchiveRoot": [
+   253,
+   0
+  ],
+  "projectsRoot": [
+   179,
+   0
+  ],
+  "promptSnippetsFile": [
+   279,
+   0
+  ],
+  "providerProfiles": [
+   337,
+   0
+  ],
+  "publishApproval": [
+   204,
+   0
+  ],
+  "publishPlatforms": [
+   102,
+   0
+  ],
+  "pulse": [
+   192,
+   0
+  ],
+  "qualitySample": [
+   171,
+   0
+  ],
+  "qualitySamplesPerAgent": [
+   83,
+   0
+  ],
+  "queue.groupSize": [
+   165,
+   0
+  ],
+  "queue.maxAgeHours": [
+   137,
+   0
+  ],
+  "queue.targets": [
+   190,
+   0
+  ],
+  "queueAutoAdvance": [
+   100,
+   0
+  ],
+  "quotaBrakeBasis": [
+   290,
+   0
+  ],
+  "quotaConvergePct": [
+   564,
+   0
+  ],
+  "quotaDowngradeModel": [
+   47,
+   0
+  ],
+  "quotaDowngradePercent": [
+   127,
+   0
+  ],
+  "quotaGuardPercent": [
+   308,
+   0
+  ],
+  "quotaHandoverPct": [
+   251,
+   0
+  ],
+  "quotaStyle.left": [
+   146,
+   0
+  ],
+  "quotaStyle.percent": [
+   202,
+   0
+  ],
+  "quotaStyle.reset": [
+   138,
+   0
+  ],
+  "quotaWeeklyHandoverPct": [
+   420,
+   0
+  ],
+  "quotaWeightMode": [
+   577,
+   0
+  ],
+  "quotaWeights": [
+   866,
+   1
+  ],
+  "relayFeeds": [
+   152,
+   0
+  ],
+  "remote.listen": [
+   275,
+   0
+  ],
+  "remote.port": [
+   88,
+   0
+  ],
+  "replicateAuthSecret": [
+   149,
+   0
+  ],
+  "replicateBaseUrl": [
+   101,
+   0
+  ],
+  "reportDir": [
+   211,
+   0
+  ],
+  "searchToolTrailDays": [
+   742,
+   0
+  ],
+  "semanticMaxSessions": [
+   56,
+   0
+  ],
+  "sentryFailureLimit": [
+   556,
+   0
+  ],
+  "sentryIdlePollMin": [
+   482,
+   0
+  ],
+  "sentryInstructionFiles": [
+   1207,
+   2
+  ],
+  "sentryLeaderBudgetUsd": [
+   279,
+   1
+  ],
+  "sentryLeaderEngine": [
+   555,
+   0
+  ],
+  "sentryLeaderFailLimit": [
+   262,
+   0
+  ],
+  "sentryLeaderMaxSeconds": [
+   127,
+   0
+  ],
+  "sentryLeaderMaxUsd": [
+   250,
+   0
+  ],
+  "sentryLeaderModel": [
+   531,
+   0
+  ],
+  "sentryStallMin": [
+   591,
+   0
+  ],
+  "sentryTemplatesFile": [
+   1034,
+   0
+  ],
+  "sessionBreakMin": [
+   580,
+   0
+  ],
+  "shellGuard": [
+   299,
+   0
+  ],
+  "showrunner": [
+   264,
+   0
+  ],
+  "speakerLabelCase": [
+   131,
+   0
+  ],
+  "speakerLabelFallback": [
+   157,
+   0
+  ],
+  "speakerLabelTemplate": [
+   320,
+   0
+  ],
+  "staleMemoryDays": [
+   73,
+   0
+  ],
+  "stuckThresholdSeconds": [
+   428,
+   0
+  ],
+  "studioLibraryBase": [
+   116,
+   0
+  ],
+  "studioLibraryKind": [
+   66,
+   0
+  ],
+  "studioLibraryPromote": [
+   183,
+   0
+  ],
+  "studioLibraryStages": [
+   118,
+   0
+  ],
+  "studioLibrarySuccess": [
+   107,
+   0
+  ],
+  "suggestScan": [
+   164,
+   0
+  ],
+  "superpowersDefaults": [
+   296,
+   0
+  ],
+  "superpowersPath": [
+   325,
+   0
+  ],
+  "taskExtraArgs": [
+   309,
+   0
+  ],
+  "taskRetry": [
+   527,
+   0
+  ],
+  "telegram.allowedChats": [
+   219,
+   0
+  ],
+  "telegram.defaultAgent": [
+   99,
+   0
+  ],
+  "telegram.digest": [
+   399,
+   0
+  ],
+  "telegram.enabled": [
+   684,
+   0
+  ],
+  "telegram.maxDailyUSD": [
+   337,
+   0
+  ],
+  "telegram.whenBusy": [
+   511,
+   0
+  ],
+  "toolOutDir": [
+   156,
+   0
+  ],
+  "toolOverwrite": [
+   70,
+   0
+  ],
+  "trendAlertFactor": [
+   102,
+   0
+  ],
+  "vaultDir": [
+   226,
+   0
+  ],
+  "web.bind": [
+   218,
+   0
+  ],
+  "web.enabled": [
+   572,
+   0
+  ],
+  "web.port": [
+   111,
+   0
+  ],
+  "web.token": [
+   198,
+   0
+  ],
+  "weeklySummary": [
+   138,
+   0
+  ],
+  "wikiAgent": [
+   232,
+   0
+  ],
+  "wikiEffort": [
+   77,
+   0
+  ],
+  "wikiEngine": [
+   259,
+   0
+  ],
+  "wikiModel": [
+   210,
+   0
+  ],
+  "wikiRoot": [
+   413,
+   0
+  ],
+  "windowTokenLimit": [
+   125,
+   0
+  ],
+  "windowWeightedTokenLimit": [
+   680,
+   0
+  ],
+  "workArea": [
+   276,
+   0
+  ],
+  "workflowAskEscalation": [
+   257,
+   0
+  ],
+  "workflowPrevTextChars": [
+   174,
+   0
+  ],
+  "workflowSpendCap": [
+   417,
+   0
+  ]
+ }
+}

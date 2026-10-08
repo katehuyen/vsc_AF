@@ -37,6 +37,8 @@ export interface CatalogRow {
     engine?: string;
     /** …or the short key of the setting that names it (empty there = claude) */
     engineFrom?: string;
+    /** U-230 — a pick-one's values as a person reads them (≤ 3 words); a value not named is shown as itself */
+    options?: Record<string, string>;
     /** words people type looking for this key that its key and text do not say */
     terms?: string;
 }
@@ -54,6 +56,7 @@ export interface CatalogFields {
     from?: string;
     /** U-229 — the engine a model or effort picker lists, `engineFrom` already read */
     engine?: string;
+    options?: Record<string, string>;
     terms?: string;
     /** 'Section › Group', the line a search result names its home with */
     place?: string;

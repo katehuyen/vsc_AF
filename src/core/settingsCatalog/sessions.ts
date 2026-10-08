@@ -21,17 +21,70 @@ export const sessions: CatalogSection = {
         }
     ],
     rows: {
-        launchDefaults: { group: 'launch', tier: 'basic' },
-        launchProfiles: { group: 'launch' },
-        flexPresets: { group: 'flex' },
-        flexOverrides: { group: 'flex' },
-        'console.autoAnswer.enabled': { group: 'autoAnswer', tier: 'basic' },
-        'console.autoAnswer.timeoutSeconds': { group: 'autoAnswer', tier: 'basic', unit: 's' },
-        'console.autoAnswer.remindSeconds': { group: 'autoAnswer', unit: 's' },
-        'console.autoAnswer.filter': { group: 'autoAnswer' },
-        'console.autoAnswer.words': { group: 'autoAnswer' },
-        permissionAnswerKeys: { group: 'guards' },
-        bridgeGuard: { group: 'guards', tier: 'basic' },
-        shellGuard: { group: 'guards', tier: 'basic' }
+        launchDefaults: {
+            group: 'launch', tier: 'basic',
+            label: 'Launch defaults',
+            summary: 'How every interactive session starts unless you choose otherwise.'
+        },
+        launchProfiles: {
+            group: 'launch',
+            label: 'Launch profiles',
+            summary: 'Saved launch setups the Start Session launcher offers.'
+        },
+        flexPresets: {
+            group: 'flex',
+            label: 'Preference presets',
+            summary: 'Your own named sets of preference values.'
+        },
+        flexOverrides: {
+            group: 'flex',
+            label: 'Agent and project preferences',
+            summary: 'Preference values set for one agent or one project.'
+        },
+        // The agent is told the choice was made for it, not by the user. Destructive means a hold-back word
+        // (Hold-back words), Turkish ones included.
+        'console.autoAnswer.enabled': {
+            group: 'autoAnswer', tier: 'basic',
+            label: 'Answer questions on a timer',
+            summary: 'Picks the recommended option when a question waits too long.'
+        },
+        'console.autoAnswer.timeoutSeconds': {
+            group: 'autoAnswer', tier: 'basic', unit: 's',
+            label: 'Answer after',
+            summary: 'How long a Console question waits before the timer answers it.'
+        },
+        'console.autoAnswer.remindSeconds': {
+            group: 'autoAnswer', unit: 's', zeroMeans: 'off',
+            label: 'Remind before',
+            summary: 'How long before the timer answers a question its reminder rings.'
+        },
+        'console.autoAnswer.filter': {
+            group: 'autoAnswer',
+            label: 'What holds a question back',
+            summary: 'How much of a question is checked for the hold-back words.',
+            options: { off: 'No filter', recommended: 'Chosen option', all: 'Every option', strict: 'Strict' }
+        },
+        'console.autoAnswer.words': {
+            group: 'autoAnswer',
+            label: 'Hold-back words',
+            summary: 'Words that make a Console question wait for you.'
+        },
+        // A setting rather than a constant because the prompt belongs to the CLI and has changed shape. Nothing reads
+        // the prompt back, so the message says which keys were sent, never that the tool was allowed.
+        permissionAnswerKeys: {
+            group: 'guards',
+            label: 'Permission answer keys',
+            summary: 'What Allow and Reject type into a session\'s terminal.'
+        },
+        bridgeGuard: {
+            group: 'guards', tier: 'basic',
+            label: 'Bridge guard',
+            summary: 'Has an agent ask Agent Farm for a session instead of searching the disk.'
+        },
+        shellGuard: {
+            group: 'guards', tier: 'basic',
+            label: 'Shell guard',
+            summary: 'Stops shell commands carrying text the shell would damage.'
+        }
     }
 };

@@ -8500,7 +8500,7 @@
             "Türkçe"
           ],
           "default": "en",
-          "description": "Language for the in-app help surfaces (Guide, Quick Start, Examples). English by default; choose Türkçe for Turkish. You can also switch from the language toggle inside the guide panel. More languages can be added over time."
+          "description": "Language of the in-app help: the Guide, Quick Start and Examples. It can also be switched from the language toggle inside the guide panel."
         },
         "agentFarm.language": {
           "type": "string",
@@ -8553,7 +8553,7 @@
             "opus",
             "fable"
           ],
-          "description": "Your model name knowledge base: the names/ids offered in every model picker (the per-agent model dropdown in Agent folders, the mission model suggestions, the Start Session… launcher). Add a new model name here ONCE and it appears in every picker permanently — model names change over time, this list is yours to keep current. Every picker also accepts a custom free-text entry for anything not listed."
+          "description": "The model names offered in every model picker (Agent folders, missions, the Start Session launcher). Add a new name here once and it is offered everywhere; every picker also takes a name typed by hand."
         },
         "agentFarm.web.enabled": {
           "type": "boolean",
@@ -8664,7 +8664,7 @@
         "agentFarm.accounts": {
           "type": "array",
           "default": [],
-          "markdownDescription": "The engine accounts captured on this machine. An account is a CONFIG DIRECTORY, not a copied file: starting a session with one set points the engine at that directory with its own variable (CLAUDE_CONFIG_DIR for Claude Code), so the identity of the session you are talking to right now is never touched and two accounts can run at the same time. Captured from the Engines page — sign in normally once, press Capture, and the address and plan are read off the disk. No token is ever stored here; the credentials stay in the account's own directory.",
+          "markdownDescription": "The engine sign-ins captured on this machine. An account is its own config folder: a session started with it points the engine there (CLAUDE_CONFIG_DIR for Claude Code), so two accounts can run at once. Capture one on the Engines page after signing in normally. No token is stored here.",
           "items": {
             "type": "object",
             "properties": {
@@ -8703,7 +8703,7 @@
         "agentFarm.activeAccounts": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Which account the NEXT session on each engine uses, keyed by engine id. Set by 'Use this next' on the Engines page. An account is deliberately not remembered per agent: it is a STATE (how much of a plan is left, which changes hourly), not a preference, so one place holds it and one gesture moves it. Empty means the main sign-in — no variable is set and the session inherits exactly what it always did.",
+          "markdownDescription": "Which account the next session on each engine uses, by engine id, set with \"Use this next\" on the Engines page. Empty = the main sign-in, exactly as without accounts.",
           "additionalProperties": {
             "type": "string"
           },
@@ -8713,7 +8713,7 @@
         "agentFarm.providerProfiles": {
           "type": "array",
           "default": [],
-          "markdownDescription": "The Anthropic-compatible ROUTES Agent Farm holds for Claude Code: which provider, which endpoint, and which model each tier resolves to. Managed on the Engines page (`Agent Farm: Open Engines` → Providers); this key is the same list in its raw form.\n\n‼️ **No credential is ever written here.** A route's key lives in the OS keychain (SecretStorage), filed under the profile's `id` — which is why the id is permanent and a copy deliberately starts with no key. Anything you type into this array that is not one of the fields below is DROPPED on the way in, so a key pasted here does not become a stored one; it just does not work.\n\n‼️ **This list is Claude's alone.** OpenCode owns its own providers, `auth.json` and `opencode.json` (`opencode auth login`, `/connect`), and a second copy here would make two vaults where the stale one wins silently — so a profile naming another engine is refused rather than ignored.\n\n`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, tier mapping) or its key is replaced — never on a rename. A launch records the revision it ran on, so a route edited afterwards cannot silently rewrite what a past session was served by.",
+          "markdownDescription": "The Anthropic-compatible routes Claude Code can start on: provider, endpoint and the model each tier resolves to. Managed on the Engines page › Providers. No key is ever written here: a route's key is kept in the OS keychain under its id, and anything typed here that is not a route field is dropped. Claude only; OpenCode keeps its own.",
           "items": {
             "type": "object",
             "properties": {
@@ -8805,12 +8805,12 @@
           },
           "additionalProperties": false,
           "default": {},
-          "markdownDescription": "How **every** interactive session starts — Start, Continue and Resume alike, from the tree, the palette or a keybinding. Set once instead of typing `--model` into a terminal all day. Every field is optional and an empty one emits no flag at all, so the default `{}` starts exactly the bare `claude` it always did. The **Start Session…** launcher (`ctrl+alt+s`) shows these as inherited values and can override them for one launch, or write itself back here."
+          "markdownDescription": "How **every** interactive session starts: Start, Continue and Resume, from the tree, the palette or a key. Each field is optional and an empty one adds no flag, so `{}` starts the bare `claude`. The **Start Session…** launcher shows these as inherited values and can override them once or save itself back here."
         },
         "agentFarm.flexOverrides": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Preference values (flex points) set for ONE agent or ONE project — `{ \"agent\": { \"developer\": { \"retry.supervisor.engine\": \"codex\" } }, \"project\": { \"prj_x\": { … } } }`. In the chain they sit above Farm Settings and below a workflow, a step and a run: an agent's value beats your general one, a project's beats the agent's. Agents are keyed by NAME, projects by id. Set with `flex.set level=agent|project target=…`; a workflow's own values live on the workflow.",
+          "markdownDescription": "Preference values set for one agent or one project: `{ \"agent\": { \"developer\": { \"retry.supervisor.engine\": \"codex\" } }, \"project\": { \"prj_x\": { … } } }`. A project's value beats the agent's, the agent's beats Farm Settings, and a workflow, step or run beats them all. Agents by name, projects by id. Set with `flex.set`.",
           "properties": {
             "agent": {
               "type": "object",
@@ -8910,21 +8910,21 @@
         "agentFarm.console.autoAnswer.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "When a **Console** session parks its turn on a question (`AskUserQuestion`) and nobody answers within `#agentFarm.console.autoAnswer.timeoutSeconds#`, choose the option the agent marked **(Recommended)** — or its first option — so an unattended session is not held for ever. The card counts down and has a **Stop timer** button. Never applies to a **permission** request, to a question whose text or options read as destructive (delete, force push, reset --hard, sil, kaldır…), or to a question with no options; the agent is told the choice was made for you, not by you."
+          "markdownDescription": "When a **Console** question waits longer than \"Answer after\", the option the agent marked **(Recommended)**, or its first, is chosen so an unattended session is not held for ever. The card counts down and has **Stop timer**. Never for a permission request, a question with no options or one that reads as destructive."
         },
         "agentFarm.console.autoAnswer.timeoutSeconds": {
           "type": "number",
           "default": 300,
           "minimum": 5,
           "maximum": 7200,
-          "markdownDescription": "How long a **Console** question waits for you before `#agentFarm.console.autoAnswer.enabled#` chooses the recommended option — in seconds, measured from when the question was asked (reopening the window does not restart it). Default 300 (5 minutes); values outside 5–7200 are clamped. Changing it re-arms questions that are already waiting."
+          "markdownDescription": "How long a **Console** question waits for you before the recommended option is chosen, counted from when it was asked; reopening the window does not restart it. Values outside 5–7200 are clamped, and a change re-arms questions already waiting."
         },
         "agentFarm.console.autoAnswer.remindSeconds": {
           "type": "number",
           "default": 120,
           "minimum": 0,
           "maximum": 1800,
-          "markdownDescription": "How many seconds before a **Console** question answers itself (`#agentFarm.console.autoAnswer.enabled#`) the reminder rings: the reminder's tone, then — with Say who on for Asking you — a short sentence naming whose question it is and how long is left. Once per question; a question answered or stopped first stays quiet. Mute all and quiet hours hold it; a session set to Silent does not. Nothing rings when the whole wait is not longer than this. `0` = off."
+          "markdownDescription": "How long before a **Console** question answers itself its reminder rings: the tone and, with Say who on for Asking you, a sentence naming whose question it is. Once per question. Mute all and quiet hours hold it; a session set to Silent does not. `0` = off."
         },
         "agentFarm.console.autoAnswer.filter": {
           "type": "string",
@@ -8941,7 +8941,7 @@
             "As 'all', and a question that marks no option \"(Recommended)\" also waits for you."
           ],
           "default": "recommended",
-          "markdownDescription": "Which **Console** questions the timer (`#agentFarm.console.autoAnswer.enabled#`) leaves for you because they carry a word from `#agentFarm.console.autoAnswer.words#`. `recommended` reads only the question and the option it would choose; `off` lets no word hold a question back — the recommended option is taken when the time runs out unless you press **Stop timer** on the card yourself."
+          "markdownDescription": "Which **Console** questions the timer leaves for you because they carry a hold-back word: `recommended` reads the question and the option it would choose, `all` every option, `strict` also waits when no option is recommended, `off` holds nothing back."
         },
         "agentFarm.console.autoAnswer.words": {
           "type": "array",
@@ -8994,17 +8994,17 @@
             "üzerine yaz",
             "sıfırla"
           ],
-          "markdownDescription": "The words that make a **Console** question wait for you instead of being answered on the timer. Each entry matches at the start of a word, any case (`silin` catches `silinen`); an entry written `/…/` is a regular expression. Add, remove or edit freely — an empty list stops nothing. How much of a question is read: `#agentFarm.console.autoAnswer.filter#`."
+          "markdownDescription": "Words that make a **Console** question wait for you instead of being answered on the timer. Each matches at the start of a word, any case (`delet` catches `deleted`); an entry written `/…/` is a regular expression. An empty list holds nothing back. How much of a question is read: \"What holds a question back\"."
         },
         "agentFarm.notifyConsoleTurnEnd": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "The **\"‹agent› is waiting for you\"** box in VS Code's bottom-right corner, shown when a **Console** turn finishes and you are not watching that conversation — with what the turn took and a button that opens it. Never for the session on your screen, never for a turn you interrupted. Untick to stop these boxes. The reminder of the same name on the **Notices** page is a separate switch: `#agentFarm.idleSessionNoticeMinutes#`. The Console's own signals (the card's *your turn* state and the count on its tab) do not depend on this."
+          "markdownDescription": "The **\"‹agent› is waiting for you\"** box in VS Code's corner when a **Console** turn ends and you are not watching it, with a button that opens it. Never for the session on screen or a turn you interrupted. The Notices reminder of the same name is \"Idle session reminder\"; the Console's own signals do not depend on this."
         },
         "agentFarm.speakerLabelTemplate": {
           "type": "string",
           "default": "{ai}",
-          "markdownDescription": "How the AI participant is labelled in conversations (Turns page, Session Viewer, and their Markdown exports) — where it used to say `ASSISTANT`/`claude`. The label is **derived from each message's model id**, so a Gemini or Codex turn labels itself correctly. Compose it from these tokens; anything else is literal text, so a template with no tokens is a fixed label of your own:\n\n- `{ai}` — engine: `claude` · `gemini` · `codex`\n- `{model}` — model family: `opus` · `sonnet` · `haiku` · `gpt` · …\n- `{version}` — version: `4.8` · `3.5` · …\n- `{raw}` — raw model id (`opus-4-8`, vendor prefix stripped)\n\nExamples: `{ai}` → CLAUDE · `{model} {version}` → OPUS 4.8 · `{ai} {model} ({version})` → Claude Opus (4.8) · `MyBot` → a fixed label. Empty = `{ai}`. Case is set by `speakerLabelCase`; `speakerLabelFallback` covers unknown models."
+          "markdownDescription": "How the AI is labelled in transcripts (Turns, Session Viewer and their Markdown exports), built from each message's model: `{ai}` the engine, `{model}` the family, `{version}` the version, `{raw}` the model id. Other text is kept as written, so `MyBot` is a fixed label. Empty = `{ai}`. Its case is \"Speaker label case\"."
         },
         "agentFarm.speakerLabelCase": {
           "type": "string",
@@ -9021,7 +9021,7 @@
             "As-is — leave the template's own case untouched (use for a fixed brand label)"
           ],
           "default": "page",
-          "description": "Case applied to the AI speaker label (see agentFarm.speakerLabelTemplate)."
+          "description": "The letter case of the AI speaker label: as the page writes its other speakers, upper, lower, or exactly as the template writes it."
         },
         "agentFarm.speakerLabelFallback": {
           "type": "string",
@@ -9389,12 +9389,12 @@
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,
-          "description": "Stops an agent that searches the disk for a session's files by its id, and has it ask Agent Farm instead — Agent Farm knows where every session is, and the engines move their files. Only a real session id triggers it. Works on Claude and Codex; the other engines only have the rule written in their instructions. A Console card shows an orange dot when one of its searches was stopped. Turn off to let such searches run."
+          "description": "Stops an agent that searches the disk for a session's files by its id and has it ask Agent Farm, which knows where every session is. Only a real session id triggers it. Works on Claude and Codex; the other engines only have the rule in their instructions. A Console card shows an orange dot when a search was stopped."
         },
         "agentFarm.shellGuard": {
           "type": "boolean",
           "default": true,
-          "description": "Stops an agent's shell command that carries text the shell would silently damage: a non-ASCII letter, a backtick, a heredoc with backslashes, or a long piece of inline text. The agent is told to write the text to a file and have the command name the file. Works on Claude and Codex; the other engines only have the rule written in their instructions. Turn off to let such commands run."
+          "description": "Stops an agent's shell command that carries text the shell would silently damage (a non-ASCII letter, a backtick, a heredoc with backslashes, a long piece of inline text) and tells it to write the text to a file. Works on Claude and Codex; the other engines only have the rule in their instructions."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",
@@ -9444,7 +9444,7 @@
         },
         "agentFarm.permissionAnswerKeys": {
           "type": "object",
-          "description": "What Allow / Reject actually TYPE into a session's terminal when you answer a permission prompt from Needs You. Leave a field empty for the built-in. ‼️ What a permission prompt accepts belongs to the CLI, not to Agent Farm, and it has worn more than one shape — so it is a setting rather than a constant: if the prompt does not move when you press Allow, put the key your CLI wants here instead of waiting for a release. Nothing here can read the prompt back, so the message you get says which keys were sent and never that the tool was allowed. Escape sequences are literal characters: use \\u001b for ESC and \\r for Enter.",
+          "description": "What Allow / Reject type into a session's terminal when you answer a permission prompt from Needs You; an empty field is the built-in. If the prompt does not move when you press Allow, put the key your CLI wants here. Escapes are literal: \\u001b for ESC, \\r for Enter.",
           "default": {},
           "properties": {
             "allow": {
@@ -9466,7 +9466,7 @@
         },
         "agentFarm.alerts.on": {
           "type": "object",
-          "description": "Play the alert SOUND on these events, for every session. This is not the same switch as notifyTurnEnd / notifyPermission above: those are VS Code notifications, these are sounds — a sound you turned off here would still leave a notification arriving, and the two are kept apart so that complaint cannot happen. Every entry is off out of the box except Question card and Workflow asks you, the two where a person is waited on. A session set to Always still rings and one set to Silent never does; each session chooses in its sound panel (the ♪ on its Live Timeline row).",
+          "description": "Which events play their alert sound, for every session. These are sounds, separate from the VS Code notifications. Every event is off at first except Question card and Workflow asks you, where a person is waited on. A session set to Always still rings and one set to Silent never does (the ♪ on its Live Timeline row).",
           "default": {},
           "properties": {
             "turn-ready": {
@@ -9514,18 +9514,18 @@
         "agentFarm.alerts.muted": {
           "type": "boolean",
           "default": false,
-          "description": "Mute every alert SOUND, across the whole farm. This is the 🔇 in the status bar — one click, and the setting is here so it survives a restart and every VS Code window sees it. It clears nothing: the events you armed and the tones you chose stay exactly as they are, so unmuting brings back the setup rather than the defaults. Sounds only — the notifications, the modal and the focus jump are separate switches and keep working. A single session can also be muted on its own from its Live Timeline row."
+          "description": "Mute every alert sound across the whole farm: the 🔇 in the status bar, kept here so it survives a restart and every window sees it. Nothing is cleared, so unmuting brings your setup back. Sounds only; notifications keep working. One session can be muted on its own from its Live Timeline row."
         },
         "agentFarm.alerts.toneVolume": {
           "type": "number",
           "default": 100,
           "minimum": 0,
           "maximum": 100,
-          "description": "How loud the alert tones play, 0–100. 100 is as loud as they have always played. Every tone uses it: an event's, a reminder's, a run's own tone at its end, and Hear it. The announcement that says who has its own volume (Sound page ▸ Voice). A player that cannot lower its level (Windows SoundPlayer on a machine without WPF, Linux aplay) is used only as the last resort, at full volume."
+          "description": "How loud the alert tones play, 0–100; 100 is full volume. Every tone uses it: an event's, a reminder's, a run's own tone and Hear it. The announcement that says who has its own volume (Sound page › Voice). A player that cannot lower its level is used only as a last resort, at full volume."
         },
         "agentFarm.alerts.reading": {
           "type": "object",
-          "description": "How an answer sounds when it is READ aloud — apart from the announcement that says who, which has its own voice and speed (`agentFarm.alerts.speak`). Every reading uses it: one you ask for (a message's 🔊, Read Last Answer, Read Selection) and Read aloud at the end of a turn. A conversation's own voice still wins over this one; the volume is the announcement's. Set on the Sound page ▸ Voice ▸ Reading.",
+          "description": "How an answer sounds when it is read aloud: a message's 🔊, Read Last Answer, Read Selection and Read aloud at the end of a turn. The announcement that says who has its own voice (\"Say who\"); a conversation's own voice still wins. Set on the Sound page › Voice › Reading.",
           "default": {
             "voice": "",
             "rate": 0,
@@ -9575,7 +9575,7 @@
         },
         "agentFarm.alerts.quietHours": {
           "type": "object",
-          "description": "The hours the farm makes no noise in. The window WRAPS MIDNIGHT — 23:00 to 08:00 means quiet from 23:00 through 07:59 the next morning, which is the only shape anybody actually sets. A time that is not HH:MM leaves quiet hours OFF and says so on the Settings card, rather than silencing the fleet on a guess; a start equal to the end is an empty window, never all day. Sounds only, exactly like the mute above.",
+          "description": "The hours the farm makes no sound in. The window wraps midnight: 23:00 to 08:00 is quiet from 23:00 through 07:59. A time that is not HH:MM leaves quiet hours off and says so on the card; a start equal to the end is an empty window, never all day. Sounds only, like the mute.",
           "default": {
             "on": false,
             "from": "23:00",
@@ -9598,7 +9598,7 @@
         },
         "agentFarm.alerts.speak": {
           "type": "object",
-          "description": "Say WHICH agent out loud. A tone answers 'what kind of news is this?' and nothing else; with eight lanes running, the question from the next room is which one — and no palette of tones can carry a name. This is local and free: Windows System.Speech, macOS `say`, Linux `spd-say`. No network, no account, no model. It rides BEHIND the tone in the same queue slot, so nothing plays between a chime and the sentence explaining it, and it follows the same mute, quiet hours and per-session mute. ‼️ A sentence in your own language needs a voice for that language, and an en-US voice reading Turkish is not accented, it is unintelligible. Windows keeps TWO separate sets of voices: the SAPI 5 set this player uses (usually just David and Zira) and the modern `Speech_OneCore` set, which is where every language pack you have ever installed from Settings actually goes. This engine cannot reach the second one — so if your language is missing from the list, it is very likely already installed and simply invisible here. `alerts.speak` lists what this player can select and says so.",
+          "description": "Say which agent an alert is about, out loud, right after its tone: local and free (Windows System.Speech, macOS say, Linux spd-say), under the same mute and quiet hours. A sentence in your language needs a voice for it; on Windows this player sees only the SAPI 5 voices, so a language pack you installed may be missing from its list.",
           "default": {
             "on": false,
             "events": [
@@ -9661,7 +9661,7 @@
         },
         "agentFarm.alerts.nudge": {
           "type": "object",
-          "description": "The second tap on the shoulder. When an agent stops to ASK you something and the question is still unanswered N minutes later, a light reminder tone plays. Only that event: reminding you about a finished turn would be pestering you about news that needs nothing from you. It follows the mute and the quiet hours above, and it stops by itself after `repeat` reminders — a chime that never ends is one you mute for good. Set `minutes` to 0 to switch it off.",
+          "description": "When an agent's question is still unanswered after the given minutes, a light tone reminds you, up to repeat times. Only questions: a finished turn needs nothing from you. It follows the mute and the quiet hours; minutes 0 switches it off.",
           "default": {
             "minutes": 3,
             "repeat": 2,
@@ -9684,7 +9684,7 @@
         },
         "agentFarm.alerts.voices": {
           "type": "object",
-          "description": "Which sound each event plays. Leave one empty and it uses its built-in default — 'turn-ready' and 'question' deliberately differ, so the two can be told apart from another room without configuring anything. Twenty built-ins in two families: the modern ten, each built from a different physical object and the ones the defaults come from — af_crystal_turn · af_intercom_knock · af_zen_chime · af_deep_sonar · af_lullaby_sleep · af_marimba_success · af_pop_advance · af_subtle_alert · af_bell_urgent · af_pulse_start; and the earlier ten, kept so that nobody who chose one loses it — chime-soft · chime-bright · ask-double · ask-rise · low-pulse · tick-dry · bell-far · close-fall · error-buzz · alarm-urgent. Plus any of your own (`u-…`). A voice whose file is missing does not silence the alert: it falls through to the next answer and reports the step it passed over.",
+          "description": "Which sound each event plays; an empty one uses its built-in, and turn-ready and question differ so they can be told apart from another room. Twenty built-ins (ten af_… sounds and the earlier ten, kept for whoever chose one) plus your own (u-…). A sound whose file is missing falls through to the next answer and says so.",
           "default": {},
           "properties": {
             "turn-ready": {
@@ -9742,7 +9742,7 @@
         "agentFarm.alerts.agentVoices": {
           "type": "object",
           "default": {},
-          "markdownDescription": "Which sound each event plays for ONE agent's sessions — `{ \"developer\": { \"question\": \"af_zen_chime\" } }`. Above `alerts.voices` (everybody) and below a session's own choice. Easiest from the Sound page › Sessions › Agents.",
+          "markdownDescription": "Which sound each event plays for one agent's sessions: `{ \"developer\": { \"question\": \"af_zen_chime\" } }`. Above \"Event sounds\" and below a session's own choice. Easiest from the Sound page › Sessions › Agents.",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": {
@@ -10384,7 +10384,7 @@
           "type": "object",
           "default": {},
           "x-af-keys": "agentDir",
-          "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine. ‼️ A Claude row may also carry `providerId` (the id of a route in agentFarm.providerProfiles) and `tier` (opus / sonnet / …). That pair is a different kind of answer from model and effort: it is not a flag but an environment ISOLATION — the chosen route's base url, key and tier model are injected and every inherited ANTHROPIC_* / route-bearing CLAUDE_* variable is cleared first, so a base url left in the user's shell cannot answer the same question twice. With no providerId set nothing is cleared and nothing is injected, which is what every engine without a provider axis does permanently. Ask `providers.runtime` on the bridge to see exactly what a launch would run on."
+          "description": "Each agent's default model and effort on engines with no settings file of their own, passed as --model / --effort at launch. Claude's goes in the agent's .claude/settings.local.json; a Claude row may name a provider route and tier instead. Edit it in Farm Settings › Agent folders, where each box says what Default resolves to."
         },
         "agentFarm.agyHome": {
           "type": "string",
@@ -10395,7 +10395,7 @@
         "agentFarm.opencodeHistory": {
           "type": "boolean",
           "default": true,
-          "description": "Read OpenCode's own history into the sessions tables. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this is the one history source that has to run its CLI (`session list`, then `export` for whatever has moved) — on a slow beat, in the background, never while a panel draws. Turn it off and OpenCode conversations simply stop appearing; nothing else changes and nothing is deleted.",
+          "description": "Read OpenCode's conversations into the sessions tables. OpenCode publishes no transcript file, so its CLI is run for this, slowly and in the background. Turn it off and OpenCode conversations stop appearing; nothing is deleted.",
           "order": 41
         },
         "agentFarm.mediaBaseUrl": {
@@ -10407,14 +10407,14 @@
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "markdownDescription": "Your notes vault, if you keep one. This is what `${vault}` means in every folder setting below, so the reports, answers and wiki folders can be written once as `${vault}/…` instead of three absolute paths. Empty = there is no vault on this machine, and a setting that asks for `${vault}` is SKIPPED rather than half-built — a path with a variable missing from it would point somewhere nobody meant."
+          "markdownDescription": "Your notes vault, if you keep one. Other folder settings can be written from it as `${vault}/…`. Empty = no vault on this machine: a folder setting that uses `${vault}` is then skipped rather than pointed at a half-built path."
         },
         "agentFarm.workArea": {
           "type": "string",
           "default": "${temp}/agent_farm",
           "scope": "application",
           "x-af-browse": "folder",
-          "markdownDescription": "The agents' scratch folder: drafts, test fixtures, logs, temporary scripts. An absolute folder, or a template such as the default `${temp}/agent_farm` (`${temp}` is the system temporary folder). It is created when first needed. Every session is told this folder when it starts and again on every resume, and every process and terminal Agent Farm starts carries it as `AGENT_FARM_WORKAREA`. When you change it, the folder it moved away from is retired: a file write into a retired folder is refused, so no agent keeps writing to the old place out of habit (`farm.workArea` lists them)."
+          "markdownDescription": "The agents' scratch folder for drafts, test fixtures, logs and temporary scripts: an absolute folder, or a template such as `${temp}/agent_farm`. It is created when first needed and every session is told it. Change it and the old folder is retired: a write into it is refused."
         },
         "agentFarm.publishApproval": {
           "type": "string",
@@ -10475,7 +10475,7 @@
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "markdownDescription": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Accepts the path variables `${vault}` `${workspace}` `${home}` `${today}` `${date:YYMMDD}` — see agentFarm.vaultDir. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/10_REPORT`."
+          "markdownDescription": "Where agents' full reports are written, one file each (YYYY-MM-DD_<name>.md). Accepts `${vault}`, `${workspace}`, `${home}`, `${today}` and `${date:YYMMDD}`. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/10_REPORT`."
         },
         "agentFarm.answerDir": {
           "type": "string",
@@ -10642,7 +10642,7 @@
             "summary",
             "digest"
           ],
-          "description": "Which notification types are forwarded to notifyWebhookUrl."
+          "description": "Which notification types are posted to the webhook address."
         },
         "agentFarm.dailyDigest": {
           "type": "string",
@@ -10745,7 +10745,7 @@
             }
           },
           "default": [],
-          "description": "Alternative CLI executors for tasks — an arbitrary command line, for a CLI Agent Farm knows nothing else about. A profile task gets output archiving and exit-code status, and nothing more: no transcript, no cost, no live events. This is a DIFFERENT axis from a task's engine — Codex, Gemini, Antigravity and OpenCode are first-class engines with their own transcripts and token counts, so pick one of those on the task instead of writing a profile for it. Live hooks remain Claude Code's alone, whichever route you take."
+          "description": "Command lines a task can run for a CLI Agent Farm knows nothing else about. Such a task gets its output archived and its exit code, nothing more: no transcript, cost or live events. Codex, Gemini, Antigravity and OpenCode are engines of their own; pick one of those on the task instead."
         },
         "agentFarm.relayFeeds": {
           "type": "array",
@@ -10763,7 +10763,7 @@
             }
           },
           "default": [],
-          "description": "Live relay feeds from other machines (J2): run farmRelay.js there ('Save Relay Script for Another Machine…'), sync its output file here, list it in this setting."
+          "description": "Live feeds from other machines: run farmRelay.js there (Save Relay Script for Another Machine…), sync its output file here, and list it in this setting."
         },
         "agentFarm.packGalleryRepos": {
           "type": "array",
@@ -10886,7 +10886,7 @@
             }
           },
           "default": [],
-          "markdownDescription": "**Named rules for which sign-in a launch runs on**, offered in every account picker beside the four built-ins (`@emptiest`, `@pool`, `@standing`, `@round-robin`). A rule is re-decided at each launch, which a slot picked by hand is not. ‼️ **A rule that can choose nothing REFUSES the launch** and says why — it never falls through to the main sign-in, which is the plan it was written to protect. Example: `[{\"name\": \"Night\", \"chain\": [{\"account\": \"spare\"}, {\"policy\": \"@emptiest\", \"ceiling\": 80}]}]` is then picked as `@Night`."
+          "markdownDescription": "**Named rules for which sign-in a launch runs on**, offered in every account picker beside `@emptiest`, `@pool`, `@standing` and `@round-robin`, decided at each launch. A rule that can choose nothing refuses the launch and says why. Example: `[{\"name\": \"Night\", \"chain\": [{\"account\": \"spare\"}, {\"policy\": \"@emptiest\", \"ceiling\": 80}]}]` is `@Night`."
         },
         "agentFarm.quotaDowngradePercent": {
           "type": "number",
@@ -11137,7 +11137,7 @@
           "type": "string",
           "default": "",
           "x-af-browse": "folder",
-          "description": "Folder that holds the Superpowers engineering-discipline skills (one folder per skill, each with a SKILL.md, plus using-superpowers/SKILL.md — the root hook). ‼️ Nothing here is loaded into a session by default: the files sleep on disk at zero tokens, and only the hook is put in front of a model when a session has Superpowers switched on. Portable: %USERPROFILE%, ~, $HOME, ${env:VAR} and ${workspaceRoot} are expanded when the folder is opened — what you type is kept exactly as typed. Empty = found next to your agents: _SKILLS/superpowers under each folder in agentFarm.agentRoots (or beside it, when a root names a single agent), first one holding the root hook."
+          "description": "The folder holding the Superpowers skills: one folder per skill with its SKILL.md, plus using-superpowers/SKILL.md, the hook. Nothing is loaded by default; only the hook is given to a session with Superpowers on. %USERPROFILE%, ~, $HOME, ${env:VAR} and ${workspaceRoot} expand. Empty = _SKILLS/superpowers beside your agents."
         },
         "agentFarm.superpowersDefaults": {
           "type": "object",
@@ -11146,7 +11146,7 @@
           "additionalProperties": {
             "type": "boolean"
           },
-          "markdownDescription": "Which agents start a session with the Superpowers engineering discipline already switched on — `{ \"developer\": true, \"asistan\": false }`, keyed by the agent's NAME. The switch itself is per session and sits next to the project chip above the composer; this is only what it shows before anybody touches it, and a session started outside the panel (a task, a terminal, a resume) has nothing else to go on.\n\n‼️ Switched on, the session's appended system prompt carries the library's root hook plus an index of where the skills are — the skills themselves stay on disk at zero tokens and are read one at a time, when one applies. Switched off, nothing is added at all.\n\nAn agent not named here falls back to the built-in list, which is `developer` on and everything else off. Write `false` to turn that off. Where the skills live is `agentFarm.superpowersPath`."
+          "markdownDescription": "Which agents start a session with Superpowers on, by agent name: `{ \"developer\": true, \"asistan\": false }`. The switch itself is per session, beside the project chip above the composer; this is only where it starts. An agent not named here follows the built-in list: `developer` on, the rest off."
         },
         "agentFarm.wikiRoot": {
           "type": "string",
@@ -11200,7 +11200,7 @@
         "agentFarm.projectSkeleton": {
           "type": "array",
           "default": [],
-          "description": "What a new project folder is built out of. Empty = the shipped default (Charter / Plan / Backlog / Backloglog / People / Worklog, plus 10_Notes, 20_Decisions, 30_Deliverables, 40_Resources, 90_Archive, 90_Archive/_tracks, _AF). Set your own to follow a vault naming convention: a path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; \"role\" is what Agent Farm looks a document up by — never its file name, so you can rename anything afterwards; and \"holds\" is how a FOLDER is found for the same reason (decisions are one file each, and the backlog track ledger is not a note).",
+          "description": "What a new project folder is built from. Empty = the built-in layout: Charter, Plan, Backlog, Backloglog, People, Worklog and the numbered folders. A path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; role and holds name what a document or folder is found by, so files can be renamed later.",
           "items": {
             "type": "object",
             "required": [
@@ -11244,12 +11244,12 @@
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "description": "Where an archived project's FOLDER is moved to. Empty derives it next to the projects root, the way a vault already mirrors its own folders: <parent>/99_ARCHIVE/<root name>_ARCHIVE. Archiving is never automatic and never happens as a side effect of setting a project's status — it is its own confirmed action, it shows both paths first, it refuses to land on anything that already exists, and Restore is the exact inverse."
+          "description": "Where an archived project's folder is moved. Empty = beside the projects folder: <parent>/99_ARCHIVE/<name>_ARCHIVE. Archiving is always its own confirmed action: it shows both paths first, never lands on a folder that exists, and Restore moves it back."
         },
         "agentFarm.projectTemplates": {
           "type": "array",
           "default": [],
-          "description": "Project templates — \"another one like that\". The list starts EMPTY on purpose: a template is a claim about how you work, so the way in is Save as Template on a project that already proved itself (⚙ Settings on its page), which asks what should travel. Each entry is {name, description?, kind?, status?, summary?, tags?, repos?, agents?, budgetUSD?, budgetTotalUSD?, color?, icon?, people?, plan?, backlog?, skeleton?}; plan and backlog items may be plain strings. A template never carries an id, a folder or a parent — those are identity, not shape.",
+          "description": "Project shapes to start a new project from, saved off one that already proved itself (Save as Template on its page asks what travels). Each entry: {name, description?, kind?, status?, summary?, tags?, repos?, agents?, budgetUSD?, budgetTotalUSD?, color?, icon?, people?, plan?, backlog?, skeleton?}. Never an id, a folder or a parent.",
           "items": {
             "type": "object",
             "required": [
@@ -11277,7 +11277,7 @@
           "default": -1,
           "minimum": -1,
           "maximum": 6,
-          "description": "Which weekday to post each open project's weekly digest on: 0 Sunday … 6 Saturday. -1 (the default) is off — a digest nobody asked for is one more unread notice. The summary lands on the Notices board with the full report attached as its second leg, stamped with the project so it also appears on that project's Work tab and timeline. Posted once per project per week; the guard is the board itself, so two open windows cannot double-post."
+          "description": "The weekday each open project's weekly digest is posted on (0 Sunday … 6 Saturday); -1 is off. The summary lands on Notices with the full report attached and the project stamped, so it also shows on that project's Work tab and timeline. Posted once per project per week."
         },
         "agentFarm.projectDigestHour": {
           "type": "number",
@@ -11289,7 +11289,7 @@
         "agentFarm.projectContextExtra": {
           "type": "string",
           "default": "",
-          "description": "One line of your own added to the project context every session gets (see the ◧ chip above the Console composer). This is where an installation points its agents at its own rules — e.g. \"Your constitution's _REF/project-session.md applies to this session.\" Empty by default: Agent Farm ships general, and what an agent should DO with a project is yours to say."
+          "description": "One line of your own added to the context every session started in a project gets (the ◧ chip above the Console composer), for example a pointer to your own rules. Empty by default."
         },
         "agentFarm.noticeStaleHours": {
           "type": "number",
@@ -11299,7 +11299,7 @@
         "agentFarm.idleSessionNoticeMinutes": {
           "type": "number",
           "default": 30,
-          "markdownDescription": "The **\"‹agent› is waiting for you\"** reminder on the **Notices** page: posted once when a session has waited this many minutes for your input. **0 turns it off.** The box of the same name in VS Code's bottom-right corner is a separate switch: `#agentFarm.notifyConsoleTurnEnd#`. An idle session never blocks the farm, so it is not a Needs You row — but one left waiting all afternoon is a loop that quietly never closed."
+          "markdownDescription": "The **\"‹agent› is waiting for you\"** reminder on the **Notices** page, posted once when a session has waited this long for your input. **0 turns it off.** The corner box of the same name is \"Notify on Console turn end\"."
         },
         "agentFarm.consoleDropZone": {
           "type": "boolean",
@@ -11406,7 +11406,7 @@
           "type": "string",
           "x-af-browse": "file",
           "default": "",
-          "description": "The markdown file holding the phrases you say to an agent over and over. Farm Settings → Saved prompts is where you pick it, see what was read out of it, and open it. Right-click any button that SENDS text in the Console — Send · Send into turn · Send after turn · Start session — and those blocks are offered to paste into the message box. Only text inside ``` fences is offered; everything around them is your own notes. Left empty, Agent Farm falls back to a built-in path in the vault while that file exists — so this stays empty on a machine where it does not, and nothing has to be cleared."
+          "description": "The markdown file holding the phrases you send to agents again and again. Only text inside ``` fences is offered; everything around it is your own notes. Right-click a Send or Start button in the Console to paste one. Empty = a built-in path in the vault, while that file exists."
         }
       }
     }

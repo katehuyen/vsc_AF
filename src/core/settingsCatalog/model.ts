@@ -37,6 +37,7 @@ export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
             ...(e?.control ? { control: e.control } : {}),
             ...(e?.from ? { from: e.from } : {}),
             ...(engine ? { engine } : {}),
+            ...(e?.options ? { options: e.options } : {}),
             ...(terms ? { terms } : {}),
             place: `${sec.label} › ${grp.label}`
         };
