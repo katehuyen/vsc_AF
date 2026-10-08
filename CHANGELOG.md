@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.898.0 - Farm Settings: pick it, don't type it (2026-10-08)
+
+- **Settings whose right values are known are picked with the mouse** -
+  every model setting opens its engine's own model list (the wiki and
+  sentry models follow the engine chosen beside them), with **Custom…**
+  for an id the list does not name; an engine, an effort, the
+  showrunner agent and the Studio's local Airtable database are picked
+  from lists; a secret setting lists the names in your Secrets vault
+  (never a value) with **Set secret…** to store one.
+- **Lists of choices are chips** - which stage folders an Airtable input
+  searches or the Studio wall shows, and which record sections a model
+  fills, are pressed on and off; the judge's ladder is a row of models
+  you drag into order, take out with ✕ or add with **+ Add…**. What is
+  saved is the same comma list as before.
+- **Times and days** - the daily digest is a time box behind an on/off
+  switch; the weekly project digest's day and hour are picked by name.
+- **The web view token** is a hidden box with **Show**, **Generate** (a
+  new token, asked first, because every old link stops working) and
+  **Copy**.
+- **Fourteen folder settings gained Browse…** - the Claude, Codex,
+  Gemini and Antigravity homes, the projects and archive roots, the
+  vault, reports, answers, automatic reports, spoken briefing, content
+  calendar, tool output and Gatekeeper rules folders.
+- **Fixed: the on/off switch in front of a number** whose 0 means off
+  was stretched to the width of the number box; it is switch-sized
+  again.
+- A value already stored that no list holds is shown as itself and
+  kept - opening the page never changes a setting. No setting's type
+  changed.
+
 ## 3.897.0 - Agents can bind a Farm Secret by its name (2026-10-08)
 
 - **A Farm Secret can be bound by name over the bridge** - an agent that
