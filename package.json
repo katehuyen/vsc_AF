@@ -11200,7 +11200,7 @@
         "agentFarm.projectSkeleton": {
           "type": "array",
           "default": [],
-          "description": "What a new project folder is built from. Empty = the built-in layout: Charter, Plan, Backlog, Backloglog, People, Worklog and the numbered folders. A path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; role and holds name what a document or folder is found by, so files can be renamed later.",
+          "description": "What a new project folder is built from. Empty = the built-in layout: Charter, Plan, Backlog, Backloglog, People, Worklog and the numbered folders. A path ending in / is a folder; {project} {id} {status} {date} {yymmdd} expand; role finds a document, never its file name; holds finds a folder.",
           "items": {
             "type": "object",
             "required": [
