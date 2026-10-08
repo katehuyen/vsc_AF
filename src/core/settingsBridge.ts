@@ -8,6 +8,8 @@ import { ENGINE_ENUM } from './consoleEngine';
 import { PreviewedPath } from './pathVars';
 import { rankSettings } from './settingSearch';
 import { resolveSectionId, SECTIONS } from './settingsCatalog/index';
+import { needsReload } from './settingsops';
+export { needsReload };
 import {
     parseImportedProfiles, pathPreviews, sanitizeValue, SettingsCategory, SettingsProfile
 } from './settingsops';
@@ -47,15 +49,6 @@ export function maskIfSensitive(key: string, value: unknown): unknown {
     return typeof value === 'string' ? '••••••••' : value;
 }
 
-/**
- * Does this setting need a window reload? Derived from the setting's OWN
- * description rather than a hand-kept list — a list of keys goes stale the
- * first time somebody adds a setting and forgets it, and the description is
- * where the fact already lives.
- */
-export function needsReload(description: string): boolean {
-    return /\b(restart|reload)\b/i.test(description ?? '');
-}
 
 export interface SettingsBridgeDeps {
     getAgents(): AgentInfo[];

@@ -192,6 +192,8 @@ const SHARED = [
     'afBlPlace.js',
     // afSettingSearch.js — the settings ranker, shared with settings.list q (U-224).
     'afSettingSearch.js',
+    // afSettingText.js — a setting's description without its markdown marks (U-227).
+    'afSettingText.js',
     // afSettingResults.js — the Settings page's results view, count, Changed chip and keys (U-224).
     'afSettingResults.js',
     // afSettingList.js — the Settings page's shape panel and plain-list editor, split out of settings.js (U-225).

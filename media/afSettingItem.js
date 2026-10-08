@@ -114,6 +114,12 @@
         return `<span class="setpath"><input type="text" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:100%; max-width:420px">${browse}</span>`;
     }
 
+    /** U-227 — the description as a person reads it: no **, ` or #agentFarm.x# marks; another setting by its name */
+    function descOf(it) {
+        const nameOf = key => (X.allItems().find(x => x.key === key) || {}).label || window.AFSettingSearch.humanize(key);
+        return window.AFSettingText.plain(it.description || '', nameOf);
+    }
+
     function itemHtml(it) {
         const err = errors[it.key];
         return `<div class="setitem${it.modified ? ' modified' : ''}" data-item="${C.esc(it.key)}"
@@ -125,7 +131,7 @@
                 ${it.modified ? `<span class="moddot" title="Changed from default (${C.esc(fmtDefault(it.default))})"></span>
                     <button class="reset" data-reset="${C.esc(it.key)}" title="Reset to default: ${C.esc(fmtDefault(it.default))}">↺</button>` : ''}
             </div>
-            <div class="setdesc">${hit(it.description || '')}</div>
+            <div class="setdesc">${hit(descOf(it))}</div>
             <div class="setctl">${controlHtml(it)}</div>
             ${/* X-193 — a scalar path says where it points, for the same reason
                   each row of a list does. A list draws its own lines per row, so

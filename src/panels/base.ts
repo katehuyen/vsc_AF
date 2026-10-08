@@ -467,6 +467,7 @@ export function htmlShell(
     const blPlace = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afBlPlace.js'));
     // U-224 — the settings ranker, the one settings.list q asks too.
     const setSearch = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingSearch.js'));
+    const setText = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingText.js'));
     const setResults = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingResults.js'));
     // U-225 — the Settings page's parts, split out of settings.js
     const setList = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingList.js'));
@@ -734,6 +735,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${colFit}"></script>
 <script nonce="${nonce}" src="${blPlace}"></script>
 <script nonce="${nonce}" src="${setSearch}"></script>
+<script nonce="${nonce}" src="${setText}"></script>
 <script nonce="${nonce}" src="${setResults}"></script>
 <script nonce="${nonce}" src="${setList}"></script>
 <script nonce="${nonce}" src="${setFields}"></script>

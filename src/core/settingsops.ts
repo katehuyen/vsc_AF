@@ -167,6 +167,8 @@ export interface SettingItem extends SettingSpec {
     terms?: string;
     /** 'Section › Group', the line a search result names its home with */
     place?: string;
+    /** U-227 — a change takes a window reload (needsReload), said on the row and in its panel */
+    reloadRequired?: boolean;
 }
 
 /** The host's per-row notes, by name: the same notes reach the page and the bridge. */
@@ -221,6 +223,16 @@ export function pathPreviews(
     return out;
 }
 
+/**
+ * Does this setting need a window reload? Derived from the setting's OWN
+ * description rather than a hand-kept list — a list of keys goes stale the
+ * first time somebody adds a setting and forgets it, and the description is
+ * where the fact already lives.
+ */
+export function needsReload(description: string): boolean {
+    return /\b(restart|reload)\b/i.test(description ?? '');
+}
+
 /** Deep-enough equality for setting values (JSON-shaped data only). */
 export function sameValue(a: unknown, b: unknown): boolean {
     if (a === b) { return true; }
@@ -258,6 +270,7 @@ export function buildSettingsModel(
             ...(() => { const s = shapeOf(p); return s ? { shape: s } : {}; })(),
             value,
             modified: !sameValue(value, p.default),
+            ...(needsReload(p.description ?? p.markdownDescription ?? '') ? { reloadRequired: true } : {}),
             ...(refusalOf?.(key) ? { refusal: refusalOf(key) } : {}),
             ...(inForceOf?.(key) ? { inForce: inForceOf(key) } : {})
         };
