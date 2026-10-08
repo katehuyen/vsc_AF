@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.894.0 - Farm Settings in sixteen sections, each in named groups (2026-10-08)
+
+- **Every setting now sits in one of sixteen sections** - General,
+  Projects, Agents, Engines & Accounts, Sessions, Notifications & Sound,
+  Quota & Cost, Handover & Relay, Tasks & Queue, Monitoring & Health,
+  Reports, Knowledge, Media & Studio, Sentry, Gatekeeper and Remote Access
+  - and inside each, in named groups that say what they decide (Plan
+  usage, Budgets, Brakes, When to hand over...) instead of one alphabetical
+  run. The cards stay beside their settings: Saved prompts under General,
+  Superpowers under Agents, the Sound line under Notifications & Sound, the
+  stuck warning and the quota figures under Monitoring & Health, the Wiki
+  under Knowledge, Telegram under Remote Access.
+- **A search still puts the best match first**, and each result names its
+  section and group.
+- **For agents:** `settings.list` and `settings.get` now return each
+  setting's section, group, tier and place; `category` takes a section id,
+  its name, or a category id from before (answered with the section it
+  moved to).
+- **More tasks run at once by default:** up to five together, with no
+  per-agent limit (Tasks & Queue > Concurrency). The reminder about notices
+  left unread is filed as a warning.
+- Under the hood the Settings page's code is split into small parts, so
+  the redesign that follows can change one section at a time.
+
 ## 3.893.0 - The Chains page pauses with its own button (2026-10-08)
 
 - **A chain that can pause has its own ⏸ on the Chains page.** Press it
