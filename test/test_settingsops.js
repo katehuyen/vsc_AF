@@ -169,7 +169,7 @@ const { charts } = require('./lib_charts_stub.js');
     }
     let setEls = [], resetEls = [];
     const sandbox = {
-        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
+        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { return { open: ['*'], more: ['*'] }; }, setState() { } }),
         window: {
             AFCharts: charts({ esc: (s) => String(s) }),
             __DATA__: {
@@ -267,11 +267,12 @@ const { charts } = require('./lib_charts_stub.js');
     }
     const wired = {}; // selector-ish key -> [{dataset, _fn}]
     const sandbox = {
-        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
+        acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { return { open: ['*'], more: ['*'] }; }, setState() { } }),
         window: {
             AFCharts: charts({ esc: (s) => String(s) }),
             __DATA__: {
-                focus: '', profiles: [], categories: [],
+                // U-228 — the Agent folders card opens the Agents section
+                focus: '', profiles: [], categories: require('./lib_settings_model.js').withCardSections([], ['agents']),
                 folders: {
                     reports: [
                         {
@@ -320,7 +321,7 @@ const { charts } = require('./lib_charts_stub.js');
     vm.runInContext(code, sandbox); // render()
 
     const html = getEl('app')._html;
-    ok('folders section + nav link rendered', html.includes('id="cat-folders"') && html.includes('data-cat="folders"'));
+    ok('folders card rendered, at the head of the Agents section', html.includes('id="cat-folders"') && html.indexOf('id="cat-folders"') > html.indexOf('id="secb-agents"'));
     ok('nest badge counts live + excluded', html.includes('nest · 1 agent(s) · 1 excluded'));
     ok('nest explanation says shared instructions, not an agent', html.includes('shared instructions'));
     ok('duplicate root warns + offers cleanup', html.includes('duplicate entry') && html.includes('id="afcleandupes"'));
@@ -397,7 +398,7 @@ const { charts } = require('./lib_charts_stub.js');
         cat.items[0].value = chosen || '';
         cat.items[0].modified = !!chosen;
         return {
-            acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
+            acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { return { open: ['*'], more: ['*'] }; }, setState() { } }),
             window: {
                 AFCharts: charts({ esc: (s) => String(s) }),
                 __DATA__: { focus: '', profiles: [], categories: [cat], prompts },
@@ -426,8 +427,8 @@ const { charts } = require('./lib_charts_stub.js');
             { label: 'Türkçe cevap', group: 'Review', text: 'Answer in Turkish, code in English.', line: 12 }
         ]
     });
-    ok('the group has its own heading, and its section a nav link',
-        html.includes('id="grp-general-prompts"') && html.includes('data-sec="general"'));
+    ok('the group has its own heading, and its section a header',
+        html.includes('id="grp-general-prompts"') && html.includes('data-fold="general"'));
     ok('‼️ the section shows what was READ, not just the path',
         html.includes('Kod incelemesi') && html.includes('Read the flow before you change it.')
         && html.includes('<b>2</b> prompt'));

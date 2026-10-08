@@ -12,8 +12,11 @@ export async function handleSettingsValueMessage(msg: { type: string; [k: string
     switch (msg.type) {
         case 'set':
         case 'reset': {
+            // U-228 — "Reset section…" sends the section instead of a key
             const key = String(msg.key ?? '');
-            const error = await s.setValue(key, msg.type === 'set' ? msg.value : undefined);
+            const error = msg.type === 'reset' && msg.section
+                ? await resetSection(String(msg.section), s)
+                : await s.setValue(key, msg.type === 'set' ? msg.value : undefined);
             if (error) {
                 void s.host.webview.postMessage({ type: 'error', key, error });
             }
@@ -170,4 +173,24 @@ export async function handleSettingsValueMessage(msg: { type: string; [k: string
             return false;
     }
     return true;
+}
+
+/** U-228 — "Reset section…": every changed setting of one section back to its default, asked first with the count and
+ *  the names. A refusal it cannot place on one row is said in the notification, so it answers no row error. */
+async function resetSection(id: string, s: SettingsPage): Promise<string> {
+    const cat = s.categories().find(c => c.id === id);
+    const items = cat ? cat.items.filter(i => i.modified) : [];
+    if (!cat || !items.length) { return ''; }
+    const n = items.length;
+    const pick = await s.host.ask.warn(`Reset ${n} setting${n === 1 ? '' : 's'} of ${cat.label} to ${n === 1 ? 'its default' : 'their defaults'}?`,
+        { modal: true, detail: items.map(i => i.label || i.key).join(' · ') }, 'Reset');
+    if (pick !== 'Reset') { return ''; }
+    const locked: string[] = [];
+    for (const it of items) {
+        const error = await s.setValue(it.key, undefined);
+        if (error && phoneLocked(it.key)) { locked.push(it.key); }
+    }
+    if (locked.length) { void s.host.ask.info('Agent Farm: ' + lockedNote(locked)); }
+    s.refresh();
+    return '';
 }

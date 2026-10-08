@@ -123,12 +123,6 @@
                 if (box) { box.focus(); }
             });
         }
-        document.querySelectorAll('.catnav a').forEach(a =>
-            a.addEventListener('click', () => {
-                // a catalog section (data-sec) or one of the cards above them (data-cat)
-                const h = document.getElementById(a.dataset.sec ? 'sec-' + a.dataset.sec : 'cat-' + a.dataset.cat);
-                if (h && h.scrollIntoView) { h.scrollIntoView({ behavior: 'smooth' }); }
-            }));
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
 
@@ -248,14 +242,15 @@
         }
     }
 
+    /** The setting sets bar — drawn only while its section is open (U-228), so nothing here may assume it. */
     function wireProfiles() {
-        // profiles
         const sel = document.getElementById('profsel');
+        if (!sel) { return; }
         document.getElementById('profapply').addEventListener('click', () => {
-            if (sel && sel.value) { vscode.postMessage({ type: 'applyProfile', name: sel.value }); }
+            if (sel.value) { vscode.postMessage({ type: 'applyProfile', name: sel.value }); }
         });
         document.getElementById('profdel').addEventListener('click', () => {
-            if (sel && sel.value) { vscode.postMessage({ type: 'deleteProfile', name: sel.value }); }
+            if (sel.value) { vscode.postMessage({ type: 'deleteProfile', name: sel.value }); }
         });
         document.getElementById('profsave').addEventListener('click', () => {
             X.saveOpen = !X.saveOpen;

@@ -11,8 +11,9 @@ import { resolveSectionId, SECTIONS } from './settingsCatalog/index';
 import { needsReload } from './settingsops';
 export { needsReload };
 import {
-    parseImportedProfiles, pathPreviews, sanitizeValue, SettingsCategory, SettingsProfile
+    pathPreviews, sanitizeValue, SettingsCategory, SettingsProfile
 } from './settingsops';
+import { settingsSetsOps } from './settingsSetsOps';
 
 /**
  * Fleet and settings management over the bridge (B-7).
@@ -245,8 +246,28 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
         },
         {
             op: 'settings.reset',
-            describe: 'Put one setting back to the value the schema declares. A setting that was already at its default is reported as unchanged rather than written again. args: key',
+            describe: 'Put settings back to the value the schema declares: one `key`, a list of `keys`, or every changed setting of a `section` (the Settings page\'s "Reset section…"; settings.list names the sections). A setting that was already at its default is reported as unchanged rather than written again. With `keys` or `section`, `dryRun:true` names what would be reset and writes nothing. args: key | keys | section, dryRun?',
             handler: async (args) => {
+                const asked = optStr(args, 'section');
+                if (asked.trim() || Array.isArray(args.keys)) {
+                    const section = asked.trim() ? resolveSectionId(asked) : undefined;
+                    need(!asked.trim() || !!section, `"${asked}" is not a settings section — one of: ${SECTIONS.map(x => x.id).join(', ')}`);
+                    const list = section
+                        ? allItems().filter(i => i.section === section && i.modified)
+                        : (args.keys as unknown[]).map(k => specOf(String(k)));
+                    const todo = list.filter(i => i.modified);
+                    const reset = todo.map(it => ({ key: it.key, was: maskIfSensitive(it.key, it.value), now: maskIfSensitive(it.key, it.default), reloadRequired: needsReload(it.description) }));
+                    const unchanged = list.filter(i => !i.modified).map(i => i.key);
+                    const where = section ? { section } : {};
+                    if (args.dryRun === true) {
+                        return { dryRun: true, ...where, changed: 0, would: todo.length, reset, unchanged, note: 'Nothing was written.' };
+                    }
+                    for (const it of todo) { await deps.writeSetting(it.key, undefined); }
+                    return {
+                        ...where, changed: todo.length, reset, unchanged,
+                        note: todo.length ? `${todo.length} reset to the default.` : 'Nothing to reset — every one was already at its default.'
+                    };
+                }
                 const it = specOf(argStr(args, 'key'));
                 if (!it.modified) {
                     return { key: it.key, changed: false, note: 'It was already at its default.' };
@@ -261,123 +282,7 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
                 };
             }
         },
-        {
-            op: 'settings.sets',
-            describe: 'The saved SETTING SETS — named snapshots of everything you have changed away from its defaults, so "my laptop setup" and "the demo machine" are two things you can switch between. Each lists how many values it carries and when it was taken. args: none',
-            handler: () => ({
-                sets: deps.getProfiles().map(p => ({
-                    name: p.name, savedAt: p.savedAt, values: Object.keys(p.values ?? {}).length,
-                    keys: Object.keys(p.values ?? {})
-                }))
-            })
-        },
-        {
-            op: 'settings.sets.save',
-            describe: 'Snapshot everything currently non-default as a named setting set. A set with the same name is REPLACED, which is how you update one. Only the values that differ from the schema default are kept, so a set stays small and travels between machines. args: name',
-            handler: async (args) => {
-                const name = argStr(args, 'name').trim().slice(0, 60);
-                need(name, 'A setting set needs a name.');
-                const values: Record<string, unknown> = {};
-                for (const it of allItems()) { if (it.modified) { values[it.key] = it.value; } }
-                const profile: SettingsProfile = { name, savedAt: Date.now(), values };
-                const list = deps.getProfiles().filter(p => p.name !== name);
-                list.push(profile);
-                list.sort((a, b) => a.name.localeCompare(b.name));
-                await deps.setProfiles(list);
-                return {
-                    name, values: Object.keys(values).length, replaced: list.length === deps.getProfiles().length,
-                    note: `"${name}" saved with ${Object.keys(values).length} non-default value(s).`
-                };
-            }
-        },
-        {
-            op: 'settings.sets.apply',
-            describe: '‼️ A SETTING SET IS A COMPLETE STATE, NOT AN OVERLAY. Applying one sets every value it carries AND resets to default every currently-modified setting it does not mention — otherwise switching sets would leave the last one\'s stragglers behind. Call it with `dryRun:true` first: the plan names every key, what it becomes and which ones are resets. args: name, dryRun?',
-            handler: async (args) => {
-                const name = argStr(args, 'name');
-                const profile = deps.getProfiles().find(p => p.name === name);
-                need(profile, `No setting set "${name}" — settings.sets lists them.`);
-                const plan = deps.applyPlan(profile as SettingsProfile);
-                const resets = plan.filter(p => p.value === undefined);
-                const steps = plan.map(p => ({
-                    key: p.key,
-                    action: p.value === undefined ? 'reset' : 'set',
-                    value: p.value === undefined ? null : maskIfSensitive(p.key, p.value)
-                }));
-                if (args.dryRun === true) {
-                    return {
-                        dryRun: true, name, sets: plan.length - resets.length, resets: resets.length,
-                        plan: steps, note: 'Nothing was written.'
-                    };
-                }
-                for (const step of plan) { await deps.writeSetting(step.key, step.value); }
-                return {
-                    name, sets: plan.length - resets.length, resets: resets.length, plan: steps,
-                    reloadRequired: plan.some(p => {
-                        const it = allItems().find(x => x.key === p.key);
-                        return !!it && needsReload(it.description);
-                    }),
-                    note: `"${name}" applied — ${plan.length - resets.length} set, ${resets.length} reset to default.`
-                };
-            }
-        },
-        {
-            op: 'settings.sets.delete',
-            describe: 'Forget a saved setting set. Nothing about the current settings changes — the set is only a snapshot. args: name',
-            handler: async (args) => {
-                const name = argStr(args, 'name');
-                const list = deps.getProfiles();
-                need(list.some(p => p.name === name), `No setting set "${name}" — settings.sets lists them.`);
-                await deps.setProfiles(list.filter(p => p.name !== name));
-                return { name, remaining: list.length - 1, note: `"${name}" deleted; your current settings are untouched.` };
-            }
-        },
-        {
-            op: 'settings.sets.export',
-            describe: 'Write the saved setting sets out as JSON — the file you carry to another machine. With no `file` the JSON comes back instead, so this is also how you read them in full. args: file?',
-            handler: (args) => {
-                const list = deps.getProfiles();
-                need(list.length, 'There are no setting sets to export.');
-                const text = JSON.stringify(list, null, 2);
-                const file = optStr(args, 'file');
-                if (!file) { return { sets: list.length, content: text, file: null }; }
-                const out = path.resolve(file);
-                fs.mkdirSync(path.dirname(out), { recursive: true });
-                fs.writeFileSync(out, text, 'utf8');
-                return { sets: list.length, file: out, note: `${list.length} setting set(s) written to ${out}.` };
-            }
-        },
-        {
-            op: 'settings.sets.import',
-            describe: 'Read setting sets in — from a `file` or from `json` text. A set whose name already exists is REPLACED; malformed entries are skipped rather than failing the whole import, and the answer says how many were kept. Importing changes no current setting: applying one does. args: file? · json?, dryRun?',
-            handler: async (args) => {
-                const file = optStr(args, 'file');
-                const json = optStr(args, 'json');
-                need(file || json, 'Pass a `file` to read, or the `json` itself.');
-                let text = json;
-                if (file) {
-                    const abs = path.resolve(file);
-                    need(fs.existsSync(abs), `No file at ${abs}.`);
-                    text = fs.readFileSync(abs, 'utf8');
-                }
-                const imported = parseImportedProfiles(text);
-                need(imported.length, 'No valid setting sets in that input — every entry was malformed.');
-                if (args.dryRun === true) {
-                    return {
-                        dryRun: true, would: imported.map(p => p.name),
-                        note: `${imported.length} set(s) would be imported; nothing has changed.`
-                    };
-                }
-                const list = deps.getProfiles().filter(p => !imported.some(i => i.name === p.name));
-                list.push(...imported);
-                list.sort((a, b) => a.name.localeCompare(b.name));
-                await deps.setProfiles(list);
-                return {
-                    imported: imported.length, names: imported.map(p => p.name), total: list.length,
-                    note: `${imported.length} setting set(s) imported — settings.sets.apply is what puts one into effect.`
-                };
-            }
-        },
+        ...settingsSetsOps({ deps, allItems, maskIfSensitive }),
         {
             op: 'claude.settings',
             describe: 'Claude Code\'s OWN settings.json as this extension reads it — the catalogued lines only (model, permission defaults, the hooks switch and so on), each with what it is set to and what it means. ‼️ This is a different file from Agent Farm\'s settings: it is what the CLI itself obeys, which is why a session can behave in a way no Agent Farm setting explains. If the file is not valid JSON that is said, and nothing here will write over it. args: none',

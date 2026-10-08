@@ -7,13 +7,17 @@
     function focusKey(key) {
         let el = document.querySelector(`[data-item="${key}"]`);
         // U-224 — a row the query or the Changed chip hides is shown: the search gives way to the link.
-        if (!el && (X.filter || X.changedOnly)) {
+        // U-228 — a row in a closed section opens it, and its "more" too when the row waits behind it.
+        if (!el) {
+            const asked = !!(X.filter || X.changedOnly);
             X.filter = '';
             X.changedOnly = false;
-            render();
+            X.reveal(key);
+            render(!asked);
             el = document.querySelector(`[data-item="${key}"]`);
         }
-        if (!el) { return; }
+        // a key no section holds: the top of the page, quietly
+        if (!el) { try { window.scrollTo(0, 0); } catch (e) { /* stub DOM */ } return; }
         if (el.scrollIntoView) { el.scrollIntoView({ block: 'center' }); }
         el.classList.add('flash');
         setTimeout(() => el.classList.remove('flash'), 2500);

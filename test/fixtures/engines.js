@@ -293,9 +293,10 @@ const engineModels = () => ({
 
 const base = () => ({
     focus: '', profiles: [], prompts: null, modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
-    categories: require('../../out/core/settingsops.js').groupIntoSections([
+    // U-228 — the Engines and Agent folders cards open their own sections
+    categories: require('../lib_settings_model.js').withCardSections(require('../../out/core/settingsops.js').groupIntoSections([
         { key: 'agentFarm.livePort', type: 'number', default: 0, description: 'listener port', value: 9000, modified: true }
-    ]),
+    ]), ['engines', 'agents']),
     folders: folders(),
     engineModels: engineModels(),
     agentDefaultsEngine: 'claude',

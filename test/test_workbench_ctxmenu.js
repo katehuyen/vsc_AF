@@ -215,12 +215,13 @@ const NOW = Date.now();
     const p = runPage('settings.js', {
         focus: '',
         profiles: [],
-        categories: [{
+        // U-228 — the Agent folders card opens the Agents section
+        categories: require('./lib_settings_model.js').withCardSections([{
             id: 'live', label: 'Live', items: [
                 { key: 'agentFarm.livePort', type: 'number', default: 0, description: 'listener port', value: 9000, modified: true },
                 { key: 'agentFarm.liveMonitor', type: 'boolean', default: true, description: 'enable', value: true, modified: false }
             ]
-        }],
+        }], ['agents']),
         folders: {
             excludes: [],
             reports: [{

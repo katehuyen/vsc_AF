@@ -127,7 +127,8 @@ const model = () => {
             if (hit) { items.push(hit); }
         }
     }
-    return [{ id: 'json', label: 'The settings that are a JSON box', items }];
+    // U-228 — and the section the Agent folders card opens
+    return require('../lib_settings_model.js').withCardSections([{ id: 'json', label: 'The settings that are a JSON box', items }], ['agents']);
 };
 
 const data = () => ({

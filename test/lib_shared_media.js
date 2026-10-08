@@ -214,6 +214,8 @@ const SHARED = [
     'afSettingAccess.js',
     // afSettingSections.js — one catalog section drawn as its groups, cards handed to their parts (U-226).
     'afSettingSections.js',
+    // afSettingFold.js — the sections as an accordion: a header each, a body while open, "Show n more" (U-228).
+    'afSettingFold.js',
     // afSettingPage/Wire/WireList/WireShapes.js — the page around #setbody and what its controls do (U-225).
     'afSettingPage.js',
     'afSettingWire.js',

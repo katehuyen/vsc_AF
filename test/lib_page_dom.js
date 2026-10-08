@@ -56,7 +56,10 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
     const onMessage = [];
     const els = {};
     const elCache = new Map();
-    let state = initialState ? JSON.parse(JSON.stringify(initialState)) : {};
+    // ‼️ U-228 — Settings opens with every section closed; a test that hands it no state sees every section and every
+    // row open, as the page was drawn before the accordion. A test about the accordion hands its own state ({} = first open).
+    const fallback = scriptFile === 'settings.js' ? { open: ['*'], more: ['*'] } : {};
+    let state = JSON.parse(JSON.stringify(initialState || fallback));
     /**
      * ‼️ FOCUS IS MODELLED, BECAUSE LOSING IT IS A BUG PAGES ACTUALLY SHIP.
      *

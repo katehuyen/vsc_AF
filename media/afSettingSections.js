@@ -67,9 +67,12 @@
         }).join('');
     }
 
+    /** U-228 — a group a card draws is drawn whole: "Show n more" never splits a card. */
+    const hasCard = (sec, group) => !!CARD[sec + '/' + group];
+
     window.AFSettingSections = function (ctx) {
         X = ctx;
         C = ctx.C;
-        return { sectionHtml, groupsOf };
+        return { sectionHtml, groupsOf, hasCard };
     };
 })();

@@ -154,7 +154,7 @@ const asJson = (p, key) => p.send({ type: 'afctx', act: 'stJson', ctx: { setKey:
     const p = open();
     ok('the fixture really does hold a key the schema does not declare, or this'
         + ' proves nothing',
-        fx.data().categories[0].items.find(i => i.key === 'agentFarm.cliProfiles')
+        fx.data().categories.find(c => c.id === 'json').items.find(i => i.key === 'agentFarm.cliProfiles')
             .value[0].command !== undefined);
     el(p, 'r-cliProfiles-0-headless').value = 'my-cli --headless';
     btn(p, 'rapply', 'agentFarm.cliProfiles').click();
@@ -652,9 +652,10 @@ const DOCOPEN = {
     defaultMode: 'obsidian', modes: ['vscode', 'preview', 'obsidian', 'custom'],
     customCommand: 'notepad.exe', customArgs: ''
 };
-/** The same page, with the two data-backed sections actually present. */
-const openFull = () => runPage(fx.script,
-    Object.assign(fx.data(), { engines: ENGINES, docOpen: DOCOPEN }));
+/** The same page, with the two data-backed sections actually present — each in the section it opens (U-228). */
+const { withCardSections } = require('./lib_settings_model.js');
+const openFull = () => runPage(fx.script, Object.assign(fx.data(), { engines: ENGINES, docOpen: DOCOPEN,
+    categories: withCardSections(fx.data().categories, ['engines', 'general']) }));
 
 /** Type into the filter box the way a keystroke does, with the caret somewhere. */
 const typeFilter = (p, text, caret) => {
@@ -754,7 +755,7 @@ const typeFilter = (p, text, caret) => {
         .forEach(k => { aa[k] = props[k]; });
     const p = runPage(fx.script, Object.assign(fx.data(), {
         engines: ENGINES, docOpen: DOCOPEN,
-        categories: S.buildSettingsModel(aa, k => aa[k].default)
+        categories: withCardSections(S.buildSettingsModel(aa, k => aa[k].default), ['engines'])
     }));
     typeFilter(p, 'soru');
     ok('U-150: "soru" finds the auto-answer rows', /console\.autoAnswer\.timeoutSeconds/.test(p.html()));

@@ -2,20 +2,14 @@
 // Split out of media/settings.js unchanged (U-225): the page hands its state in once, as X.
 (function () {
     'use strict';
-    let X, C, profileBar;
+    let X, C;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     function pageHtml(R, total, modified, body) {
         return `
             <style>
                 .profbar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0;
                     padding:8px 10px; border:1px solid var(--vscode-panel-border); border-radius:6px; }
-                .catnav { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 14px;
-                    position:sticky; top:0; z-index:10; padding:6px 0;
-                    background:var(--vscode-editor-background, var(--vscode-sideBar-background)); }
-                .catnav a { font-size:11px; padding:2px 10px; border-radius:10px; cursor:pointer;
-                    border:1px solid var(--vscode-widget-border, #4444); color:var(--vscode-foreground);
-                    text-decoration:none; opacity:.8; }
-                .catnav a:hover { opacity:1; }
                 h2.cat { margin:22px 0 4px; }
                 .setplace { font-size:11px; color:var(--vscode-descriptionForeground); margin-bottom:2px; }
                 .setcount { font-size:12px; color:var(--vscode-descriptionForeground); margin:2px 0 6px; }
@@ -216,6 +210,7 @@
                 .spstate { font-size:10px; opacity:.5; }
                 .sprow.spdef .spname { opacity:.7; }
                 ${window.AFSettingRowCss.css()}
+                ${X.foldCss()}
                 ${window.AFTelegram.css()}
                 ${window.AFFlexSettings.css()}
                 html.af-phone .setfrow { flex-wrap:wrap; }
@@ -233,24 +228,20 @@
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
-                title: 'Farm Settings',
+                title: t('Settings'),
                 version: true,
-                sub: `Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} setting${total === 1 ? '' : 's'} · ${modified} changed from default. Changes save immediately to your user settings.`,
-                // ‼️ U-139 — THE FILE ITSELF, from the page that writes it.
-                // Every box here is a view of one document, and a reader who
-                // wants to see what was really written, paste a block in, or
-                // repair something this page refuses had no way to it except
-                // the command palette. It is the same file the ↺ buttons
-                // remove keys from.
-                actions: `<button class="secondary" id="opensettingsjson"
-                    title="Open your user settings.json — the file every box on this page writes into. Changed values appear there as agentFarm.* keys; a value the schema cannot describe can be written by hand.">settings.json</button>`,
+                sub: C.esc(t('{n} settings · {m} changed', { n: total, m: modified })),
                 guide: 'dashboard'
             })}
-            ${profileBar()}
-            <div class="searchbar" style="margin:10px 0; position:relative; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <div class="searchbar setbar">
                 <input id="filter" type="text" placeholder="Filter settings… (name or description)" value="${C.esc(X.filter)}" style="width:100%; max-width:420px; padding:6px 8px"
                     title="${C.esc(window.AFQuery.tip('Searched against each setting\'s name, the words people use for it, its key, its section, its options and its description; the best match comes first. / or Ctrl+F comes back here.'))}">
                 ${R.chipHtml(modified, X.changedOnly, C.esc)}
+                ${X.barHtml()}
+                ${/* ‼️ U-139 — THE FILE ITSELF, from the page that writes it: every box here is a view of one
+                     document, and the ↺ buttons remove keys from the same file. */ ''}
+                <button class="secondary small" id="opensettingsjson"
+                    title="Open your user settings.json — the file every box on this page writes into. Changed values appear there as agentFarm.* keys; a value the schema cannot describe can be written by hand.">settings.json</button>
             </div>
             <div id="setbody">${body}</div>
         `;
@@ -258,7 +249,7 @@
 
     window.AFSettingPage = function (ctx) {
         X = ctx;
-        ({ C, profileBar } = ctx);
+        C = ctx.C;
         return { pageHtml };
     };
 })();
