@@ -474,6 +474,7 @@ export function htmlShell(
     const setFields = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingFields.js'));
     const setForms = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingForms.js'));
     const setMap = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingMap.js'));
+    const setPick = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingPick.js'));
     const setItem = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingItem.js'));
     const setRowCss = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingRowCss.js'));
     const setFolders = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSettingFolders.js'));
@@ -743,6 +744,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${setFields}"></script>
 <script nonce="${nonce}" src="${setForms}"></script>
 <script nonce="${nonce}" src="${setMap}"></script>
+<script nonce="${nonce}" src="${setPick}"></script>
 <script nonce="${nonce}" src="${setItem}"></script>
 <script nonce="${nonce}" src="${setRowCss}"></script>
 <script nonce="${nonce}" src="${setFolders}"></script>

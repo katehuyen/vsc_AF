@@ -58,7 +58,7 @@ export const handover: CatalogSection = {
         contextHandoverStayAccountPct: { group: 'account', unit: '%', zeroMeans: 'off' },
         batonFaultWaitHours: { group: 'faults', unit: 'h' },
         batonFlaggedPasses: { group: 'faults' },
-        batonFlaggedModel: { group: 'faults' },
+        batonFlaggedModel: { group: 'faults', control: 'model', engine: 'claude' },
         chainHangMinutes: { group: 'board', unit: 'min' },
         chainWaitMinutes: { group: 'board', unit: 'min' }
     }

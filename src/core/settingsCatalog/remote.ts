@@ -18,7 +18,7 @@ export const remote: CatalogSection = {
         'web.enabled': { group: 'web', tier: 'basic' },
         'web.port': { group: 'web' },
         'web.bind': { group: 'web' },
-        'web.token': { group: 'web' },
+        'web.token': { group: 'web', control: 'token' },
         'remote.listen': { group: 'bridge' },
         'remote.port': { group: 'bridge' },
         'telegram.enabled': { group: 'telegram', tier: 'basic' },

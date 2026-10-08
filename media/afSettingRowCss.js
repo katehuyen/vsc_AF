@@ -55,8 +55,21 @@
                 box-shadow:inset 0 0 0 1px var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, transparent)); }
             .setsego > input:checked + span::before { content:'\\2713  '; }
             .setnum { display:inline-flex; align-items:center; gap:5px; }
-            .setnum > input { width:110px; }
+            .setnum > input:not(.setswitch) { width:110px; }
             .setunit { font-size:11px; color:var(--vscode-descriptionForeground); }
+            .setchips { display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; max-width:100%; }
+            .setchip { display:inline-flex; align-items:center; gap:4px; padding:1px 8px; font-size:12px; line-height:18px;
+                border-radius:10px; cursor:pointer; min-width:0; white-space:nowrap;
+                background:var(--vscode-input-background); color:var(--vscode-input-foreground, var(--vscode-foreground));
+                border:1px solid var(--vscode-checkbox-border, var(--vscode-input-border, var(--vscode-widget-border, #8888))); }
+            .setchip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground);
+                border-color:var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, var(--vscode-button-background))); }
+            .setchip.lost { border-style:dashed; }
+            .setchip:focus-visible, .setchipx:focus-visible { outline:1px solid var(--vscode-focusBorder); outline-offset:1px; }
+            .setladder .setchip { cursor:grab; }
+            .setgrip { font-size:10px; }
+            .setchipx { background:none; border:0; padding:0 0 0 2px; margin:0; min-width:0; color:inherit; cursor:pointer; font-size:11px; }
+            .setchips > .setrungadd { width:auto; max-width:160px; }
             @media (max-width:700px) {
                 .setitem.srow { grid-template-columns:minmax(0, 1fr); row-gap:6px; }
             }`;

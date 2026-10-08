@@ -15,7 +15,7 @@ export const gatekeeper: CatalogSection = {
         'kapici.retry': { group: 'switches' },
         'kapici.route': { group: 'classifier', tier: 'basic' },
         'kapici.providers': { group: 'classifier' },
-        'kapici.keyName': { group: 'classifier' },
+        'kapici.keyName': { group: 'classifier', control: 'secret' },
         'kapici.timeoutMs': { group: 'classifier', unit: 'ms' },
         'kapici.rulesDir': { group: 'classifier' }
     }

@@ -10,7 +10,7 @@
 import { PreviewedPath } from './pathVars';
 import { SchemaNode, SettingShape, shapeOf } from './settingShape';
 import { groupIntoSections } from './settingsCatalog/model';
-import type { Tier } from './settingsCatalog/types';
+import type { CatalogFields } from './settingsCatalog/types';
 export { groupIntoSections } from './settingsCatalog/model';
 export type { SchemaNode, SettingShape, ShapeField, ShapeKind } from './settingShape';
 export { exampleText, shapeOf } from './settingShape';
@@ -143,7 +143,8 @@ export interface SettingSpec {
     enumDescriptions?: string[];
 }
 
-export interface SettingItem extends SettingSpec {
+/** U-226 — the catalog's fields for this key (section, group, tier, label, …) are filled in by groupIntoSections. */
+export interface SettingItem extends SettingSpec, CatalogFields {
     /**
      * ‼️ U-89 — WHAT ACTUALLY GOES IN THE BOX, derived from this key's own
      * schema rather than written down anywhere. Only ever set for an array or
@@ -160,18 +161,6 @@ export interface SettingItem extends SettingSpec {
     /** X-470 — what the box ACTS at right now when another setting bounds it (the stay line above the
      *  Account ceiling acts at the ceiling). Said on the row, so the value written is never mistaken for the one in force. */
     inForce?: string;
-    /** U-226 — the catalog's answer for this key (src/core/settingsCatalog/), filled in by groupIntoSections */
-    section?: string;
-    group?: string;
-    tier?: Tier;
-    label?: string;
-    summary?: string;
-    unit?: string;
-    zeroMeans?: 'off';
-    control?: string;
-    terms?: string;
-    /** 'Section › Group', the line a search result names its home with */
-    place?: string;
     /** U-227 — a change takes a window reload (needsReload), said on the row and in its panel */
     reloadRequired?: boolean;
 }

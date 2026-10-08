@@ -39,6 +39,9 @@
         if (it.type === 'boolean') {
             return `<input type="checkbox" role="switch" class="setswitch" id="${id}" data-set="${C.esc(it.key)}"${it.value ? ' checked' : ''} aria-label="${C.esc(it.label || shortKey(it.key))}">`;
         }
+        // U-229 — a value the catalog says is one of a known set is picked, never typed (media/afSettingPick.js)
+        const pick = X.pickHtml(it, id);
+        if (pick) { return pick; }
         if (it.enum && it.enum.length && it.enum.length <= SEG_MAX) { return segHtml(it, id); }
         if (it.enum && it.enum.length) {
             // U-130 — the box CUTS a long enum value and the popup belongs to

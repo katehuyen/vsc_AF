@@ -203,6 +203,8 @@ const SHARED = [
     'afSettingForms.js',
     // afSettingMap.js / afSettingItem.js — its name → value pairs editor and one setting row with its control (U-225).
     'afSettingMap.js',
+    // afSettingPick.js — a setting whose right values are known, picked: models, secrets, chips, a ladder, a time (U-229).
+    'afSettingPick.js',
     'afSettingItem.js',
     // afSettingRowCss.js — the look of one setting row: two columns, the control's at one x (U-227).
     'afSettingRowCss.js',

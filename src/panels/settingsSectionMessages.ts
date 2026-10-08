@@ -63,6 +63,14 @@ export async function handleSettingsSectionMessage(msg: { type: string; [k: stri
         case 'openSecrets':
             s.deps.openSecrets?.();
             break;
+        // U-229 — the web token row's Generate is the revoke, so it is asked first, as web.token.new asks for confirm
+        case 'webTokenNew': {
+            const go = 'New token';
+            const pick = await s.host.ask.warn(
+                'A new web view token ends every link made with the old one, a phone bookmark too.', { modal: true }, go);
+            if (pick === go) { await s.deps.newWebToken?.(); }
+            break;
+        }
         case 'kapiciMcp':
             if (typeof msg.on === 'boolean') {
                 s.deps.kapiciMcp?.(msg.on);

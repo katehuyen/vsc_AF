@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo, discoverAgents, scanRoots } from './core/agents';
 import {
-    addStoreFolder, airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
+    addStoreFolder, airtableBaseNames, airtablePageData, loadStore, probeAirtableInstances, registerMcp, registrationState,
     removeStoreFolder, saveStore, stageMcpServer, StoreFolderKey, unregisterMcp, validateDatabaseRoot
 } from './core/airtable';
 import { fileInto, isRole, libraryInfo, MediaRole, planLibrary } from './core/mediaLibrary';
@@ -37238,6 +37238,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          *  Read at draw time, so an agent added since the window
          *  opened is in the list. */
         agentNames: () => agents.map(a => a.name),
+        // U-229 — the secret pickers get the vault's NAMES only; Generate on the token row is web.token.new's revoke
+        secretNames: () => vault.list().map(s => s.name),
+        airtableBases: () => airtableBaseNames(context.globalStorageUri.fsPath),
+        newWebToken,
         /**
          * ‼️ X-193 — the variables, DRAWN from the dictionary rather
          * than repeated on the page, each beside what it is on this

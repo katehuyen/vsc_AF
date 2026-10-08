@@ -163,6 +163,11 @@ export interface FarmSettingsDeps extends AlertMessageDeps {
      *  Read live: an agent added since the window opened is in the picker on the
      *  next draw, and a name typed from memory into a text box is not. */
     agentNames?(): string[];
+    /** U-229 — the Secrets vault's names (never a value) and the local Airtable databases, for their pickers */
+    secretNames?(): string[];
+    airtableBases?(): string[];
+    /** U-229 — the token row's Generate: the same revoke as web.token.new */
+    newWebToken?(): Promise<unknown>;
 }
 
 

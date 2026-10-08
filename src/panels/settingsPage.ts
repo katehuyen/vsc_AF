@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { sanitizeValue, pathPreviews, SettingsCategory } from '../core/settingsops';
 import { flexSettingsState } from '../core/flexActions';
+import { settingValueSources } from '../core/settingSources';
 import { buildClaudeModel, validateRawClaudeSettings } from '../core/claudesettings';
 import { EngineId, ENGINE_IDS } from '../core/engines';
 import {
@@ -257,7 +258,7 @@ export class SettingsPage {
             // source its schema names (`x-af-values`). A hand-written list of
             // keys on the page would go stale the first time a setting is added;
             // a source declared in the manifest travels with the setting.
-            valueSources: { agent: this.deps.agentNames?.() ?? [] },
+            valueSources: settingValueSources(this.deps),
             // U-152 — derived from the flex registry on every draw: a new point gains its row here.
             flex: this.deps.flex ? flexSettingsState(this.deps.flex) : null
         };

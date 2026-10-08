@@ -18,12 +18,12 @@ export const knowledge: CatalogSection = {
         wikiRoot: { group: 'wiki', tier: 'basic' },
         wikiAgent: { group: 'wiki', tier: 'basic' },
         wikiEngine: { group: 'wiki' },
-        wikiModel: { group: 'wiki' },
+        wikiModel: { group: 'wiki', control: 'model', engineFrom: 'wikiEngine' },
         wikiEffort: { group: 'wiki' },
         embeddingsProvider: { group: 'search', tier: 'basic' },
         embeddingsModel: { group: 'search' },
         embeddingsBaseUrl: { group: 'search' },
-        embeddingsSecret: { group: 'search' },
+        embeddingsSecret: { group: 'search', control: 'secret' },
         semanticMaxSessions: { group: 'search' },
         searchToolTrailDays: { group: 'search', unit: 'days' }
     }

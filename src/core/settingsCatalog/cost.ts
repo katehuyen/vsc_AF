@@ -35,7 +35,7 @@ export const cost: CatalogSection = {
         quotaBrakeBasis: { group: 'brakes' },
         quotaGuardPercent: { group: 'brakes', tier: 'basic', unit: '%', zeroMeans: 'off' },
         quotaDowngradePercent: { group: 'brakes', unit: '%', zeroMeans: 'off' },
-        quotaDowngradeModel: { group: 'brakes' },
+        quotaDowngradeModel: { group: 'brakes', control: 'model', engine: 'claude' },
         trendAlertFactor: { group: 'forecast' },
         costAnomalyMinUsd: { group: 'forecast', unit: '$' },
         forecastDays: { group: 'forecast', unit: 'days' },

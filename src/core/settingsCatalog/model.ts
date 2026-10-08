@@ -15,9 +15,12 @@ export const MORE_GROUP: CatalogGroup = {
 
 export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
     const bySection = new Map<string, { item: SettingItem; rank: number; order: number }[]>();
+    const valueOf = new Map(items.map(i => [i.key.replace(/^agentFarm\./, ''), i.value]));
     for (const it of items) {
         const short = it.key.replace(/^agentFarm\./, '');
         const e = catalogEntry(short);
+        // U-229 — a model or effort picker lists one engine's values: its own, or the one its sibling setting names now
+        const engine = e?.engineFrom ? String(valueOf.get(e.engineFrom) ?? '').trim() || 'claude' : e?.engine;
         const sec = e ? SECTIONS.find(s => s.id === e.section)! : sectionForUnfiled(short);
         const known = e ? sec.groups.find(g => g.id === e.group) : undefined;
         const grp = known ?? MORE_GROUP;
@@ -32,6 +35,8 @@ export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
             ...(e?.unit ? { unit: e.unit } : {}),
             ...(e?.zeroMeans ? { zeroMeans: e.zeroMeans } : {}),
             ...(e?.control ? { control: e.control } : {}),
+            ...(e?.from ? { from: e.from } : {}),
+            ...(engine ? { engine } : {}),
             ...(terms ? { terms } : {}),
             place: `${sec.label} › ${grp.label}`
         };

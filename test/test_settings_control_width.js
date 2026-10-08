@@ -130,6 +130,23 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         tasks.some(b => /^opus$|^sonnet$|^haiku$/.test(String(b.t).trim()))
         && tasks.some(b => /@/.test(b.t)));
 
+    // U-229 — the pickers, among them stored values no list holds, which are drawn as themselves with a mark
+    const picks = measure('picksettings');
+    ok(`the picker rows answered with controls to measure (${picks.length})`, picks.length > 10);
+    report('picksettings', picks);
+    // ‼️ U-229 — A SWITCH IS SWITCH-SIZED. `.setnum > input` gave every input in a number's span the box's
+    // 110px, the 0-means-off switch in front of it too: a long bar with its knob near one end.
+    const swExpr = "(function(){return Array.prototype.map.call(document.querySelectorAll('.setswitch'),"
+        + "function(s){return Math.round(s.getBoundingClientRect().width);}).filter(function(w){return w>0;});})()";
+    const switches = (fixture) => {
+        node([path.join('test', 'render_page.js'), fixture]);
+        const raw = node([path.join('test', 'measure_page.js'), fixture, swExpr]);
+        try { return JSON.parse(raw.slice(raw.indexOf('['))); } catch { return []; }
+    };
+    const widths = switches('picksettings').concat(switches('disciplinesettings'));
+    ok(`every switch is drawn at switch size (${widths.length} measured, widest ${Math.max(0, ...widths)}px)`,
+        widths.length > 2 && widths.every(w => w <= 34));
+
     // ‼️ audit B-05 — …AND A BOX WITH NOTHING IN IT AT ALL, which is the same
     // defect at width zero. `agentFarm.wikiEngine` names `''` in its own enum
     // and defaults to it, so the schema-driven picker drew an option whose text

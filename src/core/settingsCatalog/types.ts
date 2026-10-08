@@ -13,8 +13,12 @@ export const UNITS = ['s', 'min', 'h', 'days', '%', '$', 'MB', 'tokens', 'chars'
 export type Unit = typeof UNITS[number];
 
 /** Where a control's values come from, when they are not the schema's own enum. */
-export const CONTROLS = ['agent', 'engine', 'model', 'effort', 'account', 'secret', 'weekday', 'hour', 'time', 'chips', 'orderedChips'] as const;
+export const CONTROLS = ['agent', 'engine', 'model', 'effort', 'account', 'secret', 'weekday', 'hour', 'time', 'chips', 'orderedChips', 'airtableBase', 'token'] as const;
 export type Control = typeof CONTROLS[number];
+
+/** U-229 — where a chips or ordered-chips control's choices come from (core/settingSources.ts, or the engine's models). */
+export const CHOICES = ['stage', 'enrichSection', 'model'] as const;
+export type Choices = typeof CHOICES[number];
 
 /** One key's record. The row's place in its section is its place in the file. */
 export interface CatalogRow {
@@ -27,8 +31,32 @@ export interface CatalogRow {
     unit?: Unit;
     zeroMeans?: 'off';
     control?: Control;
+    /** a chips or ordered-chips control's choices */
+    from?: Choices;
+    /** a model or effort picker's engine, fixed… */
+    engine?: string;
+    /** …or the short key of the setting that names it (empty there = claude) */
+    engineFrom?: string;
     /** words people type looking for this key that its key and text do not say */
     terms?: string;
+}
+
+/** What groupIntoSections writes onto a settings row from its catalog record. */
+export interface CatalogFields {
+    section?: string;
+    group?: string;
+    tier?: Tier;
+    label?: string;
+    summary?: string;
+    unit?: string;
+    zeroMeans?: 'off';
+    control?: string;
+    from?: string;
+    /** U-229 — the engine a model or effort picker lists, `engineFrom` already read */
+    engine?: string;
+    terms?: string;
+    /** 'Section › Group', the line a search result names its home with */
+    place?: string;
 }
 
 export interface CatalogGroup {

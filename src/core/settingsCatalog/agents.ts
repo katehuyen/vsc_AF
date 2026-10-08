@@ -21,7 +21,7 @@ export const agents: CatalogSection = {
         claudeDir: { group: 'folders' },
         extraClaudeDirs: { group: 'folders' },
         includeUnmatchedProjects: { group: 'folders' },
-        newAgentModel: { group: 'defaults', tier: 'basic' },
+        newAgentModel: { group: 'defaults', tier: 'basic', control: 'model', engine: 'claude' },
         agentEngineDefaults: { group: 'defaults' },
         superpowersPath: { group: 'superpowers' },
         superpowersDefaults: { group: 'superpowers' }

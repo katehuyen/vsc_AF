@@ -9030,6 +9030,7 @@
         },
         "agentFarm.claudeDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Path to the Claude Code data directory. Leave empty to use ~/.claude."
         },
@@ -9794,6 +9795,7 @@
         },
         "agentFarm.kapici.rulesDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Folder of your own Gatekeeper rules (one JSON file per rule). Empty = a _KAPICI folder inside every agent root. A project's .kapici folder is read too and wins over this one; the shipped rules come first."
         },
@@ -9948,6 +9950,7 @@
         },
         "agentFarm.toolOutDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "markdownDescription": "Where a **tool** step (and `tools.run`) writes what an ffmpeg recipe makes. Empty = an `af-tool` folder beside the input. A step or a call can name its own."
         },
@@ -10367,11 +10370,13 @@
         },
         "agentFarm.codexHome": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Codex CLI home whose sessions/ rollout transcripts feed the external-session history. Empty = ~/.codex."
         },
         "agentFarm.geminiDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Gemini CLI tmp dir whose chat files feed the external-session history. Empty = ~/.gemini/tmp."
         },
@@ -10383,6 +10388,7 @@
         },
         "agentFarm.agyHome": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Antigravity CLI home whose conversation index feeds the external-session history. Its own transcripts are protobuf inside per-conversation SQLite files and are not read; the index gives the title, the time and the workspace. Empty = ~/.gemini/antigravity-cli."
         },
@@ -10399,6 +10405,7 @@
         },
         "agentFarm.vaultDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "markdownDescription": "Your notes vault, if you keep one. This is what `${vault}` means in every folder setting below, so the reports, answers and wiki folders can be written once as `${vault}/…` instead of three absolute paths. Empty = there is no vault on this machine, and a setting that asks for `${vault}` is SKIPPED rather than half-built — a path with a variable missing from it would point somewhere nobody meant."
         },
@@ -10460,16 +10467,19 @@
         },
         "agentFarm.contentCalendarDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "markdownDescription": "The content calendar: a vault folder holding one note per publish, in the Full Calendar plugin's frontmatter (title, date, startTime, completed) plus platform, status (planned · producing · ready · published · cancelled), url, record and publishedAt. A publish step updates its note when it ends. Accepts the path variables `${vault}` `${workspace}` `${home}` — see agentFarm.vaultDir. Empty = `${vault}/01_INBOX/02_Calendar/CONTENT`."
         },
         "agentFarm.reportDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "markdownDescription": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Accepts the path variables `${vault}` `${workspace}` `${home}` `${today}` `${date:YYMMDD}` — see agentFarm.vaultDir. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/10_REPORT`."
         },
         "agentFarm.answerDir": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "markdownDescription": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Accepts the same path variables as agentFarm.reportDir. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`."
         },
@@ -10770,6 +10780,7 @@
         },
         "agentFarm.digestTtsFolder": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Folder the spoken briefing's audio file is saved into when agentFarm.digestTtsModel names a fal.ai model (e.g. a phone-synced folder). Empty = autoReportFolder."
         },
@@ -10956,6 +10967,7 @@
         },
         "agentFarm.autoReportFolder": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Folder for automatic fleet reports (e.g. a folder inside your Obsidian vault)."
         },
@@ -11181,6 +11193,7 @@
         },
         "agentFarm.projectsRoot": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Folder that holds your project folders. A new project is offered a folder inside it, and Rescan Project Folders walks it. Leave empty to choose a folder by hand for every project."
         },
@@ -11229,6 +11242,7 @@
         },
         "agentFarm.projectsArchiveRoot": {
           "type": "string",
+          "x-af-browse": "folder",
           "default": "",
           "description": "Where an archived project's FOLDER is moved to. Empty derives it next to the projects root, the way a vault already mirrors its own folders: <parent>/99_ARCHIVE/<root name>_ARCHIVE. Archiving is never automatic and never happens as a side effect of setting a project's status — it is its own confirmed action, it shows both paths first, it refuses to land on anything that already exists, and Restore is the exact inverse."
         },

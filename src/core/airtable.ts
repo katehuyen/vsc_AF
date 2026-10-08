@@ -84,6 +84,11 @@ export function expandedDatabaseRoots(store: AirtableStore): string[] {
     return store.databaseRoots.map(expandRoot);
 }
 
+/** U-229 — the local databases (engine instances) found under the roots, by name; nothing is started or asked. */
+export function airtableBaseNames(storageDir: string): string[] {
+    return discoverInstances(expandedDatabaseRoots(loadStore(storageDir))).map(i => i.name);
+}
+
 // ---------------------------------------------------------------- staging
 
 export function stagingDir(storageDir: string): string {

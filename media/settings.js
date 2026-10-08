@@ -135,11 +135,11 @@
         get ccRawSent() { return ccRawSent; }, set ccRawSent(v) { ccRawSent = v; }
     };
     // U-225 — the page's parts (media/afSetting*.js) in load order; each reads what the ones before it gave, through X
-    ['AFSettingList', 'AFSettingFields', 'AFSettingForms', 'AFSettingMap', 'AFSettingItem', 'AFSettingFolders',
+    ['AFSettingList', 'AFSettingFields', 'AFSettingForms', 'AFSettingMap', 'AFSettingPick', 'AFSettingItem', 'AFSettingFolders',
         'AFSettingClaude', 'AFSettingDocs', 'AFSettingWiki', 'AFSettingAccess', 'AFSettingSections', 'AFSettingFold', 'AFSettingPage',
         'AFSettingWire', 'AFSettingWireList', 'AFSettingWireShapes', 'AFSettingNav', 'AFSettingInbox'].forEach(p => Object.assign(X, window[p](X)));
     const { foldersSection, claudeSection, enginesSection, docOpenSection, sectionHtml, pageHtml, foldHtml, foldWire,
-        wirePage, wireAgents, wireProfiles, wireList, wireShapes, focusKey, ctxDo, onMessage } = X;
+        wirePage, wireAgents, wireProfiles, wireList, wireShapes, wirePicks, focusKey, ctxDo, onMessage } = X;
 
     /** `bodyOnly` (U-224): rewrite #setbody alone and skip every binding outside it — the
      *  header, the setting sets bar and the search box keep theirs, and the box keeps the caret. */
@@ -200,6 +200,7 @@
         wirePage(bodyOnly, enterLetsGo);
         wireList();
         wireShapes();
+        wirePicks();
 
         wireAgents(enterLetsGo);
         // U-228 — the setting sets are the last section, inside #setbody

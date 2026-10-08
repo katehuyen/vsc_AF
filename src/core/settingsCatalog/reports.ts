@@ -10,7 +10,7 @@ export const reports: CatalogSection = {
         { id: 'autoReport', label: 'Automatic reports', about: 'Whether reports are written by themselves, how often, where to, and what they include.' }
     ],
     rows: {
-        dailyDigest: { group: 'digests', tier: 'basic' },
+        dailyDigest: { group: 'digests', tier: 'basic', control: 'time' },
         weeklySummary: { group: 'digests', tier: 'basic' },
         digestTtsModel: { group: 'spoken' },
         digestTtsFolder: { group: 'spoken' },

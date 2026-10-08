@@ -6546,6 +6546,15 @@
       ]
     },
     {
+      "capability": "settingsSectionMessages.ts#webTokenNew",
+      "ui": [
+        "page:settingsSectionMessages.ts#webTokenNew"
+      ],
+      "ops": [
+        "web.token.new"
+      ]
+    },
+    {
       "capability": "settingsValueMessages.ts#applyProfile",
       "ui": [
         "page:settingsValueMessages.ts#applyProfile"
