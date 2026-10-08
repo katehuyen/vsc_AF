@@ -182,6 +182,14 @@ input[type="text"], input[type="password"], select {
     border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px;
     padding: 5px 8px;
 }
+/* U-227 — a number, time or multi-line box wears the text box's theme. Left to the
+   browser they were WHITE in the dark theme, beside dark text boxes in the same column.
+   Colours only: a page that sizes or fonts its own boxes keeps doing so. */
+input[type="number"], input[type="time"], textarea {
+    color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-input-border, transparent); border-radius: 4px;
+}
+input[type="checkbox"], input[type="radio"] { accent-color: var(--vscode-button-background); }
 .card.click { cursor: pointer; }
 .card.click:hover { background: var(--vscode-list-hoverBackground); }
 mark {
