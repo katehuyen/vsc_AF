@@ -18071,7 +18071,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard, cancelSuccessorRow); },
         endChain: (chain, by, why) => { const r = endRecords(chainBoardDeps, { chain, by, why }); if (!r.ok) { throw new Error(r.why); } }
     }, (title, body) => {
-        noticesStore.add({ agentName: 'agent-farm', type: 'warning', level: 2, title, body, sourceKey: `stale:${Date.now()}` });
+        noticesStore.add({ agentName: 'agent-farm', type: 'report', level: 2, title, body, sourceKey: `stale:${Date.now()}` });
         NoticesPanel.refreshIfOpen();
         updateNoticesBadge();
     });
