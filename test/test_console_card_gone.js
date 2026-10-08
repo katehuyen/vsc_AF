@@ -43,6 +43,8 @@ const setup = () => {
     const cards = {};
     let seq = 0;
     const tm = new T.TaskManager(path.join(dir, 'tasks.json'), () => [agent], () => false, () => '', {
+        // the seat under test: one per agent, stated — the default (0 = no per-agent limit) holds nobody
+        maxConcurrentPerAgent: () => 1,
         startConsoleTask: () => { const id = `cs${++seq}-x`; cards[id] = { state: 'starting', answered: false }; return { sessionId: id }; },
         consoleTaskState: id => cards[id]
     });
