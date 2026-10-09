@@ -159,11 +159,28 @@
         }
         const who = servedBy(I);
         if (!who) { return ''; }
+        // X-521 — a run of OpenCode's own model wears that model's name; the colour stays the engine's provider
         return '<span class="af-prov ' + cls({ providerId: who })
-            + (extra ? ' ' + extra : '') + '">' + esc(cut(label({
+            + (extra ? ' ' + extra : '') + '">' + esc(cut(I.modelLabel || label({
                 providerId: who,
                 providerLabel: id(who) === id(I.providerId) ? I.providerLabel : ''
             }), max)) + '</span>';
+    }
+
+    /** X-521 — where the answer came from, on OpenCode only: a lent route, or the engine's own provider (its name only here). */
+    function originLine(I) {
+        if (I.engine !== 'opencode') { return ''; }
+        if (I.origin === 'agent-farm-profile') { return t('Origin: Agent Farm route · lent at launch'); }
+        if (I.origin === 'engine-native') { return t('Origin: OpenCode\'s own provider · {name}', { name: label(I) }); }
+        return '';
+    }
+
+    /** X-521 — on an OpenCode route, the model that is running (reported, else requested) under the route's label. */
+    function runningLine(I) {
+        if (I.engine !== 'opencode' || I.origin !== 'agent-farm-profile') { return ''; }
+        const rep = (I.reportedModels || []).filter(Boolean);
+        const now = rep.length ? rep[rep.length - 1] : I.requestedModelRef;
+        return now ? t('Model running: {model}', { model: now }) : '';
     }
 
     /**
@@ -223,6 +240,8 @@
                 + (I.providerProfileRevision ? ' · profile revision ' + I.providerProfileRevision : '')
                 : 'Route: none declared — the engine\'s own default answered',
             ...nameLines(I),
+            originLine(I),
+            runningLine(I),
             // ‼️ ONLY WHEN IT ADDS SOMETHING. On a run where the engine named
             // what was declared this restates the line above it, and a panel
             // that repeats itself is one a reader stops opening.
@@ -244,6 +263,7 @@
             return (I.reportedProviderIds || []).map(label).join(' → ')
                 + ' — this run changed provider between turns';
         }
+        if (I.modelLabel) { return t('{model} — OpenCode\'s own model this run is answered by', { model: I.modelLabel }); }
         const who = label({ providerId: servedBy(I), providerLabel: I.providerLabel });
         return who ? who + ' — the route this run is served by' : '';
     }

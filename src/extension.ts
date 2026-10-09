@@ -238,7 +238,7 @@ import {
     dropTestsFor, keyFor, providerHealth, ProviderHealthInput, ProviderHealthReport, ProviderTestRecord,
     smokeRefusal, testKeyOf, testModelRef
 } from './core/providerHealth';
-import { routeIdOn, routeProfilesOn, routeSourceOf, routeValue } from './core/opencodeRoutes';
+import { routeIdOfWire, routeIdOn, routeProfilesOn, routeSourceOf, routeValue } from './core/opencodeRoutes';
 import { sharedRouteEnv, sharedRoutePrint } from './core/opencodeSharedRoutes';
 import { contractDue, contractProblem, ContractResult } from './core/opencodeContract';
 import { runContractProbe } from './core/opencodeContractProbe';
@@ -24738,6 +24738,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const labelOf = (pid: string): string =>
             form.providers.find(c => c.id === pid)?.label
             || providerProfiles().find(p => p.id === pid)?.label || pid;
+        /**
+         * ‼️ X-521 — ON OPENCODE THE BADGE NAMES WHAT ANSWERS, NEVER THE SERVICE: a lent
+         * route by its label in its company's colour (the same chip a Claude run on it
+         * wears), OpenCode's own model by its catalog name (else its reference).
+         */
+        const ocMark = (pid: string, ref?: string): { label: string; shape: string } | undefined => {
+            if (engineOf(engine).id !== 'opencode' || !pid) { return undefined; }
+            const rid = routeIdOfWire(pid);
+            if (rid) {
+                const p = providerProfiles().find(x => x.id === rid);
+                const n = routeName(rid, '', routeNamesNow());
+                return { label: p?.label || n?.label || labelOf(pid), shape: p?.providerId || n?.providerId || pid };
+            }
+            const m = (ref ?? '').trim();
+            return { label: (routeNamesNow().models ?? {})[m] || m || labelOf(pid), shape: pid };
+        };
         // A card launched with no route but running on a provider the engine
         // names: the mark is that provider, and there is no earlier one to
         // contrast it with.
@@ -24745,28 +24761,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // only worth drawing when it says something that one does not.
         const current = servingNow || id;
         const lastTurn = servedLast && servedLast !== current
-            ? { lastTurn: { id: servedLast, label: labelOf(servedLast) } } : {};
+            ? { lastTurn: { id: servedLast, label: ocMark(servedLast, reportedModelRef)?.label ?? labelOf(servedLast) } } : {};
         if (!id) {
+            const mark = ocMark(servingNow, modelRef);
             return {
                 // X-110 — on this engine a provider IS its own id, so the
                 // colour key and the route id are the same string.
-                id: servingNow, shape: servingNow,
-                label: labelOf(servingNow), noun: form.noun,
+                id: servingNow, shape: mark?.shape ?? servingNow,
+                label: mark?.label ?? labelOf(servingNow), noun: form.noun,
                 ...lastTurn, scopeNote: form.scopeNote
             };
         }
-        const profile = providerProfiles().find(p => p.id === id);
+        // X-521 — an OpenCode card started on its own provider: the model's name while that provider answers
+        if (!routeIdOfWire(id) && (!servingNow || servingNow === id)) {
+            const mark = ocMark(id, modelRef);
+            if (mark) {
+                return {
+                    id, shape: mark.shape, label: mark.label, noun: form.noun,
+                    ...lastTurn, ...((tier ?? '').trim() ? { tier } : {}), scopeNote: form.scopeNote
+                };
+            }
+        }
+        // X-521 — an OpenCode card started on a lent route names it by its wire id (`af-<id>`); the profile is the bare id
+        const bareId = engineOf(engine).id === 'opencode' ? (routeIdOfWire(id) || id) : id;
+        const profile = providerProfiles().find(p => p.id === bareId);
         // S-137 — a profile's one name (core/routeName.ts): current, or the last one a launch recorded once removed.
         const names = routeNamesNow();
-        const named = profile || (names.last[id.toLowerCase()] && !form.providers.some(c => c.id === id))
-            ? routeName(id, '', names) : undefined;
+        const named = profile || (names.last[bareId.toLowerCase()] && !form.providers.some(c => c.id === id))
+            ? routeName(bareId, '', names) : undefined;
         return {
             id,
             // X-110 — the company behind the profile, which is what the chip is
             // coloured by: two profiles on Kimi are one colour, not two.
             shape: profile?.providerId || named?.providerId || id,
             ...(servingNow && servingNow !== id
-                ? { now: { id: servingNow, label: labelOf(servingNow) } } : {}),
+                ? { now: { id: servingNow, label: ocMark(servingNow, modelRef)?.label ?? labelOf(servingNow) } } : {}),
             ...lastTurn,
             // The route's own name; a profile deleted since keeps the last name a
             // launch recorded (the raw id only when none did) — a card must not stop
@@ -26456,9 +26485,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let routeNamesMemo: { ms: unknown; sig: string; names: RouteNames } | undefined;
     const routeNamesNow = (): RouteNames => {
         const ms = launchManifests(), ps = providerProfiles();
-        const sig = JSON.stringify(ps.map(p => [p.id, p.label, p.providerId]));
+        const sig = JSON.stringify([ps.map(p => [p.id, p.label, p.providerId]), opencodeCatalog.fetchedAt ?? 0]);
         if (!routeNamesMemo || routeNamesMemo.ms !== ms || routeNamesMemo.sig !== sig) {
-            routeNamesMemo = { ms, sig, names: routeNames(ps, ms) };
+            // X-521 — and OpenCode's own models by their catalog names (a lent route's `af-` rows are the route's, never these)
+            const models: Record<string, string> = {};
+            for (const r of readOpenCodeCatalog(opencodeCatalog.text).rows) {
+                if (!r.providerId.startsWith('af-') && r.label) { models[r.ref] = r.label; }
+            }
+            routeNamesMemo = { ms, sig, names: { ...routeNames(ps, ms), models } };
         }
         return routeNamesMemo.names;
     };

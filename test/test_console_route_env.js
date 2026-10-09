@@ -181,7 +181,7 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
         /const consoleRouteOf = \([\s\S]{0,2600}?providerOfModelRef\(/.test(ext)
         && !/consoleRouteOf[\s\S]{0,2600}?modelRef\.split\('\/'\)/.test(ext));
     ok('…and the launch record is not overwritten by it — `now` is its own field',
-        /now: \{ id: servingNow, label: labelOf\(servingNow\) \}/.test(ext));
+        /now: \{ id: servingNow, label: ocMark\(servingNow, modelRef\)\?\.label \?\? labelOf\(servingNow\) \}/.test(ext));
     /**
      * ‼️ X-105 — AND THE REPORTED HALF IS READ THE SAME WAY, FROM THE TURN THAT
      * ALREADY RAN. X-102 keeps declared and reported apart precisely because

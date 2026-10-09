@@ -95,7 +95,7 @@ const manifest = (profileId, providerId, providerLabel, at) => ({
     ok('…and every runIdentity call over a manifest passes them', ids.length >= 1 && ids.every(([, a]) => /names: routeNamesNow\(\)/.test(a)));
     const ext = read('src/extension.ts');
     ok('…and the Console card asks the same rule for a profile, removed or not',
-        /routeName\(id, '', names\)/.test(ext) && /\.\.\.\(named\?\.removed \? \{ removed: true \} : \{\}\)/.test(ext)
+        /routeName\(bareId, '', names\)/.test(ext) &&/\.\.\.\(named\?\.removed \? \{ removed: true \} : \{\}\)/.test(ext)
         && /shape: profile\?\.providerId \|\| named\?\.providerId \|\| id/.test(ext));
     ok('…and the Turns page and its export are given them',
         /identityOf\(deps\.launchManifests\?\.\(\), deps\.routeNames\?\.\(\)\)/.test(read('src/panels/turnsPanel.ts'))

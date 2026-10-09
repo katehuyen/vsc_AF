@@ -21,6 +21,30 @@ export interface RouteNames {
     current: Record<string, RouteNameEntry>;
     /** The newest label (and company) a launch recorded for each profile id. */
     last: Record<string, RouteNameEntry>;
+    /** X-521 — OpenCode's own catalog: a model reference → its display name (CatalogModelRow.label). */
+    models?: Record<string, string>;
+}
+
+/**
+ * X-521 — WHAT THE SECOND BADGE SAYS ON A RUN OF OPENCODE'S OWN MODEL: the
+ * catalog's name for the model it ran on (reported, else requested), else the
+ * reference itself. '' on any other run — a route keeps its label, and a Claude
+ * run's identity is untouched. The reference is matched, never a display name
+ * cut at '/' (a model id may hold one).
+ */
+export function runModelLabel(
+    engine: string, origin: string, reportedProviderIds: readonly string[], reportedModels: readonly string[],
+    requestedModelRef: string, models: Record<string, string> | undefined
+): string {
+    if (engine !== 'opencode' || origin !== 'engine-native') { return ''; }
+    const bare = String(reportedModels[reportedModels.length - 1] ?? '').trim();
+    const prov = reportedProviderIds.length === 1 ? String(reportedProviderIds[0]).trim() : '';
+    const ref = bare ? (prov && !bare.startsWith(prov + '/') ? `${prov}/${bare}` : bare) : String(requestedModelRef ?? '').trim();
+    if (!ref) { return ''; }
+    const table = models ?? {};
+    if (table[ref]) { return table[ref]; }
+    const tails = Object.keys(table).filter(k => k.slice(k.indexOf('/') + 1) === ref);
+    return tails.length === 1 ? table[tails[0]] : ref;
 }
 
 export interface RouteName {

@@ -31,7 +31,7 @@
 
 import { LaunchManifest, manifestIndex, manifestOf } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
-import { RouteNames, routeName } from './routeName';
+import { RouteNames, routeName, runModelLabel } from './routeName';
 import {
     hasProviderConflict, legacyIdentity, ProviderIdentity, proofOf, scopeAllowsTurnChange,
     TurnRuntimeIdentity, turnIdentity
@@ -348,6 +348,8 @@ export interface RunIdentity {
     providerLabelAtLaunch?: string;
     /** S-137 — the profile was removed; `providerLabel` is the last name it carried. */
     providerProfileRemoved?: boolean;
+    /** X-521 — on a run of OpenCode's own model only: that model's catalog name (routeName.ts runModelLabel). */
+    modelLabel?: string;
     requestedModelRef: string;
     reportedProviderIds: string[];
     reportedModels: string[];
@@ -398,16 +400,20 @@ export function runIdentity(
     const id = declaredOf(manifest, str(engine) || 'claude');
     const binding = bindingOf(manifest, id, opts);
     const named = routeName(str(id.providerProfileId), str(id.providerLabel), opts?.names);
+    const origin = binding === 'external' ? 'external' : id.origin;
+    const modelLabel = runModelLabel(id.engine || str(engine) || 'claude', String(origin ?? ''),
+        drift.reportedProviderIds, drift.reportedModels, str(id.requestedModelRef), opts?.names?.models);
     return {
         engine: id.engine || str(engine) || 'claude',
         providerId: str(id.providerId),
         providerLabel: named ? named.label : str(id.providerLabel),
         ...(named?.launchedAs ? { providerLabelAtLaunch: named.launchedAs } : {}),
         ...(named?.removed ? { providerProfileRemoved: true } : {}),
+        ...(modelLabel ? { modelLabel } : {}),
         // ‼️ An EXTERNAL run's origin is `external` and says so, rather than
         // borrowing `legacy-inherit` — "nobody was asked" is a statement about
         // our own records and is simply untrue of somebody else's transcript.
-        origin: binding === 'external' ? 'external' : id.origin,
+        origin,
         scope: id.scope,
         providerProfileId: str(id.providerProfileId),
         providerProfileRevision: id.providerProfileRevision ?? null,
