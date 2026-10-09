@@ -187,7 +187,7 @@
 
     /** The filter row — a query box, the pickers, a reset — then `o.actions`, the bulk bar on its own line. */
     function controls(prefix, o) {
-        return `<div class="a2a-controls">
+        return `<div class="a2a-controls afms-fit">
             <input id="${prefix}-search" type="search" placeholder="🔍 search" value="${esc(o.query)}"
                 title="${esc(o.searchTip)}">
             ${o.pickers.map(p => window.AFFilter.multi({ id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title })).join('')}
@@ -227,7 +227,7 @@
 
     const STYLE = `<style>
         .a2a-controls { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
-        .a2a-controls input[type=search] { min-width:160px; padding:3px 6px; }
+        .a2a-controls input[type=search] { flex:1 1 120px; min-width:120px; max-width:160px; padding:3px 6px; }
         .a2a-day { margin:14px 0 4px; font-size:11px; opacity:.6; text-transform:uppercase; letter-spacing:.04em; }
         .a2a-card { border:1px solid var(--vscode-panel-border); border-radius:6px; margin:4px 0; background:var(--vscode-editorWidget-background); }
         .a2a-card.a2a-focus { outline:2px solid var(--vscode-focusBorder); }

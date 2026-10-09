@@ -48,6 +48,8 @@
            renamed, hidden or reordered — the buttons here are simply denser
            than the page's own body buttons, which keep their normal size. */
         .af-head-bar button, .af-head-more button { font-size:11px; padding:3px 8px; }
+        /* a filter row here measures its pickers in the 11px button's ch (common.css .afms-fit) */
+        .af-head-bar .afms-fit .afms, .af-head-more .afms-fit .afms { font-size:11px; }
         .af-head-bar .af-nav-n { opacity:.85; }
         /* ‼️ U-68 — THE ONES THAT ARE THE SAME EVERYWHERE ARE DRAWN AS THEIR
            ICON ALONE. Evals, ⌕, 🔌, ⚙, ⟳ and ? are on every page in the same order,

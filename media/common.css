@@ -215,6 +215,22 @@ mark {
     font-size: 12px; padding: 3px 9px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; text-align: left;
 }
+/* U-244 — A FILTER ROW THAT GIVES GROUND BEFORE IT WRAPS. On a wrapping row
+   marked `afms-fit`, each picker is placed from HALF of what it reserved
+   (--afms-w) and grows back to all of it: with room nothing changes, crowded the
+   pickers narrow (text-overflow and the hover carry the rest), and a picker moves
+   to the next line only when even half does not fit. Widths follow the row, never
+   the value, so the row still does not rock (A-14). The reserved width is in the
+   BUTTON's `ch`, so the wrapper is drawn at the button's size: 12px here, and a
+   bar that draws its buttons smaller says so (pageHeader.js). A phone keeps its
+   sideways row. */
+.afms-fit .afms { font-size: 12px; }
+html:not(.af-phone) .afms-fit .afms {
+    display: flex; flex: 1 1 calc(var(--afms-w, 24ch) / 2);
+    min-width: calc(var(--afms-w, 24ch) / 2); max-width: var(--afms-w, 24ch);
+}
+html:not(.af-phone) .afms-fit .afms > .tip-free { display: flex; flex: 1 1 auto; min-width: 0; }
+html:not(.af-phone) .afms-fit .afms-btn { flex: 1 1 auto; width: auto !important; min-width: 0; box-sizing: border-box; }
 /* ‼️ SHUT MEANS SHUT, WHATEVER THE PAGE'S OWN LAYOUT RULES SAY.
    `hidden` is an ATTRIBUTE, and the browser enforces it with `[hidden]
    { display: none }` from its own stylesheet — which any class selector

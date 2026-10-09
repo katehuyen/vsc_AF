@@ -476,7 +476,7 @@
     function controls() {
         const total = (DATA.notices || []).length, unread = DATA.unread || 0, q = DATA.openQuestions || 0;
         const sortOpts = SORTS.map(([k, l]) => C.option(k, tr('Sort: {how}', { how: tr(l) }), { selected: sortKey === k })).join('');
-        return `<div class="nt-controls">
+        return `<div class="nt-controls afms-fit">
             <input id="nt-search" type="search" placeholder="${esc(lab('🔍 search (text or #tag)'))}" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip(tr('Searched against the title, the body, every section, the tags and the agent. A query that STARTS with # searches the tags only.')))}">
             ${chip('all', tr('All ({n})', { n: total }), fMode === 'all')}
@@ -558,7 +558,9 @@
     const STYLE = `<style>
         .nt-controls { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
         .nt-controls select, .nt-controls input { padding:3px 6px; }
-        #nt-search { min-width:180px; }
+        /* U-244 — the search and the sort give ground with the pickers (common.css .afms-fit) */
+        #nt-search { flex:1 1 120px; min-width:120px; max-width:180px; }
+        html:not(.af-phone) #nt-sort { flex:1 1 90px; min-width:90px; max-width:max-content; }
         .af-chip { padding:3px 10px; border-radius:12px; }
         .af-chip.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:var(--af-hc-pick, none); }
         button.secondary.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); box-shadow:inset 0 0 0 1px var(--vscode-focusBorder, #007fd4); font-weight:600; }

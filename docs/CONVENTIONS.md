@@ -1457,6 +1457,15 @@ control it cleared, each pointing at the other's block.
   option may be a sentence in the open MENU and only its head on the button** —
   the menu is where you are choosing between them and has a line each; the
   button is a readout, and the hover carries the sentence whole.
+- **A ROW OF PICKERS GIVES GROUND BEFORE IT WRAPS: put `afms-fit` on it**
+  (`media/common.css`). Each picker is placed from half of what it reserved
+  (`--afms-w`, which the component publishes) and grows back to all of it, so
+  with room nothing changes and a crowded row narrows its pickers rather than
+  sending them to a second line; widths follow the row, never the value. The
+  reserve is in the BUTTON's `ch`, so a bar that draws its buttons at another
+  size draws the picker wrapper at that size too (`pageHeader.js` does for its
+  11px bar). Notices, Queue and the two A2A pages use it;
+  `test/test_filter_row_fit.js` measures them.
 - **Do not add a second signal for what the button already says in words.**
   `state: 2/4` is not `state: every state`; an inset bar and a re-tinted fill on
   top of that repeat the fact and read, on a small button with rounded corners,

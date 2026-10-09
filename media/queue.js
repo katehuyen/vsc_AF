@@ -719,7 +719,7 @@
     }
 
     function controls(items) {
-        return `<div class="q-controls">
+        return `<div class="q-controls afms-fit">
             <input id="q-search" type="search" placeholder="${esc(lab('🔍 search'))}" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip(t('Searched against the item, its target, the engine/model/effort it asks for, its author, its resolution, its stamp and its tags.')))}">
             ${filterPickers().map(p => window.AFFilter.multi({
@@ -735,7 +735,7 @@
     const STYLE = `<style>
         .q-controls { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
         .q-controls select, .q-controls input[type=search] { padding:3px 6px; }
-        #q-search { min-width:160px; }
+        #q-search { flex:1 1 120px; min-width:120px; max-width:160px; }
         .q-drop { display:inline-flex; gap:3px; align-items:center; font-size:11px; opacity:.85; }
         .q-addbar { margin:6px 0; }
         .q-add { margin:8px 0; padding:10px; border:1px solid var(--vscode-panel-border); border-radius:6px; background:var(--vscode-editorWidget-background); }
