@@ -80,6 +80,7 @@
             .setcardact { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
             .setcarddet { margin-top:6px; }
             .setcarddet > summary { cursor:pointer; }
+            .setcard.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
             @media (max-width:700px) {
                 .setitem.srow { grid-template-columns:minmax(0, 1fr); row-gap:6px; }
             }`;

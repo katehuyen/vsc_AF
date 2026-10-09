@@ -4,6 +4,7 @@
     'use strict';
     let X, C, sectionMatches;
     const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    function N_(s) { return s; }
 
     /**
      * Which editor a markdown file opens in — the setting behind every "Open"
@@ -96,15 +97,17 @@
         if (!p) { return box; }
 
         const n = (p.items || []).length;
-        const src = p.source === 'setting' ? 'the file you chose'
-            : p.source === 'built-in' ? 'the built-in path (you have not chosen one)'
-                : 'nothing';
-        const state = p.error
-            ? `<div class="seterr">⚠ ${C.esc(p.error)}</div>`
-            : p.file
-                ? `<div class="setdesc"><b>${n}</b> prompt${n === 1 ? '' : 's'} read from ${C.esc(src)}${p.empty
-                    ? ` · ${p.empty} empty block${p.empty === 1 ? '' : 's'} skipped` : ''}</div>`
-                : `<div class="setdesc">No file yet. Press <b>📁 Choose a file…</b> — your machine's own
+        const src = p.source === 'setting' ? t('the file you chose') : t('the built-in path (you have not chosen one)');
+        const many = (k, one, other) => (k === 1 ? t(one) : t(other, { n: k }));
+        // U-233 — one sentence of where it stands: what was READ, not the path
+        const status = p.error ? p.error
+            : !p.file ? t('No prompts file yet.')
+                : !n ? t('No prompt found in {src}: only text inside ``` fences is offered.', { src })
+                    : t('{count} read from {src}{skipped}.', {
+                        count: many(n, N_('One prompt'), N_('{n} prompts')), src,
+                        skipped: p.empty ? ' · ' + many(p.empty, N_('1 empty block skipped'), N_('{n} empty blocks skipped')) : ''
+                    });
+        const noFile = p.file || p.error ? '' : `<div class="setdesc">No file yet. Press <b>📁 Choose a file…</b> — your machine's own
                     file picker opens. There is a built-in path (<code>${C.esc(p.builtIn || '')}</code>)
                     that is used automatically whenever it exists, which is why nothing had to be cleared
                     on a machine where it does not.</div>`;
@@ -133,31 +136,23 @@
             list = `<div class="promptlist">${rows.join('')}</div>`;
         }
 
-        return `
-            <p class="muted small" style="max-width:760px">The phrases you say to an agent over and over,
-            kept in <b>your own markdown file</b> and offered where you need them: in the <b>Console</b>,
-            <b>right-click</b> any button that sends text — <i>Send · Send into turn · Send after turn ·
-            Start session</i> — and pick one. It is <b>pasted at the caret</b>, never sent: the press that
-            sends is still yours. Only text inside <code>\`\`\`</code> fences is offered, so the prose around
-            the blocks stays yours to write notes in. A block's name is its fence info string, the line above
-            it, or its own first line; the nearest heading becomes the group.</p>
-            <div class="setitem" data-item="agentFarm.promptSnippetsFile">
-                <div class="sethead"><span class="setname">Prompts file</span>
-                    ${p.file ? `<span class="rootbadge">${C.esc(p.source === 'setting' ? 'chosen' : 'built-in')}</span>` : ''}
-                </div>
-                <div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${p.file ? C.esc(p.file) : '—'}</div>
-                ${state}
-                <div class="btnrow">
-                    <button id="promptspick">📁 ${p.file ? 'Change file…' : 'Choose a file…'}</button>
-                    <button class="secondary" id="promptsopen" ${p.file ? '' : 'disabled'}
-                        title="Open it in the editor — add a \`\`\` block and it is in the list the moment you press Re-read">✎ Open the file</button>
-                    <button class="secondary" id="promptsreload" title="Read the file again — it is a document you edit elsewhere">⟳ Re-read</button>
-                    ${item && String(item.value ?? '').trim() ? `<button class="secondary" id="promptsdefault"
-                        title="Forget the file you chose and go back to the built-in path">↺ Use the built-in path</button>` : ''}
-                </div>
+        return X.cardHtml({
+            id: 'cat-prompts', item: 'agentFarm.promptSnippetsFile', icon: '💬', title: (cat && cat.label) || t('Saved prompts'),
+            state: p.error || (p.file && !n) ? 'warn' : p.file ? 'ok' : 'off', status,
+            actions: `<button class="small" id="promptspick">📁 ${C.esc(p.file ? t('Change file…') : t('Choose a file…'))}</button>
+                <button class="secondary small" id="promptsopen" ${p.file ? '' : 'disabled'}
+                    title="${C.esc(t('Open it in the editor — add a ``` block and it is in the list the moment you press Re-read'))}">✎ ${C.esc(t('Open the file'))}</button>
+                <button class="secondary small" id="promptsreload" title="${C.esc(t('Read the file again — it is a document you edit elsewhere'))}">⟳ ${C.esc(t('Re-read'))}</button>`,
+            tip: (cat && cat.about ? cat.about + '\n\n' : '') + t('The phrases you say to an agent over and over, kept in your own markdown file and offered where you need them: in the Console, right-click any button that sends text (Send, Send into turn, Send after turn, Start session) and pick one. It is pasted at the caret, never sent: the press that sends is still yours. Only text inside ``` fences is offered, so the prose around the blocks stays yours to write notes in. A block\'s name is its fence info string, the line above it, or its own first line; the nearest heading becomes the group.'),
+            open: !!p.error || !!X.filter,
+            details: `<div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${p.file ? C.esc(p.file) : '—'}
+                    ${p.file ? `<span class="rootbadge">${C.esc(p.source === 'setting' ? t('chosen') : t('built-in'))}</span>` : ''}</div>
+                ${noFile}
                 ${box}
-                ${list}
-            </div>`;
+                ${item && String(item.value ?? '').trim() ? `<div class="btnrow"><button class="secondary small" id="promptsdefault"
+                    title="${C.esc(t('Forget the file you chose and go back to the built-in path'))}">↺ ${C.esc(t('Use the built-in path'))}</button></div>` : ''}
+                ${list}`
+        });
     }
 
     window.AFSettingDocs = function (ctx) {

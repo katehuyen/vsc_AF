@@ -1,6 +1,6 @@
 // U-233 — a special block of Farm Settings is one card (media/afSettingSections.js cardHtml): a state dot, its name,
 // one sentence of where it stands and its primary action on one line; the long explanation on the name's AFTip and
-// the extra boxes behind Details. Driven on the real model (test/fixtures/allsettings.js) with "Open with" data.
+// the extra boxes behind Details. Driven on the real model (test/fixtures/allsettings.js), one block's data at a time.
 const { runPage } = require('./lib_page_dom.js');
 
 let pass = 0, fail = 0;
@@ -122,6 +122,51 @@ const between = (p, a, b) => (p.html().split(`id="${a}"`)[1] || '').split(b)[0];
     ok('a settings.json that does not parse is the warning, Details open on the raw editor', /data-state="warn"/.test(bad)
         && /class="setcardsum">Its settings\.json could not be parsed, so edits are blocked until the raw editor fixes it\.</.test(bad)
         && /data-dflt="1" open>/.test(bad) && /Unexpected token/.test(bad));
+}
+
+// ---- Saved prompts and Superpowers: a group its card draws whole — the card names it, no heading above it
+const PROMPTS = extra => Object.assign({ file: 'D:\\vault\\Prompts.md', source: 'setting', builtIn: 'D:\\b.md', empty: 0,
+    items: [{ label: 'Review', group: 'Code', text: 'Read the flow before you change it.', line: 4 },
+        { label: 'Turkish', group: 'Code', text: 'Answer in Turkish.', line: 9 }] }, extra);
+const pcard = p => between(p, 'grp-general-prompts', 'class="setgroup"');
+const general2 = pr => runPage(fx.script, Object.assign(fx.data(), { prompts: pr }), {}, { open: ['general'] });
+{
+    const p = general2(PROMPTS());
+    const c = pcard(p);
+    ok('Saved prompts: the group opens with its card, its heading not drawn twice', /^>\s*<div class="setcard" id="cat-prompts" data-state="ok" data-item="agentFarm\.promptSnippetsFile">/.test(c)
+        && !/setgrouph/.test(c) && /class="setcardt">💬 Saved prompts</.test(c));
+    ok('…its sentence is what was READ', /class="setcardsum">2 prompts read from the file you chose\.</.test(c));
+    ok('…Choose, Open and Re-read on the same line', /class="setcardact"><button class="small" id="promptspick">📁 Change file…<\/button>[^]*id="promptsopen" (?!disabled)[^]*id="promptsreload"/.test(c));
+    ok('…the group\'s about and the long explanation on the name\'s AFTip', /The file your saved prompts are read from/.test(c) && /pasted at the caret/.test(c));
+    ok('…the path, its box and every prompt behind a closed Details', /data-card="cat-prompts" data-dflt="0"><summary>/.test(c)
+        && c.indexOf('data-set="agentFarm.promptSnippetsFile"') > c.indexOf('<summary>') && /promptlbl">Review/.test(c));
+    el(p, 'promptsreload').click();
+    ok('Re-read still posts promptsReload', p.last().type === 'promptsReload');
+    const off = pcard(general2(PROMPTS({ file: '', source: 'none', items: [] })));
+    ok('no file is Off, said in one sentence, Open dead', /data-state="off"/.test(off) && /class="setcardsum">No prompts file yet\.</.test(off) && /id="promptsopen" disabled/.test(off));
+    const none = pcard(general2(PROMPTS({ items: [] })));
+    ok('a file with no fenced block is the warning', /data-state="warn"/.test(none) && /class="setcardsum">No prompt found in the file you chose/.test(none));
+}
+const SP = require('./fixtures/spsettings.js');
+const spPage = sp => runPage(fx.script, Object.assign(SP.data(), { superpowers: sp }), {}, { open: ['agents'] });
+const scard = p => between(p, 'grp-agents-superpowers', 'class="setgroup"');
+{
+    const p = spPage(SP.ready());
+    const c = scard(p);
+    ok('Superpowers: the group opens with its card, its heading not drawn twice', /^>\s*<div class="setcard" id="cat-superpowers" data-state="ok" data-item="agentFarm\.superpowersPath">/.test(c)
+        && !/setgrouph/.test(c) && /class="setcardt">⚡ Superpowers</.test(c));
+    ok('…its sentence: the skills behind the hook, and who starts with it on', /class="setcardsum">8 skills behind the hook; 1 of 5 agents start with it on\.</.test(c));
+    ok('…Choose the folder, Re-scan and Reveal on the same line', /class="setcardact"><button class="secondary small" data-browse="agentFarm\.superpowersPath"[^]*id="sprescan"[^]*id="spreveal" (?!disabled)/.test(c));
+    ok('…the hook, the skills and the agent matrix behind a closed Details, the group\'s rows after the card',
+        /data-card="cat-superpowers" data-dflt="0"><summary>/.test(c) && c.indexOf('data-spagent=') > c.indexOf('<summary>')
+        && c.indexOf('data-reset="agentFarm.superpowersPath"') > c.indexOf('<summary>') && c.lastIndexOf('data-item="agentFarm.superpowers') > c.indexOf('</details>'));
+    el(p, 'sprescan').click();
+    ok('Re-scan still posts spRescan', p.last().type === 'spRescan');
+    const nohook = scard(spPage(SP.noHook()));
+    ok('a folder with no hook is the warning, Details open on why a session gets nothing', /data-state="warn"/.test(nohook)
+        && /class="setcardsum">The folder has no hook, so a session switched on is given nothing\.</.test(nohook) && /data-dflt="1" open>/.test(nohook) && /given nothing at all from here/.test(nohook));
+    const gone = scard(spPage(SP.missing()));
+    ok('a folder not on this machine is Off, Reveal dead', /data-state="off"/.test(gone) && /not on this machine/.test(gone) && /id="spreveal" disabled/.test(gone));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

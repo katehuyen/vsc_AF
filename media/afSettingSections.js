@@ -59,9 +59,10 @@
             const draw = CARD[c.id + '/' + g.id];
             const inner = draw ? draw(g) : rows(g);
             if (!g.id) { return inner; }
-            return `<div class="setgroup" id="grp-${C.esc(c.id)}-${C.esc(g.id)}">
-                <h3 class="setgrouph">${C.esc(g.label)}</h3>
-                ${g.about ? `<div class="setgroupwhy">${aboutHtml(g.about)}</div>` : ''}
+            // U-233 — a group that opens with its card is named by the card; its heading is not drawn twice
+            const head = /^\s*<div class="setcard"/.test(inner) ? '' : `<h3 class="setgrouph">${C.esc(g.label)}</h3>
+                ${g.about ? `<div class="setgroupwhy">${aboutHtml(g.about)}</div>` : ''}`;
+            return `<div class="setgroup" id="grp-${C.esc(c.id)}-${C.esc(g.id)}">${head}
                 ${inner}
             </div>`;
         }).join('');
@@ -77,13 +78,14 @@
     /**
      * U-233 — every special block is one card: a state dot (ok · warn · off), its name, one sentence saying where
      * it stands, its primary actions on the same line; the long explanation is on the name's AFTip and anything
-     * long (a list, a matrix, extra boxes) waits behind Details. `id` stays the block's old anchor.
+     * long (a list, a matrix, extra boxes) waits behind Details. `id` stays the block's old anchor; `item` is the
+     * setting a deep link to it lands on.
      */
     function cardHtml(o) {
         const st = STATE_WORD[o.state] ? o.state : 'off';
         const word = t(STATE_WORD[st]);
         const name = `<span class="setcardt">${o.icon ? C.esc(o.icon) + ' ' : ''}${C.esc(o.title)}</span>`;
-        return `<div class="setcard" id="${C.esc(o.id)}" data-state="${st}">
+        return `<div class="setcard" id="${C.esc(o.id)}" data-state="${st}"${o.item ? ` data-item="${C.esc(o.item)}"` : ''}>
             <div class="setcardh"><span class="setcardst st-${st}" role="img" aria-label="${C.esc(word)}"></span>${o.tip
                 ? window.AFTip.wrap(name, `${o.title} — ${word}`, o.tip, 'tip-free') : name}
                 <span class="setcardsum">${C.esc(o.status || '')}</span>

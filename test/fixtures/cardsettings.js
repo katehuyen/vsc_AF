@@ -2,7 +2,8 @@
  * U-233 — the one card a special block of Farm Settings is drawn as. "Open with" ready, and warning when a custom
  * app has no command (its Details open on the boxes that fix it); "Agent folders" ready on one line, and warning on a
  * folder listed twice and one that is gone (Details open on the roots and their agents); Engines and Claude Code ready,
- * and warning with no engine ready and a settings.json that does not parse. Each scene opens only the
+ * and warning with no engine ready and a settings.json that does not parse; Saved prompts read; Superpowers
+ * ready, heading its group's rows. Each scene opens only the
  * section its card heads, with one row or none beside it, so it shows the card and nothing the other fixtures measure.
  */
 const path = require('path');
@@ -53,6 +54,17 @@ const ACCOUNTS = { engines: ENGINES(), claude: claude('') };
 const ACCOUNTS_WARN = { engines: ENGINES().map(e => Object.assign(e, { ready: false })), claude: claude('Unexpected token } in JSON at position 18') };
 const engines = { open: ['engines'] };
 
+// a group card needs its group: the scene's model carries only that group's own settings
+const model = keys => S.buildSettingsModel(Object.fromEntries(keys.map(k => [k, ALL[k]])), k => ALL[k].default);
+const PROMPTS = {
+    file: 'D:\\vault\\Prompts.md', source: 'setting', builtIn: 'D:\\vault\\Prompts.md', empty: 0,
+    items: [{ label: 'Review', group: 'Code', text: 'Read the flow before you change it.', line: 4 },
+        { label: 'Answer in Turkish', group: 'Code', text: 'Answer in Turkish, code in English.', line: 9 }]
+};
+const promptsData = pr => base(null, null, { prompts: pr, categories: model(['agentFarm.promptSnippetsFile']) });
+const SP = require('./spsettings.js');
+const spData = () => base(null, null, { superpowers: SP.ready(), categories: model(['agentFarm.superpowersPath', 'agentFarm.superpowersDefaults']) });
+
 const data = () => base(READY);
 
 const variants = () => ([
@@ -81,6 +93,16 @@ const variants = () => ([
         id: 'cardsettings-engines-warn',
         label: 'Settings — both warning: no engine ready and a settings.json that does not parse, Details open on the rows and the raw editor',
         data: base(null, null, ACCOUNTS_WARN), state: engines
+    },
+    {
+        id: 'cardsettings-prompts',
+        label: 'Settings — the Saved prompts card heading its group: what was read, and Choose, Open, Re-read on one line',
+        data: promptsData(PROMPTS), state
+    },
+    {
+        id: 'cardsettings-superpowers',
+        label: 'Settings — the Superpowers card heading its group: the skills behind the hook and who starts with it on, the group\'s rows below',
+        data: spData(), state: agents
     }
 ]);
 

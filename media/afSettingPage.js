@@ -165,16 +165,16 @@
                 .agchip .agcustom { width:200px; max-width:200px; padding:1px 4px; }
                 .promptlist { margin-top:10px; border:1px solid var(--vscode-widget-border, #3333);
                     border-radius:5px; max-height:340px; overflow:auto; }
-                .promptgrp { font-size:10px; text-transform:uppercase; letter-spacing:.5px; opacity:.55;
+                .promptgrp { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--vscode-descriptionForeground);
                     padding:7px 10px 2px; }
                 .promptrow { display:flex; gap:10px; align-items:baseline; padding:4px 10px;
                     border-top:1px solid var(--vscode-widget-border, #2222); }
                 .promptrow:first-child { border-top:none; }
                 .promptlbl { font-size:12px; flex:0 0 200px; max-width:200px; overflow:hidden;
                     text-overflow:ellipsis; white-space:nowrap; }
-                .promptprev { font-size:10px; opacity:.6; flex:1 1 auto; overflow:hidden;
+                .promptprev { font-size:10px; color:var(--vscode-descriptionForeground); flex:1 1 auto; overflow:hidden;
                     text-overflow:ellipsis; white-space:nowrap; }
-                .promptline { font-size:10px; opacity:.45; flex:none; }
+                .promptline { font-size:10px; color:var(--vscode-descriptionForeground); flex:none; }
                 /* engines — the row is read left to right: who, how paid for,
                    what to do. The rule on the left is the state, not decoration. */
                 .setitem.eng { border-left:3px solid var(--vscode-widget-border, #4444); }
@@ -197,7 +197,7 @@
                 .wikimark.ok { color:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); }
                 .wikimark.no { color:var(--af-ink-charts-red, var(--vscode-charts-red, #f85149)); }
                 .wikirel { flex:0 0 210px; font-family:var(--vscode-editor-font-family); }
-                .wikipath { flex:1 1 auto; opacity:.5; overflow:hidden; text-overflow:ellipsis;
+                .wikipath { flex:1 1 auto; color:var(--vscode-descriptionForeground); overflow:hidden; text-overflow:ellipsis;
                     white-space:nowrap; font-family:var(--vscode-editor-font-family); }
                 /* superpowers — one row per discovered agent. A row that was
                    never written down is dimmed: it is ticked because the
@@ -209,7 +209,7 @@
                 .sprow:hover { border-color:var(--vscode-focusBorder, #007fd4); }
                 .sprow input { margin:0; }
                 .spname { font-family:var(--vscode-editor-font-family); }
-                .spstate { font-size:10px; opacity:.5; }
+                .spstate { font-size:10px; color:var(--vscode-descriptionForeground); }
                 .sprow.spdef .spname { opacity:.7; }
                 ${window.AFSettingRowCss.css()}
                 ${X.foldCss()}

@@ -3,6 +3,7 @@
 (function () {
     'use strict';
     let X, C, itemHtml;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     /**
      * ‼️ X-136 — THE SUPERPOWERS SECTION ANSWERS "WILL A SESSION ACTUALLY GET
@@ -29,13 +30,16 @@
         if (!sp) { return boxes; }
 
         const skills = sp.skills || [];
-        const badge = sp.usable
-            ? `<span class="rootbadge">${skills.length} skill${skills.length === 1 ? '' : 's'} behind the hook</span>`
-            : `<span class="rootbadge warn">${sp.exists ? 'no hook' : 'folder does not exist'}</span>`;
-        // The rule on the left is the state, as everywhere else on this page:
-        // green can supply a session, yellow is a folder that cannot, grey is
-        // not there at all.
-        const cls = !sp.exists ? 'eng-off' : sp.usable ? 'eng-ok' : 'eng-warn';
+        // U-233 — the dot is the state: green can supply a session, yellow is a folder that cannot, grey is not there
+        const state = !sp.exists ? 'off' : sp.usable ? 'ok' : 'warn';
+        const agents = sp.agents || [];
+        const status = sp.usable
+            ? t('{skills} behind the hook; {on} of {all} agents start with it on.', {
+                skills: skills.length === 1 ? t('One skill') : t('{n} skills', { n: skills.length }),
+                on: agents.filter(a => a.on).length, all: agents.length
+            })
+            : sp.exists ? t('The folder has no hook, so a session switched on is given nothing.')
+                : t('The skills folder is not on this machine, so a session switched on is given nothing.');
 
         const why = sp.usable ? '' : `<div class="seterr">⚠ ${C.esc(sp.why || 'this folder cannot supply a session')}
             <br><b>A session with the switch on is given nothing at all from here</b> — which looks exactly like the switch being off.
@@ -72,15 +76,15 @@
             ? `<div class="spgrid">${(sp.agents || []).map(agentRow).join('')}</div>`
             : `<div class="setdesc">No agents discovered — add a folder under <b>Agent folders</b> above and they appear here.</div>`;
 
-        return `
-            <p class="muted small" style="max-width:760px">A library of engineering procedures — TDD,
-            root-cause debugging, planning, verification before completion — that <b>sleeps on disk at zero
-            tokens</b>. Switched on, a session's system prompt carries only the library's own hook plus an
-            index of where the skills are; the model reads the one it needs when it needs it. Switched off,
-            nothing is added at all.</p>
-            <div class="setitem eng ${cls}" data-item="agentFarm.superpowersPath">
-                <div class="sethead"><span class="setname">⚡ Superpowers</span> ${badge}</div>
-                ${differs ? `<div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(typed)}</div>` : ''}
+        return X.cardHtml({
+            id: 'cat-superpowers', item: 'agentFarm.superpowersPath', icon: '⚡', title: (cat && cat.label) || t('Superpowers'), state, status,
+            actions: `<button class="secondary small" data-browse="agentFarm.superpowersPath" data-browsekind="folder"
+                    title="${C.esc(t('Pick the folder — the path is written into the box below and saved'))}">📁 ${C.esc(t('Choose the folder…'))}</button>
+                <button class="secondary small" id="sprescan" title="${C.esc(t('Read the folder again. It is a folder you edit by hand, so a skill you just added shows up here without a reload.'))}">↻ ${C.esc(t('Re-scan'))}</button>
+                <button class="secondary small" id="spreveal" ${sp.exists ? '' : 'disabled'} title="${C.esc(t('Open the folder in the file manager'))}">📂 ${C.esc(t('Reveal'))}</button>`,
+            tip: (cat && cat.about ? cat.about + '\n\n' : '') + t('A library of engineering procedures (TDD, root-cause debugging, planning, verification before completion) that sleeps on disk at zero tokens. Switched on, a session\'s system prompt carries only the library\'s own hook plus an index of where the skills are; the model reads the one it needs when it needs it. Switched off, nothing is added at all.'),
+            open: state === 'warn' || !!X.filter,
+            details: `${differs ? `<div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(typed)}</div>` : ''}
                 <div class="setdesc" style="font-family:var(--vscode-editor-font-family)">${C.esc(sp.root || '—')}${differs ? ' <span class="muted">← what it opens</span>' : ''}${typed ? '' : ' <span class="muted">← found next to your agents</span>'}</div>
                 <div class="wikifile">
                     <span class="wikimark ${sp.hookFound ? 'ok' : 'no'}">${sp.hookFound ? '✓' : '✗'}</span>
@@ -95,15 +99,10 @@
                     resume).</div>
                 ${matrix}
                 <div class="btnrow">
-                    <button class="secondary" data-browse="agentFarm.superpowersPath" data-browsekind="folder"
-                        title="Pick the folder — the path is written into the box below and saved">📁 Choose the folder…</button>
-                    <button class="secondary" data-reset="agentFarm.superpowersPath"
+                    <button class="secondary small" data-reset="agentFarm.superpowersPath"
                         title="Empty the setting. The folder is then looked for next to your agents — _SKILLS/superpowers under an agent root, or beside it when a root names a single agent.">↺ Reset to default</button>
-                    <button class="secondary" id="sprescan" title="Read the folder again. It is a folder you edit by hand, so a skill you just added shows up here without a reload.">↻ Re-scan</button>
-                    <button class="secondary" id="spreveal" ${sp.exists ? '' : 'disabled'} title="Open the folder in the file manager">📂 Reveal</button>
-                </div>
-            </div>
-            ${boxes}`;
+                </div>`
+        }) + boxes;
     }
 
     /** ‼️ EVERY BOX THE CARD REPLACES, IN ONE LIST. Keyed on `alerts.on` alone,

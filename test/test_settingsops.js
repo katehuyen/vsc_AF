@@ -427,11 +427,11 @@ const { charts } = require('./lib_charts_stub.js');
             { label: 'Türkçe cevap', group: 'Review', text: 'Answer in Turkish, code in English.', line: 12 }
         ]
     });
-    ok('the group has its own heading, and its section a header',
+    ok('the group has its own anchor, named by its card, and its section a header',
         html.includes('id="grp-general-prompts"') && html.includes('data-fold="general"'));
     ok('‼️ the section shows what was READ, not just the path',
         html.includes('Kod incelemesi') && html.includes('Read the flow before you change it.')
-        && html.includes('<b>2</b> prompt'));
+        && html.includes('class="setcardsum">2 prompts read from the built-in path (you have not chosen one) · 1 empty block skipped.<'));
     ok('the heading a block sits under is drawn once, above it', html.includes('promptgrp">Review'));
     ok('empty fenced blocks are accounted for, not silently dropped',
         html.includes('1 empty block'));
@@ -462,7 +462,7 @@ const { charts } = require('./lib_charts_stub.js');
         error: 'there is no file at D:\\gone.md — your setting still points there'
     });
     ok('a missing chosen file is reported in words, on the page',
-        html.includes('⚠ there is no file at D:\\gone.md'));
+        html.includes('class="setcardsum">there is no file at D:\\gone.md') && html.includes('data-state="warn"'));
 
     // -- the filter finds it by the words a person would actually type --
     html = run({ file: 'D:\\vault\\Prompts.md', source: 'setting', builtIn: 'D:\\b.md', items: [] },
