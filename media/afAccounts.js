@@ -1019,7 +1019,7 @@
      */
     function allEnginesRefreshHtml(list) {
         const T = window.AFTip;
-        const readable = list.filter(a => a.usageState !== 'no-source');
+        const readable = list.filter(a => a.usageState !== 'no-source' && !a.disabled);
         const engines = [];
         for (const a of readable) { if (engines.indexOf(a.engine) < 0) { engines.push(a.engine); } }
         if (engines.length < 2) { return ''; }
@@ -1189,7 +1189,7 @@
                 type: 'accountRefresh', gesture: 'all',
                 ids: (DATA.accounts || [])
                     .filter(a => (!b.dataset.acrefreshall || a.engine === b.dataset.acrefreshall)
-                        && a.usageState !== 'no-source')
+                        && a.usageState !== 'no-source' && !a.disabled)
                     .map(a => a.id) })));
         // X-219 — the page names a ROW and nothing else: whether that sign-in
         // may be renewed at all, with which command and in which directory, is

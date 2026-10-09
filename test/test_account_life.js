@@ -242,6 +242,9 @@ async function actions() {
         /\+ \(a\.disabled \? '' : refresh\)/.test(page) && /\+ \(a\.disabled \? '' : stand\)/.test(page) && /\+ \(a\.disabled \? '' : window5\)/.test(page));
     ok('…and a group\'s count of readable accounts leaves the asleep ones out',
         /const readable = rows\.filter\(a => a\.usageState !== 'no-source' && !a\.disabled\);/.test(page));
+    ok('…as does the all-engines refresh line and the ids its press posts',
+        /const readable = list\.filter\(a => a\.usageState !== 'no-source' && !a\.disabled\);/.test(page)
+        && /&& a\.usageState !== 'no-source' && !a\.disabled\)\s*\.map\(a => a\.id\)/.test(page));
     const base = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'base.ts'), 'utf8');
     ok('the module ships on every page, before the view that asks it',
         base.indexOf('src="${accountLife}"') > 0 && base.indexOf('src="${accountLife}"') < base.indexOf('src="${accounts}"'));
