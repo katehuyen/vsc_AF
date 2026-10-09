@@ -39,7 +39,10 @@ export const engines: CatalogSection = {
         accountPolicies: {
             group: 'accounts', tier: 'basic',
             label: 'Account rules',
-            summary: 'Named rules for which sign-in a launch runs on.'
+            summary: 'Named rules for which sign-in a launch runs on.',
+            fieldOptions: {
+                strategy: { chain: 'In order', emptiest: 'Emptiest first' }
+            }
         },
         // The id is permanent because the key is filed under it, and a copy starts with no key. A profile naming
         // another engine is refused so there are never two vaults where the stale one wins. revision counts up when
@@ -48,7 +51,10 @@ export const engines: CatalogSection = {
         providerProfiles: {
             group: 'providers',
             label: 'Provider routes',
-            summary: 'The Anthropic-compatible routes Claude Code can start on.'
+            summary: 'The Anthropic-compatible routes Claude Code can start on.',
+            fieldOptions: {
+                engine: { claude: 'Claude Code' }
+            }
         },
         // A different axis from a task's engine. Live hooks remain Claude Code's alone.
         cliProfiles: {

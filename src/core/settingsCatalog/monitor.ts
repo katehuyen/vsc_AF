@@ -84,7 +84,10 @@ export const monitor: CatalogSection = {
         livingChecks: {
             group: 'health', tier: 'basic',
             label: 'Living page checks',
-            summary: 'Conditions the Living page watches, each read as needing attention when true.'
+            summary: 'Conditions the Living page watches, each read as needing attention when true.',
+            fieldOptions: {
+                level: { info: 'Info', warn: 'Warning', alert: 'Alert' }
+            }
         },
         staleMemoryDays: {
             group: 'health', unit: 'days',

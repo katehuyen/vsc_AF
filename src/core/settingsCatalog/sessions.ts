@@ -24,7 +24,12 @@ export const sessions: CatalogSection = {
         launchDefaults: {
             group: 'launch', tier: 'basic',
             label: 'Launch defaults',
-            summary: 'How every interactive session starts unless you choose otherwise.'
+            summary: 'How every interactive session starts unless you choose otherwise.',
+            fieldOptions: {
+                engine: { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini', agy: 'Antigravity' },
+                effort: { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' },
+                permissionMode: { plan: 'Plan', acceptEdits: 'Accept edits', auto: 'Auto', manual: 'Manual', dontAsk: 'Don\'t ask', bypassPermissions: 'Bypass permissions' }
+            }
         },
         launchProfiles: {
             group: 'launch',
@@ -34,7 +39,10 @@ export const sessions: CatalogSection = {
         flexPresets: {
             group: 'flex',
             label: 'Preference presets',
-            summary: 'Your own named sets of preference values.'
+            summary: 'Your own named sets of preference values.',
+            fieldOptions: {
+                scope: { global: 'Everywhere', project: 'One project' }
+            }
         },
         flexOverrides: {
             group: 'flex',

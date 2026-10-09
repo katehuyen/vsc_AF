@@ -95,7 +95,21 @@ for (const k of CAT.catalogKeys()) {
     const declared = ((SH.shapeOf(PROPS['agentFarm.' + k] || {}) || {}).fields || []).map(f => f.name);
     if (e.fields && Object.entries(e.fields).some(([f, l]) => !declared.includes(f) || !String(l).trim()
         || String(l).trim().split(/\s+/).length > 3 || /[a-z][A-Z]/.test(l))) { controlBad.push(k + ' (fields)'); }
+    // U-232 — a field's value labels name values that field allows, in at most three words
+    const allowedOf = f => ((((SH.shapeOf(PROPS['agentFarm.' + k] || {}) || {}).fields || []).find(x => x.name === f) || {}).allowed || []);
+    if (e.fieldOptions && Object.entries(e.fieldOptions).some(([f, o]) => Object.entries(o).some(([v, l]) => !allowedOf(f).includes(v)
+        || !String(l).trim() || String(l).trim().split(/\s+/).length > 3))) { controlBad.push(k + ' (fieldOptions)'); }
 }
+// U-232 — no pick-one value is drawn raw anywhere on the page: a setting's own list and a table or form field's alike
+const raw = [];
+for (const k of manifest) {
+    const p = PROPS['agentFarm.' + k], e = CAT.catalogEntry(k) || {};
+    if (Array.isArray(p.enum)) { p.enum.map(String).filter(v => v !== '' && !(e.options || {})[v]).forEach(v => raw.push(`${k}=${v}`)); }
+    for (const f of ((SH.shapeOf(p) || {}).fields || [])) {
+        (f.allowed || []).filter(v => v !== '' && !((e.fieldOptions || {})[f.name] || {})[v]).forEach(v => raw.push(`${k}.${f.name}=${v}`));
+    }
+}
+ok('no pick-one value is drawn raw: every value of a setting\'s list and of a fixed-list field has a name' + list(raw), raw.length === 0);
 ok('a unit is one of the known ones, and only on a number' + list(unitBad), unitBad.length === 0);
 ok('a control hint is one of the known ones' + list(controlBad), controlBad.length === 0);
 
@@ -111,12 +125,14 @@ const row = key => model.flatMap(c => c.items).find(it => it.key === 'agentFarm.
 ok('U-231 — a table column is headed by the name its record gives it, its key staying the stored name',
     row('pricing').shape.fields.find(f => f.name === 'match').label === 'Model pattern'
     && row('modelPolicy').shape.fields.find(f => f.name === 'promptMatch').label === 'Prompt pattern'
-    && row('taskRetry').shape.fields.every(f => f.label === undefined));
+    && row('taskRetry').shape.fields.every(f => f.label === undefined)
+    && row('taskRetry').shape.fields.find(f => f.name === 'backoff').optionLabels.double === 'Doubling');
 const page = require('./lib_settings_source').settingsPageSource();
 ok('…and the page draws that name on the header, the form row and the messages, the key where none is given',
     /<span class="setth">\$\{C\.esc\(f\.label \|\| f\.name\)\}/.test(page)
     && /<span class="setfname">\$\{C\.esc\(f\.label \|\| f\.name\)\}/.test(page)
-    && /\$\{f\.label \|\| f\.name\} is required/.test(page) && /\$\{f\.label \|\| f\.name\} has to be a number/.test(page));
+    && /\$\{f\.label \|\| f\.name\} is required/.test(page) && /\$\{f\.label \|\| f\.name\} has to be a number/.test(page)
+    && /opt\(v, \(f\.optionLabels && f\.optionLabels\[v\]\) \|\| v, text/.test(page));
 const future = S.buildSettingsModel({ 'agentFarm.futureThing': { type: 'string', default: '' },
     'agentFarm.telegram.futureThing': { type: 'string', default: '' } }, () => '');
 ok('a setting invented tomorrow is drawn, in a More group — under General, or beside its dotted siblings',

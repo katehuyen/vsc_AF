@@ -41,6 +41,8 @@ export interface CatalogRow {
     options?: Record<string, string>;
     /** U-231 — a table's or form's fields as a person reads them (≤ 3 words); a field not named is shown as its key */
     fields?: Record<string, string>;
+    /** U-232 — a fixed-list field's values as a person reads them (≤ 3 words), by field; the stored value stays raw */
+    fieldOptions?: Record<string, Record<string, string>>;
     /** words people type looking for this key that its key and text do not say */
     terms?: string;
 }

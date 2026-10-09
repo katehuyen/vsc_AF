@@ -54,7 +54,7 @@
             const known = f.allowed.indexOf(text) >= 0 || text === '';
             return `<select ${a}>${opt('', '(not set)', text, unset)
                 }${(known ? [] : [text]).concat(f.allowed.filter(v => v !== '')).map(v =>
-                    opt(v, v, text, f.allowed.indexOf(v) < 0
+                    opt(v, (f.optionLabels && f.optionLabels[v]) || v, text, f.allowed.indexOf(v) < 0
                         ? `Stored in the JSON, but ${f.name} no longer names this value.`
                         : (String(f.default ?? '') === String(v) ? `The default for ${f.name}.` : '')
                     )).join('')}</select>`;

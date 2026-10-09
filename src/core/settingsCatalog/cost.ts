@@ -96,7 +96,10 @@ export const cost: CatalogSection = {
             group: 'prices',
             label: 'Media prices',
             summary: 'What a media request, image or second of output is estimated to cost.',
-            fields: { match: 'Model pattern', usd: 'Price', per: 'Unit' }
+            fields: { match: 'Model pattern', usd: 'Price', per: 'Unit' },
+            fieldOptions: {
+                per: { request: 'Request', image: 'Image', second: 'Second' }
+            }
         },
         // Built in: opus and fable {5, 25, 6.25, 10, 0.5}, sonnet {1, 5, 1.25, 2, 0.1}, haiku {0.333, 1.667, 0.417,
         // 0.667, 0.033}. Cache writes are priced by TTL and the 1-hour rate applies here: measured on this machine,

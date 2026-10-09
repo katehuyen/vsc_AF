@@ -83,7 +83,11 @@ export const notify: CatalogSection = {
         'alerts.reading': {
             group: 'sound',
             label: 'Reading voice',
-            summary: 'How an answer sounds when it is read aloud.'
+            summary: 'How an answer sounds when it is read aloud.',
+            fieldOptions: {
+                length: { first: 'The beginning', whole: 'The whole answer' },
+                code: { size: 'Say its size', skip: 'Skip it' }
+            }
         },
         // An idle session never blocks the farm, so it is not a Needs You row, but one left waiting all afternoon is
         // a loop that never closed.

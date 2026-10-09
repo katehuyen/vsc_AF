@@ -35,7 +35,13 @@ export const tasks: CatalogSection = {
         taskRetry: {
             group: 'running', tier: 'basic',
             label: 'Retry after a failure',
-            summary: 'How often a failed unattended task is tried again, and how long it waits.'
+            summary: 'How often a failed unattended task is tried again, and how long it waits.',
+            fieldOptions: {
+                backoff: { same: 'Same wait', double: 'Doubling', linear: 'Growing evenly', formula: 'Formula' },
+                when: { limit: 'Limit failures', any: 'Any failure' },
+                behavior: { simple: 'Simple retry', smart: 'Smart', supervisor: 'Supervisor decides' },
+                unknownProgressFallback: { park: 'Hold it', simple: 'Simple retry', stop: 'Stop', ask: 'Ask me' }
+            }
         },
         // The integrated terminal is xterm.js, which garbles long TUI sessions; a task stays there because its status
         // is read from the terminal.
@@ -69,7 +75,10 @@ export const tasks: CatalogSection = {
             group: 'dispatch',
             label: 'Model rules',
             summary: 'Which model a task the farm launches runs on; the first matching rule wins.',
-            fields: { source: 'Launched by', agent: 'Agent pattern', promptMatch: 'Prompt pattern', model: 'Model' }
+            fields: { source: 'Launched by', agent: 'Agent pattern', promptMatch: 'Prompt pattern', model: 'Model' },
+            fieldOptions: {
+                source: { any: 'Any launch', trigger: 'Trigger', schedule: 'Schedule', workflow: 'Workflow', manual: 'By hand' }
+            }
         },
         judgeArgs: {
             group: 'judge',

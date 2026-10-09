@@ -51,15 +51,15 @@
    0
   ],
   "airtableInputLimit": [
-   69,
+   65,
    0
   ],
   "airtableInputSort": [
-   62,
+   58,
    0
   ],
   "airtableInputStages": [
-   130,
+   109,
    0
   ],
   "alerts.agentVoices": [
@@ -99,11 +99,11 @@
    0
   ],
   "allInUnsure": [
-   276,
+   193,
    0
   ],
   "allInWhen": [
-   234,
+   214,
    0
   ],
   "answerDir": [
@@ -163,7 +163,7 @@
    0
   ],
   "browserApproval": [
-   119,
+   115,
    0
   ],
   "budgets": [
@@ -219,7 +219,7 @@
    0
   ],
   "contentCalendarDir": [
-   434,
+   319,
    0
   ],
   "contextBudgetTokens": [
@@ -287,7 +287,7 @@
    0
   ],
   "embeddingsProvider": [
-   204,
+   168,
    0
   ],
   "embeddingsSecret": [
@@ -331,11 +331,11 @@
    0
   ],
   "handoverFolders": [
-   473,
+   276,
    0
   ],
   "handoverSources": [
-   1074,
+   337,
    0
   ],
   "idleSessionNoticeMinutes": [
@@ -395,11 +395,11 @@
    0
   ],
   "kapici.timeoutMs": [
-   197,
+   182,
    0
   ],
   "kapici.trigger": [
-   229,
+   210,
    0
   ],
   "kapici.workflow": [
@@ -423,7 +423,7 @@
    0
   ],
   "libraryEnrichCap": [
-   213,
+   211,
    0
   ],
   "libraryEnrichEffort": [
@@ -431,7 +431,7 @@
    0
   ],
   "libraryEnrichModel": [
-   63,
+   59,
    0
   ],
   "libraryEnrichScope": [
@@ -443,7 +443,7 @@
    0
   ],
   "libraryEnrichVideoModel": [
-   95,
+   90,
    0
   ],
   "liveMonitor": [
@@ -471,7 +471,7 @@
    0
   ],
   "mediaAuthSecret": [
-   90,
+   62,
    0
   ],
   "mediaBaseUrl": [
@@ -487,7 +487,7 @@
    0
   ],
   "mediaUploadAuto": [
-   273,
+   260,
    0
   ],
   "mediaUploadProvider": [
@@ -495,7 +495,7 @@
    0
   ],
   "mediaUploadRetentionDays": [
-   153,
+   144,
    0
   ],
   "metricsFields": [
@@ -555,7 +555,7 @@
    0
   ],
   "performanceBrief": [
-   233,
+   229,
    0
   ],
   "permissionAnswerKeys": [
@@ -639,7 +639,7 @@
    0
   ],
   "publishApproval": [
-   204,
+   183,
    0
   ],
   "publishPlatforms": [
@@ -727,7 +727,7 @@
    0
   ],
   "remote.listen": [
-   275,
+   265,
    0
   ],
   "remote.port": [
@@ -735,7 +735,7 @@
    0
   ],
   "replicateAuthSecret": [
-   149,
+   118,
    0
   ],
   "replicateBaseUrl": [
@@ -747,7 +747,7 @@
    0
   ],
   "searchToolTrailDays": [
-   742,
+   317,
    0
   ],
   "semanticMaxSessions": [
@@ -755,47 +755,47 @@
    0
   ],
   "sentryFailureLimit": [
-   556,
+   286,
    0
   ],
   "sentryIdlePollMin": [
-   482,
+   214,
    0
   ],
   "sentryInstructionFiles": [
-   1207,
-   2
+   319,
+   0
   ],
   "sentryLeaderBudgetUsd": [
-   279,
-   1
+   206,
+   0
   ],
   "sentryLeaderEngine": [
-   555,
+   178,
    0
   ],
   "sentryLeaderFailLimit": [
-   262,
+   134,
    0
   ],
   "sentryLeaderMaxSeconds": [
-   127,
+   117,
    0
   ],
   "sentryLeaderMaxUsd": [
-   250,
+   179,
    0
   ],
   "sentryLeaderModel": [
-   531,
+   270,
    0
   ],
   "sentryStallMin": [
-   591,
+   282,
    0
   ],
   "sentryTemplatesFile": [
-   1034,
+   335,
    0
   ],
   "sessionBreakMin": [
@@ -831,23 +831,23 @@
    0
   ],
   "studioLibraryBase": [
-   116,
+   112,
    0
   ],
   "studioLibraryKind": [
-   66,
+   62,
    0
   ],
   "studioLibraryPromote": [
-   183,
+   173,
    0
   ],
   "studioLibraryStages": [
-   118,
+   97,
    0
   ],
   "studioLibrarySuccess": [
-   107,
+   103,
    0
   ],
   "suggestScan": [
@@ -879,11 +879,11 @@
    0
   ],
   "telegram.digest": [
-   399,
+   232,
    0
   ],
   "telegram.enabled": [
-   684,
+   347,
    0
   ],
   "telegram.maxDailyUSD": [
@@ -891,15 +891,15 @@
    0
   ],
   "telegram.whenBusy": [
-   511,
+   272,
    0
   ],
   "toolOutDir": [
-   156,
+   132,
    0
   ],
   "toolOverwrite": [
-   70,
+   66,
    0
   ],
   "trendAlertFactor": [
@@ -911,15 +911,15 @@
    0
   ],
   "web.bind": [
-   218,
+   201,
    0
   ],
   "web.enabled": [
-   572,
+   346,
    0
   ],
   "web.port": [
-   111,
+   78,
    0
   ],
   "web.token": [
@@ -931,23 +931,23 @@
    0
   ],
   "wikiAgent": [
-   232,
+   127,
    0
   ],
   "wikiEffort": [
-   77,
+   73,
    0
   ],
   "wikiEngine": [
-   259,
+   161,
    0
   ],
   "wikiModel": [
-   210,
+   179,
    0
   ],
   "wikiRoot": [
-   413,
+   314,
    0
   ],
   "windowTokenLimit": [

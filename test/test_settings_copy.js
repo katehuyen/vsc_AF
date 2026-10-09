@@ -16,7 +16,8 @@ const CAT = require(path.join(ROOT, 'out', 'core', 'settingsCatalog', 'index.js'
 const FILE = path.join(__dirname, 'settings_copy.ratchet.json');
 const MAX = 350;
 /** the sections whose every row has its name and summary written (U-230, U-231, U-232 add theirs) */
-const DONE = ['general', 'projects', 'agents', 'engines', 'sessions', 'notify', 'cost', 'handover', 'tasks', 'monitor', 'reports'];
+const DONE = ['general', 'projects', 'agents', 'engines', 'sessions', 'notify', 'cost', 'handover', 'tasks', 'monitor', 'reports',
+    'knowledge', 'media', 'sentry', 'gatekeeper', 'remote'];
 
 const marks = d => (d.match(/‼️|#agentFarm\.|[çğıöşüÇĞİÖŞÜ]/g) || []).length;
 const now = {};

@@ -14,9 +14,17 @@ export const MORE_GROUP: CatalogGroup = {
     about: 'Settings the catalog does not file yet — shown here so nothing is hidden.'
 };
 
-/** U-231 — a table column or form field is headed by the name its record gives it; the stored key stays its name */
-function fieldLabels(shape: SettingShape, labels: Record<string, string>): SettingShape {
-    return { ...shape, fields: shape.fields.map(f => (labels[f.name] ? { ...f, label: labels[f.name] } : f)) };
+/**
+ * U-231 / U-232 — a table column or form field is headed by the name its record gives it, and its fixed values read
+ * as words; the stored key and values stay what the JSON holds.
+ */
+function fieldLabels(shape: SettingShape, labels: Record<string, string>, options: Record<string, Record<string, string>>): SettingShape {
+    return {
+        ...shape,
+        fields: shape.fields.map(f => (labels[f.name] || options[f.name]
+            ? { ...f, ...(labels[f.name] ? { label: labels[f.name] } : {}), ...(options[f.name] ? { optionLabels: options[f.name] } : {}) }
+            : f))
+    };
 }
 
 export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
@@ -44,7 +52,8 @@ export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
             ...(e?.from ? { from: e.from } : {}),
             ...(engine ? { engine } : {}),
             ...(e?.options ? { options: e.options } : {}),
-            ...(e?.fields && it.shape?.fields ? { shape: fieldLabels(it.shape, e.fields) } : {}),
+            ...((e?.fields || e?.fieldOptions) && it.shape?.fields
+                ? { shape: fieldLabels(it.shape, e.fields ?? {}, e.fieldOptions ?? {}) } : {}),
             ...(terms ? { terms } : {}),
             place: `${sec.label} › ${grp.label}`
         };

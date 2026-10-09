@@ -48,6 +48,8 @@ export interface ShapeField {
     name: string;
     /** U-231 — the heading a person reads, from the setting's catalog record; absent = the name */
     label?: string;
+    /** U-232 — each allowed value as a person reads it, from the same record; a value not named is shown as itself */
+    optionLabels?: Record<string, string>;
     /** `string`, `number`, `boolean`, `string[]`, `object`… — already readable. */
     type: string;
     required: boolean;

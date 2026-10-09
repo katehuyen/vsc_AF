@@ -26,7 +26,11 @@ export const projects: CatalogSection = {
         projectSkeleton: {
             group: 'newProject',
             label: 'New project layout',
-            summary: 'The folders and documents a new project folder starts with.'
+            summary: 'The folders and documents a new project folder starts with.',
+            fieldOptions: {
+                role: { charter: 'Charter', plan: 'Plan', people: 'People', log: 'Worklog', deliverables: 'Deliverables', backlog: 'Backlog', backloglog: 'Backlog log', brief: 'Brief' },
+                holds: { decisions: 'Decisions', tracks: 'Tracks' }
+            }
         },
         // Starts empty on purpose: a template is a claim about how you work. Id, folder and parent are identity, not
         // shape.

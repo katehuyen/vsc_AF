@@ -8558,12 +8558,12 @@
         "agentFarm.web.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Serve a **read-only web view** of the farm — the same figures the panel shows, sized for a phone: what needs you, what is running, per-agent and per-project cost, recent sessions. Off by default. While VS Code is open the extension serves it; when VS Code is closed the **headless service** takes the port over and keeps serving the last snapshot (and says so on the page). Bound to `127.0.0.1` unless `agentFarm.web.bind` says otherwise, and **a token is always required** — there is no route that starts, stops or changes anything. Use **Open Web View…** to get the URL."
+          "markdownDescription": "Serve a read-only web view of the farm, the same figures the panel shows, sized for a phone. While VS Code is closed the background service keeps serving the last snapshot and says so. It answers this machine only unless Reachable from says else, a token is always required, and nothing on it can change anything. Open Web View gives the address."
         },
         "agentFarm.web.port": {
           "type": "number",
           "default": 8378,
-          "description": "Port for the read-only web view (the live-hook listener uses agentFarm.livePort, 8377, and must stay separate)."
+          "description": "The port the read-only web view listens on; it must differ from Listener port."
         },
         "agentFarm.web.bind": {
           "type": "string",
@@ -8571,8 +8571,12 @@
             "local",
             "lan"
           ],
+          "enumDescriptions": [
+            "Only this machine (127.0.0.1).",
+            "Your network: your phone or a second machine can reach it."
+          ],
           "default": "local",
-          "markdownDescription": "`local` — only this machine (127.0.0.1). `lan` — reachable from your phone or a second machine on the same network. LAN exposure is opt-in on purpose; the token stays mandatory either way, and the view stays read-only."
+          "markdownDescription": "This machine only (127.0.0.1), or your network too, so your phone or a second machine can reach it. Network reach is opt-in on purpose; the token stays required either way and the view stays read-only."
         },
         "agentFarm.web.token": {
           "type": "string",
@@ -8594,7 +8598,7 @@
             "Your Tailscale network: listens on this machine's 100.x address only."
           ],
           "default": "off",
-          "markdownDescription": "Where the **Agent Farm phone app** can reach this farm. Off by default. Every connection is TLS with a certificate the phone pins at pairing, and every phone must be paired (a one-time QR code) and can be revoked at any time. Only the window that runs the task queue listens."
+          "markdownDescription": "Where the Agent Farm phone app can reach this farm. Off by default. Every connection is TLS with a certificate the phone pins at pairing, and every phone is paired once with a QR code and can be revoked at any time. Only the window that runs the task queue listens."
         },
         "agentFarm.remote.port": {
           "type": "number",
@@ -8606,7 +8610,7 @@
         "agentFarm.telegram.enabled": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Let a **Telegram chat talk to your agents**: send a message, the agent the chat is bound to runs it headlessly, and the answer comes back in the same thread. Off by default; the bot token lives in the Agent Farm **secret vault** (never in settings) — set it up with **Connect Telegram…**. Two rails are always on: a message from a chat that is not in `agentFarm.telegram.allowedChats` is refused (it is told its own chat id, so allowing it is one copy), and chat-started runs stop at `agentFarm.telegram.maxDailyUSD` per day. Commands in chat: `/agent <name>` · `/new <agent> [prompt]` (opens a real Console session, focused on the chat) · `/agents` · `/status` · `/cancel` · `/help`."
+          "markdownDescription": "Let a Telegram chat talk to your agents: the agent the chat is bound to runs each message and answers in the same thread. The bot token lives in Secrets; set it up with Connect Telegram. A chat not in Allowed chats is refused and told its id; chat-started runs stop at Daily remote budget. Commands: /agent, /new, /agents, /status, /cancel, /help."
         },
         "agentFarm.telegram.allowedChats": {
           "type": "array",
@@ -8640,7 +8644,7 @@
             "Every allowed chat hears every live conversation's turn cards.",
             "No turn cards; commands and replies keep working."
           ],
-          "markdownDescription": "When a Console turn ends, or an agent stops to ask you something, the bridge sends the chat a **card**: what the agent said this turn, what it is waiting on, and what the turn cost — with buttons under it (a question's options, Allow / Deny, Continue · Cancel · Diff · Status). `focused` = the conversation the chat is focused on, or the only live one; `all` = every live conversation; `off` = none."
+          "markdownDescription": "When a Console turn ends, or an agent stops to ask you something, the chat gets a card: what the agent said, what it waits on and what the turn cost, with buttons (a question's options, Allow / Deny, Continue, Cancel, Diff, Status)."
         },
         "agentFarm.telegram.whenBusy": {
           "type": "string",
@@ -8653,7 +8657,7 @@
             "The message waits and goes in as the next turn's first words, and the chat is told so. Survives a window reload.",
             "The message goes into the turn that is running, where the engine allows it — the same steering the Console composer does."
           ],
-          "markdownDescription": "What a message typed from a chat meets when the agent is already working. `queue` (default) parks it and sends it in when the turn ends: from a phone you cannot see what the agent is in the middle of, so waiting is safer than steering blind. `steer` sends it into the running turn on engines that can take one (Claude); the others queue it regardless, because their turn has no channel to speak into. The queue is part of the saved chat state, so a message parked before a window reload is still there after it."
+          "markdownDescription": "What a message from a chat meets when the agent is already working. Wait parks it and sends it in when the turn ends, since from a phone you cannot see what the agent is doing. Steer sends it into the running turn on engines that allow it (Claude); the others wait anyway."
         },
         "agentFarm.a2a.preferredGraceHours": {
           "type": "number",
@@ -9804,7 +9808,7 @@
           "default": 3000,
           "minimum": 200,
           "maximum": 30000,
-          "description": "How long Gatekeeper waits for the classifier before handing the decision back to the usual path (milliseconds). A rule may set its own. The language-model judge, when used, waits at least a minute."
+          "description": "How long Gatekeeper waits for the classifier before handing the decision back to the usual path. A rule may set its own; the language-model judge, when used, waits at least a minute."
         },
         "agentFarm.kapici.providers": {
           "type": "array",
@@ -9887,7 +9891,7 @@
             "Triggers fire as they always have, and Gatekeeper quietly says beside each firing whether it saw real work in it, recorded in the Gatekeeper audit. Nothing waits for it.",
             "A trigger with a Gatekeeper precondition asks it last, after its cheaper brakes, and does not wake the agent when Gatekeeper is sure there is no work. When it is not sure, the trigger fires; when it cannot answer, the rule decides."
           ],
-          "description": "Whether a trigger's Gatekeeper precondition is asked before it wakes an agent — so a change that is only noise (an auto-save, a lock file, a formatting-only edit) costs no run. Try shadow for a week or two before switching it on."
+          "description": "Whether Gatekeeper is asked before a trigger wakes an agent, so a change that is only noise (an auto-save, a lock file, a formatting-only edit) costs no run. Try Shadow for a week or two before switching it on."
         },
         "agentFarm.kapici.workflow": {
           "type": "string",
@@ -9917,7 +9921,7 @@
             "Upload it and use its URL, without asking.",
             "Never — the step fails and says which file; {upload:<path>} still uploads."
           ],
-          "markdownDescription": "A media step whose input names a file on this computer (`D:\\clips\\a.mp4`) — fal and Replicate only read https URLs, so the file is uploaded to the provider's storage and its URL sent instead. `{upload:<path>}` in the input always uploads. The same content is uploaded once."
+          "markdownDescription": "A media step whose input names a file on this computer: fal and Replicate only read web addresses, so the file is uploaded to the provider's storage and its address sent instead. `{upload:<path>}` in the input always uploads. The same content is uploaded once."
         },
         "agentFarm.mediaUploadProvider": {
           "type": "string",
@@ -9939,7 +9943,7 @@
           "default": 7,
           "minimum": 0,
           "maximum": 365,
-          "markdownDescription": "How long fal keeps an uploaded file (days); after that it is uploaded again when a step needs it. `0` = fal's own default. Replicate sets its own expiry."
+          "markdownDescription": "How long fal keeps an uploaded file; after that it is uploaded again when a step needs it. 0 = fal's own default. Replicate sets its own expiry."
         },
         "agentFarm.workflowPrevTextChars": {
           "type": "number",
@@ -9952,7 +9956,7 @@
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "markdownDescription": "Where a **tool** step (and `tools.run`) writes what an ffmpeg recipe makes. Empty = an `af-tool` folder beside the input. A step or a call can name its own."
+          "markdownDescription": "Where a tool step writes what an ffmpeg recipe makes. Empty = an af-tool folder beside the input. A step or a call can name its own."
         },
         "agentFarm.toolOverwrite": {
           "type": "string",
@@ -9967,7 +9971,7 @@
             "An output already there is replaced."
           ],
           "default": "never",
-          "markdownDescription": "What a **tool** step does when a file it would write is already there."
+          "markdownDescription": "What a tool step does when a file it would write is already there."
         },
         "agentFarm.showrunner": {
           "type": "string",
@@ -9988,14 +9992,14 @@
         "agentFarm.airtableInputStages": {
           "type": "string",
           "default": "asset, final",
-          "markdownDescription": "Which stage folders an **airtable** workflow input searches when it names none, comma separated (source, raw, semi, final, asset)."
+          "markdownDescription": "Which stage folders an Airtable workflow input searches when it names none (source, raw, semi, final, asset)."
         },
         "agentFarm.airtableInputLimit": {
           "type": "number",
           "default": 20,
           "minimum": 1,
           "maximum": 200,
-          "markdownDescription": "At most this many records an **airtable** workflow input hands a run."
+          "markdownDescription": "At most this many records an Airtable workflow input hands a run."
         },
         "agentFarm.airtableInputSort": {
           "type": "string",
@@ -10004,18 +10008,23 @@
             "oldest",
             "name"
           ],
+          "enumDescriptions": [
+            "Newest records first.",
+            "Oldest records first.",
+            "Alphabetically by name."
+          ],
           "default": "newest",
-          "markdownDescription": "The order an **airtable** workflow input hands its records in."
+          "markdownDescription": "The order an Airtable workflow input hands its records in."
         },
         "agentFarm.studioLibraryBase": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Which local Airtable database the **Studio** wall reads its media records from. Empty = the Airtable page's default."
+          "markdownDescription": "Which local Airtable database the Studio wall reads its media records from. Empty = the Airtable page's default."
         },
         "agentFarm.studioLibraryStages": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Which stage folders the **Studio** wall shows, comma separated (source, raw, semi, final, asset). Empty = every stage."
+          "markdownDescription": "Which stage folders the Studio wall shows (source, raw, semi, final, asset). Empty = every stage."
         },
         "agentFarm.studioLibraryKind": {
           "type": "string",
@@ -10025,8 +10034,14 @@
             "video",
             "audio"
           ],
+          "enumDescriptions": [
+            "Every kind.",
+            "Images only.",
+            "Videos only.",
+            "Audio only."
+          ],
           "default": "",
-          "markdownDescription": "Which kind of media the **Studio** wall shows. Empty = every kind."
+          "markdownDescription": "Which kind of media the Studio wall shows. Empty = every kind."
         },
         "agentFarm.studioLibrarySuccess": {
           "type": "string",
@@ -10035,8 +10050,13 @@
             "passed",
             "failed"
           ],
+          "enumDescriptions": [
+            "Both.",
+            "Only the files that passed.",
+            "Only the failed ones."
+          ],
           "default": "",
-          "markdownDescription": "Which outcome the **Studio** wall shows: only the files that passed, only the failed ones, or empty = both."
+          "markdownDescription": "Which outcome the Studio wall shows: only the files that passed, only the failed ones, or empty = both."
         },
         "agentFarm.studioLibraryPromote": {
           "type": "string",
@@ -10049,7 +10069,7 @@
             "Promote at once"
           ],
           "default": "ask",
-          "markdownDescription": "A promotion on the **Studio** wall (raw → asset, semi → final) moves the file into the next stage folder and its Airtable record with it. `ask` confirms first, `auto` does it at once."
+          "markdownDescription": "A promotion on the Studio wall (raw to asset, semi to final) moves the file into the next stage folder and its Airtable record with it. Ask first confirms; At once does not."
         },
         "agentFarm.allInUnsure": {
           "type": "string",
@@ -10062,7 +10082,7 @@
             "Leave it in all_in for the next pass, without a question"
           ],
           "default": "ask",
-          "markdownDescription": "A file in a media library's `all_in` waiting area that the model is not sure of (or cannot open, or that is not media) stays where it is. `ask` posts one Notices question listing them, `wait` leaves them for the next pass. The bridge op `media.allin` can override it per pass."
+          "markdownDescription": "A file in the all_in waiting area that the model is not sure of, cannot open, or is not media stays where it is. Ask posts one Notices question listing them; wait leaves them for the next pass."
         },
         "agentFarm.allInWhen": {
           "type": "string",
@@ -10075,7 +10095,7 @@
             "Only a call by hand (bridge media.allin) processes it"
           ],
           "default": "daily",
-          "markdownDescription": "When a media library's `all_in` waiting area is processed — each file looked at by a model (about two model turns a file: its stage, then its form). `daily`: the manager's daily media batch runs it. `manual`: only a call by hand does."
+          "markdownDescription": "When a media library's all_in waiting area is processed, each file looked at by a model (about two turns a file: its stage, then its form). Daily: the manager's daily media batch runs it. By hand: only a call does."
         },
         "agentFarm.libraryEnrich": {
           "type": "string",
@@ -10110,12 +10130,12 @@
         "agentFarm.libraryEnrichModel": {
           "type": "string",
           "default": "sonnet",
-          "markdownDescription": "The claude model that looks at an **image** to fill its record."
+          "markdownDescription": "The Claude model that looks at an image to fill its record."
         },
         "agentFarm.libraryEnrichVideoModel": {
           "type": "string",
           "default": "gemini-3.8-flash-low",
-          "markdownDescription": "The agy model that looks at a **video** to fill its record — it sees the frames, not the sound."
+          "markdownDescription": "The Antigravity model that looks at a video to fill its record; it sees frames, not sound."
         },
         "agentFarm.libraryEnrichEffort": {
           "type": "string",
@@ -10132,7 +10152,7 @@
           "default": 0,
           "minimum": 0,
           "maximum": 50,
-          "markdownDescription": "Dollars per record a claude turn may spend filling it; 0 = no cap. A turn's own start costs about $0.02 (measured on haiku), so a cap under $0.05 stops every turn. agy reports no cost, so it is not enforced there."
+          "markdownDescription": "What one Claude turn may spend filling a record. 0 = no cap. A turn's own start costs about $0.02 (measured on haiku), so a cap under $0.05 stops every turn. Antigravity reports no cost, so it is not held there."
         },
         "agentFarm.workflowAskEscalation": {
           "type": "string",
@@ -10356,12 +10376,12 @@
         "agentFarm.mediaAuthSecret": {
           "type": "string",
           "default": "FAL_KEY",
-          "description": "Name of the vault secret holding your fal.ai key (store it via 'Agent Farm: Set Secret…')."
+          "description": "The Secrets name of your fal.ai key; store it with Set Secret."
         },
         "agentFarm.replicateAuthSecret": {
           "type": "string",
           "default": "REPLICATE_API_TOKEN",
-          "description": "Name of the vault secret holding your Replicate API token (store it via 'Agent Farm: Set Secret…'). Used for media models with a 'replicate:' prefix."
+          "description": "The Secrets name of your Replicate API token, used by media models with a replicate: prefix; store it with Set Secret."
         },
         "agentFarm.replicateBaseUrl": {
           "type": "string",
@@ -10423,8 +10443,13 @@
             "auto",
             "never"
           ],
+          "enumDescriptions": [
+            "Wait for a yes before anything is sent.",
+            "Publish without asking.",
+            "Rehearse: build and record the payload, send nothing."
+          ],
           "default": "ask",
-          "markdownDescription": "Before a publish step sends anything: `ask` waits for a yes (default), `auto` publishes without asking, `never` rehearses — it builds and records the payload and sends nothing. A step's own approval wins."
+          "markdownDescription": "Before a publish step sends anything: Ask me waits for a yes, Publish sends without asking, Rehearse only builds and records the payload and sends nothing. A step's own approval wins."
         },
         "agentFarm.publishPlatforms": {
           "type": "array",
@@ -10463,13 +10488,13 @@
         "agentFarm.performanceBrief": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Put \"how similar published content performed\" into the briefs: the `{performance}` placeholder of an idea or script step, and the workflow supervisor's brief. Off = both stay empty. The numbers come from the metrics step's last pull."
+          "markdownDescription": "Put how similar published content performed into the briefs: the {performance} placeholder of an idea or script step, and the workflow supervisor's brief. Off = both stay empty. The numbers come from the metrics step's last pull."
         },
         "agentFarm.contentCalendarDir": {
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "markdownDescription": "The content calendar: a vault folder holding one note per publish, in the Full Calendar plugin's frontmatter (title, date, startTime, completed) plus platform, status (planned · producing · ready · published · cancelled), url, record and publishedAt. A publish step updates its note when it ends. Accepts the path variables `${vault}` `${workspace}` `${home}` — see agentFarm.vaultDir. Empty = `${vault}/01_INBOX/02_Calendar/CONTENT`."
+          "markdownDescription": "The content calendar: a vault folder with one note per publish, in the Full Calendar plugin's frontmatter plus platform, status, url, record and publishedAt; a publish step updates its note when it ends. Takes the path variables `${vault}`, `${workspace}` and `${home}`. Empty = `${vault}/01_INBOX/02_Calendar/CONTENT`."
         },
         "agentFarm.reportDir": {
           "type": "string",
@@ -10679,8 +10704,13 @@
             "gemini",
             "openai"
           ],
+          "enumDescriptions": [
+            "No search by meaning.",
+            "Google's Gemini API; its key goes in Secrets.",
+            "Any OpenAI-compatible /embeddings endpoint, local ones included."
+          ],
           "default": "off",
-          "description": "Semantic search embeddings: 'gemini' (Google API, GEMINI_API_KEY secret) or 'openai' (any OpenAI-compatible /embeddings endpoint — incl. fully local Ollama/LM Studio via embeddingsBaseUrl, no key needed)."
+          "description": "Embeddings for search by meaning: Gemini (Google's API, key in Secrets) or OpenAI-compatible (any /embeddings endpoint, a local Ollama or LM Studio too, no key needed)."
         },
         "agentFarm.embeddingsModel": {
           "type": "string",
@@ -10706,7 +10736,7 @@
           "type": "number",
           "default": 60,
           "minimum": 0,
-          "description": "How many days after a session's last activity its TOOL TRAIL (what each tool was asked and what it answered) stays in the text-search index, on disk. The trail is 92% of the index by measurement and only an 'Everything' search reads it; the default You+Agent search never does. Past this horizon a session keeps its dialogue in the index and drops its trail, which is what keeps the index from growing 1:1 with your transcripts (measured 254 MB after 977 sessions, 2.6 GB projected at 10 000; ~300 MB with this). Nothing is lost: an Everything search that reaches an older session re-reads that transcript on the spot — slower, and the results say how many it re-read. 0 keeps every trail for ever. Applied on the first search of each window."
+          "description": "How long after a session's last activity its tool trail (what each tool was asked and answered) stays in the text search index; only an Everything search reads it. After that the session keeps its dialogue and drops the trail, and an Everything search reaching it re-reads the transcript, slower. 0 keeps every trail."
         },
         "agentFarm.browserAllowHosts": {
           "type": "array",
@@ -10722,8 +10752,12 @@
             "ask",
             "auto"
           ],
+          "enumDescriptions": [
+            "Confirm every browser step before it runs (recommended).",
+            "Run browser steps on allowed sites without asking."
+          ],
           "default": "ask",
-          "description": "'ask' = confirm every browser step before it runs (recommended); 'auto' = run allowlisted browser steps without asking."
+          "description": "Whether every browser step is confirmed before it runs (recommended), or steps on allowed sites run without asking."
         },
         "agentFarm.cliProfiles": {
           "type": "array",
@@ -11152,13 +11186,13 @@
           "type": "string",
           "default": "",
           "x-af-browse": "folder",
-          "description": "Folder that holds the LLM wiki — one folder per category, a page per concept, plus index.md, log.md and _KURALLAR_/-WIKI-ANAYASA-.md. wiki.compile and wiki.lint read it. Portable: %USERPROFILE%, ~, $HOME, ${env:VAR} and ${workspaceRoot} are expanded when the folder is opened, so the same settings.json works on another machine — what you type is kept exactly as typed. Empty = D:\\zone\\know\\note\\obsidian\\00_WIKI."
+          "description": "The folder that holds the wiki: one folder per category, a page per concept, plus index.md, log.md and the wiki's rules file. Portable: %USERPROFILE%, ~, $HOME, ${env:VAR} and ${workspaceRoot} are expanded when it is opened, so the same settings work on another machine. Empty = D:\\zone\\know\\note\\obsidian\\00_WIKI."
         },
         "agentFarm.wikiAgent": {
           "type": "string",
           "default": "",
           "x-af-values": "agent",
-          "description": "Which agent writes the wiki. wiki.compile.run starts a headless run under this agent unless one is named in the call — the synthesis belongs to an agent, so a compile needs somebody to be one. Empty = the first agent the farm knows."
+          "description": "Which agent writes the wiki: a compile runs under this agent unless the call names one. Empty = the first agent the farm knows."
         },
         "agentFarm.wikiEngine": {
           "type": "string",
@@ -11171,12 +11205,20 @@
             "agy",
             "opencode"
           ],
-          "description": "Which engine a wiki compile runs on when the call does not name one. Empty = Claude Code. A compile reads whole transcripts and writes pages under the vault's own law, so it is worth choosing deliberately rather than inheriting whatever the last session used."
+          "enumDescriptions": [
+            "Not set: Claude Code.",
+            "Anthropic's Claude Code.",
+            "OpenAI's Codex.",
+            "Google's Gemini CLI.",
+            "Antigravity.",
+            "OpenCode, each model on its own provider."
+          ],
+          "description": "Which engine a wiki compile runs on when the call names none. Empty = Claude Code. A compile reads whole transcripts and writes pages, so choose it deliberately."
         },
         "agentFarm.wikiModel": {
           "type": "string",
           "default": "",
-          "description": "--model for a wiki compile (alias or full id) when the call does not name one. Empty = the agent's own default. Synthesis is the expensive half of the wiki: this is where you decide it is worth a capable model."
+          "description": "The model a wiki compile runs on (alias or full id) when the call names none. Empty = the agent's own default. Synthesis is the costly half of the wiki: a capable model pays here."
         },
         "agentFarm.wikiEffort": {
           "type": "string",
@@ -11189,7 +11231,15 @@
             "xhigh",
             "max"
           ],
-          "description": "--effort for a wiki compile when the call does not name one. Empty = no flag."
+          "enumDescriptions": [
+            "Not set: no effort flag is passed.",
+            "Quick, light thinking.",
+            "Balanced.",
+            "Deeper thinking, more tokens.",
+            "Deeper still.",
+            "The most thinking the model allows."
+          ],
+          "description": "The effort a wiki compile runs at when the call names none. Empty = none."
         },
         "agentFarm.projectsRoot": {
           "type": "string",
@@ -11318,7 +11368,7 @@
             ]
           },
           "default": [],
-          "markdownDescription": "Where a sentry campaign looks for the handover note of the session that just ended, and in which order. Empty = all four, in this order: `transcript` (the files that session ITSELF wrote — the most truthful source, because where the agent actually wrote beats where a setting says it should have), `configured` (agentFarm.handoverFolders), `projectNotes` (the project's own 10_Notes) and `fallback` (the folder this extension shipped with, reached last and only then). Drop a source to stop looking there. A folder that cannot be READ is reported as unknown rather than as empty, so the campaign never says “no handover note” about a folder nobody opened.\n\nThe name no longer has to be exact: a file scores on the session id in its name, on the session having written it, on the word `devir`/`handover`, on a date near today, and on the full `YYYY-MM-DD_devir_##_<id8>_<topic>.md` pattern. The canonical name is still preferred — it is just no longer required. What IS required is that the note belongs to this session: another session's note is never adopted, at any score."
+          "markdownDescription": "Where a sentry campaign looks for the handover note of the session that just ended, in order. Empty = all four: transcript (the files that session itself wrote), configured (Handover folders), projectNotes (the project's 10_Notes) and fallback. A file is matched by its name and who wrote it, and another session's note is never adopted."
         },
         "agentFarm.handoverFolders": {
           "type": "array",
@@ -11327,13 +11377,13 @@
             "x-af-browse": "folder"
           },
           "default": [],
-          "markdownDescription": "The folders the `configured` handover source looks in, in order. Accepts the same path variables as agentFarm.reportDir — ${vault}, ${projectNotes}, ${projectFolder}, ${today}, ${sessionId8} … — and a template whose variable has nothing behind it on this machine is SKIPPED with its reason rather than half-built. Empty = agentFarm.answerDir, then `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`: the folder answers are written into is the one folder you have already named."
+          "markdownDescription": "The folders the configured source looks in, in order. They take the same path variables as Reports folder; a template whose variable has nothing behind it on this machine is skipped, with its reason. Empty = Answers folder, then `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`."
         },
         "agentFarm.sentryTemplatesFile": {
           "type": "string",
           "x-af-browse": "file",
           "default": "",
-          "description": "A markdown file holding the words a sentry campaign starts the NEXT session with, when you want your own instead of the built-in ones. Same shape as Saved prompts: a heading names the verdict the block answers — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — and only text inside ``` fences is used. Placeholders like {nextCode}, {handoverPath}, {evidence} and {assist} are filled in; one nothing answers is left visible rather than blanked. A block replaces just that verdict, so every verdict you do not write keeps its built-in wording and this can stay empty for ever without anything being missing. A path named here that is not on disk is reported, never cleared. `sentry.templates` on the bridge shows what was read and what was refused, and it is the FIRST file of the pool rather than the whole of it: `agentFarm.sentryInstructionFiles` lists the rest, and a heading of your own that names no verdict is no longer discarded — it becomes material the sentry leader blends (`sentry.instructions`)."
+          "description": "A markdown file with your own words a sentry campaign starts the next session with. Shaped like Saved prompts: a heading names the verdict (item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any) and only fenced text is used. A verdict you do not write keeps its built-in words. It is read before Instruction files."
         },
         "agentFarm.sentryInstructionFiles": {
           "type": "array",
@@ -11342,59 +11392,59 @@
             "x-af-browse": "file"
           },
           "default": [],
-          "markdownDescription": "The POOL of your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (path variables are allowed: `${vault}`, `${workspace}`, `${projectNotes}`, `${today}` …). Same shape as Saved prompts, and read TWICE for two jobs: a block whose heading names a verdict — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — is a TEMPLATE and fills mechanically; every block, including the ones whose heading names something of your own (`Genel tembihler`, `Sabaha karşı`), is MATERIAL the leader blends into the next session's opening words. It is material, never a template it copies.\n\n`agentFarm.sentryTemplatesFile` is read first and this list follows it — they are assembled, not chosen between, so a file named in both is read once. A path whose variables cannot be filled is skipped WITH ITS REASON rather than pointed at the wrong folder; a path that is gone is reported and the rest of the pool still reads. Empty is the normal case: the built-in templates answer every verdict with no file of yours anywhere. `sentry.instructions` on the bridge shows what was read, what was refused, and what a leader woken on a given verdict would actually be given."
+          "markdownDescription": "Your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (path variables allowed). Shaped like Saved prompts: a block whose heading names a verdict fills mechanically as a template, and every block is material the leader blends into the next session's opening words. Empty is normal."
         },
         "agentFarm.sentryLeaderEngine": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The ENGINE a sentry LEADER turn spawns. It used to be a constant, and honestly so: the runner could build one command line and read one reply envelope, so a settable box would have been a box that lies. Both halves are now the engine's own adapter, so this is a real choice — and an engine nobody has written an adapter for is REFUSED BY NAME, which names the ones that can be spawned AND read, rather than quietly spawning `claude` and reporting a turn nobody asked for. A campaign may name its own; this is what answers when none does. Empty = `claude`."
+          "markdownDescription": "The engine a sentry leader turn runs on when the campaign names none. An engine that cannot be run and read this way is refused by name rather than replaced. Empty = Claude Code."
         },
         "agentFarm.sentryLeaderModel": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The model a sentry LEADER turn runs on. The leader is woken only when one of the campaign's conditions fires (agentFarm settings do not decide that — the campaign's own condition set does), and it gets ONE bounded turn to write the next session's opening words. Cheap on purpose: an unattended loop is not where an expensive model belongs, and the whole reason this family was rewritten is a $70.90 bill from asking a model something that could have been counted. Raise it deliberately, having read the budget below. Empty = haiku."
+          "markdownDescription": "The model a sentry leader turn runs on. The leader is woken only when one of the campaign's own conditions fires, and gets one short turn to write the next session's opening words. Cheap on purpose; raise it deliberately, with Leader daily budget in mind. Empty = haiku."
         },
         "agentFarm.sentryLeaderBudgetUsd": {
           "type": "number",
           "default": 2,
           "minimum": 0,
-          "markdownDescription": "Dollars of leader turns one campaign may spend per calendar day. ‼️ WHEN IT IS GONE THE CAMPAIGN DOES NOT STOP — it carries on mechanically, filling templates, and you are told once on Notices. A leash, not a brake. 0 = no daily budget, which is the setting to think twice about."
+          "markdownDescription": "What one campaign's leader turns may spend per calendar day. When it is gone the campaign does not stop: it carries on mechanically, filling templates, and you are told once on Notices. 0 = no daily budget."
         },
         "agentFarm.sentryLeaderMaxSeconds": {
           "type": "number",
           "default": 120,
           "minimum": 5,
-          "markdownDescription": "Seconds one leader turn may take before it is cut. A cut turn falls back to the mechanical template and is recorded as a fault."
+          "markdownDescription": "How long one leader turn may take before it is cut; a cut turn falls back to the template and is recorded as a fault."
         },
         "agentFarm.sentryLeaderMaxUsd": {
           "type": "number",
           "default": 0.25,
           "minimum": 0,
-          "markdownDescription": "Dollars one leader turn may cost. A turn that goes over is still USED — it is paid for either way — but the NEXT one is refused and the campaign runs mechanically until tomorrow. A ceiling cannot un-spend money; what it can do is stop the second one."
+          "markdownDescription": "What one leader turn may cost. A turn that goes over is still used, since it is paid for either way, but the next one is refused and the campaign runs mechanically until tomorrow."
         },
         "agentFarm.sentryLeaderFailLimit": {
           "type": "number",
           "default": 3,
           "minimum": 0,
-          "markdownDescription": "Failed leader turns in a row after which the campaign drops to the mechanical path AND SAYS SO. A leader that cannot produce readable JSON is a leader nobody should keep paying for. 0 switches the brake off, the same convention agentFarm.sentryFailureLimit uses."
+          "markdownDescription": "Failed leader turns in a row after which the campaign drops to the mechanical path and says so. 0 = off, as for Barren rounds allowed."
         },
         "agentFarm.sentryFailureLimit": {
           "type": "number",
           "default": 3,
           "minimum": 0,
-          "description": "How many BARREN rounds in a row switch a sentry campaign off. A round is barren when the run failed, or when it \"succeeded\" and left nothing behind at all. This is not a round budget — a campaign that is WORKING runs until you stop it — it is an alarm for the case no quota can catch: a broken setup opening empty sessions all night, each one failing instantly and therefore spending nothing. The streak is wiped by the first round that achieves something. 0 switches the brake off entirely. A campaign may carry its own limit (sentry.start { failLimit })."
+          "description": "How many barren rounds in a row switch a sentry campaign off. A round is barren when the run failed, or succeeded and left nothing behind. It is an alarm for a broken setup opening empty sessions all night, not a round budget; the first round that achieves something clears it. 0 = off."
         },
         "agentFarm.sentryIdlePollMin": {
           "type": "number",
           "default": 10,
           "minimum": 1,
-          "description": "How often, in minutes, an IDLING sentry campaign looks at the backlog again. An empty backlog is a wait rather than a finish, so something has to notice the item you write tomorrow morning — and that something is the beat the farm already keeps, not a timer of the sentry's own. It does not apply while a round is on the board (that round ending is what drives the next one) and it never shortens a measured sleep: a three-hour quota wall is waited out, not poked every ten minutes."
+          "description": "How often an idling sentry campaign looks at the backlog again, so an item you write tomorrow morning is noticed. It does not apply while a round is running, and never shortens a measured wait such as a quota wall."
         },
         "agentFarm.sentryStallMin": {
           "type": "number",
           "default": 45,
           "minimum": 0,
-          "description": "How long, in minutes, a sentry round may say nothing before the watchdog ends it. The campaign's loop is driven by rounds ENDING, so a round that never ends holds it for ever — and an unattended session parked on a permission prompt is exactly that: it spends nothing, so the quota never breaks the deadlock either. Silence is measured from the run's own output, so a thinking turn is never touched. The round is ended as FAILED (which counts against the failure brake), never as cancelled (which is your hand and would stop the campaign), and it is not retried. 0 switches the watchdog off."
+          "description": "How long a sentry round may say nothing before the watchdog ends it, typically a session stuck on a permission prompt nobody is there to answer. Silence is measured from the run's own output, so a thinking turn is never touched. The round ends as failed and is not retried. 0 = off."
         },
         "agentFarm.sessionBreakMin": {
           "type": "number",
