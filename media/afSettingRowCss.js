@@ -70,6 +70,16 @@
             .setgrip { font-size:10px; }
             .setchipx { background:none; border:0; padding:0 0 0 2px; margin:0; min-width:0; color:inherit; cursor:pointer; font-size:11px; }
             .setchips > .setrungadd { width:auto; max-width:160px; }
+            .setcard { margin:6px 0 12px; padding:8px 10px; border:1px solid var(--vscode-widget-border, #3333); border-radius:4px; }
+            .setcardh { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+            .setcardst { width:8px; height:8px; border-radius:50%; flex:0 0 auto; background:var(--vscode-descriptionForeground); }
+            .setcardst.st-ok { background:var(--vscode-testing-iconPassed, #73c991); }
+            .setcardst.st-warn { background:var(--vscode-editorWarning-foreground, #cca700); }
+            .setcardt { font-weight:600; }
+            .setcardsum { flex:1 1 220px; min-width:0; color:var(--vscode-descriptionForeground); }
+            .setcardact { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+            .setcarddet { margin-top:6px; }
+            .setcarddet > summary { cursor:pointer; }
             @media (max-width:700px) {
                 .setitem.srow { grid-template-columns:minmax(0, 1fr); row-gap:6px; }
             }`;

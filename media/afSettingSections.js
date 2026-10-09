@@ -70,9 +70,32 @@
     /** U-228 — a group a card draws is drawn whole: "Show n more" never splits a card. */
     const hasCard = (sec, group) => !!CARD[sec + '/' + group];
 
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const STATE_WORD = { ok: N_('Ready'), warn: N_('Needs a look'), off: N_('Off') };
+    function N_(s) { return s; }
+
+    /**
+     * U-233 — every special block is one card: a state dot (ok · warn · off), its name, one sentence saying where
+     * it stands, its primary actions on the same line; the long explanation is on the name's AFTip and anything
+     * long (a list, a matrix, extra boxes) waits behind Details. `id` stays the block's old anchor.
+     */
+    function cardHtml(o) {
+        const st = STATE_WORD[o.state] ? o.state : 'off';
+        const word = t(STATE_WORD[st]);
+        const name = `<span class="setcardt">${o.icon ? C.esc(o.icon) + ' ' : ''}${C.esc(o.title)}</span>`;
+        return `<div class="setcard" id="${C.esc(o.id)}" data-state="${st}">
+            <div class="setcardh"><span class="setcardst st-${st}" role="img" aria-label="${C.esc(word)}"></span>${o.tip
+                ? window.AFTip.wrap(name, `${o.title} — ${word}`, o.tip, 'tip-free') : name}
+                <span class="setcardsum">${C.esc(o.status || '')}</span>
+                ${o.actions ? `<span class="setcardact">${o.actions}</span>` : ''}
+            </div>
+            ${o.details ? `<details class="setcarddet"${o.open ? ' open' : ''}><summary>${C.esc(t('Details'))}</summary>${o.details}</details>` : ''}
+        </div>`;
+    }
+
     window.AFSettingSections = function (ctx) {
         X = ctx;
         C = ctx.C;
-        return { sectionHtml, groupsOf, hasCard };
+        return { sectionHtml, groupsOf, hasCard, cardHtml };
     };
 })();

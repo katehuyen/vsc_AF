@@ -3,6 +3,7 @@
 (function () {
     'use strict';
     let X, C, sectionMatches;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     /**
      * Which editor a markdown file opens in — the setting behind every "Open"
@@ -49,27 +50,23 @@
         const opts = modes.map(m => C.option(m, LBL[m] || m,
             { selected: m === d.defaultMode, detail: DOCOPEN_WHY[m] || '' })).join('');
         const showCustom = d.defaultMode === 'custom';
-        return `
-            <h2 class="cat" id="cat-docopen">Open documents with <span class="muted small">${C.esc(LBL[d.defaultMode] || d.defaultMode)}</span></h2>
-            <p class="muted small" style="max-width:760px">Which editor a <code>.md</code> file opens in when you press
-            <b>Open</b> anywhere in Agent Farm: report and answer links on <b>Notices</b> and the <b>Work Queue</b>, and the
-            project documents on the <b>Projects</b> page (Plan · Backlog · Docs). The buttons beside <b>Open</b> —
-            <i>Editor · Preview · Obsidian · App</i> — are per-click overrides of this default, and <b>App</b> is the
-            custom one configured here. Kept out of <code>agentFarm.*</code> on purpose: a path to an executable on
-            <i>this</i> machine does not belong in settings that travel between machines.</p>
-            <div class="setitem">
-                <div class="sethead"><span class="setname">Default</span></div>
-                <select id="docopenmode" style="margin-top:4px; min-width:280px">${opts}</select>
-                <div class="setdesc" style="margin-top:6px">Obsidian opens the file <b>at the line</b> when you click a
-                single backlog item's code, if the Advanced URI plugin is installed; otherwise it opens the file.</div>
+        // U-233 — a custom app with no command opens nothing: the one state worth a warning here
+        const noCmd = showCustom && !String(d.customCommand || '').trim();
+        return X.cardHtml({
+            id: 'cat-docopen', icon: '📄', title: t('Open documents with'), state: noCmd ? 'warn' : 'ok',
+            status: noCmd ? t('Custom app is chosen, but no command is set.')
+                : t('Every Open button uses {app}.', { app: LBL[d.defaultMode] || d.defaultMode }),
+            actions: `<select id="docopenmode" aria-label="${C.esc(t('Default app'))}" style="min-width:240px">${opts}</select>`,
+            tip: t('Which editor a .md file opens in when you press Open anywhere in Agent Farm: report and answer links on Notices and the Work Queue, and the project documents on the Projects page. The buttons beside Open (Editor, Preview, Obsidian, App) override it for one click, and App is the custom one set here. It is kept out of the settings on purpose: a path to a program on this machine does not belong in settings that travel between machines.'),
+            open: showCustom,
+            details: `<div class="setdesc">${C.esc(t('Obsidian opens the file at the line when you click a single backlog item\'s code, if the Advanced URI plugin is installed; otherwise it opens the file.'))}</div>
                 <div id="docopencustom" style="margin-top:10px; ${showCustom ? '' : 'display:none'}">
-                    <div class="setdesc">Custom app — executable or command, e.g. <code>notepad.exe</code> or a full path.</div>
+                    <div class="setdesc">${C.esc(t('Custom app: an executable or command, e.g. notepad.exe or a full path.'))}</div>
                     <input id="docopencmd" type="text" value="${C.esc(d.customCommand || '')}" placeholder="notepad.exe" style="width:100%; max-width:440px; padding:6px 8px">
-                    <div class="setdesc" style="margin-top:6px">Arguments — <code>{file}</code> becomes the file path,
-                    <code>{line}</code> the line number when one is known (dropped when it is not).</div>
+                    <div class="setdesc" style="margin-top:6px">${C.esc(t('Arguments: {file} becomes the file path, {line} the line number when one is known (dropped when it is not).', { file: '{file}', line: '{line}' }))}</div>
                     <input id="docopenargs" type="text" value="${C.esc(d.customArgs || '{file}')}" placeholder="{file}" style="width:100%; max-width:440px; padding:6px 8px">
-                </div>
-            </div>`;
+                </div>`
+        });
     }
 
     /**
