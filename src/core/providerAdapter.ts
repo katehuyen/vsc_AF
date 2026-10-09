@@ -64,6 +64,8 @@ export interface ProviderCatalogEntry {
     route?: RedactedRoute;
     /** X-494 — the owner's own note on a route (whose key, what for), shown under it in every picker. */
     note?: string;
+    /** X-517 — a route Agent Farm lends the engine, or one of the engine's own providers. */
+    origin?: 'agent-farm-route' | 'engine-native';
 }
 
 export interface ProviderCatalog {
@@ -106,6 +108,8 @@ export interface ResolvedEngineRuntime {
     /** Environment names to CLEAR before spawning — an inherited Anthropic route
      *  is otherwise a second, invisible answer to the same question. */
     clearEnv?: string[];
+    /** X-517 — not secret: on a lent route the model sent is always one of `refs`, `defaultRef` when none of them is asked. */
+    modelRule?: { refs: string[]; defaultRef: string };
 }
 
 /** What a resume is allowed to do when the requested setup differs from the one

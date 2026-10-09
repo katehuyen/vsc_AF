@@ -22,10 +22,9 @@
  *   forks instead of pretending.
  * - **OpenCode**: the provider is the ENGINE's. `auth.json` and `opencode.json`
  *   are its own, the choice travels as `-m provider/model`, and it may change at
- *   a turn boundary because the engine documents that. Agent Farm contributes
- *   no environment and clears none: a second copy of that credential here would
- *   be a second vault, a second revision, and two truths that eventually
- *   disagree.
+ *   a turn boundary because the engine documents that. Agent Farm clears none of
+ *   it and copies none of its credentials; the one environment it gives is a
+ *   route of its OWN, lent beside the engine's providers (openCodeAdapter.ts).
  *
  * Everything here is pure — no vscode, no I/O, no keychain. The credential
  * arrives through `secretFor`, which is the only way the private half can be
@@ -36,11 +35,12 @@ import {
     BillingSourcePolicy, notApplicableAdapter, ProviderAdapter, ProviderCatalog,
     ProviderSelection, ResolvedEngineRuntime, ResumeVerdict
 } from './providerAdapter';
-import { catalogRefusal, ClaudeRouteInput, readClaudeRouteCatalog, readOpenCodeCatalog } from './providerCatalog';
+import { catalogRefusal, ClaudeRouteInput, readClaudeRouteCatalog } from './providerCatalog';
 import { ProviderIdentity, unknownIdentity } from './providerIdentity';
-import { claudeReported, openCodeReported, reportedPartial } from './reportedIdentity';
+import { claudeReported, reportedPartial } from './reportedIdentity';
 import { StoredProviderProfile } from './providerProfiles';
 import { claudeRouteRuntime } from './providerRuntime';
+import { openCodeAdapter } from './openCodeAdapter';
 
 /**
  * What the registry has to be handed, and nothing more.
@@ -60,6 +60,10 @@ export interface RegistryDeps {
     /** OpenCode's own catalog text, when something has read it. Absent means
      *  NOT FETCHED, which refuses nothing — see `catalogRefusal`. */
     openCodeCatalogText?: string;
+    /** X-517 — what is known of a route's key without its value: there is one, or it was given for another address. */
+    keyState?(profileId: string): { has: boolean; heldFor?: string };
+    /** S-137 — the company a launch last recorded for a route that is gone. */
+    lastRouteVendor?(profileId: string): string | undefined;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -236,118 +240,6 @@ function claudeAdapter(deps: RegistryDeps): ProviderAdapter {
             };
         },
         identity: () => ({ ...unknownIdentity('claude'), scope: 'session' })
-    };
-}
-
-/**
- * THE OPENCODE ADAPTER — the engine owns the provider, so Agent Farm records the
- * choice and keeps its hands off everything else.
- */
-function openCodeAdapter(deps: RegistryDeps): ProviderAdapter {
-    const catalog = (): ProviderCatalog => readOpenCodeCatalog(deps.openCodeCatalogText);
-
-    /**
-     * ‼️ THE PROVIDER IS ASKED OF THE CATALOG, NEVER TAKEN OFF THE MODEL NAME.
-     *
-     * `opencode/big-pickle` looks like it carries its own provider, and
-     * splitting on the slash would be right most of the time — which is exactly
-     * what makes it the wrong rule. It is a GUESS that happens to agree, and the
-     * day a wire name is spelled differently it goes on agreeing confidently
-     * with the wrong answer. The catalog is the engine's own statement of which
-     * provider serves which model, so that is what is asked.
-     *
-     * And when nothing has read the catalog yet, the answer is EMPTY — which
-     * `providerIdentity.ts` requires this system to be able to say rather than
-     * fill in. `test_provider_identity.js` measures this rule across the whole
-     * source tree, so it fails the build rather than somebody's memory.
-     */
-    const catalogProviderFor = (ref: string): string => {
-        if (!ref) { return ''; }
-        const row = readOpenCodeCatalog(deps.openCodeCatalogText).rows.find(r => r.ref === ref);
-        return row ? row.providerId : '';
-    };
-
-    const identityFor = (sel: ProviderSelection): ProviderIdentity => {
-        const model = str(sel.modelId);
-        const provider = str(sel.providerId) || catalogProviderFor(model);
-        // ‼️ A MODEL WITHOUT A PROVIDER IS `unknown`, NOT `engine-native`. The
-        // origin says where the PROVIDER answer came from; claiming the engine
-        // named one when nothing did would be the same guess this file just
-        // refused to make, wearing a different word. The model is still
-        // recorded — it is a fact, and it is the fact we actually have.
-        if (!provider) {
-            return { ...unknownIdentity('opencode'), scope: 'turn', requestedModelRef: model };
-        }
-        return {
-            engine: 'opencode',
-            providerId: provider,
-            origin: 'engine-native',
-            // The engine legitimately changes this at a turn boundary, so a
-            // session-level claim would be lying about a real feature.
-            scope: 'turn',
-            requestedModelRef: model,
-            proof: 'launch-declared'
-        };
-    };
-
-    return {
-        id: 'opencode-native',
-        version: '1',
-        engine: 'opencode',
-        axis: 'provider',
-        providerScope: 'turn',
-        // `session/set_config_option` — ‼️ and it takes `configId`, not `id`
-        // (documented in `core/opencode.ts`, where it has bitten before).
-        canSwitchProviderAtTurnBoundary: true,
-        catalog,
-        normalizeSelection: sel => ({
-            engine: 'opencode',
-            providerId: str(sel.providerId),
-            modelId: str(sel.modelId),
-            variant: sel.variant,
-            effort: sel.effort
-        }),
-        resolveRuntime: (sel): ResolvedEngineRuntime => {
-            const model = str(sel.modelId);
-            return {
-                identity: identityFor(sel),
-                // The CLI's own vocabulary, passed through unassembled. Building
-                // `provider/model` from parts here would invent wire names the
-                // engine never published.
-                args: model ? ['-m', model] : []
-                // ‼️ NO `spawnEnv` AND NO `clearEnv`, deliberately. This engine's
-                // sign-in is its own; a copy here would be a second vault. And
-                // an OpenCode run through an Anthropic provider is the engine's
-                // arrangement — sanitising the user's Anthropic environment for
-                // it would break a setup Agent Farm does not own.
-            };
-        },
-        preflight: sel => catalogRefusal(readOpenCodeCatalog(deps.openCodeCatalogText), {
-            engine: 'opencode',
-            // Same rule as the identity: the catalog says who serves this, and
-            // where it has not been read there is nothing to refuse anyway.
-            providerId: str(sel.providerId) || catalogProviderFor(str(sel.modelId)),
-            modelId: str(sel.modelId),
-            ...(sel.variant ? { variant: sel.variant } : {}),
-            // X-113 - the reasoning level is part of the pick, so it is part of
-            // what can be refused; a model that publishes none says so here.
-            ...(sel.effort ? { effort: str(sel.effort) } : {})
-        }),
-        // ‼️ THE OPPOSITE OF CLAUDE, AND FOR A MEASURED REASON: this engine DOES
-        // name its provider — `providerID` on an export's assistant rows, and
-        // `provider/model` as the ACP `model` option's current value. Both are
-        // read; the second is cut only where the head is a name this same
-        // catalog published, which is the identical refusal `catalogProviderFor`
-        // makes above rather than a second, looser one living beside it.
-        identityFromEvents: events => reportedPartial(
-            'opencode',
-            openCodeReported(events, catalog().providers.map(p => p.providerId))
-        ),
-        // A provider change here is the engine's documented feature, not the
-        // defect it is on Claude.
-        resumePolicy: () => ({ act: 'resume' }),
-        billingPolicy: () => ({ engineCostIsAuthoritative: true, countsAgainstPlanQuota: false }),
-        identity: () => ({ ...unknownIdentity('opencode'), scope: 'turn' })
     };
 }
 

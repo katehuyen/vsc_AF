@@ -24037,7 +24037,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Absent means NOT FETCHED, which the catalog reader treats as a
         // distinct state from "the engine offers none" — so an unread catalog
         // refuses nothing rather than refusing everything.
-        ...(opencodeCatalog.text ? { openCodeCatalogText: opencodeCatalog.text } : {})
+        ...(opencodeCatalog.text ? { openCodeCatalogText: opencodeCatalog.text } : {}),
+        keyState: (id: string) => {
+            const p = providerProfiles().find(x => x.id === id);
+            const k = p ? routeKeyOf(p) : undefined;
+            return { has: !!k?.value, ...(k?.heldFor ? { heldFor: k.heldFor } : {}) };
+        },
+        lastRouteVendor: (id: string) => routeNamesNow().last[id.toLowerCase()]?.providerId || undefined
     });
 
     /* ===================== X-114 — PROVIDER HEALTH =========================

@@ -49,6 +49,17 @@ interface ProviderEntry {
 
 const trimSlash = (u: string | undefined): string => String(u ?? '').trim().replace(/\/+$/, '');
 
+/** A lent model's name: the route's label when it serves one model, otherwise the model's own id. */
+export function lentModelName(p: LentRoute, modelId: string): string {
+    return routeModelList(p.tiers).length === 1 ? (p.label || p.id) : modelId;
+}
+
+/** Where OpenCode sends a lent route's requests, and the kind of header the key goes in (an OpenCode endpoint takes a Bearer). */
+export function lentAddress(p: LentRoute): { baseUrl: string; authKind: string } {
+    const oc = trimSlash(p.opencodeUrl);
+    return oc ? { baseUrl: oc, authKind: 'oauth' } : { baseUrl: trimSlash(p.baseUrl), authKind: p.authKind || 'api-key' };
+}
+
 /**
  * The provider entry for one route. With an OpenCode endpoint: the OpenAI-style
  * SDK there, the key as a Bearer. Otherwise the Anthropic SDK at the endpoint +
@@ -71,7 +82,7 @@ function entryFor(p: LentRoute): ProviderEntry {
     for (const m of models) {
         // ‼️ a limit with no output makes OpenCode refuse its WHOLE config (measured): both, or none
         out.models[m.model] = {
-            name: models.length === 1 ? (p.label || p.id) : m.model,
+            name: lentModelName(p, m.model),
             ...(p.context && p.output ? { limit: { context: p.context, output: p.output } } : {})
         };
     }
