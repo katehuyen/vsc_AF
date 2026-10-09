@@ -511,7 +511,8 @@ export function opencodeResolveOption(
     if (!group) { return v; }
     const values = group.options.map(o => o.value);
     if (values.includes(v)) { return v; }
-    const tails = values.filter(x => x.slice(x.lastIndexOf('/') + 1) === v);
+    // X-519 — the FIRST '/', as OpenCode splits it (measured): `af-x/nvidia/nemo:free` is model `nvidia/nemo:free`.
+    const tails = values.filter(x => x.slice(x.indexOf('/') + 1) === v);
     return tails.length === 1 ? tails[0] : undefined;
 }
 

@@ -147,6 +147,15 @@ ok('set_config_option says configId, not id',
         O.opencodeResolveOption(opts, 'reasoning', 'high') === 'high');
     ok('…and nothing asked for is nothing to send',
         O.opencodeResolveOption(opts, 'model', '  ') === undefined);
+    // X-519 (4) — measured (design map 2.2 item 7): OpenCode splits a value at its FIRST '/', so a model id
+    // with a slash of its own (a real route's) is the whole tail after the provider.
+    const slashed = [{
+        id: 'model', name: 'Model', category: 'c', currentValue: 'opencode/big-pickle',
+        options: [{ value: 'opencode/big-pickle', name: 'Big Pickle' }, { value: 'af-or-nemotron/nvidia/nemo:free', name: 'Nemotron' }]
+    }];
+    ok('‼️ a model id with a slash resolves to the value OpenCode publishes for it',
+        O.opencodeResolveOption(slashed, 'model', 'nvidia/nemo:free') === 'af-or-nemotron/nvidia/nemo:free');
+    ok('…and its last segment alone is not that model', O.opencodeResolveOption(slashed, 'model', 'nemo:free') === undefined);
 }
 
 // --- K-28: and the Console compares AFTER resolving, so a resume is quiet ---
