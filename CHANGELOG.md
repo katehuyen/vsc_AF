@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.909.0 - The second badge names what answers (2026-10-10)
+
+- **An OpenCode session's badge names the model or the route, never the
+  service.** A session on OpenCode's own model shows that model's name
+  (Big Pickle), not "opencode". A session on one of your routes shows the
+  route's name in its company's colour - the same badge a Claude session on
+  that route wears. A card that switched to a route between turns shows that
+  route's name too. Claude sessions look exactly as before.
+- **The same answer on every page**: the Console card, the Sessions table,
+  the session viewer, the Turns page (each turn), the timeline, tasks,
+  missions and the phone. Hovering the badge says where the answer came from
+  (an Agent Farm route, or OpenCode's own provider) and, on a route, which
+  model is running. Typing the model name in the Sessions search finds the
+  session.
+- **A route's history stays right.** A session that ran on a route is no
+  longer listed as answered by an unknown provider, and a route that was
+  renamed or removed later still names its sessions (removed ones say so).
+- **Two groups in OpenCode's provider and model lists** - "Agent Farm
+  routes" and "OpenCode's own" - in the Console, the launcher, and the task
+  and mission forms. A route serving several models lists each one with the
+  slots it fills.
+- **Disk space:** OpenCode can leave half-written copies of its model list
+  (about 4 MB each) in its cache folder. Agent Farm's own background reads
+  no longer cause them, and the ones already there - older than an hour and
+  not being written - are removed.
+- **For agents:** new bridge op launch.form (the route and model rows of the
+  start form for one engine, with their groups); turns.list rows carry
+  modelLabel and servedLabel; sessions.opencodeSync reports the leftover
+  catalog files (catalogTemps).
+
 ## 3.908.0 - OpenCode Console cards run on your routes (2026-10-10)
 
 - **Every route you lend to OpenCode now reaches its Console cards.** The
