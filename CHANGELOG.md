@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.900.0 - Farm Settings speaks plainly on every row (2026-10-09)
+
+- **Every setting now has a name and a one-line summary** instead of its
+  raw key - the last eight sections join the first six: Tasks & Queue,
+  Quota & Cost, Handover & Relay, Knowledge, Media & Studio, Sentry,
+  Gatekeeper and Remote Access ("Retry after a failure", "Hold starts at",
+  "Most legs per chain", "Reachable from").
+- **No choice is shown as its stored value any more** - "Lead, then me",
+  "Whichever is fuller", "Ask every time", and inside tables and forms too:
+  "Accept edits", "Doubling", "Any launch".
+- **Table columns have names** - Model prices, Media prices, Quota weights,
+  Model rules and Dispatch rules head their columns "Model pattern",
+  "Cache write", "Prompt pattern" and so on; the stored key is still in the
+  column's hover.
+- **Shorter, plainer descriptions** in these sections, on this page and in
+  VS Code's own Settings editor: another setting named by its name, no
+  internal notes, no fixed levels written into the text. Nine choices that
+  had no explanation at all now say what each option does.
+- **Handover & Relay's and Sentry's groups explain themselves in a sentence
+  or two** instead of a paragraph.
+- **Fixed:** "Start the next queued task" said it acted when a task's
+  terminal closed; it starts the agent's next queued task when a task
+  finishes successfully.
+- Workflow spend cap, Trend alert at, Weekly handover at and Cost cap per
+  record get the on/off switch their "0 = off" promised.
+
 ## 3.899.0 - Farm Settings speaks plainly: the first six sections (2026-10-08)
 
 - **Every setting in General, Projects, Agents, Engines & Accounts,
