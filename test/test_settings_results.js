@@ -168,7 +168,8 @@ const type = (p, q) => {
     const live = picks.find(p => p.key === CHANGED);
     ok('Find Setting… lists every setting', picks.length === flat.length);
     ok('…by its name, with its section (and that it is changed) and its key',
-        live && live.label === 'Live port' && /· changed$/.test(live.description) && live.detail === CHANGED);
+        live && live.label === require('../out/core/settingsCatalog/index.js').catalogEntry('livePort').label
+        && /· changed$/.test(live.description) && live.detail === CHANGED);
     const cmd = pkg.contributes.commands.find(c => c.command === 'agentfarm.findSetting');
     ok('…and it is in the command palette as Agent Farm: Find Setting…', cmd && cmd.category === 'Agent Farm' && /^Find Setting/.test(cmd.title));
 }

@@ -134,7 +134,7 @@ export const handover: CatalogSection = {
             label: 'Standing rule',
             summary: 'A rule said to every leg of every chain, above the predecessor\'s words.'
         },
-        // A late note is a handover note written in the leg's last two minutes. A leg that finished cleanly, or that
+        // A leg whose note was written in its last two minutes is cut off too. A leg that finished cleanly, or that
         // you ended yourself, is never rescued; a successor that dies within 30 seconds without a tool call stops the
         // chain (crash-loop guard). {evidence} is the handover note's status, remaining and first-five-minutes
         // sections, or the uncommitted state.

@@ -13,7 +13,7 @@ export const monitor: CatalogSection = {
         {
             // U-158 — the stuck warning is one question (after how long, and whether you are told), so its two keys are one group
             id: 'stuck', label: 'Stuck warning',
-            about: 'When a silent working session is marked stalled, and whether you are told.'
+            about: 'The **number** says WHEN a working session silent that long is marked stalled; 0 turns the warning off. The **box** says whether you are told: ticked, a Needs You row and a pop-up; unticked, only its card shows the mark.'
         },
         {
             // U-154 — the three quota figures' looks are one question, shown on a sample line

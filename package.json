@@ -9334,7 +9334,7 @@
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Your own first message for a leg the failsafe opens when the one before was cut off (told to hand over, a late note, an error, uncommitted work). Variables as in Leg message template, plus {evidence} (what it left behind), without {agentPrompt}; a template without {evidence} still gets it, last. Empty = the built-in emergency header."
+          "description": "Your own first message for a leg the failsafe opens after a cut-off leg (told to hand over, an error, uncommitted work). Variables: {leg}, {hop}, {maxHops}, {chain}, {agentId}, {fromSessionId}, {why}, {evidence} (what it left), {userDirective}, {relayRules}; without {evidence} a template gets it, last. Empty = the built-in header."
         },
         "agentFarm.batonFaultWaitHours": {
           "type": "number",
@@ -10776,7 +10776,7 @@
         "agentFarm.digestTtsModel": {
           "type": "string",
           "default": "",
-          "description": "The fal.ai text-to-speech model the spoken daily briefing is recorded with (check the exact id on fal.ai); the file goes to \"Briefing audio folder\" and is paid from your fal key. Empty = this computer reads the briefing aloud for free, with the Sound page's reading voice."
+          "description": "The fal.ai text-to-speech model the spoken daily briefing is recorded with (check the exact id on fal.ai); the file goes to \"Briefing audio folder\" and is paid from your fal key. Empty: this computer reads the briefing aloud for free, with the Sound page's reading voice."
         },
         "agentFarm.digestTtsFolder": {
           "type": "string",
