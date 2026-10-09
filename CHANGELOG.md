@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.904.0 - Launch profiles keep every choice; route names fit their badge (2026-10-09)
+
+- **Fixed:** a launch profile created or edited by an agent (through the
+  bridge) lost its Superpowers choice and its sign-in - a profile set to
+  start without the engineering-discipline skills came back saying nothing
+  about them. Every choice a profile can hold is now kept, whichever way it
+  is saved.
+- **settings.json knows every field of a launch profile** - engine, route,
+  tier, sign-in, variant, Superpowers and where it opens are described in
+  VS Code's settings editor, and Farm Settings names them ("Route",
+  "Sign-in", "Opens in") instead of showing their keys.
+- **A route's name is at most 15 characters** - the length every badge
+  shows in full. The route form stops at 15 and says so; a longer note
+  goes in "Your note". Routes saved earlier with a longer name keep it and
+  stay editable; only a new or changed name is held to the limit, and a
+  copied route's name is shortened to fit "(copy)".
+
 ## 3.903.0 - Filter boxes narrow instead of wrapping (2026-10-09)
 
 - **Notices, Queue, A2A Notes and A2A Tasks keep their filters on one
