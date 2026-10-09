@@ -488,8 +488,8 @@ console.log('\n== X-116 — a named route removed while the task waited is refus
     // before any spawn, so a refusal that stopped working turns this red without
     // ever starting a real engine out of a temp folder.
     const tm = new T.TaskManager(path.join(dir, 'tasks.json'), () => [agent], () => false, () => '', {
-        routeRefusal: (engine, providerId, tier) => {
-            refusedFor.push({ engine, providerId, tier });
+        routeRefusal: (engine, providerId, tier, model) => {
+            refusedFor.push({ engine, providerId, tier, model });
             return removed ? `"${providerId}" is not a route ${engine} can be pointed at —` : undefined;
         },
         recordLaunch: () => { throw new Error('reached the manifest'); }
@@ -509,6 +509,15 @@ console.log('\n== X-116 — a named route removed while the task waited is refus
     refusedFor.length = 0;
     try { tm.startTask(bare); } catch (e) { threw = String(e.message); }
     ok('‼️ a task that names NO route is not asked about one', refusedFor.length === 0 && threw === 'reached the manifest');
+
+    // X-517 — on OpenCode a model alone can name a lent route, so the model is asked about too.
+    const lent = tm.addTask(agent, 'lent', 'p', 'headless', { engine: 'opencode', model: 'af-kimi/k2', autoStart: false });
+    refusedFor.length = 0;
+    threw = '';
+    try { started = tm.startTask(lent); } catch (e) { threw = String(e.message); }
+    ok('a task naming only a model hands the gate that model', refusedFor.length === 1
+        && refusedFor[0].engine === 'opencode' && refusedFor[0].providerId === '' && refusedFor[0].model === 'af-kimi/k2');
+    ok('…and a refusal stops it before the manifest', started === false && threw === '' && lent.status === 'failed');
     tm.dispose();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 
@@ -516,8 +525,13 @@ console.log('\n== X-116 — a named route removed while the task waited is refus
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('the refusal sits before the manifest is written', tasksTs.indexOf('this.opts.routeRefusal?.(')
         < tasksTs.indexOf('task.launchId = this.opts.recordLaunch?.('));
+    // X-517 — "where Agent Farm holds the catalog" is asked for the side the pick names (a lent route on OpenCode).
+    const gate = ext.slice(ext.indexOf('routeRefusal: (engine, providerId, tier, model'), ext.indexOf('resumeRoute: (agentId, engine, sessionId, route)'));
     ok('‼️ the host asks the SAME rule the enqueue applies, only where Agent Farm holds the catalog',
-        /routeRefusal: \(engine, providerId, tier\) =>\s*dataOwnerOf\(engineOf\(engine\)\.id, 'catalog'\) === 'agent-farm'\s*\? launchRouteRefusal\(engine, providerId, tier\) : undefined/.test(ext));
+        /const source = routeSourceOf\(id, providerId, model\);/.test(gate)
+        && /if \(dataOwnerOf\(id, 'catalog', source\) !== 'agent-farm'\) \{ return undefined; \}/.test(gate)
+        && /\? launchRouteRefusal\(engine, providerId, tier\)/.test(gate)
+        && /\.preflight\(\{ engine: id, providerId: '', modelId: model \}\)\[0\]/.test(gate));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1979,7 +1979,7 @@ export interface TaskManagerOptions {
      * the same rule that refuses writing it onto a task, asked again at the
      * spawn, because a route can be removed while the task waits.
      */
-    routeRefusal?: (engine: string, providerId: string, tier: string) => string | undefined;
+    routeRefusal?: (engine: string, providerId: string, tier: string, model?: string) => string | undefined;
     /**
      * ‼️ X-106 — WHAT THAT ROUTE RESOLVES TO RIGHT NOW, as a redacted answer.
      *
@@ -4069,8 +4069,9 @@ export class TaskManager implements vscode.Disposable {
          * route gets at the enqueue.
          */
         const named = routeOf(task);
-        const gone = named && this.opts.routeRefusal?.(
-            engineOf(task.engine).id, named.providerId ?? '', named.tier ?? '');
+        // X-517 — the model too: on OpenCode a model alone can name a lent route.
+        const gone = (named || task.model) && this.opts.routeRefusal?.(
+            engineOf(task.engine).id, named?.providerId ?? '', named?.tier ?? '', task.model ?? '');
         if (gone) {
             const why = `the route it names cannot be run on now: ${gone} Point the task at a route `
                 + 'that exists, or clear its route to run on the agent\'s own.';

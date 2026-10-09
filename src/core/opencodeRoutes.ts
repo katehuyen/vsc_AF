@@ -18,6 +18,22 @@ const WIRE = 'af-';
 /** A route's OpenCode provider id. Claude-side records keep the bare route id. */
 export function wireIdOf(routeId: string): string { return WIRE + routeId; }
 
+/** The provider id a route is filed under on an engine: OpenCode's wire id, the bare id everywhere else. */
+export function routeIdOn(engine: string, routeId: string): string { return engine === 'opencode' ? wireIdOf(routeId) : routeId; }
+
+/** An engine's routes as its health rows match them: on OpenCode the lendable ones under their wire id (copies). */
+export function routeProfilesOn<T extends LentRoute>(engine: string, profiles: readonly T[]): T[] {
+    return engine === 'opencode'
+        ? profiles.filter(p => lendableToOpenCode(p)).map(p => ({ ...p, id: wireIdOf(p.id) }))
+        : profiles.filter(p => p.engines.includes(engine));
+}
+
+/** Whose data a pick names: on OpenCode a lent route (its wire id, or with no provider a model under one), else the engine's. */
+export function routeSourceOf(engine: string, providerId: string, model = ''): 'agent-farm-route' | 'engine-native' {
+    const named = providerId.trim() ? routeIdOfWire(providerId) : routeIdOfWire(model.trim().split('/')[0]);
+    return engine === 'opencode' && named ? 'agent-farm-route' : 'engine-native';
+}
+
 /** `af-kimi` → `kimi`; anything not ours → ''. Strips exactly one prefix (a route id may itself start with af-). */
 export function routeIdOfWire(providerId: string | undefined): string {
     const s = String(providerId ?? '').trim();

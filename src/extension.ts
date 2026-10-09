@@ -235,8 +235,9 @@ import { publicOpenCodeCatalogText, readOpenCodeCatalog } from './core/providerC
 import { variantsByRef } from './core/opencodeVariant';
 import {
     dropTestsFor, keyFor, providerHealth, ProviderHealthInput, ProviderHealthReport, ProviderTestRecord,
-    smokeRefusal, testKeyOf
+    smokeRefusal, testKeyOf, testModelRef
 } from './core/providerHealth';
+import { routeIdOn, routeProfilesOn, routeSourceOf, routeValue } from './core/opencodeRoutes';
 import { scrubSecrets, secretValuesOf } from './core/secretScrub';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
@@ -4424,9 +4425,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ X-116 — refused only where Agent Farm holds the route catalog
             // itself: an engine-owned catalog may simply not have been read yet,
             // and there the engine is the authority that refuses.
-            routeRefusal: (engine, providerId, tier) =>
-                dataOwnerOf(engineOf(engine).id, 'catalog') === 'agent-farm'
-                    ? launchRouteRefusal(engine, providerId, tier) : undefined,
+            // X-517 — asked by the side the pick names: a route lent to OpenCode is Agent Farm's, and a
+            // model alone can name one there (launchSelection), so the adapter refuses it the same way.
+            routeRefusal: (engine, providerId, tier, model = '') => {
+                const id = engineOf(engine).id;
+                const source = routeSourceOf(id, providerId, model);
+                if (dataOwnerOf(id, 'catalog', source) !== 'agent-farm') { return undefined; }
+                return providerId || source !== 'agent-farm-route'
+                    ? launchRouteRefusal(engine, providerId, tier)
+                    : adapterFor(id, registryDeps()).preflight({ engine: id, providerId: '', modelId: model })[0];
+            },
             // ‼️ X-109 — the same gate every Console and terminal resume goes
             // through, so a task continuing a conversation cannot come to a
             // different answer about its route than a person would. A headless
@@ -23890,7 +23898,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // something (X-101).
             let childEnv: NodeJS.ProcessEnv | undefined;
             if (runEnv && (runEnv.set || runEnv.clear)) {
-                childEnv = { ...process.env, ...(runEnv.set ?? {}) };
+                childEnv = { ...process.env };
+                // X-517 B — a route's OPENCODE_CONFIG_CONTENT joins the inherited one, as a launch's does.
+                for (const [name, value] of Object.entries(runEnv.set ?? {})) { childEnv[name] = routeValue(name, value, process.env[name]); }
                 for (const name of runEnv.clear ?? []) { delete childEnv[name]; }
             }
             const child = cp.execFile(command, args, {
@@ -24067,10 +24077,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await context.globalState.update(PROVIDER_TESTS,
             [rec, ...kept].sort((a, b) => b.at - a.at).slice(0, 200));
     };
-    /** X-115 — every verdict about a route that is gone, gone with it. */
-    const forgetProviderTests = async (engine: string, providerId: string): Promise<void> => {
+    /** X-115 — every verdict about a route that is gone, gone with it (on OpenCode filed under its wire id). */
+    const forgetProviderTests = async (engine: string, routeId: string): Promise<void> => {
         const all = providerTestRecords();
-        const kept = dropTestsFor(all, engine, providerId);
+        const kept = dropTestsFor(all, engine, routeIdOn(engine, routeId));
         if (kept.length !== all.length) { await context.globalState.update(PROVIDER_TESTS, kept); }
     };
     /**
@@ -24142,9 +24152,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engine,
             adapter,
             catalog: adapter.catalog(),
-            // OpenCode is handed no route until a launch lends them: its catalog would report each one as not offered.
-            profiles: engine === 'opencode' ? [] : providerProfiles().filter(p => p.engines.includes(engine)),
-            hasSecret: (id: string) => providerProfiles().some(p => p.id === id && !!routeKeyOf(p).value),
+            // X-517 E — on OpenCode the lendable routes under their wire id (af-<id>), so its rows match them.
+            profiles: routeProfilesOn(engine, providerProfiles()),
+            hasSecret: (id: string) => providerProfiles().some(p => routeIdOn(engine, p.id) === id && !!routeKeyOf(p).value),
             cli: { present: !!row?.cli.found, ...(version ? { version } : {}) },
             inheritedEnv: process.env,
             // ‼️ Claude only, because it is the only engine whose route IS the
@@ -24205,7 +24215,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const input = await providerHealthInput(engine);
         const report = providerHealth(input);
         const row = report.rows.find(r => r.providerId === providerId);
-        const modelRef = model.trim() || row?.modelRefs[0] || '';
+        const modelRef = testModelRef(row, model);
         const key = keyFor(input, providerId, modelRef);
         const refusal = smokeRefusal(row, modelRef);
         if (refusal) {
@@ -44442,7 +44452,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'model / own providers / disabled providers from the global and project '
                 + 'opencode.json(c). A bare model id there is a problem and stays unknown, never '
                 + 'guessed; `config` lists every file read with its scope and the agents it reaches. '
-                + 'Agent Farm never rewrites those files — each finding names the file to edit. Reads '
+                + 'Agent Farm never rewrites those files — each finding names the file to edit. X-517 — '
+                + 'on OpenCode a row carries `origin`: agent-farm-route (a route Agent Farm lends, id '
+                + 'af-<id>, available from its own data even before the engine\'s catalog is read) or '
+                + 'engine-native (the engine\'s own provider). Reads '
                 + 'only; nothing is started and nothing is written. args: engine? (default claude)',
             handler: async (args) => {
                 const engine = (optStr(args, 'engine') || 'claude').trim().toLowerCase();
@@ -44468,8 +44481,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'reason), and ok false with `refused` (nothing ran, nothing was spent, nothing was '
                 + 'proved — read it as "not tested", never as "failed"). The verdict is filed under '
                 + 'what it proved and returned by providers.status until one of those things changes. '
-                + 'No credential is read or returned. args: providerId, engine? (default claude), '
-                + 'model? (the engine\'s own spelling; omit for the first the route offers)',
+                + 'No credential is read or returned. On OpenCode a route Agent Farm lends is named '
+                + 'af-<id> (engine=opencode providerId=af-<id>); only that route and its key are given '
+                + 'to the one turn, and a model it does not serve is refused. args: providerId, '
+                + 'engine? (default claude), model? (the engine\'s own spelling — on a lent route its '
+                + 'reference or the bare model id; omit for the route\'s default)',
             handler: async (args) => {
                 const engine = (optStr(args, 'engine') || 'claude').trim().toLowerCase();
                 need(!!ENGINES[engine as EngineId], `no engine called "${engine}"`);

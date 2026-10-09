@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.906.0 - OpenCode runs on a route Agent Farm holds (2026-10-10)
+
+- **A route marked for OpenCode can now be picked when OpenCode starts** -
+  from a background task, a schedule, a mission, a relay leg, or the
+  integrated or external terminal. Its requests go to the route's address
+  with the route's key. Only the route you picked is given to that run, and
+  its key travels in the run's environment alone: no OpenCode file is
+  written, and the key is in no command line, launch record or answer. The
+  Console card follows in a later release.
+- **A route's models appear under its own name** (af-<route>) beside
+  OpenCode's own providers, so a route can never take over a provider
+  OpenCode already has. Picking a route without a model runs its default -
+  the model on its highest tier (opus, then sonnet, then haiku).
+- **A route OpenCode cannot use is refused before anything starts**, with
+  the reason: not marked for OpenCode, no model, no address, no key, or a
+  key given for an address that has changed since.
+- **A session that ran on a route resumes on the same route** instead of
+  being refused as "no longer offered".
+- **Test on the Engines page works for OpenCode** - for its own models and
+  for routes. A test aimed at a model sent the model twice and OpenCode quit
+  before asking anything; it now sends it once. A route's result is kept per
+  route, model, OpenCode version and route revision.
+- **On a route, OpenCode's cost is shown as not measured** - OpenCode writes
+  0 for a model it has no price for, which is not the same as free.
+- **For agents:** providers.status engine=opencode marks each row's origin
+  (agent-farm-route or engine-native); providers.test engine=opencode
+  providerId=af-<id> tests a route (model optional - the route's default; a
+  model the route does not serve is refused); providers.runtime takes
+  model=.
+
 ## 3.905.0 - One route for Claude Code and OpenCode: the groundwork (2026-10-09)
 
 - **A route now says which engines it serves** - Claude Code, OpenCode or

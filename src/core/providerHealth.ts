@@ -39,7 +39,7 @@
  */
 
 import {
-    CatalogSource, ProviderAdapter, ProviderAxis, ProviderCatalog, ProviderSelection
+    CatalogSource, ProviderAdapter, ProviderAxis, ProviderCatalog, ProviderCatalogEntry, ProviderSelection
 } from './providerAdapter';
 import { StoredProviderProfile } from './providerProfiles';
 import { isRouteEnvName } from './providerRuntime';
@@ -135,6 +135,8 @@ export interface ProviderHealthRow {
     engine: string;
     providerId: string;
     label: string;
+    /** Where the catalog entry came from — a route Agent Farm lends, or the engine's own; absent when the catalog does not say. */
+    origin?: ProviderCatalogEntry['origin'];
     /** Something declares it. Never a claim that it would run. */
     configured: boolean;
     /** In one phrase: who declares it. */
@@ -318,7 +320,9 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
                 + 'could name on it');
         }
 
-        if (credentialsEmpty) {
+        // A lent route's key is ours, so the engine's credential file says nothing about it.
+        const lent = p.origin === 'agent-farm-route';
+        if (credentialsEmpty && !lent) {
             rowNotes.push('no credential is stored for this engine, and it is offering this '
                 + 'provider anyway');
         }
@@ -338,14 +342,16 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
                 + 'and mode, and the interactive TUI takes no --variant flag');
         }
 
+        // ‼️ X-517 E — a lent route is our own data, so it does not wait on the engine's catalog.
         const available: Availability = !cli.present || rowProblems.length
             ? 'no'
-            : fetched ? 'yes' : 'unknown';
+            : fetched || lent ? 'yes' : 'unknown';
 
         return {
             engine,
             providerId: p.providerId,
             label: p.providerLabel || p.providerId,
+            ...(p.origin ? { origin: p.origin } : {}),
             configured: true,
             configuredBy: profile ? 'a route Agent Farm holds' : 'the engine\'s own catalog',
             available,
@@ -437,7 +443,19 @@ export function smokeRefusal(row: ProviderHealthRow | undefined, modelId: string
     if (!trim(modelId) && !row.modelRefs.length) {
         return 'this provider publishes no model, so there is nothing to send a turn to';
     }
+    // A lent route is handed to the engine with its own models only; any other name cannot reach it.
+    if (row.origin === 'agent-farm-route' && trim(modelId) && !row.modelRefs.includes(trim(modelId))) {
+        return `this route does not serve "${trim(modelId)}" — it serves ${row.modelRefs.join(', ')}`;
+    }
     return '';
+}
+
+/** The model a test turn asks for: the one named (a lent route also takes its bare model id), else the row's first. */
+export function testModelRef(row: ProviderHealthRow | undefined, model: string): string {
+    const m = trim(model);
+    if (!m) { return row?.modelRefs[0] ?? ''; }
+    const lent = `${row?.providerId ?? ''}/${m}`;
+    return row?.origin === 'agent-farm-route' && !row.modelRefs.includes(m) && row.modelRefs.includes(lent) ? lent : m;
 }
 
 /**

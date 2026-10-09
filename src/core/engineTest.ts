@@ -283,7 +283,11 @@ export function aimedArgs(id: EngineId, args: string[], aim: ProviderAim): strin
     const extra = (aim.args ?? []).filter(a => typeof a === 'string');
     if (!model) { return [...args, ...extra]; }
     if (id === 'opencode') {
-        return [...opencodeRunArgs({ model, agent: 'plan' }), ...extra];
+        // ‼️ The adapter's args name the model too; measured (X-517 E), `run … -m X … -m X` exits with
+        // "j.split is not a function" before any request, so its model pair is dropped here.
+        const isModel = (a: string | undefined): boolean => a === '-m' || a === '--model';
+        const rest = extra.filter((a, i) => !isModel(a) && !isModel(extra[i - 1]));
+        return [...opencodeRunArgs({ model, agent: 'plan' }), ...rest];
     }
     const at = args.indexOf('--model');
     const rebuilt = at >= 0 && at + 1 < args.length
