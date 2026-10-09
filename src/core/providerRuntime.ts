@@ -38,6 +38,7 @@
 import { RedactedRoute } from './providerIdentity';
 import { StoredProviderProfile } from './providerProfiles';
 import { routeDefaultEnv, routeModelEnv } from './routeModels';
+import { routeValue } from './opencodeRoutes';
 
 /**
  * ‼️ MEANING, NOT MEMBERSHIP. A closed list of `CLAUDE_*` names goes stale
@@ -251,7 +252,7 @@ export function spawnEnvironment(
     // still finds and still tries to sign in with; the ABSENCE is what makes it
     // fall through to the credentials file, which is the whole point.
     for (const name of runtime?.clearEnv || []) { delete out[name]; }
-    for (const [k, v] of Object.entries(runtime?.spawnEnv || {})) { out[k] = v; }
+    for (const [k, v] of Object.entries(runtime?.spawnEnv || {})) { out[k] = routeValue(k, v, out[k]); }
     return out;
 }
 
@@ -279,7 +280,8 @@ export function spawnEnvironment(
  */
 export function terminalEnvOverlay(
     layers: Array<Record<string, string | null> | undefined>,
-    runtime: { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
+    runtime: { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined,
+    opts?: { windowEnv?: Record<string, string | undefined> } // what VS Code merges the overlay onto
 ): Record<string, string | null> {
     const out: Record<string, string | null> = {};
     for (const source of layers || []) {
@@ -293,6 +295,6 @@ export function terminalEnvOverlay(
         }
     }
     for (const name of runtime?.clearEnv || []) { out[name] = null; }
-    for (const [k, v] of Object.entries(runtime?.spawnEnv || {})) { out[k] = v; }
+    for (const [k, v] of Object.entries(runtime?.spawnEnv || {})) { out[k] = routeValue(k, v, k in out ? out[k] : opts?.windowEnv?.[k]); }
     return out;
 }

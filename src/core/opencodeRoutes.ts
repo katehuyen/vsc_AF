@@ -115,6 +115,11 @@ export function mergeConfigContent(existing: string | undefined, ours: string): 
     return JSON.stringify(out);
 }
 
+/** X-517 B — a route's OPENCODE_CONFIG_CONTENT JOINS the one already built (the constitution's layer); any other name is written over. */
+export function routeValue(name: string, value: string, before: string | null | undefined): string {
+    return name === 'OPENCODE_CONFIG_CONTENT' && typeof before === 'string' && before ? mergeConfigContent(before, value) : value;
+}
+
 /** A stable digest of everything about the lendable routes that changes what OpenCode is given — never a key's value. */
 export function routesFingerprint(routes: readonly LentRoute[], hasKey: (id: string) => boolean): string {
     const rows = routes.filter(p => lendableToOpenCode(p)).map(p => [

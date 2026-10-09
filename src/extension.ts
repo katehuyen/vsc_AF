@@ -26069,7 +26069,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         const termEnv = terminalEnvOverlay(
             [env],
-            termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude', route) : undefined);
+            termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude', route) : undefined,
+            { windowEnv: process.env });
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
             openExternalTerminal(cwd, command, title, { env: termEnv });

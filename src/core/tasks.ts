@@ -4265,7 +4265,8 @@ export class TaskManager implements vscode.Disposable {
             // nightly job pointed at one endpoint by hand ran on whichever one
             // the agent was set to when it fired. `undefined` is unchanged
             // behaviour for every task written before the dimension existed.
-            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude', this.spawnRouteOf(task)));
+            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude', this.spawnRouteOf(task)),
+            { windowEnv: process.env });
         if (target === 'external') {
             fs.mkdirSync(this.outputsDir, { recursive: true });
             const exitFile = path.join(this.outputsDir, `${task.id}.exit`);

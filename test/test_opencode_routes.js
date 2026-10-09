@@ -86,5 +86,37 @@ eq('one variable per route, upper-case, everything else an underscore', R.routeK
         && !R.routeOfSelection({ modelId: 'opencode/big-pickle' }, routes));
 }
 
+// ---------- B the route's config joins the constitution's, on both spawn shapes ----------
+{
+    const fs = require('fs');
+    const RT = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));
+    const CC = 'OPENCODE_CONFIG_CONTENT';
+    const constitution = JSON.stringify({ instructions: ['D:/a/CLAUDE.md'] });
+    const fragment = R.fragmentFor([nemotron]);
+    const rt = { spawnEnv: { [CC]: fragment, AF_ROUTE_KEY_OR_NEMOTRON: 'k', ANTHROPIC_BASE_URL: 'route' } };
+    const both = j => j.instructions?.[0] === 'D:/a/CLAUDE.md' && !!j.provider?.['af-or-nemotron'];
+
+    const env = RT.spawnEnvironment({ PATH: 'p' }, [{ [CC]: constitution, ANTHROPIC_BASE_URL: 'layer' }], rt);
+    ok('‼️ a spawn keeps the constitution\'s layer AND gets the route', both(JSON.parse(env[CC])));
+    eq('…every other name is still written over, the key variable beside it', [env.ANTHROPIC_BASE_URL, env.AF_ROUTE_KEY_OR_NEMOTRON], ['route', 'k']);
+    eq('…an inherited config joins the same way', JSON.parse(RT.spawnEnvironment({ [CC]: constitution }, [], rt)[CC]).instructions, ['D:/a/CLAUDE.md']);
+    eq('with nothing there the route\'s text goes as it is', RT.spawnEnvironment({}, [], rt)[CC], fragment);
+    eq('…and a cleared name is nothing to join', RT.spawnEnvironment({ [CC]: constitution }, [], { ...rt, clearEnv: [CC] })[CC], fragment);
+
+    const win = { [CC]: constitution };
+    ok('‼️ a terminal joins the WINDOW\'s config when no layer set one', both(JSON.parse(RT.terminalEnvOverlay([], rt, { windowEnv: win })[CC])));
+    const layered = JSON.parse(RT.terminalEnvOverlay([{ [CC]: JSON.stringify({ instructions: ['L'] }) }], rt, { windowEnv: win })[CC]);
+    eq('…a layer\'s config is the one joined, not the window\'s', layered.instructions, ['L']);
+    eq('…a layer that removes it leaves the route\'s alone', RT.terminalEnvOverlay([{ [CC]: null }], rt, { windowEnv: win })[CC], fragment);
+    eq('…and without the window it is written as before', RT.terminalEnvOverlay([], rt)[CC], fragment);
+
+    const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const callOf = (src, head) => { const i = src.indexOf(head); return i < 0 ? '' : src.slice(i, src.indexOf('\n        if (', i)); };
+    ok('both terminal launches hand the window\'s environment over',
+        callOf(tasks, 'const env = terminalEnvOverlay(').includes('{ windowEnv: process.env }')
+        && callOf(ext, 'const termEnv = terminalEnvOverlay(').includes('{ windowEnv: process.env }'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

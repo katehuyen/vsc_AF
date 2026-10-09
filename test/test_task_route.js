@@ -103,7 +103,7 @@ console.log('\n== …and reaches the SPAWN, in the shape the resolver takes ==')
     ok('‼️ the interactive spawn AND the headless spawn both pass the task\'s own route',
         calls === 3 && /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(src)
         && /const routeRuntime = this\.opts\.engineRuntime\?\.\(agent\.id, engine\.id, this\.spawnRouteOf\(task\)\);/.test(src)
-        && /this\.opts\.engineRuntime\?\.\(agent\.id, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(src));
+        && /this\.opts\.engineRuntime\?\.\(agent\.id, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\),\s*\{ windowEnv: process\.env \}\);/.test(src));
     ok('…and neither of them reads the fields by hand instead',
         !/engineRuntime\?\.\([^)]*\{\s*providerId:\s*task\./.test(src));
     // ‼️ …AND THE RETRY'S ROUTE IS DECIDED BEFORE THE ROW EXISTS, not written
