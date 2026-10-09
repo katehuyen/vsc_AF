@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.903.0 - Filter boxes narrow instead of wrapping (2026-10-09)
+
+- **Notices, Queue, A2A Notes and A2A Tasks keep their filters on one
+  line.** Each filter box (Type, Level, Agents, Status, Projects,
+  Accounts...) used to keep the width of the longest thing it could ever
+  show, so a narrower window pushed the last boxes onto a second line while
+  the first ones stood half empty. Now the boxes narrow as the window does -
+  down to half their width, the rest in the hover - and only then does one
+  move down. With room to spare nothing changes, and the row still does not
+  move when you pick something.
+- The search box (and on Notices the sort) narrows with them.
+
 ## 3.902.0 - Search hits and drag handles readable in High Contrast (2026-10-09)
 
 - **High Contrast themes outline every search hit** the way VS Code's own
