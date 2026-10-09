@@ -195,6 +195,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--vscode-button-
 mark {
     background: var(--vscode-editor-findMatchHighlightBackground, #ffd33d55);
     color: inherit; border-radius: 2px; padding: 0 1px;
+    box-shadow: var(--af-hc-pick, none); /* High Contrast outlines a find match the way its editor does */
 }
 
 /* Multi-select filter dropdown (media/afFilters.js) — every "all or one"

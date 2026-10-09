@@ -42,8 +42,8 @@
                 .setlrow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
                 .setlrow input, .setlrow select { flex:1 1 auto; min-width:0; }
                 /* X-193 — the order is the value, so the row can be picked up. */
-                .setlgrip { cursor:grab; opacity:calc(1 - .55 * var(--af-dimk, 1)); font-size:12px; user-select:none; flex:0 0 auto; }
-                .setlrow:hover .setlgrip { opacity:.85; }
+                .setlgrip { cursor:grab; color:var(--vscode-descriptionForeground); font-size:12px; user-select:none; flex:0 0 auto; }
+                .setlrow:hover .setlgrip { color:var(--vscode-foreground); }
                 .setlrow.dragging { opacity:.5; }
                 .setlrow button[disabled] { opacity:.35; cursor:default; }
                 /* Where a path actually points — a whole row of its own, because

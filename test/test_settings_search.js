@@ -75,5 +75,37 @@ const keys = (q, n) => S.rank(items, q).slice(0, n).map(r => r.item.key);
         === keys('port', 3).sort().join());
 }
 
+// U-241 — the whole page's search scenes (test/fixtures/allsettings.js) draw what their labels promise
+{
+    const { runPage } = require('./lib_page_dom.js');
+    const fx = require('./fixtures/allsettings.js');
+    const scene = id => {
+        const v = fx.variants().find(x => x.id === id);
+        const p = runPage(fx.script, v.data, {}, v.state);
+        v.act(p);
+        const html = p.html();
+        const body = html.split('id="setbody"')[1] || html;
+        return { v, html, rows: (body.match(/data-item="([^"]+)"/g) || []).map(s => s.slice(11, -1)),
+            count: Number(((body.match(/class="setcount"[^>]*>(\d+) setting/) || [])[1]) || -1) };
+    };
+    const sound = scene('allsettings-sound');
+    ok(`‼️ the "sound" scene draws a ranked list whose count is its rows (${sound.count})`,
+        sound.count > 5 && sound.rows.length === sound.count && /value="sound"/.test(sound.html));
+    ok('…the sound settings first', sound.rows.slice(0, 5).every(k => /^agentFarm\.alerts\./.test(k)));
+    const port = scene('allsettings-port');
+    const firstReport = port.rows.findIndex(k => /report/i.test(k));
+    ok(`the "port" scene: livePort first, and the three port settings ahead of every report setting (${firstReport})`,
+        port.rows.length === port.count && port.rows[0] === 'agentFarm.livePort' && firstReport > 0
+            && ['agentFarm.web.port', 'agentFarm.remote.port'].every(k => port.rows.indexOf(k) > 0 && port.rows.indexOf(k) < firstReport));
+    const none = scene('allsettings-none');
+    ok('the "zzz" scene: no row, the query said back, one button back to every setting',
+        none.rows.length === 0 && /No setting matches &quot;zzz&quot;\.|No setting matches "zzz"\./.test(none.html) && /id="setclear"/.test(none.html));
+    const chg = scene('allsettings-changed');
+    const mod = fx.data().categories.flatMap(c => c.items).filter(i => i.modified).map(i => i.key);
+    ok(`the Changed scene: exactly the ${mod.length} changed settings, pressed`,
+        mod.length === 4 && chg.count === 4 && chg.rows.slice().sort().join() === mod.slice().sort().join()
+        && /id="setchanged" aria-pressed="true"/.test(chg.html));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

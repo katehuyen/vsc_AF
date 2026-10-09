@@ -39,11 +39,42 @@ const base = (values) => ({
 
 const data = () => base(changed());
 
+// Typing redraws #setbody only, and the stub never writes a typed value back into the markup, so the
+// picture's box is given its value attribute here, after the page has answered the input.
+const typed = q => r => {
+    const box = r.query('#filter')[0];
+    box.value = q;
+    box.fire('input');
+    const app = r.els.app;
+    app.innerHTML = app.innerHTML.replace(/(<input id="filter"[^>]*?)value=""/, `$1value="${q}"`);
+};
+
 const variants = () => ([
     {
         id: 'allsettings',
         label: 'Settings — every setting of the manifest in its section and group; four changed from their default',
         data: base(changed())
+    },
+    {
+        id: 'allsettings-sound', query: 'sound',
+        label: 'Settings — the search "sound": a ranked list, the sound settings first, each row naming its section and group',
+        // one webhook event: a list's disabled first/last arrows are the first scene's to measure, not the search's
+        data: base(Object.assign(changed(), { 'agentFarm.notifyWebhookEvents': ['permission'] })), act: typed('sound')
+    },
+    {
+        id: 'allsettings-port', query: 'port',
+        label: 'Settings — the search "port": sections ordered by their best hit, the three port settings ahead of every report setting',
+        data: base(changed()), act: typed('port')
+    },
+    {
+        id: 'allsettings-none', query: 'zzz',
+        label: 'Settings — a search nothing matches: the query said back and one button back to every setting',
+        data: base(changed()), act: typed('zzz')
+    },
+    {
+        id: 'allsettings-changed', changed: true,
+        label: 'Settings — Changed pressed: only the four settings changed from their default, with their reset',
+        data: base(changed()), act: r => { r.query('#setchanged')[0].click(); }
     }
 ]);
 
