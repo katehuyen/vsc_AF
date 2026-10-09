@@ -1011,13 +1011,7 @@ module.exports = {
         },
         {
             id: 'console-opencode',
-            label: 'Console — OpenCode chosen: no effort box, and permissions it can really ask about',
-            data: opencodeComposerData()
-        },
-        {
-            id: 'console-opencode-groups',
-            tip: 'tip-route',
-            label: 'Console — OpenCode\'s provider and model boxes in two groups: Agent Farm routes, OpenCode\'s own (X-521)',
+            label: 'Console — OpenCode chosen: no effort box, permissions it can really ask about, and its provider and model boxes in two groups (X-521)',
             data: opencodeGroupsData()
         },
         {
