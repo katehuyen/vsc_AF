@@ -34,6 +34,7 @@
 import { launchProviderForm, ProviderTransport } from './launchProvider';
 import { ProviderAdapter } from './providerAdapter';
 import { ProviderIdentity, qualifiedRef, splitQualifiedRef } from './providerIdentity';
+import { routeIdOfWire } from './opencodeRoutes';
 
 /** How the resumed session's route is known — the same four words as
  *  `RunIdentity.binding`, because it is the same fact. */
@@ -175,7 +176,7 @@ export function resumeRoute(
     // the profile (`kimi-work`), whose vendor half (`kimi`) is a different
     // field; on OpenCode the provider id, which the manifest states when the
     // launch named one and the turns report when it did not.
-    const prevSel = prevProfile || str(id?.providerId) || lastReported;
+    const ranOn = prevProfile || str(id?.providerId) || lastReported;
     const previous = {
         providerId: str(id?.providerId) || lastReported,
         profileId: prevProfile,
@@ -193,6 +194,8 @@ export function resumeRoute(
     const known = form.providers.map(c => str(c.id)).filter(Boolean);
     const noun = form.noun.toLowerCase() || 'provider';
     const offered = known.length ? `one of: ${known.join(', ')}` : (form.empty || 'nothing is on offer');
+    // X-517 — a lent route is picked by its wire id (`af-<profile>`) while the manifest names the bare profile
+    const prevSel = !prevProfile || known.includes(ranOn) ? ranOn : (known.find(k => routeIdOfWire(k) === ranOn) ?? ranOn);
 
     const q = qualifyModelRef(adapter, asked.model);
     if (q.ambiguous) {

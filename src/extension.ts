@@ -230,6 +230,7 @@ import {
     ProviderTransport, pruneProviderPick
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
+import { LaunchRouteAsk, launchSelection, ModelRule } from './core/launchSelection';
 import { publicOpenCodeCatalogText, readOpenCodeCatalog } from './core/providerCatalog';
 import { variantsByRef } from './core/opencodeVariant';
 import {
@@ -24266,8 +24267,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * Absent (or naming no provider) still means "ask the agent's record",
          * which is what every caller written before this said.
          */
-        route?: { providerId?: string; tier?: string; pinned?: boolean }
-    ): { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined => {
+        route?: LaunchRouteAsk
+    ): { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: ModelRule } | undefined => {
         const r = resolveLaunchRoute(agentId, engine, route);
         /**
          * ‼️ X-102 — NO ROUTE STILL MEANS NO OVERLAY, exactly as before this
@@ -24280,7 +24281,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!r?.routed) { return undefined; }
         return {
             ...(r.spawnEnv ? { spawnEnv: r.spawnEnv } : {}),
-            ...(r.clearEnv ? { clearEnv: r.clearEnv } : {})
+            ...(r.clearEnv ? { clearEnv: r.clearEnv } : {}),
+            ...(r.modelRule ? { modelRule: r.modelRule } : {})
         };
     };
 
@@ -24311,37 +24313,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * The resume gate answers with `pinned: true`, and here the agent's
          * record is then not consulted at all.
          */
-        route?: { providerId?: string; tier?: string; pinned?: boolean }
+        route?: LaunchRouteAsk
     ): {
         identity: ProviderIdentity; routed: boolean;
-        spawnEnv?: Record<string, string>; clearEnv?: string[];
+        spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: ModelRule;
     } | undefined => {
         const agent = agents.find(a => a.id === agentId);
         if (!agent) { return undefined; }
-        const chosen = route?.pinned || (route?.providerId ?? '').trim()
-            // The tier travels with the route that was named: a stored tier read
-            // against a launch's different route maps the word through the wrong
-            // endpoint.
-            ? { providerId: (route!.providerId ?? '').trim(), tier: (route!.tier ?? '').trim() }
-            : storedRoute(
-                cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
-                agent.dir, engine as EngineId);
-        const rt = resolveRuntime(engine, {
-            engine,
-            ...(chosen.providerId ? { providerId: chosen.providerId } : {}),
-            ...(chosen.providerId && chosen.tier ? { tier: chosen.tier } : {})
-        }, registryDeps());
+        const { rt, routed } = launchSelectionFor(agent.dir, engine, route, registryDeps());
         // ‼️ THE ENVIRONMENT IS WITHHELD WHEN NOTHING WAS CHOSEN. An adapter is
         // free to answer a routeless selection with a clearing list, and applying
         // it here would silently change what an unrouted terminal inherits — a
         // behaviour nobody asked for, arriving through a record-keeping item.
         return {
             identity: rt.identity,
-            routed: !!chosen.providerId,
-            ...(chosen.providerId && rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
-            ...(chosen.providerId && rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
+            routed,
+            ...(routed && rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
+            ...(routed && rt.clearEnv ? { clearEnv: rt.clearEnv } : {}),
+            ...(routed && rt.modelRule ? { modelRule: rt.modelRule } : {})
         };
     };
+    /** The door's one resolution (core/launchSelection.ts): the agent's standing route and the registry, handed in. */
+    const launchSelectionFor = (agentDir: string, engine: string, route: LaunchRouteAsk | undefined, deps: RegistryDeps) =>
+        launchSelection(engine, route,
+            () => storedRoute(cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {}, agentDir, engine as EngineId),
+            sel => resolveRuntime(engine, { ...sel }, deps));
     /**
      * ‼️ X-102 / X-106 — WHICH REVISION OF THE CATALOG a choice is being made
      * against, asked of the adapter rather than of the engine name.
@@ -24455,10 +24451,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 && normPath(s.cwd ?? '') === normPath(dir))
             .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))[0];
     /** The gate's route in the shape a spawn takes — absent fields stay absent. */
-    const gatedRoute = (g: ResumeRoute | undefined): { providerId?: string; tier?: string; pinned?: boolean } | undefined =>
+    const gatedRoute = (g: ResumeRoute | undefined): LaunchRouteAsk | undefined =>
         g && g.act !== 'none' && g.act !== 'refuse'
             ? { ...(g.providerId ? { providerId: g.providerId } : {}), ...(g.tier ? { tier: g.tier } : {}), pinned: g.pinned }
             : undefined;
+    /** X-517 — a door's route with the model it will send beside it (a lent route's reference names its route). */
+    const withModel = (r: LaunchRouteAsk | undefined, model: string | undefined): LaunchRouteAsk | undefined =>
+        (model ?? '').trim() ? { ...(r ?? {}), model: (model ?? '').trim() } : r;
     /**
      * ‼️ X-103 — THE FORM A LAUNCH PICKER DRAWS, for one engine and the pick so
      * far. One reader, so a door that SHOWS the choices and the resolver that
@@ -26026,7 +26025,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * actually picked, and a terminal that re-derived it from settings would
          * open on a different route from the one the row said.
          */
-        route?: { providerId?: string; tier?: string; pinned?: boolean },
+        route?: LaunchRouteAsk,
         /** ‼️ X-102 — the spawn this window IS, so the manifest can be joined to
          *  the session id that turns up later. See TermBinding.launchId. */
         launchId?: string
@@ -26438,7 +26437,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }): string | undefined => {
         const engine = engineOf(o.options.engine).id;
         const resolved = resolveLaunchRoute(o.agentId, engine, {
-            providerId: o.options.providerId, tier: o.options.tier
+            providerId: o.options.providerId, tier: o.options.tier, model: o.options.model
         });
         return resolved ? recordLaunch({
             engine,
@@ -26480,7 +26479,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     recordTaskLaunch = (run) => {
         const agent = agents.find(a => a.id === run.agentId);
         const resolved = agent ? resolveLaunchRoute(agent.id, run.engine, {
-            providerId: run.options.providerId, tier: run.options.tier
+            providerId: run.options.providerId, tier: run.options.tier, model: run.options.model
         }) : undefined;
         if (!agent || !resolved) { return undefined; }
         return recordLaunch({
@@ -26590,7 +26589,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...merged, permission, projectContextFile: contextFile, cwd: launchCwd,
             // X-495 — an Anthropic model asked of a third-party route by its alias
             model: routedModel(merged.model, resolveLaunchRoute(agent.id, spec.id,
-                { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned }))
+                { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned, model: merged.model }))
         });
         // ‼️ …EXCEPT ON AN ENGINE WITH NO SYSTEM-PROMPT CHANNEL, WHICH SAYS SO.
         // `codex` takes no `--append-system-prompt-file` (measured against its
@@ -26623,7 +26622,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * apart later — an external window is exactly where Agent Farm cannot
          * apply the route at all (X-104).
          */
-        const route = { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned };
+        const route = { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned, model: merged.model };
         const resolved = resolveLaunchRoute(agent.id, spec.id, route);
         const launchId = resolved && recordLaunch({
             engine: spec.id,
@@ -27659,7 +27658,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 permission: resolveLaunchPermission(merged.permissionMode, previewCwd),
                 // X-495 — the preview names the model the launch will really ask for
                 model: routedModel(merged.model, resolveLaunchRoute(agent.id, spec.id,
-                    { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned }))
+                    { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned, model: merged.model }))
             });
             const d = launchDefaults();
             const inherited = (own: string | undefined, def: string | undefined) =>
@@ -31135,7 +31134,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * composer is a person starting a session, whatever door sent them here.
          */
         const resolved = resolveLaunchRoute(agent.id, engineOf(merged.engine).id, {
-            providerId: merged.providerId, tier: merged.tier
+            providerId: merged.providerId, tier: merged.tier, model: merged.model
         });
         const launchId = resolved && recordLaunch({
             engine: engineOf(merged.engine).id,
@@ -37808,7 +37807,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         projectContextFile: systemPromptFileFor(own || undefined, 'session',
                             superpowersOnFor(s.agentName), s.sessionId),
                         // X-495 — on the conversation's own route, an Anthropic model by its alias
-                        model: routedModel(merged.model, resolveLaunchRoute(ownerAgent?.id ?? '', engine, gatedRoute(gate)))
+                        model: routedModel(merged.model, resolveLaunchRoute(ownerAgent?.id ?? '', engine, withModel(gatedRoute(gate), merged.model)))
                     }),
                     launchAccountEnv({ engine, account }),
                     // '' = do not stamp. A resume does not decide where a session
@@ -37818,7 +37817,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // gate's route: the terminal's environment is built from
                     // this pair, and before this item it got neither, so the
                     // route was resolved for Claude off the standing record.
-                    engine, gatedRoute(gate));
+                    engine, withModel(gatedRoute(gate), merged.model));
             }),
 
         // ---------- A2: the shelf (pin + tags) ----------
@@ -44382,10 +44381,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'same boundary X-100 draws with hasSecret. ‼️ AND AN EMPTY ANSWER IS AN ANSWER: with '
                 + 'no route chosen nothing is cleared and nothing is injected, which is the permanent '
                 + 'state of the four engines that have no provider axis. Reads only — nothing is '
-                + 'started and nothing is written. args: agent (name|id), engine? (default claude)',
+                + 'started and nothing is written. args: agent (name|id), engine? (default claude), model? '
+                + '(a lent route\'s af-<route>/<model> names it; modelRule = the model sent)',
             handler: async (args) => {
                 const agent = findAgent(optStr(args, 'agent'));
                 const engine = optStr(args, 'engine') || 'claude';
+                const model = optStr(args, 'model');
                 const chosen = storedRoute(
                     cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
                     agent.dir, engine as EngineId);
@@ -44393,12 +44394,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // whole answer lives in a catalog nothing had read here.
                 if (engine === 'opencode') { await refreshOpencodeCatalog(); }
                 const rdeps = registryDeps();
-                const sel = {
-                    engine, providerId: chosen.providerId,
-                    ...(chosen.tier ? { tier: chosen.tier } : {})
-                };
+                const { sel, rt } = launchSelectionFor(agent.dir, engine, model ? { model } : undefined, rdeps);
                 const adapter = adapterFor(engine, rdeps);
-                const rt = adapter.resolveRuntime(sel);
                 return {
                     agent: agent.name,
                     engine,
@@ -44414,6 +44411,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // without the key ever reaching a bridge response, a log or
                     // whatever wrote the answer to a file.
                     injects: Object.keys(rt.spawnEnv ?? {}),
+                    ...(rt.modelRule ? { modelRule: rt.modelRule } : {}),
                     preflight: adapter.preflight(sel)
                 };
             }

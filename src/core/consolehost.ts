@@ -578,8 +578,8 @@ export class ConsoleHost {
             /** X-103 — the route this CARD was started on; absent asks the
              *  agent's stored record, which is what every caller written before
              *  a picker existed meant. */
-            route?: { providerId?: string; tier?: string; pinned?: boolean }
-        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined,
+            route?: { providerId?: string; tier?: string; pinned?: boolean; model?: string }
+        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string } } | undefined,
         /**
          * ‼️ X-169 — THE ACCOUNT'S ENVIRONMENT, resolved by the side that owns
          * the slot list and the "use this next" map, for the same reason
@@ -1015,7 +1015,7 @@ export class ConsoleHost {
         // ‼️ X-267 — a resume asks for its OWN conversation's context, pinned.
         const ctxFile = this.projectContextFile(projectId, superpowers, init.resume);
         const routeRt = this.engineRuntime?.(init.agentId, engine.id, {
-            providerId: init.providerId, tier: init.tier, pinned: init.routePinned
+            providerId: init.providerId, tier: init.tier, pinned: init.routePinned, model: init.model
         });
         // X-495 — the model asked of a third-party route by its alias (routedModel)
         const args = hostArgs({ ...init, model: routedModel(init.model, routeRt), permission, projectContextFile: ctxFile });
@@ -2659,7 +2659,7 @@ export class ConsoleHost {
         // ‼️ X-495 — on this card's third-party route an Anthropic model is asked for by its alias,
         // and one the route maps no model for is not sent at all (it could only fail there).
         const asked = routedModel(model.trim(), this.engineRuntime?.(h.state.agentId, h.engine.id, {
-            providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned
+            providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned, model: model.trim()
         }), { live: true });
         if (!asked) {
             this.mutate(id, s => ({

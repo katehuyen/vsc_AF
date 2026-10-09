@@ -219,7 +219,7 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
         /const args = hostArgs\(\{ \.\.\.init, model: routedModel\(init\.model, routeRt\),/.test(host)
         && /\[this\.accountLayer\?\.\(engine\.id, init\.account\)\], routeRt\)/.test(host));
     ok('…and a live switch on a running card too, as a live one', /const asked = routedModel\(model\.trim\(\), this\.engineRuntime\?\.\(h\.state\.agentId/.test(host)
-        && /pinned: h\.state\.routePinned\s*\}\), \{ live: true \}\);/.test(host)
+        && /pinned: h\.state\.routePinned, model: model\.trim\(\)\s*\}\), \{ live: true \}\);/.test(host)
         && /controlLine\(requestId, 'set_model', \{ model: asked \}\)/.test(host));
     ok('tasks: the picked model and the policy\'s both, on both spawn shapes',
         /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(tasksTs)

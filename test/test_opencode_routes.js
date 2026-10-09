@@ -86,6 +86,16 @@ eq('one variable per route, upper-case, everything else an underscore', R.routeK
         && !R.routeOfSelection({ modelId: 'opencode/big-pickle' }, routes));
 }
 
+// ---------- the text travels as ASCII (an external window reads its env file in the console code page) ----------
+{
+    const tr = { ...nemotron, label: 'Öğrenci' };
+    const frag = R.fragmentFor([tr]);
+    const merged = R.mergeConfigContent(JSON.stringify({ instructions: ['C:/Masaüstü/CLAUDE.md'] }), frag);
+    ok('‼️ the fragment and the merge are ASCII only', /^[\x00-\x7e]*$/.test(frag) && /^[\x00-\x7e]*$/.test(merged));
+    eq('…and decode to the same label and path', [JSON.parse(frag).provider['af-or-nemotron'].name, JSON.parse(merged).instructions[0]],
+        ['Öğrenci', 'C:/Masaüstü/CLAUDE.md']);
+}
+
 // ---------- B the route's config joins the constitution's, on both spawn shapes ----------
 {
     const fs = require('fs');

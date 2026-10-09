@@ -1951,8 +1951,8 @@ export interface TaskManagerOptions {
          * item lands there is one resolver rather than a second one built beside
          * this signature.
          */
-        route?: { providerId?: string; tier?: string; pinned?: boolean }
-    ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
+        route?: { providerId?: string; tier?: string; pinned?: boolean; model?: string }
+    ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string } } | undefined;
     /**
      * ‼️ X-109 — WHICH ROUTE A TASK THAT CONTINUES A CONVERSATION RUNS ON,
      * as an ANSWER from the side that holds the launch manifests and the
@@ -4189,7 +4189,7 @@ export class TaskManager implements vscode.Disposable {
                 // becomes this engine's sandbox because it has nobody to ask.
                 const engine = engineOf(task.engine);
                 const dims = {
-                    model: task.model, effort: task.effort,
+                    model: this.askedModel(task, agent.id), effort: task.effort,
                     permissionMode: task.permissionMode,
                     // ‼️ Antigravity works in its own scratch folder unless it
                     // is handed one; the terminal's cwd below is not enough.
@@ -4226,9 +4226,17 @@ export class TaskManager implements vscode.Disposable {
 
     /** ‼️ X-109 — the route a spawn resolves: the task's own, and PINNED
      *  (empty included) once the resume gate has answered for it. */
-    private spawnRouteOf(task: FarmTask): { providerId?: string; tier?: string; pinned?: boolean } | undefined {
+    private spawnRouteOf(task: FarmTask): { providerId?: string; tier?: string; pinned?: boolean; model?: string } | undefined {
         const route = routeOf(task);
-        return task.routePinned ? { providerId: '', ...(route ?? {}), pinned: true } : route;
+        // X-517 — the model rides along: one that is a lent route's reference names that route
+        const model = task.model ? { model: task.model } : {};
+        if (task.routePinned) { return { providerId: '', ...(route ?? {}), ...model, pinned: true }; }
+        return route || task.model ? { ...(route ?? {}), ...model } : undefined;
+    }
+
+    /** X-517 — the model a non-Claude task asks for: on a lent route always one of the route's (routedModel). */
+    private askedModel(task: FarmTask, agentId: string): string | undefined {
+        return routedModel(task.model, this.opts.engineRuntime?.(agentId, task.engine ?? 'claude', this.spawnRouteOf(task))) || undefined;
     }
 
     /**
@@ -4670,7 +4678,7 @@ export class TaskManager implements vscode.Disposable {
         // path below is left exactly as it was for everything else.
         const argv = perTurn && engine.promptOn === 'argv'
             ? ['--print', perTurnPrompt, ...runArgs(engine.id, {
-                model: task.model, effort: task.effort,
+                model: this.askedModel(task, agent.id), effort: task.effort,
                 permissionMode: task.permissionMode,
                 // …and it must be told which folder it may see, or it answers
                 // about its own scratch workspace instead.
@@ -4687,7 +4695,7 @@ export class TaskManager implements vscode.Disposable {
             ? buildCliCommand(profile.headless, task.prompt, this.extraArgs())
             : perTurn
                 ? [engine.exe, ...runArgs(engine.id, {
-                    model: task.model, effort: task.effort,
+                    model: this.askedModel(task, agent.id), effort: task.effort,
                     permissionMode: task.permissionMode,
                     ...(safeResume ? { resume: safeResume } : {})
                 })].join(' ')

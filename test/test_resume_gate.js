@@ -226,7 +226,7 @@ console.log('\n== X-109 — the wire: every resume door passes through the gate 
         && /routePinned: true/.test(between("registerCommand('agentfarm.resumeInConsole'", "registerCommand('agentfarm.consoleForAgent'")));
     ok('‼️ the row\'s terminal Resume gates with nothing asked and hands the engine AND the route to the terminal',
         /resumeRouteFor\(s\.sessionId, engine, ownerAgent\?\.id \?\? '', \{\}, 'tui'\)/.test(ext)
-        && /engine, gatedRoute\(gate\)\);/.test(ext));
+        && /engine, withModel\(gatedRoute\(gate\), merged\.model\)\);/.test(ext));
     ok('‼️ startClaudeSession gates a resume and --continue, unless the launch arrived pinned',
         /if \(!o\.routePinned && \(o\.resume \|\| o\.continueLast\)\)/.test(between('const startClaudeSession = (', 'live.onDidUpdate('))
         && /latestSessionIn\(agent\.dir, engine\)/.test(between('const startClaudeSession = (', 'live.onDidUpdate(')));
@@ -242,7 +242,8 @@ console.log('\n== X-109 — the wire: every resume door passes through the gate 
     ok('‼️ the task runner is handed the same gate',
         /resumeRoute: \(agentId, engine, sessionId, route\) => resumeRouteFor\(/.test(ext));
     ok('‼️ the resolver honours a pinned empty route instead of asking the agent\'s record',
-        /const chosen = route\?\.pinned \|\| \(route\?\.providerId \?\? ''\)\.trim\(\)/.test(ext));
+        /launchSelection\(engine, route,/.test(ext) && /const named = route\?\.pinned \|\| asked;[\s\S]{0,200}const byModel = named \? undefined :/.test(
+            fs.readFileSync(path.join(ROOT, 'src', 'core', 'launchSelection.ts'), 'utf8')));
     ok('‼️ withAgentEngineDefaults does not fill a pinned route from the record',
         /providerId: \(o\.providerId \?\? ''\)\.trim\(\) \|\| \(pinned \? '' : route\.providerId\) \|\| ''/.test(ext));
     ok('‼️ the read-only op exists so the verdict can be seen before anything starts',
@@ -283,8 +284,8 @@ console.log('\n== X-109 — the wire: every resume door passes through the gate 
     const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
     ok('‼️ the task runner gates a continuation before the manifest and reads the pin at both spawn shapes',
         /this\.opts\.resumeRoute\(/.test(tasks)
-        // two spawn shapes, plus X-495's model check asking the same reader (never a spawn of its own)
-        && (tasks.match(/this\.spawnRouteOf\(task\)/g) || []).length === 3
+        // two spawn shapes, plus X-495's and X-517's model checks asking the same reader (never a spawn of its own)
+        && (tasks.match(/this\.spawnRouteOf\(task\)/g) || []).length === 4
         && /const m = routedModel\(flag\[1\], this\.opts\.engineRuntime\?\.\(agentId, task\.engine \?\? 'claude', this\.spawnRouteOf\(task\)\)\);/.test(tasks)
         && !/engineRuntime\?\.\([^)]*routeOf\(task\)\)/.test(tasks));
 }

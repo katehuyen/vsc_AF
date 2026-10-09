@@ -46,10 +46,13 @@ export function routeModelEnv(tiers: Record<string, string> | undefined): Record
  * URL of its own too — the surfaces fold the Model box into the tier on both.
  */
 export function routedModel(
-    model: string | undefined, rt: { spawnEnv?: Record<string, string> } | undefined,
+    model: string | undefined,
+    rt: { spawnEnv?: Record<string, string>; modelRule?: { refs: string[]; defaultRef: string } } | undefined,
     opts: { live?: boolean } = {}
 ): string {
     const m = String(model ?? '').trim();
+    // X-517 — on a lent route the model sent is always one of the route's: the one asked when it is, else its default.
+    if (rt?.modelRule) { return rt.modelRule.refs.includes(m) ? m : rt.modelRule.defaultRef; }
     const env = rt?.spawnEnv;
     // An ALIAS there is the route's default (routeDefaultEnv), not a picked tier: a model sent still wins over it.
     if (m && !opts.live && env?.ANTHROPIC_MODEL && !ROUTE_TIERS.includes(env.ANTHROPIC_MODEL)) { return ''; }

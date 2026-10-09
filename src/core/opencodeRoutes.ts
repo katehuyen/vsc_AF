@@ -89,11 +89,19 @@ function entryFor(p: LentRoute): ProviderEntry {
     return out;
 }
 
+/**
+ * ‼️ ASCII-ONLY JSON — every other character as a \u escape, which any JSON reader decodes to the same value.
+ * Measured: an external window reads its environment file in the console's code page, and a UTF-8 label or
+ * path ("Öğrenci", "Masaüstü") arrived mangled.
+ */
+const asciiJson = (v: unknown): string =>
+    JSON.stringify(v).replace(/[\u007f-￿]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+
 /** OPENCODE_CONFIG_CONTENT for these routes — only the ones that can be lent. Undefined when none can. */
 export function fragmentFor(routes: readonly LentRoute[]): string | undefined {
     const provider: Record<string, ProviderEntry> = {};
     for (const p of routes) { if (lendableToOpenCode(p)) { provider[wireIdOf(p.id)] = entryFor(p); } }
-    return Object.keys(provider).length ? JSON.stringify({ $schema: 'https://opencode.ai/config.json', provider }) : undefined;
+    return Object.keys(provider).length ? asciiJson({ $schema: 'https://opencode.ai/config.json', provider }) : undefined;
 }
 
 const objectOf = (text: string | undefined): Record<string, unknown> | undefined => {
@@ -123,7 +131,7 @@ export function mergeConfigContent(existing: string | undefined, ours: string): 
         if (id.startsWith(WIRE) || !(id in provider)) { provider[id] = entry; }
     }
     if (Object.keys(provider).length) { out.provider = provider; }
-    return JSON.stringify(out);
+    return asciiJson(out);
 }
 
 /** X-517 B — a route's OPENCODE_CONFIG_CONTENT JOINS the one already built (the constitution's layer); any other name is written over. */

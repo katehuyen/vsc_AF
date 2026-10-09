@@ -240,6 +240,9 @@ function routeNoteFor(cat: ProviderCatalogRead, providerId: string): string | un
 function modelAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxis {
     const rows = (cat.rows || []).filter(r => !providerId || r.providerId === providerId);
     if (!rows.length) { return emptyAxis; }
+    // X-517 — on a lent route "Default" is the route's own default model, never the engine's
+    const lent = cat.providers.find(p => p.providerId === providerId && p.origin === 'agent-farm-route');
+    const def = lent && rows.find(r => r.ref === lent.models[0]);
     return {
         kind: 'model',
         label: 'Model',
@@ -247,7 +250,7 @@ function modelAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxi
             ? `what ${providerId} publishes — passed to the engine as -m, unassembled`
             : 'every model the engine published — passed as -m, unassembled',
         choices: [
-            leaveAlone("the engine's own default model"),
+            leaveAlone(def ? `the route's default — ${def.label || def.ref}` : "the engine's own default model"),
             ...rows.map(r => ({ id: r.ref, label: r.label || r.ref, detail: modelDetail(r) }))
         ]
     };
@@ -388,6 +391,11 @@ export function pruneProviderPick(
         return { pick: next, dropped };
     }
 
+    // X-517 — a lent route's model picked with the provider box empty names its route: the box is filled, the model kept.
+    if (!str(next.providerId) && str(next.model)) {
+        const lent = readOf(adapter).providers.find(p => p.origin === 'agent-farm-route' && p.models.includes(str(next.model)));
+        if (lent) { next.providerId = lent.providerId; }
+    }
     const form = launchProviderForm(adapter, next, transport);
     const providerId = str(next.providerId);
     if (providerId && !has(form.providers, providerId)) {

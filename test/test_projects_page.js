@@ -139,8 +139,9 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         // again: the manifest is written here and only this call can hand the
         // id to the record that will learn the session id.
         // ‼️ X-109 — and the pin rides with it, so a resumed terminal session's
-        // empty route is an instruction and not a fall-through.
-        && /const route = \{ providerId: merged\.providerId, tier: merged\.tier, pinned: merged\.routePinned \};/.test(startClaude)
+        // empty route is an instruction and not a fall-through. X-517 D — and the
+        // model, so the model a launch picked on an OpenCode route is the one lent.
+        && /const route = \{ providerId: merged\.providerId, tier: merged\.tier, pinned: merged\.routePinned, model: merged\.model \};/.test(startClaude)
         && /sessionId, projectId, spec\.id, route, launchId \|\| undefined\);/.test(startClaude)
         // …and only ONE read of the window: the context file and the stamp both
         // come off `projectId`, so a second `activeProjectId()` CALL here would

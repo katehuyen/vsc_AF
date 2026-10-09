@@ -288,12 +288,12 @@ console.log('\n== the store is bounded before the first row is written ==');
     // ---- one resolution, two readers ----
     ok('‼️ the route is resolved ONCE, and the identity comes out of it',
         /const resolveLaunchRoute = \(/.test(ext)
-        && /identity: rt\.identity,\s*\n\s*routed: !!chosen\.providerId,/.test(ext));
+        && /identity: rt\.identity,\s*\n\s*routed,/.test(ext));
     ok('…and the environment half keeps the contract it always had',
         /if \(!r\?\.routed\) \{ return undefined; \}/.test(ext));
     ok('‼️ …so a routeless launch gets NO overlay but still HAS an identity',
-        /\.\.\.\(chosen\.providerId && rt\.spawnEnv \? \{ spawnEnv: rt\.spawnEnv \} : \{\}\)/.test(ext)
-        && /\.\.\.\(chosen\.providerId && rt\.clearEnv \? \{ clearEnv: rt\.clearEnv \} : \{\}\)/.test(ext));
+        /\.\.\.\(routed && rt\.spawnEnv \? \{ spawnEnv: rt\.spawnEnv \} : \{\}\)/.test(ext)
+        && /\.\.\.\(routed && rt\.clearEnv \? \{ clearEnv: rt\.clearEnv \} : \{\}\)/.test(ext));
 
     // ---- the store ----
     ok('the store is bounded by the core on every write, not swept later',
@@ -403,7 +403,7 @@ console.log('\n== the store is bounded before the first row is written ==');
             && /\.\.\.\(t\.launchId \? \{ launchId: t\.launchId \} : \{\}\),/.test(ext));
         ok('‼️ X-296 — an automated run passes ITS OWN route, because a stored '
             + 'automation carries one and the spawn beside it resolves with it',
-            /const resolved = agent \? resolveLaunchRoute\(agent\.id, run\.engine, \{\s*\n\s*providerId: run\.options\.providerId, tier: run\.options\.tier\s*\n\s*\}\) : undefined;/.test(ext));
+            /const resolved = agent \? resolveLaunchRoute\(agent\.id, run\.engine, \{\s*\n\s*providerId: run\.options\.providerId, tier: run\.options\.tier, model: run\.options\.model\s*\n\s*\}\) : undefined;/.test(ext));
         ok('‼️ X-296 — …and the discipline recorded is the RUN\'s first, the agent '
             + 'default only in its absence, and never for a mission member',
             /superpowers: run\.options\.superpowers\s*\n\s*\?\? \(run\.mechanism !== 'mission' && superpowersOnFor\(agent\.name\)\)/.test(ext));
