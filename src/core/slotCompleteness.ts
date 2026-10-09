@@ -46,7 +46,9 @@ export const CONTENT_KEYS = [
 export const META_KEYS = [
     'engine', 'support', 'configEnv', 'liveDir', 'liveFiles', 'evidence', 'signIn', 'readIdentity', 'quotaSource',
     // X-292 — evidence about the engine's own housekeeping, not something a slot carries.
-    'housekeeping'
+    'housekeeping',
+    // X-531 — which own file Sign out removes; an action's target, not a clause a slot must carry.
+    'grantFiles'
 ] as const;
 
 export type ClauseKind = 'own' | 'keys' | 'carry' | 'env' | 'link' | 'hooks';

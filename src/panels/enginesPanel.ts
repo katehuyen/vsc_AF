@@ -195,6 +195,10 @@ export interface EnginesPanelDeps {
     captureAccount(engine: string, label: string): Promise<string>;
     activateAccount(id: string, engine: string): Promise<string>;
     forgetAccount(id: string): Promise<string>;
+    /** X-530 / X-531 — put to sleep, wake, sign out; each answers with the refusal to show */
+    disableAccount(id: string): Promise<string>;
+    enableAccount(id: string): Promise<string>;
+    signOutAccount(id: string): Promise<string>;
     /**
      * ‼️ X-219 — OPEN THE WAY BACK for a sign-in that has stopped refreshing.
      * Answers with the refusal to show, or an empty string when a terminal was

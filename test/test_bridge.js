@@ -6339,7 +6339,7 @@ const { opencodeStatus, syncToOpencode } =
         // ‼️ AND THE OTHER TWO GATES ASK THE SAME ONE THING, or the eleventh
         // clause is carried by one door and forgotten by the other two.
         ok('‼️ X-284: capture asks the contract once the row exists',
-            /await writeAccounts\(addSlot\(list, slot\)\);[\s\S]{0,700}runContractGate\('capture', slot\.id\);/.test(src));
+            /await writeAccounts\(setAsleep\(addSlot\(list, slot\), slot\.id, false, Date\.now\(\)\)\);[\s\S]{0,700}runContractGate\('capture', slot\.id\);/.test(src));
         ok('…and the capture executor copies the IDENTITY and stops',
             !/for \(const l of plan\.links\)/.test(src)
             && !/reproduceSlotSettings\(fs, \{\r?\n\s+home: os\.homedir\(\), dir: plan\.slot\.dir/.test(src));

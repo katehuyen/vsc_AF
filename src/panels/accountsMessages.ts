@@ -24,6 +24,10 @@ export interface AccountsMessageDeps {
     /** `ask` — whoever is looking at the page is asked (X-447); the desktop's window when absent */
     forgetAccount(id: string, ask?: PanelAsk): Promise<string>;
     reauthAccount(id: string): Promise<string>;
+    /** X-530 / X-531 — the life of an account: asleep, awake, signed out */
+    disableAccount(id: string): Promise<string>;
+    enableAccount(id: string): Promise<string>;
+    signOutAccount(id: string): Promise<string>;
     repairAccountSettings(id: string): string[];
     completeAccount(id: string): string[];
     queueAccountRefresh(ids: string[], gesture: 'toggle' | 'all'): void;
@@ -115,6 +119,16 @@ export async function handleAccountsMessage(
             if (file) { deps.openSession(file); }
             return true;
         }
+        // X-530 / X-531 — each changes which accounts there are figures for, so a live reading follows
+        case 'accountDisable':
+            await wrote(await deps.disableAccount(String(msg.id ?? '')));
+            return true;
+        case 'accountEnable':
+            await wrote(await deps.enableAccount(String(msg.id ?? '')));
+            return true;
+        case 'accountSignOut':
+            await wrote(await deps.signOutAccount(String(msg.id ?? '')));
+            return true;
         case 'accountForget':
             // X-282 — the host shows what goes and what stays, then asks; the
             // folder goes by default, after the slot is drained.

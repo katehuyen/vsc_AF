@@ -410,6 +410,32 @@ function freshState() {
                     path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8')));
     }
 
+    // ---------- ‼️ X-530 / X-531 — the life doors, through the real registry ----------
+    {
+        const { accountLifeActions, registerAccountLifeOps } = require(path.join(OUT, 'accountLifeOps.js'));
+        const state = freshState();
+        const reg = new BridgeRegistry();
+        const life = accountLifeActions({
+            stored: () => state.slots, write: async l => { state.slots = l; },
+            active: () => state.active, writeActive: async m => { state.active = m; },
+            busy: () => false, standingAgents: () => [], health: () => 'ready', readFigure: () => {}, followed: () => {},
+            removeFile: () => true, repaint: () => {}, now: () => 7
+        });
+        registerAccountLifeOps(reg, life, async id => ({ refusal: '', result: { deleted: id } }));
+        const off = await reg.dispatch('accounts.disable', { id: 'claude-a' });
+        ok('‼️ X-530: accounts.disable keeps the row and stops it being the active one',
+            off.ok && state.slots.length === 3 && findSlot(state.slots, 'claude-a').disabled === true && !state.active.claude);
+        ok('…and a launch naming it is now refused by name, never replaced by the main sign-in',
+            /is disabled/.test(accountRefusal('claude-a', state.slots, 'claude')));
+        ok('…while the rotation no longer counts it', mostRoom(state.usage.filter(u => !findSlot(state.slots, u.slotId)?.disabled), 95, 0).slotId === 'claude-b');
+        const on = await reg.dispatch('accounts.enable', { id: 'claude-a' });
+        ok('accounts.enable wakes it and says what it read', on.ok && !findSlot(state.slots, 'claude-a').disabled && on.result.health === 'ready');
+        const out = await reg.dispatch('accounts.signout', { id: 'claude-a' });
+        ok('‼️ X-531: accounts.signout keeps the slot and answers file NAMES only — no token crosses',
+            out.ok && state.slots.length === 3 && out.result.removed.join() === '.credentials.json'
+            && !/tok|secret|ey[A-Za-z0-9]/.test(JSON.stringify(out.result.removed)));
+    }
+
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

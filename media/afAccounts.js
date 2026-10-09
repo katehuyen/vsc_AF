@@ -876,7 +876,8 @@
                             + 'than five seconds apart, however many are asked for at once — asking how much quota '
                             + 'is left must not become the thing that spends it.\n\n'
                             + 'This figure was ' + readAge + '.');
-        return '<div class="accard' + (a.active ? ' a-now' : '') + '">'
+        const life = window.AFAccountLife;
+        return '<div class="accard' + (a.active ? ' a-now' : '') + (a.disabled ? ' asleep tip-host' : '') + '">'
             + '<div class="pohead">'
             + '<span class="poname">' + esc(a.label || a.id) + '</span>'
             + (a.email && a.email !== a.label
@@ -894,11 +895,12 @@
                 ? T.wrap('<span class="acdup">duplicate</span>', 'Same account as ' + esc(a.duplicateOf.join(', ')),
                     'This folder and ' + esc(a.duplicateOf.join(', ')) + ' carry the same account id: one '
                     + 'sign-in, two folders, and the fleet counting two quotas where there is one. '
-                    + 'Forget one of them — its session records are moved to the pool first, nothing is lost.')
+                    + 'Delete one of them — its session records are moved to the pool first, nothing is lost.')
                 : '')
             + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
             + T.wrap('<span class="acbad ' + verdict[0] + '">' + esc(verdict[1]) + '</span>',
                 verdict[2], verdict[3])
+            + life.badge(a)
             + promptBadge
             + contractBadge
             + repairBadge
@@ -910,17 +912,11 @@
             + fixSettings
             + fixContract
             + reauth
-            + refresh
-            + stand
-            + T.wrap('<button class="secondary small" data-acforget="' + esc(a.id) + '">Forget</button>',
-                'Forget this account — you are shown what goes and what stays, then asked',
-                'The folder goes too, by default: a folder left behind is the orphan the next capture '
-                + 'counts past (claude-x-2). It is safe because the slot is emptied into the session pool '
-                + 'first, and if anything cannot be moved nothing is forgotten. A running session or task '
-                + 'on this account refuses it. "Keep folder" is offered by name in the dialog. Local '
-                + 'deletion is not revocation — the tokens stay in the agent repo\'s git history.')
+            + (a.disabled ? '' : refresh)
+            + (a.disabled ? '' : stand)
+            + life.actions(a)
             + '</div>'
-            + window5
+            + (a.disabled ? '' : window5)
             + spendRow
             + lastRow
             // ‼️ X-220 — THE ENGINE, IN THE PRODUCT'S OWN BADGE. This card wrote
@@ -968,8 +964,9 @@
         // "Claude Code accounts" above the only group is a line of furniture.
         const bare = order.length < 2;
         return order.map(function (eng) {
-            const rows = byEngine[eng];
-            const readable = rows.filter(a => a.usageState !== 'no-source');
+            // X-530 — the asleep accounts close their group and are never part of a read
+            const rows = window.AFAccountLife.order(byEngine[eng]);
+            const readable = rows.filter(a => a.usageState !== 'no-source' && !a.disabled);
             const head = bare && !readable.length ? '' : '<div class="acgrp">'
                 + (bare ? '' : '<span class="acgrpn">' + esc(engineLabel(eng)) + '</span>')
                 + '<span class="acgrpc muted small">' + rows.length
@@ -1212,8 +1209,7 @@
             b.addEventListener('click', go);
             b.addEventListener('keydown', e => { if (e.key === 'Enter') { go(); } });
         });
-        document.querySelectorAll('[data-acforget]').forEach(b =>
-            b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
+        window.AFAccountLife.wire(post);
         document.querySelectorAll('[data-accapture]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'accountCapture', engine: val('ac-engine'), label: val('ac-label') })));
@@ -1424,7 +1420,7 @@
         .pobody { margin-top:5px; }
         /* the phone (media/afMobile.js): a sign-in is renewed in a terminal on the PC */
         html.af-phone .af-tipw:has(> [data-acreauth]), html.af-phone [data-acreauth] { display:none; }
-    `;
+    ` + window.AFAccountLife.CSS;
 
     const api = {
         sectionHtml: (c) => { use(c); return accountsHtml(); },

@@ -160,7 +160,7 @@ console.log('\n== the floor through the service: a 429 and a reload ==');
         // X-475 — the door's account, the stay and the wake hold live in the placement surface
         const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8').replace(/\r\n/g, '\n');
         ok('the door marks the account the plan limit walled', /if \(b\.fault === 'limit' && was\) \{ try \{ d\.markWalled\(was\); \}/.test(place) && /markWalled: slot => accountUsage\.markWalled\(slot\),/.test(ext));
-        ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : b\.want\.account, agentId, model: b\.inherit\.model \}\);/.test(place)
+        ok('…and places the leg by the policies, as before: S-106, then the chain\'s pool', /const pick = launchAccountPick\(\{ engine: b\.from\.engine, account: stay\.stay \? stay\.slotId : wanted, agentId, model: b\.inherit\.model \}\);/.test(place) && /const wanted = asleep\(b\.want\.account\) \? '@emptiest' : b\.want\.account;/.test(place)
             && /const \{ stay, park \} = successorPlacement\(b, agent\.id, accountRuled\(batonStore\.all\(\), b\)\);/.test(ext));
         ok('the stay reads the figure in force (a floor counts), the week apart (X-479)', /const s = splitNow\(u\);/.test(place) && /stayPct: pct, slotId, percent: cause\.quotaPct >= 0 \? cause\.quotaPct : \(u \? s\.five : undefined\), resetsAt: u\?\.resetsAt,/.test(place)
             && /week: Math\.max\(s\.week, typeof cause\.weekPct === 'number' \? cause\.weekPct : -1\),/.test(place));

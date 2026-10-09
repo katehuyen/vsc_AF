@@ -88,6 +88,8 @@ const SHARED = [
     // the groups, the capture form and their presses, lifted out of the
     // Engines page verbatim so the Accounts page draws the same thing. Loaded
     // after afAccount.js, whose `turns` it asks.
+    // afAccountLife.js — a card's Disable / Enable, Sign out and Delete (X-530 / X-531); afAccounts.js asks it.
+    'afAccountLife.js',
     'afAccounts.js',
     // afPolicies.js was the twenty-fourth — the account policies VIEW (X-305):
     // the built-in four, the named rules and the rule form, lifted out of the

@@ -351,6 +351,7 @@ import {
     forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, portableSlots, slotLabel,
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
+import { asleepIn, asleepRefusal, setAsleep, usableSlots } from './core/accountLife';
 import {
     ACCOUNT_WALL_CEILING, AccountUsageService, SEVEN_DAY, SlotUsage, UsageBar, accountOrder, engineUsageFromSlot, fiveHourOf,
     mostRoom, nextResetAt,
@@ -407,6 +408,7 @@ import { pickChainPause } from './batonPauseUi';
 import { pickChainAccount } from './batonAccountUi';
 import { accountRuled } from './core/chainAccount';
 import { ChainAccountDeps, registerChainAccountOps } from './core/chainAccountOps';
+import { accountLifeActions, registerAccountLifeOps } from './core/accountLifeOps';
 import { wireStale } from './staleCleanup';
 import { BatonBoard } from './core/batonBoard';
 import { attachRelay, markPassNow, passNowText } from './core/batonAttach';
@@ -1036,6 +1038,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // travels like every other store: `${globalStorage}\accounts\<slot>` on the
     // way out, and an absolute path recorded on another machine heals on load.
     const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []), portableRoots());
+    // X-530 — the accounts that may be USED (an asleep one is kept but never read for quota, offered or placed on)
+    const usableAccounts = (): EngineAccountSlot[] => usableSlots(storedAccounts());
+    const asleepNow = (id: string): boolean => asleepIn(storedAccounts())(id);
     /**
      * ‼️ X-266 — EVERY CLAUDE HOME THIS MACHINE MAY HAVE A LIVE SESSION UNDER.
      *
@@ -4469,6 +4474,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             accountBlock: (engine, account, agentId) =>
                 accountRefusal(launchAccountFor(engine, account, agentId), storedAccounts(), engine)
                 || undefined,
+            accountAsleep: id => asleepNow(id),
             /**
              * ‼️ X-102 — THE RUNNER STATES THE FACTS; THIS SIDE WRITES THE
              * RECORD. Same doctrine as `engineRuntime` above, and the same
@@ -21605,7 +21611,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const accountsAutoRefresh = (): boolean => cfg().get<boolean>('accountsAutoRefresh', true);
     const usageRead: ((u: SlotUsage[]) => void)[] = [];
     const accountUsage = new AccountUsageService({
-        slots: () => storedAccounts(),
+        slots: () => usableAccounts(),
         // The same two intervals the single-account card is tuned to,
         // deliberately: two refresh policies in one codebase is how one of them
         // ends up wrong. X-240 — but applied PER SLOT: asked about one, its own
@@ -21747,7 +21753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const accountsAutoRefreshState = (): { on: boolean; beat: { slotId: string; ms: number; active: boolean }[] } => ({
         on: accountsAutoRefresh(),
-        beat: storedAccounts().map(s => ({ slotId: s.id, ms: slotBeatMs(s), active: slotActive(s.id) }))
+        beat: usableAccounts().map(s => ({ slotId: s.id, ms: slotBeatMs(s), active: slotActive(s.id) }))
     });
     /**
      * ‼️ X-261 — THE FLEET'S OWN MEMORY OF WHICH SIGN-INS ARE DOWN.
@@ -21837,7 +21843,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * queue you learn not to join. A list ADDS, keeping whatever was already
      * waiting in the place it had.
      */
-    const queueAccountRefresh = (ids: string[], gesture: 'toggle' | 'all'): void => {
+    const queueAccountRefresh = (asked: string[], gesture: 'toggle' | 'all'): void => {
+        const ids = asked.filter(id => !asleepNow(id));
         /**
          * ‼️ X-215 — A FILE READ JOINS NO LINE.
          *
@@ -21860,7 +21867,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pumpRefreshQueue();
     };
     /** Which slots a "refresh all" / "refresh this engine" press really means. */
-    const refreshableSlots = (engine: string): string[] => storedAccounts()
+    const refreshableSlots = (engine: string): string[] => usableAccounts()
         .filter(s => (!engine || s.engine === engine)
             && accountAdapterFor(s.engine).quotaSource().kind !== 'none')
         .map(s => s.id);
@@ -22512,6 +22519,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             accountUuid: uuid, uuidShort: shortUuid(uuid), duplicateOf: twins,
             capturedAt: slot.capturedAt || 0,
             health: id.health,
+            // X-530 — asleep on purpose: kept, never read, never offered
+            disabled: !!slot.disabled, disabledAt: slot.disabledAt || 0,
             // ‼️ X-275 — HOW LONG THIS SIGN-IN HAS LEFT, and whether the
             // machine's own sign-in is this same account. `health` answers only
             // the present tense, so a slot read `ready` until the hour its
@@ -22733,7 +22742,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
     };
     const captureAccount = async (engine: string, label: string, activate: boolean):
-        Promise<{ refusal: string; plan: CapturePlan; slot?: EngineAccountSlot }> => {
+        Promise<{ refusal: string; plan: CapturePlan; slot?: EngineAccountSlot; woke?: boolean }> => {
         const eng = (engine || '').trim() || 'claude';
         const list = storedAccounts();
         const plan = planCapture({
@@ -22749,7 +22758,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // in place instead of adding a clone. The cached identity for it is
         // dropped, or the card would go on showing the verdict it had five
         // seconds ago — the very verdict this press exists to change.
-        await writeAccounts(addSlot(list, slot));
+        // X-530 — capturing a sign-in is making it usable, so an asleep row it lands on wakes (the answer says so)
+        const woke = !!findSlot(list, slot.id)?.disabled;
+        await writeAccounts(setAsleep(addSlot(list, slot), slot.id, false, Date.now()));
         // ‼️ X-284 — THE BIRTH CONTRACT, AT BIRTH. The row exists now, so the
         // slot can be asked for everything it must carry beyond the identity —
         // and a RE-capture repairs a slot that had drifted, which the
@@ -22772,7 +22783,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await writeActiveAccounts({ ...activeAccounts(), [eng]: slot.id });
             usageFollowedAccount(eng);
         }
-        return { refusal: '', plan, slot };
+        return { refusal: '', plan, slot, woke };
     };
     /** Which account the next session on an engine opens with. An empty id is a
      *  real answer and the way back: it CLEARS the engine rather than naming an
@@ -22796,6 +22807,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 engine: '', active: null, note: ''
             };
         }
+        if (slot.disabled) { return { refusal: asleepRefusal(slotLabel(slot)), engine: '', active: null, note: '' }; }
         await writeActiveAccounts({ ...active, [slot.engine]: slot.id });
         usageFollowedAccount(slot.engine);
         return {
@@ -22974,20 +22986,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const drain = repairSharedLinks(true, clean);
         const refs = accountReferences(clean);
         const lines = [
-            `Forget ${slotLabel(slot)} (${slot.id})?`,
+            `Delete ${slotLabel(slot)} (${slot.id}) for good?`,
             '',
             `DELETED: the folder ${slot.dir} — its sign-in tokens and settings copy.`,
             `KEPT: ${drain.moved.length} session record(s) still inside it are moved to the pool first`
                 + (drain.stranded.length ? `; ${drain.stranded.length} cannot be moved yet (in use) and would stop the deletion` : '') + '.',
             refs.length ? `STILL POINTING HERE: ${refs.join('; ')} — they fall back to the machine\'s sign-in and say so.` : 'Nothing else points at it.',
             '',
-            FORGET_REVOKE_NOTE
+            FORGET_REVOKE_NOTE,
+            '',
+            'To keep it for later instead, Disable it: nothing is deleted and Enable brings it back.'
         ];
-        const pick = await ask.warn(lines.join('\n'), { modal: true },
-            'Forget and delete folder', 'Forget, keep folder');
-        if (!pick) { return ''; }
-        return (await forgetAccount(clean, pick === 'Forget and delete folder')).refusal;
+        const pick = await ask.warn(lines.join('\n'), { modal: true }, 'Delete account and folder');
+        if (pick !== 'Delete account and folder') { return ''; }
+        return (await forgetAccount(clean, true)).refusal;
     };
+    // ‼️ X-530 / X-531 — asleep, awake, signed out: one set of actions behind the card's buttons and the bridge's ops
+    const accountLife = accountLifeActions({
+        stored: () => storedAccounts(),
+        write: list => writeAccounts(list),
+        active: () => activeAccounts(),
+        writeActive: map => writeActiveAccounts(map),
+        busy: id => accountIsBusy(id),
+        standingAgents: slot => agents.filter(a => storedAccount(
+            cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {}, a.dir, slot.engine as EngineId) === slot.id).map(a => a.name),
+        health: slot => { identitySeen.delete(slot.id); return slotIdentity(slot).health; },
+        readFigure: id => queueAccountRefresh([id], 'all'),
+        followed: engine => usageFollowedAccount(engine),
+        removeFile: f => { try { if (!fs.existsSync(f)) { return false; } fs.rmSync(f, { force: true }); return true; } catch { return false; } },
+        repaint: () => { identitySeen.clear(); EnginesPanel.refreshIfOpen(); AccountsPanel.refreshIfOpen(); },
+        now: () => Date.now()
+    });
+    registerAccountLifeOps(bridge, accountLife, async id => {
+        const done = await forgetAccount(id, true);
+        if (done.refusal || !done.slot) { return { refusal: done.refusal || `No account "${id}" is stored on this machine.` }; }
+        const s = done.slot;
+        return { refusal: '', result: {
+            deleted: s.id, engine: s.engine, dir: s.dir, filesRemoved: done.filesRemoved, pooled: done.pooled, refs: done.refs,
+            note: (done.filesRemoved ? 'The account folder was deleted. ' : `The folder could not be removed: ${s.dir}. `) + done.note
+        } };
+    });
     /**
      * ‼️ X-219 — RENEW A SIGN-IN THAT HAS STOPPED REFRESHING, from its own card.
      *
@@ -23177,7 +23215,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         engine: string, title: string, own?: string
     ): Promise<string | undefined> => {
         if (!canIsolateAccounts(engine)) { return ''; }
-        const slots = slotsFor(storedAccounts(), engine);
+        const slots = slotsFor(usableAccounts(), engine);
         // ‼️ …and NOTHING STATED, not `@machine`. Nobody was asked, so nobody
         // answered — and `@machine` is an answer that CLEARS the engine's config
         // variable. On a machine with no slot the window's own
@@ -23391,7 +23429,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ceiling: number;
         ceilingWhy: string;
     } => {
-        const withSlots = [...new Set(storedAccounts().map(s => s.engine))];
+        const withSlots = [...new Set(usableAccounts().map(s => s.engine))];
         const engines = withSlots.length ? withSlots : ['claude'];
         const rowsBy = new Map(engines.map(e => [e, policyRowsFor(e)] as const));
         const nowFor = (id: string, only?: string) =>
@@ -23432,7 +23470,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             detail: [p.refusal ? `cannot choose right now — ${p.refusal}` : p.note, p.detail]
                 .filter(Boolean).join(' · ')
         })),
-        ...slotsFor(storedAccounts(), engine).map(sl => {
+        ...slotsFor(usableAccounts(), engine).map(sl => {
             const id = slotIdentityFresh(sl);
             const u = accountUsage.current().find(x => x.slotId === sl.id);
             return {
@@ -23497,7 +23535,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // service holds one budget per account and refreshes on its own beat, so
         // reading it here costs nothing and a picker never waits on the network.
         const usage = accountUsage.current();
-        for (const sl of storedAccounts()) {
+        for (const sl of usableAccounts()) {
             (out[sl.engine] ??= []).push({
                 id: sl.id, label: slotLabel(sl),
                 health: slotIdentityFresh(sl).health,
@@ -23539,7 +23577,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return `${String(stated).trim()} → ${sl ? slotLabel(sl) : p.id || 'Main account'}`;
         }
         const r = accountResolution(stated, engine, activeAccounts(),
-            agentStandingAccount(agentId, engine));
+            agentStandingAccount(agentId, engine), undefined, asleepNow);
         if (!r.id) { return 'Main account'; }
         const slot = findSlot(storedAccounts(), r.id);
         if (!slot) { return `${r.id} (not on this machine)`; }
@@ -24842,7 +24880,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const engineTestAim = (engine: string): ProviderAim | undefined => {
         const id = accountResolution('', engine, activeAccounts(),
-            agentStandingAccount(undefined, engine)).id;
+            agentStandingAccount(undefined, engine), undefined, asleepNow).id;
         const env = accountEnvFor(engine, id, storedAccounts());
         const set: Record<string, string> = {};
         const clear: string[] = [];
@@ -24935,6 +24973,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         activateAccount: async (id: string, engine: string): Promise<string> =>
             (await activateAccount(id, engine)).refusal,
         forgetAccount: (id: string, ask?: PanelAsk): Promise<string> => forgetAccountFromPage(id, ask),
+        // X-530 / X-531 — the card's Disable / Enable / Sign out and accounts.disable / .enable / .signout are one set of actions
+        disableAccount: async (id: string): Promise<string> => (await accountLife.disable(id)).refusal,
+        enableAccount: async (id: string): Promise<string> => (await accountLife.enable(id)).refusal,
+        signOutAccount: async (id: string): Promise<string> => (await accountLife.signOut(id)).refusal,
         reauthAccount: (id: string): Promise<string> => reauthAccount(id),
         // X-269 — the card's [fix] press and `accounts.repairSettings` are the
         // same function; the button answers with what it had to put back.
@@ -28611,7 +28653,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         accountChoices: () => ({
             slots: storedAccounts().map(s => ({
-                id: s.id, engine: s.engine, label: slotLabel(s)
+                id: s.id, engine: s.engine, label: slotLabel(s), ...(s.disabled ? { disabled: true } : {})
             })),
             standing: activeAccounts()
         }),
@@ -30406,7 +30448,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const usage = accountUsage.current();
             // ‼️ X-263 — the figure comes from the SAME reader the matrix uses,
             // so a slot cannot be 42% on one picker and unread on another.
-            return slotsFor(storedAccounts(), engine).map(sl => ({
+            return slotsFor(usableAccounts(), engine).map(sl => ({
                 id: sl.id, label: slotLabel(sl),
                 health: slotIdentityFresh(sl).health,
                 active: activeAccounts()[sl.engine] === sl.id,
@@ -34850,7 +34892,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * page to find out which account has room, in order to come back and
              * tick it, is the click DENSITY says must not be charged.
              */
-            accountPool: storedAccounts().map(sl => {
+            accountPool: usableAccounts().map(sl => {
                 const u = accountUsage.current().find(x => x.slotId === sl.id);
                 return {
                     id: sl.id,
@@ -37319,7 +37361,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // on and say what clearing the box would fall through to.
         accountChoices: () => ({
             slots: storedAccounts().map(s => ({
-                id: s.id, engine: s.engine, label: slotLabel(s)
+                id: s.id, engine: s.engine, label: slotLabel(s), ...(s.disabled ? { disabled: true } : {})
             })),
             standing: activeAccounts()
         }),
@@ -42830,6 +42872,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // that was already there, and the count above the list would
                     // not move to agree with it.
                     reseated: done.plan.reseats ?? null,
+                    woke: !!done.woke,
                     copied: done.plan.copies.length, linked: done.plan.links.length,
                     layout: describeSlotLayout(slot.engine)
                 };
@@ -42878,7 +42921,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // 429 hold — so the caller most likely to ask over and over held
                 // the privilege that keeps a rate limit alive.
                 await accountUsage.refresh('auto');
-                const mine = slotsFor(storedAccounts(), engine).map(s => s.id);
+                const mine = slotsFor(usableAccounts(), engine).map(s => s.id);
                 const usage = accountUsage.current().filter(u => mine.includes(u.slotId));
                 const best = mostRoom(usage, wall);
                 const waking = nextResetAt(usage, wall);
@@ -42920,6 +42963,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!!id || !!engine || all, 'Name an `id`, an `engine`, or pass `all:true`.');
                 if (id) {
                     need(!!findSlot(storedAccounts(), id), `No account is captured under the id ${id}.`);
+                    need(!asleepNow(id), `${id} is disabled — an asleep account is never read; enable it first.`);
                     const wasWaiting = accountQueue.positionOf(refreshQueue, id) === 'queued';
                     const reading = accountQueue.positionOf(refreshQueue, id) === 'reading';
                     queueAccountRefresh([id], 'toggle');
@@ -42978,7 +43022,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'in the same act; tasks pinned to it fall back to the machine\'s sign-in and their rows say '
                 + 'so (`refs` lists them). ‼️ Local deletion is NOT revocation: the tokens stay in the agent '
                 + 'repo\'s git history — revoke at the provider separately (`note` says so). Pass '
-                + 'deleteFiles:false to drop only the row and keep the folder. args: id, deleteFiles? '
+                + 'deleteFiles:false to drop only the row and keep the folder; to keep an account for later, accounts.disable keeps it whole. args: id, deleteFiles? '
                 + '(default true)',
             handler: async (args) => {
                 const done = await forgetAccount(
@@ -44192,7 +44236,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 account: accountResolution(
                                     '', e.id, activeAccounts(),
                                     storedAccount(store, a.dir, e.id),
-                                    id => accountLabelOf(findSlot(storedAccounts(), id)) || id)
+                                    id => accountLabelOf(findSlot(storedAccounts(), id)) || id, asleepNow)
                             };
                         })
                 }));

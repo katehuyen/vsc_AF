@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.907.0 - Disable, Enable and Sign out for accounts (2026-10-10)
+
+- **An account can be put to sleep without deleting it.** Disable keeps its
+  folder, sign-in, settings and history, and stops everything that uses it:
+  its quota is never read (no requests at all), no picker, pool, rule or
+  relay offers it, and a launch, task or chain that names it is refused with
+  the reason. Enable brings it back at once - its sign-in is read off the
+  disk, and one that has expired is sent to the key button to sign in again.
+  An asleep account is drawn dimmed at the end of its engine group.
+- **If the account you disable is the one in use**, "use this next" falls
+  back to the main sign-in and the answer says so; an agent that stands on it
+  by name steps over it to the next choice, and its launch says why. A run
+  already on it keeps going. A relay set on it opens its next leg on the
+  emptiest account instead. A task pinned to it waits until it is enabled.
+- **Sign out keeps the account.** It removes only the sign-in tokens from the
+  account's folder; the card stays, reads as needing a sign-in, and the key
+  button signs it in again into the same slot. It is refused while a session
+  or task runs on the account.
+- **Forget is now Delete, with one way through.** Delete moves the account's
+  session records to the shared pool first and then removes its folder;
+  "keep the folder" is gone from the dialog - to keep an account for later,
+  Disable it. Capturing a disabled account again enables it.
+- **OpenCode is checked again whenever it updates itself.** Agent Farm runs a
+  short local probe once per OpenCode version to confirm a route is still
+  lent the way it expects (no network, no real key). If a new OpenCode
+  breaks it, Notices says so once and each route row names the fault.
+- **A model id with a slash** (for example a route's nvidia/... model) now
+  resolves in an OpenCode Console card instead of being reported as unknown.
+- **For agents:** new bridge ops accounts.disable, accounts.enable,
+  accounts.signout and accounts.delete (the same act as accounts.forget with
+  deleteFiles true), and providers.contract (the last OpenCode probe;
+  run=true probes again). accounts.list rows carry disabled and disabledAt;
+  accounts.capture answers woke when it enabled an asleep row.
+
 ## 3.906.0 - OpenCode runs on a route Agent Farm holds (2026-10-10)
 
 - **A route marked for OpenCode can now be picked when OpenCode starts** -

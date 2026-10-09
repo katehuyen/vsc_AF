@@ -99,5 +99,16 @@ const NOW = Date.parse('2026-09-05T12:00:00Z');
         q.startNext(q.enqueue(q.emptyQueue(), ['a']), NOW).slotId === 'a');
 }
 
+// ---------- ‼️ X-530 — an asleep account joins no reading line ----------
+{
+    const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ X-530: the line drops an asleep id before anything is queued, a single press included',
+        /const queueAccountRefresh = \(asked: string\[\], gesture: 'toggle' \| 'all'\): void => \{\s*\n\s*const ids = asked\.filter\(id => !asleepNow\(id\)\);/.test(ext));
+    ok('…and the beat, the refresh-all and the service itself are handed only the awake accounts',
+        /slots: \(\) => usableAccounts\(\),/.test(ext)
+        && /const refreshableSlots = \(engine: string\): string\[\] => usableAccounts\(\)/.test(ext)
+        && /beat: usableAccounts\(\)\.map\(s => \(\{ slotId: s\.id/.test(ext));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

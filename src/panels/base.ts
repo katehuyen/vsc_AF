@@ -526,6 +526,8 @@ export function htmlShell(
     // how one account comes to read differently on two surfaces. Loaded after
     // afAccount.js, whose `turns` it asks.
     const accounts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAccounts.js'));
+    // X-530 / X-531 — a card's Disable / Enable, Sign out and Delete; afAccounts.js asks it, so it loads first.
+    const accountLife = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAccountLife.js'));
     // The account policies VIEW (X-305): the built-in four, the named rules and
     // the rule form. Ships everywhere for the reason afAccounts.js does — the
     // Engines page and the Accounts page draw the same section. Loaded after
@@ -688,6 +690,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${provider}"></script>
 <script nonce="${nonce}" src="${runFilter}"></script>
 <script nonce="${nonce}" src="${account}"></script>
+<script nonce="${nonce}" src="${accountLife}"></script>
 <script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${routeForm}"></script>

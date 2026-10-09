@@ -89,7 +89,7 @@ export interface FarmSettingsDeps extends AlertMessageDeps {
      * could not name it would be the U-29 mystery again, one axis over.
      */
     accountChoices?(): {
-        slots: { id: string; engine: string; label: string }[];
+        slots: { id: string; engine: string; label: string; disabled?: boolean }[];
         /** `agentFarm.activeAccounts` — engine id → slot id. */
         standing: Record<string, string>;
     };

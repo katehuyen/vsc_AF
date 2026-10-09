@@ -131,6 +131,10 @@ export interface EngineAccountSlot {
     accountUuid?: string;
     subscriptionType?: string;
     capturedAt?: number;
+    /** X-530 — asleep on purpose: kept, never read for quota, never launched on (accountLife.ts) */
+    disabled?: boolean;
+    /** when it was put to sleep, epoch ms */
+    disabledAt?: number;
 }
 
 /**
@@ -262,6 +266,8 @@ export interface EngineAuthAdapter {
     configEnv: string;
     /** the files that ARE the identity and belong to the slot */
     ownFiles: string[];
+    /** X-531 — of those, the ones holding the grant (the tokens): Sign out removes these and nothing else */
+    grantFiles?: string[];
     /**
      * ‼️ X-265 — …AND THE FILES THAT ARE NOT THE IDENTITY BUT DECIDE HOW THE
      * SESSION BEHAVES. Copied at capture, never linked, never required.
@@ -591,6 +597,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         support: 'measured',
         configEnv: 'CLAUDE_CONFIG_DIR',
         ownFiles: ['.credentials.json', '.claude.json'],
+        grantFiles: ['.credentials.json'],
         // ‼️ DIRECTORIES ONLY, and `history.jsonl` is left out on purpose. A
         // directory is shared with a junction, which needs no administrator on
         // Windows; a FILE would need a real symlink, which does — so a capture
@@ -714,6 +721,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         support: 'measured',
         configEnv: 'CODEX_HOME',
         ownFiles: ['auth.json'],
+        grantFiles: ['auth.json'],
         /**
          * ‼️ X-279 — THE BEHAVIOUR FILES, AND WHY A CODEX SLOT HAD NEITHER.
          *
@@ -895,6 +903,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         support: 'unmapped',
         configEnv: '',
         ownFiles: ['oauth_creds.json', 'google_accounts.json'],
+        grantFiles: ['oauth_creds.json'],
         sharedPaths: [],
         liveDir: '.gemini',
         evidence: 'The Gemini CLI writes its Google sign-in into ~/.gemini and this side has not verified any '
@@ -911,6 +920,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         support: 'unmapped',
         configEnv: '',
         ownFiles: ['opencode/auth.json'],
+        grantFiles: ['opencode/auth.json'],
         sharedPaths: [],
         liveDir: '.local/share',
         evidence: 'OpenCode stores credentials under the shared XDG data root (~/.local/share/opencode/auth.json), '

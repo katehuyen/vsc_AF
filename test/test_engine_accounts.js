@@ -451,5 +451,17 @@ const config = (email) => JSON.stringify({
         signinOutlook(dead, liveSame, NOW).state === 'needs-signin');
 }
 
+// ---------- X-531 — the grant is named per engine, and it is part of the identity ----------
+{
+    const { ENGINE_AUTH_ADAPTERS } = require(path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
+    ok('every engine that can hold an account names the file its sign-in grant lives in',
+        ENGINE_AUTH_ADAPTERS.filter(a => a.support === 'measured').every(a => (a.grantFiles || []).length > 0));
+    ok('‼️ …and it is always one of its own identity files — Sign out never reaches a carried or fleet file',
+        ENGINE_AUTH_ADAPTERS.every(a => (a.grantFiles || []).every(g => a.ownFiles.includes(g))
+            && !(a.grantFiles || []).some(g => (a.carryFiles || []).includes(g))));
+    ok('…and on Claude it is the credentials file alone, so the address and the trusts survive a sign-out',
+        JSON.stringify(ENGINE_AUTH_ADAPTERS.find(a => a.engine === 'claude').grantFiles) === '[".credentials.json"]');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

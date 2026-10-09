@@ -164,7 +164,7 @@ export async function handleSettingsAgentMessage(msg: { type: string; [k: string
             const engine = String(msg.engine ?? 'claude').trim().toLowerCase();
             const account = String(msg.account ?? '').trim();
             const slots = s.deps.accountChoices?.().slots ?? [];
-            if (account && !slots.some(s => s.id === account && s.engine === engine)) { break; }
+            if (account && !slots.some(s => s.id === account && s.engine === engine && !s.disabled)) { break; }
             await s.writeFarmDefault(dir, engine, { account });
             s.refresh();
             break;

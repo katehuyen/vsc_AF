@@ -293,6 +293,24 @@
       ]
     },
     {
+      "capability": "accountsMessages.ts#accountDisable",
+      "ui": [
+        "page:accountsMessages.ts#accountDisable"
+      ],
+      "ops": [
+        "accounts.disable"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountEnable",
+      "ui": [
+        "page:accountsMessages.ts#accountEnable"
+      ],
+      "ops": [
+        "accounts.enable"
+      ]
+    },
+    {
       "capability": "accountsMessages.ts#accountFixSettings",
       "ui": [
         "page:accountsMessages.ts#accountFixSettings"
@@ -307,7 +325,8 @@
         "page:accountsMessages.ts#accountForget"
       ],
       "ops": [
-        "accounts.forget"
+        "accounts.forget",
+        "accounts.delete"
       ]
     },
     {
@@ -327,6 +346,15 @@
       ],
       "ops": [
         "accounts.reauth"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountSignOut",
+      "ui": [
+        "page:accountsMessages.ts#accountSignOut"
+      ],
+      "ops": [
+        "accounts.signout"
       ]
     },
     {

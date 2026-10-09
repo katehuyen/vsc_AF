@@ -92,6 +92,8 @@ export const TASK_WAIT_RULES: TaskWaitRule[] = [
     // the thing being waited for, and name the door — otherwise this parks like
     // a queue and reads like one.
     { prefix: 'account:missing:', kind: 'task-account', clearedBy: 'human', op: 'accounts.capture' },
+    // X-530 — an asleep sign-in: a person wakes it
+    { prefix: 'account:asleep:', kind: 'task-account', clearedBy: 'human', op: 'accounts.enable' },
     // ‼️ M-13 — a supervised retry: its supervisor answers (event), or a person
     // does after it said "needsUser" or the policy parked it
     { prefix: 'supervisor:pending', kind: 'task-supervisor', clearedBy: 'event' },

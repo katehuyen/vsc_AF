@@ -179,18 +179,18 @@ const sec = () => {
 
 // ---- dropping one ----------------------------------------------------------
 {
-    const drop = r.query('[data-acforget]');
-    ok('every account can be dropped', drop.length === 5);
-    drop.find(b => b.dataset.acforget === 'spare').click();
+    const drop = r.query('[data-aclife]').filter(b => b.dataset.aclife === 'delete');
+    ok('every account can be deleted', drop.length === 5);
+    drop.find(b => b.dataset.acid === 'spare').click();
     ok('…and dropping asks for exactly that id', JSON.stringify(r.last())
         === JSON.stringify({ type: 'accountForget', id: 'spare' }));
     // ‼️ X-282 — the contract turned over: a folder left behind IS the orphan
     // the next capture counts past, so the page says the folder goes, that the
     // slot is drained first, and that local deletion is not revocation.
     ok('‼️ and the page says the folder goes, after the slot is emptied into the pool',
-        /folder goes too, by default/i.test(sec()) && /emptied into the session pool first/i.test(sec()));
-    ok('…that a running session or task refuses it, and "keep folder" is offered by name',
-        /running session or task/i.test(sec()) && /Keep folder/.test(sec()));
+        /the folder — sign-in tokens included — is deleted/i.test(sec()) && /moved to the shared pool first/i.test(sec()));
+    ok('…that a running session or task refuses it, and X-530: keeping it for later is Disable, named on the button',
+        /running session or task refuses it/i.test(sec()) && /To keep the account for later, Disable it instead/.test(sec()));
     ok('…and that deleting locally is not revoking — the tokens stay in git history',
         /not revocation/i.test(sec()) && /git history/i.test(sec()));
 }
@@ -514,7 +514,7 @@ const sec = () => {
     // at the first "broken@gmail" would run through every OTHER card on the way
     // down and inherit the expired wording it is supposed to prove is absent.
     const row = ('<div class="accard' + h.split('<div class="accard').slice(1)
-        .find(c => c.indexOf('data-acforget="broken"') >= 0)) || '';
+        .find(c => c.indexOf('data-acid="broken"') >= 0)) || '';
     ok('the unreadable row is findable — this test is worthless if the fixture lost it',
         row.length > 0);
     ok('‼️ …and it does NOT tell the reader to sign in again, which is the one thing '
@@ -542,7 +542,7 @@ const sec = () => {
     const incomplete = fixture.variants().find(v => v.id === 'enginesincomplete');
     const ih = runPage('engines.js', incomplete.data).html();
     const card = (h, id) => ('<div class="accard' + h.split('<div class="accard').slice(1)
-        .find(c => c.indexOf('data-acforget="' + id + '"') >= 0)) || '';
+        .find(c => c.indexOf('data-acid="' + id + '"') >= 0)) || '';
     const bad = card(ih, 'personal');
     ok('the incomplete row is findable — this test is worthless if the fixture lost it', bad.length > 0);
     ok('‼️ X-284: the card says HOW MANY of the slot\'s clauses are absent', bad.includes('>3 missing<'));

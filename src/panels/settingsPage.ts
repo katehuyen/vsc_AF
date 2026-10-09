@@ -54,6 +54,7 @@ export class SettingsPage {
         const slots = choices.slots;
         const standing = choices.standing;
         const slotName = (id: string): string => slots.find(s => s.id === id)?.label || id;
+        const asleep = (id: string): boolean => slots.some(s => s.id === id && s.disabled);
         return {
             ...rep,
             reports: rep.reports.map(r => ({
@@ -111,11 +112,11 @@ export class SettingsPage {
                              */
                             account: mine,
                             resolvedAccount: accountResolution(
-                                '', id, standing, mine, slotName),
+                                '', id, standing, mine, slotName, asleep),
                             resolvedAccountZero: accountResolution(
-                                '', id, standing, '', slotName),
-                            accounts: slots.filter(s => s.engine === id)
-                                .map(s => ({ id: s.id, label: s.label }))
+                                '', id, standing, '', slotName, asleep),
+                            accounts: slots.filter(s => s.engine === id && (!s.disabled || s.id === mine))
+                                .map(s => ({ id: s.id, label: s.disabled ? `${s.label} (disabled)` : s.label }))
                         };
                     }
                     return { ...c, engines: per };

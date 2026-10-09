@@ -36,6 +36,8 @@ export interface StayInput {
     stayPct: number;
     /** the slot the ending run was on; empty = the main sign-in, nothing to stay on */
     slotId?: string;
+    /** X-530 — that slot is asleep: nothing is placed on it, a successor included */
+    asleep?: boolean;
     /** that slot's five-hour usage now, 0–100 (the figure in force: a floor counts); negative or absent = not measured */
     percent?: number;
     /** that window's reset, epoch ms; a reset already past means the window is fresh */
@@ -76,6 +78,7 @@ export function stayOnAccount(i: StayInput): StayVerdict {
     if (!Number.isFinite(line) || line <= 0) { return { stay: false, why: 'staying on the account is off (contextHandoverStayAccountPct 0)' }; }
     const slot = String(i.slotId ?? '').trim();
     if (!slot) { return { stay: false, why: 'the run was on the main sign-in — there is no account to stay on' }; }
+    if (i.asleep) { return { stay: false, why: `${slot} is disabled — the pool picks another account` }; }
     if (i.quotaHandover) { return { stay: false, why: `the handover was the quota's — the pool picks another account than ${slot}` }; }
     if (i.walled) { return { stay: false, why: `the plan limit walled the run on ${slot} — the pool picks another account` }; }
     const fresh = !!i.resetsAt && i.resetsAt > 0 && i.resetsAt <= i.now;

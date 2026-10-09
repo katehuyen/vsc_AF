@@ -95,7 +95,7 @@ export interface SettingsBridgeDeps {
      * failing here with a sentence.
      */
     accountChoices(): {
-        slots: { id: string; engine: string; label: string }[];
+        slots: { id: string; engine: string; label: string; disabled?: boolean }[];
         standing: Record<string, string>;
     };
     /** build an agent pack and write it out */
@@ -455,6 +455,7 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
                         + 'names the ones there are, and "" clears the box.');
                     need(slot!.engine === engine, `"${account}" is a ${slot!.engine} sign-in and this `
                         + `row is ${engine}'s — an account belongs to one engine.`);
+                    need(!slot!.disabled, `"${account}" is disabled — enable it (accounts.enable) before an agent stands on it.`);
                 }
                 const patch: Partial<AgentEngineDefault> = {
                     ...(hasModel ? { model: String(args.model ?? '').trim() } : {}),

@@ -9,6 +9,7 @@
  * (a dep asked too early throws exactly as the host's own closure would).
  */
 import { AccountPolicy, isPolicyId, PolicyPool, PolicyResolution, PolicyWorld, resolvePolicy } from '../core/accountPolicy';
+import { asleepIn } from '../core/accountLife';
 import { accountResolution, findSlot, slotLabel } from '../core/accountStore';
 import { SEVEN_DAY, SlotUsage } from '../core/accountUsage';
 import type { Baton, BatonFault } from '../core/baton';
@@ -53,6 +54,8 @@ export const roundRobinKey = (engine: string): string =>
 
 export function accountPlacement(d: PlacementDeps) {
     const labelOf = (id: string): string => { const sl = findSlot(d.stored(), id); return sl ? slotLabel(sl) : id; };
+    // X-530 — an asleep slot is never placed on: not by a standing choice, a pool, a stay or a relay's own account
+    const asleep = (id: string | undefined): boolean => !!id && asleepIn(d.stored())(id);
     /** agentFarm.quotaHandoverPct — its default is the context guard's, never a number written here. */
     function handoverLine(): number {
         return d.setting<number>('quotaHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.quotaHandoverPct);
@@ -80,6 +83,7 @@ export function accountPlacement(d: PlacementDeps) {
         const pct = stayPctOf(d.ownSetting).value;
         const s = splitNow(u);
         return stayOnAccount({
+            asleep: asleep(slotId),
             // X-462 / X-472 — the figure the verdict stood on (a floor counts, an agent's figure only raises it); a turned-over window is fresh
             stayPct: pct, slotId, percent: cause.quotaPct >= 0 ? cause.quotaPct : (u ? s.five : undefined), resetsAt: u?.resetsAt,
             // X-479 — the week, judged against the wall's own weekly figure (a recorded week only raises it)
@@ -143,7 +147,7 @@ export function accountPlacement(d: PlacementDeps) {
         if (!rec || rec.stoppedAt) { return undefined; }
         const engineId = String(rec.engine ?? '').trim().toLowerCase();
         const accounts = (rec.pool ?? []).length
-            ? (rec.pool ?? [])
+            ? (rec.pool ?? []).filter(id => !asleep(id))
             : engineId
                 ? d.usage()
                     .filter(u => String(u.engine ?? '').toLowerCase() === engineId)
@@ -163,7 +167,7 @@ export function accountPlacement(d: PlacementDeps) {
     ): PolicyWorld => {
         const eng = (String(engine || '').trim() || 'claude').toLowerCase();
         const standing = accountResolution('', eng, d.active(),
-            d.standing(agentId, eng));
+            d.standing(agentId, eng), undefined, asleep);
         const pool = policyPool();
         return {
             engine: eng,
@@ -177,7 +181,7 @@ export function accountPlacement(d: PlacementDeps) {
             cursor: d.cursor(roundRobinKey(eng)),
             policies: d.policies(),
             ...(model ? { model } : {}),
-            stored: d.stored().filter(s => s.engine === eng).map(s => s.id),
+            stored: d.stored().filter(s => s.engine === eng && !s.disabled).map(s => s.id),
             labelOf
         };
     };
@@ -192,7 +196,7 @@ export function accountPlacement(d: PlacementDeps) {
         if (!isPolicyId(stated)) {
             const r = accountResolution(stated, o.engine, d.active(),
                 d.standing(o.agentId, o.engine),
-                labelOf);
+                labelOf, asleep);
             return { id: r.id, policy: '', note: r.note };
         }
         return resolvePolicy(stated, policyWorldFor(o.engine, o.agentId, o.model));
@@ -272,7 +276,10 @@ export function accountPlacement(d: PlacementDeps) {
         const stay: StayVerdict = ruled ? { stay: false, why: ruled } : handoverStay(was, cause);
         if (stay.stay || ruled) { d.log(`baton ${b.id}: ${stay.why}`); }
         // S-73 — every account full RIGHT NOW: the row is written with the first reset + the safety buffer as its notBefore
-        const pick = launchAccountPick({ engine: b.from.engine, account: stay.stay ? stay.slotId : b.want.account, agentId, model: b.inherit.model });
+        // X-530 — a chain whose own account was put to sleep opens its next leg through the pool, and says so
+        const wanted = asleep(b.want.account) ? '@emptiest' : b.want.account;
+        if (wanted !== b.want.account) { d.log(`baton ${b.id}: ${labelOf(String(b.want.account))} is disabled — the next leg is placed by @emptiest`); }
+        const pick = launchAccountPick({ engine: b.from.engine, account: stay.stay ? stay.slotId : wanted, agentId, model: b.inherit.model });
         const park = pick.refusal && pick.resetsAt
             ? {
                 resetsAt: pick.resetsAt,

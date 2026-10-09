@@ -236,7 +236,7 @@ const CFG = {
     // which a settings file carried over from another machine can do alone.
     ok('…both resolve before they refuse, which is what catches a dead STANDING '
         + 'choice as well as a dead named one',
-        /const id = resolveAccount\(stated, engine, active, mine\);\s*\n\s*const refusal = accountRefusal\(id, list, engine\);/
+        /const id = resolveAccount\(stated, engine, active, mine, asleepIn\(list\)\);\s*\n\s*const refusal = accountRefusal\(id, list, engine\);/
             .test(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'accountStore.ts'), 'utf8')));
 
     /* ---------------------------------------------------------------------

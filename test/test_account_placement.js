@@ -117,5 +117,26 @@ console.log('\n== the supervisor\'s turn (X-477) ==');
         /supervisorRoom: p => \(p\.engine === KAPICI_ENGINE \? 'free' : supervisorRoom\(p\)\),/.test(ext) && !/percent < 95/.test(ext));
 }
 
+console.log('\n== X-530: an asleep account is never placed on ==');
+{
+    const sleepy = stored.map(x => (x.id === 'claude-b' ? { ...x, disabled: true } : x));
+    // the real quota service never holds a row for an asleep account (test_account_usage.js)
+    const awakeUsage = () => [slot('claude-a', 92), slot('claude-c', 50)];
+    const { p } = mk({ stored: () => sleepy, sentry: () => ({ id: 'c1', engine: 'claude', pool: ['claude-b', 'claude-c'] }) });
+    ok('X-530: a campaign pool drops an asleep account before a rule walks it', p.policyPool().accounts.join() === 'claude-c');
+    const { p: q } = mk({ stored: () => sleepy, usage: awakeUsage, standing: () => 'claude-b', active: () => ({ claude: 'claude-c' }) });
+    const r = q.launchAccountPick({ engine: 'claude', agentId: 'dev' });
+    ok('…an agent standing on it is placed on the machine-wide choice, and the note says it was stepped over',
+        r.id === 'claude-c' && /stepped over/.test(r.note));
+    const stay = (st) => mk({ stored: () => st, ownSetting: k => (k === 'contextHandoverStayAccountPct' ? 80 : k === 'defaultAccountCeiling' ? 70 : undefined) }).p
+        .handoverStay('claude-b', { kind: 'context', quotaPct: -1 });
+    ok('…a successor is never kept on it, though its last figure is under the line', stay(stored).stay === true && stay(sleepy).stay === false);
+    const { p: w, calls } = mk({ stored: () => sleepy, usage: awakeUsage });
+    const b = { id: 'bt1', chainId: 'chn1', from: { engine: 'claude', sessionId: 's1' }, want: { account: 'claude-b' }, inherit: {} };
+    const placed = w.successorPlacement(b, 'dev');
+    ok('…and a chain set on it opens its next leg through @emptiest, saying so in the log',
+        !placed.park && calls.log.some(l => /claude-b|b is disabled/.test(l) && /@emptiest/.test(l)));
+}
+
 console.log(`test_account_placement: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

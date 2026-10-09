@@ -5,6 +5,7 @@ import {
 } from './engineAccounts';
 import { expandPath, PortableRoot, tokenizePath } from './portablePaths';
 import { AccountPolicy, isPolicyId, policyRefusal } from './accountPolicy';
+import { asleepIn, asleepRefusal } from './accountLife';
 
 /**
  * X-171 — THE SLOTS AS A LIST, AND WHAT CAPTURING ONE ACTUALLY DOES.
@@ -104,7 +105,8 @@ export function normalizeSlots(raw: unknown, roots: PortableRoot[] = []): Engine
             email: typeof o.email === 'string' ? o.email : undefined,
             accountUuid: typeof o.accountUuid === 'string' && o.accountUuid.trim() ? o.accountUuid.trim() : undefined,
             subscriptionType: typeof o.subscriptionType === 'string' ? o.subscriptionType : undefined,
-            capturedAt: typeof o.capturedAt === 'number' ? o.capturedAt : undefined
+            capturedAt: typeof o.capturedAt === 'number' ? o.capturedAt : undefined,
+            ...(o.disabled === true ? { disabled: true, disabledAt: typeof o.disabledAt === 'number' ? o.disabledAt : 0 } : {})
         });
     }
     return out;
@@ -250,13 +252,24 @@ export function accountResolution(
     /** X-255 — `agentDefaults.storedAccount` for this agent on this engine. */
     agentStanding?: string,
     /** turns a slot id into the label a person recognises; id by default. */
-    labelOf?: (id: string) => string
+    labelOf?: (id: string) => string,
+    /** X-530 — a standing choice naming an asleep slot is stepped over, and the note says so */
+    asleep?: (id: string) => boolean
 ): AccountResolution {
     const name = (id: string): string => (labelOf ? labelOf(id) : id) || id;
     const own = String(stated || '').trim();
     const eng = String(engine || 'claude').trim() || 'claude';
-    const mine = String(agentStanding || '').trim();
-    const machine = active[eng] || '';
+    const sleeps = (id: string): boolean => !!id && !!asleep && asleep(id);
+    const minePlain = String(agentStanding || '').trim();
+    const machinePlain = active[eng] || '';
+    const mine = sleeps(minePlain) ? '' : minePlain;
+    const machine = sleeps(machinePlain) ? '' : machinePlain;
+    const stepped = [minePlain, machinePlain].filter(sleeps)
+        .map(id => `${name(id)} is disabled, so it was stepped over. `).filter((s, i, a) => a.indexOf(s) === i).join('');
+    if (stepped && !own) {
+        const r = accountResolution('', eng, machine ? { [eng]: machine } : {}, mine, labelOf);
+        return { ...r, note: stepped + r.note };
+    }
     // ‼️ X-211 — the one answer that is a statement OF nothing. It outranks every
     // standing layer exactly as any other stated account does; what it resolves
     // to is the absence of a slot, which is the main sign-in.
@@ -300,9 +313,10 @@ export function resolveAccount(
     stated: string | undefined,
     engine: string | undefined,
     active: Record<string, string>,
-    agentStanding?: string
+    agentStanding?: string,
+    asleep?: (id: string) => boolean
 ): string {
-    return accountResolution(stated, engine, active, agentStanding).id;
+    return accountResolution(stated, engine, active, agentStanding, undefined, asleep).id;
 }
 
 /**
@@ -399,6 +413,7 @@ export function accountRefusal(
         return `Account "${id}" is a ${slot.engine} sign-in and this session is on ${want}. `
             + 'An account belongs to one engine; pick one of that engine\'s, or none.';
     }
+    if (slot.disabled) { return asleepRefusal(slotLabel(slot)); }
     return '';
 }
 
@@ -758,7 +773,7 @@ export function headlessAccountPlan(
     // ‼️ The sentinel is resolved BEFORE the refusal, because `@machine` names
     // no slot on purpose and asking `accountRefusal` about it would be asking
     // whether "nothing" is stored.
-    const id = resolveAccount(stated, engine, active, mine);
+    const id = resolveAccount(stated, engine, active, mine, asleepIn(list));
     const refusal = accountRefusal(id, list, engine);
     if (refusal) { return { env: {}, account: '', refusal }; }
     return { env: accountEnvFor(engine, stated || id, list), account: id, refusal: '' };

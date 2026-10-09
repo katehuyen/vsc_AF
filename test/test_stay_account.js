@@ -107,7 +107,7 @@ console.log('\n== the wiring ==');
     const place = fs.readFileSync(path.join(ROOT, 'src', 'launch', 'accountPlacement.ts'), 'utf8').replace(/\r\n/g, '\n');
     ok('the door asks the stay for the predecessor\'s account, with the measured cause (X-472)', /const cause = passCauseOf\(\{ sessionId: b\.from\.sessionId, slot: was, fault: b\.fault, recorded: b\.cause \}\);\n\s*\/\/ S-143[^\n]*\n\s*const stay: StayVerdict = ruled \? \{ stay: false, why: ruled \} : handoverStay\(was, cause\);/.test(place)
         && /const \{ stay, park \} = successorPlacement\(b, agent\.id, accountRuled\(batonStore\.all\(\), b\)\);/.test(ext));
-    ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : b\.want\.account/.test(place) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
+    ok('…and opens the leg on it, the pool untouched', /account: stay\.stay \? stay\.slotId : wanted/.test(place) && /const wanted = asleep\(b\.want\.account\) \? '@emptiest' : b\.want\.account;/.test(place) && /\.\.\.\(stay\.stay \? \{ account: stay\.slotId \} : \{\}\)/.test(ext));
     ok('‼️ X-472 — the quota reason is the measured cause, never whether an order reached the run', /quotaHandover: cause\.kind === 'quota', walled: cause\.kind === 'limit'/.test(place) && !/(contextGuard\.record\(sid\)|d\.guard\(sid\))\?\.quota\?\.handover/.test(ext + place));
     ok('the sentry step gets the finished round\'s stay, on the same verdict', /stay: handoverStay\(finishedTask\.account, passCauseOf\(\{ sessionId: successorSessionOf\(finishedTask\), slot: finishedTask\.account \}\)\)/.test(ext));
     const src = ext.replace(/\r\n/g, '\n');

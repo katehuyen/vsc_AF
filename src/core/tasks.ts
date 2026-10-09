@@ -1886,6 +1886,8 @@ export interface TaskManagerOptions {
      * side that owns the slot list, so the two runners cannot disagree.
      */
     accountBlock?: (engine: string, account?: string, agentId?: string) => string | undefined;
+    /** X-530 — the named account is stored but asleep: the hold is cleared by Enable, not by a capture */
+    accountAsleep?: (account: string) => boolean;
     /** ‼️ S-19 — what a session has cost and spent so far, for the delta a
      *  resumed run is charged. Undefined = not indexed yet, and the task simply
      *  starts from nothing rather than from a guess. */
@@ -3603,6 +3605,8 @@ export class TaskManager implements vscode.Disposable {
          */
         const accountNo = this.opts.accountBlock?.(task.engine ?? 'claude', task.account, task.agentId);
         if (accountNo) {
+            const named = (task.account ?? '').trim();
+            if (named && this.opts.accountAsleep?.(named)) { return { code: `account:asleep:${named}`, reason: accountNo }; }
             return { code: `account:missing:${(task.account ?? '').trim() || task.engine || 'claude'}`, reason: accountNo };
         }
         const maxGlobal = this.opts.maxConcurrent?.() ?? 5;

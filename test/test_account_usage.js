@@ -996,6 +996,21 @@ async function main() {
             && launchBody.indexOf('this.spawnHeadless(task, agent)') > launchBody.indexOf("task.status = 'running'"));
     }
 
+    // ---------- ‼️ X-530 — an ASLEEP account is never read: zero requests ----------
+    {
+        const { usableSlots } = require(path.join(__dirname, '..', 'out', 'core', 'accountLife.js'));
+        const all = [slot('a'), { ...slot('b'), disabled: true, disabledAt: 1 }, slot('c')];
+        const { service, calls, reads, tick } = svc(usableSlots(all));
+        for (let i = 0; i < 6; i++) { await service.beat(); tick(61_000); }
+        await service.refresh('user');
+        tick(61_000);
+        await service.refreshSlot('b', 'user');
+        ok('‼️ X-530: an asleep account is never read — no credential opened and no request spent, however many beats and presses',
+            !reads.some(f => /[\\/]b[\\/]/.test(f)) && !calls.includes('tok-b'));
+        ok('…while the awake ones still are', calls.includes('tok-a') && calls.includes('tok-c'));
+        ok('…and it has no row among the figures, so no rotation can rank it', !service.current().some(u => u.slotId === 'b'));
+    }
+
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 }
