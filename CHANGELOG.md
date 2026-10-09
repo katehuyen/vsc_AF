@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.908.0 - OpenCode Console cards run on your routes (2026-10-10)
+
+- **Every route you lend to OpenCode now reaches its Console cards.** The
+  OpenCode cards in the Console share one OpenCode process, so it is given
+  every route that is marked for OpenCode and has a key, each with its own
+  key. A route without a key, or whose key was given for an address it has
+  since left, is not given until you set or confirm the key.
+- **Changing a route restarts that process by itself - only when it is
+  safe.** Adding, editing or removing a route, ticking OpenCode on it, or
+  changing its key or the Farm Secret it uses restarts the process with the
+  new settings once every OpenCode card is idle. A reply that is running or
+  a permission question that is open is never cut: the restart waits for
+  it. Each card keeps its conversation and reads "OpenCode restarted with
+  the new route settings".
+- **A card keeps its model across a restart or a crash**, even one that has
+  not sent a message yet, and its permission mode with it. If its model is
+  no longer offered (its route was removed), the card says so instead of
+  quietly switching to another one.
+- **A new card on a route with no model picked starts on the route's
+  default model.** A message sent while the process restarts waits and goes
+  out as soon as its card is back.
+- **Accounts page:** the "refresh all" button and the line that counts the
+  accounts it will read leave disabled accounts out.
+- **For agents:** new bridge op console.runtime - the shared OpenCode
+  process's phase, pid, card count, whether it is reloading, and whether a
+  route change is waiting for the cards to be idle (and since when).
+
 ## 3.907.0 - Disable, Enable and Sign out for accounts (2026-10-10)
 
 - **An account can be put to sleep without deleting it.** Disable keeps its
