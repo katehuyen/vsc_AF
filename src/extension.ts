@@ -220,7 +220,8 @@ import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
 import { composerSetup } from './launch/doors/composer';
 import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, publicProfile, secretKeyFor } from './core/providerOwnership';
-import { ProviderKeys } from './core/providerKeys';
+import { routeArgsRefusal } from './core/routeEngines';
+import { bindAddresses, ProviderKeys } from './core/providerKeys';
 import { keyHint, keyPickItems, routeKeyFor } from './core/routeKey';
 import { routedModel } from './core/routeModels';
 import { authKindLabel } from './core/routeAuth';
@@ -24134,7 +24135,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engine,
             adapter,
             catalog: adapter.catalog(),
-            profiles: providerProfiles().filter(p => p.engine === engine),
+            // OpenCode is handed no route until a launch lends them: its catalog would report each one as not offered.
+            profiles: engine === 'opencode' ? [] : providerProfiles().filter(p => p.engines.includes(engine)),
             hasSecret: (id: string) => providerProfiles().some(p => p.id === id && !!routeKeyOf(p).value),
             cli: { present: !!row?.cli.found, ...(version ? { version } : {}) },
             inheritedEnv: process.env,
@@ -24154,7 +24156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 },
                 worktreeOf: (d: string) => opencodeWorktree(d)
             }),
-            ...(dataOwnerOf(engine, 'catalog') === 'agent-farm' ? {
+            ...(dataOwnerOf(engine, 'catalog', 'agent-farm-route') === 'agent-farm' ? {
                 savedRoutes: savedRoutesFor(engine),
                 routeRunnable: (id: string) => !launchRouteRefusal(engine, id, ''),
                 profileRead: readProfilesReport(cfg().get<unknown[]>('providerProfiles', []))
@@ -24690,7 +24692,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const setProviderSecret = async (id: string, value: string): Promise<void> => {
         const route = providerProfiles().find(p => p.id === id);
         if (!secretKeyFor(id) || !route) { return; }
-        await providerKeys.set(id, value, route.baseUrl ?? '');
+        await providerKeys.set(id, value, route);
         await bumpRouteRevision(id);
         EnginesPanel.refreshIfOpen();
     };
@@ -24699,7 +24701,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const route = providerProfiles().find(p => p.id === id);
         if (!route || !vault.names().includes(name)) { return; }
         await providerKeys.delete(id);
-        await providerKeys.bind(id, { baseUrl: route.baseUrl ?? '', secretRef: name });
+        await providerKeys.bind(id, { ...bindAddresses(route), secretRef: name });
         await bumpRouteRevision(id);
         EnginesPanel.refreshIfOpen();
     };
@@ -24716,12 +24718,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         setKapiciKey: async (name: string) => { await cfg().update('kapici.keyName', name, vscode.ConfigurationTarget.Global); },
         announce: (title: string, body: string) => { noticesStore.add({ agentName: 'agent-farm', title, body, level: 1 }); }
     };
-    /** X-492 — a person says the key held for the old endpoint may go to the route's new one. */
+    /** X-492 — a person says the key held for the old endpoints may go to the route's new ones. */
     const confirmRouteKey = async (id: string): Promise<void> => {
         const route = providerProfiles().find(p => p.id === id);
         const b = providerKeys.bindOf(id);
         if (!route || !b) { return; }
-        await providerKeys.bind(id, { ...b, baseUrl: route.baseUrl ?? '' });
+        await providerKeys.bind(id, { ...bindAddresses(route), secretRef: b.secretRef });
         await bumpRouteRevision(id);
         EnginesPanel.refreshIfOpen();
     };
@@ -24932,8 +24934,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // …and the credential goes with it, or it stays in the keychain
             // with nothing left to collect it.
             await clearProviderSecret(id);
-            // X-115 — the SAME function the bridge op calls.
-            await forgetProviderTests(w.profile?.engine ?? 'claude', id);
+            // X-115 — the SAME function the bridge op calls, for every engine the route served.
+            for (const e of w.profile!.engines) { await forgetProviderTests(e, id); }
             EnginesPanel.refreshIfOpen();
             return [];
         },
@@ -44194,12 +44196,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         {
             op: 'providers.ownership',
-            describe: 'X-100 — WHO IS THE AUTHORITY FOR WHICH PIECE OF PROVIDER DATA, per engine per '
-                + 'kind, each row with the reason in words. ‼️ THE FAILURE THIS PREVENTS IS TWO '
-                + 'VAULTS: give every engine the same provider manager and OpenCode — which already '
-                + 'owns /connect, `opencode auth login`, auth.json and opencode.json — ends up with a '
-                + 'second copy of its credentials here, after which the copy that loses is always the '
-                + 'one the user did not edit last. Kinds: catalog (which providers and models exist), '
+            describe: 'X-100 / X-516 — WHO IS THE AUTHORITY FOR WHICH PIECE OF PROVIDER DATA, per engine, '
+                + 'per source and per kind, each row with the reason in words. Two sources: `agent-farm-route` '
+                + '— a route Agent Farm holds, whose catalog, key and config are Agent Farm\'s on every engine '
+                + 'it serves (Claude Code is given it as environment; OpenCode is lent it at launch inside '
+                + 'OPENCODE_CONFIG_CONTENT, its key by an {env:NAME} reference, and no OpenCode file is '
+                + 'written) — and `engine-native` — the engine\'s own providers. ‼️ THE FAILURE THIS PREVENTS '
+                + 'IS TWO VAULTS: OpenCode already owns /connect, `opencode auth login`, auth.json and '
+                + 'opencode.json, so its own providers and credentials are never copied or written here — the '
+                + 'copy that loses is always the one the user did not edit last. Kinds: catalog (which providers and models exist), '
                 + 'credential (what unlocks them), config (the engine\'s own file), selection (which '
                 + 'provider a run was actually started with — history rather than configuration, and '
                 + 'Agent Farm\'s on EVERY engine because no engine keeps it). An engine with no row '
@@ -44212,18 +44217,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...secretBindOps(secretBindDeps),
         {
             op: 'providers.list',
-            describe: 'X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: id, '
-                + 'label, engine, providerId, baseUrl, authKind, tiers (tier → model id), revision, '
-                + 'and `hasSecret`. ‼️ `hasSecret` IS THE WHOLE OF WHAT THIS SAYS ABOUT A CREDENTIAL '
+            describe: 'X-100 / X-516 — the ROUTES Agent Farm holds, each ONE record serving Claude Code, '
+                + 'OpenCode or both: id, label, engines (claude, opencode), providerId, baseUrl (the '
+                + 'Anthropic-style endpoint Claude Code is pointed at), opencodeUrl (where OpenCode reaches the '
+                + 'service in the OpenAI style, when that is not baseUrl), authKind, context and output (the '
+                + 'models\' context window and longest answer, in tokens), tiers (tier → model id; tiers may '
+                + 'name different models), revision, and `hasSecret`. ‼️ `hasSecret` IS THE WHOLE OF WHAT THIS SAYS ABOUT A CREDENTIAL '
                 + '— whether one exists is public, the value is not, and no op anywhere returns it. '
-                + '`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, '
-                + 'tier mapping) or its key is replaced, never on a rename: a launch records the '
+                + '`revision` counts up whenever the ROUTE changes (provider, endpoint, OpenCode endpoint, '
+                + 'auth kind, engines, tier mapping) or its key is replaced, never on a rename: a launch records the '
                 + 'revision it ran on, so a route edited afterwards cannot silently rewrite what a '
                 + 'past session was served by. X-488 — `description` is the owner\'s note, `secretRef` '
                 + 'names the Farm Secret the route signs in with (absent = a key of its own), and '
                 + '`keyHint` is a masked reminder of which key it is (`sk-or-…4444`), never the key. '
-                + 'X-492 — `keyHeldFor` names the endpoint a key was given for when the route has moved '
-                + 'since; such a route has no key until a person confirms it. S-135 — `retired` lists the '
+                + 'X-492 — `keyHeldFor` names the endpoints a key was given for when the route has moved '
+                + 'since (baseUrl or opencodeUrl); such a route has no key on any engine until a person '
+                + 'confirms it. S-135 — `retired` lists the '
                 + 'ids of removed routes that are never given again (past sessions still carry them). '
                 + 'args: id? (one route by id)',
             handler: (args) => {
@@ -44241,20 +44250,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'nothing: everything is read through an allow-list, so a `key`/`apiKey`/`headers` '
                 + 'field is dropped on the way in rather than stored. Storing the key is human-only, '
                 + 'in the Engines page (Providers → Add key), for the reason the Secrets vault is. '
-                + '‼️ REFUSED, NOT WARNED: an engine that owns its own credentials (OpenCode) cannot '
-                + 'be given a profile — ask providers.ownership — and the refusal names that engine\'s '
-                + 'own way of signing in. A base URL must be https or http on loopback: a key sent '
-                + 'over plain http to another host travels in clear. The id is PERMANENT because the '
+                + '‼️ X-516 — `engines` says which engines the route serves (claude, opencode or both); left '
+                + 'out, it serves every engine it can. REFUSED, NOT WARNED: every marked engine must be able '
+                + 'to run it — OpenCode needs an address (baseUrl or opencodeUrl) and at least one tier, and a '
+                + 'route with only opencodeUrl serves OpenCode alone. The single `engine` argument is refused '
+                + '(use engines). OpenCode\'s own providers are never stored here — ask providers.ownership. '
+                + 'A base URL must be https or http on loopback (a key sent over plain http to another host '
+                + 'travels in clear) and must not end in /v1: Claude Code adds /v1/messages itself, and the '
+                + 'refusal says the address to write. authKind is api-key or oauth. The id is PERMANENT because the '
                 + 'credential is filed under it; it is 2-40 characters of lowercase letters, digits '
                 + 'and hyphens. ‼️ X-488 / B-31 — WHICH key a route signs in with is kept beside the '
                 + 'keychain, not in the route: a key of its own is typed only in the Engines page; a Farm '
                 + 'Secret may be NAMED here (`secretRef`, refused unless the vault holds it) or with '
                 + 'providers.bindSecret — bound to the endpoint the route has then, and announced on '
                 + 'Notices. args: id, label? (at most ' + PROFILE_LABEL_MAX + ' characters — every badge shows '
-                + 'it in full, so a longer one is refused; empty shows the id), providerId, baseUrl?, authKind?, tiers? (object, tier → '
-                + 'model id), description? (the owner\'s note), engine? (claude), secretRef?. S-135 — the '
+                + 'it in full, so a longer one is refused; empty shows the id), providerId, baseUrl?, opencodeUrl?, '
+                + 'authKind? (api-key | oauth), engines? (a list or comma-separated: claude, opencode), '
+                + 'context?, output? (positive whole numbers of tokens), tiers? (object, tier → model id), '
+                + 'description? (the owner\'s note), secretRef?. S-135 — the '
                 + 'id of a removed route is refused: an id is given once (providers.list → retired).',
             handler: async (args, from) => {
+                const argBad = routeArgsRefusal(args as Record<string, unknown>);
+                need(!argBad, argBad);
                 // B-31 — `secretRef` names a Farm Secret to sign in with; refused before anything is written
                 const ref = optStr(args, 'secretRef').trim();
                 need(!ref || vault.names().includes(ref), secretMissing(ref));
@@ -44277,15 +44294,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'in the OS keychain with nothing left to collect it — use providers.copy, whose copy '
                 + 'deliberately carries no key. The revision bumps only when the ROUTE changed; a '
                 + 'rename leaves it alone, because the number is a statement about the route rather '
-                + 'than a count of edits. ‼️ X-492 — A KEY DOES NOT FOLLOW A NEW baseUrl: it is bound to '
-                + 'the endpoint a person gave it for, so after a move the route answers hasSecret:false '
-                + 'with keyHeldFor naming the old endpoint, and runs nothing until a person confirms the '
+                + 'than a count of edits. ‼️ X-492 / X-516 — A KEY DOES NOT FOLLOW A NEW baseUrl OR opencodeUrl: it is bound to '
+                + 'the endpoints a person gave it for, so after a move the route answers hasSecret:false '
+                + 'with keyHeldFor naming the old endpoints, and runs nothing on any engine until a person confirms the '
                 + 'key in the Engines page (Change key). The same holds whatever wrote the change — this '
                 + 'op, settings.set or a hand edit — unless this same call names a Farm Secret '
                 + '(`secretRef`, B-31), which is then bound at the new endpoint and announced on Notices. '
                 + 'args: id, label? (at most ' + PROFILE_LABEL_MAX + ' characters; a label stored longer before '
-                + 'the limit is kept while it is not changed), providerId?, baseUrl?, authKind?, tiers?, description?, secretRef?',
+                + 'the limit is kept while it is not changed), providerId?, baseUrl?, opencodeUrl?, authKind?, '
+                + 'engines?, context?, output?, tiers?, description?, secretRef? (an emptied value clears it; '
+                + 'engine is refused — use engines)',
             handler: async (args, from) => {
+                const argBad = routeArgsRefusal(args as Record<string, unknown>);
+                need(!argBad, argBad);
                 const id = argStr(args, 'id').trim().toLowerCase();
                 // B-31 — `secretRef` binds a Farm Secret at the endpoint the route has after this change
                 const ref = optStr(args, 'secretRef').trim();
@@ -44335,8 +44356,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await writeProviderProfiles(w.list);
                 await retireProviderId(id);
                 await clearProviderSecret(id);
-                // X-115 — and the verdicts filed under it, the last trace left.
-                await forgetProviderTests(w.profile?.engine ?? 'claude', id);
+                // X-115 — and the verdicts filed under it on every engine it served, the last trace left.
+                for (const e of w.profile!.engines) { await forgetProviderTests(e, id); }
                 EnginesPanel.refreshIfOpen();
                 return { removed: id, credentialCollected: hadSecret };
             }

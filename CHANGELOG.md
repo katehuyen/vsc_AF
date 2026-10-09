@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.905.0 - One route for Claude Code and OpenCode: the groundwork (2026-10-09)
+
+- **A route now says which engines it serves** - Claude Code, OpenCode or
+  both. This is the first step towards using the same route (endpoint, key
+  and the models on its tiers) from OpenCode too; starting OpenCode on a
+  route comes in a following release. Routes you already have are read as
+  serving both when they have an endpoint and at least one model, and
+  Claude Code alone otherwise. Nothing changes in how Claude Code runs on
+  them, and nothing is rewritten until you next save the route.
+- **Each tier can still name its own model.** A route with one model on
+  opus and another on haiku is kept exactly as it is.
+- **An endpoint ending in /v1 is refused, with the address to write
+  instead.** Claude Code adds /v1/messages itself, so such an endpoint sent
+  every request to .../v1/v1/messages and every turn failed.
+- **The key kind is API key or Bearer token.** A value written by hand that
+  is neither is read as API key - which is how it was always sent.
+- **A key stays with the addresses it was given for.** A route can now also
+  carry the address OpenCode reaches the service at; if either address
+  changes, the key is held back on every engine until you confirm it on the
+  Engines page, as it already was for the endpoint.
+- **For agents:** providers.add and providers.set take engines, opencodeUrl,
+  context and output (the old engine argument is refused with a pointer to
+  engines); providers.list returns them, and providers.ownership shows
+  OpenCode in two groups - its own providers, which stay its own, and the
+  routes Agent Farm lends it.
+
 ## 3.904.0 - Launch profiles keep every choice; route names fit their badge (2026-10-09)
 
 - **Fixed:** a launch profile created or edited by an agent (through the

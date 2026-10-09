@@ -22,7 +22,7 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
 (async () => {
     const kc = keychain(), st = memento();
     const keys = new ProviderKeys(kc, st);
-    await keys.set('openrouter-r1', 'sk-or-real', 'https://openrouter.ai/api');
+    await keys.set('openrouter-r1', 'sk-or-real', { baseUrl: 'https://openrouter.ai/api' });
     ok('‼️ a stored key is read back by its profile id', keys.get('openrouter-r1') === 'sk-or-real');
     ok('…from the keychain name X-100 chose, never the vault\'s', kc.m.get('agentFarm.providerProfile.openrouter-r1') === 'sk-or-real'
         && ![...kc.m.keys()].some(k => k.startsWith('agentfarm.secret.')));
@@ -43,7 +43,7 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     ok('‼️ every mapped tier answers for its alias', env.ANTHROPIC_DEFAULT_OPUS_MODEL === 'deepseek/deepseek-r1:free'
         && env.ANTHROPIC_DEFAULT_HAIKU_MODEL === 'x/fast' && env.ANTHROPIC_SMALL_FAST_MODEL === 'x/fast');
     ok('an unmapped alias and an unknown tier name nothing', env.ANTHROPIC_DEFAULT_SONNET_MODEL === undefined && Object.keys(env).length === 3);
-    const run = R.claudeRouteRuntime({ id: 'r', label: 'R', engine: 'claude', providerId: 'anthropic', baseUrl: 'https://openrouter.ai/api',
+    const run = R.claudeRouteRuntime({ id: 'r', label: 'R', engines: ['claude'], providerId: 'anthropic', baseUrl: 'https://openrouter.ai/api',
         authKind: 'oauth', tiers: { opus: 'm/opus', sonnet: 'm/sonnet' }, revision: 1 }, 'tok', {}, '');
     // X-496 — and names the route's first tier by its ALIAS, so no settings-file model reaches the route raw
     ok('a run with no tier chosen still stays on the route for every alias', run.spawnEnv.ANTHROPIC_MODEL === 'opus'
@@ -64,7 +64,7 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     const { PROVIDER_KEY_BINDS } = require(path.join(OUT, 'providerKeys.js'));
     const kc2 = keychain(), st2 = memento();
     const k2 = new ProviderKeys(kc2, st2);
-    await k2.set('r', 'own-key-value-123456', 'https://openrouter.ai/api');
+    await k2.set('r', 'own-key-value-123456', { baseUrl: 'https://openrouter.ai/api' });
     ok('a typed key is bound to the endpoint it was given for, beside the keychain (not in settings)',
         JSON.stringify(st2.m.get(PROVIDER_KEY_BINDS)) === JSON.stringify({ r: { baseUrl: 'https://openrouter.ai/api' } }));
     const named = n => (n === 'OpenRouter-ahmet' ? 'sk-or-v1-0123456789abcdef4444' : undefined);
@@ -95,6 +95,37 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     ok('…and only once', (await k3.adopt([{ id: 'old', baseUrl: 'https://elsewhere' }])).length === 0
         && k3.bindOf('old').baseUrl === 'https://api.moonshot.ai/anthropic');
 
+    // ---------- X-516 — the OpenCode endpoint is a second address the key is bound to ----------
+    {
+        const { bindAddresses } = require(path.join(OUT, 'providerKeys.js'));
+        const kc4 = keychain(), st4 = memento();
+        const k4 = new ProviderKeys(kc4, st4);
+        const two = { id: 'or', baseUrl: 'https://openrouter.ai/api', opencodeUrl: 'https://openrouter.ai/api/v1' };
+        await k4.set('or', 'own-key-value-777777', two);
+        ok('a typed key is bound to BOTH endpoints the route has', JSON.stringify(k4.bindOf('or'))
+            === JSON.stringify({ baseUrl: 'https://openrouter.ai/api', opencodeUrl: 'https://openrouter.ai/api/v1' }));
+        const own4 = id => k4.get(id);
+        ok('…and at both the route signs in', routeKeyFor(two, k4.bindOf('or'), own4, named).value === 'own-key-value-777777');
+        const ocMoved = routeKeyFor({ ...two, opencodeUrl: 'https://evil.example/v1' }, k4.bindOf('or'), own4, named);
+        ok('‼️ an OpenCode endpoint changed since gives NO key to any engine, and says where it was given',
+            ocMoved.value === undefined && ocMoved.heldFor === 'https://openrouter.ai/api and https://openrouter.ai/api/v1');
+        ok('…and one added since is a change too',
+            routeKeyFor({ id: 'or', baseUrl: 'https://openrouter.ai/api', opencodeUrl: 'https://x/v1' },
+                { baseUrl: 'https://openrouter.ai/api' }, own4, named).heldFor === 'https://openrouter.ai/api');
+        // the confirm flow (extension confirmRouteKey) rebinds both addresses as the route has them now
+        await k4.bind('or', { ...bindAddresses({ ...two, opencodeUrl: 'https://new.example/v1' }), secretRef: undefined });
+        ok('‼️ after a person confirms, the key goes to the new endpoints',
+            routeKeyFor({ ...two, opencodeUrl: 'https://new.example/v1' }, k4.bindOf('or'), own4, named).value === 'own-key-value-777777');
+        ok('a bind from before the OpenCode endpoint holds for a route that has none', routeKeyFor(
+            { id: 'r', baseUrl: 'https://openrouter.ai/api' }, { baseUrl: 'https://openrouter.ai/api' }, () => 'k-000000000000000', named).value
+            === 'k-000000000000000');
+        await k4.bind('or', { ...bindAddresses(two), secretRef: 'OpenRouter-ahmet' });
+        ok('a Farm Secret rename keeps both addresses', (await k4.followRename('OpenRouter-ahmet', 'OR-2')).join() === 'or'
+            && k4.bindOf('or').opencodeUrl === 'https://openrouter.ai/api/v1' && k4.bindOf('or').secretRef === 'OR-2');
+        ok('the confirm flow and the Farm Secret bind name both addresses (extension)',
+            /await providerKeys\.bind\(id, \{ \.\.\.bindAddresses\(route\), secretRef: b\.secretRef \}\);/.test(ext));
+    }
+
     ok('the masked hint tells keys apart and gives none away', keyHint('sk-or-v1-0123456789abcdef4444') === 'sk-or-…4444'
         && keyHint('short-key') === '…ey' && keyHint('') === '' && keyHint(undefined) === '');
     ok('…and a canary never survives into it', !/CANARY/.test(keyHint('sk-ant-api03-CANARYx115CANARYx115CANARYx115')));
@@ -114,9 +145,9 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
     ok('‼️ the binds are read where the launch reads the key', /routeKeyFor\(p, providerKeys\.bindOf\(p\.id\), id => providerKeys\.get\(id\), name => vault\.get\(name\)\)/.test(ext));
     ok('keys from before binds are adopted at activation, right after the load',
         /await providerKeys\.load\(\);\s*\/\/[^\n]*\n\s*await providerKeys\.adopt\(readProfiles\(cfg\(\)\.get<unknown\[\]>\('providerProfiles', \[\]\)\)\);/.test(ext));
-    ok('a typed key is bound to the route\'s endpoint as it is now', /await providerKeys\.set\(id, value, route\.baseUrl \?\? ''\);/.test(ext));
+    ok('a typed key is bound to the route\'s endpoints as they are now', /await providerKeys\.set\(id, value, route\);/.test(ext));
     ok('naming a Farm Secret collects the own key and binds the name to this endpoint',
-        /await providerKeys\.delete\(id\);\s*await providerKeys\.bind\(id, \{ baseUrl: route\.baseUrl \?\? '', secretRef: name \}\);/.test(ext));
+        /await providerKeys\.delete\(id\);\s*await providerKeys\.bind\(id, \{ \.\.\.bindAddresses\(route\), secretRef: name \}\);/.test(ext));
     ok('every surface sees a route through one builder (hasSecret, keyHint, secretRef, keyHeldFor)',
         /const publicProviderProfiles = \(\) => providerProfiles\(\)\.map\(publicRoute\);/.test(ext)
         && (ext.match(/publicRoute\((w\.profile!|fresh)\)/g) || []).length === 3 && !/publicProfiles\(\[w\.profile/.test(ext));
@@ -161,7 +192,7 @@ const memento = () => { const m = new Map(); return { m, get: (k, d) => (m.has(k
         routedModel('claude-opus-5-5', byDefault) === 'opus' && routedModel('claude-sonnet-5', byDefault) === ''
         && routedModel('deepseek/deepseek-r1', byDefault) === 'deepseek/deepseek-r1');
     const RT = require(path.join(OUT, 'providerRuntime.js'));
-    const prof = { id: 'or', label: 'OR', engine: 'claude', providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
+    const prof = { id: 'or', label: 'OR', engines: ['claude'], providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
         authKind: 'oauth', tiers: { sonnet: 'x/sonnet', haiku: 'x/haiku' }, revision: 1 };
     ok('‼️ the runtime: no tier picked → the default alias; a picked tier → its model; an unmapped pick → none',
         RT.claudeRouteRuntime(prof, 'k', {}, '').spawnEnv.ANTHROPIC_MODEL === 'sonnet'

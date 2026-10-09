@@ -45,7 +45,7 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
     const rep = H.providerHealth({ engine: 'claude', adapter, catalog, savedRoutes, inheritedEnv: {} });
     ok('a gone route lands in the report problems', rep.problems.some(p => /route "kimi" no longer exists/.test(p)));
     const held = H.providerHealth({ engine: 'claude', adapter, catalog, savedRoutes, inheritedEnv: {},
-        profiles: [{ id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', tiers: {} }] });
+        profiles: [{ id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', tiers: {} }] });
     ok('‼️ a route Agent Farm still holds is not "gone", even when the catalog lacks it',
         !held.problems.some(p => /no longer exists/.test(p)));
     const unread = H.providerHealth({ engine: 'claude', adapter, catalog: { ...catalog, source: 'not-fetched' }, savedRoutes, inheritedEnv: {} });
@@ -74,14 +74,14 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
         && /taskManager\.schedules/.test(body) && /t\.status === 'queued'/.test(body));
     ok('‼️ it writes nothing', !/\.update\(|writeFile|save\(\)|\.set\(/.test(body));
     ok('‼️ only for an engine whose route catalog Agent Farm owns',
-        /\.\.\.\(dataOwnerOf\(engine, 'catalog'\) === 'agent-farm' \? \{\s*savedRoutes: savedRoutesFor\(engine\),/.test(ext));
+        /\.\.\.\(dataOwnerOf\(engine, 'catalog', 'agent-farm-route'\) === 'agent-farm' \? \{\s*savedRoutes: savedRoutesFor\(engine\),/.test(ext));
 }
 
 // ---- profile schema upgrade: filled in and skipped, SAID ----
 {
     const P = require(path.join(ROOT, 'out', 'core', 'providerProfiles.js'));
     const raw = [
-        { id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', tiers: { opus: 'k2' }, revision: 3 },
+        { id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', tiers: { opus: 'k2' }, revision: 3 },
         { id: 'old', providerId: 'old', tiers: {} },
         { id: 'Kimi Work', providerId: 'x', tiers: {} },
         'not a record'
@@ -90,7 +90,7 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
     ok('the list is exactly what readProfiles returns', JSON.stringify(r.list) === JSON.stringify(P.readProfiles(raw)));
     ok('a current record is not reported', !r.upgraded.some(u => /"kimi"/.test(u)));
     ok('‼️ an older shape says what was filled in', r.upgraded.length === 1
-        && /route "old" was stored in an older shape and is read with engine claude, revision 1, label "old"/.test(r.upgraded[0]));
+        && /route "old" was stored in an older shape and is read with engines claude, revision 1, label "old"/.test(r.upgraded[0]));
     ok('‼️ a skipped id is named with the reason, not silently missing',
         r.dropped.some(d => /stored route "Kimi Work" was skipped: a profile id is/.test(d)));
     ok('a non-record is counted by position', r.dropped.some(d => /stored route #4 is not a record/.test(d)));

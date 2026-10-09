@@ -149,7 +149,7 @@ const formOf = (h) => {
     const { readClaudeRouteCatalog } = require(path.join(ROOT, 'out', 'core', 'providerCatalog.js'));
     const { authKindLabel } = require(path.join(ROOT, 'out', 'core', 'routeAuth.js'));
     const cat = readClaudeRouteCatalog(profilesAsRoutes([{
-        id: 'or', label: 'OpenRouter', engine: 'claude', providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
+        id: 'or', label: 'OpenRouter', engines: ['claude'], providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
         authKind: 'oauth', tiers: { opus: 'x/y' }, revision: 1, description: 'night experiments'
     }]));
     const row = cat.providers.find(p => p.providerId === 'or');
@@ -159,7 +159,7 @@ const formOf = (h) => {
     const G = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
     const F = require(path.join(ROOT, 'out', 'core', 'launchProvider.js'));
     const adapter = G.adapterFor('claude', {
-        profiles: [{ id: 'or', label: 'OpenRouter', engine: 'claude', providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
+        profiles: [{ id: 'or', label: 'OpenRouter', engines: ['claude'], providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api',
             authKind: 'oauth', tiers: { opus: 'x/y' }, revision: 1, description: 'night experiments' }],
         secretFor: () => 'sk-test', inheritedEnv: {}
     });
@@ -208,8 +208,8 @@ const formOf = (h) => {
     const F = require(path.join(ROOT, 'out', 'core', 'launchProvider.js'));
     const adapter = G.adapterFor('claude', {
         profiles: [
-            { id: 'mm', label: 'MiniMax', engine: 'claude', providerId: 'minimax', baseUrl: 'https://api.minimax.io/anthropic', tiers: {}, revision: 1 },
-            { id: 'key2', label: 'Second key', engine: 'claude', providerId: 'anthropic-api', authKind: 'api-key', tiers: {}, revision: 1 }
+            { id: 'mm', label: 'MiniMax', engines: ['claude'], providerId: 'minimax', baseUrl: 'https://api.minimax.io/anthropic', tiers: {}, revision: 1 },
+            { id: 'key2', label: 'Second key', engines: ['claude'], providerId: 'anthropic-api', authKind: 'api-key', tiers: {}, revision: 1 }
         ],
         secretFor: () => 'sk-test', inheritedEnv: {}
     });

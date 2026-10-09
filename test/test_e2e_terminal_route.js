@@ -115,7 +115,7 @@ async function main() {
         // the FIRST `=`; the value is substituted after parsing). A real key is
         // base64 and the claim has never been run.
         const KEY = 'sk-kimi-CANARY=%x!y';
-        const profiles = [{ id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', baseUrl: kimiM.url,
+        const profiles = [{ id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', baseUrl: kimiM.url,
             authKind: 'api-key', tiers: { opus: 'kimi-k2' }, revision: 3 }];
         const inherited = { ANTHROPIC_BASE_URL: wrongM.url, ANTHROPIC_API_KEY: 'sk-inherited-CANARY',
             ANTHROPIC_AUTH_TOKEN: 'sk-inherited-bearer-CANARY' };

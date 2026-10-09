@@ -78,7 +78,7 @@ const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
  */
 export function profilesAsRoutes(profiles: readonly StoredProviderProfile[]): ClaudeRouteInput[] {
     return (profiles || [])
-        .filter(p => p && p.engine === 'claude')
+        .filter(p => p && p.engines.includes('claude'))
         .map(p => ({
             // ‼️ The catalog is keyed by the PROFILE id, not by the vendor id.
             // Two profiles for the same vendor (a work key and a personal one)

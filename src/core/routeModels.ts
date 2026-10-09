@@ -75,6 +75,46 @@ export function routeDefaultTier(baseUrl: string | undefined, tiers: Record<stri
     return baseUrl ? (ROUTE_TIERS.find(n => tiers?.[n]) ?? '') : '';
 }
 
+/** One model a route serves, and the tiers it is written into. */
+export interface RouteModel {
+    model: string;
+    tiers: string[];
+}
+
+/**
+ * ‼️ A ROUTE'S MODELS, READ OFF ITS TIERS — the one list every engine is given.
+ * Each model once, in ROUTE_TIERS order and then the other tiers as stored; the
+ * first is the route's default, by the same rule as `routeDefaultTier`. Two
+ * tiers may name two different models: nothing here folds them into one.
+ */
+export function routeModelList(tiers: Record<string, string> | undefined): RouteModel[] {
+    const all = Object.entries(tiers ?? {}).filter(([, m]) => String(m ?? '').trim());
+    const order = [
+        ...ROUTE_TIERS.filter(n => all.some(([t]) => t === n)),
+        ...all.map(([t]) => t).filter(t => !ROUTE_TIERS.includes(t))
+    ];
+    const out: RouteModel[] = [];
+    for (const tier of order) {
+        const model = String(tiers![tier]).trim();
+        const hit = out.find(m => m.model === model);
+        if (hit) { hit.tiers.push(tier); } else { out.push({ model, tiers: [tier] }); }
+    }
+    return out;
+}
+
+/**
+ * ‼️ CAN THIS ROUTE BE LENT TO OPENCODE — one predicate, asked by the store's
+ * refusal, by the launch and by every picker: it is marked for OpenCode, it has
+ * an address OpenCode can reach, and it serves at least one model.
+ */
+export function lendableToOpenCode(p: {
+    engines?: readonly string[]; baseUrl?: string; opencodeUrl?: string; tiers?: Record<string, string>;
+}): boolean {
+    return !!p.engines?.includes('opencode')
+        && !!(String(p.opencodeUrl ?? '').trim() || String(p.baseUrl ?? '').trim())
+        && routeModelList(p.tiers).length > 0;
+}
+
 export function routeDefaultEnv(baseUrl: string | undefined, tiers: Record<string, string> | undefined): Record<string, string> {
     const alias = routeDefaultTier(baseUrl, tiers);
     return alias ? { ANTHROPIC_MODEL: alias } : {};

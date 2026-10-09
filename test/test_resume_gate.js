@@ -36,12 +36,12 @@ const I = require(path.join(ROOT, 'out', 'core', 'providerIdentity.js'));
 
 const PROFILES = [
     {
-        id: 'kimi-work', label: 'Kimi (work)', engine: 'claude', providerId: 'kimi',
+        id: 'kimi-work', label: 'Kimi (work)', engines: ['claude'], providerId: 'kimi',
         baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
         tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' }, revision: 3
     },
     {
-        id: 'minimax-lab', label: 'MiniMax (lab)', engine: 'claude', providerId: 'minimax',
+        id: 'minimax-lab', label: 'MiniMax (lab)', engines: ['claude'], providerId: 'minimax',
         baseUrl: 'https://api.minimax.io/anthropic', authKind: 'api-key',
         tiers: { opus: 'MiniMax-M2' }, revision: 1
     }

@@ -30,7 +30,7 @@ const P = require(path.join(ROOT, 'out', 'core', 'providerProfiles.js'));
 const O = require(path.join(ROOT, 'out', 'core', 'providerOwnership.js'));
 
 const claude = {
-    id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi',
+    id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi',
     baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
     tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' }
 };
@@ -55,7 +55,7 @@ const claude = {
         !/sk-ant-REAL-KEY|sk-2|sk-3|sk-4|Bearer/.test(text));
     eq('…and the record holds exactly the named fields, nothing else',
         Object.keys(stored).sort(),
-        ['authKind', 'baseUrl', 'engine', 'id', 'label', 'providerId', 'revision', 'tiers']);
+        ['authKind', 'baseUrl', 'engines', 'id', 'label', 'providerId', 'revision', 'tiers']);
     // ‼️ AND THE PUBLIC VIEW IS THE SAME SHAPE PLUS ONE DERIVED FIELD. If these
     // two ever diverge, "the stored record is the public record" has stopped
     // being true and the whole argument above collapses to a filter again.
@@ -82,18 +82,15 @@ const claude = {
     eq('…and starts at revision 1', mine.profile.revision, 1);
 
     /**
-     * ‼️ THE TWO-VAULT FAILURE, REFUSED AT THE DOOR. OpenCode already owns
-     * `/connect`, `opencode auth login` and `auth.json`. A profile here IS a
-     * stored credential, so letting a form create one would produce two vaults
-     * and two revisions — and the copy that loses is always the one the user did
-     * not edit last, which is the worst possible way for a credential to fail.
+     * ‼️ X-516 — A ROUTE AGENT FARM HOLDS IS AGENT FARM'S ON EVERY ENGINE IT IS
+     * LENT TO, so one marked for OpenCode is kept. What stays refused is the
+     * two-vault failure itself: writing OpenCode's OWN credentials or config.
      */
-    const theirs = P.addProfile(list, { ...claude, id: 'oc', engine: 'opencode' },
-        ['claude', 'opencode']);
-    ok('‼️ a credential profile for an engine that owns its own is refused',
-        theirs.refusal.length > 0 && theirs.list.length === 0);
-    ok('…and the refusal names the engine\'s OWN way of doing it',
-        /opencode auth login/.test(theirs.refusal.join(' ')));
+    const lent = P.addProfile(list, { ...claude, id: 'oc', engines: ['opencode'] }, ['claude', 'opencode']);
+    eq('a route marked for OpenCode is Agent Farm\'s to keep', lent.refusal, []);
+    const theirs = O.ownershipRefusal('opencode', 'credential', 'write');
+    ok('‼️ …but storing OpenCode\'s own credential is still refused',
+        theirs.length > 0 && /opencode auth login/.test(theirs.join(' ')));
     // A refusal that does not say what to do instead is just a wall.
     eq('reading is never refused', O.ownershipRefusal('opencode', 'credential', 'read'), []);
     eq('…and recording what a run CHOSE is Agent Farm\'s on every engine',
@@ -352,7 +349,7 @@ const claude = {
     // ‼️ Derived from a FULLY POPULATED profile, not from an empty one: the two
     // optional fields are omitted when empty, so `publicProfile({})` would name
     // six and the gate would then reject the page for drawing a base URL.
-    const allowed = Object.keys(O.publicProfile({ ...claude, description: 'n' },
+    const allowed = Object.keys(O.publicProfile({ ...claude, description: 'n', opencodeUrl: 'https://o/v1', context: 8, output: 4 },
         { hasSecret: true, keyHint: 'sk-…0000', secretRef: 'S', keyHeldFor: 'https://old' })).sort();
     eq('‼️ the row renderer reads nothing that is not on the public shape',
         touched.filter(f => !allowed.includes(f)), []);
@@ -365,9 +362,10 @@ const claude = {
      */
     // X-488 (the user's own request) and X-492 are the decision that added four: the owner's note,
     // the Farm Secret's NAME, a masked hint and the endpoint a key was given for — none of them a value.
-    eq('the public shape is thirteen fields — a fourteenth is a decision, not a detail',
-        allowed, ['authKind', 'baseUrl', 'description', 'engine', 'hasSecret', 'id', 'keyHeldFor', 'keyHint',
-            'label', 'providerId', 'revision', 'secretRef', 'tiers']);
+    // X-516 (the user's approved design) made engine a list and added the OpenCode endpoint and two model limits.
+    eq('the public shape is sixteen fields — a seventeenth is a decision, not a detail',
+        allowed, ['authKind', 'baseUrl', 'context', 'description', 'engines', 'hasSecret', 'id', 'keyHeldFor', 'keyHint',
+            'label', 'opencodeUrl', 'output', 'providerId', 'revision', 'secretRef', 'tiers']);
     ok('…and the row really reads most of them, so the gate has something to hold',
         touched.length >= 7);
 
@@ -376,7 +374,7 @@ const claude = {
     // same endpoint under a different key would go on claiming to be what
     // served a past session.
     ok('replacing a credential is a new route',
-        /await providerKeys\.set\(id, value, route\.baseUrl \?\? ''\);\s*await bumpRouteRevision\(id\);/.test(extTs)
+        /await providerKeys\.set\(id, value, route\);\s*await bumpRouteRevision\(id\);/.test(extTs)
         && /next\[at\] = bumpRevision\(list\[at\]\);/.test(extTs));
     ok('…and so is naming a Farm Secret, or confirming a key at a new endpoint',
         (extTs.match(/await bumpRouteRevision\(id\);/g) || []).length === 3);
@@ -397,6 +395,72 @@ const claude = {
     ok('a hint is only drawn for a route that has a key',
         O.publicProfile(claude, { hasSecret: false, keyHint: 'x…1234' }).keyHint === undefined);
     ok('a copy names no key', O.copyProfile({ ...claude, description: 'n' }, 'k2').secretRef === undefined);
+}
+
+// ---------- X-516 — one route, the engines it serves, read from the old shape without a rewrite ----------
+{
+    const M = require(path.join(ROOT, 'out', 'core', 'routeModels.js'));
+    const R = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));
+    // the live or-nemotron as it is stored: a single engine and a key kind this build has no header for
+    const nemotron = { id: 'or-nemotron', label: 'Nemotron', engine: 'claude', providerId: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api', authKind: 'bearer', tiers: { opus: 'nvidia/nemotron:free' }, revision: 4 };
+    const r = P.readProfilesReport([nemotron, { id: 'first', engine: 'claude', providerId: 'anthropic', tiers: {} }]);
+    const [n, f] = r.list;
+    eq('‼️ an old route with an endpoint and a model is read as serving both engines', n.engines, ['claude', 'opencode']);
+    eq('…an old route with neither serves Claude Code alone', f.engines, ['claude']);
+    ok('‼️ the stored "bearer" is read as api-key, which is how it was always sent', n.authKind === 'api-key');
+    eq('…and the revision does not move on a read', n.revision, 4);
+    ok('the migration is said, in one sentence per route',
+        r.upgraded.length === 2 && /engines claude \+ opencode/.test(r.upgraded[0]) && /key kind api-key \(stored as "bearer"\)/.test(r.upgraded[0]));
+    ok('…and the old field is never written again', !('engine' in n) && !('engine' in P.storedProfile(nemotron)));
+    eq('a Claude route\'s environment is unchanged by the read', Object.keys(R.claudeRouteRuntime(n, 'k', {}, '').spawnEnv).sort(),
+        Object.keys(R.claudeRouteRuntime({ ...nemotron, engines: ['claude'] }, 'k', {}, '').spawnEnv).sort());
+    // engines: a list once each, in one order; empty and unknown refused
+    eq('engines are stored once each, claude first, from a list or a comma text',
+        [P.storedProfile({ ...claude, engines: ['opencode', 'claude', 'opencode'] }).engines,
+            P.storedProfile({ ...claude, engines: ' OpenCode , claude' }).engines], [['claude', 'opencode'], ['claude', 'opencode']]);
+    ok('‼️ an empty list is refused', P.addProfile([], { ...claude, engines: [] }).refusal.some(x => /at least one engine/.test(x)));
+    ok('‼️ an unknown engine is refused by name', P.addProfile([], { ...claude, engines: 'claude,codex' }).refusal.some(x => /"codex"/.test(x)));
+    eq('a new route that could be lent serves both; one that could not serves Claude Code',
+        [P.addProfile([], { ...claude, engines: undefined }).profile.engines,
+            P.addProfile([], { id: 'anth', providerId: 'anthropic' }).profile.engines], [['claude', 'opencode'], ['claude']]);
+    ok('‼️ a route marked for OpenCode with no address is refused, naming it',
+        P.addProfile([], { id: 'x1', providerId: 'p', engines: ['opencode'], tiers: { opus: 'a/b' } }).refusal.some(x => /needs an address/.test(x)));
+    ok('‼️ …and with no model, naming that', P.addProfile([], { ...claude, tiers: {}, engines: ['claude', 'opencode'] })
+        .refusal.some(x => /at least one model/.test(x)));
+    // the key kind, the /v1 endpoint, the OpenCode-only endpoint, the limits
+    ok('a key kind outside the known ones is refused on a write', P.addProfile([], { ...claude, authKind: 'bearer' }).refusal.some(x => /"bearer"/.test(x)));
+    const v1 = P.addProfile([], { ...claude, baseUrl: 'https://openrouter.ai/api/v1/' }).refusal.join(' ');
+    ok('‼️ an endpoint ending in /v1 is refused, saying the address to write',
+        /\/v1\/v1\/messages/.test(v1) && /write "https:\/\/openrouter\.ai\/api"/.test(v1));
+    const ocOnly = { id: 'oc-only', providerId: 'openrouter', opencodeUrl: 'https://openrouter.ai/api/v1', tiers: { opus: 'a/b' } };
+    eq('a route with only an OpenCode endpoint serves OpenCode alone', P.addProfile([], ocOnly).profile.engines, ['opencode']);
+    ok('‼️ …and marking it for Claude Code is refused', P.addProfile([], { ...ocOnly, engines: ['claude', 'opencode'] })
+        .refusal.some(x => /OpenCode alone/.test(x)));
+    ok('the OpenCode endpoint is held to the same clear-text rule', P.addProfile([], { ...ocOnly, opencodeUrl: 'http://x.example/v1' })
+        .refusal.some(x => /OpenCode endpoint: base URL must be https/.test(x)));
+    const lim = P.addProfile([], { ...claude, context: '200000', output: 8192 }).profile;
+    ok('context and output are kept as whole numbers of tokens', lim.context === 200000 && lim.output === 8192);
+    ok('…and a limit that is not one is refused', P.addProfile([], { ...claude, context: -1 }).refusal.some(x => /context is a positive whole number/.test(x))
+        && P.addProfile([], { ...claude, output: 'lots' }).refusal.some(x => /output is a positive whole number/.test(x)));
+    // the revision moves with the engines and the OpenCode endpoint, not with the limits
+    const one = P.addProfile([], { ...claude, engines: ['claude', 'opencode'] }).list;
+    ok('changing engines or the OpenCode endpoint is a new revision',
+        P.setProfile(one, 'kimi', { engines: ['claude'] }).profile.revision === 2
+        && P.setProfile(one, 'kimi', { opencodeUrl: 'https://api.moonshot.ai/v1' }).profile.revision === 2);
+    ok('…a limit is not', P.setProfile(one, 'kimi', { context: 128000, output: 4096 }).profile.revision === 1);
+    ok('an edit that does not name engines keeps them', P.setProfile(one, 'kimi', { label: 'K' }).profile.engines.join() === 'claude,opencode');
+    // the models of a route, read off its tiers — different models per tier stay different
+    const two = P.addProfile([], { ...claude, tiers: { haiku: 'm-b', opus: 'm-a', sonnet: 'm-a', odd: 'm-c' } });
+    eq('‼️ a route with different models on its tiers is saved', two.refusal, []);
+    eq('…and its models come once each, in tier order, each with its tiers; the first is the default',
+        M.routeModelList(two.profile.tiers), [{ model: 'm-a', tiers: ['opus', 'sonnet'] }, { model: 'm-b', tiers: ['haiku'] },
+            { model: 'm-c', tiers: ['odd'] }]);
+    eq('the item\'s own example', M.routeModelList({ haiku: 'B', sonnet: 'A', opus: 'A' }).map(m => m.model), ['A', 'B']);
+    ok('lent to OpenCode only when marked, reachable and serving a model',
+        M.lendableToOpenCode(n) && !M.lendableToOpenCode({ ...n, engines: ['claude'] })
+        && !M.lendableToOpenCode({ ...n, baseUrl: '' }) && M.lendableToOpenCode({ ...n, baseUrl: '', opencodeUrl: 'https://o/v1' })
+        && !M.lendableToOpenCode({ ...n, tiers: {} }));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

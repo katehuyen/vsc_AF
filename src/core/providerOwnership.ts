@@ -15,6 +15,12 @@
  * contradicting truths — and the copy that loses is always the one the user did
  * not edit last, which is the worst possible way for a credential to fail.
  *
+ * ‼️ X-516 — AND A ROUTE AGENT FARM HOLDS IS AGENT FARM'S ON EVERY ENGINE IT IS
+ * LENT TO. So a row also says whose provider it is about (`source`): OpenCode's
+ * own providers stay the engine's, while an Agent Farm route is given to OpenCode
+ * at launch (in OPENCODE_CONFIG_CONTENT, its key by an `{env:NAME}` reference)
+ * and nothing is written into any OpenCode file.
+ *
  * So ownership is a fact PER ENGINE PER KIND OF DATA, stated once, in one table
  * a surface can draw. That is the item's first acceptance line: it must be
  * visible which engine is the authority for which data. A rule that lives only
@@ -47,8 +53,12 @@ export type ProviderDataKind =
      */
     | 'selection';
 
+/** Whose provider a row is about: a route Agent Farm holds, or one the engine keeps itself. */
+export type RouteSource = 'agent-farm-route' | 'engine-native';
+
 export interface OwnershipRow {
     engine: string;
+    source: RouteSource;
     kind: ProviderDataKind;
     owner: DataOwner;
     /** ‼️ In words, because the table is meant to be READ. A row that only says
@@ -64,46 +74,70 @@ export interface OwnershipRow {
  */
 export const OWNERSHIP: OwnershipRow[] = [
     {
-        engine: 'claude', kind: 'catalog', owner: 'agent-farm',
+        engine: 'claude', source: 'agent-farm-route', kind: 'catalog', owner: 'agent-farm',
         why: 'Claude Code has no provider list of its own. A route is something Agent Farm '
             + 'assembles from a template, so the list of them exists here or nowhere.'
     },
     {
-        engine: 'claude', kind: 'credential', owner: 'agent-farm',
+        engine: 'claude', source: 'agent-farm-route', kind: 'credential', owner: 'agent-farm',
         why: 'The key for a route Agent Farm injects is held in SecretStorage, keyed by the '
             + 'profile id. The CLI is never told where it came from and keeps no copy.'
     },
     {
-        engine: 'claude', kind: 'config', owner: 'agent-farm',
+        engine: 'claude', source: 'agent-farm-route', kind: 'config', owner: 'agent-farm',
         why: 'The environment a Claude process is spawned with is built per launch: inherited '
             + 'route variables are cleared and the chosen profile is injected in isolation.'
     },
     {
-        engine: 'opencode', kind: 'catalog', owner: 'engine',
+        engine: 'opencode', source: 'engine-native', kind: 'catalog', owner: 'engine',
         why: 'OpenCode publishes its own providers and models (`opencode models --verbose`, ACP '
             + 'configOptions). A shipped list here would be a build claiming to know a machine.'
     },
     {
-        engine: 'opencode', kind: 'credential', owner: 'engine',
+        engine: 'opencode', source: 'engine-native', kind: 'credential', owner: 'engine',
         why: 'The engine owns `/connect`, `opencode auth login` and `auth.json`. A second copy '
             + 'in Agent Farm makes two vaults and two revisions, and the stale one wins silently.'
     },
     {
-        engine: 'opencode', kind: 'config', owner: 'engine',
+        engine: 'opencode', source: 'engine-native', kind: 'config', owner: 'engine',
         why: 'The global and per-project `opencode.json` are the user\'s files. Agent Farm reads '
             + 'what it needs and never rewrites them — an automated edit to a hand-kept config '
             + 'is a change nobody asked for and nobody can find afterwards.'
+    },
+    {
+        engine: 'opencode', source: 'agent-farm-route', kind: 'catalog', owner: 'agent-farm',
+        why: 'A route Agent Farm holds is lent to OpenCode at launch, inside OPENCODE_CONFIG_CONTENT, '
+            + 'beside the engine\'s own providers; nothing is written into any OpenCode file.'
+    },
+    {
+        engine: 'opencode', source: 'agent-farm-route', kind: 'credential', owner: 'agent-farm',
+        why: 'The route\'s key stays in SecretStorage. OpenCode is lent it at launch by an `{env:NAME}` '
+            + 'reference to the spawn\'s environment, and never sees auth.json touched.'
+    },
+    {
+        engine: 'opencode', source: 'agent-farm-route', kind: 'config', owner: 'agent-farm',
+        why: 'The lent route lives only in the launch\'s OPENCODE_CONFIG_CONTENT. The global and '
+            + 'per-project opencode.json are the user\'s and are not written.'
     }
 ];
+
+/** An engine that has no group of the source asked answers from the group it has (Claude Code's are all routes). */
+function rowOf(engine: string, kind: ProviderDataKind, source: RouteSource): OwnershipRow | undefined {
+    const mine = OWNERSHIP.filter(r => r.engine === engine);
+    const group = mine.some(r => r.source === source) ? source : mine[0]?.source;
+    return mine.find(r => r.source === group && r.kind === kind);
+}
 
 /**
  * Who owns this. ‼️ `selection` is answered before the table is consulted: it is
  * Agent Farm's on every engine, present or future, because it is a record of
  * something that happened rather than a setting.
  */
-export function ownerOf(engine: string, kind: ProviderDataKind): DataOwner {
+export function ownerOf(
+    engine: string, kind: ProviderDataKind, source: RouteSource = 'engine-native'
+): DataOwner {
     if (kind === 'selection') { return 'agent-farm'; }
-    const row = OWNERSHIP.find(r => r.engine === engine && r.kind === kind);
+    const row = rowOf(engine, kind, source);
     // ‼️ THE DEFAULT IS THE ENGINE, and that is the cautious answer: an engine
     // nobody has written a row for is one Agent Farm knows nothing about, and
     // claiming ownership of its credentials would be the two-vault failure
@@ -127,15 +161,17 @@ export function ownerOf(engine: string, kind: ProviderDataKind): DataOwner {
  * engine the table knows and every kind there is. One rule, one reader.
  */
 export function ownershipTable(): OwnershipRow[] {
-    const engines = [...new Set(OWNERSHIP.map(r => r.engine))];
+    // one group per engine and source, in table order: OpenCode's own providers before the routes it is lent
+    const groups = [...new Map(OWNERSHIP.map(r => [`${r.engine}/${r.source}`, r])).values()]
+        .map(r => ({ engine: r.engine, source: r.source }));
     const kinds: ProviderDataKind[] = ['catalog', 'credential', 'config', 'selection'];
     const out: OwnershipRow[] = [];
-    for (const engine of engines) {
+    for (const { engine, source } of groups) {
         for (const kind of kinds) {
-            const row = OWNERSHIP.find(r => r.engine === engine && r.kind === kind);
+            const row = OWNERSHIP.find(r => r.engine === engine && r.source === source && r.kind === kind);
             if (row) { out.push({ ...row }); continue; }
             out.push({
-                engine, kind, owner: ownerOf(engine, kind),
+                engine, source, kind, owner: ownerOf(engine, kind, source),
                 why: kind === 'selection'
                     ? 'Which provider a run was actually started with is HISTORY, not configuration — '
                     + 'and no engine keeps it. Claude\'s transcript demonstrably cannot (measured: two '
@@ -169,10 +205,13 @@ export function secretKeyFor(profileId: string | undefined): string {
 export interface PublicProviderProfile {
     id: string;
     label: string;
-    engine: string;
+    engines: string[];
     providerId: string;
     baseUrl?: string;
+    opencodeUrl?: string;
     authKind?: string;
+    context?: number;
+    output?: number;
     tiers: Record<string, string>;
     revision: number;
     /** ‼️ WHETHER there is a credential is public; the credential is not. A
@@ -211,14 +250,19 @@ export function publicProfile(
     const out: PublicProviderProfile = {
         id: str(stored.id),
         label: str(stored.label) || str(stored.id),
-        engine: str(stored.engine) || 'claude',
+        engines: Array.isArray(stored.engines) ? stored.engines.map(str).filter(e => e) : [],
         providerId: str(stored.providerId),
         tiers,
         revision: rev,
         hasSecret: opts?.hasSecret === true
     };
     if (str(stored.baseUrl)) { out.baseUrl = str(stored.baseUrl); }
+    if (str(stored.opencodeUrl)) { out.opencodeUrl = str(stored.opencodeUrl); }
     if (str(stored.authKind)) { out.authKind = str(stored.authKind); }
+    for (const k of ['context', 'output'] as const) {
+        const n = stored[k];
+        if (typeof n === 'number' && Number.isInteger(n) && n > 0) { out[k] = n; }
+    }
     if (str(stored.description)) { out.description = str(stored.description); }
     // ‼️ The key facts come from the keychain's side (opts), never from the stored record.
     if (str(opts?.secretRef)) { out.secretRef = str(opts?.secretRef); }
@@ -238,10 +282,10 @@ export function publicProfile(
  * Farm's on every engine.
  */
 export function ownershipRefusal(
-    engine: string, kind: ProviderDataKind, action: 'read' | 'write'
+    engine: string, kind: ProviderDataKind, action: 'read' | 'write', source: RouteSource = 'engine-native'
 ): string[] {
     if (action === 'read') { return []; }
-    if (ownerOf(engine, kind) === 'agent-farm') { return []; }
+    if (ownerOf(engine, kind, source) === 'agent-farm') { return []; }
     if (kind === 'credential') {
         return [`${engine} owns its own credentials — Agent Farm does not store them. `
             + `Sign in with the engine itself (\`opencode auth login\`, or /connect in its TUI); `

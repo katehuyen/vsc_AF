@@ -21,7 +21,7 @@ export interface RouteKey {
  * is gone is no key — never a quiet fall back to another one.
  */
 export function routeKeyFor(
-    p: { id: string; baseUrl?: string },
+    p: { id: string; baseUrl?: string; opencodeUrl?: string },
     bind: KeyBind | undefined,
     own: (id: string) => string | undefined,
     named: (name: string) => string | undefined
@@ -29,8 +29,10 @@ export function routeKeyFor(
     if (!bind) { return { from: 'none' }; }
     const from = bind.secretRef ? 'secret' : 'route';
     const ref = bind.secretRef ? { secretRef: bind.secretRef } : {};
-    if ((bind.baseUrl ?? '') !== (p.baseUrl ?? '')) {
-        return { from, ...ref, heldFor: bind.baseUrl || 'the first-party endpoint' };
+    // X-516 — the OpenCode endpoint is a second address the key would go to: it moves the key's bind the same way
+    if ((bind.baseUrl ?? '') !== (p.baseUrl ?? '') || (bind.opencodeUrl ?? '') !== (p.opencodeUrl ?? '')) {
+        const at = bind.baseUrl || 'the first-party endpoint';
+        return { from, ...ref, heldFor: bind.opencodeUrl ? `${at} and ${bind.opencodeUrl}` : at };
     }
     const v = bind.secretRef ? named(bind.secretRef) : own(p.id);
     return { from, ...ref, ...(v ? { value: v } : {}) };

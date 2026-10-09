@@ -56,7 +56,9 @@
             baseUrl: p ? p.baseUrl || '' : '',
             authKind: p ? p.authKind || '' : 'api-key',
             tiers, more: more.join(', '),
-            description: p ? p.description || '' : ''
+            description: p ? p.description || '' : '',
+            // the engines an edited route serves travel back unchanged; a new route states none
+            engines: p && Array.isArray(p.engines) ? p.engines.slice() : null
         };
     }
 
@@ -77,8 +79,9 @@
             if (String(v || '').trim()) { tiers[k] = String(v).trim(); }
         }
         return {
-            id: form.id, label: form.label, engine: 'claude', providerId: form.providerId,
-            baseUrl: form.baseUrl, authKind: form.authKind, tiers, description: form.description
+            id: form.id, label: form.label, providerId: form.providerId,
+            baseUrl: form.baseUrl, authKind: form.authKind, tiers, description: form.description,
+            ...(form.mode === 'edit' && form.engines ? { engines: form.engines } : {})
         };
     }
 

@@ -102,22 +102,22 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
 {
     const G = require(path.join(__dirname, '..', 'out', 'core', 'providerRegistry.js'));
     const PROFILES = [
-        { id: 'anthropic', label: 'Anthropic', engine: 'claude', providerId: 'anthropic', tiers: {}, revision: 1 },
+        { id: 'anthropic', label: 'Anthropic', engines: ['claude'], providerId: 'anthropic', tiers: {}, revision: 1 },
         {
-            id: 'kimi-work', label: 'Kimi (work)', engine: 'claude', providerId: 'kimi',
+            id: 'kimi-work', label: 'Kimi (work)', engines: ['claude'], providerId: 'kimi',
             baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key', tiers: {}, revision: 3
         },
         {
-            id: 'key', label: 'Anthropic (API key)', engine: 'claude', providerId: 'anthropic-api',
+            id: 'key', label: 'Anthropic (API key)', engines: ['claude'], providerId: 'anthropic-api',
             authKind: 'api-key', tiers: {}, revision: 1
         },
         // ‼️ THE TWO CASES A NAME LIST GETS BACKWARDS. `house` is the user's own
         // profile on Anthropic's own endpoint — the plan, under a name this
         // build never shipped. `anthropic` here is the shipped NAME pointed at
         // somebody else's endpoint, which is exactly the lie X-112 exists for.
-        { id: 'house', label: 'House', engine: 'claude', providerId: 'house', tiers: {}, revision: 1 },
+        { id: 'house', label: 'House', engines: ['claude'], providerId: 'house', tiers: {}, revision: 1 },
         {
-            id: 'proxy', label: 'Proxy', engine: 'claude', providerId: 'anthropic',
+            id: 'proxy', label: 'Proxy', engines: ['claude'], providerId: 'anthropic',
             baseUrl: 'https://proxy.example/anthropic', authKind: 'api-key', tiers: {}, revision: 1
         }
     ];

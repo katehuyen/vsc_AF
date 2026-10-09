@@ -96,9 +96,9 @@ async function main() {
     let mgr;
     try {
         const profiles = [
-            { id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', baseUrl: kimiM.url,
+            { id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', baseUrl: kimiM.url,
                 authKind: 'api-key', tiers: { opus: 'kimi-k2' }, revision: 7 },
-            { id: 'minimax', label: 'MiniMax', engine: 'claude', providerId: 'minimax', baseUrl: miniM.url,
+            { id: 'minimax', label: 'MiniMax', engines: ['claude'], providerId: 'minimax', baseUrl: miniM.url,
                 authKind: 'api-key', tiers: { opus: 'MiniMax-M2' }, revision: 1 }
         ];
         const adapter = R.adapterFor('claude', { profiles, secretFor: id => `sk-${id}-CANARY`, inheritedEnv: inherited });

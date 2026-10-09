@@ -94,7 +94,7 @@ const R = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));
 // ---------- THE INJECTION: a chosen route, and nothing of the one it replaces ----------
 {
     const profile = {
-        id: 'kimi-work', label: 'Kimi (work)', engine: 'claude', providerId: 'kimi',
+        id: 'kimi-work', label: 'Kimi (work)', engines: ['claude'], providerId: 'kimi',
         baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
         tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' }, revision: 3
     };
@@ -182,7 +182,7 @@ const R = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));
     // FILE — but an inherited base url would still send it somewhere else while
     // the manifest recorded Anthropic. So it isolates and injects nothing.
     const firstParty = R.claudeRouteRuntime(
-        { id: 'anthropic', label: 'Anthropic', engine: 'claude', providerId: 'anthropic', tiers: {}, revision: 1 },
+        { id: 'anthropic', label: 'Anthropic', engines: ['claude'], providerId: 'anthropic', tiers: {}, revision: 1 },
         undefined, inherited);
     ok('choosing the first-party route still clears an inherited one',
         firstParty.clearEnv.includes('ANTHROPIC_BASE_URL'));

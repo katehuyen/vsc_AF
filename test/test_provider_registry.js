@@ -30,16 +30,16 @@ const G = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
 // X-100 stores them, plus one OpenCode-native selection.
 const PROFILES = [
     {
-        id: 'anthropic', label: 'Anthropic', engine: 'claude', providerId: 'anthropic',
+        id: 'anthropic', label: 'Anthropic', engines: ['claude'], providerId: 'anthropic',
         tiers: {}, revision: 1
     },
     {
-        id: 'kimi-work', label: 'Kimi (work)', engine: 'claude', providerId: 'kimi',
+        id: 'kimi-work', label: 'Kimi (work)', engines: ['claude'], providerId: 'kimi',
         baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
         tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' }, revision: 3
     },
     {
-        id: 'minimax-lab', label: 'MiniMax (lab)', engine: 'claude', providerId: 'minimax',
+        id: 'minimax-lab', label: 'MiniMax (lab)', engines: ['claude'], providerId: 'minimax',
         baseUrl: 'https://api.minimax.io/anthropic', authKind: 'api-key',
         tiers: { opus: 'MiniMax-M2' }, revision: 1
     }

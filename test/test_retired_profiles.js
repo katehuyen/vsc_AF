@@ -10,7 +10,7 @@ const P = require(path.join(ROOT, 'out', 'core', 'providerProfiles.js'));
 const R = require(path.join(ROOT, 'out', 'core', 'retiredProfiles.js'));
 
 const kimi = {
-    id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi',
+    id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi',
     baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
     tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' }
 };

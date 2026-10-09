@@ -209,7 +209,7 @@ const KNOWN = ['opencode', 'anthropic'];
     // with grep at the start of this item. The point of the suite above is only
     // realised if the registry actually calls it.
     const deps = {
-        profiles: [{ id: 'anthropic', label: 'Anthropic', engine: 'claude', providerId: 'anthropic', tiers: {}, revision: 1 }],
+        profiles: [{ id: 'anthropic', label: 'Anthropic', engines: ['claude'], providerId: 'anthropic', tiers: {}, revision: 1 }],
         secretFor: () => undefined,
         inheritedEnv: {},
         // The engine's own catalog, in the shape `readOpenCodeCatalog` parses.

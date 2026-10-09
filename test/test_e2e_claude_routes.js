@@ -64,9 +64,9 @@ async function main() {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-e2e-routes-'));
     try {
         const profiles = [
-            { id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', baseUrl: kimiM.url, authKind: 'api-key',
+            { id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', baseUrl: kimiM.url, authKind: 'api-key',
                 tiers: { opus: 'kimi-k2', sonnet: 'kimi-k2-mini' }, revision: 4 },
-            { id: 'minimax', label: 'MiniMax', engine: 'claude', providerId: 'minimax', baseUrl: miniM.url, authKind: 'api-key',
+            { id: 'minimax', label: 'MiniMax', engines: ['claude'], providerId: 'minimax', baseUrl: miniM.url, authKind: 'api-key',
                 tiers: { opus: 'MiniMax-M2' }, revision: 1 }
         ];
         // ‼️ A BEARER TOKEN AND A MODEL TOO: the route writes a key and a model of

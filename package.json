@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.904.0",
+  "version": "3.905.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8717,7 +8717,7 @@
         "agentFarm.providerProfiles": {
           "type": "array",
           "default": [],
-          "markdownDescription": "The Anthropic-compatible routes Claude Code can start on: provider, endpoint and the model each tier resolves to. Managed on the Engines page › Providers. No key is ever written here: a route's key is kept in the OS keychain under its id, and anything typed here that is not a route field is dropped. Claude only; OpenCode keeps its own.",
+          "markdownDescription": "The routes Agent Farm holds: provider, endpoint and the model each tier resolves to; one route can serve Claude Code, OpenCode or both. Managed on the Engines page › Providers. No key is ever written here: it is kept in the OS keychain under the route's id, and anything typed here that is not a route field is dropped.",
           "items": {
             "type": "object",
             "properties": {
@@ -8729,13 +8729,16 @@
                 "type": "string",
                 "description": "What a picker shows. Free to change at any time; renaming does not bump the revision, because the revision is a statement about the route rather than a count of edits."
               },
-              "engine": {
-                "type": "string",
-                "enum": [
-                  "claude"
-                ],
-                "default": "claude",
-                "description": "Only Claude Code. The other engines either have no provider axis at all or own it themselves."
+              "engines": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "claude",
+                    "opencode"
+                  ]
+                },
+                "description": "The engines this route serves: claude, opencode or both. Every one marked must be able to run it — OpenCode needs an endpoint and at least one tier. Left out, the route serves every engine it can."
               },
               "providerId": {
                 "type": "string",
@@ -8743,11 +8746,29 @@
               },
               "baseUrl": {
                 "type": "string",
-                "description": "The Anthropic-compatible endpoint. Empty = first-party. Must be https, or http on this machine (localhost / 127.0.0.1): a key sent over plain http to another host travels in clear."
+                "description": "The Anthropic-compatible endpoint Claude Code is pointed at. Empty = first-party. Must be https, or http on this machine (localhost / 127.0.0.1): a key sent over plain http to another host travels in clear. Never ends in /v1: Claude Code adds /v1/messages itself."
+              },
+              "opencodeUrl": {
+                "type": "string",
+                "description": "Where OpenCode reaches this service in the OpenAI style, when that is not the endpoint above. A route with only this serves OpenCode alone. The same https rule applies."
               },
               "authKind": {
                 "type": "string",
-                "description": "How it is paid for — subscription, api-key, oauth. Descriptive: it decides what the page says, not what is injected."
+                "enum": [
+                  "api-key",
+                  "oauth"
+                ],
+                "description": "Which header carries the key: api-key sends x-api-key, oauth sends Authorization: Bearer."
+              },
+              "context": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The context window of the route's models, in tokens."
+              },
+              "output": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The longest answer the route's models give, in tokens."
               },
               "tiers": {
                 "type": "object",

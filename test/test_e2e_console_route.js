@@ -46,7 +46,7 @@ async function main() {
     Object.assign(process.env, inherited);
     let host;
     try {
-        const profiles = [{ id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', baseUrl: kimiM.url,
+        const profiles = [{ id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', baseUrl: kimiM.url,
             authKind: 'api-key', tiers: { opus: 'kimi-k2' }, revision: 2 }];
         const adapter = R.adapterFor('claude', { profiles, secretFor: id => `sk-${id}-CANARY`, inheritedEnv: inherited });
         const asked = [];

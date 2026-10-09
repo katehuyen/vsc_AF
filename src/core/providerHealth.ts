@@ -360,7 +360,7 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
     // CONFIGURED — it exists, somebody made it — and that is exactly the pair of
     // states this item asks to be kept apart.
     for (const profile of input.profiles ?? []) {
-        if (!profile || profile.engine !== engine) { continue; }
+        if (!profile || !profile.engines.includes(engine)) { continue; }
         if (rows.some(r => r.providerId === profile.id)) { continue; }
         rows.push({
             engine,

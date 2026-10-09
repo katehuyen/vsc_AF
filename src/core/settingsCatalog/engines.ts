@@ -44,16 +44,16 @@ export const engines: CatalogSection = {
                 strategy: { chain: 'In order', emptiest: 'Emptiest first' }
             }
         },
-        // The id is permanent because the key is filed under it, and a copy starts with no key. A profile naming
-        // another engine is refused so there are never two vaults where the stale one wins. revision counts up when
-        // the route (provider, endpoint, auth kind, tier mapping) or its key changes, never on a rename; a launch
-        // records the revision it ran on.
+        // The id is permanent because the key is filed under it, and a copy starts with no key. One route serves
+        // Claude Code, OpenCode or both; OpenCode's own providers are never stored here. revision counts up when
+        // the route (provider, endpoints, auth kind, engines, tier mapping) or its key changes, never on a rename;
+        // a launch records the revision it ran on.
         providerProfiles: {
             group: 'providers',
             label: 'Provider routes',
-            summary: 'The Anthropic-compatible routes Claude Code can start on.',
+            summary: 'The routes Claude Code and OpenCode can start on.',
             fieldOptions: {
-                engine: { claude: 'Claude Code' }
+                authKind: { 'api-key': 'API key', oauth: 'Bearer token' }
             }
         },
         // A different axis from a task's engine. Live hooks remain Claude Code's alone.

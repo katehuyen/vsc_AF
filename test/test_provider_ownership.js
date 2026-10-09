@@ -85,7 +85,7 @@ const O = require(path.join(ROOT, 'out', 'core', 'providerOwnership.js'));
  * ========================================================================= */
 {
     const stored = {
-        id: 'route-7', label: 'Kimi', engine: 'claude', providerId: 'kimi',
+        id: 'route-7', label: 'Kimi', engines: ['claude'], providerId: 'kimi',
         baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
         tiers: { opus: 'kimi-k2-thinking' }, revision: 3,
         apiKey: 'sk-PLANTED-1', token: 'PLANTED-2',
@@ -164,6 +164,29 @@ const O = require(path.join(ROOT, 'out', 'core', 'providerOwnership.js'));
         copy.revision, 1);
     ok('…and the copy carries no credential — a key is not duplicated by copying',
         copy.hasSecret === false);
+}
+
+/* =========================================================================
+ * 6 — X-516: TWO GROUPS ON OPENCODE — ITS OWN PROVIDERS, AND THE ROUTES IT IS LENT
+ * ========================================================================= */
+{
+    const table = O.ownershipTable();
+    const oc = table.filter(r => r.engine === 'opencode');
+    eq('OpenCode has two groups, its own first', [...new Set(oc.map(r => r.source))], ['engine-native', 'agent-farm-route']);
+    eq('…each with every kind', ['engine-native', 'agent-farm-route'].map(s => oc.filter(r => r.source === s).map(r => r.kind)),
+        [['catalog', 'credential', 'config', 'selection'], ['catalog', 'credential', 'config', 'selection']]);
+    ok('its own providers stay the engine\'s', oc.filter(r => r.source === 'engine-native' && r.kind !== 'selection').every(r => r.owner === 'engine'));
+    ok('‼️ a route it is lent is Agent Farm\'s, and the reason says it is lent at launch and no OpenCode file is written',
+        oc.filter(r => r.source === 'agent-farm-route').every(r => r.owner === 'agent-farm')
+        && /OPENCODE_CONFIG_CONTENT/.test(oc.find(r => r.source === 'agent-farm-route' && r.kind === 'catalog').why)
+        && /\{env:NAME\}/.test(oc.find(r => r.source === 'agent-farm-route' && r.kind === 'credential').why));
+    eq('Claude Code\'s rows are all routes', [...new Set(table.filter(r => r.engine === 'claude').map(r => r.source))], ['agent-farm-route']);
+    ok('‼️ writing OpenCode\'s own credential is still refused (the default source is the engine\'s own)',
+        O.ownershipRefusal('opencode', 'credential', 'write').length > 0
+        && O.ownershipRefusal('opencode', 'config', 'write', 'engine-native').length > 0);
+    eq('‼️ …a route\'s credential lent to OpenCode is not', O.ownershipRefusal('opencode', 'credential', 'write', 'agent-farm-route'), []);
+    eq('an engine with no group of the source asked answers from the one it has',
+        [O.ownerOf('claude', 'credential', 'engine-native'), O.ownerOf('gemini', 'credential', 'agent-farm-route')], ['agent-farm', 'engine']);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

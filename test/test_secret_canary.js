@@ -127,7 +127,7 @@ opencode/ling-3.0-flash-fin-free
  * B — CLAUDE: a canary key through the real adapter, looked for everywhere
  * ========================================================================= */
 const route = {
-    id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'moonshot',
+    id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'moonshot',
     baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
     tiers: { opus: 'kimi-k2-thinking' }, revision: 4
 };
@@ -276,7 +276,7 @@ const rt = adapter.resolveRuntime(sel);
 
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('‼️ removing a route through the bridge empties its verdicts',
-        /await forgetProviderTests\(w\.profile\?\.engine \?\? 'claude', id\);/.test(
+        /for \(const e of w\.profile!\.engines\) \{ await forgetProviderTests\(e, id\); \}/.test(
             ext.slice(ext.indexOf("op: 'providers.remove'"), ext.indexOf("op: 'providers.remove'") + 2400)));
     ok('‼️ …and so does removing it from the page, through the same function',
         (ext.match(/await forgetProviderTests\(/g) || []).length >= 2);

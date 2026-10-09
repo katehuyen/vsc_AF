@@ -30,8 +30,15 @@ export const PROVIDER_KEY_BINDS = 'agentfarm.providerKeyBinds';
 export interface KeyBind {
     /** The route's base URL when a person gave it this key; '' = the first-party endpoint. */
     baseUrl: string;
+    /** X-516 — the route's OpenCode endpoint at that moment, when it had one: the key goes to both or neither. */
+    opencodeUrl?: string;
     /** A Farm Secret's NAME, when the route signs in with one instead of a key of its own. */
     secretRef?: string;
+}
+
+/** The addresses a key is given for: the route's two endpoints as they are now, named. */
+export function bindAddresses(route: { baseUrl?: string; opencodeUrl?: string }): KeyBind {
+    return { baseUrl: route.baseUrl ?? '', ...(route.opencodeUrl ? { opencodeUrl: route.opencodeUrl } : {}) };
 }
 
 export interface KeyStore {
@@ -66,14 +73,14 @@ export class ProviderKeys {
     /** The key a launch of this route signs in with; never drawn, never logged. */
     get(id: string): string | undefined { return this.cache.get(id); }
 
-    /** A key of the route's own, given for the endpoint it has now; a Farm Secret it named is let go. */
-    async set(id: string, value: string, baseUrl: string): Promise<void> {
+    /** A key of the route's own, given for the endpoints it has now; a Farm Secret it named is let go. */
+    async set(id: string, value: string, route: { baseUrl?: string; opencodeUrl?: string }): Promise<void> {
         const key = secretKeyFor(id);
         if (!key) { return; }
         await this.keychain.store(key, value);
         this.cache.set(id, value);
         await this.state.update(PROVIDER_SECRET_IDS, [...new Set([...this.ids(), id])].sort());
-        await this.bind(id, { baseUrl });
+        await this.bind(id, bindAddresses(route));
     }
 
     /** No key at all: its own is collected and the bind goes (a named Farm Secret stays in the vault). */
@@ -102,14 +109,14 @@ export class ProviderKeys {
         if (!to || from === to) { return []; }
         const all = this.binds();
         const moved = this.refsTo(from);
-        for (const id of moved) { all[id] = { baseUrl: all[id].baseUrl, secretRef: to }; }
+        for (const id of moved) { all[id] = { ...bindAddresses(all[id]), secretRef: to }; }
         if (moved.length) { await this.state.update(PROVIDER_KEY_BINDS, all); }
         return moved;
     }
 
     async bind(id: string, b: KeyBind | undefined): Promise<void> {
         const all = this.binds();
-        if (b) { all[id] = b.secretRef ? { baseUrl: b.baseUrl, secretRef: b.secretRef } : { baseUrl: b.baseUrl }; } else { delete all[id]; }
+        if (b) { all[id] = { ...bindAddresses(b), ...(b.secretRef ? { secretRef: b.secretRef } : {}) }; } else { delete all[id]; }
         await this.state.update(PROVIDER_KEY_BINDS, all);
     }
 
@@ -117,10 +124,10 @@ export class ProviderKeys {
      * A key stored before binds existed is bound to the endpoint its route has at the first start
      * that knows about binds — the only endpoint it can be said to have been given for. Returns the ids.
      */
-    async adopt(routes: { id: string; baseUrl?: string }[]): Promise<string[]> {
+    async adopt(routes: { id: string; baseUrl?: string; opencodeUrl?: string }[]): Promise<string[]> {
         const all = this.binds();
         const adopted = this.ids().filter(id => !all[id] && routes.some(r => r.id === id));
-        for (const id of adopted) { all[id] = { baseUrl: routes.find(r => r.id === id)?.baseUrl ?? '' }; }
+        for (const id of adopted) { all[id] = bindAddresses(routes.find(r => r.id === id) ?? {}); }
         if (adopted.length) { await this.state.update(PROVIDER_KEY_BINDS, all); }
         return adopted;
     }

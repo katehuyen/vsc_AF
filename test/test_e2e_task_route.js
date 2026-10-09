@@ -99,7 +99,7 @@ async function main() {
 
     let mgr;
     try {
-        const profiles = [{ id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'kimi', baseUrl: kimiM.url,
+        const profiles = [{ id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'kimi', baseUrl: kimiM.url,
             authKind: 'api-key', tiers: { opus: 'kimi-k2' }, revision: 5 }];
         const adapter = R.adapterFor('claude', { profiles, secretFor: id => `sk-${id}-CANARY`, inheritedEnv: inherited });
         // Removed everywhere but on the task that still names it — which is the

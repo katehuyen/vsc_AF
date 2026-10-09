@@ -25,6 +25,8 @@ import { modelIdOk } from './launch';
 import {
     ownershipRefusal, PublicProviderProfile, publicProfile, secretKeyFor
 } from './providerOwnership';
+import { ROUTE_AUTH_KINDS } from './routeAuth';
+import { defaultEngines, engineNames, enginesRefusal, limitRefusal, ROUTE_ENGINES, v1Refusal } from './routeEngines';
 
 /**
  * What is written down. ‼️ Deliberately the public shape minus `hasSecret`:
@@ -35,10 +37,16 @@ import {
 export interface StoredProviderProfile {
     id: string;
     label: string;
-    engine: string;
+    /** X-516 — the engines this one route serves: claude, opencode or both, always in that order. */
+    engines: string[];
     providerId: string;
     baseUrl?: string;
+    /** X-516 — where OpenCode reaches this service in the OpenAI style, when that is not `baseUrl`. */
+    opencodeUrl?: string;
     authKind?: string;
+    /** X-516 — the context window and the longest answer of the route's models, in tokens. */
+    context?: number;
+    output?: number;
     /** tier (`opus`, `sonnet`, `haiku`) → the model id this route serves for it. */
     tiers: Record<string, string>;
     revision: number;
@@ -74,10 +82,15 @@ const labelLength = (s: string): number => Array.from(s).length;
 export interface ProviderProfileInput {
     id?: string;
     label?: string;
+    engines?: unknown;
+    /** Read from a record stored before `engines`; never written. */
     engine?: string;
     providerId?: string;
     baseUrl?: string;
+    opencodeUrl?: string;
     authKind?: string;
+    context?: unknown;
+    output?: unknown;
     tiers?: Record<string, unknown>;
     revision?: number;
     description?: string;
@@ -85,6 +98,9 @@ export interface ProviderProfileInput {
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+/** A limit as given: a number, or digits in text (a bridge argument); kept as given so a refusal can name it. */
+const limit = (v: unknown): number | undefined =>
+    v === undefined || v === null || v === '' ? undefined : Number(typeof v === 'string' ? v.trim() : v);
 
 /**
  * ‼️ BUILT BY NAMING, NEVER BY DELETING — the same rule as `publicProfile`, one
@@ -105,14 +121,22 @@ export function storedProfile(input: ProviderProfileInput): StoredProviderProfil
     const out: StoredProviderProfile = {
         id: str(input.id).toLowerCase(),
         label: str(input.label) || str(input.id),
-        engine: str(input.engine).toLowerCase() || 'claude',
+        engines: [],
         providerId: str(input.providerId),
         tiers,
         revision: rev
     };
     if (str(input.baseUrl)) { out.baseUrl = str(input.baseUrl); }
+    if (str(input.opencodeUrl)) { out.opencodeUrl = str(input.opencodeUrl); }
     if (str(input.authKind)) { out.authKind = str(input.authKind); }
+    const context = limit(input.context), output = limit(input.output);
+    if (context !== undefined) { out.context = context; }
+    if (output !== undefined) { out.output = output; }
     if (str(input.description)) { out.description = str(input.description).replace(/\s+/g, ' ').slice(0, 200); }
+    // A record from before `engines` named one engine; a Claude one (or none) serves every engine it can.
+    const legacy = str(input.engine).toLowerCase();
+    out.engines = engineNames(input.engines)
+        ?? (legacy && legacy !== 'claude' ? [legacy] : defaultEngines(out));
     return out;
 }
 
@@ -136,9 +160,8 @@ export function baseUrlRefusal(url: string): string {
  * a form that reports one fault per press makes the user find them serially,
  * and this one is filled in from a dialog.
  *
- * `engines` is passed in rather than imported: this module must not know which
- * engines exist, or a new one means editing a validator that has no opinion
- * about it.
+ * The engines a route can serve are `ROUTE_ENGINES` (routeEngines.ts); `opts.engines`
+ * narrows them to the engines this build has, so every marked engine is one that runs.
  */
 export function profileRefusal(
     p: StoredProviderProfile,
@@ -161,9 +184,7 @@ export function profileRefusal(
             + 'still carry it — an id is given once, so a new route never inherits that history'
             + (free ? `; use "${free}".` : '.'));
     }
-    if (opts.engines?.length && !opts.engines.includes(p.engine)) {
-        out.push(`engine "${p.engine}" is not one of: ${opts.engines.join(', ')}`);
-    }
+    out.push(...enginesRefusal(p, opts.engines));
     /**
      * ‼️ AND THE OWNERSHIP QUESTION IS ASKED HERE, NOT AT THE SURFACE.
      *
@@ -174,12 +195,21 @@ export function profileRefusal(
      * the engine's own way of doing it, so the answer is "do it there", not
      * "you may not".
      */
-    out.push(...ownershipRefusal(p.engine, 'credential', 'write'));
+    for (const e of p.engines) { out.push(...ownershipRefusal(e, 'credential', 'write', 'agent-farm-route')); }
     if (!p.providerId) {
         out.push('a profile names the provider it routes to (anthropic, kimi, minimax, …).');
     }
-    const url = baseUrlRefusal(p.baseUrl ?? '');
+    const url = baseUrlRefusal(p.baseUrl ?? '') || v1Refusal(p.baseUrl);
     if (url) { out.push(url); }
+    const ocUrl = baseUrlRefusal(p.opencodeUrl ?? '');
+    if (ocUrl) { out.push(`OpenCode endpoint: ${ocUrl}`); }
+    if (p.authKind && !ROUTE_AUTH_KINDS.some(a => a.id === p.authKind)) {
+        out.push(`the key kind "${p.authKind}" is not one of: ${ROUTE_AUTH_KINDS.map(a => a.id).join(', ')}.`);
+    }
+    for (const name of ['context', 'output'] as const) {
+        const bad = limitRefusal(name, p[name]);
+        if (bad) { out.push(bad); }
+    }
     for (const [tier, model] of Object.entries(p.tiers)) {
         if (!modelIdOk(model)) {
             out.push(`the model for tier "${tier}" is not a model id — letters, digits, dot, `
@@ -207,7 +237,8 @@ export function routeChanged(a: StoredProviderProfile, b: StoredProviderProfile)
     if (a.providerId !== b.providerId) { return true; }
     if ((a.baseUrl ?? '') !== (b.baseUrl ?? '')) { return true; }
     if ((a.authKind ?? '') !== (b.authKind ?? '')) { return true; }
-    if (a.engine !== b.engine) { return true; }
+    if (a.engines.join(',') !== b.engines.join(',')) { return true; }
+    if ((a.opencodeUrl ?? '') !== (b.opencodeUrl ?? '')) { return true; }
     const ta = Object.keys(a.tiers).sort(), tb = Object.keys(b.tiers).sort();
     if (ta.join(',') !== tb.join(',')) { return true; }
     return ta.some(k => a.tiers[k] !== b.tiers[k]);
@@ -264,7 +295,25 @@ export function readProfilesReport(raw: unknown): ProfileReadReport {
             return;
         }
         const filled: string[] = [];
-        if (!str(input.engine)) { filled.push(`engine ${p.engine}`); }
+        if (engineNames(input.engines) === undefined) { filled.push(`engines ${p.engines.join(' + ')}`); }
+        const unknown = p.engines.filter(e => !ROUTE_ENGINES.includes(e));
+        if (unknown.length) {
+            p.engines = p.engines.filter(e => ROUTE_ENGINES.includes(e));
+            if (!p.engines.length) {
+                out.dropped.push(`stored route "${p.id}" was skipped: it names no engine a route can serve `
+                    + `(${ROUTE_ENGINES.join(', ')})`);
+                return;
+            }
+            filled.push(`engines ${p.engines.join(' + ')} (stored with ${unknown.join(', ')})`);
+        }
+        // a kind this build has no header for was always sent as an API key (providerRuntime): read as one
+        if (p.authKind && !ROUTE_AUTH_KINDS.some(a => a.id === p.authKind)) {
+            filled.push(`key kind api-key (stored as "${p.authKind}")`);
+            p.authKind = 'api-key';
+        }
+        for (const name of ['context', 'output'] as const) {
+            if (limitRefusal(name, p[name])) { filled.push(`no ${name} (stored as "${String(input[name])}")`); delete p[name]; }
+        }
         const rev = input.revision;
         if (!(typeof rev === 'number' && Number.isFinite(rev) && rev >= 1)) { filled.push(`revision ${p.revision}`); }
         if (!str(input.label)) { filled.push(`label "${p.label}"`); }
@@ -283,6 +332,8 @@ export function addProfile(
     retiredIds?: readonly string[]
 ): ProfileWrite {
     const p = { ...storedProfile(input), revision: 1 };
+    // engines not stated: every engine the route can serve AND this build has
+    if (engineNames(input.engines) === undefined && engines?.length) { p.engines = p.engines.filter(e => engines.includes(e)); }
     const refusal = profileRefusal(p, { engines, takenIds: list.map(x => x.id), retiredIds });
     if (refusal.length) { return refuse(list, refusal); }
     return { list: [...list, p], refusal: [], profile: p };

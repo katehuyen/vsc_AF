@@ -39,7 +39,7 @@ const deps = (profiles, secrets = [], catalogText) => ({
 });
 
 const route = (over = {}) => ({
-    id: 'kimi', label: 'Kimi', engine: 'claude', providerId: 'moonshot',
+    id: 'kimi', label: 'Kimi', engines: ['claude'], providerId: 'moonshot',
     baseUrl: 'https://api.moonshot.ai/anthropic',
     tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' }, revision: 3, ...over
 });
