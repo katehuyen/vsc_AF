@@ -40,10 +40,11 @@ function routeEntry(p: StoredProviderProfile): ProviderCatalogEntry {
 
 /** One row per model the route serves. No cost: none was stated, which is "not measured" — never "free". */
 function routeRows(p: StoredProviderProfile): CatalogModelRow[] {
-    return routeModelList(p.tiers).map(m => ({
+    const list = routeModelList(p.tiers);
+    return list.map(m => ({
         ref: modelRefOf(p.id, m.model), providerId: wireIdOf(p.id), modelId: m.model, label: lentModelName(p, m.model),
         variants: [], limit: { ...(p.context ? { context: p.context } : {}), ...(p.output ? { output: p.output } : {}) },
-        capabilities: {}
+        capabilities: {}, ...(list.length > 1 ? { slots: m.tiers } : {})
     }));
 }
 

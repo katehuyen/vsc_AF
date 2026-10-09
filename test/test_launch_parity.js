@@ -677,7 +677,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     // is drawn, it is wrapped in `withCurrent`.
     ok('the select carries the current value even when the catalog does not',
         /function withCurrent\(list, current\) \{/.test(consoleJs)
-        && /axis: 'Model', id: 'c-model', cur: intent\(\)\.model,\s*\n\s*list: withCurrent\(composerModels\(engineNow\(\)\), intent\(\)\.model\),/.test(consoleJs)
+        && /const list = withCurrent\(composerModels\(engineNow\(\)\), intent\(\)\.model\);\s*\n\s*return axisBox\(\{\s*\n\s*axis: 'Model', id: 'c-model', cur: intent\(\)\.model, list: list,/.test(consoleJs)
         && /axis: 'Effort', id: 'c-effort', cur: intent\(\)\.effort,\s*\n\s*list: withCurrent\(effortsForModel\(engineNow\(\), intent\(\)\.model\), intent\(\)\.effort\),/.test(consoleJs));
     // ‼️ AN ENGINE CHANGE IS STILL A RESET, AND THAT IS WHAT THIS FUNCTION IS
     // FOR. The claim used to be that the keep was per-engine "by construction",

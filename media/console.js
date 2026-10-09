@@ -4244,6 +4244,28 @@
      * card, whose route was decided when it started and has nothing to do with
      * whatever the composer is currently pointing at.
      */
+    /**
+     * X-521 — rows the host gave a heading (core/providerGroups.ts: 'Agent Farm routes' ·
+     * 'OpenCode's own') drawn under it, in the host's order; unheaded rows lead under the axis.
+     */
+    function headed(list, groupOf, hostRows) {
+        const g = r => (r && r.id ? groupOf(r) || '' : '');
+        const order = [];
+        (hostRows || []).forEach(r => { if (r.group && order.indexOf(r.group) < 0) { order.push(r.group); } });
+        if (!order.length || !(list || []).some(g)) { return {}; }
+        return {
+            groups: [{ label: '', list: list.filter(r => !g(r)) }]
+                .concat(order.map(k => ({ label: t(k), list: list.filter(r => g(r) === k) })))
+        };
+    }
+    /** …the composer's model box, grouped by the form's own model rows (the box lists the engine's models). */
+    function composerModelGroups(list) {
+        const f = composerForm();
+        if (!f || !f.applies || !f.sub || f.sub.kind !== 'model') { return {}; }
+        const of = {};
+        (f.sub.choices || []).forEach(c => { if (c.id && c.group) { of[c.id] = c.group; } });
+        return headed(list, r => of[r.id], f.sub.choices);
+    }
     function composerModels(engineId) {
         const base = modelsFor(engineId);
         const f = composerForm();
@@ -4393,7 +4415,7 @@
      *  X-326 refills a standing box with it, so the two cannot differ. */
     const axisBoxBody = (o) => o.groups
         ? o.groups.filter(g => g && (g.list || []).length)
-            .map(g => `<optgroup label="${C.esc(o.axis + ' · ' + g.label)}">${opts(g.list, o.cur)}</optgroup>`).join('')
+            .map(g => `<optgroup label="${C.esc(g.label ? o.axis + ' · ' + g.label : o.axis)}">${opts(g.list, o.cur)}</optgroup>`).join('')
         : `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`;
 
     // The axis box, hoisted so a strip drawn outside the shell (S-82 relay) is the same shape.
@@ -4539,7 +4561,7 @@
                 // been photographed, so the sentences in it were shipped read but
                 // never looked at.
                 axis: f.noun, id: 'c-route', list: rows, cur: cur, standard: routeTip,
-                cls: 'tip-route'
+                cls: 'tip-route', ...headed(rows, r => r.group, f.providers)
             });
             if (!tierAxisOn()) { return route; }
             const tcur = pick.tier || '';
@@ -4879,14 +4901,17 @@
                 ${engineHintHtml(engineNow())}
                 ${routeBoxesHtml()}
                 ${accountBoxHtml()}
-                ${tierAxisOn() || modelByRouteOn() ? '' : axisBox({
-                    axis: 'Model', id: 'c-model', cur: intent().model,
-                    list: withCurrent(composerModels(engineNow()), intent().model),
-                    standard: window.AFTip.lines([
-                        'Model for the new session' + flagOf(engineNow(), 'model') + '.',
-                        modelNote(engineNow())
-                    ])
-                })}
+                ${tierAxisOn() || modelByRouteOn() ? '' : (() => {
+                    const list = withCurrent(composerModels(engineNow()), intent().model);
+                    return axisBox({
+                        axis: 'Model', id: 'c-model', cur: intent().model, list: list,
+                        standard: window.AFTip.lines([
+                            'Model for the new session' + flagOf(engineNow(), 'model') + '.',
+                            modelNote(engineNow())
+                        ]),
+                        ...composerModelGroups(list)
+                    });
+                })()}
                 ${drawsEffort(engineNow())
                     ? axisBox({
                         axis: 'Effort', id: 'c-effort', cur: intent().effort,

@@ -1004,7 +1004,7 @@
                 selected: !sel,
                 detail: 'The mission’s own ' + noun + ' if it names one, else whichever ' + noun
                     + ' this agent happens to be set to when the delegation fires — and nobody is watching when it does.'
-            })].concat(routeRowsFor(engine).map(p =>
+            })].concat(window.AFProvider.optgroups(routeRowsFor(engine), p =>
                 C.option(p.id, p.label, { selected: p.id === sel, detail: p.detail || '' }))).join('');
         };
         const tierOpts = (engine, route, sel) => [C.option('', '— the route’s own choice —', {

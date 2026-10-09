@@ -60,6 +60,8 @@ export interface CatalogModelRow {
          *  `image: false`, and the parse used to drop the whole map. */
         input?: { image?: boolean; pdf?: boolean; audio?: boolean; video?: boolean };
     };
+    /** X-521 — on a lent route serving several models: the route's slots (tiers) this model fills. */
+    slots?: string[];
     status?: string;
 }
 

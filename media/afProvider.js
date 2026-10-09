@@ -275,7 +275,24 @@
         return who ? who + ' — the route this run is served by' : '';
     }
 
+    /**
+     * X-521 — a list whose rows carry `group` (the host's heading, core/providerGroups.ts) drawn
+     * as headed `<optgroup>`s in the order the host gave; rows with none lead, unheaded.
+     */
+    function optgroups(rows, draw) {
+        const head = [], order = [], by = {};
+        (rows || []).forEach(function (r) {
+            if (!r.group) { head.push(draw(r)); return; }
+            if (!by[r.group]) { by[r.group] = []; order.push(r.group); }
+            by[r.group].push(draw(r));
+        });
+        return head.join('') + order.map(function (g) {
+            return '<optgroup label="' + esc(t(g)) + '">' + by[g].join('') + '</optgroup>';
+        }).join('');
+    }
+
     window.AFProvider = {
+        optgroups: optgroups,
         id: id, label: label, cls: cls, chip: chip, cut: cut, known: KNOWN, CARD_MAX: 15,
         servedBy: servedBy, multi: multi, tipLines: tipLines, nameLines: nameLines, runLines: runLines, title: title,
         binding: BINDING, proof: PROOF

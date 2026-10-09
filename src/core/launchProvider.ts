@@ -44,6 +44,7 @@ import { CatalogModelRow, ProviderCatalogRead } from './providerCatalog';
 import { ProviderScope } from './providerIdentity';
 import { authKindLabel } from './routeAuth';
 import { routeDefaultTier, routeModelNote } from './routeModels';
+import { catalogGroups, grouped, slotsNote } from './providerGroups';
 
 /** What a person has picked on the provider axis so far. */
 export interface ProviderPick {
@@ -162,6 +163,7 @@ function modelDetail(row: CatalogModelRow): string {
     else if (caps.input?.image === false) { bits.push('no images'); }
     if (row.variants.length) { bits.push(`variants: ${row.variants.join(', ')}`); }
     if (row.status && row.status !== 'active') { bits.push(row.status); }
+    if (row.slots?.length) { bits.unshift(slotsNote(row.slots)); }
     return bits.join(' · ') || row.ref;
 }
 
@@ -249,10 +251,10 @@ function modelAxis(cat: ProviderCatalogRead, providerId: string): ProviderSubAxi
         note: providerId
             ? `what ${providerId} publishes — passed to the engine as -m, unassembled`
             : 'every model the engine published — passed as -m, unassembled',
-        choices: [
+        choices: grouped([
             leaveAlone(def ? `the route's default — ${def.label || def.ref}` : "the engine's own default model"),
             ...rows.map(r => ({ id: r.ref, label: r.label || r.ref, detail: modelDetail(r) }))
-        ]
+        ], catalogGroups(cat).model)
     };
 }
 
@@ -307,7 +309,7 @@ export function launchProviderForm(
             leaveAlone(claude
                 ? 'nothing injected and nothing cleared — the shell’s own environment decides'
                 : "the engine's own current provider"),
-            ...providers
+            ...(claude ? providers : grouped(providers, catalogGroups(cat).provider))
         ],
         ...(providers.length ? {} : { empty: emptyWhy(adapter, cat) }),
         sub,

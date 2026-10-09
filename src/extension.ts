@@ -24601,11 +24601,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const engineRouteMatrix = (): Record<string, {
         noun: string;
-        providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; tierDefault?: string; modelByRoute?: string }[];
+        providers: { id: string; label: string; detail: string; group?: string; tiers: LaunchChoice[]; tierDefault?: string; modelByRoute?: string }[];
     }> => {
         const out: Record<string, {
             noun: string;
-            providers: { id: string; label: string; detail: string; tiers: LaunchChoice[]; tierDefault?: string; modelByRoute?: string }[];
+            providers: { id: string; label: string; detail: string; group?: string; tiers: LaunchChoice[]; tierDefault?: string; modelByRoute?: string }[];
         }> = {};
         for (const id of Object.keys(ENGINES)) {
             // ‼️ `run` is the transport: a task is spawned headless. Asking as
@@ -24619,7 +24619,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 providers: providers.map(p => {
                     const picked = providerFormFor(id, { providerId: p.id }, 'run');
                     return {
-                        id: p.id, label: p.label, detail: p.detail ?? '',
+                        id: p.id, label: p.label, detail: p.detail ?? '', ...(p.group ? { group: p.group } : {}),
                         // Only a TIER axis becomes a second box. Where the sub-axis
                         // is the MODEL (OpenCode names a model `provider/model`) the
                         // model box on this same form already IS that axis, and two
@@ -27168,11 +27168,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         placeHolder: string, choices: LaunchChoice[], current: string, allowCustom: boolean
     ): Promise<string | undefined> => {
         interface Item extends vscode.QuickPickItem { id: string; custom?: boolean }
-        const items: Item[] = choices.map(c => ({
-            label: (c.id === current ? '$(check) ' : '$(blank) ') + c.label,
-            description: c.detail,
-            id: c.id
-        }));
+        // X-521 — a row's `group` heads its run of rows (OpenCode: 'Agent Farm routes' · 'OpenCode's own')
+        const items: Item[] = choices.flatMap((c, i) => [
+            ...(c.group && c.group !== choices[i - 1]?.group
+                ? [{ label: c.group, kind: vscode.QuickPickItemKind.Separator, id: '' }] : []),
+            { label: (c.id === current ? '$(check) ' : '$(blank) ') + c.label, description: c.detail, id: c.id }
+        ]);
         if (allowCustom) {
             items.push({
                 label: '$(edit) Other…', id: '',
@@ -44530,6 +44531,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 for (const e of w.profile!.engines) { await forgetProviderTests(e, id); }
                 EnginesPanel.refreshIfOpen();
                 return { removed: id, credentialCollected: hadSecret };
+            }
+        },
+        {
+            op: 'launch.form',
+            describe: 'X-521 — THE ROUTE ROWS OF THE START-SESSION FORM for one engine, as every launch door draws them '
+                + '(the Console composer, the launcher, the task and mission forms): applies (false on an engine with no '
+                + 'provider axis), noun, scopeNote, providers ({id, label, detail, group?} — on OpenCode `group` is '
+                + '"Agent Farm routes" or "OpenCode\'s own", decided by the catalog entry\'s origin, routes listed first; '
+                + 'the Default row carries none), sub (Claude: the picked route\'s tiers; OpenCode: the picked provider\'s '
+                + 'models, grouped the same way — a lent route serving several models names the slots each fills), '
+                + 'variants and refusals for the pick. args: engine? (default claude), providerId?, tier?, model?, '
+                + 'variant?, transport? (run | acp | tui — what the door speaks; default run)',
+            handler: (args) => {
+                const engine = optStr(args, 'engine') || 'claude';
+                need(!!ENGINES[engine as EngineId], `no engine called "${engine}"`);
+                const transport = optStr(args, 'transport') || 'run';
+                need(['run', 'acp', 'tui'].includes(transport), `transport is run, acp or tui — not "${transport}"`);
+                return providerFormFor(engine, {
+                    providerId: optStr(args, 'providerId'), tier: optStr(args, 'tier'),
+                    model: optStr(args, 'model'), variant: optStr(args, 'variant')
+                }, transport as ProviderTransport);
             }
         },
         {

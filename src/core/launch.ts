@@ -27,6 +27,8 @@ export interface LaunchChoice {
     id: string;
     label: string;
     detail: string;
+    /** X-521 — the heading this row is listed under (core/providerGroups.ts); absent = no heading. */
+    group?: string;
 }
 
 export interface LaunchOptions {

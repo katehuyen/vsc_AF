@@ -1965,7 +1965,7 @@ Runs it now with this run's own supervisor values, or a preset's (Economy · Bal
             selected: !providerId,
             detail: 'The run takes whichever ' + noun.toLowerCase() + ' the agent happens to be set to when it fires — and nobody is watching when it does.'
         })]
-            .concat(routeForm.providers.map(p =>
+            .concat(window.AFProvider.optgroups(routeForm.providers, p =>
                 C.option(p.id, p.label, { selected: p.id === providerId, detail: p.detail || p.baseUrl || '' })))
             .join('');
         const picked = routeForm.providers.find(p => p.id === providerId) || {};

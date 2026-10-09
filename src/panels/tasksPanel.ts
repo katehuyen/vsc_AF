@@ -116,7 +116,7 @@ export interface TasksDeps {
     kapiciSupervisor?(): boolean;
     engineRoutes?(): Record<string, {
         noun: string;
-        providers: { id: string; label: string; detail: string; tiers: { id: string; label: string; detail?: string }[]; tierDefault?: string; modelByRoute?: string }[];
+        providers: { id: string; label: string; detail: string; group?: string; tiers: { id: string; label: string; detail?: string }[]; tierDefault?: string; modelByRoute?: string }[];
     }>;
     /**
      * ‼️ X-169 — WHICH SIGN-INS EACH ENGINE HAS ON THIS MACHINE, for the form's

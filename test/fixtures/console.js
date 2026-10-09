@@ -522,6 +522,36 @@ const relayComposerData = (account) => Object.assign(composerData(), {
 const opencodeComposerData = () => Object.assign(composerData(), {
     composerIntent: intentOf({ engine: 'opencode', account: 'work-1' })
 });
+/** X-521 — OpenCode's provider and model boxes in two headed groups: the routes Agent Farm lends, then OpenCode's own. */
+const opencodeGroupsData = () => {
+    const d = opencodeComposerData();
+    const lent = { id: 'af-or-nemotron/nvidia/nemotron-3-ultra:free', label: 'Nemotron-Ultra/Nemotron-Ultra', detail: 'af-or-nemotron/nvidia/nemotron-3-ultra:free' };
+    d.engineModels = Object.assign({}, d.engineModels, {
+        opencode: Object.assign({}, d.engineModels.opencode, { models: d.engineModels.opencode.models.concat([lent]) })
+    });
+    const R = 'Agent Farm routes', O = 'OpenCode\'s own';
+    d.composerForm = {
+        engine: 'opencode', applies: true, noun: 'Provider', scope: 'turn',
+        scopeNote: 'the engine may change this at a turn boundary, and records it as a new turn identity',
+        providers: [
+            { id: '', label: 'Default', detail: 'the engine\'s own current provider' },
+            { id: 'af-or-nemotron', label: 'Nemotron-Ultra', detail: 'https://openrouter.ai/api/v1 · API key · 1 model', group: R },
+            { id: 'opencode', label: 'OpenCode Zen', detail: '3 models', group: O }
+        ],
+        sub: {
+            kind: 'model', label: 'Model', note: 'every model the engine published — passed as -m, unassembled',
+            choices: [
+                { id: '', label: 'Default', detail: 'the engine\'s own default model' },
+                { id: lent.id, label: 'Nemotron-Ultra', detail: 'not measured', group: R },
+                { id: 'opencode/big-pickle', label: 'Big Pickle', detail: '200K context · free', group: O },
+                { id: 'opencode/grok-code-free', label: 'Grok Code (free)', detail: 'free', group: O },
+                { id: 'opencode/qwen3-coder-free', label: 'Qwen3 Coder (free)', detail: 'free', group: O }
+            ]
+        },
+        variants: []
+    };
+    return d;
+};
 /** S-60 — the composer with Antigravity chosen: the permission box draws only
  *  the rows that engine can keep — no `manual`, no `dontAsk`. */
 const agyComposerData = () => Object.assign(composerData(), {
@@ -983,6 +1013,12 @@ module.exports = {
             id: 'console-opencode',
             label: 'Console — OpenCode chosen: no effort box, and permissions it can really ask about',
             data: opencodeComposerData()
+        },
+        {
+            id: 'console-opencode-groups',
+            tip: 'tip-route',
+            label: 'Console — OpenCode\'s provider and model boxes in two groups: Agent Farm routes, OpenCode\'s own (X-521)',
+            data: opencodeGroupsData()
         },
         {
             id: 'console-agy',
