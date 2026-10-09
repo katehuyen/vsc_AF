@@ -13,6 +13,7 @@
  */
 
 import { LaunchManifest } from './launchManifest';
+import { routeIdOfWire } from './opencodeRoutes';
 
 export interface RouteNameEntry { label: string; providerId: string }
 
@@ -79,6 +80,37 @@ export function routeNames(
         last[id] = { label, providerId: str(m.identity.providerId) };
     }
     return { current, last };
+}
+
+/**
+ * X-521 — A LENT ROUTE READ BACK AS ITS COMPANY. OpenCode names a lent route's provider
+ * `af-<route id>`; the record says the company the launch declared, as the live path
+ * does (openCodeAdapter vendorOf), so declared and reported agree. The run's own
+ * declaration first, then the profile now, then the last launch on it; anything else untouched.
+ */
+export function routeVendorOf(
+    providerId: string, declared: { providerProfileId?: string; providerId?: string } | undefined, names: RouteNames | undefined
+): string {
+    const bare = routeIdOfWire(providerId);
+    const rid = idOf(bare);
+    if (!rid) { return providerId; }
+    if (declared && idOf(declared.providerProfileId) === rid && str(declared.providerId)) { return str(declared.providerId); }
+    const known = names && (names.current[rid] || names.last[rid]);
+    return (known && known.providerId) || bare;
+}
+
+/** X-521 — one turn's badge facts: its reported providers read back, and on OpenCode's own model that model's catalog name. */
+export function turnMark(
+    engine: string,
+    identity: { origin?: string; providerProfileId?: string; providerId?: string; requestedModelRef?: string } | undefined,
+    providerIds: readonly string[] | undefined, models: readonly string[] | undefined, names: RouteNames | undefined
+): { servedBy: string[]; modelLabel: string } {
+    const reported = providerIds ?? [];
+    return {
+        servedBy: [...new Set(reported.map(p => routeVendorOf(p, identity, names)))],
+        modelLabel: reported.length
+            ? runModelLabel(engine, str(identity?.origin), reported, models ?? [], str(identity?.requestedModelRef), names?.models) : ''
+    };
 }
 
 /** Undefined when the run named no profile, or the caller gave no names. */

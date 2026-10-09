@@ -5,6 +5,7 @@ import { CtxWindowSource, contextWindowOf } from './pricing';
 import { SessionInfo, SessionOrigin, sessionHeadless, sessionMission, sessionOrigin } from './sessions';
 import { ChainIndex, RunCategory, chainIndexNow, runCategory } from './chainMembership';
 import { RunIdentity } from './turnRuntime';
+import { RouteNames, turnMark } from './routeName';
 import { matchesAny, profileOf, providersOf, RUN_SELECTION_ARGS, runSelectionArgs, selectionArg } from './runFilter';
 
 /**
@@ -78,6 +79,9 @@ export interface TurnRow {
      * and were unfindable while `providerIds` was the only column.
      */
     providers: string[];
+    /** X-521 — `providerIds` with a lent route read back as its company, and OpenCode's own model by its catalog name. */
+    servedBy: string[];
+    modelLabel: string;
     /** The stored profile the session was launched on — Claude routes only, '' elsewhere. */
     profile: string;
     /** The session's declared route (its provider id), '' when it was launched on none. */
@@ -106,7 +110,9 @@ export interface TurnRow {
 }
 
 /** All turn rows of one session, newest data included. */
-export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity, chains?: ChainIndex, project = ''): TurnRow[] {
+export function turnRowsFor(
+    s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity, chains?: ChainIndex, project = '', names?: RouteNames
+): TurnRow[] {
     const origin = sessionOrigin(s);
     const mission = sessionMission(s) ?? null;
     const at = chains?.bySession.get(s.sessionId);
@@ -122,6 +128,7 @@ export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identit
             s.ctxWindow ?? 0,
             t.models?.length ? t.models[t.models.length - 1] : '',
             forced);
+        const mark = turnMark(s.source ?? 'claude', identity, t.providerIds, t.models, names);
         return {
             file: s.file,
             sessionId: s.sessionId,
@@ -148,7 +155,8 @@ export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identit
             errors: t.errors,
             models: t.models,
             providerIds: t.providerIds ?? [],
-            providers: providersOf(identity, t.providerIds),
+            ...mark,
+            providers: providersOf(identity, mark.servedBy),
             profile,
             route: identity?.providerId ?? '',
             routeLabel: identity?.providerLabel ?? '',
@@ -174,11 +182,12 @@ export function buildTurnRows(
     /** U-191 — the relay chains, so a leg's turns read ⑂ Baton. */
     chains?: ChainIndex,
     /** U-191 — the session's project, by the Sessions table's own resolver. */
-    projectOf?: (s: SessionInfo) => string | undefined
+    projectOf?: (s: SessionInfo) => string | undefined,
+    names?: RouteNames
 ): TurnRow[] {
     const rows: TurnRow[] = [];
     for (const s of sessions) {
-        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s), chains, projectOf?.(s) ?? ''));
+        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s), chains, projectOf?.(s) ?? '', names));
     }
     return rows.sort((a, b) => b.ts - a.ts);
 }
@@ -197,6 +206,8 @@ export function registerTurnsOps(
         identityOf?(s: SessionInfo): RunIdentity | undefined;
         /** U-191 — the session's project, so `project=` finds what the page's picker does. */
         projectOf?(s: SessionInfo): string | undefined;
+        /** X-521 — the route names, so a turn's badge reads what the page's does. */
+        routeNames?(): RouteNames;
         /**
          * B-21 — the Turns page's own Markdown builder (`buildTurnsMarkdown`),
          * injected because it reads the reader's settings and this module is
@@ -236,7 +247,8 @@ export function registerTurnsOps(
         // and a type test drops them for the default without saying so —
         // the same silence that queued four items at the bottom.
         const limit = Math.max(1, Math.floor(optNum(args, 'limit', limitDefault)) || limitDefault);
-        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf, chainIndexNow(), deps.projectOf)
+        return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf, chainIndexNow(), deps.projectOf,
+            deps.routeNames?.())
             .filter(r => !agent || r.agentName.toLowerCase() === agent)
             // ‼️ The same axis the page filters on — an agent calling this op
             // to ask "what has Codex been doing" had no way to say so.
@@ -294,7 +306,7 @@ export function registerTurnsOps(
                     wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
                     tools: r.tools, errors: r.errors, models: r.models, providerIds: r.providerIds,
-                    providers: r.providers, profile: r.profile || null, route: r.route || null
+                    providers: r.providers, profile: r.profile || null, route: r.route || null, modelLabel: r.modelLabel || null
                 }));
         }
     });

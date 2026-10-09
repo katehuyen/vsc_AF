@@ -239,11 +239,11 @@ export function sessionRowPool(
         if (!m) {
             return {
                 route: '', revision: null, requested: '', surface: '', account: '', at: 0,
-                agreement: identity.agreement, note: describeDrift(runDrift(turnRuntimes(m, engine, reports))),
+                agreement: identity.agreement, note: describeDrift(runDrift(turnRuntimes(m, engine, reports, names))),
                 identity
             };
         }
-        const drift = runDrift(turnRuntimes(m, engine, reports));
+        const drift = runDrift(turnRuntimes(m, engine, reports, names));
         return {
             identity,
             // The route, named the way `describeManifest` names it: a label when

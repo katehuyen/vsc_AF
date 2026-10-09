@@ -96,7 +96,8 @@ export function buildTurnsMarkdown(
     // is not. The export silently dropped those rows and the header lookup below
     // fell through to a bare "turn N". A LOG surface reads the log list, once.
     for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-        afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.(), deps.routeNames?.()))) {
+        afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.(), deps.routeNames?.()),
+        undefined, undefined, deps.routeNames?.())) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
     const sc = afConfig();

@@ -67,10 +67,14 @@
      * says two things about is counted rather than named, because naming one of
      * them over a turn that used both is the lie the component exists to stop.
      */
-    const providerMark = r => window.AFProvider.chip({
-        providerId: '', reportedProviderIds: r.providerIds || [],
-        multiProvider: (r.providerIds || []).length > 1
-    }, '', window.AFProvider.CARD_MAX);
+    // X-521 — a lent route read back as its company wears the session's route label; OpenCode's own model its name.
+    const providerMark = r => {
+        const served = r.servedBy || r.providerIds || [];
+        return window.AFProvider.chip({
+            providerId: served.length ? r.route || '' : '', providerLabel: r.routeLabel || '',
+            reportedProviderIds: served, modelLabel: r.modelLabel || '', multiProvider: served.length > 1
+        }, '', window.AFProvider.CARD_MAX);
+    };
 
     // Content filter of an unfolded turn — the session viewer's chip set, same
     // semantics: empty selection = show everything; "Errors" matches the flag,
@@ -614,8 +618,8 @@
         engine: r => cell('engcell',
             window.AFEngine.badge(r.engine || 'claude') + providerMark(r),
             engineLabel(r), [
-                line('Model', (r.models || []).join(', ') || '—'),
-                line('Answered by', (r.providerIds || []).map(window.AFProvider.label).join(', ')),
+                line('Model', (r.modelLabel ? r.modelLabel + ' · ' : '') + ((r.models || []).join(', ') || '—')),
+                line('Answered by', (r.servedBy || r.providerIds || []).map(window.AFProvider.label).join(', ')),
                 // X-111 — the session's declared route, which is what the
                 // Providers filter counts a Claude turn under.
                 line('Session route', r.route ? (r.routeLabel || window.AFProvider.label(r.route)) : ''),

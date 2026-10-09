@@ -17233,6 +17233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // finds the Claude-via-Kimi turns here as it does on the page.
         identityOf: s => sessionIdentity(s, launchManifests(), routeNamesNow()),
         projectOf: sessionProjectName,
+        routeNames: () => routeNamesNow(),
         // B-21 — the page's own builder, so the op cannot describe a turn
         // differently from the row it came from.
         exportMarkdown: (shown, openKeys, roles, opts) =>
@@ -44091,7 +44092,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // read `reportedProviderIds`, and the index is the only place
                 // that could ever have supplied one.
                 const rows = turnRuntimes(manifest, engine,
-                    (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })));
+                    (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })), routeNamesNow());
                 const drift = runDrift(rows);
                 return {
                     sessionId,

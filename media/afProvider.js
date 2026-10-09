@@ -217,6 +217,12 @@
         ];
     }
 
+    /** X-521 — the origin and running-model lines, for a surface that words its own hover. */
+    function runLines(v) {
+        const I = normalize(v);
+        return [originLine(I), runningLine(I)];
+    }
+
     function tipLines(v) {
         const I = normalize(v);
         const rep = (I.reportedProviderIds || []).filter(Boolean);
@@ -240,8 +246,7 @@
                 + (I.providerProfileRevision ? ' · profile revision ' + I.providerProfileRevision : '')
                 : 'Route: none declared — the engine\'s own default answered',
             ...nameLines(I),
-            originLine(I),
-            runningLine(I),
+            ...runLines(I),
             // ‼️ ONLY WHEN IT ADDS SOMETHING. On a run where the engine named
             // what was declared this restates the line above it, and a panel
             // that repeats itself is one a reader stops opening.
@@ -270,7 +275,7 @@
 
     window.AFProvider = {
         id: id, label: label, cls: cls, chip: chip, cut: cut, known: KNOWN, CARD_MAX: 15,
-        servedBy: servedBy, multi: multi, tipLines: tipLines, nameLines: nameLines, title: title,
+        servedBy: servedBy, multi: multi, tipLines: tipLines, nameLines: nameLines, runLines: runLines, title: title,
         binding: BINDING, proof: PROOF
     };
 })();

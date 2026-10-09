@@ -3947,6 +3947,8 @@
                 // S-137 — the same name lines every surface draws, about the route this card started on.
                 ...(moved ? [] : window.AFProvider.nameLines({
                     providerLabelAtLaunch: (s.identity || {}).providerLabelAtLaunch, providerProfileRemoved: !!r.removed })),
+                // X-521 — on OpenCode: where the answer comes from, and on a lent route the model running
+                ...window.AFProvider.runLines(s.identity),
                 // ‼️ ONLY WHEN IT REALLY MOVED. On every other card this line
                 // would restate the line above it, which is how a panel teaches
                 // a reader to stop reading it.

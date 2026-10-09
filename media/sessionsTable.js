@@ -577,7 +577,8 @@
                 if (!text.empty && !text.test((r.title || '') + ' ' + (r.agent || '') + ' '
                     + (r.tags || []).join(' ') + ' ' + (r.sessionId || '') + ' '
                     + (r.chain ? r.chain.chainId + ' ' : '')
-                    + providersOf(r).join(' ') + ' ' + window.AFProvider.label(identityOf(r)))) { return false; }
+                    + providersOf(r).join(' ') + ' ' + window.AFProvider.label(identityOf(r))
+                    + ' ' + ((identityOf(r) || {}).modelLabel || ''))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 // The picker lists LABELS ("Antigravity"), because that is what
                 // the badge in the column says and a filter that disagrees with
@@ -1189,6 +1190,7 @@
             return [
                 line('Route', L.route + (L.revision ? ` · profile revision ${L.revision}` : '')),
                 ...window.AFProvider.nameLines(I),
+                ...window.AFProvider.runLines(I),
                 line('Answered by', (I.reportedProviderIds || []).join(', ')),
                 line('How we know', PROOF[I.proof] || ''),
                 line('Requested', L.requested),

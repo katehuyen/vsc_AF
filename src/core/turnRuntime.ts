@@ -31,7 +31,7 @@
 
 import { LaunchManifest, manifestIndex, manifestOf } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
-import { RouteNames, routeName, runModelLabel } from './routeName';
+import { RouteNames, routeName, routeVendorOf, runModelLabel } from './routeName';
 import {
     hasProviderConflict, legacyIdentity, ProviderIdentity, proofOf, scopeAllowsTurnChange,
     TurnRuntimeIdentity, turnIdentity
@@ -175,16 +175,20 @@ export function modelAgreement(
 export function turnRuntimes(
     manifest: LaunchManifest | undefined,
     engine: string,
-    turns: readonly TurnReport[]
+    turns: readonly TurnReport[],
+    names?: RouteNames
 ): TurnRuntime[] {
     const declared = declaredOf(manifest, engine);
     const wanted = requestedNames(manifest);
     const out: TurnRuntime[] = [];
     let previousReported = '';
     let previousIdentity: TurnRuntimeIdentity | undefined;
+    // X-521 — OpenCode's `af-<route>` is the lent route's company (routeName.ts routeVendorOf)
+    const readBack = (declared.engine || str(engine)) === 'opencode';
     for (const t of turns || []) {
         const models = list(t.models);
-        const providerIds = list(t.providerIds);
+        const providerIds = readBack
+            ? [...new Set(list(t.providerIds).map(p => routeVendorOf(p, declared, names)))] : list(t.providerIds);
         const identity = turnIdentity(
             { ...declared, engine: declared.engine || str(engine) || 'claude' },
             { providerIds, models },
@@ -395,7 +399,7 @@ export function runIdentity(
      *  CLI whose sessions it merely reads. The caller knows; this file cannot. */
     opts?: { external?: boolean; names?: RouteNames }
 ): RunIdentity {
-    const rows = turnRuntimes(manifest, engine, turns);
+    const rows = turnRuntimes(manifest, engine, turns, opts?.names);
     const drift = runDrift(rows);
     const id = declaredOf(manifest, str(engine) || 'claude');
     const binding = bindingOf(manifest, id, opts);

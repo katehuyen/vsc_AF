@@ -50,7 +50,8 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
         rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.(), deps.routeNames?.()), chainIndexNow(), deps.projectOf),
+            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps.launchManifests?.(), deps.routeNames?.()), chainIndexNow(), deps.projectOf,
+            deps.routeNames?.()),
         tableN: TURNS_TABLE_N
     };
 }
