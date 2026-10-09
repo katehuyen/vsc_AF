@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.901.0 - Farm Settings: every special block is one card (2026-10-09)
+
+- **The ten special blocks of Farm Settings are drawn the same way** -
+  Agent folders, Engines, Claude Code, Saved prompts, Superpowers,
+  Preferences, Sound, Wiki, Telegram and Gatekeeper. Each is one card: a
+  state dot, its name (the hover explains what it is), one sentence saying
+  where it stands, and its main actions on the same line.
+- **The long parts sit behind Details** - the engine table, the raw
+  Claude Code settings editor, the prompt list, the skill list and the
+  rest. A Details you opened stays open while you work in it (picking a
+  model for an agent no longer folds it shut), and one that opened itself
+  for a warning opens again when the warning is new.
+- **A link to a setting inside a card** lands on the card and lights it
+  for a moment.
+- Saved prompts and Superpowers no longer repeat their group's heading
+  above the card that already names them.
+- **Easier to read in every theme:** faint text on chips, prompt rows,
+  skill states and wiki paths now uses the theme's own description colour;
+  a turned-off engine's row no longer dims its Install button; badges
+  read clearly in the dark theme and carry the outline the high-contrast
+  themes expect.
+
 ## 3.900.0 - Farm Settings speaks plainly on every row (2026-10-09)
 
 - **Every setting now has a name and a one-line summary** instead of its
