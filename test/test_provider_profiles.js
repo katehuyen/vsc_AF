@@ -281,7 +281,7 @@ const claude = {
     // failing test: this family is the one that stands between a stored
     // credential and five surfaces, and an op added without anybody rereading
     // that boundary is exactly how the boundary stops holding.
-    eq('the bridge exposes the nine provider ops', provOps.length, 9);
+    eq('the bridge exposes the ten provider ops', provOps.length, 10);
     // ‼️ THREE OF THEM DO NOT CARRY A PROFILE ROW AT ALL, and each is named here
     // rather than folded into the pattern below: adding their shapes to that
     // list would loosen the gate for the six that really do carry rows.
@@ -303,8 +303,13 @@ const claude = {
             .test(provOps.find(s => /^providers\.test'/.test(s)) || ''));
     ok('…and NAMES, NEVER VALUES holds in that runner too',
         /injected: Object\.keys\(rt\.spawnEnv/.test(extTs));
+    // X-517 F — the engine-version contract probe: it carries no profile and reads no key, only its own result.
+    const contractOp = provOps.filter(s => /^providers\.contract'/.test(s));
+    ok('…and one is the contract probe, which carries no profile and reads no key',
+        contractOp.length === 1 && /checkOpencodeContract\(true\)/.test(contractOp[0])
+        && !/providerProfiles\(|routeKeyOf\(|secretFor\(/.test(contractOp[0]));
     ok('‼️ every provider op that carries a profile answers with the PUBLIC shape',
-        provOps.filter(s => !/^providers\.(runtime|status|test)'/.test(s))
+        provOps.filter(s => !/^providers\.(runtime|status|test|contract)'/.test(s))
             .every(s => /publicRoute\(|publicProviderProfiles\(|ownershipTable\(|removed: id/.test(s)));
     ok('…and none of them touches the keychain for a value',
         !provOps.some(s => /context\.secrets\.get|setProviderSecret|askProviderSecret/.test(s)));

@@ -205,6 +205,8 @@ export interface ProviderHealthInput {
     profileRead?: { upgraded: readonly string[]; dropped: readonly string[] };
     /** The engine's own credential file, for the engines that own one. */
     engineCredentials?: { file: string; present: boolean; entries: number };
+    /** X-517 F — a fault every lent route row carries (the engine-version contract probe found one). */
+    lentRouteProblem?: string;
     records?: readonly ProviderTestRecord[];
 }
 
@@ -322,6 +324,7 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
 
         // A lent route's key is ours, so the engine's credential file says nothing about it.
         const lent = p.origin === 'agent-farm-route';
+        if (lent && trim(input.lentRouteProblem)) { rowProblems.push(trim(input.lentRouteProblem)); }
         if (credentialsEmpty && !lent) {
             rowNotes.push('no credential is stored for this engine, and it is offering this '
                 + 'provider anyway');

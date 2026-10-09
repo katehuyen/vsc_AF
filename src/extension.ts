@@ -238,6 +238,8 @@ import {
     smokeRefusal, testKeyOf, testModelRef
 } from './core/providerHealth';
 import { routeIdOn, routeProfilesOn, routeSourceOf, routeValue } from './core/opencodeRoutes';
+import { contractDue, contractProblem, ContractResult } from './core/opencodeContract';
+import { runContractProbe } from './core/opencodeContractProbe';
 import { scrubSecrets, secretValuesOf } from './core/secretScrub';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
@@ -24102,6 +24104,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { return ''; }
     };
     /**
+     * X-517 F — OpenCode updates itself silently, so the way a route is lent to it is probed again, ONCE,
+     * whenever its version changes: locally, in the background, never the bare TUI (opencodeContract.ts).
+     */
+    const OPENCODE_CONTRACT_KEY = 'agentfarm.opencodeContract';
+    const opencodeContract = (): ContractResult | undefined => context.globalState.get<ContractResult>(OPENCODE_CONTRACT_KEY);
+    let contractInFlight: Promise<ContractResult | undefined> | undefined;
+    const checkOpencodeContract = async (force = false): Promise<ContractResult | undefined> => {
+        if (contractInFlight) { return contractInFlight; }
+        const row = engineMatrix().find(e => e.id === 'opencode');
+        if (!row?.cli.found) { return opencodeContract(); }
+        const version = await cliVersion(row.cli.command);
+        const last = opencodeContract();
+        if (!force && !contractDue(last, version)) { return last; }
+        contractInFlight = (async () => {
+            const result = await runContractProbe({ version, workDir: path.join(workArea.path || os.tmpdir(), 'af-opencode-contract') });
+            await context.globalState.update(OPENCODE_CONTRACT_KEY, result);
+            if (result.status === 'broken') {
+                postNewsOnce(`opencode-contract:${version}`, {
+                    type: 'warning', level: 3,
+                    title: `OpenCode ${version} no longer takes a lent route the way Agent Farm writes it`,
+                    body: `${result.problems.map(p => `- ${p}`).join('\n')}\n\nRoutes lent to OpenCode carry this on the `
+                        + 'Engines page until the probe passes again. providers.contract run=true probes again.'
+                });
+            }
+            EnginesPanel.refreshIfOpen();
+            return result;
+        })().finally(() => { contractInFlight = undefined; });
+        return contractInFlight;
+    };
+    // Well after the catalog warm, never on the activation path; unref'd so it holds nothing open.
+    const contractWarm = setTimeout(() => { void checkOpencodeContract(); }, 45000);
+    contractWarm.unref?.();
+    context.subscriptions.push({ dispose: () => clearTimeout(contractWarm) });
+    /**
      * OpenCode's own credentials file, counted and never read out. ‼️ THE COUNT
      * IS THE WHOLE OF WHAT LEAVES THIS FUNCTION — the same boundary `hasSecret`
      * draws for the routes Agent Farm owns, and for the same reason.
@@ -24163,7 +24199,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(engine === 'claude'
                 ? { settingsEnv: (readClaudeSettings().json.env as Record<string, unknown>) ?? {} }
                 : {}),
-            ...(engine === 'opencode' ? { engineCredentials: openCodeCredentials() } : {}),
+            ...(engine === 'opencode'
+                ? { engineCredentials: openCodeCredentials(), lentRouteProblem: contractProblem(opencodeContract(), version) }
+                : {}),
             // X-116 — read, never written: the collector is handed a reader.
             configFiles: collectEngineConfigFiles(engine, {
                 home: os.homedir(),
@@ -44495,6 +44533,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const out = await runProviderTest(engine, providerId, optStr(args, 'model'));
                 EnginesPanel.refreshIfOpen();
                 return out;
+            }
+        },
+        {
+            op: 'providers.contract',
+            describe: 'X-517 F — DOES THE OPENCODE ON THIS MACHINE STILL TAKE A LENT ROUTE THE WAY AGENT FARM '
+                + 'WRITES IT? OpenCode updates itself silently, so whenever its version changes Agent Farm probes '
+                + 'ONCE, in the background and locally: a server on 127.0.0.1 that answers 401 to everything, a '
+                + 'probe route (af-probe) in both shapes Agent Farm writes — an endpoint through the Anthropic SDK '
+                + 'with the key in x-api-key, an OpenCode URL through the OpenAI-style SDK with a Bearer — then '
+                + '`opencode models af-probe` and one `opencode run` per shape, with self-update off and a fixed '
+                + 'stand-in instead of a key: no real key, no paid turn, never the bare TUI. Returns the last '
+                + 'result: status ok · broken · not-run (nothing could be concluded, e.g. the CLI would not start), '
+                + 'per shape whether the provider was listed, the request reached its path and the key arrived in '
+                + 'its header, the problems, the version probed, `installed` (the version on PATH now) and '
+                + '`current` (whether the result is about it). A broken contract puts "engine contract changed" '
+                + 'on every lent route row of providers.status and is announced on Notices once per version. '
+                + 'args: run? (true probes again now — two OpenCode spawns per shape, about 20 s)',
+            handler: async (args) => {
+                const result = optBool(args, 'run') ? await checkOpencodeContract(true) : opencodeContract();
+                const row = engineMatrix().find(e => e.id === 'opencode');
+                const installed = row?.cli.found ? await cliVersion(row.cli.command) : '';
+                return { ...(result ?? { status: 'never-run' }), installed, current: !!result && result.version === installed };
             }
         },
         {
