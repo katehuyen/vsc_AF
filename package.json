@@ -8887,9 +8887,41 @@
                 "type": "string",
                 "description": "the agent this setup starts when pressed on the Start Session… icon (written by Save in the launcher); leave it out and that press asks which agent"
               },
+              "engine": {
+                "type": "string",
+                "description": "which engine the session runs on; leave it out for the default engine"
+              },
+              "providerId": {
+                "type": "string",
+                "description": "which route the session runs on: a stored route on Claude, the engine's own provider on OpenCode"
+              },
+              "tier": {
+                "type": "string",
+                "description": "which tier of that route (Claude, only together with a route)"
+              },
+              "account": {
+                "type": "string",
+                "description": "which sign-in of that engine the setup opens on; a sign-in no longer on this machine arrives empty"
+              },
               "model": {
                 "type": "string",
                 "description": "--model"
+              },
+              "variant": {
+                "type": "string",
+                "description": "the model's reasoning variant, where the engine offers one"
+              },
+              "superpowers": {
+                "type": "boolean",
+                "description": "start under the engineering-discipline skills (true) or without them (false); leave it out and the agent's own default decides"
+              },
+              "surface": {
+                "type": "string",
+                "enum": [
+                  "console",
+                  "terminal"
+                ],
+                "description": "where the session opens; leave it out and the launcher keeps the surface it is on"
               },
               "effort": {
                 "type": "string",

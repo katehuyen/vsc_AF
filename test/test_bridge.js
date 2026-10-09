@@ -267,11 +267,7 @@ const { opencodeStatus, syncToOpencode } =
                 handler: async (a) => {
                     const name = String(a.name || '').trim();
                     need(!!name, 'a profile needs a name');
-                    const p = profileFrom({
-                        engine: String(a.engine || ''), model: String(a.model || ''),
-                        effort: String(a.effort || ''), permissionMode: String(a.permissionMode || ''),
-                        prompt: String(a.prompt || '')
-                    }, name);
+                    const p = profileFrom(require(path.join(__dirname, '..', 'out', 'core', 'launchProfileArgs.js')).setupFromArgs(a).setup, name);
                     await write(saveProfile(stored, p));
                     return { name, stored: describeProfile(p), profiles: stored.length };
                 }

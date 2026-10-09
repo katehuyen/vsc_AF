@@ -34,7 +34,15 @@ export const sessions: CatalogSection = {
         launchProfiles: {
             group: 'launch',
             label: 'Launch profiles',
-            summary: 'Saved launch setups the Start Session launcher offers.'
+            summary: 'Saved launch setups the Start Session launcher offers.',
+            fields: {
+                name: 'Name', agentId: 'Agent', engine: 'Engine', providerId: 'Route', tier: 'Tier',
+                account: 'Sign-in', model: 'Model', variant: 'Variant', effort: 'Effort',
+                permissionMode: 'Permissions', prompt: 'First prompt', superpowers: 'Superpowers', surface: 'Opens in'
+            },
+            fieldOptions: {
+                surface: { console: 'Console', terminal: 'Terminal' }
+            }
         },
         flexPresets: {
             group: 'flex',

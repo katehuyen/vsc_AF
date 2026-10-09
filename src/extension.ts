@@ -303,6 +303,7 @@ import {
     pressedSetupStarts, profileAccountGone, profileFrom,
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
 } from './core/launchProfiles';
+import { setupFromArgs } from './core/launchProfileArgs';
 import {
     allTags, colorOf, isPinned, normalizeColor, normalizeMarks, parseTags, SESSION_COLORS,
     SessionMark, SessionMarks, setColor, setTags, tagsOf, togglePin
@@ -43819,8 +43820,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'it were new is noise. '
                 + '‼️ `name` here is the PROFILE\'s name and never a session name — a profile carries no '
                 + '-n, or every session started from it would be called the same thing. '
-                + 'Returns [{name, engine?, providerId?, tier?, model, variant?, effort, '
-                + 'permissionMode, prompt?, surface?}] — `providerId` is X-103\'s route (a stored '
+                + 'Returns [{name, engine?, providerId?, tier?, account?, model, variant?, effort, '
+                + 'permissionMode, prompt?, superpowers?, surface?, agentId?}] — `providerId` is X-103\'s route (a stored '
                 + 'route profile id on Claude, the engine\'s own provider id on OpenCode) and ABSENT '
                 + 'means the profile says nothing about it, so the agent\'s own record decides; '
                 + '`surface` is "console" or "terminal", and ABSENT means the profile says nothing '
@@ -43994,7 +43995,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'provider: which tier of that route, because "opus" is a different model on each), '
                 + 'model?, variant? (only where the engine publishes one for that model, and only a '
                 + 'headless run can carry it — the TUI takes no --variant and ACP declares none), '
-                + 'effort?, '
+                + 'effort?, account? (X-253 — which sign-in of that engine the setup opens on, a slot id '
+                + 'from accounts.list; soft: the box opens on it and nothing is locked, and a slot no '
+                + 'longer on the machine arrives empty and says so), superpowers? (true | false — start '
+                + 'under the engineering-discipline skills or explicitly without them; omit it and the '
+                + 'profile says nothing, so the agent\'s own default decides), '
                 + 'permissionMode?, prompt?, surface? (console|terminal — omit it and the profile says '
                 + 'nothing about where, so the launcher keeps the surface it is on), agentId? (X-180 — '
                 + 'the agent the setup starts from the Start Session… icon with one press; omit it and '
@@ -44010,20 +44015,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const surface = optStr(args, 'surface') ?? '';
                 need(!surface || surface === 'console' || surface === 'terminal',
                     `surface is "console" or "terminal" — "${surface}" is neither (leave it out to say nothing)`);
-                const setup: LaunchOptions = {
-                    ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') as EngineId } : {}),
-                    // ‼️ X-103 — `provider` on the wire, `providerId` on the
-                    // options. The arg is named for the reader (they are picking
-                    // a provider, not an id shape) and the field for the type it
-                    // actually holds; the translation happens once, here.
-                    providerId: optStr(args, 'provider') ?? '',
-                    tier: optStr(args, 'tier') ?? '',
-                    model: optStr(args, 'model') ?? '',
-                    variant: optStr(args, 'variant') ?? '',
-                    effort: optStr(args, 'effort') ?? '',
-                    permissionMode: optStr(args, 'permissionMode') ?? '',
-                    ...(optStr(args, 'prompt') ? { prompt: optStr(args, 'prompt') } : {})
-                };
+                // ‼️ B-32 — by the profile's SHAPE (core/launchProfileArgs.ts), never a field list here
+                const asked = setupFromArgs(args);
+                need(!asked.refused, asked.refused ?? '');
+                const setup = asked.setup;
                 // ‼️ REFUSED HERE, not stored and refused at a spawn. A profile is
                 // a setup somebody will start from tomorrow morning; a tier with
                 // no route in it names nothing, and finding that out in a
