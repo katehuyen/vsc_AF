@@ -3,6 +3,9 @@
 (function () {
     'use strict';
     let X, C;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    function N_(s) { return s; }
+    const many = (n, one, other) => (n === 1 ? t(one) : t(other, { n }));
 
     // ---- Agent folders — where agents live: roots, nest/single badges, exclude ----
 
@@ -257,30 +260,35 @@
             fq.test(r.root + ' ' + r.candidates.map(c => c.name).join(' ')));
         if (X.filter && !reports.length) { return ''; }
         const dupes = f.reports.some(r => r.duplicate);
+        const missing = f.reports.filter(r => r.kind === 'missing').length;
         const agentCount = f.reports.reduce((a, r) => a + (r.duplicate ? 0 : r.candidates.filter(c => !c.excluded).length), 0);
         // excludes that no current root explains — stale leftovers, offered for removal
         const known = new Set(f.reports.flatMap(r => r.candidates.map(c => pnorm(c.dir))));
         const stale = (f.excludes || []).filter(x => !known.has(pnorm(x)));
-        return `
-            <h2 class="cat" id="cat-folders">Agent folders <span class="muted small">${f.reports.length} root(s) · ${agentCount} agent(s)</span></h2>
-            <p class="muted small" style="max-width:760px">Where your agents live. Each root folder is scanned: subfolders with a
-            <code>CLAUDE.md</code>, <code>.claude</code> or <code>memory/</code> become agents; a root whose subfolders are agents is a
-            <b>nest</b> (its own CLAUDE.md = shared instructions); a root with no agent-like subfolders is one agent itself.
-            <b>Exclude</b> keeps a folder out of the farm entirely — it stops being an agent everywhere (views, analytics, session
-            ownership) until you Include it back. Each agent chip carries a <b>model</b>, an <b>effort</b> and — where that engine has
-            captured sign-ins — an <b>account</b> dropdown: that agent's defaults <i>for the engine selected below</i>. The account is
-            the one that outranks the machine-wide standing choice on the Engines page, so an agent set here stops following it;
-            new agents are seeded from <code>agentFarm.newAgentModel</code>.
-            <button class="secondary small" id="rootadd" title="Pick a folder to scan for agents">+ Add root…</button></p>
-            ${agentEngineTabs()}
-            ${dupes ? `<div class="seterr">⚠ The roots list contains the same folder more than once (case/slash spelling differs) — this distorts discovery. <a id="afcleandupes">Clean duplicates</a></div>` : ''}
+        // U-233 — the one card: the warning a reader must act on leads, the roots and their agents wait behind Details
+        const status = !f.reports.length ? t('No folder is scanned for agents yet.')
+            : dupes ? t('The same folder is listed more than once (its spelling differs), which distorts discovery.')
+                : missing ? many(missing, N_('One folder on the list does not exist on this machine.'), N_('{n} folders on the list do not exist on this machine.'))
+                    : t('{agents} found in {folders}.', {
+                        agents: many(agentCount, N_('One agent'), N_('{n} agents')),
+                        folders: many(f.reports.length, N_('one folder'), N_('{n} folders'))
+                    });
+        const warn = !f.reports.length || dupes || missing > 0;
+        return X.cardHtml({
+            id: 'cat-folders', icon: '📁', title: t('Agent folders'), state: warn ? 'warn' : 'ok', status,
+            actions: `<button class="secondary small" id="rootadd" title="${C.esc(t('Pick a folder to scan for agents'))}">${C.esc(t('+ Add folder…'))}</button>`
+                + (dupes ? ` <button class="secondary small" id="afcleandupes" title="${C.esc(t('Keep the first spelling of each folder and remove the rest'))}">${C.esc(t('Clean duplicates'))}</button>` : ''),
+            tip: t('Where your agents live. Each folder on this list is scanned: a subfolder with a CLAUDE.md, a .claude folder or a memory folder becomes an agent. A folder whose subfolders are agents is a nest, and its own CLAUDE.md holds the instructions they all share; a folder with no agent-like subfolders is one agent by itself. Exclude keeps a folder out of the farm everywhere (views, analytics, session ownership) until you Include it back. Each agent carries a model, an effort and, where the engine has captured sign-ins, an account: its defaults for the engine picked above the list. That account outranks the machine-wide standing choice on the Engines page. New agents start from the setting New agent model.'),
+            open: warn || !!X.filter,
+            details: `${agentEngineTabs()}
             ${reports.map(rootItemHtml).join('')}
             ${stale.length ? `<div class="setitem">
                 <div class="sethead"><span class="setname">Excluded, but not under any root</span></div>
                 <div class="setdesc">Leftover exclude entries that match nothing anymore — safe to remove.</div>
                 <div class="aglist">${stale.map(x =>
                     `<span class="agchip agexcl" title="${C.esc(x)}">${C.esc(x)} <a data-include="${C.esc(x)}" title="Remove this stale entry">Remove</a></span>`).join('')}</div>
-            </div>` : ''}`;
+            </div>` : ''}`
+        });
     }
 
     window.AFSettingFolders = function (ctx) {

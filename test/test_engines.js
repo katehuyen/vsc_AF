@@ -336,7 +336,7 @@ const by = (list, id) => list.find(e => e.id === id);
     const panel = require('./lib_settings_source').settingsPanelSource();
 
     ok('the matrix reaches Farm Settings', /engines: \(\) => engineMatrix\(\)/.test(ext)
-        && /function enginesSection\(\)/.test(js) && /id="cat-engines"/.test(js));
+        && /function enginesSection\(\)/.test(js) && /id: 'cat-engines'/.test(js));
     // agentfarm-dev.md: a user-triggerable function reaches the bridge in the
     // same commit as the feature, never later.
     ok('…and the bridge, in the same commit', /op: 'engines\.status'/.test(ext));

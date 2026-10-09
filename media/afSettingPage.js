@@ -133,7 +133,7 @@
                 .setinforce { font-size:11px; color:var(--af-ink-editorWarning-foreground, var(--vscode-editorWarning-foreground)); margin-top:4px; }
                 .setitem.flash { outline:2px solid var(--vscode-textLink-foreground); outline-offset:2px; }
                 .rootbadge { font-size:10px; padding:1px 8px; border-radius:8px; white-space:nowrap;
-                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); box-shadow:var(--af-hc-ring, none); }
                 .rootbadge.warn { background:var(--vscode-inputValidation-warningBackground, #664d00);
                     color:var(--vscode-foreground); }
                 .aglist { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
@@ -147,10 +147,11 @@
                 .agchip { font-size:11px; padding:2px 10px; border-radius:10px; white-space:nowrap;
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .agchip a { cursor:pointer; }
-                .agchip .agex, .agchip.agexcl a { margin-left:6px; font-size:10px; opacity:.75; }
-                .agchip .agex:hover, .agchip.agexcl a:hover { opacity:1; }
-                .agchip.agexcl { opacity:.55; text-decoration:line-through; }
-                .agchip.agexcl a { text-decoration:none; }
+                .agchip .agex, .agchip.agexcl a { margin-left:6px; font-size:10px; }
+                .agchip .agex { color:var(--vscode-descriptionForeground); }
+                .agchip .agex:hover { color:var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
+                .agchip.agexcl { color:var(--vscode-descriptionForeground); text-decoration:line-through; }
+                .agchip.agexcl a { display:inline-block; text-decoration:none; color:var(--vscode-textLink-foreground); }
                 /* ‼️ audit B-04.1 — THE CEILING WAS UNDER THE VALUE IT HAD TO HOLD.
                    Measured on the OpenCode scene, whose whole reason for existing
                    is that a model id there is a sentence: the box was pinned to
@@ -179,10 +180,11 @@
                 .setitem.eng { border-left:3px solid var(--vscode-widget-border, #4444); }
                 .setitem.eng-ok { border-left-color:var(--vscode-charts-green, #3fb950); }
                 .setitem.eng-warn { border-left-color:var(--vscode-charts-yellow, #d7ba7d); }
-                .setitem.eng-off { border-left-color:var(--vscode-descriptionForeground, #888); opacity:.75; }
+                .setitem.eng-off { border-left-color:var(--vscode-descriptionForeground, #888); }
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4446); }
-                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); color:#fff; border-color:transparent; }
+                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); color:var(--vscode-editor-background, #1e1e1e); border-color:transparent; }
+                body.vscode-light .engbadge.b-ok, body.vscode-high-contrast-light .engbadge.b-ok { color:#fff; }
                 .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 .engnext { font-size:12px; margin-top:4px; max-width:760px; }
                 .engdetail { margin-top:2px; }

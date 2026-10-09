@@ -58,7 +58,8 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
     const elCache = new Map();
     // ‼️ U-228 — Settings opens with every section closed; a test that hands it no state sees every section and every
     // row open, as the page was drawn before the accordion. A test about the accordion hands its own state ({} = first open).
-    const fallback = scriptFile === 'settings.js' ? { open: ['*'], more: ['*'] } : {};
+    // U-233 — and every card's Details open, as the page was drawn before the cards.
+    const fallback = scriptFile === 'settings.js' ? { open: ['*'], more: ['*'], cards: { '*': { open: true } } } : {};
     let state = JSON.parse(JSON.stringify(initialState || fallback));
     /**
      * ‼️ FOCUS IS MODELLED, BECAUSE LOSING IT IS A BUG PAGES ACTUALLY SHIP.
@@ -77,7 +78,7 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
 
     /** What counts as an element in this markup — named ONCE, because `query`
      *  builds the cache from it and an innerHTML write invalidates it by it. */
-    const TAG_RE = /<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2)\b[^>]*>/g;
+    const TAG_RE = /<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2|details)\b[^>]*>/g;
     /** Markup back to text. `&amp;` goes LAST, or `&amp;quot;` unescapes twice. */
     const unesc = (s) => String(s)
         .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -287,7 +288,7 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
         const attrAny = /\[data-([\w-]+)\]/.exec(target);
         const tagM = /^([a-z]+)(?![\w-])/.exec(target);
         const out = [];
-        const tags = html().match(/<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2)\b[^>]*>/g) || [];
+        const tags = html().match(/<(?:input|button|select|div|span|th|td|tr|li|ol|ul|label|a|textarea|h2|details)\b[^>]*>/g) || [];
         for (const raw of tags) {
             /**
              * ‼️ THE WHOLE TAG NAME, not its first letter.

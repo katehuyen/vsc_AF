@@ -89,13 +89,31 @@
                 <span class="setcardsum">${C.esc(o.status || '')}</span>
                 ${o.actions ? `<span class="setcardact">${o.actions}</span>` : ''}
             </div>
-            ${o.details ? `<details class="setcarddet"${o.open ? ' open' : ''}><summary>${C.esc(t('Details'))}</summary>${o.details}</details>` : ''}
+            ${o.details ? `<details class="setcarddet" data-card="${C.esc(o.id)}" data-dflt="${o.open ? 1 : 0}"${detailsOpen(o.id, !!o.open) ? ' open' : ''}><summary>${C.esc(t('Details'))}</summary>${o.details}</details>` : ''}
         </div>`;
+    }
+
+    // Details stays as the hand left it, across redraws (a pick inside it redraws the page) and reopenings, until the
+    // card's own default changes (a warning appears). A '*' entry stands for every card.
+    function stored() {
+        try { return (X.vscode.getState && X.vscode.getState()) || {}; } catch (e) { return {}; }
+    }
+    function detailsOpen(id, dflt) {
+        const h = stored().cards || {};
+        const r = h[id] || h['*'];
+        return r && (r.dflt === undefined || r.dflt === dflt) ? !!r.open : dflt;
+    }
+    function wireCards() {
+        document.querySelectorAll('[data-card]').forEach(d => d.addEventListener('toggle', () => {
+            const st = stored();
+            const cards = Object.assign({}, st.cards, { [d.dataset.card]: { open: !!d.open, dflt: d.dataset.dflt === '1' } });
+            try { X.vscode.setState(Object.assign({}, st, { cards })); } catch (e) { /* no state */ }
+        }));
     }
 
     window.AFSettingSections = function (ctx) {
         X = ctx;
         C = ctx.C;
-        return { sectionHtml, groupsOf, hasCard, cardHtml };
+        return { sectionHtml, groupsOf, hasCard, cardHtml, wireCards };
     };
 })();

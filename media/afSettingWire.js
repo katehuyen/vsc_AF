@@ -18,6 +18,7 @@
         window.AFTelegram.wire(m => vscode.postMessage(m));
         // U-152 — the Flow & Content card; a new attempt clears the last refusal.
         window.AFFlexSettings.wire(m => { delete errors.flex; vscode.postMessage(m); });
+        X.wireCards();
         const dcMode = document.getElementById('docopenmode');
         if (dcMode) { dcMode.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'defaultMode', value: dcMode.value })); }
         const dcCmd = document.getElementById('docopencmd');

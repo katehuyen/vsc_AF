@@ -3,6 +3,7 @@
 (function () {
     'use strict';
     let X, C, errors, sectionMatches;
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
 
     // ---- Claude Code (claude CLI) settings — curated + raw JSON ----
 
@@ -51,13 +52,17 @@
         const items = cc.items.filter(it => ccq.test(it.label + ' ' + it.description));
         if (X.filter && !items.length) { return ''; }
         const rawErr = errors['cc:__raw__'];
-        return `
-            <h2 class="cat" id="cat-claude">Claude Code (claude CLI) <span class="muted small">${items.length}</span></h2>
-            <p class="muted small" style="max-width:760px">These are <b>claude's own settings</b>, not Agent Farm's — the file behind terminal tips like
-            “Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1 …”. Edits write to <code>${C.esc(cc.file)}</code>
-            (a one-time <code>.agentfarm-backup</code> copy is kept next to it) and apply to <b>new</b> claude sessions.
-            <a id="ccopen">Open the file</a></p>
-            ${cc.parseError ? `<div class="seterr">⚠ settings.json could not be parsed (${C.esc(cc.parseError)}) — fix it in the raw editor below; edits are blocked until then.</div>` : ''}
+        // U-233 — one card: a refused edit or a file that does not parse opens Details on the box that says so
+        const refused = !!rawErr || cc.items.some(it => errors['cc:' + it.id]);
+        return X.cardHtml({
+            id: 'cat-claude', icon: '📝', title: t('Claude Code (claude CLI)'), state: cc.parseError ? 'warn' : 'ok',
+            status: cc.parseError ? t('Its settings.json could not be parsed, so edits are blocked until the raw editor fixes it.')
+                : t('{set} of the {all} settings here are set in its settings.json; the rest are its own defaults.',
+                    { set: cc.items.filter(it => it.set).length, all: cc.items.length }),
+            actions: `<button class="secondary small" id="ccopen" title="${C.esc(t('Open settings.json in the editor'))}">${C.esc(t('Open the file'))}</button>`,
+            tip: t('These are claude\'s own settings, not Agent Farm\'s: the file behind terminal tips like "Set CLAUDE_CODE_USE_POWERSHELL_TOOL=1". Edits write to {file} (a one-time .agentfarm-backup copy is kept next to it) and apply to new claude sessions.', { file: cc.file }),
+            open: !!cc.parseError || refused || !!X.filter,
+            details: `${cc.parseError ? `<div class="seterr">⚠ settings.json could not be parsed (${C.esc(cc.parseError)}) — fix it in the raw editor below; edits are blocked until then.</div>` : ''}
             ${items.map(ccItemHtml).join('')}
             <details class="setitem" id="ccrawbox" style="margin-top:10px">
                 <summary style="cursor:pointer">Raw settings.json — everything else (hooks, statusLine, permissions lists…)</summary>
@@ -66,7 +71,8 @@
                     style="width:100%; font-family:var(--vscode-editor-font-family); font-size:11px">${C.esc(cc.raw)}</textarea>
                 <button class="secondary small" id="ccrawapply">Apply raw JSON</button>
                 ${rawErr ? `<div class="seterr">⚠ ${C.esc(rawErr)}</div>` : ''}
-            </details>`;
+            </details>`
+        });
     }
 
     /**
@@ -169,24 +175,20 @@
         if (!sectionMatches(ENGINE_TERMS + ' ' + engineWords(list))) { return ''; }
         const ready = list.filter(e => e.ready).length;
         const onPlan = list.filter(e => e.ready && e.auth.mode === 'subscription').length;
-        // ‼️ THIS IS THE SUMMARY; THE PANEL IS THE PAGE (X-14, settled
-        // 2026-08-09). The section stays because the answer belongs where
-        // somebody is already looking, but the depth — a real call with a
-        // verdict and an age on it, quota, model lists, per-engine defaults —
-        // needs a surface of its own. So the rows stay readable here and the
-        // button is the first control, not a footnote under them.
-        return `
-            <h2 class="cat" id="cat-engines">Engines <span class="muted small">${ready} of ${list.length} ready</span></h2>
-            <p class="muted small" style="max-width:760px">Which agent CLIs this machine can actually run, and how each one is paid for.
-            <b>${onPlan} of ${ready}</b> are running on a subscription rather than per token — a plan sign-in lives in the CLI's own
-            credentials file and never passes through Agent Farm. A key is the other route, and it is kept in the OS keychain
-            (the <b>Secrets</b> page is the full table); it is injected into an agent's environment under the exact name the engine reads.</p>
-            <div class="pj-row" style="margin:0 0 10px"><button id="openengines"
-                title="${C.esc('The Engines page: the same rows, plus a real call that proves a turn actually gets through — everything here was read off disk.')}">⚙ Open Engines</button>
-                <button id="openaccounts" class="secondary"
-                title="${C.esc('The Accounts page: every captured sign-in, how much of its plan is left, and the switch between them — the Engines page\'s accounts section on a page of its own.')}">👥 Open Accounts</button>
-                <span class="muted small">everything below was read off disk — only a call proves it works</span></div>
-            ${list.map(engineRow).join('')}`;
+        // ‼️ THIS IS THE SUMMARY; THE PANEL IS THE PAGE (X-14): a real call, quota, model lists and per-engine defaults
+        // live on the Engines page, so its button leads the card and the rows read off disk wait behind Details.
+        return X.cardHtml({
+            id: 'cat-engines', icon: '⚙', title: t('Engines'), state: ready ? 'ok' : 'warn',
+            status: ready ? t('{ready} of {all} ready, {plan} of them on a plan rather than per token.', { ready, all: list.length, plan: onPlan })
+                : t('None of the {all} engines can run on this machine yet.', { all: list.length }),
+            actions: `<button class="small" id="openengines"
+                title="${C.esc(t('The Engines page: the same rows, plus a real call that proves a turn actually gets through — everything here was read off disk.'))}">${C.esc(t('⚙ Open Engines'))}</button>
+                <button id="openaccounts" class="secondary small"
+                title="${C.esc(t('The Accounts page: every captured sign-in, how much of its plan is left, and the switch between them — the Engines page\'s accounts section on a page of its own.'))}">${C.esc(t('👥 Open Accounts'))}</button>`,
+            tip: t('Which agent CLIs this machine can actually run, and how each one is paid for. A plan sign-in lives in the CLI\'s own credentials file and never passes through Agent Farm. A key is the other route: it is kept in the OS keychain (the Secrets page is the full table) and injected into an agent\'s environment under the exact name the engine reads. Everything here was read off disk; only a call on the Engines page proves a turn gets through.'),
+            open: !ready || !!X.filter,
+            details: list.map(engineRow).join('')
+        });
     }
 
     function profileBar() {

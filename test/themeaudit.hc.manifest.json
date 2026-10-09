@@ -26,7 +26,7 @@
   ],
   "alertsettings": [
    9,
-   3
+   0
   ],
   "capabilities": [
    44,
@@ -54,11 +54,11 @@
   ],
   "disciplinesettings": [
    9,
-   3
+   0
   ],
   "engines": [
-   21,
-   18
+   9,
+   0
   ],
   "enginespanel": [
    539,
@@ -70,11 +70,11 @@
   ],
   "jsonsettings": [
    24,
-   12
+   0
   ],
   "flowsettings": [
    6,
-   2
+   0
   ],
   "living": [
    9,
@@ -82,7 +82,7 @@
   ],
   "kapicisettings": [
    32,
-   8
+   4
   ],
   "memgraph": [
    11,
@@ -150,7 +150,7 @@
   ],
   "sentrysettings": [
    76,
-   4
+   0
   ],
   "sessionviewer": [
    78,
@@ -173,8 +173,8 @@
    14
   ],
   "spsettings": [
-   17,
-   7
+   11,
+   1
   ],
   "taskanalytics": [
    11,
@@ -186,7 +186,7 @@
   ],
   "tgsettings": [
    31,
-   5
+   0
   ],
   "timeline": [
    18,
@@ -209,8 +209,8 @@
    186
   ],
   "wikisettings": [
-   14,
-   9
+   11,
+   3
   ],
   "work": [
    8,
@@ -252,7 +252,7 @@
   ],
   "alertsettings": [
    9,
-   3
+   0
   ],
   "capabilities": [
    48,
@@ -280,11 +280,11 @@
   ],
   "disciplinesettings": [
    9,
-   3
+   0
   ],
   "engines": [
-   24,
-   15
+   21,
+   0
   ],
   "enginespanel": [
    130,
@@ -296,11 +296,11 @@
   ],
   "jsonsettings": [
    34,
-   10
+   0
   ],
   "flowsettings": [
    6,
-   2
+   0
   ],
   "living": [
    18,
@@ -308,7 +308,7 @@
   ],
   "kapicisettings": [
    24,
-   8
+   4
   ],
   "memgraph": [
    0,
@@ -376,7 +376,7 @@
   ],
   "sentrysettings": [
    50,
-   4
+   0
   ],
   "sessionviewer": [
    30,
@@ -399,8 +399,8 @@
    9
   ],
   "spsettings": [
-   38,
-   6
+   29,
+   1
   ],
   "taskanalytics": [
    10,
@@ -412,7 +412,7 @@
   ],
   "tgsettings": [
    21,
-   5
+   0
   ],
   "timeline": [
    74,
@@ -435,8 +435,8 @@
    73
   ],
   "wikisettings": [
-   23,
-   8
+   20,
+   3
   ],
   "work": [
    0,
