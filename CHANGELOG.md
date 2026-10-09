@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.902.0 - Search hits and drag handles readable in High Contrast (2026-10-09)
+
+- **High Contrast themes outline every search hit** the way VS Code's own
+  editor outlines a find match - on Farm Settings, in Search and wherever
+  a hit is highlighted. Before, the highlight's tint was nearly invisible
+  on a High Contrast ground.
+- **The drag handle on a list's rows** (Farm Settings: root folders, model
+  lists, webhook events and the rest) is drawn in the theme's description
+  colour instead of a faded one, so it is readable in High Contrast too.
+- Under the hood, Farm Settings' whole-page test now also draws the page
+  searched for "sound" and "port", a search that finds nothing, and the
+  Changed filter, and checks the count and the order of each.
+
 ## 3.901.0 - Farm Settings: every special block is one card (2026-10-09)
 
 - **The ten special blocks of Farm Settings are drawn the same way** -
