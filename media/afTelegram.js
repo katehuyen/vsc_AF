@@ -90,9 +90,14 @@
             <b>Telegram Bridge</b> ${badge(t.status)}
             ${t.botUsername ? `<span class="muted small">@${esc(t.botUsername)}</span>` : ''}
             <span class="svc-sp"></span>
-            <button class="mini" data-svc="verify">verify</button>
-            <button class="mini" data-svc="connect">${t.hasToken ? 'replace token' : 'connect…'}</button>
+            ${tokenButtons(t, 'mini')}
         </div>`;
+    }
+
+    /** The two acts that are not settings: ask Telegram who the bot is, and connect (or replace) its token. */
+    function tokenButtons(t, cls) {
+        return `<button class="${cls}" data-svc="verify">verify</button>
+            <button class="${cls}" data-svc="connect">${t.hasToken ? 'replace token' : 'connect…'}</button>`;
     }
 
     /**
@@ -173,9 +178,11 @@
         }
         const s = t.status;
         const msg = o.msg;
-        return `<div class="card svc-card">
-            ${head(t)}
-            <div class="muted small svc-detail">${esc(s.detail)}${s.next ? ' <b>' + esc(s.next) + '</b>' : ''}</div>
+        // head:false — a surface that names the bridge and says its state on a line of its own (Settings' card, U-233)
+        const lead = o.head === false ? (s.next ? `<b>${esc(s.next)}</b>` : '') : esc(s.detail) + (s.next ? ' <b>' + esc(s.next) + '</b>' : '');
+        return `<div class="${o.head === false ? '' : 'card '}svc-card">
+            ${o.head === false ? '' : head(t)}
+            ${lead ? `<div class="muted small svc-detail">${lead}</div>` : ''}
             ${msg ? `<div class="svc-msg ${msg.ok ? 'ok' : 'bad'}">${esc(msg.text)}</div>` : ''}
             ${o.controls ? controls(t, o.agents) : facts(t)}
             ${o.footer || ''}
@@ -304,6 +311,6 @@
 
     window.AFTelegram = {
         card: card, wire: wire, css: css, dot: dot, line: line,
-        words: words, verifiedMessage: verifiedMessage
+        words: words, verifiedMessage: verifiedMessage, tokenButtons: tokenButtons
     };
 })();

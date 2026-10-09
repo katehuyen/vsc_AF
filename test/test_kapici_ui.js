@@ -120,7 +120,9 @@ const verdict = o => Object.assign({ passed: true, decision: 'pass', confidence:
         const kapiciKeys = require('../out/core/settingsCatalog/index.js').catalogKeys().filter(k => /^kapici\./.test(k));
         ok('every kapici setting is filed under it', kapiciKeys.length === 9 && kapiciKeys.every(k => require('../out/core/settingsCatalog/index.js').catalogEntry(k).section === 'gatekeeper'));
         ok('…and it has a name', (require('../out/core/settingsCatalog/index.js').SECTIONS.find(s => s.id === 'gatekeeper') || {}).label === 'Gatekeeper');
-        ok('the page heads it with the status, then its settings', /gatekeeper: \(\) => \(window\.AFKapici \? window\.AFKapici\.section\(X\.DATA\.kapici, C\)/.test(require('./lib_settings_source').settingsPageSource()));
+        // U-233 — as one card: the sentence on its line, the vault button beside it, the chips behind Details
+        ok('the page heads it with the status, then its settings', /gatekeeper: c => kapiciCard\(c\)/.test(require('./lib_settings_source').settingsPageSource())
+            && /details: A\.section\(K, C, \{ vault: false \}\)/.test(require('./lib_settings_source').settingsPageSource()));
         ok('the MCP button reaches the same function the op does', /case 'kapiciMcp':/.test(require('./lib_settings_source').settingsPanelSource())
             && /kapiciMcp: \(on: boolean\) => \{\s*try \{ setKapiciMcp\(context\.globalStorageUri\.fsPath, on\); \}/.test(read('src/extension.ts'))
             && /mcp: kapiciMcpState\(context\.globalStorageUri\.fsPath\)/.test(read('src/extension.ts')));

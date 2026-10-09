@@ -31,10 +31,12 @@ const of = (id) => V.find(v => v.id === id).data;
 {
     const p = open(of('tgsettings'));
     const html = p.html();
-    ok('the card is drawn', /Telegram Bridge/.test(html));
-    ok('…exactly once', (html.match(/>Telegram Bridge</g) || []).length === 1);
+    // U-233 — the bridge is one Settings card: its state in words on the line, verify and connect beside it
+    ok('the card is drawn', /<div class="setcard" id="cat-telegram" data-state="ok"/.test(html) && /class="setcardt">📱 Telegram</.test(html));
+    ok('…exactly once, the bridge\'s own head not drawn inside it', (html.match(/<button[^>]*data-svc="connect"/g) || []).length === 1
+        && !/>Telegram Bridge</.test(html));
     ok('…above the four rows it reports on',
-        html.indexOf('Telegram Bridge') < html.indexOf('agentFarm.telegram.enabled'));
+        html.indexOf('id="cat-telegram"') < html.indexOf('agentFarm.telegram.enabled'));
 
     // ‼️ ONE SUBJECT. The rows below own the four controls; a second switch two
     // inches above the first is a page that can disagree with itself.
@@ -53,18 +55,18 @@ const of = (id) => V.find(v => v.id === id).data;
 // ---------------------------------------------------------------------------
 {
     const up = open(of('tgsettings')).html();
-    ok('it names the bridge state', /connected/.test(up));
+    ok('it names the bridge state, on the card\'s line', /class="setcardsum">Connected /.test(up));
     ok('it says the token is in the vault', /in the vault/.test(up));
     ok('it says the poller is alive', /alive/.test(up));
     ok('it says how many chats the list admits', /Allowed chats/.test(up));
     ok('it says what today has cost against today\'s ceiling', /\$0\.3812 \/ \$1\.00/.test(up));
-    ok('…and who the bot is', /@muvu_farm_bot/.test(up));
+    ok('…and who the bot is', /class="setcardsum">Connected \(@muvu_farm_bot\): /.test(up));
 
     // ‼️ THE CASE THE CARD EXISTS FOR: four rows that look configured, and a
     // bridge that cannot sign in.
     const none = open(of('tgsettings-notoken')).html();
     ok('‼️ switched on with no token reads as "no token", not as working',
-        /no token/.test(none));
+        /class="setcardsum">No token[ :]/.test(none) && /id="cat-telegram" data-state="warn"/.test(none));
     ok('…the poller is reported stopped', /stopped/.test(none));
     ok('…and the card says what to press next', /Connect Telegram/.test(none));
     ok('…while the switch row below still says the setting is on',
@@ -72,7 +74,7 @@ const of = (id) => V.find(v => v.id === id).data;
 
     const deaf = open(of('tgsettings-nochats')).html();
     ok('a polling bridge with an empty allowlist is not called connected',
-        /no chats/.test(deaf) && !/>● connected</.test(deaf));
+        /class="setcardsum">No chats[ :]/.test(deaf) && !/Connected/.test(deaf) && /id="cat-telegram" data-state="warn"/.test(deaf));
 
     const over = open(of('tgsettings-over')).html();
     ok('a spent ceiling paints the bar as over', /class="over"/.test(over));

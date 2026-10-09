@@ -68,7 +68,7 @@ const byAttr = (p, attr, key) =>
     const p = open(fx.inUse());
     const html = p.html();
     ok('the summary line is drawn: state, what rings, and the door to the page',
-        /🔊 Sound<\/span>/.test(html) && /— on · rings on 4 events/.test(html)
+        /class="setcardt">🔊 Sound<\/span>/.test(html) && /class="setcardsum">On · rings on 4 events/.test(html) && /data-state="ok"/.test(html)
         && /data-afnav="sound"/.test(html) && />Open Sound</.test(html));
     ok('‼️ …and the card is gone: no event table, no gate, no strip on Settings',
         !/class="settbl alerttbl"/.test(html) && !/class="alertgate"/.test(html)
@@ -87,11 +87,12 @@ const byAttr = (p, attr, key) =>
 {
     const html = open(fx.gated()).html();
     ok('the line says WHY nothing is heard: muted, the quiet window, the silent sessions',
-        /— muted · /.test(html) && /quiet 23:00–08:00/.test(html) && /2 silent sessions/.test(html));
+        /class="setcardsum">Muted · /.test(html) && /quiet 23:00–08:00/.test(html) && /2 silent sessions/.test(html)
+        && /id="cat-sound" data-state="off"/.test(html));
     // U-213 — every switch off, the two shipped on as well
     const fresh = open((d => { d.alerts.events.forEach(e => { e.on = false; }); return d; })(fx.fresh())).html();
     ok('…and a farm that rings on nothing says off, not a count of zero',
-        /— off · no event rings/.test(fresh));
+        /class="setcardsum">Off · no event rings/.test(fresh) && /id="cat-sound" data-state="off"/.test(fresh));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

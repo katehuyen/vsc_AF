@@ -82,7 +82,7 @@
   ],
   "kapicisettings": [
    32,
-   4
+   0
   ],
   "memgraph": [
    11,
@@ -218,7 +218,7 @@
   ],
   "tasks": [
    169,
-   252
+   247
   ],
   "allsettings": [
    79,
@@ -308,7 +308,7 @@
   ],
   "kapicisettings": [
    24,
-   4
+   0
   ],
   "memgraph": [
    0,
@@ -444,7 +444,7 @@
   ],
   "tasks": [
    247,
-   253
+   248
   ],
   "allsettings": [
    23,

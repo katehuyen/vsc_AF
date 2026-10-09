@@ -3,7 +3,7 @@
  * app has no command (its Details open on the boxes that fix it); "Agent folders" ready on one line, and warning on a
  * folder listed twice and one that is gone (Details open on the roots and their agents); Engines and Claude Code ready,
  * and warning with no engine ready and a settings.json that does not parse; Saved prompts read; Superpowers
- * ready, heading its group's rows. Each scene opens only the
+ * ready, heading its group's rows; Preferences, Sound, Wiki, Telegram and Gatekeeper on one line. Each scene opens only the
  * section its card heads, with one row or none beside it, so it shows the card and nothing the other fixtures measure.
  */
 const path = require('path');
@@ -64,6 +64,12 @@ const PROMPTS = {
 const promptsData = pr => base(null, null, { prompts: pr, categories: model(['agentFarm.promptSnippetsFile']) });
 const SP = require('./spsettings.js');
 const spData = () => base(null, null, { superpowers: SP.ready(), categories: model(['agentFarm.superpowersPath', 'agentFarm.superpowersDefaults']) });
+const flowData = () => base(null, null, { flex: require('./flowsettings.js').data().flex, categories: model(['agentFarm.flexPresets', 'agentFarm.flexOverrides']) });
+const wikiData = () => base(null, null, { wiki: require('./wikisettings.js').ready(), categories: model(['agentFarm.wikiRoot']) });
+const tgData = () => base(null, null, { telegram: require('./tgsettings.js').data().telegram, categories: model(['agentFarm.telegram.enabled']) });
+const KAP = require('./kapicisettings.js');
+const kapData = () => base(null, null, { kapici: KAP.data().kapici, categories: KAP.data().categories.filter(c => c.id === 'gatekeeper') });
+const soundData = () => base(null, null, { alerts: require('./alertsettings.js').inUse().alerts, categories: model(['agentFarm.alerts.on', 'agentFarm.alerts.voices']) });
 
 const data = () => base(READY);
 
@@ -103,6 +109,31 @@ const variants = () => ([
         id: 'cardsettings-superpowers',
         label: 'Settings — the Superpowers card heading its group: the skills behind the hook and who starts with it on, the group\'s rows below',
         data: spData(), state: agents
+    },
+    {
+        id: 'cardsettings-flow',
+        label: 'Settings — the Preferences card: how many you set and the preset they match, the table behind Details',
+        data: flowData(), state: { open: ['sessions'] }
+    },
+    {
+        id: 'cardsettings-sound',
+        label: 'Settings — the Sound card: on, what rings, and Open Sound on one line, no Details',
+        data: soundData(), state: { open: ['notify'] }
+    },
+    {
+        id: 'cardsettings-wiki',
+        label: 'Settings — the Wiki card: pages and categories, Choose the folder, Re-scan and Open the cockpit on one line',
+        data: wikiData(), state: { open: ['knowledge'] }
+    },
+    {
+        id: 'cardsettings-telegram',
+        label: 'Settings — the Telegram card: the bridge connected, its bot, verify and connect on one line',
+        data: tgData(), state: { open: ['remote'] }
+    },
+    {
+        id: 'cardsettings-gatekeeper',
+        label: 'Settings — the Gatekeeper card Off: no key, the Secret vault on its line',
+        data: kapData(), state: { open: ['gatekeeper'] }
     }
 ]);
 

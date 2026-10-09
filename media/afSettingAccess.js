@@ -141,16 +141,22 @@
     function accessSection(cat) {
         const items = (cat && cat.items) || [];
         const boxes = items.map(itemHtml).join('');
-        const t = X.DATA.telegram;
+        const tg = X.DATA.telegram;
         // Nothing to add when this window has no bridge host, or when the filter
         // has narrowed the category down to the web-server rows.
-        if (!t || !items.some(it => /^agentFarm\.telegram/.test(it.key))) { return boxes; }
-        return window.AFTelegram.card(t, {
-            controls: false,
-            msg: X.svcMsg,
-            footer: '<div class="muted small" style="margin-top:6px">The switch, the allowlist, '
-                + 'the ceiling and the default agent are the boxes below — this card is what they '
-                + 'cannot tell you.</div>'
+        if (!tg || !items.some(it => /^agentFarm\.telegram/.test(it.key))) { return boxes; }
+        // U-233 — the card's line is the bridge's state in words and its two acts; the figures wait behind Details
+        const s = tg.status;
+        const word = window.AFTelegram.words(s.state);
+        const msg = X.svcMsg;
+        return X.cardHtml({
+            id: 'cat-telegram', item: (items.find(it => /^agentFarm\.telegram/.test(it.key)) || {}).key, icon: '📱',
+            title: (cat && cat.label) || t('Telegram'), state: s.tone === 'ok' ? 'ok' : s.tone === 'off' ? 'off' : 'warn',
+            status: word.charAt(0).toUpperCase() + word.slice(1) + (tg.botUsername ? ' (@' + tg.botUsername + ')' : '') + ': ' + s.detail,
+            actions: window.AFTelegram.tokenButtons(tg, 'secondary small'),
+            tip: (cat && cat.about ? cat.about + '\n\n' : '') + t('The switch, the allowlist, the ceiling and the default agent are the rows below; this card is what they cannot tell you: whether a token exists, whether the poller is alive, how many chats the list admits and what today has cost.'),
+            open: (s.tone !== 'ok' && s.tone !== 'off') || !!msg || !!X.filter,
+            details: window.AFTelegram.card(tg, { head: false, controls: false, msg })
         }) + boxes;
     }
 
@@ -161,18 +167,16 @@
         const al = X.DATA.alerts;
         const items = (group && group.items) || [];
         if (!al) { return items.map(itemHtml).join(''); }
-        // Whichever of the two the filter leaves standing draws the card, once.
-        // Keyed on `alerts.on` alone, a search for "voice" would file the card
-        // away with the box it replaced.
-        let drawn = false;
-        return items.map(it => {
-            if (ALERT_CARD_KEYS.indexOf(it.key) < 0) {
-                return itemHtml(it);
-            }
-            if (drawn) { return ''; }
-            drawn = true;
-            return window.AFSoundCard.summary(al);
-        }).join('');
+        // Whichever of the boxes it replaces the filter leaves standing draws the card, once, at the head of the group.
+        // Keyed on `alerts.on` alone, a search for "voice" would file the card away with the box it replaced.
+        const rest = items.filter(it => ALERT_CARD_KEYS.indexOf(it.key) < 0).map(itemHtml).join('');
+        if (!items.some(it => ALERT_CARD_KEYS.indexOf(it.key) >= 0)) { return rest; }
+        return X.cardHtml({
+            id: 'cat-sound', item: 'agentFarm.alerts.voices', icon: '🔊', title: (group && group.label) || t('Sound'),
+            state: window.AFSoundCard.summaryState(al), status: window.AFSoundCard.summary(al),
+            actions: `<button class="secondary small" data-afnav="sound" title="${C.esc(t('Open the Sound page: what rings on which event, the tones, saying who, quiet hours and your own sounds.'))}">${C.esc(t('Open Sound'))}</button>`,
+            tip: (group && group.about ? group.about + '\n\n' : '') + t('The controls live on the Sound page; this card says where they stand: the state, then only what differs from out of the box.')
+        }) + rest;
     }
 
     window.AFSettingAccess = function (ctx) {

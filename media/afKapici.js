@@ -14,7 +14,8 @@
     const LABEL = { dispatch: 'routing incoming work', retry: 'a held retry', trigger: 'a trigger precondition', workflow: 'a workflow step' };
     const pct = x => Math.round((Number(x) || 0) * 100) + '%';
     const T = () => window.AFTip;
-    const CHIP = 'display:inline-block;padding:0 5px;border-radius:3px;font-size:11px;line-height:16px;white-space:nowrap;';
+    const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const CHIP = 'display:inline-block;padding:0 5px;border-radius:3px;font-size:11px;line-height:16px;white-space:nowrap;box-shadow:var(--af-hc-ring, none);';
     const tint = ok => (ok ? 'background:rgba(76,175,80,.18);color:var(--af-ink-charts-green, var(--vscode-charts-green,#4caf50))' : 'background:rgba(241,76,76,.16);color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c))');
 
     function word(k) { return k.outcome || (k.fallback ? k.fallback + ' path' : k.passed ? 'pass' : 'reject'); }
@@ -35,7 +36,7 @@
         ]), 'tip-kapici');
     }
 
-    function section(K, C) {
+    function section(K, C, opts) {
         if (!K || !K.key) { return ''; }
         const key = K.key;
         const agree = K.agreement || {};
@@ -64,7 +65,28 @@
                 '\nIn shadow a consumer works exactly as before and Gatekeeper answers beside it; this is how often the two agreed. Switch one on when its rate is high enough for you.'
             ]), 'tip-kpc-agree');
         return `<div class="kpc-head" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:4px 0 8px">${keyHtml}${rulesHtml}${agreeHtml}${mcp(K.mcp, C)}`
-            + `<button id="kpc-secrets" title="Secret vault\n\nEnter the key there under ${C.esc(key.name)} and tick Farm only — Agent Farm reads it, no agent's environment gets it.">Secret vault…</button></div>`;
+            + `${opts && opts.vault === false ? '' : vaultButton(K, C, false)}</div>`;
+    }
+
+    /** `small` — drawn on a card's line among the other secondary acts. */
+    function vaultButton(K, C, small) {
+        return `<button id="kpc-secrets"${small ? ' class="secondary small"' : ''} title="${C.esc(t('Secret vault\n\nEnter the key there under {name} and tick Farm only — Agent Farm reads it, no agent\'s environment gets it.', { name: K.key.name }))}">${C.esc(t('Secret vault…'))}</button>`;
+    }
+
+    /** U-233 — the Settings card's dot and sentence: no key is Off (every question takes its failure path), a broken rule a warning. */
+    function summary(K) {
+        const problems = K.problems || [];
+        const agree = K.agreement || {};
+        const shown = CONSUMERS.filter(([id]) => agree[id] && agree[id].compared);
+        if (!K.key.present) { return { state: 'off', text: t('No key, so every question goes down its rule\'s failure path and nothing is asked of a model.') }; }
+        return {
+            state: problems.length ? 'warn' : 'ok',
+            text: t('Key present · {rules} rules{broken} · {agreed}.', {
+                rules: Number(K.rules) || 0,
+                broken: problems.length ? ' · ' + t('{n} broken', { n: problems.length }) : '',
+                agreed: shown.length ? t('agreed: {list}', { list: shown.map(([id, l]) => l + ' ' + pct(agree[id].rate)).join(' · ') }) : t('nothing compared yet')
+            })
+        };
     }
 
     /** B-28 — whether every Claude Code session gets the kapici_* tools, and the button that gives or takes them. */
@@ -106,5 +128,5 @@
         if (m) { m.addEventListener('click', () => post({ type: 'kapiciMcp', on: m.getAttribute('data-on') === '1' })); }
     }
 
-    window.AFKapici = { chip, section, rules, wire, CONSUMERS };
+    window.AFKapici = { chip, section, summary, vaultButton, rules, wire, CONSUMERS };
 })();

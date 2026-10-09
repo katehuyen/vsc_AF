@@ -169,5 +169,90 @@ const scard = p => between(p, 'grp-agents-superpowers', 'class="setgroup"');
     ok('a folder not on this machine is Off, Reveal dead', /data-state="off"/.test(gone) && /not on this machine/.test(gone) && /id="spreveal" disabled/.test(gone));
 }
 
+// ---- Flow (the preferences) and Sound
+const FLOW = require('./fixtures/flowsettings.js');
+{
+    const p = runPage(FLOW.script, FLOW.data(), {}, { open: ['sessions'] });
+    const c = between(p, 'grp-sessions-flex', 'class="setgroup"');
+    ok('Preferences: the group opens with its card', /^>\s*<div class="setcard" id="cat-flex" data-state="ok" data-item="agentFarm\.flex/.test(c)
+        && !/setgrouph/.test(c) && /class="setcardt">🎚 Preferences</.test(c));
+    ok('…its sentence: how many you set, and the preset they match', /class="setcardsum">0 of 81 set by you; they match the preset Balanced\.</.test(c));
+    ok('…the table and the presets behind a closed Details', /data-card="cat-flex" data-dflt="0"><summary>/.test(c) && c.indexOf('class="flextable"') > c.indexOf('<summary>'));
+    const d = FLOW.data();
+    d.flex.points[0].from = 'settings';
+    d.flex.presets.forEach(x => { x.matches = false; });
+    const own = between(runPage(FLOW.script, d, {}, { open: ['sessions'] }), 'grp-sessions-flex', 'class="setgroup"');
+    ok('…a value of your own that matches no preset is said so', /class="setcardsum">1 of 81 set by you; no preset matches them\.</.test(own));
+    const r = runPage(FLOW.script, FLOW.data(), {}, { open: ['sessions'] });
+    r.send({ type: 'error', key: 'flex', error: 'not a valid number' });
+    const bad = between(r, 'grp-sessions-flex', 'class="setgroup"');
+    ok('a refusal is the warning: the sentence says it once, Details open on the table', /data-state="warn"/.test(bad)
+        && /class="setcardsum">not a valid number</.test(bad) && /data-dflt="1" open>/.test(bad) && !/class="flexerr"/.test(bad));
+}
+const AL = require('./fixtures/alertsettings.js');
+{
+    const p = runPage(AL.script, AL.inUse(), {}, { open: ['notify'] });
+    const c = between(p, 'grp-notify-sound', 'class="setgroup"');
+    ok('Sound: the group opens with its card, the deep link on the old key', /^>\s*<div class="setcard" id="cat-sound" data-state="ok" data-item="agentFarm\.alerts\.voices">/.test(c)
+        && !/setgrouph/.test(c) && /class="setcardt">🔊 Sound</.test(c));
+    ok('…its sentence: the state, then what differs from out of the box', /class="setcardsum">On · rings on 4 events/.test(c));
+    ok('…Open Sound on the same line, and no Details: the controls live on the Sound page',
+        /class="setcardact"><button class="secondary small" data-afnav="sound"/.test(c) && !/setcarddet/.test(c));
+    const all = between(runPage(fx.script, Object.assign(fx.data(), { alerts: AL.inUse().alerts }), {}, { open: ['notify'], more: ['notify'] }),
+        'grp-notify-sound', 'class="setgroup"');
+    ok('…on the real model the group\'s other rows follow the card', /^>\s*<div class="setcard" id="cat-sound"/.test(all)
+        && all.indexOf('data-item="agentFarm.alerts.toneVolume"') > all.indexOf('class="setcardsum"'));
+}
+
+// ---- Wiki, Telegram and Gatekeeper
+const W = require('./fixtures/wikisettings.js');
+const wiki = w => between(runPage(W.script, Object.assign(W.data(), w ? { wiki: w } : {}), {}, { open: ['knowledge'] }), 'grp-knowledge-wiki', 'class="setgroup"');
+{
+    const c = wiki();
+    ok('Wiki: the group opens with its card, the deep link on the root', /^>\s*<div class="setcard" id="cat-wiki" data-state="ok" data-item="agentFarm\.wikiRoot">/.test(c)
+        && !/setgrouph/.test(c) && /class="setcardt">📚 Wiki</.test(c));
+    ok('…its sentence: pages and categories', /class="setcardsum">22 pages in 5 categories\.</.test(c));
+    ok('…Choose the folder, Re-scan and Open the cockpit on the line; Start only when something is missing',
+        /class="setcardact">\s*<button class="secondary small" data-browse="agentFarm\.wikiRoot"[^]*id="wikirescan"[^]*id="wikiopen"/.test(c) && !/id="wikiinit"/.test(c));
+    ok('…the files, the categories and Reveal behind a closed Details', /data-card="cat-wiki" data-dflt="0"><summary>/.test(c)
+        && c.indexOf('class="wikifiles"') > c.indexOf('<summary>') && c.indexOf('id="wikireveal"') > c.indexOf('<summary>'));
+    const law = wiki(W.noLaw());
+    ok('no law in the folder is the warning: Start on the line, Details open on why every compile refuses', /data-state="warn"/.test(law)
+        && /class="setcardsum">The vault's own law is not in this folder, so every compile refuses\.</.test(law)
+        && /class="setcardact"><button class="small" id="wikiinit"/.test(law) && /data-dflt="1" open>/.test(law) && /every compile refuses without it/.test(law));
+    const gone = wiki(W.missing());
+    ok('a folder not there yet is Off, Reveal dead', /data-state="off"/.test(gone) && /Nothing is at the wiki folder yet\./.test(gone) && /id="wikireveal" disabled/.test(gone));
+}
+const G = require('./fixtures/tgsettings.js');
+const tgv = id => G.variants().find(v => v.id === id).data;
+{
+    const p = runPage(G.script, tgv('tgsettings'), {}, { open: ['remote'] });
+    const c = between(p, 'grp-remote-telegram', 'class="setgroup"');
+    ok('Telegram: the group opens with its card', /^>\s*<div class="setcard" id="cat-telegram" data-state="ok" data-item="agentFarm\.telegram\./.test(c)
+        && !/setgrouph/.test(c) && /class="setcardt">📱 Telegram</.test(c));
+    ok('…its sentence: the state in words, the bot, the bridge\'s own sentence', /class="setcardsum">Connected \(@muvu_farm_bot\): /.test(c));
+    ok('…verify and connect on the line, the figures behind a closed Details, the four rows after the card',
+        /class="setcardact"><button class="secondary small" data-svc="verify">/.test(c) && /data-card="cat-telegram" data-dflt="0"><summary>/.test(c)
+        && c.indexOf('class="svc-facts"') > c.indexOf('<summary>') && c.lastIndexOf('data-item="agentFarm.telegram.enabled"') > c.indexOf('</details>'));
+    const none = between(runPage(G.script, tgv('tgsettings-notoken'), {}, { open: ['remote'] }), 'grp-remote-telegram', 'class="setgroup"');
+    ok('no token is the warning, Details open on what to press next', /data-state="warn"/.test(none) && /data-dflt="1" open>/.test(none) && /Connect Telegram/.test(none));
+}
+const K = require('./fixtures/kapicisettings.js');
+{
+    const p = runPage(K.script, K.data(), K.window, { open: ['gatekeeper'] });
+    const c = between(p, 'cat-gatekeeper', 'class="setgroup"');
+    ok('Gatekeeper: the section opens with its card', /<div class="setcard" id="cat-gatekeeper" data-state="off">/.test(p.html()) && /class="setcardt">🛡 Gatekeeper</.test(c));
+    ok('…no key is Off, said in one sentence', /class="setcardsum">No key, so every question goes down its rule's failure path/.test(c));
+    ok('…the Secret vault on the line, the key, rules, agreement and MCP chips behind a closed Details, not a second vault button',
+        /class="setcardact"><button id="kpc-secrets" class="secondary small"/.test(c) && /data-card="cat-gatekeeper" data-dflt="0"><summary>/.test(c)
+        && c.indexOf('class="kpc-head"') > c.indexOf('<summary>') && (c.match(/id="kpc-secrets"/g) || []).length === 1);
+    el(p, 'kpc-secrets').click();
+    ok('Secret vault still posts openSecrets', p.last().type === 'openSecrets');
+    const d = K.data();
+    d.kapici.key.present = true;
+    const on = between(runPage(K.script, d, K.window, { open: ['gatekeeper'] }), 'cat-gatekeeper', 'class="setgroup"');
+    ok('with a key it is ready: the rules and what was compared', /^ data-state="ok">/.test(on) && /class="setcardsum">Key present · 3 rules · nothing compared yet\.</.test(on));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

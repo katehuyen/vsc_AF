@@ -236,7 +236,7 @@
 
 
     /**
-     * ‼️ U-178 — SETTINGS DRAWS ONE LINE, NOT THE CARD. The controls moved to
+     * ‼️ U-178 — SETTINGS SAYS ONE SENTENCE, NOT THE CONTROLS (its card's, U-233). The controls moved to
      * the 🔊 Sound page; what stays here is the answer to "is sound on, and
      * where do I change it", in the place a search for sound, voice, mute or
      * quiet lands.
@@ -245,7 +245,7 @@
         const g = al.gate || {};
         const sil = g.silence || {};
         const on = (al.events || []).filter(e => e.on).length;
-        const state = g.muted ? 'muted' : sil.silent ? 'silent right now' : on ? 'on' : 'off';
+        const state = g.muted ? t('Muted') : sil.silent ? t('Silent right now') : on ? t('On') : t('Off');
         const q = g.quiet || {};
         const muted = (g.mutedSessions || []).length;
         const rd = al.reading || {};
@@ -260,11 +260,12 @@
             rd.length === 'whole' ? t('Read aloud reads whole answers') : '',
             rd.code === 'skip' ? t('code left out of readings') : ''
         ].filter(Boolean);
-        return `<div class="setitem alertsum" data-item="agentFarm.alerts.voices" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span class="setname">🔊 Sound</span>
-            <span class="alertsumtxt">— ${C.esc(state)} · ${C.esc(parts.join(' · '))}</span>
-            <button class="secondary" data-afnav="sound" title="${C.esc('Open the Sound page: what rings on which event, the tones, saying who, quiet hours and your own sounds.')}">Open Sound</button>
-        </div>`;
+        return [state].concat(parts).join(' · ');
+    }
+
+    /** …and its dot (U-233): ringing is ready; muted, or nothing armed to ring, is off. */
+    function alertsState(al) {
+        return !(al.gate || {}).muted && (al.events || []).some(e => e.on) ? 'ok' : 'off';
     }
 
 
@@ -294,6 +295,6 @@
         navState, paintNav,
         EVENT_TEXT: ALERT_EVENT_TEXT, ORIGIN_TEXT: ALERT_ORIGIN_TEXT,
         voiceName: alertVoiceName, toneGroups: alertToneGroups, voiceSelect: alertVoiceSelect,
-        eventRow: alertEventRow, events: alertEvents, customRow: alertCustomRow, summary: alertsSummary
+        eventRow: alertEventRow, events: alertEvents, customRow: alertCustomRow, summary: alertsSummary, summaryState: alertsState
     });
 })();
