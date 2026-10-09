@@ -25,6 +25,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { OPENCODE_EXE, OPENCODE_SESSION_ID } from './opencode';
+import { NO_MODELS_FETCH } from './opencodeCacheTemps';
 import {
     OpencodeListRow, opencodeExportsToRefresh, opencodeListJson, opencodeMergeRows
 } from './opencodehistory';
@@ -312,7 +313,9 @@ export function nodeOpencodeCli(exe = OPENCODE_EXE): OpencodeCli {
                 try {
                     child = cp.spawn(exe, args, {
                         cwd: cwd || undefined, shell: true, windowsHide: true,
-                        stdio: ['ignore', 'pipe', 'pipe']
+                        stdio: ['ignore', 'pipe', 'pipe'],
+                        // X-528 — a list or an export only reads the store: no catalog refresh to cut off half-written
+                        env: { ...process.env, ...NO_MODELS_FETCH }
                     });
                 } catch (e) {
                     return resolve({ stdout: '', error: String((e as Error)?.message ?? e) });

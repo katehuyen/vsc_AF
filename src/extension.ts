@@ -37,6 +37,7 @@ import {
 import {
     HarvestResult, nodeOpencodeCli, OpencodeHarvester
 } from './core/opencodeharvest';
+import { sweepCatalogTemps } from './core/opencodeCacheTemps';
 import {
     OPENCODE_AUTH_FILE, OPENCODE_EXE, OPENCODE_NEEDS_SHELL, OPENCODE_SESSION_ID,
     opencodeModelsCatalogArgs, opencodeModelsListArgs, readOpencodeModelList
@@ -3456,10 +3457,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the quiet floor; the automatic caller does not, so a busy window does not
      * turn into a spawn every fifteen seconds.
      */
-    const harvestOpencode = async (force = false): Promise<HarvestResult> => {
+    const harvestOpencode = async (force = false): Promise<HarvestResult & { catalogTemps?: { removed: number; bytes: number } }> => {
         const r = await opencodeHarvester.harvest(force);
         if (r.ran && (r.exported || force)) { refreshExternalSessions(); }
-        return r;
+        // X-528 — OpenCode's half-written catalog files, left by any process that ended mid-refresh (opencodeCacheTemps.ts)
+        return r.ran ? { ...r, catalogTemps: sweepCatalogTemps() } : r;
     };
     /**
      * Which OpenCode conversation a command is about — from the row it was
@@ -12171,7 +12173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.opencodeSync',
-            describe: 'Read OpenCode\'s own history back into the sessions tables — the same refresh the "Refresh OpenCode History" command runs. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this SPAWNS its CLI (`session list --format json` in each known folder, then `export` for whatever has moved) and caches each export; it is the only history source here that costs a process, which is why it has a slow automatic beat and this op. The listing is cwd-scoped, so folders matter: the walk is the open workspace, every registered agent root, and any directory a previous listing named. ‼️ S-39 — A FOLDER THAT IS GONE IS DROPPED BEFORE ANYTHING SPAWNS and counted as `skippedRoots`, NOT as a failure: a conversation outlives its directory, so the learned walk fills up with folders that were deleted after the run that made them, and spawning in one costs two seconds to produce an error about nothing. ‼️ AND `failed` NOW SAYS WHY — `failures[]` carries {stage: list|export|read|write, where, reason}, capped, because a failure that is only ever counted cannot be diagnosed. Reads only — nothing is written to OpenCode\'s store. args: force? (default true — ignore the quiet floor between automatic harvests)',
+            describe: 'Read OpenCode\'s own history back into the sessions tables — the same refresh the "Refresh OpenCode History" command runs. OpenCode keeps its conversations in SQLite and publishes no transcript file, so this SPAWNS its CLI (`session list --format json` in each known folder, then `export` for whatever has moved) and caches each export; it is the only history source here that costs a process, which is why it has a slow automatic beat and this op. The listing is cwd-scoped, so folders matter: the walk is the open workspace, every registered agent root, and any directory a previous listing named. ‼️ S-39 — A FOLDER THAT IS GONE IS DROPPED BEFORE ANYTHING SPAWNS and counted as `skippedRoots`, NOT as a failure: a conversation outlives its directory, so the learned walk fills up with folders that were deleted after the run that made them, and spawning in one costs two seconds to produce an error about nothing. ‼️ AND `failed` NOW SAYS WHY — `failures[]` carries {stage: list|export|read|write, where, reason}, capped, because a failure that is only ever counted cannot be diagnosed. Reads only — nothing is written to OpenCode\'s store. ‼️ X-528 — its calls run with OPENCODE_DISABLE_MODELS_FETCH (a short CLI call that ended mid catalog refresh left OpenCode\'s models.json.<pid>.<ms>.tmp behind), and every pass that ran sweeps those leftovers: `catalogTemps` {removed, bytes} — only that name, older than an hour, its writer gone. args: force? (default true — ignore the quiet floor between automatic harvests)',
             handler: async (args) => {
                 const force = typeof args.force === 'boolean' ? args.force : true;
                 const r = await harvestOpencode(force);
@@ -12188,6 +12190,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     failures: r.failures,
                     skippedRoots: r.skippedRoots,
                     ...(r.error ? { error: r.error } : {}),
+                    ...(r.catalogTemps ? { catalogTemps: r.catalogTemps } : {}),
                     inTable: index.external().filter(s => s.source === 'opencode').length
                 };
             }
