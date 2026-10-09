@@ -38,6 +38,7 @@
 
 import { StringDecoder } from 'string_decoder';
 import { opencodeLockRetryDelay } from './opencodeLockRetry';
+import { PLANNED_RESTART, reapplyWanted, RefreshVerdict, refreshVerdict, ReloadGate } from './opencodeReload';
 import {
     OPENCODE_ACP_PROTOCOL, OpencodeCapabilities, OpencodeConfigOption,
     opencodeAcpArgs, opencodeCapabilities, opencodeCapabilityRefusal, opencodeConfigOptions,
@@ -97,10 +98,12 @@ export interface OpencodeCardHandlers {
      * lost its handle on it, which is a thing to SAY rather than a card that
      * quietly stops answering.
      */
-    reloaded(ok: boolean, why?: string): void;
+    reloaded(ok: boolean, why?: string, planned?: boolean): void;
     /** a diagnostic worth putting in front of the reader (stderr, an unknown
      *  frame) — never used for anything the conversation depends on */
     note?(text: string): void;
+    /** X-519 — the config options the reloaded session reports, before `reloaded` */
+    options?(options: OpencodeConfigOption[]): void;
 }
 
 /** Everything from outside this module. Injected so the runtime is testable, and
@@ -111,6 +114,8 @@ export interface OpencodeRuntimeIo {
     readTextFile?(path: string): string;
     writeTextFile?(path: string, content: string): void;
     now?(): number;
+    /** X-519 — a digest of the route settings a spawn would be given now (opencodeSharedRoutes.ts) */
+    print?(): string;
 }
 
 /** How long a request waits before it is given up on. A handshake that never
@@ -137,6 +142,8 @@ interface Card {
     /** the folder this conversation belongs to — needed to load it again after a
      *  crash, because `session/load` takes a cwd of its own */
     cwd: string;
+    /** X-519 — every config value set on it, re-applied when a reload loses it */
+    wanted: Record<string, string>;
 }
 
 /**
@@ -165,6 +172,12 @@ export class OpencodeRuntime {
      *  a second process */
     private restarting = false;
     private disposed = false;
+    /** X-519 — the route print this process was spawned with; when a change waits for it to go idle; a planned reason */
+    private startedPrint = '';
+    private dueSince = 0;
+    private plannedWhy = '';
+    /** set while the cards are being put back on a new process: a new card waits for it rather than racing it */
+    private reloadGate = new ReloadGate();
 
     constructor(private io: OpencodeRuntimeIo) {}
 
@@ -181,6 +194,43 @@ export class OpencodeRuntime {
     /** how many cards this one process is carrying — the figure that justifies
      *  the whole shape */
     get cardCount(): number { return this.cards.size; }
+    /** X-519 — since when a route change waits for every card to be idle (0 = none waits) */
+    get refreshDueSince(): number { return this.dueSince; }
+    /** X-519 — the cards are being put back on a new process */
+    get reloading(): boolean { return this.reloadGate.active; }
+    /** …and this card is not back yet: a message sent to it now is held until its `reloaded` */
+    awaitsReload(sessionId: string): boolean { return this.reloadGate.awaits(sessionId); }
+
+    /**
+     * X-519 — the route settings changed: restart with them when every card is
+     * idle, else mark it due and look again when a request settles or a question
+     * is answered (refreshVerdict). The cards come back through `recover`.
+     */
+    refresh(): RefreshVerdict {
+        // A reload under way counts as busy: its new spawn may predate this change, so it is looked at again after.
+        const reloadingNow = this.restarting || this.reloadGate.active;
+        const v = refreshVerdict({
+            running: !!this.child || reloadingNow,
+            started: this.startedPrint,
+            now: this.io.print ? this.io.print() : this.startedPrint,
+            busy: reloadingNow || this.pending.size > 0 || this.asks.size > 0
+        });
+        if (v === 'due') { this.dueSince = this.dueSince || (this.io.now?.() ?? Date.now()); return v; }
+        this.dueSince = 0;
+        if (v === 'restart') {
+            if (!this.cards.size) { this.stop(); return v; }
+            this.plannedWhy = PLANNED_RESTART;
+            this.reloadGate.begin(this.cards.keys());
+            this.restart();
+        }
+        return v;
+    }
+
+    /** A request settled or a question was answered: a waiting refresh is looked at once the callers have moved on. */
+    private settled(): void {
+        if (!this.dueSince) { return; }
+        setTimeout(() => { if (this.dueSince && !this.disposed) { this.refresh(); } }, 0);
+    }
 
     // -----------------------------------------------------------------------
     // The lifecycle
@@ -227,6 +277,7 @@ export class OpencodeRuntime {
     private async start(cwd: string): Promise<OpencodeCapabilities> {
         this.phase = 'starting';
         this.stderr = '';
+        this.startedPrint = this.io.print ? this.io.print() : '';
         const child = this.io.spawn(cwd);
         this.child = child;
         this.decoder = new StringDecoder('utf8');
@@ -270,8 +321,10 @@ export class OpencodeRuntime {
      */
     private onExit(code: number | null): void {
         const said = this.stderr.split(/\r?\n/).filter(l => l.trim()).slice(-1)[0] ?? '';
-        const why = `the shared OpenCode process stopped${code === null ? '' : ` (exit ${code})`}`
-            + (said ? ` — ${said.trim().slice(0, 300)}` : '');
+        const planned = !!this.plannedWhy;
+        const why = this.plannedWhy || (`the shared OpenCode process stopped${code === null ? '' : ` (exit ${code})`}`
+            + (said ? ` — ${said.trim().slice(0, 300)}` : ''));
+        this.plannedWhy = '';
         this.child = undefined;
         this.handshake = undefined;
         for (const [, p] of this.pending) {
@@ -284,27 +337,29 @@ export class OpencodeRuntime {
         // build this integration cannot drive is a state a surface has to be able
         // to report; overwriting it with the ordinary "the process is not running"
         // would leave the user reading a shrug where there was a named reason.
-        if (this.phase === 'refused') { return; }
-        if (this.disposed) { this.phase = 'stopped'; return; }
+        if (this.phase === 'refused') { this.reloadGate.end(); return; }
+        if (this.disposed) { this.phase = 'stopped'; this.reloadGate.end(); return; }
         this.phase = 'failed';
-        if (!this.cards.size || this.restarting) { return; }
+        if (!this.cards.size || this.restarting) { if (!this.restarting) { this.reloadGate.end(); } return; }
         this.restarting = true;
+        this.reloadGate.begin(this.cards.keys());
         // A tick, so the caller that is unwinding a rejected promise finishes
         // before the reload begins — and so a process that dies during its own
         // start does not recurse.
-        setTimeout(() => { void this.recover(why); }, 0);
+        setTimeout(() => { void this.recover(why, planned); }, 0);
     }
 
     /** Bring the process back and put every live card back on it. */
-    private async recover(why: string): Promise<void> {
+    private async recover(why: string, planned = false): Promise<void> {
         const cards = [...this.cards.entries()];
         try {
             await this.ready(cards[0]?.[1].cwd ?? process.cwd());
         } catch (e) {
             this.restarting = false;
             for (const [, card] of cards) {
-                safely(() => card.handlers.reloaded(false, `${why}, and it could not be started again: ${String((e as Error).message ?? e)}`));
+                safely(() => card.handlers.reloaded(false, `${why}, and it could not be started again: ${String((e as Error).message ?? e)}`, planned));
             }
+            this.reloadGate.end();
             return;
         }
         this.restarting = false;
@@ -312,13 +367,23 @@ export class OpencodeRuntime {
             // Still here? A card ended while the process was down is not reloaded.
             if (!this.cards.has(sessionId)) { continue; }
             try {
-                await this.request('session/load', { sessionId, cwd: card.cwd, mcpServers: [] });
-                safely(() => card.handlers.reloaded(true, why));
+                const loaded = opencodeConfigOptions(
+                    await this.request('session/load', { sessionId, cwd: card.cwd, mcpServers: [] }));
+                // X-519 — its choices before the card is told it is back, or a held message would run on the default.
+                const options = await reapplyWanted(loaded, card.wanted,
+                    (configId, value) => this.applyConfig(sessionId, configId, value),
+                    text => safely(() => card.handlers.note?.(text)));
+                if (options.length) { safely(() => card.handlers.options?.(options)); }
+                this.reloadGate.back(sessionId);
+                safely(() => card.handlers.reloaded(true, why, planned));
             } catch (e) {
+                this.reloadGate.back(sessionId);
                 safely(() => card.handlers.reloaded(
-                    false, `${why}, and this conversation could not be re-opened: ${String((e as Error).message ?? e)}`));
+                    false, `${why}, and this conversation could not be re-opened: ${String((e as Error).message ?? e)}`, planned));
             }
         }
+        // A crash during these loads has scheduled another recover, which keeps the gate.
+        if (!this.restarting) { this.reloadGate.end(); this.settled(); }
     }
 
     /**
@@ -359,7 +424,9 @@ export class OpencodeRuntime {
         this.disposed = true;
         this.cards.clear();
         this.phase = 'stopped';
+        this.dueSince = 0;
         this.stop();
+        this.reloadGate.end();
     }
 
     // -----------------------------------------------------------------------
@@ -368,7 +435,7 @@ export class OpencodeRuntime {
 
     attach(sessionId: string, cwd: string, handlers: OpencodeCardHandlers): void {
         if (!sessionId) { return; }
-        this.cards.set(sessionId, { handlers, cwd });
+        this.cards.set(sessionId, { handlers, cwd, wanted: {} });
     }
 
     /**
@@ -387,7 +454,7 @@ export class OpencodeRuntime {
         if (this.child && this.caps?.sessionClose) {
             this.notify('session/close', { sessionId });
         }
-        if (!this.cards.size) { this.stop(); }
+        if (!this.cards.size) { this.dueSince = 0; this.stop(); }
     }
 
     // -----------------------------------------------------------------------
@@ -398,6 +465,7 @@ export class OpencodeRuntime {
      *  the config options it volunteers (model list included — see
      *  `opencodeModelsFrom`, which is why nothing shells out for a catalogue). */
     async newSession(cwd: string): Promise<{ sessionId: string; options: OpencodeConfigOption[] }> {
+        await this.reloadGate.done;
         await this.ready(cwd);
         const result = await this.request('session/new', { cwd, mcpServers: [] });
         const sessionId = String((result as Record<string, unknown>)?.sessionId ?? '');
@@ -409,6 +477,7 @@ export class OpencodeRuntime {
      *  ordinary `session/update` frames before the result arrives, which is why
      *  the translator has a `replaying` flag (see `opencodeproto.ts`). */
     async loadSession(sessionId: string, cwd: string): Promise<OpencodeConfigOption[]> {
+        await this.reloadGate.done;
         await this.ready(cwd);
         const result = await this.request('session/load', { sessionId, cwd, mcpServers: [] });
         return opencodeConfigOptions(result);
@@ -417,8 +486,16 @@ export class OpencodeRuntime {
     /** ‼️ `configId`, NOT `id` — the params are built by the one function that
      *  knows (A-16, trap 2), so this call site cannot get it wrong. */
     async setConfig(sessionId: string, configId: string, value: string): Promise<OpencodeConfigOption[]> {
+        await this.reloadGate.done;
+        return this.applyConfig(sessionId, configId, value);
+    }
+
+    /** The set itself; a value the engine took is remembered on the card (X-519). */
+    private async applyConfig(sessionId: string, configId: string, value: string): Promise<OpencodeConfigOption[]> {
         const result = await this.request(
             'session/set_config_option', opencodeSetConfigParams(sessionId, configId, value));
+        const card = this.cards.get(sessionId);
+        if (card) { card.wanted[configId] = value; }
         return opencodeConfigOptions(result);
     }
 
@@ -448,9 +525,11 @@ export class OpencodeRuntime {
         const ask = this.asks.get(requestId);
         if (!ask) { return false; }
         this.asks.delete(requestId);
-        return this.reply(ask.id, optionId
+        const wrote = this.reply(ask.id, optionId
             ? { outcome: { outcome: 'selected', optionId } }
             : { outcome: { outcome: 'cancelled' } });
+        this.settled();
+        return wrote;
     }
 
     /** Is this permission request still open? A panel that repainted must not
@@ -472,6 +551,7 @@ export class OpencodeRuntime {
                 entry.timer = setTimeout(() => {
                     this.pending.delete(id);
                     reject(new Error(`OpenCode did not answer ${method} within ${Math.round(timeoutMs / 1000)}s`));
+                    this.settled();
                 }, timeoutMs);
             }
             this.pending.set(id, entry);
@@ -538,6 +618,7 @@ export class OpencodeRuntime {
             } else {
                 entry.resolve(frame.result);
             }
+            this.settled();
             return;
         }
         const method = String(frame.method ?? '');

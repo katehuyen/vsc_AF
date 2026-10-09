@@ -238,6 +238,7 @@ import {
     smokeRefusal, testKeyOf, testModelRef
 } from './core/providerHealth';
 import { routeIdOn, routeProfilesOn, routeSourceOf, routeValue } from './core/opencodeRoutes';
+import { sharedRouteEnv, sharedRoutePrint } from './core/opencodeSharedRoutes';
 import { contractDue, contractProblem, ContractResult } from './core/opencodeContract';
 import { runContractProbe } from './core/opencodeContractProbe';
 import { scrubSecrets, secretValuesOf } from './core/secretScrub';
@@ -13407,6 +13408,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'console.runtime',
+            describe: 'X-519 — the ONE shared `opencode acp` process every OpenCode Console card runs in: phase (stopped · starting · ready · refused · failed), pid, cards (how many cards it carries), reloading (cards are being put back on a new process), refreshDue + refreshDueSince (a route change is waiting for every card to be idle before the process restarts with it — a running turn or an open permission question is never cut). `running:false` when no OpenCode card has started it. Read-only: nothing forces a restart. args: none',
+            handler: () => {
+                const s = consoleHost.opencodeRuntimeState();
+                return s ? { running: true, ...s } : { running: false, phase: 'stopped', cards: 0, reloading: false, refreshDue: false };
+            }
+        },
+        {
             op: 'console.sessions',
             describe: 'The Console sessions this window hosts. ‼️ EVERY ROW SAYS WHICH ENGINE IT IS AND WHAT THAT ENGINE CAN DO (`engine`, `engineLabel`, `turnShape`, `steerable`, `reportsCost`, `costSource`, `takesEffort`) — read them BEFORE the figures beside them, because each one changes what a figure means: `cost` is the engine\'s own on a `costSource:"cli"` row and derived from your pricing rules on a `"tokens"` one; `effort` is refused outright where `takesEffort` is false; a message sent now is HELD until the turn ends unless `steerable`; and `asking.kind === "permission"` can only ever happen on an engine that stops and asks. ‼️ `steerable:false` does NOT mean the controls are dead — on `turnShape:"sharedAcp"` they reach a LIVE connection at the next turn boundary, which is a different thing from becoming a flag on a process that does not exist yet. Then: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), ‼️ TWO DIFFERENT TOKEN MEASUREMENTS that must not be read as one: `tokens` is what the whole conversation has SPENT (it can exceed the window many times over — a long thread legitimately reads 5.4M), while `contextTokens` is what the window is HOLDING after the last model call, against `contextWindowTokens` (the capacity that session itself reported, which is not the model catalogue\'s published ceiling) with `contextPct`, `contextSource` (where the reading came from: stream-last-call / rollout-last-token-usage / transcript-last-call), `contextMeasuredAt` and `contextStale`; contextTokens is null when no per-call source exists — a session or turn total is NEVER used in its place, and contextPct is null rather than invented when the reading exceeds the window, whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. ‼️ AND `route` SAYS WHAT IS ANSWERING ON THE OTHER SIDE OF THE ENGINE (id, label, noun, tier?, baseUrl?, authKind?, scopeNote) — the engine is the program, the route is the endpoint it talks to, and two cards on ONE engine can be served by two different companies. `null` on the four engines with no provider axis and on every launch that picked none, which is most of them; `scopeNote` is the engine\'s own word for how long the pick lasts (fixed for the session on Claude, changeable at a turn boundary on OpenCode). It is the SAME reader the Console card draws from, so this op and the page cannot say two different things. No credential is in it. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
@@ -24036,6 +24045,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** X-488 / X-492 — the key a route signs in with (its own, or a Farm Secret it names), at the endpoint it was given for. */
     const routeKeyOf = (p: StoredProviderProfile) =>
         routeKeyFor(p, providerKeys.bindOf(p.id), id => providerKeys.get(id), name => vault.get(name));
+    /** X-519 — a route's usable key by id (none while it is held for an old address), for the shared OpenCode process. */
+    const routeKeyValue = (id: string): string | undefined => {
+        const p = providerProfiles().find(x => x.id === id);
+        return p ? routeKeyOf(p).value : undefined;
+    };
     /** One route as every surface may see it — whether it has a key, which one (name / masked hint) and where it was given for. */
     const publicRoute = (p: StoredProviderProfile) => {
         const k = routeKeyOf(p);
@@ -28895,7 +28909,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // lifecycle whose interesting states are a crash and a reload. It is
         // created on the first OpenCode card and stopped when the last one goes
         // — the 383 MB measurement is the whole argument for the shape.
-        nodeOpencodeIo(() => ENGINES.opencode.exe),
+        // ‼️ X-519 — and it is given EVERY lendable route with a usable key at each spawn
+        // (one process, so one environment for all its cards); the constitution is not.
+        nodeOpencodeIo(() => ENGINES.opencode.exe, undefined, {
+            env: () => sharedRouteEnv(process.env.OPENCODE_CONFIG_CONTENT, providerProfiles(), routeKeyValue),
+            print: () => sharedRoutePrint(providerProfiles(), routeKeyValue)
+        }),
         // ‼️ X-101 — the SAME symbol the runner and both terminals resolve
         // through. Three surfaces reading a launch three ways would be three
         // answers to "which route is this run on", and the transcript records
@@ -28951,6 +28970,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.console.autoAnswer')) { consoleHost.resyncAutoAnswers(); }
     }));
+    // ‼️ X-519 — a route written or removed, its OpenCode tick, a key set, confirmed or bound to a Farm Secret
+    // (each bumps the route's revision, so the setting changes), or a Farm Secret's value or name (the keychain):
+    // the shared OpenCode process restarts with them once every card is idle. Coalesced: one key write is two events.
+    let opencodeRouteTimer: NodeJS.Timeout | undefined;
+    const refreshOpencodeRoutes = (): void => {
+        if (opencodeRouteTimer) { clearTimeout(opencodeRouteTimer); }
+        opencodeRouteTimer = setTimeout(() => { opencodeRouteTimer = undefined; consoleHost.refreshOpencodeRoutes(); }, 1500);
+    };
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('agentFarm.providerProfiles')) { refreshOpencodeRoutes(); }
+        }),
+        context.secrets.onDidChange(() => refreshOpencodeRoutes()),
+        { dispose: () => { if (opencodeRouteTimer) { clearTimeout(opencodeRouteTimer); } } }
+    );
     const externalTranscriptTimers = new Map<string, NodeJS.Timeout>();
     const externalTranscriptFile = (sessionId: string): string =>
         path.join(farmExternalTranscriptDir, `${sessionId.replace(/[^a-z0-9._-]/gi, '_')}.json`);

@@ -25,6 +25,7 @@ import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from 
 import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import { spawnEnvironment } from './providerRuntime';
 import { routedModel } from './routeModels';
+import { t as tUi } from './i18n';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
@@ -242,13 +243,19 @@ export const OPENCODE_CANCEL_GRACE_MS = 8000;
  */
 export function nodeOpencodeIo(
     exe: () => string = () => 'opencode',
-    args: () => string[] = opencodeRuntimeArgs
+    args: () => string[] = opencodeRuntimeArgs,
+    /** X-519 — the lent routes, asked at every spawn: what is added to the environment, and its print */
+    routes?: { env(): Record<string, string>; print(): string }
 ): OpencodeRuntimeIo {
     return {
+        ...(routes ? { print: () => routes.print() } : {}),
         spawn(cwd: string): AcpChild {
+            const extra = routes?.env() ?? {};
             const child = cp.spawn(exe(), args(), {
                 cwd: cwd || undefined, shell: true, windowsHide: true,
-                stdio: ['pipe', 'pipe', 'pipe']
+                stdio: ['pipe', 'pipe', 'pipe'],
+                // No route to lend leaves the spawn exactly as it was: the window's own environment.
+                ...(Object.keys(extra).length ? { env: { ...process.env, ...extra } } : {})
             });
             return {
                 pid: child.pid,
@@ -711,9 +718,21 @@ export class ConsoleHost {
 
     /** What the one shared process is doing, for a surface that wants to say —
      *  and for the acceptance run, which has to prove two cards share one pid. */
-    opencodeRuntimeState(): { phase: string; pid?: number; cards: number } | undefined {
+    opencodeRuntimeState(): {
+        phase: string; pid?: number; cards: number; reloading: boolean; refreshDue: boolean; refreshDueSince?: number
+    } | undefined {
         const rt = this.opencodeRt;
-        return rt ? { phase: rt.state, pid: rt.pid, cards: rt.cardCount } : undefined;
+        if (!rt) { return undefined; }
+        const since = rt.refreshDueSince;
+        return {
+            phase: rt.state, pid: rt.pid, cards: rt.cardCount, reloading: rt.reloading,
+            refreshDue: since > 0, ...(since ? { refreshDueSince: since } : {})
+        };
+    }
+
+    /** X-519 — the lent routes changed: the shared process restarts with them once every card is idle (OpencodeRuntime.refresh). */
+    refreshOpencodeRoutes(): string {
+        return this.opencodeRt?.refresh() ?? 'none';
     }
 
     /**
@@ -1366,9 +1385,14 @@ export class ConsoleHost {
             this.mutate(id, s => ({ ...s, sessionId, status: 'idle', lastTs: Date.now() }));
             // The pickers, now that there is a connection to apply them to. A
             // refusal is said out loud rather than leaving a card claiming a
-            // model it is not using.
+            // model it is not using. X-519 — on a lent route, one of the route's
+            // models: the one asked when it is the route's, else its default.
+            const routeRt = this.engineRuntime?.(h.state.agentId, h.engine.id, {
+                providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned, model: h.state.model
+            });
             await this.applyOpencodeConfig(id, {
-                model: h.state.model, mode: opencodePermissionFor(h.state.permissionMode).mode
+                model: routedModel(h.state.model, routeRt) || h.state.model,
+                mode: opencodePermissionFor(h.state.permissionMode).mode
             }, true);
             const firstFiles = init.firstAttachments ?? [];
             if (init.firstPrompt?.trim() || firstFiles.length) {
@@ -1401,13 +1425,20 @@ export class ConsoleHost {
     private opencodeHandlers(id: string): {
         update(u: Record<string, unknown>): void;
         permission(r: OpencodePermissionRequest): void;
-        reloaded(ok: boolean, why?: string): void;
+        reloaded(ok: boolean, why?: string, planned?: boolean): void;
         note(text: string): void;
+        options(options: OpencodeConfigOption[]): void;
     } {
         return {
             update: u => this.onOpencodeUpdate(id, u),
             permission: r => this.onOpencodePermission(id, r),
-            reloaded: (ok, why) => this.onOpencodeReloaded(id, ok, why),
+            reloaded: (ok, why, planned) => this.onOpencodeReloaded(id, ok, why, planned),
+            // X-519 — the reloaded session's own list and value, so the model box shows what it really runs
+            options: options => {
+                this.withOpencode(id, c => ({ ...c, options }));
+                const now = options.find(o => o.id === 'model')?.currentValue;
+                if (now) { this.mutate(id, s => (s.model === now ? s : { ...s, model: now })); }
+            },
             note: text => this.mutate(id, s => ({
                 ...s, lastTs: Date.now(),
                 messages: [...s.messages, {
@@ -1556,7 +1587,7 @@ export class ConsoleHost {
      * this card back on it. What is gone is the turn that was in flight, and a
      * card left at `working` after that is a card that will never move again.
      */
-    private onOpencodeReloaded(id: string, ok: boolean, why?: string): void {
+    private onOpencodeReloaded(id: string, ok: boolean, why?: string, planned?: boolean): void {
         const h = this.sessions.get(id);
         if (!h?.opencode || h.closed) { return; }
         h.opencode = {
@@ -1564,7 +1595,9 @@ export class ConsoleHost {
             proto: opencodeReplay(h.opencode.proto, false)
         };
         if (h.opencode.cancelTimer) { clearTimeout(h.opencode.cancelTimer); h.opencode.cancelTimer = undefined; }
-        const text = ok
+        // X-519 — a restart the route settings asked for cut nothing (it waits for every card to be idle): one line.
+        const text = ok && planned ? tUi('OpenCode restarted with the new route settings')
+            : ok
             ? `${why ?? 'the shared OpenCode process restarted'} — this conversation was re-opened on the new one`
             + ' and is ready. Anything that was mid-turn did not finish; say it again.'
             : `${why ?? 'the shared OpenCode process stopped'}. The conversation itself is safe in OpenCode's own store —`
@@ -2344,6 +2377,18 @@ export class ConsoleHost {
             // is no `ses_…` to prompt yet, and a message sent into that gap would
             // be accepted and lost.
             || (shared && (busyShared || h.state.status === 'working' || h.state.status === 'starting'));
+        // X-519 — a card waiting to be put back on a reloaded process: the message waits in its queue and
+        // its reload releases it (onOpencodeReloaded → releaseShared). A file cannot wait in that queue.
+        if (shared && !!h.state.sessionId && this.opencodeRt?.awaitsReload(h.state.sessionId)) {
+            if (ready.length) {
+                return { queued: false, refused: 'OpenCode is restarting with the new route settings — send the files again in a moment.' };
+            }
+            const said = text.trim();
+            if (!said) { return { queued: false }; }
+            h.state = { ...h.state, lastTs: Date.now(), queued: [...h.state.queued, said] };
+            this.fire(id);
+            return { queued: true };
+        }
         // S-54 — the persistent engine's line is stamped, so the CLI's receipts
         // (an interrupt's `cancelled` list) can name this message back.
         const uuid = !perTurn && !shared ? newUuid() : undefined;
