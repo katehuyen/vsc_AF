@@ -3,7 +3,7 @@
  "max": 350,
  "keys": {
   "a2a.preferredGraceHours": [
-   359,
+   267,
    0
   ],
   "accountPolicies": [
@@ -15,7 +15,7 @@
    0
   ],
   "accountsAutoRefresh": [
-   521,
+   332,
    0
   ],
   "activeAccounts": [
@@ -35,7 +35,7 @@
    0
   ],
   "agentRowCostUnit": [
-   166,
+   151,
    0
   ],
   "agyHome": [
@@ -43,11 +43,11 @@
    0
   ],
   "agyUsageActiveRefreshSeconds": [
-   324,
+   169,
    0
   ],
   "agyUsageRefreshMinutes": [
-   533,
+   324,
    0
   ],
   "airtableInputLimit": [
@@ -107,7 +107,7 @@
    0
   ],
   "answerDir": [
-   249,
+   240,
    0
   ],
   "autoReport": [
@@ -127,31 +127,31 @@
    0
   ],
   "batonEmergencyTemplate": [
-   1160,
-   1
+   335,
+   0
   ],
   "batonFaultWaitHours": [
-   417,
+   316,
    0
   ],
   "batonFlaggedModel": [
-   275,
+   187,
    0
   ],
   "batonFlaggedPasses": [
-   470,
+   330,
    0
   ],
   "batonHandoverTemplate": [
-   822,
+   345,
    0
   ],
   "batonInjectedDirective": [
-   341,
+   279,
    0
   ],
   "batonMaxHops": [
-   373,
+   291,
    0
   ],
   "bridgeGuard": [
@@ -167,19 +167,19 @@
    0
   ],
   "budgets": [
-   367,
+   324,
    0
   ],
   "budgetsUnlimited": [
-   229,
+   198,
    0
   ],
   "chainHangMinutes": [
-   491,
+   338,
    0
   ],
   "chainWaitMinutes": [
-   280,
+   221,
    0
   ],
   "claudeDir": [
@@ -227,15 +227,15 @@
    0
   ],
   "contextConvergePct": [
-   414,
+   241,
    0
   ],
   "contextHandoverPct": [
-   224,
+   204,
    0
   ],
   "contextHandoverStayAccountPct": [
-   725,
+   275,
    0
   ],
   "contextWindowTokens": [
@@ -243,7 +243,7 @@
    0
   ],
   "costAnomalyMinUsd": [
-   121,
+   91,
    0
   ],
   "dailyDigest": [
@@ -251,11 +251,11 @@
    0
   ],
   "defaultAccountCeiling": [
-   866,
+   294,
    0
   ],
   "defaultAccountWeeklyCeiling": [
-   773,
+   321,
    0
   ],
   "digestTtsFolder": [
@@ -267,11 +267,11 @@
    0
   ],
   "disciplineOrders": [
-   604,
+   347,
    0
   ],
   "dispatchClassifier": [
-   104,
+   100,
    0
   ],
   "dispatchRules": [
@@ -303,7 +303,7 @@
    0
   ],
   "externalTerminal": [
-   341,
+   320,
    0
   ],
   "extraClaudeDirs": [
@@ -363,7 +363,7 @@
    0
   ],
   "judgeLadder": [
-   434,
+   338,
    0
   ],
   "judgeUnjudged": [
@@ -567,27 +567,27 @@
    0
   ],
   "planUsageActiveRefreshSeconds": [
-   749,
+   309,
    0
   ],
   "planUsageDangerPercent": [
-   52,
+   50,
    0
   ],
   "planUsageEngine": [
-   311,
+   177,
    0
   ],
   "planUsageMinIntervalSeconds": [
-   831,
+   326,
    0
   ],
   "planUsageRefreshMinutes": [
-   597,
+   308,
    0
   ],
   "planUsageStatusBar": [
-   450,
+   312,
    0
   ],
   "planUsageWarnPercent": [
@@ -659,27 +659,27 @@
    0
   ],
   "queue.groupSize": [
-   165,
+   148,
    0
   ],
   "queue.maxAgeHours": [
-   137,
+   136,
    0
   ],
   "queue.targets": [
-   190,
+   129,
    0
   ],
   "queueAutoAdvance": [
-   100,
+   75,
    0
   ],
   "quotaBrakeBasis": [
-   290,
+   200,
    0
   ],
   "quotaConvergePct": [
-   564,
+   307,
    0
   ],
   "quotaDowngradeModel": [
@@ -687,15 +687,15 @@
    0
   ],
   "quotaDowngradePercent": [
-   127,
+   115,
    0
   ],
   "quotaGuardPercent": [
-   308,
+   292,
    0
   ],
   "quotaHandoverPct": [
-   251,
+   217,
    0
   ],
   "quotaStyle.left": [
@@ -711,16 +711,16 @@
    0
   ],
   "quotaWeeklyHandoverPct": [
-   420,
+   316,
    0
   ],
   "quotaWeightMode": [
-   577,
+   224,
    0
   ],
   "quotaWeights": [
-   866,
-   1
+   337,
+   0
   ],
   "relayFeeds": [
    152,
@@ -807,7 +807,7 @@
    0
   ],
   "showrunner": [
-   264,
+   177,
    0
   ],
   "speakerLabelCase": [
@@ -863,11 +863,11 @@
    0
   ],
   "taskExtraArgs": [
-   309,
+   283,
    0
   ],
   "taskRetry": [
-   527,
+   350,
    0
   ],
   "telegram.allowedChats": [
@@ -903,7 +903,7 @@
    0
   ],
   "trendAlertFactor": [
-   102,
+   98,
    0
   ],
   "vaultDir": [
@@ -955,7 +955,7 @@
    0
   ],
   "windowWeightedTokenLimit": [
-   680,
+   291,
    0
   ],
   "workArea": [
@@ -963,7 +963,7 @@
    0
   ],
   "workflowAskEscalation": [
-   257,
+   218,
    0
   ],
   "workflowPrevTextChars": [
@@ -971,7 +971,7 @@
    0
   ],
   "workflowSpendCap": [
-   417,
+   283,
    0
   ]
  }

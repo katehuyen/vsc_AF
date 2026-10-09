@@ -44,7 +44,7 @@
         // option carries its own name plus the one thing that option means
         // here, because the popup is drawn by the OS and no panel reaches it.
         const unset = f.default !== undefined
-            ? `${f.name} falls back to its default, ${f.default}.`
+            ? `${f.label || f.name} falls back to its default, ${f.default}.`
             : `${f.name} is left out of the JSON altogether.`;
         const opt = (v, label, cur, detail) =>
             C.option(v, label, { selected: v === cur, detail });
@@ -61,8 +61,8 @@
         }
         if (f.type === 'boolean') {
             return `<select ${a}>${opt('', '(not set)', text, unset)
-                }${opt('true', 'yes', text, `${f.name} is on.`)
-                }${opt('false', 'no', text, `${f.name} is off.`)}</select>`;
+                }${opt('true', 'yes', text, `${f.label || f.name} is on.`)
+                }${opt('false', 'no', text, `${f.label || f.name} is off.`)}</select>`;
         }
         // ‼️ AN EMPTY BOX SAYS WHAT WILL HAPPEN IF IT STAYS EMPTY (MIRROR).
         // Leaving a field out is not "nothing" — the field's own default stays
@@ -115,7 +115,7 @@
         if (f.type === 'boolean') { return { v: raw === 'true' }; }
         if (f.type === 'number' || f.type === 'integer') {
             const n = Number(raw);
-            return Number.isFinite(n) ? { v: n } : { err: `${f.name} has to be a number` };
+            return Number.isFinite(n) ? { v: n } : { err: `${f.label || f.name} has to be a number` };
         }
         if (f.type !== 'string') {
             try { return { v: JSON.parse(raw) }; }

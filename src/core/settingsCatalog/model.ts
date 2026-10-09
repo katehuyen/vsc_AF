@@ -4,6 +4,7 @@
  * answer. A key the catalog has no record for is never hidden: it lands in its section's More group.
  */
 import type { SettingItem, SettingsCategory } from '../settingsops';
+import type { SettingShape } from '../settingShape';
 import { settingName } from '../settingSearch';
 import { CatalogGroup, catalogEntry, SECTIONS, sectionForUnfiled } from './index';
 
@@ -12,6 +13,11 @@ export const MORE_GROUP: CatalogGroup = {
     label: 'More',
     about: 'Settings the catalog does not file yet — shown here so nothing is hidden.'
 };
+
+/** U-231 — a table column or form field is headed by the name its record gives it; the stored key stays its name */
+function fieldLabels(shape: SettingShape, labels: Record<string, string>): SettingShape {
+    return { ...shape, fields: shape.fields.map(f => (labels[f.name] ? { ...f, label: labels[f.name] } : f)) };
+}
 
 export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
     const bySection = new Map<string, { item: SettingItem; rank: number; order: number }[]>();
@@ -38,6 +44,7 @@ export function groupIntoSections(items: SettingItem[]): SettingsCategory[] {
             ...(e?.from ? { from: e.from } : {}),
             ...(engine ? { engine } : {}),
             ...(e?.options ? { options: e.options } : {}),
+            ...(e?.fields && it.shape?.fields ? { shape: fieldLabels(it.shape, e.fields) } : {}),
             ...(terms ? { terms } : {}),
             place: `${sec.label} › ${grp.label}`
         };

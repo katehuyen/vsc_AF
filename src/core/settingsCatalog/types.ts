@@ -39,6 +39,8 @@ export interface CatalogRow {
     engineFrom?: string;
     /** U-230 — a pick-one's values as a person reads them (≤ 3 words); a value not named is shown as itself */
     options?: Record<string, string>;
+    /** U-231 — a table's or form's fields as a person reads them (≤ 3 words); a field not named is shown as its key */
+    fields?: Record<string, string>;
     /** words people type looking for this key that its key and text do not say */
     terms?: string;
 }

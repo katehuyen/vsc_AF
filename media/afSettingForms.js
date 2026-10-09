@@ -100,7 +100,7 @@
             if (r.err) { errors[key] = where + r.err; return undefined; }
             if (r.skip) {
                 if (f.required) {
-                    errors[key] = `${where}${f.name} is required — it cannot be left empty`;
+                    errors[key] = `${where}${f.label || f.name} is required — it cannot be left empty`;
                     return undefined;
                 }
                 continue;
@@ -178,8 +178,8 @@
         return `<div class="setform">
             ${it.shape.fields.map(f => `<div class="setfrow">
                 ${window.AFTip.wrap(
-            `<span class="setfname">${C.esc(f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
-            f.name, fieldTip(f), 'tip-field')}
+            `<span class="setfname">${C.esc(f.label || f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
+            f.label || f.name, fieldTip(f), 'tip-field')}
                 ${fieldBox(f, `f-${id}-${f.name}`, cells[f.name] || '', `data-frow="${C.esc(it.key)}"`)}
                 ${/**
                   * ‼️ X-196 — THE ONE HOVER THAT REPEATED WHAT WAS ALREADY DRAWN.
@@ -228,8 +228,8 @@
         const fields = it.shape.fields;
         const rows = rowsCells(it);
         const head = fields.map(f => `<th>${window.AFTip.wrap(
-            `<span class="setth">${C.esc(f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
-            f.name, fieldTip(f), 'tip-field')}</th>`).join('');
+            `<span class="setth">${C.esc(f.label || f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
+            f.label || f.name, fieldTip(f), 'tip-field')}</th>`).join('');
         const body = rows.map((cells, i) => `<tr id="rr-${id}-${i}">
             ${fields.map(f => `<td>${fieldBox(f, `r-${id}-${i}-${f.name}`,
             cells[f.name] || '', `data-rrow="${C.esc(it.key)}"`)}</td>`).join('')}

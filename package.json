@@ -8659,7 +8659,7 @@
           "type": "number",
           "default": 2,
           "minimum": 0,
-          "markdownDescription": "How long a `preferred` A2A note or task is its target role's alone, in hours. Until then only that role is offered it; after that anyone else in the same project who has the required capabilities may read or claim it, ranked below an exact fit. `0` opens it at once — `preferred` then differs from `any` only in ranking. `hard` never opens; `any` never waits."
+          "markdownDescription": "How long an agent-to-agent note or task marked preferred is its target role's alone. After that, anyone in the same project with the required skills may read or claim it, ranked below an exact fit. 0 opens it at once. A hard note never opens; an any note never waits."
         },
         "agentFarm.accounts": {
           "type": "array",
@@ -9090,12 +9090,12 @@
             "Turn the weighting off: the ⚖ figure becomes the raw total."
           ],
           "default": "model-aware",
-          "description": "How the ⚖ figure (what work costs the plan's rolling limit, as opposed to how many tokens moved) is derived. Calibrated against the real endpoint on 2026-08-04 by sampling utilization twice inside one window: 29% → 82% over 28 minutes and 96 API calls cost 38.13M raw / 24.86M weighted-model-aware / 4.97M weighted-model-flat, i.e. a full 5-hour limit of about 72M raw, 47M model-aware or 9.4M model-flat FOR THAT WORKLOAD. Almost all of it ran on Opus, so that sample cannot tell model-aware and model-flat apart — sample a day with real haiku or sonnet work to separate them."
+          "description": "How the weighted figure, what work costs the plan's rolling limit rather than how many tokens moved, is worked out. By default both the kind of token and the model count, so a Haiku test does not read as costly as Opus work."
         },
         "agentFarm.quotaWeights": {
           "type": "array",
           "default": [],
-          "description": "Override the ⚖ weight table. Empty = use the built-in one. Each entry: { match (regex on the model id), input, output, cacheWrite (5-minute TTL), cacheWrite1h (1-hour TTL), cacheRead } — all relative to ONE SONNET INPUT TOKEN = 1. Built in: opus and fable { input 5, output 25, cacheWrite 6.25, cacheWrite1h 10, cacheRead 0.5 }, sonnet { 1, 5, 1.25, 2, 0.1 }, haiku { 0.333, 1.667, 0.417, 0.667, 0.033 }. ‼️ CACHE WRITES ARE PRICED BY TTL AND THE 1-HOUR RATE IS THE ONE THAT APPLIES HERE: measured on this machine, 17 923 938 of 17 923 938 cache-creation tokens were 1-hour and none were 5-minute. A usage block that reports no split is charged at the 1-hour rate. Deliberately separate from agentFarm.pricing: correcting a billing rate must not silently move the limit gauge. First matching rule wins; an unmatched model falls back to the sonnet row, never to zero.",
+          "description": "Override the weight table behind the weighted figure; empty = the built-in one. Each rule matches a model id and weighs input, output, cache writes (5-minute and 1-hour) and cache reads against one Sonnet input token = 1. The first rule that matches wins; an unmatched model counts as Sonnet, never as zero. Kept apart from Model prices.",
           "items": {
             "type": "object",
             "properties": {
@@ -9139,52 +9139,52 @@
             "Brake only on the raw total against windowTokenLimit — how it behaved before the weighted figure existed."
           ],
           "default": "whichever",
-          "description": "Which figure the quota guard (quotaGuardPercent) and the model-downgrade rule (quotaDowngradePercent) read when deciding how full the 5-hour window is. A ceiling that is not configured is simply not consulted, whatever this says — set windowTokenLimit and/or windowWeightedTokenLimit first."
+          "description": "Which figure Hold starts at and Downgrade at read to judge how full the five-hour window is. A limit that is not set is never read, whatever this says; set Window limit or Weighted window limit first."
         },
         "agentFarm.windowWeightedTokenLimit": {
           "type": "number",
           "default": 0,
-          "description": "Optional limit for the rolling 5-hour window measured in WEIGHTED tokens (⚖) instead of raw ones. A cache-read token is a tenth of a fresh input token and an output token is five, while 94-99% of a raw total is cache reads — so the raw total of a full window ranges 111M-175M across days that hit the very same wall, and the weighted total of those same windows sits at 18-21M. Set this to what your plan actually allows (watch the ⚖ figure in the status bar for a window where you hit the limit) and the quota guard and the model-downgrade rule brake on it. 0 = off; the raw windowTokenLimit keeps working exactly as before, and setting both brakes on whichever is further along."
+          "description": "The rolling five-hour limit in weighted tokens instead of raw ones. Set it to what your plan really allows (watch the weighted figure in a window where you hit the limit); the start brake and the model downgrade then read it. 0 = off. With both limits set, Brake on decides which one counts."
         },
         "agentFarm.planUsageRefreshMinutes": {
           "type": "number",
           "default": 5,
           "minimum": 0,
-          "description": "How often your Claude subscription limits are re-read from Anthropic while the fleet is IDLE, in minutes — nothing is running, so they can only change by the clock. While an agent is actually mid-turn the faster planUsageActiveRefreshSeconds beat takes over. One beat is shared by the status-bar indicator, the Dashboard's \"Plan usage\" card and the usage.plan bridge op — they never make separate requests. 0 turns the automatic refresh off in BOTH windows; the card's ⟳ and the indicator's \"Check now\" still work. Only the OAuth session Claude Code stores locally is read; it is never written to."
+          "description": "How often your Claude plan limits are re-read while no agent is mid-turn; while one is, Refresh while working takes over. One read serves the status-bar indicator, the Dashboard's Plan usage card and the bridge. 0 turns automatic refresh off in both cases; Check now and the card's refresh button still work."
         },
         "agentFarm.planUsageActiveRefreshSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 30,
-          "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 30 seconds, and that floor is enforced in code: the endpoint is undocumented and answers a too-frequent poller with a persistent HTTP 429, so a fast setting is not a preference it will honour. A 429 is met with an automatic backoff (3 → 6 → 12 → 15 min) that one success clears; the ⟳ button asks anyway. Ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
+          "description": "How often the same figures are re-read while an agent is mid-turn, when they really move; a turn starting or ending also reads once. Minimum 30 seconds: the endpoint answers a faster poller with a persistent HTTP 429, met by an automatic backoff that one success clears. Ignored while Refresh while idle is 0."
         },
         "agentFarm.agyUsageRefreshMinutes": {
           "type": "number",
           "default": 240,
           "minimum": 0,
-          "description": "How often Antigravity's quota is re-read while NO Antigravity turn is running, in minutes. Reading it runs agy -p /usage in the background (no tokens), which briefly flashes a terminal on screen. Other engines' turns (Claude, Codex…) do not count: they spend none of Antigravity's quota. It is read once when the window opens and once right after each Antigravity run ends; after that, every this many minutes. 0 = never while Antigravity is idle — only the reads above, and Check now. Separate from Claude's planUsageRefreshMinutes."
+          "description": "How often Antigravity's quota is re-read while no Antigravity turn runs. Each read runs agy -p /usage in the background (no tokens), which briefly flashes a terminal. Other engines' turns (Claude, Codex…) do not count. It is also read when the window opens and after each Antigravity run. 0 = only those reads and Check now."
         },
         "agentFarm.agyUsageActiveRefreshSeconds": {
           "type": "number",
           "default": 60,
           "minimum": 30,
-          "description": "How often Antigravity's quota is re-read while an Antigravity turn is running, in seconds, counted from the run's start (a turn that has just begun has spent nothing yet). Only Antigravity's own turns switch this on; Claude or Codex working does not. Minimum 30 seconds. Separate from Claude's planUsageActiveRefreshSeconds."
+          "description": "How often Antigravity's quota is re-read while an Antigravity turn runs, counted from the run's start. Claude or Codex working does not switch it on. Minimum 30 seconds."
         },
         "agentFarm.planUsageMinIntervalSeconds": {
           "type": "number",
           "default": 10,
           "minimum": 5,
-          "description": "The shortest gap between two usage requests for ONE sign-in, in seconds, counted across everything that reads it — the background beat, the status-bar indicator, the turn-boundary read, an account card's ⟳ and the bridge. Anthropic limits this endpoint per account token, and until this existed each reader kept its own clock: whichever account was standing had two of them, so it alone could be asked twice within a second and it alone kept hitting the limit while the others stayed clean. Raise it if an account still gets rate limited; the floor is 5 seconds and is enforced in code. This is a SPACING rule, not a beat — it never causes an extra read. A read that arrives too early is answered with the figure taken moments ago instead of spending a second request, and the one triggered by a turn ending waits and then happens."
+          "description": "The shortest gap between two usage requests for one sign-in, across everything that reads it (background, status bar, turn ends, account cards, bridge). A read that comes too early gets the figure taken moments ago instead. Raise it if an account still gets rate limited; the floor is 5 seconds. It never causes an extra read."
         },
         "agentFarm.planUsageStatusBar": {
           "type": "boolean",
           "default": true,
-          "description": "Keep your plan's session countdown and usage percentages in the VS Code status bar — \"3h 49m - 86% / wk 41%\": time left in the current session window, how much of it is gone, and how much of the week. Visible while you work without opening anything. Hover for every limit with its reset time and the beat it is running on, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
+          "description": "Keep your plan's session countdown and usage in the VS Code status bar, e.g. 3h 49m - 86% / wk 41%: time left in this session window, how much of it is used, and how much of the week. Hover for every limit and its reset time; click for the Dashboard card. Hidden on a machine with no Claude subscription sign-in."
         },
         "agentFarm.accountsAutoRefresh": {
           "type": "boolean",
           "default": true,
-          "description": "Re-read every captured sign-in's window figures in the background, page open or not — each sign-in on its own beat: planUsageActiveRefreshSeconds while a turn is running on it, planUsageRefreshMinutes while nothing is, and never all at once (one request per five seconds across the machine; a 429 pauses the whole fleet). Off costs nothing: the ⟳ on a card, the \"Refresh all\" line and the turn-boundary read still work. The Engines page's Auto-refresh button and the accounts.autoRefresh bridge op flip this same setting."
+          "description": "Re-read every captured sign-in's window figures in the background, page open or not, each on its own beat (Refresh while working during a turn, Refresh while idle otherwise) and never all at once. Off costs nothing: a card's refresh, Refresh all and the turn-end read still work. The Engines page's Auto-refresh button flips it too."
         },
         "agentFarm.planUsageEngine": {
           "type": "string",
@@ -9203,7 +9203,7 @@
             "OpenCode — each model runs against its own provider, so there is no single plan window; it states the price of every turn instead."
           ],
           "default": "claude",
-          "description": "Which engine's remaining limit the status bar shows. Every engine reports differently and only Claude has an endpoint to ask — hover the indicator to see them all at once and switch between them, or use the mini tabs on the Dashboard's Plan usage card. Both write this setting, so the two surfaces always agree."
+          "description": "Which engine's remaining limit the status bar shows. Hover the indicator to see them all and switch, or use the tabs on the Dashboard's Plan usage card; both write this setting."
         },
         "agentFarm.planUsageWarnPercent": {
           "type": "number",
@@ -9217,7 +9217,7 @@
           "default": 95,
           "minimum": 0,
           "maximum": 100,
-          "description": "…and red at this one. Set it to 101 to never go red."
+          "description": "The status-bar figure turns red here; 101 = never."
         },
         "agentFarm.maxTranscriptMessages": {
           "type": "number",
@@ -9234,40 +9234,40 @@
           "default": 35,
           "minimum": 0,
           "maximum": 100,
-          "description": "Context discipline: when a running session's window is this full, it is told once — CONTEXT CONVERGE — to start nothing new and finish the step in flight. Delivered through the live hook's answer (PostToolUse additionalContext) on Claude Code; an engine whose hooks carry no such channel records the crossing as undelivered. 0 = off. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set."
+          "description": "When a running session's context window is this full, it is told once (CONTEXT CONVERGE) to start nothing new and finish the step in flight. On an engine whose hooks cannot carry the message, the crossing is recorded as undelivered. 0 = off."
         },
         "agentFarm.contextHandoverPct": {
           "type": "number",
           "default": 40,
           "minimum": 0,
           "maximum": 100,
-          "description": "Context discipline: when a running session's window is this full, it is told once — CONTEXT HANDOVER — to stop, commit, write the handover note and end the run. A converge line above this one is folded down onto it. 0 = off."
+          "description": "When a running session's context window is this full, it is told once (CONTEXT HANDOVER) to stop, commit, write its handover note and end the run. A converge line above it is folded down onto it. 0 = off."
         },
         "agentFarm.quotaConvergePct": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 100,
-          "description": "Quota discipline: when the 5-hour window of the account a running session is signed in as is this full, the session is told once — QUOTA CONVERGE — to start nothing new. Off by default: the handover law has no quota converge line — below the handover line a run works at full capacity; set a figure only if you want that earlier warning. Read from that session's OWN sign-in (a Console card's or its launch manifest's account slot), never from the home folder; a session whose sign-in is not known is not told. Same channel and rules as the context lines. 0 = off."
+          "description": "When the five-hour window of the account a running session is signed in as is this full, it is told once (QUOTA CONVERGE) to start nothing new. Off by default: below the handover line a run works at full capacity. Read from the session's own sign-in; a session whose sign-in is unknown is not told. 0 = off."
         },
         "agentFarm.quotaHandoverPct": {
           "type": "number",
           "default": 90,
           "minimum": 0,
           "maximum": 100,
-          "description": "Quota discipline: when the session's own account window is this full, it is told once — QUOTA HANDOVER — to stop, commit, write the handover note and end the run (the handover law's 90%). A converge line above this one is folded down onto it. 0 = off."
+          "description": "When the five-hour window of the session's own account is this full, it is told once (QUOTA HANDOVER) to stop, commit, write its handover note and end the run. A converge line above it is folded down onto it. 0 = off."
         },
         "agentFarm.quotaWeeklyHandoverPct": {
           "type": "number",
           "default": 98,
           "minimum": 0,
           "maximum": 100,
-          "description": "Quota discipline: when the session's own account has used this much of its WEEKLY window, it is told once — QUOTA HANDOVER, naming the weekly window — to stop, commit, write the handover note (or pass the baton) and end the run, and the relay's successor never stays on that account. Kept apart from the five-hour line: each window has its own line and each is said once until it turns over. 0 turns the weekly line off."
+          "description": "When the session's own account has used this much of its weekly window, it is told once (QUOTA HANDOVER, naming the week) to stop, commit, write its handover note or pass the baton, and end the run; a relay's next leg never stays on that account. Each window has its own line, said once until it turns over. 0 = off."
         },
         "agentFarm.disciplineOrders": {
           "type": "object",
           "default": {},
-          "description": "Handover discipline: WHAT the two lines actually order the running session to do. The lead words (CONTEXT CONVERGE / CONTEXT HANDOVER / QUOTA CONVERGE / QUOTA HANDOVER) and the reading in front of them are fixed — the handover law waits for exactly those — and this is the instruction that follows. Six branches, because a run in a baton relay is told to pass the baton rather than to write a note. Leave a field empty and its built-in sentence stays in charge; {chain} is replaced by the relay's own chain and hop. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set orders=.",
+          "description": "What the converge and handover warnings order a running session to do. The lead words and the reading before them are fixed; this is the instruction that follows. A run in a baton relay has its own branches, told to pass the baton instead of writing a note. Leave a field empty for its built-in sentence; {chain} becomes the relay's chain and leg.",
           "properties": {
             "converge": {
               "type": "string",
@@ -9316,75 +9316,75 @@
           "type": "number",
           "default": 6,
           "minimum": 0,
-          "description": "Baton relay: the most legs one chain may run — the run that started it is leg 1. A pass from the last leg opens nothing: the baton is kept as stopped with the reason, the runner is told to write a handover note instead, and Notices says so once. 0 = no ceiling. The other automatic brake needs no setting: two legs in a row that end on the same git HEAD stop the chain too."
+          "description": "The most legs one relay chain may run; the run that started it is leg 1. A pass from the last leg opens nothing: the baton is kept as stopped, the runner writes a handover note instead, and Notices says so once. Two legs in a row ending on the same commit stop the chain too. 0 = no ceiling."
         },
         "agentFarm.batonInjectedDirective": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Baton relay: a standing rule said to EVERY leg of every chain, above the predecessor's own words — for example \"run npm test before you pass the baton\". Empty = nothing is added. In your own handover template it goes where {userDirective} stands; a template that does not name it still gets it, on its own line above the predecessor's words."
+          "description": "A standing rule said to every leg of every chain, above the predecessor's own words, e.g. run npm test before you pass the baton. Empty = nothing is added. In your own leg message template it goes where {userDirective} stands, or on its own line if the template does not name it."
         },
         "agentFarm.batonHandoverTemplate": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Baton relay: your own first message for every leg, instead of the built-in \"=== BATON RELAY — chain … ===\" header. Variables: {fromSessionId} (the predecessor's session), {agentId} (the agent's name), {chain}, {leg} (the leg this run is — hop + 1, the number the card and the status bar show), {hop} (handovers so far), {maxHops} (the chain's leg ceiling, \"none\" when it has none), {why} (what opened this leg), {userDirective} (agentFarm.batonInjectedDirective), {agentPrompt} (the predecessor's own words), {relayRules} (the relay rules every leg is told; a template that does not name them still gets them, above the directive). An unknown {name} is left as typed. The predecessor's words are never lost: a template without {agentPrompt} gets them appended under a --- line. Empty = the built-in header stays in charge."
+          "description": "Your own first message for every leg, in place of the built-in header. Variables: {leg} (this leg), {hop} (passes so far), {maxHops}, {chain}, {agentId}, {fromSessionId} (the predecessor), {why}, {userDirective}, {agentPrompt} (the predecessor's words), {relayRules}. A template without the last two still gets them. Empty = the built-in header."
         },
         "agentFarm.batonEmergencyTemplate": {
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Baton relay: your own first message for a leg the FAILSAFE opens — when a leg ends without passing the baton although it was cut off (a QUOTA/CONTEXT HANDOVER had reached it, it wrote a handover note in its last two minutes, it exited with an error, or it left uncommitted work). Empty = the built-in \"=== BATON RELAY — … · EMERGENCY HANDOVER ===\" header, which names the predecessor and how to read its last turns. Variables: {fromSessionId} (the ended session, in full), {agentId}, {chain}, {leg} (the leg this run is — hop + 1), {hop} (handovers so far), {maxHops} (the leg ceiling, \"none\" when the chain has none), {why} (why it was rescued), {evidence} (its handover note's Durum/Kalan/İlk 5 dakika sections, or its uncommitted state), {userDirective} (agentFarm.batonInjectedDirective), {relayRules} (the relay rules every leg is told; a template that does not name them still gets them). A template that does not name {evidence} still gets it, last, under a ---. A leg that finished cleanly, or that you ended yourself, is never rescued: the chain simply ends, and a successor that dies within 30 seconds without a tool call stops it (crash-loop guard)."
+          "description": "Your own first message for a leg the failsafe opens when the one before was cut off (told to hand over, a late note, an error, uncommitted work). Variables as in Leg message template, plus {evidence} (what it left behind), without {agentPrompt}; a template without {evidence} still gets it, last. Empty = the built-in emergency header."
         },
         "agentFarm.batonFaultWaitHours": {
           "type": "number",
           "default": 24,
           "minimum": 0,
-          "description": "Baton relay: when a running leg's turn fails because the ENGINE is down, overloaded, unreachable, rate limited or refuses the sign-in, no new leg is opened (it would fail the same way) — the same session is asked to continue at growing intervals (1 min, 2, 4 … up to one hour apart). Past this many hours without a working turn Agent Farm stops asking and Needs You gets a row. 0 = keep asking hourly with no ceiling."
+          "description": "When a leg's turn fails because the engine is down, overloaded, unreachable, rate limited or refuses the sign-in, no new leg is opened; the same session is asked to continue at growing intervals, up to an hour apart. Past this many hours without a working turn, Needs You gets a row. 0 = keep asking hourly for ever."
         },
         "agentFarm.batonFlaggedPasses": {
           "type": "number",
           "default": 3,
           "minimum": 0,
-          "description": "Baton relay: when the engine FLAGS a running leg's conversation (\"safeguards flagged this message … can't respond\"), nothing said in that session is answered again, so Agent Farm passes the baton for it: the successor opens from what the leg left, through the same brakes as any pass, and the flagged card is closed. This is how many such passes may come in a row before the chain holds for you (Needs You). 0 = no cap of its own — the chain's leg ceiling still applies."
+          "description": "When the engine flags a leg's conversation, nothing in that session is answered again, so the baton is passed for it through the same brakes as any pass and the flagged card is closed. This is how many such passes may come in a row before the chain waits for you in Needs You. 0 = no cap of its own; the leg ceiling still applies."
         },
         "agentFarm.batonFlaggedModel": {
           "type": "string",
           "default": "",
-          "description": "Baton relay: the model a successor opens on when the leg before it was ALSO opened by a flagged pass — the engine's own advice is a new session first, then another model. Empty = the chain keeps its own model. The chain carries on with whatever model its successor opened on."
+          "description": "The model a successor opens on when the leg before it was also opened by a flagged pass; the engine advises a new session first, then another model. Empty = the chain keeps its own model."
         },
         "agentFarm.chainHangMinutes": {
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "description": "Chain board: a relay chain is flagged as needing attention ('hanging') when its running leg has been idle this many minutes — or its session ended this long ago, or nothing has seen its session and its record has not moved for this long — without passing the baton and without the chain being closed. Read from the record and the session itself, never from what the leg said. It shows on the Chains and Living pages and arrives as a notice, which withdraws itself once the chain moves again."
+          "description": "A relay chain is flagged as hanging when its running leg has been idle this long, or its session ended this long ago, without passing the baton or the chain being closed. Read from the record and the session, never from what the leg said. It shows on the Chains and Living pages and as a notice that withdraws itself once the chain moves."
         },
         "agentFarm.chainWaitMinutes": {
           "type": "number",
           "default": 30,
           "minimum": 1,
-          "description": "Chain board: a relay chain is flagged as needing attention ('stuck') when the next leg has been waiting this many minutes for the session that passed the baton to end. It shows on the Chains and Living pages and arrives as a notice, which withdraws itself once the next leg opens."
+          "description": "A relay chain is flagged as stuck when its next leg has waited this long for the session that passed the baton to end. It shows on the Chains and Living pages and as a notice that withdraws itself once the next leg opens."
         },
         "agentFarm.defaultAccountCeiling": {
           "type": "number",
           "default": 70,
           "minimum": 1,
           "maximum": 100,
-          "description": "Account ceiling: the wall every unattended start obeys — a sign-in at or past this share of its five-hour window is passed over (its all-models week has its own wall, defaultAccountWeeklyCeiling). Every built-in policy (@emptiest, @round-robin, @standing, @pool) and every rule step that names none, a relay successor staying on its account, a sentry round whose campaign names no ceiling, a run carried to another account after a limit, and accounts.status when asked without a ceiling. A campaign, rule, step or caller may name its own wall instead, but nothing — this box included — ever acts above quotaHandoverPct: a slot past the quota handover line would be told to hand over on its first reading, so lowering the handover line lowers every wall with it. The Account Policies table, the campaign's Ceiling box and sentry.status show the wall in force and why."
+          "description": "The wall every unattended start obeys: an account at or past this share of its five-hour window is passed over; its week has Weekly account ceiling. Account policies, rule steps, relay legs and sentry rounds all obey it unless they name their own wall, and no wall acts above Quota handover at."
         },
         "agentFarm.defaultAccountWeeklyCeiling": {
           "type": "number",
           "default": 95,
           "minimum": 1,
           "maximum": 100,
-          "description": "Weekly Account ceiling: the wall every unattended start obeys on the all-models WEEK — a sign-in at or past this share of its weekly window is passed over, while its five-hour window is judged by the Account ceiling (defaultAccountCeiling). Kept apart so an account whose week is past the Account ceiling is still used for days instead of sitting idle; the emptiest account still leads, and a week at its limit is never picked. Every place the Account ceiling binds (the built-in policies and rule steps, a relay successor staying on its account, a sentry round, a run carried to another account, accounts.status) judges the week here. Never acts above quotaWeeklyHandoverPct: a session started past the weekly handover line would be told to hand over on its first reading."
+          "description": "The same wall for the all-models week: an account at or past this share of its weekly window is passed over, while its five-hour window is judged by Account ceiling. Kept apart so an account past Account ceiling on its week is still used for days; the emptiest account still leads. It never acts above Weekly handover at."
         },
         "agentFarm.contextHandoverStayAccountPct": {
           "type": "number",
           "default": 70,
           "minimum": 0,
           "maximum": 100,
-          "description": "Handover discipline: when a run hands over for any reason other than QUOTA — its context window filled up, or it passed on its own — and its account has used less than this percentage of its five-hour window, the successor opens on the SAME account instead of the pool's pick, so one account's window is used up before another is started. At or above the line, or when the handover was the quota's, the pool picks as before. A stay is a start, so it never stands above the wall every start obeys (defaultAccountCeiling, itself never above quotaHandoverPct): a line set higher acts at that wall. Applies to a baton relay's next leg (the chain's pool is kept for later legs) and to the sentry's next round. 0 = off. Default 70."
+          "description": "When a run hands over for any reason but the quota and its account has used less than this share of its five-hour window, the next leg or sentry round opens on the same account, so one window is used up before another is started. It never acts above Account ceiling. 0 = off."
         },
         "agentFarm.bridgeGuard": {
           "type": "boolean",
@@ -9753,12 +9753,12 @@
         "agentFarm.taskExtraArgs": {
           "type": "string",
           "default": "",
-          "description": "Extra CLI arguments appended to a task's claude command, e.g. \"--model haiku\" to run routine automation on a cheaper model. These are Claude Code's flag vocabulary, so a task queued on another engine (Codex / Gemini / Antigravity / OpenCode) ignores them — set that task's model and effort on the task itself."
+          "description": "Extra command-line arguments added to a task's claude command, e.g. --model haiku to run routine work on a cheaper model. They are Claude Code flags, so a task on another engine (Codex, Gemini, Antigravity, OpenCode) ignores them; set that task's model and effort on the task itself."
         },
         "agentFarm.externalTerminal": {
           "type": "boolean",
           "default": false,
-          "description": "Open claude session terminals (Start/Continue/Resume) in the OS terminal — Windows Terminal when available — instead of the integrated terminal. Avoids xterm.js rendering glitches (ghost spaces, lost lines) in long TUI sessions. Farm tasks stay in the integrated terminal so their status can be tracked. Toggle via 'Terminal Rendering Fix…'."
+          "description": "Open session terminals (Start, Continue, Resume) in the system terminal, Windows Terminal when there is one, instead of the one inside VS Code. It avoids drawing glitches (ghost spaces, lost lines) in long sessions. Farm tasks stay inside VS Code so their status can be followed. Also switched by Terminal Rendering Fix."
         },
         "agentFarm.judgeArgs": {
           "type": "string",
@@ -9972,18 +9972,18 @@
         "agentFarm.showrunner": {
           "type": "string",
           "default": "youtuber",
-          "markdownDescription": "The **showrunner** — the agent that fills every role a workflow step names (senarist, kurgu, yayinci …) when the workflow binds it to nobody. A workflow binds a role on its form (Roles) or with `workflows.add roles=`; `workflows.roles` says who fills what and why."
+          "markdownDescription": "The agent that fills every role a workflow step names (writer, editor, publisher...) when the workflow binds that role to nobody. A workflow binds its roles on its form (Roles)."
         },
         "agentFarm.judgeLadder": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The **judge's ladder** for a workflow step's quality check, cheapest model first (`haiku,sonnet`). The check is judged on the first rung; a FAIL is judged once more on the next rung before the step is paid for again — a PASS there overturns it and no retry is made. A step that names its own judge engine or model keeps it. Empty = the one judge of `judgeArgs`. One run sets its own with `workflows.run judgeLadder=` or a cost preset."
+          "markdownDescription": "The models a workflow step's quality check uses, cheapest first (e.g. haiku,sonnet). The check runs on the first; a fail is judged once more on the next before the step is paid for again, and a pass there overturns it. A step naming its own judge keeps it. Empty = the one judge of Judge arguments. A run or a cost preset can set its own."
         },
         "agentFarm.workflowSpendCap": {
           "type": "number",
           "default": 0,
           "minimum": 0,
-          "markdownDescription": "The **hard spend cap** of a workflow run, in dollars: once a run has spent this much — every step and supervisor turn counted — no further step or for-each branch starts and the run stops, saying so. Nothing is asked. `0` = no cap. A workflow sets its own on its form (Run cap $) or with `workflows.add spendCap=`; one run beats both with `workflows.run spendCap=`. The soft ceiling is a Wake condition on `cost.run`."
+          "markdownDescription": "The most one workflow run may spend, in dollars, counting every step and supervisor turn. Once reached, no further step or branch starts and the run stops, saying so; nothing is asked. 0 = no cap. A workflow can set its own cap on its form (Run cap $), and one run can override both."
         },
         "agentFarm.airtableInputStages": {
           "type": "string",
@@ -10147,12 +10147,12 @@
             "It comes straight to you, as a workflow you started yourself does."
           ],
           "default": "leader-then-human",
-          "markdownDescription": "When a workflow a **mission** started has a supervisor that asks a question (`ask_user` at a checkpoint), who is asked. A workflow you started yourself always asks you. Whoever answered is written on the run's board, which the mission reads with the result."
+          "markdownDescription": "When a workflow a mission started asks a question at a checkpoint, who is asked. A workflow you started yourself always asks you. Whoever answered is written on the run's board, which the mission reads with the result."
         },
         "agentFarm.taskRetry": {
           "type": "object",
           "default": {},
-          "markdownDescription": "What happens when a headless task FAILS, for every run that does not state its own policy. Leave it empty to keep the shipped behaviour: six attempts, forty minutes apart, and only when the Claude session limit was hit — i.e. when the work was never actually attempted. The first three waits can be set one by one (`delayMin`, `delay2Min`, `delay3Min`); retry 4 and after follow `backoff` (and `formula`). With `resetAware` on, a genuine limit failure waits for the window the engine says it reopens at, plus `safetyBufferMin`.",
+          "markdownDescription": "What happens when an unattended task fails, unless the run sets its own rule. Empty = six attempts, forty minutes apart, only when the session limit was hit, so the work never ran. The first three waits can be set one by one; later ones follow the strategy. With reset-aware on, a limit failure waits until the window reopens, plus the safety buffer.",
           "properties": {
             "max": {
               "type": "number",
@@ -10346,7 +10346,7 @@
         "agentFarm.quotaGuardPercent": {
           "type": "number",
           "default": 0,
-          "description": "Defer automatic task starts when the 5h window reaches this percent of windowTokenLimit (0 = off; requires windowTokenLimit). Separately, and even at 0, a task that names an account whose own 5h window is at or past the quota handover line waits for that window instead of starting only to hand over at once."
+          "description": "Hold automatic task starts once the five-hour window reaches this share of its limit (needs Window limit or Weighted window limit). 0 = off. Even at 0, a task naming an account whose own window is at or past the quota handover line waits for that window instead of starting only to hand over."
         },
         "agentFarm.outputsMaxMB": {
           "type": "number",
@@ -10481,7 +10481,7 @@
           "type": "string",
           "x-af-browse": "folder",
           "default": "",
-          "markdownDescription": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Accepts the same path variables as agentFarm.reportDir. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`."
+          "markdownDescription": "Folder where the detailed answer to a work queue item is written (not a report you asked for), named `YYYY-MM-DD_<agent>_<name>.md`. It takes the same path variables as Reports folder. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`."
         },
         "agentFarm.queue.targets": {
           "type": "array",
@@ -10489,17 +10489,17 @@
             "type": "string"
           },
           "default": [],
-          "description": "Optional routing-target suggestions (repos/areas) offered in the work queue's add form and filter, in addition to the discovered agent names. Empty by default — free text, nothing hardcoded."
+          "description": "Targets (repos or areas) offered in the work queue's add form and filter, next to the agents' names. Free text; empty by default."
         },
         "agentFarm.queue.groupSize": {
           "type": "number",
           "default": 3,
-          "description": "Work queue batching: a group of same-target items FIRES for delegation once it reaches this many items (mechanical threshold; the manager also fires on age/urgency)."
+          "description": "How many work queue items for one target are gathered before they are handed out as one. The manager may send a group sooner for its age or urgency."
         },
         "agentFarm.queue.maxAgeHours": {
           "type": "number",
           "default": 24,
-          "description": "Work queue batching: the oldest item in a group forces the group to fire after this many hours, so nothing starves (anti-starvation cap)."
+          "description": "How long the oldest item in a work queue group may wait before the group is handed out anyway, however small, so nothing waits for ever."
         },
         "agentFarm.ingestFolders": {
           "type": "array",
@@ -10656,11 +10656,11 @@
             "properties": {
               "match": {
                 "type": "string",
-                "description": "case-insensitive regex tested against the incoming text"
+                "description": "A case-insensitive regex tested against the incoming text."
               },
               "agent": {
                 "type": "string",
-                "description": "agent name that takes the work"
+                "description": "The name of the agent that takes the work."
               }
             }
           },
@@ -10670,7 +10670,7 @@
         "agentFarm.dispatchClassifier": {
           "type": "boolean",
           "default": true,
-          "description": "When no dispatch rule matches, let the cheap model (judgeArgs) pick the agent from CLAUDE.md role hints."
+          "description": "When no dispatch rule matches, the model set in Judge arguments picks the agent from each CLAUDE.md."
         },
         "agentFarm.embeddingsProvider": {
           "type": "string",
@@ -10798,19 +10798,19 @@
                   "workflow",
                   "manual"
                 ],
-                "description": "which launches the rule applies to"
+                "description": "Which launches the rule applies to."
               },
               "agent": {
                 "type": "string",
-                "description": "case-insensitive regex on the agent name (empty = any)"
+                "description": "A case-insensitive regex on the agent name; empty = any agent."
               },
               "promptMatch": {
                 "type": "string",
-                "description": "case-insensitive regex on the prompt (empty = any)"
+                "description": "A case-insensitive regex on the prompt; empty = any prompt."
               },
               "model": {
                 "type": "string",
-                "description": "model id/alias passed as --model"
+                "description": "The model id or alias the task runs on (passed as --model)."
               }
             }
           },
@@ -10891,7 +10891,7 @@
         "agentFarm.quotaDowngradePercent": {
           "type": "number",
           "default": 0,
-          "description": "When the 5h window reaches this percent of windowTokenLimit, farm-launched tasks are forced onto quotaDowngradeModel (0 = off)."
+          "description": "When the five-hour window reaches this share of its limit, tasks the farm launches run on Downgrade model. 0 = off."
         },
         "agentFarm.quotaDowngradeModel": {
           "type": "string",
@@ -10953,7 +10953,7 @@
         "agentFarm.queueAutoAdvance": {
           "type": "boolean",
           "default": false,
-          "description": "When a task finishes (its terminal closes), automatically start the next queued task for that agent."
+          "description": "When a task finishes successfully, start the same agent's next queued task."
         },
         "agentFarm.autoReport": {
           "type": "string",
@@ -10979,12 +10979,12 @@
         "agentFarm.trendAlertFactor": {
           "type": "number",
           "default": 2,
-          "description": "Warn when an agent's 7-day cost reaches this multiple of the previous 7 days. 0 disables trend alerts."
+          "description": "Warn when an agent's cost over seven days reaches this multiple of the seven days before. 0 = off."
         },
         "agentFarm.costAnomalyMinUsd": {
           "type": "number",
           "default": 1,
-          "description": "Statistical cost-anomaly detector (median + MAD over 14 days): ignore days below this USD level. 0 disables the detector."
+          "description": "Days spending less than this are left out of the cost anomaly check. 0 turns the check off."
         },
         "agentFarm.agentRowCostUnit": {
           "type": "string",
@@ -10997,7 +10997,7 @@
             "Dollar cost, e.g. \"$12.34 today\""
           ],
           "default": "tokens",
-          "description": "Unit for the daily-usage suffix shown on each agent's row in the Agents view. Tokens by default since cost reads $0 until an agentFarm.pricing rule matches the model."
+          "description": "What the daily usage on each agent's row in the Agents view counts. Tokens by default, since cost reads $0 until a Model prices rule matches the model."
         },
         "agentFarm.evalRunArgs": {
           "type": "string",
@@ -11016,12 +11016,12 @@
             "type": "number"
           },
           "default": {},
-          "description": "Daily USD budgets by agent name (API-equivalent value). Use \"*\" for a fleet-wide budget. Example: {\"agent_one\": 20, \"*\": 50}. Warns at 80%, alerts when exceeded. A figure of 0 means NO CAP on that name, so {\"*\": 0} lifts the fleet ceiling while every per-agent figure stays in force. Tick 'budgetsUnlimited' to suspend every budget at once without losing the figures."
+          "description": "Daily budgets in dollars by agent name (API-equivalent value); \"*\" is the whole fleet. Example: {\"agent_one\": 20, \"*\": 50}. It warns at 80% and alerts when one is passed. A figure of 0 means NO CAP on that name, so {\"*\": 0} lifts the fleet ceiling while per-agent figures stay. Ignore all budgets turns them all off at once."
         },
         "agentFarm.budgetsUnlimited": {
           "type": "boolean",
           "default": false,
-          "description": "Suspend every daily budget: while this is on, no agent has a cap and nothing warns or blocks on spend, whatever 'budgets' says. The figures are kept, not cleared — turn it off and the budgets you set are back in force, unchanged."
+          "description": "Suspend every daily budget: while on, no agent has a cap and nothing warns or blocks on spend, whatever Daily budgets says. The figures are kept, not cleared; turn it off and they are back in force."
         },
         "agentFarm.includeUnmatchedProjects": {
           "type": "boolean",

@@ -20,6 +20,7 @@ const list = (a) => (a.length ? ': ' + a.slice(0, 12).join(', ') + (a.length > 1
 
 const CAT = require(path.join(ROOT, 'out', 'core', 'settingsCatalog', 'index.js'));
 const S = require(path.join(ROOT, 'out', 'core', 'settingsops.js'));
+const SH = require(path.join(ROOT, 'out', 'core', 'settingShape.js'));
 const PROPS = require(path.join(ROOT, 'package.json')).contributes.configuration.properties;
 const short = k => k.replace(/^agentFarm\./, '');
 const manifest = Object.keys(PROPS).filter(k => k.startsWith('agentFarm.')).map(short);
@@ -90,6 +91,10 @@ for (const k of CAT.catalogKeys()) {
     // U-230 — an option label names a value the schema has, in at most three words
     const en = ((PROPS['agentFarm.' + k] || {}).enum || []).map(String);
     if (e.options && Object.entries(e.options).some(([o, l]) => !en.includes(o) || String(l).trim().split(/\s+/).length > 3)) { controlBad.push(k + ' (options)'); }
+    // U-231 — a column heading names a field the schema declares, in at most three plain words
+    const declared = ((SH.shapeOf(PROPS['agentFarm.' + k] || {}) || {}).fields || []).map(f => f.name);
+    if (e.fields && Object.entries(e.fields).some(([f, l]) => !declared.includes(f) || !String(l).trim()
+        || String(l).trim().split(/\s+/).length > 3 || /[a-z][A-Z]/.test(l))) { controlBad.push(k + ' (fields)'); }
 }
 ok('a unit is one of the known ones, and only on a number' + list(unitBad), unitBad.length === 0);
 ok('a control hint is one of the known ones' + list(controlBad), controlBad.length === 0);
@@ -102,6 +107,16 @@ ok('the page model follows the catalog\'s section order', model.map(c => c.id).j
 ok('nothing in the real manifest falls into a More group', model.every(c => c.items.every(it => it.group !== 'more')));
 ok('every row carries section, group, tier, label and place', model.every(c => c.items.every(it =>
     it.section === c.id && it.group && it.tier && it.label && it.place)));
+const row = key => model.flatMap(c => c.items).find(it => it.key === 'agentFarm.' + key);
+ok('U-231 — a table column is headed by the name its record gives it, its key staying the stored name',
+    row('pricing').shape.fields.find(f => f.name === 'match').label === 'Model pattern'
+    && row('modelPolicy').shape.fields.find(f => f.name === 'promptMatch').label === 'Prompt pattern'
+    && row('taskRetry').shape.fields.every(f => f.label === undefined));
+const page = require('./lib_settings_source').settingsPageSource();
+ok('…and the page draws that name on the header, the form row and the messages, the key where none is given',
+    /<span class="setth">\$\{C\.esc\(f\.label \|\| f\.name\)\}/.test(page)
+    && /<span class="setfname">\$\{C\.esc\(f\.label \|\| f\.name\)\}/.test(page)
+    && /\$\{f\.label \|\| f\.name\} is required/.test(page) && /\$\{f\.label \|\| f\.name\} has to be a number/.test(page));
 const future = S.buildSettingsModel({ 'agentFarm.futureThing': { type: 'string', default: '' },
     'agentFarm.telegram.futureThing': { type: 'string', default: '' } }, () => '');
 ok('a setting invented tomorrow is drawn, in a More group — under General, or beside its dotted siblings',

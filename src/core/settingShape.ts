@@ -46,6 +46,8 @@ export interface SchemaNode {
 /** One field of an entry, as the page draws it. */
 export interface ShapeField {
     name: string;
+    /** U-231 — the heading a person reads, from the setting's catalog record; absent = the name */
+    label?: string;
     /** `string`, `number`, `boolean`, `string[]`, `object`… — already readable. */
     type: string;
     required: boolean;
