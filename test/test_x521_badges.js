@@ -140,7 +140,7 @@ const CLAUDE_ROUTE = {
     const turnsJs = read('media/turns.js');
     ok('the Turns chip wears the read-back provider, the route label and the model name',
         /providerId: served\.length \? r\.route \|\| '' : '', providerLabel: r\.routeLabel \|\| ''/.test(turnsJs)
-        && /reportedProviderIds: served, modelLabel: r\.modelLabel \|\| '', multiProvider: served\.length > 1/.test(turnsJs));
+        && /reportedProviderIds: served, modelLabel: r\.modelLabel \|\| '', servedLabel: r\.servedLabel \|\| '',\s*multiProvider: served\.length > 1/.test(turnsJs));
     const table = read('media/sessionsTable.js');
     ok('the Sessions table hover carries the origin lines, and its search finds what the chip says',
         /\.\.\.window\.AFProvider\.nameLines\(I\),\s*\.\.\.window\.AFProvider\.runLines\(I\),/.test(table)
@@ -150,6 +150,36 @@ const CLAUDE_ROUTE = {
     ok('every host builder passes the names: the Turns op, the identity op\'s rows', /projectOf: sessionProjectName,\s*routeNames: \(\) => routeNamesNow\(\),/.test(ext)
         && /providerIds: t\.providerIds \}\)\), routeNamesNow\(\)\);/.test(ext));
     ok('…the Sessions rows\' drift', (read('src/panels/dashboard.ts').match(/turnRuntimes\(m, engine, reports, names\)/g) || []).length === 2);
+}
+
+// ---------- a card opened on OpenCode's own model and moved onto a lent route at a turn boundary ----------
+{
+    const named = { current: { 'or-nemotron': { label: 'Nemotron-Ultra', providerId: 'openrouter' } }, last: {}, models: MODELS };
+    const moved = T.runIdentity(manifest(NATIVE), 'opencode',
+        [{ n: 1, models: ['nvidia/nemo:free'], providerIds: ['af-or-nemotron'] }], { names: named });
+    ok('‼️ the record names the route it moved onto, never a model reference cut from it', moved.servedLabel === 'Nemotron-Ultra' && !('modelLabel' in moved));
+    const win = {};
+    vm.runInNewContext(read('media/afProvider.js'), { window: win });
+    const P = win.AFProvider;
+    const I = { ...moved, binding: 'declared' };
+    ok('…its chip is that route\'s label in its company\'s colour, never "OpenRouter"',
+        String(P.chip(I, '', P.CARD_MAX)).replace(/<[^>]+>/g, '') === 'Nemotron-Ultra' && P.chip(I).includes(P.cls({ providerId: 'openrouter' })));
+    ok('…the hover opens with it and says the route was chosen during the run, with the model running',
+        /^Nemotron-Ultra — the route this run moved onto/.test(P.title(I))
+        && P.runLines(I)[0] === 'Origin: Agent Farm route · chosen during the run' && P.runLines(I)[1] === 'Model running: nvidia/nemo:free');
+    const back = T.runIdentity(manifest(NATIVE), 'opencode', [{ n: 1, models: ['nvidia/nemo:free'], providerIds: ['af-or-nemotron'] },
+        { n: 2, models: ['big-pickle'], providerIds: ['opencode'] }], { names: named });
+    ok('…back on its own model, the model\'s name again (the chip counts two providers)', back.modelLabel === 'Big Pickle' && !('servedLabel' in back) && back.multiProvider);
+    ok('…a removed route by the last name a launch gave it, an unknown one by its id',
+        N.badgeNames('opencode', NATIVE, [{ providerIds: ['af-gone'] }], [], { current: {}, last: { gone: { label: 'Old name', providerId: 'zai' } } }).servedLabel === 'Old name'
+        && N.badgeNames('opencode', NATIVE, [{ providerIds: ['af-gone'] }], [], undefined).servedLabel === 'gone');
+    const declared = T.runIdentity(manifest(OC_ROUTE), 'opencode', [{ n: 1, models: ['m'], providerIds: ['af-or-nemotron'] }], { names: named });
+    ok('a run declared on the route carries no servedLabel (its own label stands)', !('servedLabel' in declared) && declared.providerLabel === 'Nemotron-Ultra');
+    ok('a Claude run never carries one', N.badgeNames('claude', CLAUDE_ROUTE, [{ providerIds: ['af-x'] }], [], named).servedLabel === '');
+    const { turnRowsFor } = require(path.join(ROOT, 'out', 'core', 'turns.js'));
+    const row = turnRowsFor({ file: 'f', sessionId: 's', cwd: 'D:/a', agentName: 'dev', title: 't', lastTs: 9, isSidechain: false, source: 'opencode',
+        turns: [{ n: 1, ts: 1, models: ['nvidia/nemo:free'], providerIds: ['af-or-nemotron'] }] }, false, 0, moved, undefined, '', named)[0];
+    ok('…and that turn\'s row on the Turns page names the route too', row.servedLabel === 'Nemotron-Ultra' && row.modelLabel === '');
 }
 
 console.log(`test_x521_badges: ${pass} passed, ${fail} failed`);

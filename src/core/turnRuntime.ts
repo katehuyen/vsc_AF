@@ -31,7 +31,7 @@
 
 import { LaunchManifest, manifestIndex, manifestOf } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
-import { RouteNames, routeName, routeVendorOf, runModelLabel } from './routeName';
+import { badgeNames, RouteNames, routeName, routeVendorOf } from './routeName';
 import {
     hasProviderConflict, legacyIdentity, ProviderIdentity, proofOf, scopeAllowsTurnChange,
     TurnRuntimeIdentity, turnIdentity
@@ -354,6 +354,8 @@ export interface RunIdentity {
     providerProfileRemoved?: boolean;
     /** X-521 — on a run of OpenCode's own model only: that model's catalog name (routeName.ts runModelLabel). */
     modelLabel?: string;
+    /** X-521 — on OpenCode, a lent route the run moved onto at a turn boundary: its name (routeName.ts badgeNames). */
+    servedLabel?: string;
     requestedModelRef: string;
     reportedProviderIds: string[];
     reportedModels: string[];
@@ -405,8 +407,8 @@ export function runIdentity(
     const binding = bindingOf(manifest, id, opts);
     const named = routeName(str(id.providerProfileId), str(id.providerLabel), opts?.names);
     const origin = binding === 'external' ? 'external' : id.origin;
-    const modelLabel = runModelLabel(id.engine || str(engine) || 'claude', String(origin ?? ''),
-        drift.reportedProviderIds, drift.reportedModels, str(id.requestedModelRef), opts?.names?.models);
+    const { modelLabel, servedLabel } = badgeNames(id.engine || str(engine) || 'claude',
+        { ...id, origin: String(origin ?? '') }, turns || [], drift.reportedModels, opts?.names);
     return {
         engine: id.engine || str(engine) || 'claude',
         providerId: str(id.providerId),
@@ -414,6 +416,7 @@ export function runIdentity(
         ...(named?.launchedAs ? { providerLabelAtLaunch: named.launchedAs } : {}),
         ...(named?.removed ? { providerProfileRemoved: true } : {}),
         ...(modelLabel ? { modelLabel } : {}),
+        ...(servedLabel ? { servedLabel } : {}),
         // ‼️ An EXTERNAL run's origin is `external` and says so, rather than
         // borrowing `legacy-inherit` — "nobody was asked" is a statement about
         // our own records and is simply untrue of somebody else's transcript.

@@ -82,6 +82,7 @@ export interface TurnRow {
     /** X-521 — `providerIds` with a lent route read back as its company, and OpenCode's own model by its catalog name. */
     servedBy: string[];
     modelLabel: string;
+    servedLabel: string;
     /** The stored profile the session was launched on — Claude routes only, '' elsewhere. */
     profile: string;
     /** The session's declared route (its provider id), '' when it was launched on none. */
@@ -306,7 +307,8 @@ export function registerTurnsOps(
                     wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
                     tools: r.tools, errors: r.errors, models: r.models, providerIds: r.providerIds,
-                    providers: r.providers, profile: r.profile || null, route: r.route || null, modelLabel: r.modelLabel || null
+                    providers: r.providers, profile: r.profile || null, route: r.route || null, modelLabel: r.modelLabel || null,
+                    servedLabel: r.servedLabel || null
                 }));
         }
     });

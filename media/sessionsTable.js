@@ -578,7 +578,7 @@
                     + (r.tags || []).join(' ') + ' ' + (r.sessionId || '') + ' '
                     + (r.chain ? r.chain.chainId + ' ' : '')
                     + providersOf(r).join(' ') + ' ' + window.AFProvider.label(identityOf(r))
-                    + ' ' + ((identityOf(r) || {}).modelLabel || ''))) { return false; }
+                    + ' ' + ((identityOf(r) || {}).modelLabel || (identityOf(r) || {}).servedLabel || ''))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 // The picker lists LABELS ("Antigravity"), because that is what
                 // the badge in the column says and a filter that disagrees with

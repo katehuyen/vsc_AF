@@ -72,7 +72,8 @@
         const served = r.servedBy || r.providerIds || [];
         return window.AFProvider.chip({
             providerId: served.length ? r.route || '' : '', providerLabel: r.routeLabel || '',
-            reportedProviderIds: served, modelLabel: r.modelLabel || '', multiProvider: served.length > 1
+            reportedProviderIds: served, modelLabel: r.modelLabel || '', servedLabel: r.servedLabel || '',
+            multiProvider: served.length > 1
         }, '', window.AFProvider.CARD_MAX);
     };
 

@@ -99,17 +99,36 @@ export function routeVendorOf(
     return (known && known.providerId) || bare;
 }
 
-/** X-521 — one turn's badge facts: its reported providers read back, and on OpenCode's own model that model's catalog name. */
+type BadgeIdentity = { origin?: string; providerProfileId?: string; providerId?: string; requestedModelRef?: string };
+
+/**
+ * X-521 — WHAT THE BADGE SAYS BEYOND THE DECLARED ROUTE, off the RAW reports: OpenCode's own
+ * model by its catalog name, or a lent route the run moved onto at a turn boundary (its last
+ * turn reported `af-<id>`, not the declared profile) by that route's name — never the service.
+ */
+export function badgeNames(
+    engine: string, identity: BadgeIdentity | undefined, turns: readonly { providerIds?: readonly string[] }[],
+    models: readonly string[], names: RouteNames | undefined
+): { modelLabel: string; servedLabel: string } {
+    const ids = (t?: { providerIds?: readonly string[] }) => (t?.providerIds ?? []).map(str).filter(Boolean);
+    const raw = [...new Set(turns.flatMap(t => ids(t)))];
+    const last = ids(turns[turns.length - 1]);
+    const rid = engine === 'opencode' && last.length === 1 ? routeIdOfWire(last[0]) : '';
+    return {
+        modelLabel: rid ? '' : runModelLabel(engine, str(identity?.origin), raw, models, str(identity?.requestedModelRef), names?.models),
+        servedLabel: rid && idOf(rid) !== idOf(identity?.providerProfileId) ? (routeName(rid, '', names)?.label || rid) : ''
+    };
+}
+
+/** X-521 — one turn's badge facts: its reported providers read back, and the names `badgeNames` gives that turn. */
 export function turnMark(
-    engine: string,
-    identity: { origin?: string; providerProfileId?: string; providerId?: string; requestedModelRef?: string } | undefined,
+    engine: string, identity: BadgeIdentity | undefined,
     providerIds: readonly string[] | undefined, models: readonly string[] | undefined, names: RouteNames | undefined
-): { servedBy: string[]; modelLabel: string } {
+): { servedBy: string[]; modelLabel: string; servedLabel: string } {
     const reported = providerIds ?? [];
     return {
         servedBy: [...new Set(reported.map(p => routeVendorOf(p, identity, names)))],
-        modelLabel: reported.length
-            ? runModelLabel(engine, str(identity?.origin), reported, models ?? [], str(identity?.requestedModelRef), names?.models) : ''
+        ...(reported.length ? badgeNames(engine, identity, [{ providerIds: reported }], models ?? [], names) : { modelLabel: '', servedLabel: '' })
     };
 }
 
