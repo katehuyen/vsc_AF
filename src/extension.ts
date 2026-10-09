@@ -290,7 +290,7 @@ import { loadRows, metricsRefusal, performanceSummary, planMetrics } from './cor
 import { publishStepOf } from './core/calendarSignals';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
-    addProfile, duplicateProfile, readProfiles, readProfilesReport, removeProfile, setProfile,
+    addProfile, duplicateProfile, PROFILE_LABEL_MAX, readProfiles, readProfilesReport, removeProfile, setProfile,
     StoredProviderProfile
 } from './core/providerProfiles';
 import { retire, RETIRED_PROFILES_KEY, retiredProfileIds } from './core/retiredProfiles';
@@ -44250,7 +44250,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'keychain, not in the route: a key of its own is typed only in the Engines page; a Farm '
                 + 'Secret may be NAMED here (`secretRef`, refused unless the vault holds it) or with '
                 + 'providers.bindSecret — bound to the endpoint the route has then, and announced on '
-                + 'Notices. args: id, label?, providerId, baseUrl?, authKind?, tiers? (object, tier → '
+                + 'Notices. args: id, label? (at most ' + PROFILE_LABEL_MAX + ' characters — every badge shows '
+                + 'it in full, so a longer one is refused; empty shows the id), providerId, baseUrl?, authKind?, tiers? (object, tier → '
                 + 'model id), description? (the owner\'s note), engine? (claude), secretRef?. S-135 — the '
                 + 'id of a removed route is refused: an id is given once (providers.list → retired).',
             handler: async (args, from) => {
@@ -44282,7 +44283,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'key in the Engines page (Change key). The same holds whatever wrote the change — this '
                 + 'op, settings.set or a hand edit — unless this same call names a Farm Secret '
                 + '(`secretRef`, B-31), which is then bound at the new endpoint and announced on Notices. '
-                + 'args: id, label?, providerId?, baseUrl?, authKind?, tiers?, description?, secretRef?',
+                + 'args: id, label? (at most ' + PROFILE_LABEL_MAX + ' characters; a label stored longer before '
+                + 'the limit is kept while it is not changed), providerId?, baseUrl?, authKind?, tiers?, description?, secretRef?',
             handler: async (args, from) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
                 // B-31 — `secretRef` binds a Farm Secret at the endpoint the route has after this change

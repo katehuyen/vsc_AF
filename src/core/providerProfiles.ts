@@ -60,6 +60,15 @@ export const PROFILE_ID_REFUSAL =
     + 'letter or digit — it is also the key its credential is stored under, so it may not contain '
     + 'a dot, a space or a slash.';
 
+/**
+ * ‼️ S-131 — A ROUTE'S LABEL IS ITS BADGE, so it is held to what a badge shows in
+ * full (media/afProvider.js CARD_MAX is the same number). Counted in characters,
+ * as the badge cuts. A label stored before the limit is read and kept as it is;
+ * only a new or changed one is held to it (`labelWas`).
+ */
+export const PROFILE_LABEL_MAX = 15;
+const labelLength = (s: string): number => Array.from(s).length;
+
 /** Anything a caller might hand over. Nothing here is trusted; nothing not
  *  named in `storedProfile` survives the trip. */
 export interface ProviderProfileInput {
@@ -133,10 +142,15 @@ export function baseUrlRefusal(url: string): string {
  */
 export function profileRefusal(
     p: StoredProviderProfile,
-    opts: { engines?: string[]; takenIds?: string[]; retiredIds?: readonly string[] } = {}
+    opts: { engines?: string[]; takenIds?: string[]; retiredIds?: readonly string[]; labelWas?: string } = {}
 ): string[] {
     const out: string[] = [];
     if (!PROFILE_ID.test(p.id)) { out.push(PROFILE_ID_REFUSAL); }
+    if (labelLength(p.label) > PROFILE_LABEL_MAX && p.label !== opts.labelWas) {
+        out.push(`the label "${p.label}" is ${labelLength(p.label)} characters — a route's label is at most `
+            + `${PROFILE_LABEL_MAX}, because every badge shows it in full (an empty label shows the id, which `
+            + 'must fit too); a longer note belongs in its description.');
+    }
     if (opts.takenIds?.includes(p.id)) {
         out.push(`a profile with the id "${p.id}" already exists — ids are permanent because the `
             + 'credential is filed under one; change it with Edit on its card (providers.set), or copy it to a new id.');
@@ -293,7 +307,7 @@ export function setProfile(
         id: before.id,
         revision: before.revision
     });
-    const refusal = profileRefusal(merged, { engines });
+    const refusal = profileRefusal(merged, { engines, labelWas: before.label });
     if (refusal.length) { return refuse(list, refusal); }
     const next = routeChanged(before, merged)
         ? { ...merged, revision: before.revision + 1 }
@@ -331,8 +345,12 @@ export function duplicateProfile(
     const src = list.find(x => x.id === str(id).toLowerCase());
     if (!src) { return refuse(list, [`no profile with the id "${str(id)}"`]); }
     const wanted = str(newId).toLowerCase() || freeProfileId(list, src.id, retiredIds);
+    // the copy's label is held to the badge too: the source's is shortened to make room for the mark
+    const mark = ' (copy)';
+    const room = PROFILE_LABEL_MAX - labelLength(mark);
+    const base = labelLength(src.label) > room ? Array.from(src.label).slice(0, room).join('').trim() : src.label;
     const copy: StoredProviderProfile = {
-        ...src, id: wanted, label: `${src.label} (copy)`, revision: 1
+        ...src, id: wanted, label: base + mark, revision: 1
     };
     const refusal = profileRefusal(copy, { takenIds: list.map(x => x.id), retiredIds });
     if (refusal.length) { return refuse(list, refusal); }

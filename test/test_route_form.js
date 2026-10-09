@@ -40,6 +40,9 @@ const formOf = (h) => {
     const h = r.html();
     const f = formOf(h);
     ok('Edit opens the form', /Edit OpenRouter R1/.test(f));
+    // S-131 — a hand cannot type past what a badge shows in full; the hover says how many
+    ok('the label box takes at most the badge\'s characters, and its hover says so',
+        /<input type="text" data-af="label" data-aft="s" maxlength="15" /.test(f) && /at most 15 characters/.test(f));
     ok('…under that route\'s card, not at the top', h.indexOf('data-pokey="openrouter-r1"') < h.indexOf('id="poform"')
         && h.indexOf('id="poform"') < h.indexOf('data-pokey="groq"'));
     ok('…its own Edit button is gone while it is open', !/data-poedit="openrouter-r1"/.test(h));

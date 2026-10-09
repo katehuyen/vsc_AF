@@ -170,6 +170,33 @@ const claude = {
         P.setProfile(one, 'nope', { label: 'x' }).refusal.length, 1);
 }
 
+// ---------- ‼️ S-131 — A ROUTE'S LABEL IS ITS BADGE: at most PROFILE_LABEL_MAX characters ----------
+{
+    const M = P.PROFILE_LABEL_MAX;
+    const at = n => 'x'.repeat(n);
+    const long = P.addProfile([], { ...claude, label: at(M + 1) });
+    ok(`a new route's label of ${M + 1} characters is refused, and the refusal says the limit`,
+        long.refusal.length === 1 && new RegExp(`at most ${M}`).test(long.refusal[0]) && !long.list.length);
+    ok(`…one of exactly ${M} is taken`, !P.addProfile([], { ...claude, label: at(M) }).refusal.length);
+    ok('…counted in characters, as the badge cuts: emoji are one each',
+        !P.addProfile([], { ...claude, label: '🧠'.repeat(M) }).refusal.length);
+    ok('an empty label shows the id, so a long id with no label is held to it too',
+        P.addProfile([], { ...claude, id: 'a-very-long-route-id', label: '' }).refusal.some(r => /at most/.test(r)));
+    // a label stored before the limit is read and kept — only a new or changed one is held to it
+    const old = P.readProfiles([{ ...claude, label: at(M + 5) }]);
+    ok('‼️ a label stored longer before the limit is still read', old.length === 1 && old[0].label === at(M + 5));
+    ok('‼️ …and the route stays editable while its label is left alone',
+        !P.setProfile(old, 'kimi', { baseUrl: 'https://api.moonshot.ai/v2' }).refusal.length);
+    ok('…but a changed label is held to the limit', P.setProfile(old, 'kimi', { label: at(M + 2) }).refusal.length === 1);
+    ok('…and shortening it is taken', !P.setProfile(old, 'kimi', { label: 'Kimi' }).refusal.length);
+    const copied = P.duplicateProfile(P.addProfile([], { ...claude, label: 'MiniMax M2.5' }).list, 'kimi');
+    ok(`a copy's label makes room for "(copy)" and fits (${copied.profile && copied.profile.label})`,
+        !copied.refusal.length && /\(copy\)$/.test(copied.profile.label) && Array.from(copied.profile.label).length <= M);
+    const prov = fs.readFileSync(path.join(ROOT, 'media', 'afProvider.js'), 'utf8');
+    ok('‼️ the badge cuts at the same number the store holds a label to (afProvider CARD_MAX)',
+        new RegExp(`CARD_MAX: ${M}\\b`).test(prov));
+}
+
 // ---------- ‼️ A COPY IS A NEW PROFILE WITH NO CREDENTIAL ----------
 {
     const one = P.addProfile([], claude).list;

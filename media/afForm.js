@@ -72,10 +72,12 @@
         // ------------------------------------------------------------ fields
 
         /** A one-line text box. `o.ph` placeholder · `o.tip` hover · `o.wide`
-         *  full row · `o.required` marks it · `o.redraw` repaints on change. */
+         *  full row · `o.required` marks it · `o.redraw` repaints on change ·
+         *  `o.max` the most characters a hand can type into it. */
         text: function (key, label, value, o) {
             const opt = Object.assign({ label: label }, o || {});
             return wrap(opt, `<input type="${esc(opt.type || 'text')}" ${bind(key, 's', opt)}`
+                + (Number(opt.max) > 0 ? ` maxlength="${Number(opt.max)}"` : '')
                 + ` value="${esc(value)}" placeholder="${esc(opt.ph || '')}"`
                 + `${opt.mono ? ' class="mono"' : ''}>`);
         },

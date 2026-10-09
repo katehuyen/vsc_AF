@@ -114,8 +114,10 @@
                         required: true, mono: true, ph: 'kimi',
                         tip: t('2–40 lowercase letters, digits and hyphens. The key is stored under it, so it cannot be changed afterwards.')
                     }),
+                // S-131 — the label is the badge, held to what a badge shows in full (core PROFILE_LABEL_MAX)
                 F.text('label', t('Label'), form.label, {
-                    ph: 'Kimi', tip: t('What a picker shows. Renaming does not start a new revision.')
+                    ph: 'Kimi', max: window.AFProvider.CARD_MAX,
+                    tip: t('What a picker and every badge show — at most {n} characters, so it is never cut. A longer note goes in Your note. Renaming does not start a new revision.', { n: window.AFProvider.CARD_MAX })
                 }),
                 F.text('providerId', t('Provider'), form.providerId, {
                     required: true, ph: 'kimi', tip: t('anthropic · anthropic-api · kimi · minimax, or one you name yourself.')
