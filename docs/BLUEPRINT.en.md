@@ -3613,7 +3613,7 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 | `agentFarm.contextBudgetTokens` | 8000 | Fixed context-load budget |
 | `agentFarm.windowTokenLimit` | 0 (off) | 5-hour window limit (for the percentage bar) |
 | `agentFarm.maxTranscriptMessages` | 1500 | Max messages shown in the session viewer |
-| `agentFarm.contextWindowTokens` | 0 (auto) | The "Context now" ceiling. 0 = found automatically from the session's model (no percentage for an unknown model); enter a value to force a fixed ceiling |
+| `agentFarm.contextWindowTokens` | 0 (auto) | The "Context now" ceiling. 0 = found automatically: the window the engine states, else the Context of the route the session runs on, else the session's model (no percentage when none of them is known); enter a value to force a fixed ceiling |
 | `agentFarm.includeUnmatchedProjects` | false | Also include sessions that don't match the agent roots |
 | `agentFarm.pricing` | the table above | Model pricing rules |
 | `agentFarm.liveMonitor` | true | Run the live event listener |

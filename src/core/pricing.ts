@@ -451,9 +451,9 @@ export function contextWindowFor(model: string): number {
     return hit ? hit.tokens : 0;
 }
 
-/** Which of the three answers a context ceiling was. '' means nobody stated
+/** Which of the four answers a context ceiling was. '' means nobody stated
  *  one, and that is a real answer: there is then no fraction to take. */
-export type CtxWindowSource = 'forced' | 'engine' | 'model' | '';
+export type CtxWindowSource = 'forced' | 'engine' | 'route' | 'model' | '';
 
 export interface CtxWindow {
     /** 0 when nobody stated one — never a stand-in default. */
@@ -475,10 +475,15 @@ export interface CtxWindow {
  * the model's published window is the last real answer; and zero is where it
  * stops, because a confident percentage against a guessed ceiling is worse than
  * no percentage at all.
+ *
+ * X-522 — `route` is the window the session's route states (routeWindow.ts): a
+ * person's figure for that very route, so it outranks the table, which only
+ * knows a model name. A route stating none passes 0 and adds nothing.
  */
-export function contextWindowOf(stated: number, model: string, forced = 0): CtxWindow {
+export function contextWindowOf(stated: number, model: string, forced = 0, route = 0): CtxWindow {
     if (forced > 0) { return { tokens: forced, source: 'forced' }; }
     if (stated > 0) { return { tokens: stated, source: 'engine' }; }
+    if (route > 0) { return { tokens: route, source: 'route' }; }
     const tokens = contextWindowFor(model);
     return tokens > 0 ? { tokens, source: 'model' } : { tokens: 0, source: '' };
 }

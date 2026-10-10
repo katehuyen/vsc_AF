@@ -306,6 +306,7 @@ import {
 } from './core/providerProfiles';
 import { retire, RETIRED_PROFILES_KEY, retiredProfileIds } from './core/retiredProfiles';
 import { RouteNames, routeName, routeNames } from './core/routeName';
+import { sessionRouteWindow, statesRouteWindow } from './core/routeWindow';
 import { noticesBarText, unseenQuestionCount } from './core/noticesBar';
 import { launchRecordHealth } from './core/launchRecordHealth';
 import { bridgeStartText } from './core/bridgeStartText';
@@ -1742,15 +1743,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // put the stated window ahead of the reader's override (`c.window ||`,
     // `s.ctxWindow ||`) while the dashboard put the override first, so the
     // guard and the table could disagree about the same session.
-    const contextLimitForModel = (model: string, stated = 0): number =>
-        contextWindowOf(stated, model, cfg().get<number>('contextWindowTokens', 0)).tokens;
+    // X-522 — what the session's route states (core/routeWindow.ts). No profile stating one → no lookup at all:
+    // this is asked on every tool call of every session, and the declarations it reads come later in this function.
+    const routeWindowFor = (sessionId: string, engine?: string): number => {
+        const names = routeNamesNow();
+        return statesRouteWindow(names) ? sessionRouteWindow(sessionRowOf(sessionId), launchManifests(), names, engine) : 0;
+    };
+    const contextLimitForModel = (model: string, stated: number, route: number): number =>
+        contextWindowOf(stated, model, cfg().get<number>('contextWindowTokens', 0), route).tokens;
     const contextReadingFor = (sessionId: string, hint: ContextReadHint): ContextSample | undefined => {
         const hosted = consoleHostRef?.list().find(s => s.sessionId === sessionId);
         if (hosted && hosted.contextTokens) {
             const c = contextSample(hosted);
             if (c) {
                 const w = contextLimitForModel(
-                    hosted.applied?.model || hosted.model || '', c.window || 0);
+                    hosted.applied?.model || hosted.model || '', c.window || 0, routeWindowFor(sessionId, hosted.engine));
                 if (w > 0) { c.window = w; }
                 return c;
             }
@@ -1760,13 +1767,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // here at hook time, long after activation has finished.
             const last = lastCallFromTranscriptTail(usageProbe.readTail(hint.transcriptPath, 96 * 1024), u => contextAfter(u as RawUsage | undefined));
             if (last) {
-                const w = contextLimitForModel(last.model);
+                const w = contextLimitForModel(last.model, 0, routeWindowFor(sessionId));
                 return { tokens: last.tokens, ...(w > 0 ? { window: w } : {}), source: 'transcript-last-call', measuredAt: Date.now() };
             }
         }
         const s = index.byId(sessionId);
         if (s?.lastCtxTokens) {
-            const w = contextLimitForModel(s.lastModel ?? '', s.ctxWindow ?? 0);
+            const w = contextLimitForModel(s.lastModel ?? '', s.ctxWindow ?? 0, routeWindowFor(sessionId));
             return { tokens: s.lastCtxTokens, ...(w > 0 ? { window: w } : {}), source: 'transcript-last-call', stale: true };
         }
         return undefined;
@@ -25459,8 +25466,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ X-113 — `stated` is what the CLI itself printed for this session,
         // and it used to win over the reader's override because the caller
         // wrote `cli.context.limit || …`. One rule now decides, in core.
-        contextLimitFor: (model: string, stated = 0) =>
-            contextWindowOf(stated, model, cfg().get<number>('contextWindowTokens', 0)).tokens,
+        contextLimitFor: (model: string, stated: number, sessionId: string) =>
+            contextWindowOf(stated, model, cfg().get<number>('contextWindowTokens', 0), routeWindowFor(sessionId)).tokens,
         contextSignalFor: (sessionId: string) =>
             contextSignalView(contextGuard.record(sessionId), contextGuard.thresholds(), relTime),
         titleFor: (sessionId: string) => sessionTitles()[sessionId],
@@ -26651,7 +26658,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let routeNamesMemo: { ms: unknown; sig: string; names: RouteNames } | undefined;
     const routeNamesNow = (): RouteNames => {
         const ms = launchManifests(), ps = providerProfiles();
-        const sig = JSON.stringify([ps.map(p => [p.id, p.label, p.providerId]), opencodeCatalog.fetchedAt ?? 0]);
+        const sig = JSON.stringify([ps.map(p => [p.id, p.label, p.providerId, p.context]), opencodeCatalog.fetchedAt ?? 0]);
         if (!routeNamesMemo || routeNamesMemo.ms !== ms || routeNamesMemo.sig !== sig) {
             // X-521 — and OpenCode's own models by their catalog names (a lent route's `af-` rows are the route's, never these)
             const models: Record<string, string> = {};
@@ -30743,6 +30750,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         routeOf: consoleRouteOf,
         identityFor: (sessionId: string, engine?: string) => sessionIdentityOf(sessionId, engine),
+        routeWindowFor,
         /**
          * ‼️ X-105 — THE COMPOSER'S ROUTE BOX, FROM THE LAUNCHER'S OWN READER.
          *

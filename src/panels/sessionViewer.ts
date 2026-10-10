@@ -30,8 +30,9 @@ export interface ViewerDeps {
      *  the gauge then shows the raw token count without a percent or color. */
     /** The ceiling a context reading is a fraction of. `stated` is what the
      *  engine itself published for this session, when there is one; the host
-     *  decides the precedence once (core/pricing.ts contextWindowOf). */
-    contextLimitFor(model: string, stated?: number): number;
+     *  decides the precedence once (core/pricing.ts contextWindowOf). The
+     *  session is named so the host can add what its route states (X-522). */
+    contextLimitFor(model: string, stated: number, sessionId: string): number;
     /**
      * ‼️ S-64 — WAS THIS RUN TOLD ITS WINDOW WAS FULL, and did it obey? The
      * gauge above says how full the window got; without this, a page showing
@@ -445,7 +446,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             engine: deps.engineFor?.(cli.sessionId) || cli.engine,
             context: {
                 ...cli.context,
-                limit: deps.contextLimitFor(cli.context.model, cli.context.limit || 0)
+                limit: deps.contextLimitFor(cli.context.model, cli.context.limit || 0, cli.sessionId)
             },
             contextSignal: deps.contextSignalFor?.(cli.sessionId) ?? null,
             contextReport: null,
@@ -823,7 +824,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         cost,
         errors,
         toolCalls,
-        context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimitFor(ctxModel), model: ctxModel },
+        context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimitFor(ctxModel, 0, sessionId), model: ctxModel },
         contextSignal: deps.contextSignalFor?.(sessionId) ?? null,
         contextReport,
         turnCount: turnNo,

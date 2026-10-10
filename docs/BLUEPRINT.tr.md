@@ -3665,7 +3665,7 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 | `agentFarm.contextBudgetTokens` | 8000 | Sabit bağlam yükü bütçesi |
 | `agentFarm.windowTokenLimit` | 0 (kapalı) | 5 saatlik pencere limiti (yüzde çubuğu için) |
 | `agentFarm.maxTranscriptMessages` | 1500 | Oturum görüntüleyicide gösterilen en fazla mesaj |
-| `agentFarm.contextWindowTokens` | 0 (otomatik) | "Context now" tavanı. 0 = oturumun modelinden otomatik bulunur (bilinmeyen modelde yüzde gösterilmez); sabit tavan zorlamak için değer gir |
+| `agentFarm.contextWindowTokens` | 0 (otomatik) | "Context now" tavanı. 0 = otomatik bulunur: motorun bildirdiği pencere, yoksa oturumun çalıştığı rotanın Context değeri, yoksa oturumun modeli (hiçbiri bilinmiyorsa yüzde gösterilmez); sabit tavan zorlamak için değer gir |
 | `agentFarm.includeUnmatchedProjects` | false | Ajan köklerine eşleşmeyen oturumları da dahil et |
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
 | `agentFarm.liveMonitor` | true | Canlı olay dinleyicisini çalıştır |

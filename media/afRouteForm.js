@@ -199,7 +199,7 @@
                 + F.grid([
                     F.text('context', t('Context'), form.context, {
                         type: 'number', ph: t('tokens'),
-                        tip: t('The context window of the route\'s models, in tokens — one number for every tier, so write the smallest, or split the models into routes. OpenCode takes a limit only when Context and Output are both filled.')
+                        tip: t('The context window of the route\'s models, in tokens — one number for every tier, so write the smallest, or split the models into routes. Claude Code is told this window, and the context meter and the handover thresholds count against it; left empty, Claude Code assumes its own default and the meter shows no percentage for a model it does not know. OpenCode takes a limit only when Context and Output are both filled.')
                     }),
                     F.text('output', t('Output'), form.output, {
                         type: 'number', ph: t('tokens'),

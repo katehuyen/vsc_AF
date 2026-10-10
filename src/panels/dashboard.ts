@@ -15,6 +15,7 @@ import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
 import type { RouteNames } from '../core/routeName';
+import { sessionRouteWindow } from '../core/routeWindow';
 import { billingReader, describeDrift, runDrift, sessionIdentity, turnRuntimes } from '../core/turnRuntime';
 import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
@@ -283,7 +284,7 @@ export function sessionRowPool(
     const windowOf = (s: SessionInfo): CtxWindow => contextWindowOf(
         s.ctxWindow ?? 0,
         s.models?.length ? s.models[s.models.length - 1] : '',
-        forced);
+        forced, sessionRouteWindow(s, manifests, names));
     const ctxWindowFields = (s: SessionInfo) => {
         const w = windowOf(s);
         return {

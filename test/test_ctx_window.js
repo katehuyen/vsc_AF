@@ -128,7 +128,7 @@ for (const [page, num] of [['media/turns.js', 'r.endCtx'], ['media/sessionsTable
 // no percentage and no bar. The other pages had known the answer since X-35.
 const consolePanel = read('src/panels/consolePanel.ts');
 ok('the card resolves its ceiling through the one rule, not off the engine alone',
-    /liveWindow\(s, afConfig\(\)\.get<number>\('contextWindowTokens', 0\)\)/.test(consolePanel)
+    /liveWindow\(s, afConfig\(\)\.get<number>\('contextWindowTokens', 0\),/.test(consolePanel)
     && !/contextWindowTokens: s\.contextWindowTokens \?\? 0/.test(consolePanel));
 ok('…and asks the APPLIED model, which is the one really running',
     /s\.applied\?\.model \|\| s\.model \|\| ''/.test(consolePanel));
@@ -148,7 +148,7 @@ const C = (() => {
     return box.window.AFCharts;
 })();
 ok('every source has its own sentence',
-    new Set(['forced', 'engine', 'model', ''].map(s => C.ctxWindowIs(s))).size === 4);
+    new Set(['forced', 'engine', 'route', 'model', ''].map(s => C.ctxWindowIs(s))).size === 5);
 ok('the override is described as the reader\'s own, not as a measurement',
     /setting/.test(C.ctxWindowIs('forced')) && !/setting/.test(C.ctxWindowIs('engine')));
 ok('an unknown source still gets a sentence rather than "undefined"',

@@ -6,6 +6,7 @@ import { SessionInfo, SessionOrigin, sessionHeadless, sessionMission, sessionOri
 import { ChainIndex, RunCategory, chainIndexNow, runCategory } from './chainMembership';
 import { RunIdentity } from './turnRuntime';
 import { RouteNames, turnMark } from './routeName';
+import { routeWindowOf } from './routeWindow';
 import { matchesAny, profileOf, providersOf, RUN_SELECTION_ARGS, runSelectionArgs, selectionArg } from './runFilter';
 
 /**
@@ -128,7 +129,7 @@ export function turnRowsFor(
         const win = contextWindowOf(
             s.ctxWindow ?? 0,
             t.models?.length ? t.models[t.models.length - 1] : '',
-            forced);
+            forced, routeWindowOf(s.source ?? 'claude', identity?.providerProfileId, t.providerIds, names));
         const mark = turnMark(s.source ?? 'claude', identity, t.providerIds, t.models, names);
         return {
             file: s.file,

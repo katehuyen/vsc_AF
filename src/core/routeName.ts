@@ -15,7 +15,8 @@
 import { LaunchManifest } from './launchManifest';
 import { routeIdOfWire } from './opencodeRoutes';
 
-export interface RouteNameEntry { label: string; providerId: string }
+/** `context` (X-522): the window the profile states now, only when it states one — read by routeWindow.ts. */
+export interface RouteNameEntry { label: string; providerId: string; context?: number }
 
 export interface RouteNames {
     /** The profiles that exist now, by id. */
@@ -64,13 +65,14 @@ const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 const idOf = (v: unknown): string => str(v).toLowerCase();
 
 export function routeNames(
-    profiles: readonly { id: string; label?: string; providerId?: string }[],
+    profiles: readonly { id: string; label?: string; providerId?: string; context?: number }[],
     manifests: readonly LaunchManifest[] | undefined
 ): RouteNames {
     const current: Record<string, RouteNameEntry> = {};
     for (const p of profiles || []) {
         const id = idOf(p && p.id);
-        if (id) { current[id] = { label: str(p.label), providerId: str(p.providerId) }; }
+        const context = Math.floor(Number(p && p.context) || 0);
+        if (id) { current[id] = { label: str(p.label), providerId: str(p.providerId), ...(context > 0 ? { context } : {}) }; }
     }
     const last: Record<string, RouteNameEntry> = {};
     const at: Record<string, number> = {};

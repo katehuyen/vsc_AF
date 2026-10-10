@@ -9284,7 +9284,7 @@
         "agentFarm.contextWindowTokens": {
           "type": "number",
           "default": 0,
-          "description": "The context window every \"Context now\" figure is measured against: the session viewer's gauge and the Ctx column's hover. 0 = the window the engine itself states (Codex reports one per turn), else the model's known one; with neither, the raw token count shows without a percent."
+          "description": "The context window every \"Context now\" figure is measured against: the session viewer's gauge and the Ctx column's hover. 0 = the window the engine itself states (Codex reports one per turn), else the Context of the route the session runs on, else the model's known one; with none of them, the raw token count shows without a percent."
         },
         "agentFarm.contextConvergePct": {
           "type": "number",

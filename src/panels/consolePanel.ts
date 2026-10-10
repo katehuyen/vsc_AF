@@ -60,9 +60,9 @@ import { ComposerSetup, composerSetup, setupRoute } from '../launch/doors/compos
  */
 function liveWindow(
     s: { contextWindowTokens?: number; applied?: { model: string }; model?: string },
-    forced: number
+    forced: number, route: number
 ): { contextWindowTokens: number; contextWindowSource: string } {
-    const w = contextWindowOf(s.contextWindowTokens ?? 0, s.applied?.model || s.model || '', forced);
+    const w = contextWindowOf(s.contextWindowTokens ?? 0, s.applied?.model || s.model || '', forced, route);
     return { contextWindowTokens: w.tokens, contextWindowSource: w.source };
 }
 
@@ -307,6 +307,8 @@ export interface ConsoleDeps {
      * one run cannot be off-plan on one page and on the plan on another.
      */
     identityFor?(sessionId: string, engine?: string): RunIdentity | undefined;
+    /** X-522 — the window the session's route states, 0 when none does (core/routeWindow.ts, through the host). */
+    routeWindowFor?(sessionId: string, engine?: string): number;
     /**
      * ‼️ X-105 — WHAT THE COMPOSER MAY PICK, ASKED OF THE ENGINE'S OWN ADAPTER.
      *
@@ -1279,7 +1281,8 @@ export class ConsolePanel {
                 // reading came from and how old it is — the strip draws the
                 // first two and the AFTip carries all four.
                 contextTokens: s.contextTokens ?? 0,
-                ...liveWindow(s, afConfig().get<number>('contextWindowTokens', 0)),
+                ...liveWindow(s, afConfig().get<number>('contextWindowTokens', 0),
+                    this.deps.routeWindowFor?.(s.sessionId ?? '', s.engine ?? 'claude') ?? 0),
                 contextSource: s.contextSource ?? '',
                 contextMeasuredAt: s.contextMeasuredAt ?? 0,
                 contextStale: !!s.contextStale,
@@ -1932,7 +1935,8 @@ export class ConsolePanel {
             // every Claude conversation in the list — the exact ambiguity the
             // paragraph above exists to close.
             contextWindowTokens: contextWindowOf(s.ctxWindow ?? 0, s.lastModel ?? '',
-                afConfig().get<number>('contextWindowTokens', 0)).tokens,
+                afConfig().get<number>('contextWindowTokens', 0),
+                this.deps.routeWindowFor?.(s.sessionId, s.source || 'claude') ?? 0).tokens,
             // …and where that reading came from: the index read it off the
             // conversation's own last call, which is the only thing it may mean.
             contextSource: s.lastCtxTokens ? 'transcript-last-call' : '',
