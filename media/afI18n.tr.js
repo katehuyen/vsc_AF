@@ -10,6 +10,8 @@
     'Projects': 'Projeler',
     'Console': 'Konsol',
     'Now': 'Şimdi',
+    'Mobile': 'Mobil',
+    'Devices': 'Cihazlar',
     'Living': 'Canlılık',
     'Notices': 'Bildirimler',
     'Queue': 'Kuyruk',
@@ -40,6 +42,12 @@
         'Herhangi bir motorla VS Code içindeki bir panelde konuş: terminal değil, barındırılan bir konuşma; turları, maliyeti ve dökümü diğer her oturum gibi kaydedilir.',
     'One screen of what waits for you, what is running, today\'s spend and quotas and the latest notices, with a box that speaks into a running session. The phone opens it first.':
         'Tek ekranda seni bekleyenler, çalışanlar, bugünün harcaması ve kotalar, son bildirimler; çalışan bir oturuma yazabileceğin bir kutuyla. Telefon ilk bunu açar.',
+    'The farm on your phone, in three tabs: Now (what waits for you, what is running, today\'s spend and quotas — the phone opens it first), Web (the farm in a browser) and Devices (pairing a phone and letting it in).':
+        'Telefonundaki çiftlik, üç sekmede: Şimdi (seni bekleyenler, çalışanlar, bugünün harcaması ve kotalar — telefon ilk bunu açar), Web (tarayıcıdaki çiftlik) ve Cihazlar (telefon eşleme ve ona izin verme).',
+    'The farm in a browser or on your phone: read-only and token-protected.': 'Tarayıcıda ya da telefonunda çiftlik: salt okunur ve belirteçle korunur.',
+    'Pair a phone with the Agent Farm app, see the phones paired, and let them in through your network.':
+        'Agent Farm uygulamasıyla bir telefon eşle, eşli telefonları gör ve ağından içeri girmelerine izin ver.',
+    'The phone app is not available in this build.': 'Telefon uygulaması bu sürümde yok.',
     'Is the system alive? Your own loops — a file that should exist, a folder that should be empty, a queue that should be short — each one a row that passes or fails.':
         'Sistem canlı mı? Kendi döngülerin: var olması gereken bir dosya, boş olması gereken bir klasör, kısa kalması gereken bir kuyruk; her biri geçen ya da kalan bir satır.',
     'What the agents want to tell you: questions waiting on an answer, results and reports. The number beside the name is how many are still unread.':

@@ -113,9 +113,9 @@
                 + 'terminal, so its turns, cost and transcript are recorded like every other session.'
         },
         {
-            id: 'now', label: '◉ Now',
-            tip: 'One screen of what waits for you, what is running, today\'s spend and quotas and the '
-                + 'latest notices, with a box that speaks into a running session. The phone opens it first.'
+            id: 'now', label: '📱 Mobile',
+            tip: 'The farm on your phone, in three tabs: Now (what waits for you, what is running, today\'s spend and quotas — '
+                + 'the phone opens it first), Web (the farm in a browser) and Devices (pairing a phone and letting it in).'
         },
         {
             id: 'living', label: '💓 Living',
@@ -255,6 +255,7 @@
         .af-tab .af-tab-n { opacity:calc(1 - .2 * var(--af-dimk, 1)); font-weight:400; }
         .af-tab .af-tab-grey { opacity:calc(1 - .45 * var(--af-dimk, 1)); font-weight:400; font-size:12px; }
         .af-tab-sep { width:1px; height:18px; margin:0 6px 8px; background:var(--vscode-panel-border); opacity:.8; }
+        html.af-phone .af-tabs-mobile { display:none; }
     </style>`;
 
     /**
@@ -281,15 +282,27 @@
         return `<span class="${cls}" data-afcount="${id}">${n ? ` (${n})` : ''}</span>`;
     }
 
-    function tabs(active) {
-        const T = [
+    // U-247 — a strip is a GROUP of pages that reads as one destination in the global row; the page a strip
+    // is drawn on finds its own group, so a caller names only itself.
+    const TAB_GROUPS = {
+        inbox: [
             { id: 'notices', label: '🔔 Notices', cls: 'af-tab-n' },
             { id: 'queue', label: '📥 Queue', cls: 'af-tab-n' },
             { sep: true },
             { id: 'a2anotes', label: '🤖 A2A Notes', cls: 'af-tab-n af-tab-grey' },
             { id: 'a2atasks', label: '⚡ A2A Tasks', cls: 'af-tab-n af-tab-grey' }
-        ];
-        return `${TAB_STYLE}<div class="af-tabs">` + T.map(t => t.sep
+        ],
+        mobile: [
+            { id: 'now', label: '◉ Now', cls: 'af-tab-n' },
+            { id: 'web', label: '🌐 Web', cls: 'af-tab-n' },
+            { id: 'devices', label: '🔗 Devices', cls: 'af-tab-n' }
+        ]
+    };
+    function tabs(active) {
+        const T = Object.values(TAB_GROUPS).find(g => g.some(x => x.id === active)) || TAB_GROUPS.inbox;
+        // the phone itself has no use for the Mobile strip: it opens on Now, and Web and Devices set up the PC
+        const group = T === TAB_GROUPS.mobile ? ' af-tabs-mobile' : '';
+        return `${TAB_STYLE}<div class="af-tabs${group}">` + T.map(t => t.sep
             ? '<span class="af-tab-sep" aria-hidden="true"></span>'
             : `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${tl(t.label)}${badge(t.id, t.cls)}</button>`
         ).join('') + `</div>`;

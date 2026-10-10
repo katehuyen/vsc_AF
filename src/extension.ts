@@ -739,6 +739,7 @@ import { TasksPanel } from './panels/tasksPanel';
 import { desktopAsk, type PanelAsk } from './panels/panelAsk';
 import { NeedsPanel } from './panels/needsPanel';
 import { NowPanel, type NowDeps } from './panels/nowPanel';
+import { MOBILE_COMMANDS, MobilePanel, type MobileView } from './panels/mobilePanel';
 import { buildNow, NOW_LIMITS } from './core/nowPage';
 import { NoticesPanel, type NoticesDeps } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
@@ -41892,6 +41893,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.openNow', () => {
             NowPanel.show(nowDeps);
         }),
+        // U-247 — the other two tabs under 📱 Mobile: the Toolbox's web view and phone app cards, on pages of their own
+        ...(Object.keys(MOBILE_COMMANDS) as MobileView[]).map(view => vscode.commands.registerCommand(
+            MOBILE_COMMANDS[view],
+            () => MobilePanel.show(view, {
+                extensionUri: context.extensionUri,
+                ...(toolboxDeps.web ? { web: toolboxDeps.web } : {}),
+                ...(toolboxDeps.remote ? { remote: toolboxDeps.remote } : {})
+            }))),
 
         // S-123 — a chain id (or { chainId }) opens the page on that chain's row
         vscode.commands.registerCommand('agentfarm.openChains', (arg?: unknown) => {

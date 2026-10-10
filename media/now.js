@@ -187,6 +187,7 @@
                     .nw-boxrow select { max-width:none; flex:1 1 100%; }
                 }
             </style>
+            ${window.AFHeader.tabs('now')}
             ${window.AFHeader.html({
                 page: 'now',
                 title: t('Now'),

@@ -349,15 +349,6 @@
       ]
     },
     {
-      "capability": "accountsMessages.ts#accountSignOut",
-      "ui": [
-        "page:accountsMessages.ts#accountSignOut"
-      ],
-      "ops": [
-        "accounts.signout"
-      ]
-    },
-    {
       "capability": "accountsMessages.ts#accountRefresh",
       "ui": [
         "page:accountsMessages.ts#accountRefresh"
@@ -373,6 +364,15 @@
       ],
       "ops": [
         "accounts.autoRefresh"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountSignOut",
+      "ui": [
+        "page:accountsMessages.ts#accountSignOut"
+      ],
+      "ops": [
+        "accounts.signout"
       ]
     },
     {
@@ -962,6 +962,15 @@
       ]
     },
     {
+      "capability": "alertMessages.ts#alertReading",
+      "ui": [
+        "page:alertMessages.ts#alertReading"
+      ],
+      "ops": [
+        "alerts.readingSettings"
+      ]
+    },
+    {
       "capability": "alertMessages.ts#alertReadStop",
       "ui": [
         "page:alertMessages.ts#alertReadStop"
@@ -1040,15 +1049,6 @@
       ],
       "ops": [
         "alerts.volume"
-      ]
-    },
-    {
-      "capability": "alertMessages.ts#alertReading",
-      "ui": [
-        "page:alertMessages.ts#alertReading"
-      ],
-      "ops": [
-        "alerts.readingSettings"
       ]
     },
     {
@@ -1427,6 +1427,15 @@
       }
     },
     {
+      "capability": "chainsPanel.ts#account",
+      "ui": [
+        "page:chainsPanel.ts#account"
+      ],
+      "ops": [
+        "chains.setAccount"
+      ]
+    },
+    {
       "capability": "chainsPanel.ts#afnav",
       "ui": [
         "page:chainsPanel.ts#afnav"
@@ -1443,33 +1452,6 @@
       ],
       "ops": [
         "baton.setLegs"
-      ]
-    },
-    {
-      "capability": "chainsPanel.ts#pause",
-      "ui": [
-        "page:chainsPanel.ts#pause"
-      ],
-      "ops": [
-        "chains.pause"
-      ]
-    },
-    {
-      "capability": "chainsPanel.ts#resume",
-      "ui": [
-        "page:chainsPanel.ts#resume"
-      ],
-      "ops": [
-        "chains.resume"
-      ]
-    },
-    {
-      "capability": "chainsPanel.ts#account",
-      "ui": [
-        "page:chainsPanel.ts#account"
-      ],
-      "ops": [
-        "chains.setAccount"
       ]
     },
     {
@@ -1537,12 +1519,30 @@
       }
     },
     {
+      "capability": "chainsPanel.ts#pause",
+      "ui": [
+        "page:chainsPanel.ts#pause"
+      ],
+      "ops": [
+        "chains.pause"
+      ]
+    },
+    {
       "capability": "chainsPanel.ts#refresh",
       "ui": [
         "page:chainsPanel.ts#refresh"
       ],
       "ops": [
         "chains.list"
+      ]
+    },
+    {
+      "capability": "chainsPanel.ts#resume",
+      "ui": [
+        "page:chainsPanel.ts#resume"
+      ],
+      "ops": [
+        "chains.resume"
       ]
     },
     {
@@ -1798,6 +1798,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#batonPassNow",
+      "ui": [
+        "page:consolePanel.ts#batonPassNow"
+      ],
+      "ops": [
+        "console.send"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#batonPause",
       "ui": [
         "page:consolePanel.ts#batonPause"
@@ -1805,15 +1814,6 @@
       "ops": [
         "chains.pause",
         "chains.resume"
-      ]
-    },
-    {
-      "capability": "consolePanel.ts#batonPassNow",
-      "ui": [
-        "page:consolePanel.ts#batonPassNow"
-      ],
-      "ops": [
-        "console.send"
       ]
     },
     {
@@ -3606,6 +3606,27 @@
       }
     },
     {
+      "capability": "mobilePanel.ts#afnav",
+      "ui": [
+        "page:mobilePanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "mobilePanel.ts#refresh",
+      "ui": [
+        "page:mobilePanel.ts#refresh"
+      ],
+      "ops": [
+        "web.status",
+        "remote.status",
+        "remote.devices"
+      ]
+    },
+    {
       "capability": "moveDutyDown",
       "ui": [
         "cmd:agentfarm.moveDutyDown"
@@ -4583,6 +4604,33 @@
       }
     },
     {
+      "capability": "pageReading.ts#readAloud",
+      "ui": [
+        "page:pageReading.ts#readAloud"
+      ],
+      "ops": [
+        "alerts.readNow"
+      ]
+    },
+    {
+      "capability": "pageReading.ts#readControl",
+      "ui": [
+        "page:pageReading.ts#readControl"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
+      "capability": "pageReading.ts#readFor",
+      "ui": [
+        "page:pageReading.ts#readFor"
+      ],
+      "ops": [
+        "alerts.readText"
+      ]
+    },
+    {
       "capability": "pauseAutomations",
       "ui": [
         "cmd:agentfarm.pauseAutomations"
@@ -5534,6 +5582,15 @@
       }
     },
     {
+      "capability": "readingSpeed",
+      "ui": [
+        "cmd:agentfarm.readingSpeed"
+      ],
+      "ops": [
+        "alerts.reading"
+      ]
+    },
+    {
       "capability": "readLastAnswer",
       "ui": [
         "cmd:agentfarm.readLastAnswer",
@@ -5551,15 +5608,6 @@
       ],
       "ops": [
         "alerts.readNow"
-      ]
-    },
-    {
-      "capability": "readingSpeed",
-      "ui": [
-        "cmd:agentfarm.readingSpeed"
-      ],
-      "ops": [
-        "alerts.reading"
       ]
     },
     {
@@ -6339,33 +6387,6 @@
       ]
     },
     {
-      "capability": "pageReading.ts#readAloud",
-      "ui": [
-        "page:pageReading.ts#readAloud"
-      ],
-      "ops": [
-        "alerts.readNow"
-      ]
-    },
-    {
-      "capability": "pageReading.ts#readControl",
-      "ui": [
-        "page:pageReading.ts#readControl"
-      ],
-      "ops": [
-        "alerts.reading"
-      ]
-    },
-    {
-      "capability": "pageReading.ts#readFor",
-      "ui": [
-        "page:pageReading.ts#readFor"
-      ],
-      "ops": [
-        "alerts.readText"
-      ]
-    },
-    {
       "capability": "sessionViewer.ts#refresh",
       "ui": [
         "page:sessionViewer.ts#refresh"
@@ -6463,61 +6484,6 @@
       ]
     },
     {
-      "capability": "settingsFlex.ts#flexReset",
-      "ui": [
-        "page:settingsFlex.ts#flexReset"
-      ],
-      "ops": [
-        "flex.set"
-      ]
-    },
-    {
-      "capability": "settingsFlex.ts#flexSet",
-      "ui": [
-        "page:settingsFlex.ts#flexSet"
-      ],
-      "ops": [
-        "flex.set"
-      ]
-    },
-    {
-      "capability": "settingsFlex.ts#presetApply",
-      "ui": [
-        "page:settingsFlex.ts#presetApply"
-      ],
-      "ops": [
-        "presets.apply"
-      ]
-    },
-    {
-      "capability": "settingsFlex.ts#presetDelete",
-      "ui": [
-        "page:settingsFlex.ts#presetDelete"
-      ],
-      "ops": [
-        "presets.delete"
-      ]
-    },
-    {
-      "capability": "settingsFlex.ts#presetSave",
-      "ui": [
-        "page:settingsFlex.ts#presetSave"
-      ],
-      "ops": [
-        "presets.save"
-      ]
-    },
-    {
-      "capability": "settingsSectionMessages.ts#afnav",
-      "ui": [
-        "page:settingsSectionMessages.ts#afnav"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Moves the selection or the focus inside a page that is already open."
-      }
-    },
-    {
       "capability": "settingsAgentMessages.ts#agentAccount",
       "ui": [
         "page:settingsAgentMessages.ts#agentAccount"
@@ -6574,44 +6540,6 @@
       ]
     },
     {
-      "capability": "settingsSectionMessages.ts#webTokenNew",
-      "ui": [
-        "page:settingsSectionMessages.ts#webTokenNew"
-      ],
-      "ops": [
-        "web.token.new"
-      ]
-    },
-    {
-      "capability": "settingsValueMessages.ts#applyProfile",
-      "ui": [
-        "page:settingsValueMessages.ts#applyProfile"
-      ],
-      "ops": [
-        "settings.sets.apply"
-      ]
-    },
-    {
-      "capability": "settingsValueMessages.ts#browse",
-      "ui": [
-        "page:settingsValueMessages.ts#browse"
-      ],
-      "exempt": {
-        "kind": "file-picker",
-        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
-      }
-    },
-    {
-      "capability": "settingsValueMessages.ts#browseRow",
-      "ui": [
-        "page:settingsValueMessages.ts#browseRow"
-      ],
-      "exempt": {
-        "kind": "file-picker",
-        "why": "The same dialog for ONE ROW of a list setting (U-108). It saves nothing at all — the path is posted back to the page, which puts it in the row being edited; the list is written by settings.set like any other value. There is no capability here to put on the bridge: an agent setting agentRoots states the paths."
-      }
-    },
-    {
       "capability": "settingsAgentMessages.ts#ccClear",
       "ui": [
         "page:settingsAgentMessages.ts#ccClear"
@@ -6650,15 +6578,97 @@
       ]
     },
     {
-      "capability": "settingsValueMessages.ts#deleteProfile",
+      "capability": "settingsAgentMessages.ts#rootAdd",
       "ui": [
-        "page:settingsValueMessages.ts#deleteProfile"
+        "page:settingsAgentMessages.ts#rootAdd"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "settingsAgentMessages.ts#rootCleanDupes",
+      "ui": [
+        "page:settingsAgentMessages.ts#rootCleanDupes"
       ],
       "ops": [
-        "settings.sets.delete",
-        "settings.sets.import",
-        "settings.sets.save"
+        "agents.roots.clean"
       ]
+    },
+    {
+      "capability": "settingsAgentMessages.ts#rootRemove",
+      "ui": [
+        "page:settingsAgentMessages.ts#rootRemove"
+      ],
+      "ops": [
+        "agents.roots.remove"
+      ]
+    },
+    {
+      "capability": "settingsAgentMessages.ts#rootReveal",
+      "ui": [
+        "page:settingsAgentMessages.ts#rootReveal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsFlex.ts#flexReset",
+      "ui": [
+        "page:settingsFlex.ts#flexReset"
+      ],
+      "ops": [
+        "flex.set"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#flexSet",
+      "ui": [
+        "page:settingsFlex.ts#flexSet"
+      ],
+      "ops": [
+        "flex.set"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#presetApply",
+      "ui": [
+        "page:settingsFlex.ts#presetApply"
+      ],
+      "ops": [
+        "presets.apply"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#presetDelete",
+      "ui": [
+        "page:settingsFlex.ts#presetDelete"
+      ],
+      "ops": [
+        "presets.delete"
+      ]
+    },
+    {
+      "capability": "settingsFlex.ts#presetSave",
+      "ui": [
+        "page:settingsFlex.ts#presetSave"
+      ],
+      "ops": [
+        "presets.save"
+      ]
+    },
+    {
+      "capability": "settingsSectionMessages.ts#afnav",
+      "ui": [
+        "page:settingsSectionMessages.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
     },
     {
       "capability": "settingsSectionMessages.ts#docOpenSet",
@@ -6698,27 +6708,6 @@
         "kind": "secrets",
         "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
       }
-    },
-    {
-      "capability": "settingsValueMessages.ts#exportProfiles",
-      "ui": [
-        "page:settingsValueMessages.ts#exportProfiles"
-      ],
-      "ops": [
-        "settings.sets.export"
-      ]
-    },
-    {
-      "capability": "settingsValueMessages.ts#importProfiles",
-      "ui": [
-        "page:settingsValueMessages.ts#importProfiles"
-      ],
-      "ops": [
-        "settings.sets.apply",
-        "settings.sets.delete",
-        "settings.sets.import",
-        "settings.sets.save"
-      ]
     },
     {
       "capability": "settingsSectionMessages.ts#kapiciMcp",
@@ -6781,26 +6770,6 @@
       }
     },
     {
-      "capability": "settingsValueMessages.ts#openSettingsJson",
-      "ui": [
-        "page:settingsValueMessages.ts#openSettingsJson"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
-      "capability": "settingsValueMessages.ts#openSettingsUi",
-      "ui": [
-        "page:settingsValueMessages.ts#openSettingsUi"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
       "capability": "settingsSectionMessages.ts#promptsOpen",
       "ui": [
         "page:settingsSectionMessages.ts#promptsOpen"
@@ -6849,73 +6818,6 @@
       }
     },
     {
-      "capability": "settingsValueMessages.ts#reset",
-      "ui": [
-        "page:settingsValueMessages.ts#reset"
-      ],
-      "ops": [
-        "settings.reset"
-      ]
-    },
-    {
-      "capability": "settingsAgentMessages.ts#rootAdd",
-      "ui": [
-        "page:settingsAgentMessages.ts#rootAdd"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
-      "capability": "settingsAgentMessages.ts#rootCleanDupes",
-      "ui": [
-        "page:settingsAgentMessages.ts#rootCleanDupes"
-      ],
-      "ops": [
-        "agents.roots.clean"
-      ]
-    },
-    {
-      "capability": "settingsAgentMessages.ts#rootRemove",
-      "ui": [
-        "page:settingsAgentMessages.ts#rootRemove"
-      ],
-      "ops": [
-        "agents.roots.remove"
-      ]
-    },
-    {
-      "capability": "settingsAgentMessages.ts#rootReveal",
-      "ui": [
-        "page:settingsAgentMessages.ts#rootReveal"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "settingsValueMessages.ts#saveProfile",
-      "ui": [
-        "page:settingsValueMessages.ts#saveProfile"
-      ],
-      "ops": [
-        "settings.sets.delete",
-        "settings.sets.import",
-        "settings.sets.save"
-      ]
-    },
-    {
-      "capability": "settingsValueMessages.ts#set",
-      "ui": [
-        "page:settingsValueMessages.ts#set"
-      ],
-      "ops": [
-        "settings.set"
-      ]
-    },
-    {
       "capability": "settingsSectionMessages.ts#spDefault",
       "ui": [
         "page:settingsSectionMessages.ts#spDefault"
@@ -6943,6 +6845,15 @@
         "kind": "navigation",
         "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
       }
+    },
+    {
+      "capability": "settingsSectionMessages.ts#webTokenNew",
+      "ui": [
+        "page:settingsSectionMessages.ts#webTokenNew"
+      ],
+      "ops": [
+        "web.token.new"
+      ]
     },
     {
       "capability": "settingsSectionMessages.ts#wikiInit",
@@ -6982,6 +6893,116 @@
         "kind": "navigation",
         "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
       }
+    },
+    {
+      "capability": "settingsValueMessages.ts#applyProfile",
+      "ui": [
+        "page:settingsValueMessages.ts#applyProfile"
+      ],
+      "ops": [
+        "settings.sets.apply"
+      ]
+    },
+    {
+      "capability": "settingsValueMessages.ts#browse",
+      "ui": [
+        "page:settingsValueMessages.ts#browse"
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The file-picker adaptor in front of a capability that IS on the bridge: the dialog chooses a path, the op takes the path directly."
+      }
+    },
+    {
+      "capability": "settingsValueMessages.ts#browseRow",
+      "ui": [
+        "page:settingsValueMessages.ts#browseRow"
+      ],
+      "exempt": {
+        "kind": "file-picker",
+        "why": "The same dialog for ONE ROW of a list setting (U-108). It saves nothing at all — the path is posted back to the page, which puts it in the row being edited; the list is written by settings.set like any other value. There is no capability here to put on the bridge: an agent setting agentRoots states the paths."
+      }
+    },
+    {
+      "capability": "settingsValueMessages.ts#deleteProfile",
+      "ui": [
+        "page:settingsValueMessages.ts#deleteProfile"
+      ],
+      "ops": [
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
+      ]
+    },
+    {
+      "capability": "settingsValueMessages.ts#exportProfiles",
+      "ui": [
+        "page:settingsValueMessages.ts#exportProfiles"
+      ],
+      "ops": [
+        "settings.sets.export"
+      ]
+    },
+    {
+      "capability": "settingsValueMessages.ts#importProfiles",
+      "ui": [
+        "page:settingsValueMessages.ts#importProfiles"
+      ],
+      "ops": [
+        "settings.sets.apply",
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
+      ]
+    },
+    {
+      "capability": "settingsValueMessages.ts#openSettingsJson",
+      "ui": [
+        "page:settingsValueMessages.ts#openSettingsJson"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "settingsValueMessages.ts#openSettingsUi",
+      "ui": [
+        "page:settingsValueMessages.ts#openSettingsUi"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "settingsValueMessages.ts#reset",
+      "ui": [
+        "page:settingsValueMessages.ts#reset"
+      ],
+      "ops": [
+        "settings.reset"
+      ]
+    },
+    {
+      "capability": "settingsValueMessages.ts#saveProfile",
+      "ui": [
+        "page:settingsValueMessages.ts#saveProfile"
+      ],
+      "ops": [
+        "settings.sets.delete",
+        "settings.sets.import",
+        "settings.sets.save"
+      ]
+    },
+    {
+      "capability": "settingsValueMessages.ts#set",
+      "ui": [
+        "page:settingsValueMessages.ts#set"
+      ],
+      "ops": [
+        "settings.set"
+      ]
     },
     {
       "capability": "setupExample",
