@@ -26,6 +26,7 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const B = require(path.join(ROOT, 'out', 'core', 'bridge.js'));
 const L = require(path.join(ROOT, 'out', 'core', 'launch.js'));
 const EXT = require(path.join(ROOT, 'out', 'core', 'extTerminal.js'));
+const BP = require(path.join(ROOT, 'out', 'core', 'batchProgram.js'));
 
 const tasksTs = read('src', 'core', 'tasks.ts');
 const pageJs = read('media', 'tasksPage.js');
@@ -123,16 +124,19 @@ function launched(cwd, command, title, opts) {
             /\.cmd$/.test(last(stay)) && last(stay).indexOf('claude') < 0);
 
         const script = fs.readFileSync(last(stay), 'utf8');
+        // Where `claude` is itself a batch shim the command is handed to a cmd of its own (below).
+        const handed = s => (/\ncmd \/d \/s \/c ""([^"]+)""/.exec(s) || [])[1];
+        const ran = s => (handed(s) ? fs.readFileSync(handed(s), 'utf8') : s);
         ok('the script names its own window, runs in the folder, and runs the command',
             /^@echo off/.test(script) && script.indexOf('\ntitle AF: x') >= 0
-            && script.indexOf('\ncd /d "C:\\tmp"') >= 0 && script.indexOf('claude "hi"') >= 0);
+            && script.indexOf('\ncd /d "C:\\tmp"') >= 0 && ran(script).indexOf('claude "hi"') >= 0);
         ok('‼️ the exit code is read on ITS OWN LINE, which is the only place it is real',
             /\n\(echo %ERRORLEVEL%\)> "/.test(script));
         ok('…and the launcher removes itself, so a window nobody watches leaves nothing',
             /\ndel \/q "%~f0"/.test(script));
+        const quiet = launched('C:\\tmp', 'claude "hi"', 'AF: x', {});
         ok('a launch with nothing to report writes no exit line',
-            fs.readFileSync(last(launched('C:\\tmp', 'claude "hi"', 'AF: x', {})), 'utf8')
-                .indexOf('ERRORLEVEL') < 0);
+            fs.readFileSync(last(quiet), 'utf8').indexOf('ERRORLEVEL') < 0);
 
         // ‼️ THE MEASUREMENT, not the reasoning: the generated script is RUN, for a
         // code that is zero and codes that are not. `echo %ERRORLEVEL%> f` wrote an
@@ -160,8 +164,43 @@ function launched(cwd, command, title, opts) {
         ok('‼️ a prompt carrying % and ! and & arrives INTACT',
             (() => { try { return fs.readFileSync(arg, 'utf8') === PROMPT; } catch { return false; } })());
         try { fs.rmSync(arg, { force: true }); } catch { /* nothing to clear */ }
+
+        // ‼️ A CLI INSTALLED BY npm IS A BATCH FILE, AND A BATCH FILE NEVER HANDS CONTROL BACK.
+        // Measured on an OS-window OpenCode run: the turn answered, no exit file was ever
+        // written, the launcher stayed on disk and the task stayed running. The shim here ends
+        // the way npm's does — its last line is the program, with no `exit /b` of its own.
+        const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-m26-shim-'));
+        const shim = path.join(shimDir, 'af-shim.cmd');
+        fs.writeFileSync(shim, '@ECHO off\r\nnode -e "require(\'fs\').writeFileSync(process.argv[1], process.argv[3]);'
+            + ' process.exit(Number(process.argv[2]))" "' + arg + '" %*\r\n', 'utf8');
+        ok('a command that starts a batch file is told from one that starts a program',
+            BP.startsBatchFile(`"${shim}" 5 "x"`, undefined) && !BP.startsBatchFile('node -e "process.exit(0)"', undefined));
+        const viaShim = last(launched(undefined, `"${shim}" 5 "${PROMPT}"`, 'AF: t', { keepOpen: false, exitFile: f }));
+        const outer = fs.readFileSync(viaShim, 'utf8');
+        const inner = handed(outer);
+        ok('‼️ a batch shim is run by a cmd of its own, from a script of its own',
+            !!inner && outer.indexOf('af-shim.cmd') < 0 && fs.readFileSync(inner, 'utf8').indexOf(`"${shim}" 5 `) >= 0);
+        ok('…the exit line is the very next one, and both scripts are removed after it',
+            new RegExp('\\ncmd /d /s /c ""[^"]+""\\r?\\n\\(echo %ERRORLEVEL%\\)> "[^"]+"\\r?\\ndel /q "[^"]*af-cmd-[^"]+" >nul 2>&1\\r?\\ndel /q "%~f0"').test(outer));
         try { fs.rmSync(f, { force: true }); } catch { /* nothing to clear */ }
-        for (const c of [stay, go]) { try { fs.rmSync(last(c), { force: true }); } catch { /* gone */ } }
+        cp.spawnSync('cmd', ['/c', viaShim], { encoding: 'utf8' });
+        ok('‼️ THE SHIM\'S OWN EXIT CODE COMES BACK — the launcher regained control',
+            (() => { try { return fs.readFileSync(f, 'utf8').trim() === '5'; } catch { return false; } })());
+        ok('…its prompt arrived intact through the second script',
+            (() => { try { return fs.readFileSync(arg, 'utf8') === PROMPT; } catch { return false; } })());
+        ok('…and nothing is left behind: neither script', !fs.existsSync(viaShim) && !fs.existsSync(inner));
+        const plain = launched(undefined, 'node -e "process.exit(0)"', 'AF: t', { exitFile: f });
+        ok('a program that is an executable keeps the script it always had (no second cmd)',
+            !handed(fs.readFileSync(last(plain), 'utf8')) && /\nnode -e "process\.exit\(0\)"\r?\n\(echo %ERRORLEVEL%\)> "/.test(fs.readFileSync(last(plain), 'utf8')));
+        try { fs.rmSync(last(plain), { force: true }); } catch { /* gone */ }
+        try { fs.rmSync(shimDir, { recursive: true, force: true }); } catch { /* gone */ }
+        try { fs.rmSync(arg, { force: true }); } catch { /* nothing to clear */ }
+        try { fs.rmSync(f, { force: true }); } catch { /* nothing to clear */ }
+        for (const c of [stay, go, quiet]) {
+            const s = last(c);
+            try { const h = handed(fs.readFileSync(s, 'utf8')); if (h) { fs.rmSync(h, { force: true }); } } catch { /* gone */ }
+            try { fs.rmSync(s, { force: true }); } catch { /* gone */ }
+        }
     } else {
         const posix = launched('/tmp', 'claude "hi"', 'AF: x', { keepOpen: false, exitFile: f });
         ok('a POSIX launch writes `$?` to the same file', /\$\?/.test(JSON.stringify(posix[0].args)));
@@ -175,6 +214,8 @@ function launched(cwd, command, title, opts) {
         !/\$\{command\} & .*ERRORLEVEL/.test(extTs));
     ok('every % in the command is doubled, because batch reads one as a variable',
         extTs.indexOf("s.split('%').join('%%')") >= 0);
+    ok('the launcher asks which kind of program the command starts, in the folder it will run in',
+        extTs.indexOf('startsBatchFile(command, cwd)') >= 0);
     ok('‼️ the `start` fallback passes an EMPTY title — an unquoted one is read as a program',
         /'\/c', 'start', '',/.test(extTs));
 }

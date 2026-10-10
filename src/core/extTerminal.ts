@@ -2,6 +2,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { startsBatchFile } from './batchProgram';
 
 /**
  * Opens `command` in the OS terminal instead of the integrated one.
@@ -157,8 +158,19 @@ export function writeWindowsRunScript(
         lines.push(`for /f "usebackq tokens=1,* delims==" %%A in ("${esc(envFile)}") do set "%%A=%%B"`);
         lines.push(`del /q "${esc(envFile)}" >nul 2>&1`);
     }
-    lines.push(esc(command));
+    // ‼️ A BATCH SHIM GETS A cmd OF ITS OWN (batchProgram.ts). Run on a line of this
+    // script it never hands control back, so the exit line below was never reached
+    // and the launcher never removed itself. The child reads the command from a
+    // script too — one parse, as here — and its exit code is the shim's own.
+    const inner = startsBatchFile(command, cwd) ? path.join(os.tmpdir(), `af-cmd-${stamp}.cmd`) : '';
+    if (inner) {
+        fs.writeFileSync(inner, ['@echo off', esc(command)].join('\r\n') + '\r\n', 'utf8');
+        lines.push(`cmd /d /s /c ""${esc(inner)}""`);
+    } else {
+        lines.push(esc(command));
+    }
     if (exitFile) { lines.push(`(echo %ERRORLEVEL%)> "${esc(exitFile)}"`); }
+    if (inner) { lines.push(`del /q "${esc(inner)}" >nul 2>&1`); }
     lines.push('del /q "%~f0" >nul 2>&1');
     fs.writeFileSync(file, lines.join('\r\n') + '\r\n', 'utf8');
     return file;
