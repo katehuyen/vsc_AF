@@ -87,7 +87,7 @@ const leaks = r => Object.values(VALUES).some(v => JSON.stringify(r).includes(v)
 
     // ---- providers.add / providers.set take secretRef (extension.ts), checked before anything is written
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    const guarded = ext.match(/const ref = optStr\(args, 'secretRef'\)\.trim\(\);\s*need\(!ref \|\| vault\.names\(\)\.includes\(ref\), secretMissing\(ref\)\);[\s\S]{0,320}?writeProviderProfiles\(w\.list\);\s*const bound = ref \? await bindRouteSecret\(secretBindDeps/g) || [];
+    const guarded = ext.match(/const ref = optStr\(args, 'secretRef'\)\.trim\(\);\s*need\(!ref \|\| vault\.names\(\)\.includes\(ref\), secretMissing\(ref\)\);[\s\S]{0,720}?writeProviderProfiles\(w\.list\);\s*const bound = ref \? await bindRouteSecret\(secretBindDeps/g) || [];
     ok('providers.add and providers.set take secretRef: refused before the write, bound through the same path after', guarded.length === 2);
     ok('the four ops are registered beside the providers ops', /\.\.\.secretBindOps\(secretBindDeps\)/.test(ext));
 

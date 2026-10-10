@@ -455,9 +455,12 @@ const launchTs = read('src', 'core', 'launch.ts');
         /export function agentSeedDefault\(/.test(read('src', 'core', 'agentDefaults.ts'))
         && /agentFile: engine === 'claude' \? agentClaudeModel\(dir\) : '',/.test(extTs));
     // S-102 — two recorders and no third: a launch (launchToRemember) and a
-    // choice taken on a live card (withLiveChoice), each shaped in core.
+    // choice taken on a live card (withLiveChoice), each shaped in core. X-525 —
+    // and the route settle, which only moves or clears a route a record names
+    // (core/routeRecords.ts applyRouteChange) and records no launch.
     ok('…and writes it through exactly two recorders, each shaped in core',
-        (extTs.match(/context\.globalState\.update\(LAST_LAUNCH_KEY/g) || []).length === 2
+        (extTs.match(/context\.globalState\.update\(LAST_LAUNCH_KEY/g) || []).length === 3
+        && /await context\.globalState\.update\(LAST_LAUNCH_KEY, snap\.lastLaunch\);/.test(extTs)
         && /\[agentId\]: launchToRemember\(\{ \.\.\.o, engine \}, surface, lastLaunchOf\(agentId\)\)/.test(extTs)
         && /\[agentId\]: withLiveChoice\(lastLaunchOf\(agentId\), engine, choice\)/.test(extTs));
     ok('…whose shape is decided in core, not at the call site',

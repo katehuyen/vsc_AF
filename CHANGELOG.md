@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.912.0 - Removing a route never leaves a saved setup pointing nowhere (2026-10-10)
+
+- **Removing a route asks first when something still uses it.** Agent
+  defaults, launch profiles, the setup an agent last started with, queued
+  tasks, schedules, task templates, workflow steps, triggers, missions and
+  relay legs waiting to start are all listed, and you pick one answer: move
+  them to a route that serves the same models, clear their route, or delete
+  the launch profiles and clear the rest. Only a route holding the same model
+  in every slot is offered - the same provider is not enough.
+- **The same question when you untick an engine on a route, or change or
+  empty a slot's model.** For a slot that only changes its model you can keep
+  them on the route - they run on the slot's new model.
+- **A session never starts on a route that is gone.** If an agent's own
+  route, a launch profile or a task names a route that was removed or is not
+  set up for that engine, the start is refused with the reason - in the
+  Console, a terminal, a background task and a mission's planner alike -
+  instead of quietly running on whatever the window carried.
+- **Setups edited by hand are looked after too.** When a saved setup names a
+  route that is not there (an edited settings file, settings sync, another
+  machine), it is moved to the one route serving the model it names, and you
+  are told; anything else is listed once on Notices and in the stuck-items
+  cleanup, where you can clear it or delete the launch profiles.
+- **What already ran keeps its route.** Launch records, the route names on
+  past sessions, transcripts, turns and costs are never rewritten.
+
 ## 3.911.0 - One route form for Claude Code and OpenCode (2026-10-10)
 
 - **A route is added once for both engines.** The route form on the Engines
