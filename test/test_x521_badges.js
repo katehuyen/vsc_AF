@@ -182,5 +182,47 @@ const CLAUDE_ROUTE = {
     ok('…and that turn\'s row on the Turns page names the route too', row.servedLabel === 'Nemotron-Ultra' && row.modelLabel === '');
 }
 
+// ---------- a launch that picked no model, an old run, a foreign one: the engine's own report names the model ----------
+{
+    ok('‼️ a run that declared nothing wears the model the engine reported, never "opencode"',
+        ['unknown', 'legacy-inherit', 'external', ''].every(o => N.runModelLabel('opencode', o, ['opencode'], ['big-pickle'], '', MODELS) === 'Big Pickle'));
+    ok('…nothing reported and nothing asked: no label', N.runModelLabel('opencode', 'unknown', [], [], '', MODELS) === '');
+    ok('…a lent route\'s provider is never worded as a model, whatever the launch declared',
+        ['unknown', 'engine-native'].every(o => N.runModelLabel('opencode', o, ['af-x'], ['m'], '', MODELS) === ''));
+    const UNDECLARED = { engine: 'opencode', providerId: '', origin: 'unknown', scope: 'session', requestedModelRef: '', proof: 'unknown' };
+    const named = { current: { 'or-nemotron': { label: 'Nemotron-Ultra', providerId: 'openrouter' } }, last: {}, models: MODELS };
+    const one = [{ n: 1, models: ['big-pickle'], providerIds: ['opencode'] }];
+    const bare = T.runIdentity(manifest(UNDECLARED), 'opencode', one, { names: NAMES });
+    ok('‼️ a session opened with no model picked carries modelLabel', bare.modelLabel === 'Big Pickle' && bare.providerId === '');
+    ok('…and so does a run older than the manifest', T.runIdentity(undefined, 'opencode', one, { names: NAMES }).modelLabel === 'Big Pickle');
+    const win = {};
+    vm.runInNewContext(read('media/afProvider.js'), { window: win });
+    const P = win.AFProvider;
+    ok('…its chip is the model in the engine provider\'s colour',
+        String(P.chip({ ...bare, binding: 'declared' }, '', P.CARD_MAX)).replace(/<[^>]+>/g, '') === 'Big Pickle'
+        && P.chip({ ...bare, binding: 'declared' }).includes(P.cls({ providerId: 'opencode' })));
+
+    const { turnRowsFor } = require(path.join(ROOT, 'out', 'core', 'turns.js'));
+    const turns = [{ n: 1, ts: 1, models: ['big-pickle'], providerIds: ['opencode'] }, { n: 2, ts: 2, models: ['big-pickle'], providerIds: ['opencode'] },
+        { n: 3, ts: 3, models: ['nvidia/nemo:free'], providerIds: ['af-or-nemotron'] }];
+    const mixed = T.runIdentity(manifest(UNDECLARED), 'opencode', turns, { names: named });
+    const rows = turnRowsFor({ file: 'f', sessionId: 's', cwd: 'D:/a', agentName: 'dev', title: 't', lastTs: 9, isSidechain: false, source: 'opencode', turns },
+        false, 0, mixed, undefined, '', named);
+    ok('‼️ its Turns rows: the model on its own turns, the route on the turn it moved onto',
+        rows[0].modelLabel === 'Big Pickle' && rows[1].modelLabel === 'Big Pickle' && rows[2].modelLabel === '' && rows[2].servedLabel === 'Nemotron-Ultra'
+        && mixed.servedLabel === 'Nemotron-Ultra' && !('modelLabel' in mixed));
+
+    ok('a run declared on a route keeps the route\'s label while the route answers',
+        N.turnMark('opencode', OC_ROUTE, ['af-or-nemotron'], ['nvidia/nemo:free'], named).modelLabel === ''
+        && N.badgeNames('opencode', OC_ROUTE, [], ['nvidia/nemo:free'], named).modelLabel === '');
+    ok('…and the turn it left the route for OpenCode\'s own model wears that model',
+        N.turnMark('opencode', OC_ROUTE, ['opencode'], ['big-pickle'], named).modelLabel === 'Big Pickle');
+    const there = [{ n: 1, models: ['big-pickle'], providerIds: ['opencode'] }, { n: 2, models: ['nvidia/nemo:free'], providerIds: ['af-or-nemotron'] }];
+    ok('the last answered turn decides, by its own models: own, route, own again is the model',
+        T.runIdentity(manifest(UNDECLARED), 'opencode', [...there, { n: 3, models: ['big-pickle'], providerIds: ['opencode'] }], { names: named }).modelLabel === 'Big Pickle');
+    const waiting = T.runIdentity(manifest(UNDECLARED), 'opencode', [...there, { n: 3 }], { names: named });
+    ok('…and a turn nothing answered yet leaves the route it is on', waiting.servedLabel === 'Nemotron-Ultra' && !('modelLabel' in waiting));
+}
+
 console.log(`test_x521_badges: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

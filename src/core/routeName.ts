@@ -29,17 +29,20 @@ export interface RouteNames {
 /**
  * X-521 — WHAT THE SECOND BADGE SAYS ON A RUN OF OPENCODE'S OWN MODEL: the
  * catalog's name for the model it ran on (reported, else requested), else the
- * reference itself. '' on any other run — a route keeps its label, and a Claude
- * run's identity is untouched. The reference is matched, never a display name
- * cut at '/' (a model id may hold one).
+ * reference itself — whatever the launch declared, because a launch that picks
+ * no model declares nothing and the engine still names what answered. '' on a
+ * route's run (its label stands) until the engine names one provider of its own
+ * for it, and on any other engine: a Claude run's identity is untouched. The
+ * reference is matched, never a display name cut at '/' (a model id may hold one).
  */
 export function runModelLabel(
     engine: string, origin: string, reportedProviderIds: readonly string[], reportedModels: readonly string[],
     requestedModelRef: string, models: Record<string, string> | undefined
 ): string {
-    if (engine !== 'opencode' || origin !== 'engine-native') { return ''; }
+    if (engine !== 'opencode') { return ''; }
     const bare = String(reportedModels[reportedModels.length - 1] ?? '').trim();
     const prov = reportedProviderIds.length === 1 ? String(reportedProviderIds[0]).trim() : '';
+    if (routeIdOfWire(prov) || (origin === 'agent-farm-profile' && !(bare && prov))) { return ''; }
     const ref = bare ? (prov && !bare.startsWith(prov + '/') ? `${prov}/${bare}` : bare) : String(requestedModelRef ?? '').trim();
     if (!ref) { return ''; }
     const table = models ?? {};
@@ -105,17 +108,21 @@ type BadgeIdentity = { origin?: string; providerProfileId?: string; providerId?:
  * X-521 — WHAT THE BADGE SAYS BEYOND THE DECLARED ROUTE, off the RAW reports: OpenCode's own
  * model by its catalog name, or a lent route the run moved onto at a turn boundary (its last
  * turn reported `af-<id>`, not the declared profile) by that route's name — never the service.
+ * The last turn the engine named a provider for decides: that provider and that turn's own models.
  */
 export function badgeNames(
-    engine: string, identity: BadgeIdentity | undefined, turns: readonly { providerIds?: readonly string[] }[],
+    engine: string, identity: BadgeIdentity | undefined,
+    turns: readonly { providerIds?: readonly string[]; models?: readonly string[] }[],
     models: readonly string[], names: RouteNames | undefined
 ): { modelLabel: string; servedLabel: string } {
     const ids = (t?: { providerIds?: readonly string[] }) => (t?.providerIds ?? []).map(str).filter(Boolean);
-    const raw = [...new Set(turns.flatMap(t => ids(t)))];
-    const last = ids(turns[turns.length - 1]);
+    const lastTurn = [...turns].reverse().find(t => ids(t).length);
+    const last = ids(lastTurn);
     const rid = engine === 'opencode' && last.length === 1 ? routeIdOfWire(last[0]) : '';
+    const lastModels = (lastTurn?.models ?? []).map(str).filter(Boolean);
     return {
-        modelLabel: rid ? '' : runModelLabel(engine, str(identity?.origin), raw, models, str(identity?.requestedModelRef), names?.models),
+        modelLabel: rid ? '' : runModelLabel(engine, str(identity?.origin), last,
+            lastModels.length ? lastModels : models, str(identity?.requestedModelRef), names?.models),
         servedLabel: rid && idOf(rid) !== idOf(identity?.providerProfileId) ? (routeName(rid, '', names)?.label || rid) : ''
     };
 }
