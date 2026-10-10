@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.915.0",
+  "version": "3.916.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8523,9 +8523,7 @@
             "type": "string",
             "x-af-browse": "folder"
           },
-          "default": [
-            "D:/zone/agent/ajanlar"
-          ],
+          "default": [],
           "description": "Root folders scanned for agent directories. Subfolders containing CLAUDE.md, .claude or memory/ become agents. A root whose subfolders are agents is a nest — its own CLAUDE.md counts as shared instructions, not an agent; a root with no agent-like subfolders is one agent itself. Manage this comfortably in the Agent folders section of Farm Settings."
         },
         "agentFarm.excludeAgentDirs": {

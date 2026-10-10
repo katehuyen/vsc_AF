@@ -922,7 +922,11 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   model) — so `test_table_row_display.js` still catches a class that turns a
   row into a flex box by accident; a VS Code
   tab under a mouse is never in phone mode, however narrow —
-  `test_mobile_layer.js` measures both.
+  `test_mobile_layer.js` measures both. **A phone layout is decided in CSS**
+  (`html.af-phone`, a media query), never by page script reading the width:
+  `render_page.js` runs the script in a DOM shim with no width, so a layout the
+  script chose is never photographed, and CSS that hides what the script did not
+  move draws nothing at all (U-242, measured; the Chains table is a card list).
 - **‼️ A PAGE ON THE PANEL HOST ASKS ITS HOST, NEVER `vscode.window` (X-447).**
   A message, confirmation, pick, typed answer or file dialog a panel shows is
   `this.surface.ask.warn / info / error / pick / input / open` — the same

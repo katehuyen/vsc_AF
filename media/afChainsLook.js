@@ -39,6 +39,8 @@
             + (atEnd(r) ? ` <span class="ch-brake">${SYM.lastLeg}</span>` : '');
     }
 
+    // U-242 — on a phone a chain is a card (media/afMobile.js, table[data-afcards]): the html.af-phone rules at the end
+    // show every figure with its label and give the buttons a line of their own.
     const CSS = `
         .ch-chips { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
         .ch-chip { min-height:28px; padding:2px 10px; border-radius:14px; background:transparent; color:inherit; border:1px solid var(--vscode-panel-border); cursor:pointer; }
@@ -106,7 +108,14 @@
             .ch-legs td:nth-child(2) { width:auto; }
             .ch-legs .ch-lw, .ch-legs .ch-live { display:none; }
             .ch-sub > td { padding-left:8px; }
-        }`;
+        }
+        html.af-phone .ch-tab tr[data-afcard] > td.ch-wide { display:block; }
+        html.af-phone .ch-tab .ch-name { max-width:none; }
+        html.af-phone .ch-tab tr[data-afcard] > td.ch-acts { flex:1 1 100%; width:auto; text-align:right; white-space:normal; }
+        html.af-phone .ch-tab .ch-act { margin:0 0 0 4px; }
+        html.af-phone .ch-row > td:first-child { box-shadow:none; }
+        html.af-phone .ch-row.t-run, html.af-phone .ch-row.t-hold, html.af-phone .ch-row.t-attn { box-shadow:inset 3px 0 0 var(--ch-tone); }
+        html.af-phone .ch-tab tr[data-afcardmore] > td { padding:4px 0 8px 8px; }`;
 
     window.AFChainsLook = { GLYPH, SYM, CAUSE, tone, stepper, atEnd, CSS };
 })();

@@ -70,7 +70,7 @@
             ...(r.paused ? [t('Paused by {by}', { by: r.paused.by }), T.tip(r.paused.at, 'Paused')] : []),
             ...(r.signals.length ? [TIP.GAP, ...r.signals.map(s => `⚠ ${t(SIGNAL[s.kind] || s.kind)}: ${s.why}`)] : [])];
         const mark = r.paused ? '<span class="ch-g">⏸</span>' : '';
-        return TIP.cell('ch-st', '', `${warn}${mark}<span class="ch-g">${GLYPH[r.state] || '·'}</span> <span class="ch-sw">${esc(t(r.state))}</span>`,
+        return TIP.cell('ch-st', 'data-first', `${warn}${mark}<span class="ch-g">${GLYPH[r.state] || '·'}</span> <span class="ch-sw">${esc(t(r.state))}</span>`,
             `${GLYPH[r.state] || ''} ${t(r.state)}`, TIP.lines(lines));
     }
 
@@ -80,7 +80,7 @@
             T.tip(r.startedAt, 'Started'), T.tip(r.lastAt, 'Last move'), r.trimmed ? t('Only its links are left on record.') : '',
             TIP.GAP, t('{copy} copies the chain id.', { copy: L.SYM.copy })];
         const copy = `<button class="ch-copy" data-copy="${esc(r.chainId)}" aria-label="${esc(t('Copy chain id'))}">${L.SYM.copy}</button>`;
-        return TIP.cell('ch-name', '', `<span class="ch-title">${esc(r.title || r.chainId)}</span><span class="ch-id muted">${esc(r.chainId)}${copy}</span>`,
+        return TIP.cell('ch-name', 'data-lead', `<span class="ch-title">${esc(r.title || r.chainId)}</span><span class="ch-id muted">${esc(r.chainId)}${copy}</span>`,
             r.title || r.chainId, TIP.lines(lines));
     }
 
@@ -90,25 +90,25 @@
         const lines = [t('Leg: {leg} of {max}', { leg: r.leg, max }), r.lastLeg ? t('Last leg: braked — it writes the handover note instead of passing') : '',
             ceiling ? t('Last leg: the chain\'s ceiling — it writes the handover note instead of passing') : '',
             r.brake ? t('Brake: {brake}', { brake: r.brake }) : '', TIP.GAP, t('● ran · ▶ running · ⏳ waiting · 🅿 parked · ○ still allowed · ∞ no ceiling')];
-        return TIP.cell('ch-legc', '', L.stepper(r), t('Leg {leg} of {max}', { leg: r.leg, max }), TIP.lines(lines));
+        return TIP.cell('ch-legc', `data-label="${esc(t('Leg'))}"`, L.stepper(r), t('Leg {leg} of {max}', { leg: r.leg, max }), TIP.lines(lines));
     }
 
     function nowCell(r) {
         const w = liveWord(r);
         const lines = [r.sessionId ? t('Session: {id}', { id: r.sessionId }) : '', w ? t('State: {state}', { state: w }) : ''];
-        return TIP.cell('ch-live ' + (r.state === 'running' ? esc(r.live || '') : ''), '', esc(w || '—'), w || t(r.state), TIP.lines(lines));
+        return TIP.cell('ch-live ' + (r.state === 'running' ? esc(r.live || '') : ''), `data-label="${esc(t('Now'))}"`, esc(w || '—'), w || t(r.state), TIP.lines(lines));
     }
 
     function totalsCell(r) {
         const x = r.totals;
         const lines = [t('Legs: {n}', { n: x.legs }), t('Cost: {cost}', { cost: money(x.cost) }), t('Tokens: {n}', { n: C.fmtTok(x.tokens) }),
             x.ms ? t('Time: {time}', { time: C.fmtDur(x.ms) }) : '', x.legs > 1 ? t('Per leg: {cost}', { cost: money(x.cost / x.legs) }) : ''];
-        return TIP.cell('num ch-wide', '', x.cost || x.tokens ? money(x.cost) : '—', t('{n} legs', { n: x.legs }), TIP.lines(lines));
+        return TIP.cell('num ch-wide', `data-label="${esc(t('Cost'))}"`, x.cost || x.tokens ? money(x.cost) : '—', t('{n} legs', { n: x.legs }), TIP.lines(lines));
     }
 
     function nextCell(r) {
         const n = r.next;
-        if (!n) { return '<td class="ch-wide muted">—</td>'; }
+        if (!n) { return `<td class="ch-wide muted" data-label="${esc(t('Next'))}">—</td>`; }
         const lines = [t('Account: {account}', { account: n.account }), t('Surface: {surface}', { surface: n.surface }),
             n.model ? t('Model: {model}', { model: n.model }) : '', n.effort ? t('Effort: {effort}', { effort: n.effort }) : '',
             n.rule ? t('Account set by: {by} · {when}', { by: n.rule.by, when: T.ago(n.rule.at) }) : '',
@@ -117,7 +117,7 @@
         const account = r.acts.account
             ? `<button class="ch-next" data-act="account" data-chain="${esc(r.chainId)}" aria-label="${esc(t('Change account'))}">${esc(n.account)}</button>`
             : esc(n.account);
-        return TIP.cell('ch-wide', '', `${account} · ${esc(n.model || '—')}`, t('The next leg opens on'), TIP.lines(lines));
+        return TIP.cell('ch-wide', `data-label="${esc(t('Next'))}"`, `${account} · ${esc(n.model || '—')}`, t('The next leg opens on'), TIP.lines(lines));
     }
 
     function act(r, type, glyph, label, why, attrs, more) {
@@ -177,13 +177,13 @@
                     <td class="num muted ch-wide">${esc(ran)}</td><td class="num">${l.cost !== undefined ? money(l.cost) : ''}</td>
                     <td class="ch-live ${esc(l.live || '')}">${esc(l.live ? t(l.live) : '')}</td></tr>`;
             }).join('') + '</table>';
-        return `<tr class="ch-sub"><td colspan="9">${body}</td></tr>`;
+        return `<tr class="ch-sub" data-afcardmore><td colspan="9">${body}</td></tr>`;
     }
 
     function formRow(r) {
         if (!form || form.chainId !== r.chainId) { return ''; }
         const cont = form.kind === 'continue';
-        return `<tr class="ch-sub"><td colspan="9"><div class="ch-form">
+        return `<tr class="ch-sub" data-afcardmore><td colspan="9"><div class="ch-form">
             ${cont ? `<textarea id="ch-prompt" rows="3" placeholder="${esc(t('Empty: the new leg starts from the chain\'s last handover words'))}">${esc(form.prompt)}</textarea>` : ''}
             <input id="ch-why" type="text" value="${esc(form.why)}" placeholder="${esc(t('Why (recorded on the chain)'))}">
             ${cont ? '' : `<label class="ch-chk"><input id="ch-close" type="checkbox"${form.endSession ? ' checked' : ''}> ${esc(t('Also close the current leg\'s session (asks first if it is working)'))}</label>`}
@@ -205,9 +205,9 @@
         const projects = DATA.projects || [];
         return rows.map(r => {
             const isOpen = open.has(r.chainId);
-            return `<tr class="ch-row t-${L.tone(r)}${r.signals.length ? ' attn' : ''}${isOpen ? ' open' : ''}" data-chain="${esc(r.chainId)}">
-                ${stateCell(r)}${chainCell(r, window.AFProject.find(projects, r.projectId))}<td class="ch-wide">${esc(r.agentName || '—')}</td>
-                ${legCell(r)}${nowCell(r)}${TIP.cell('ch-wide muted', '', esc(T.ago(r.lastAt)), t('Last move'), TIP.lines([T.tip(r.lastAt, 'Last move'), T.tip(r.startedAt, 'Started')]))}
+            return `<tr class="ch-row t-${L.tone(r)}${r.signals.length ? ' attn' : ''}${isOpen ? ' open' : ''}" data-chain="${esc(r.chainId)}" data-afcard>
+                ${stateCell(r)}${chainCell(r, window.AFProject.find(projects, r.projectId))}<td class="ch-wide" data-label="${esc(t('Agent'))}">${esc(r.agentName || '—')}</td>
+                ${legCell(r)}${nowCell(r)}${TIP.cell('ch-wide muted', `data-label="${esc(t('Last move'))}"`, esc(T.ago(r.lastAt)), t('Last move'), TIP.lines([T.tip(r.lastAt, 'Last move'), T.tip(r.startedAt, 'Started')]))}
                 ${totalsCell(r)}${nextCell(r)}${actsCell(r)}</tr>${formRow(r)}${isOpen ? legsRow(r) : ''}`;
         }).join('');
     }
@@ -221,7 +221,7 @@
         const table = !d.chains.length ? `<p class="muted">${esc(t('No relay chain on record yet.'))}</p>`
             : !byChip.length ? `<p class="muted">${esc(t('No chain in this state.'))} <a href="#" data-chip="">${esc(t('Show every chain'))}</a></p>`
             : !rows.length ? `<p class="muted">${esc(t('No chain matches the filters.'))} <a href="#" data-reset>${esc(t('Reset filters'))}</a></p>`
-                : `<table class="ch-tab"><thead><tr>${th('State', 'Where the chain stands, from its newest record. ⚠ = something the record shows going wrong.')}
+                : `<table class="ch-tab" data-afcards><thead><tr data-afcardhead>${th('State', 'Where the chain stands, from its newest record. ⚠ = something the record shows going wrong.')}
                     ${th('Chain', 'The first leg\'s title and the chain id.')}${th('Agent', 'The agent the chain runs as.', 'ch-wide')}
                     ${th('Leg', 'The legs as a strip: ● ran, the current one in its state, ○ still allowed under the ceiling (∞ = none). ⑂⊣ = this leg is the last.')}
                     ${th('Now', 'The current leg: working, idle, gone — or what the next one waits for.')}

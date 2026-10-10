@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.916.0 - The Chains page on a phone (2026-10-10)
+
+- **Each chain is a card on a phone.** The buttons of a chain (pause, start
+  now, stop, last leg, ceiling, continue, end, open) stacked one per line in a
+  narrow column and ran off the right edge of the screen. On a phone a chain
+  is now a card: its title on top in full, then every figure with its name -
+  agent, leg, now, last move, cost, next - and the buttons on a line of their
+  own under it. A wide window keeps the table.
+
 ## 3.915.0 - The live port and the agent folders take effect without a reload (2026-10-10)
 
 - **Changing the live port moves the hooks with it.** The hooks Agent Farm
