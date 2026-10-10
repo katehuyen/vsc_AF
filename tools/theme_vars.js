@@ -22,6 +22,15 @@ const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'test', 'theme_vars.json');
 const KINDS = { dark: ['dark_modern.json', 'dark'], light: ['light_modern.json', 'light'], 'hc-dark': ['hc_black.json', 'hcDark'], 'hc-light': ['hc_light.json', 'hcLight'] };
+/**
+ * U-220 — A COLOUR THE USER SET BY HAND IS THE THEME'S OWN COLOUR TO VS CODE. An unscoped
+ * `workbench.colorCustomizations` entry holds under every theme, and every registry default that
+ * aliases the colour follows it — so a dark `editor.background` kept from a dark theme is the ground
+ * a LIGHT theme's webview is handed, beside that theme's dark text. The plain tables above never see
+ * it: they are the themes as shipped. A scenario is a kind resolved under such colours; only the
+ * variables that come out different from the plain kind are written.
+ */
+const UNDER = { darkground: { kinds: ['light', 'hc-light'], colours: { 'editor.background': '#2c2c25' } } };
 /** Set from the user's font settings, not from a theme. */
 const NOT_COLOURS = /^(font-|editor-font-)/;
 
@@ -179,6 +188,19 @@ function main() {
             // --vscode-a-b → a.b: VS Code writes a colour id's dots as dashes
             const val = value(v.replace(/-/g, '.'));
             if (typeof val === 'string') { out.themes[kind][v] = val.toLowerCase(); } else { out[val === null ? 'none' : 'unresolved'][kind].push(v); }
+        }
+    }
+    out.under = {};
+    for (const [id, sc] of Object.entries(UNDER)) {
+        out.under[id] = { colours: sc.colours, themes: {} };
+        for (const kind of sc.kinds) {
+            const [file, field] = KINDS[kind];
+            const value = resolver(Object.assign({}, themeColours(themesDir, file), sc.colours), reg, field);
+            out.under[id].themes[kind] = {};
+            for (const v of vars) {
+                const val = value(v.replace(/-/g, '.'));
+                if (typeof val === 'string' && val.toLowerCase() !== out.themes[kind][v]) { out.under[id].themes[kind][v] = val.toLowerCase(); }
+            }
         }
     }
     fs.writeFileSync(OUT, JSON.stringify(out, null, 1) + '\n', 'utf8');

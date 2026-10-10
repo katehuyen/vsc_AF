@@ -43,6 +43,21 @@ ok('the values are VS Code\'s own, theme by theme (registry defaults included)',
     T.themes.light['charts-green'] === '#388a34' && T.themes.dark['charts-green'] === '#89d185'
     && T.themes.light['editor-background'] === '#ffffff' && T.themes['hc-dark']['contrastBorder'] === '#6fc3df');
 
+// ---- U-220: the themes as shipped are not the themes a user runs ----
+// A colour customised by hand (workbench.colorCustomizations, unscoped) holds under every theme, so a
+// dark editor.background kept from a dark theme is the ground a light theme's page is handed. The table
+// carries each such scenario as the variables it changes from the plain kind — read off VS Code, not listed.
+const U = T.under || {};
+ok('the table carries a customised-colour scenario, for theme kinds it has',
+    Object.keys(U).length > 0 && Object.values(U).every(s => Object.keys(s.colours).length > 0
+        && Object.keys(s.themes).length > 0 && Object.keys(s.themes).every(k => KINDS.includes(k))));
+ok('…each written as what it CHANGES: a variable the pages use, with a value the plain kind does not have',
+    Object.values(U).every(s => Object.entries(s.themes).every(([k, vars]) => Object.keys(vars).length > 0
+        && Object.entries(vars).every(([v, val]) => used.has(v) && /^#[0-9a-f]{6,8}$/.test(val) && val !== T.themes[k][v]))));
+ok('‼️ …and the colour set by hand reaches the page as itself, under every kind of the scenario',
+    Object.values(U).every(s => Object.entries(s.colours).every(([key, val]) => !used.has(key.replace(/\./g, '-'))
+        || Object.values(s.themes).every(vars => vars[key.replace(/\./g, '-')] === val))));
+
 // ---- the renderer draws with it ----
 const render = (flag, suffix) => {
     execFileSync(process.execPath, [path.join(__dirname, 'render_page.js'), 'now'].concat(flag ? [flag] : []), { cwd: ROOT, stdio: 'pipe', timeout: 120000 });

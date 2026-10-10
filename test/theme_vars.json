@@ -1,6 +1,6 @@
 {
  "vscode": "1.103.2",
- "generated": "2026-10-08",
+ "generated": "2026-10-10",
  "vars": 67,
  "themes": {
   "dark": {
@@ -295,5 +295,20 @@
   "light": [],
   "hc-dark": [],
   "hc-light": []
+ },
+ "under": {
+  "darkground": {
+   "colours": {
+    "editor.background": "#2c2c25"
+   },
+   "themes": {
+    "light": {
+     "editor-background": "#2c2c25"
+    },
+    "hc-light": {
+     "editor-background": "#2c2c25"
+    }
+   }
+  }
  }
 }
