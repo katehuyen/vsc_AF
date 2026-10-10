@@ -1,5 +1,5 @@
 /**
- * The Toolbox "Phone app" card's data, already decided: where the host listens,
+ * The Mobile > Devices card's data, already decided: where the host listens,
  * whether a phone can reach it, the paired phones, and a pairing code while one
  * is fresh. The QR is encoded here — one encoder, the one the tests render.
  */

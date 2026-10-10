@@ -23,13 +23,14 @@
         devices: N_('Pair a phone with the Agent Farm app, see the phones paired, and let them in through your network.')
     };
 
+    // the service cards' shared look (svc-card, its head, badges, said line, facts, mini buttons) is AFTelegram.css()
+    const cardCss = () => window.AFTelegram.css() + window.AFWeb.css() + window.AFPhoneApp.css();
+
     function render() {
         const web = DATA.view === 'web';
-        const card = web ? window.AFWeb.card(DATA.web, { msg: said })
-            : DATA.remote ? window.AFPhoneApp.card(DATA.remote, { msg: said })
-                : `<p class="muted">${esc(t('The phone app is not available in this build.'))}</p>`;
+        const card = web ? window.AFWeb.card(DATA.web, { msg: said }) : window.AFPhoneApp.card(DATA.remote, { msg: said });
         document.getElementById('app').innerHTML = `
-            <style>${window.AFWeb.css()}${window.AFPhoneApp.css()}</style>
+            <style>${cardCss()}</style>
             ${window.AFHeader.tabs(DATA.view)}
             ${window.AFHeader.html({ page: DATA.view, title: esc(t(web ? 'Web' : 'Devices')), sub: esc(t(SUB[DATA.view])) })}
             ${card}`;

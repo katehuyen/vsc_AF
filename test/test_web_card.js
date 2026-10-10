@@ -27,13 +27,10 @@ const eq = (n, got, want) => ok(n + ` (got ${JSON.stringify(got)})`,
     JSON.stringify(got) === JSON.stringify(want));
 
 const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
-const FX = require(path.join(__dirname, 'fixtures', 'toolbox.js'));
+const FX = require(path.join(__dirname, 'fixtures', 'mobile.js'));
 
-// ---------- THE CARD, PER STATE, THROUGH THE REAL PAGE SCRIPT ----------
-const draw = (webOpts) => {
-    const data = FX.base({ telegram: FX.tg({ botUsername: 'b' }), web: FX.web(webOpts) });
-    return runPage('toolbox.js', data).html();
-};
+// ---------- THE CARD, PER STATE, THROUGH THE REAL PAGE SCRIPT (📱 Mobile ▸ Web, U-247) ----------
+const draw = (webOpts) => runPage('mobile.js', FX.onWeb(FX.web(webOpts))).html();
 
 {
     const lan = draw();
@@ -71,8 +68,7 @@ const draw = (webOpts) => {
     eq('…and draws no code either', (noToken.match(/class="webqr-img"/g) || []).length, 0);
 
     // A window that hosts nothing draws a card that says so, never a blank.
-    const none = runPage('toolbox.js',
-        FX.base({ telegram: FX.tg({ botUsername: 'b' }) })).html();
+    const none = runPage('mobile.js', { view: 'web' }).html();
     ok('a window with no web host says so instead of drawing an empty card',
         /web view is not available in this window/.test(none));
 }
@@ -185,23 +181,18 @@ const draw = (webOpts) => {
         eq('…and the link is the core formula s', d.url, 'http://127.0.0.1:8378/?t=abc');
         ok('no host, no card', W.webCardData(undefined) === undefined);
 
-        // ---------- THE DASHBOARD'S TOP-BAR DOOR ----------
-        // The button asks the header for an ACTION (not a nav), the panel runs
-        // the palette's own command — the one that asks local/LAN when the view
-        // is off — and the parity manifest ties that door to web.enable.
+        // ---------- THE CARD'S DOORS (U-247) ----------
+        // The card is its own page under 📱 Mobile, opened by afnav and the
+        // palette; the palette's Open Web View… still turns the view on (asking
+        // local/LAN when it is off), and parity ties that command to web.enable.
         {
             const rd = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
-            const dj = rd('media/dashboard.js');
-            const dt = rd('src/panels/dashboard.ts');
-            ok('the Dashboard header carries the web action',
-                /related: \[\{\s*action: 'openWebView'/.test(dj));
-            ok('…with a tooltip that says what it does and where the rest lives',
-                /Mobile Web Dashboard — [^']*read-only/.test(dj) && /Toolbox → Services/.test(dj));
-            ok('the panel answers it with the palette command, and only that one',
-                /case 'headerAction':\s*if \(msg\.action === 'openWebView'\) \{\s*void vscode\.commands\.executeCommand\('agentfarm\.openWebView'\)/.test(dt));
+            ok('the Web tab opens the card\'s page', /web: 'agentfarm\.openMobileWeb'/.test(rd('src/panels/base.ts'))
+                && /registerCommand\('agentfarm\.openMobileWeb', \(\) => MobilePanel\.show\(MOBILE_VIEW\.web,/.test(rd('src/extension.ts')));
+            ok('the Dashboard no longer carries a door of its own', !/openWebView/.test(rd('media/dashboard.js')));
             const man = JSON.parse(rd('parity.manifest.json'));
-            const cap = (man.capabilities || man.entries || []).find(c => c.capability === 'dashboard.ts#headerAction');
-            ok('parity ties the door to web.enable', !!cap && (cap.ops || []).includes('web.enable'));
+            const cap = (man.capabilities || man.entries || []).find(c => c.capability === 'openWebView');
+            ok('parity ties Open Web View… to web.enable', !!cap && (cap.ops || []).includes('web.enable'));
         }
 
         Module._load = origLoad;

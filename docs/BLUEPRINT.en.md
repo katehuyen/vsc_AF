@@ -1110,7 +1110,7 @@ Enabled via `agentFarm.web.enabled`, the built-in HTTP server provides a standal
 - **‼️ "A QR Code is a Promise" and `local` Warning:**
   - `webCockpit.ts` evaluates 6 connection states. When bound to loopback `127.0.0.1`, a QR code photographed by a phone camera will fail silently.
   - Instead of drawing an unscannable symbol, the cockpit shifts to an **amber** warning state, replacing the QR code with an explanatory note (*"Bound to this machine only — select LAN for phone access"*). A QR code is generated only when `phoneReachable` evaluates to true.
-- **Dashboard Top-Bar `📱 Web` Button:** A dedicated `📱 Web` action button in the Dashboard header opens the LAN/Local binding and QR cockpit in one click (`webCockpit.ts`).
+- **The `📱 Mobile` tab:** the global row's `📱 Mobile` button holds three tabs — `◉ Now` (what waits, what runs, today; the phone opens it first), `🌐 Web` (the LAN/Local binding, the link and its QR code — `webCockpit.ts`) and `🔗 Devices` (pairing a phone with the Agent Farm app, the phones paired and their scope, the network's permission). On the phone itself the strip is not drawn: it opens on Now.
 - **Mobile Battery and Radio Optimization (`core/webpage.ts`):** 
   - When the browser tab is hidden or backgrounded (`document.hidden`), the 15-second polling timer is immediately suspended (`poll(false)`), conserving phone battery and cellular radio wakeups.
   - Upon returning to the foreground, an immediate single `fetch` executes and polling resumes.

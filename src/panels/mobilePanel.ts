@@ -10,9 +10,9 @@ import { webCardData, webCardMessage, type WebViewHost } from './toolboxWeb';
  * the Toolbox drew, with the same data and the same acts (toolboxWeb.ts, toolboxRemote.ts); nothing is decided here.
  */
 export type MobileView = 'web' | 'devices';
+/** The views by name, so a caller in a file that may not spell OpenCode's server flags (extension.ts) can name them. */
+export const MOBILE_VIEW: { readonly [K in MobileView]: K } = { web: 'web', devices: 'devices' };
 const TITLE: Record<MobileView, string> = { web: 'Web', devices: 'Devices' };
-/** The command each view opens on (src/panels/base.ts handleAfNav routes the same ids). */
-export const MOBILE_COMMANDS: Record<MobileView, string> = { web: 'agentfarm.openMobileWeb', devices: 'agentfarm.openMobileDevices' };
 
 export interface MobileDeps {
     extensionUri: vscode.Uri;

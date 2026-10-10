@@ -739,7 +739,7 @@ import { TasksPanel } from './panels/tasksPanel';
 import { desktopAsk, type PanelAsk } from './panels/panelAsk';
 import { NeedsPanel } from './panels/needsPanel';
 import { NowPanel, type NowDeps } from './panels/nowPanel';
-import { MOBILE_COMMANDS, MobilePanel, type MobileView } from './panels/mobilePanel';
+import { MOBILE_VIEW, MobilePanel, type MobileDeps } from './panels/mobilePanel';
 import { buildNow, NOW_LIMITS } from './core/nowPage';
 import { NoticesPanel, type NoticesDeps } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
@@ -25351,7 +25351,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             clearPort: () => clearPort(cfg().get<number>('livePort', 8377)),
             restart: () => live.start()
-        },
+        }
+    };
+    // U-247 — the two services the Mobile pages draw (Web, Devices), on the PC and on an admin phone alike
+    const mobileServices = {
         /**
          * U-85 — the read-only web surface a phone opens.
          *
@@ -25376,6 +25379,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-444 — lent once the phone host exists (further down activate)
         remote: undefined as RemoteDevicesHost | undefined
     };
+    const mobileDeps = (): MobileDeps => ({
+        extensionUri: context.extensionUri,
+        web: mobileServices.web,
+        ...(mobileServices.remote ? { remote: mobileServices.remote } : {})
+    });
     /**
      * ‼️ X-251 — WHOSE PLAN A RECORDED SESSION RAN ON, ANSWERED IN ONE PLACE.
      *
@@ -31954,6 +31962,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             guide: (host, args) => GuidePanel.openOn(host, context.extensionUri, args),
             wiki: (host, args) => WikiPanel.openOn(host, wikiPageDeps(), typeof args?.focus === 'string' ? args.focus : undefined),
             toolbox: host => ToolboxPanel.openOn(host, toolboxDeps),
+            web: host => MobilePanel.openOn(host, MOBILE_VIEW.web, mobileDeps()),
+            devices: host => MobilePanel.openOn(host, MOBILE_VIEW.devices, mobileDeps()),
             sound: host => SoundPanel.openOn(host, soundPageDeps),
             settings: host => FarmSettingsPanel.openOn(host, farmSettingsDeps()),
             living: host => LivingPanel.openOn(host, livingDeps),
@@ -32064,7 +32074,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (await vscode.window.showWarningMessage('Agent Farm: ' + text, yes) !== yes) { return; }
         const r = await allowFirewall();
         void (r.ok
-            ? vscode.window.showInformationMessage('Agent Farm: phones are let in now. Pair one from Toolbox > Services > Agent Farm app.')
+            ? vscode.window.showInformationMessage('Agent Farm: phones are let in now. Pair one from Mobile > Devices.')
             : vscode.window.showWarningMessage('Agent Farm: ' + (r.cancelled ? 'nothing changed — Windows asked for permission and the answer was No.' : r.error)));
     };
     /** Listen where the settings say — or stop — and warn when a chosen mode could not listen. */
@@ -32104,7 +32114,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await cfg().update('remote.listen', mode, vscode.ConfigurationTarget.Global);
         return applyRemote(false);
     };
-    toolboxDeps.remote = {
+    mobileServices.remote = {
         snapshot: () => ({
             mode: remoteCfg().mode, port: remoteCfg().port, status: remote.status(), devices: remote.devices(), runner: taskRunner,
             firewall: phoneModes(remoteCfg().mode) ? firewall.verdict() : undefined,
@@ -41893,14 +41903,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.openNow', () => {
             NowPanel.show(nowDeps);
         }),
-        // U-247 — the other two tabs under 📱 Mobile: the Toolbox's web view and phone app cards, on pages of their own
-        ...(Object.keys(MOBILE_COMMANDS) as MobileView[]).map(view => vscode.commands.registerCommand(
-            MOBILE_COMMANDS[view],
-            () => MobilePanel.show(view, {
-                extensionUri: context.extensionUri,
-                ...(toolboxDeps.web ? { web: toolboxDeps.web } : {}),
-                ...(toolboxDeps.remote ? { remote: toolboxDeps.remote } : {})
-            }))),
+        // U-247 — the other two tabs under 📱 Mobile: the web view's card and the phone app's, a page each
+        vscode.commands.registerCommand('agentfarm.openMobileWeb', () => MobilePanel.show(MOBILE_VIEW.web, mobileDeps())),
+        vscode.commands.registerCommand('agentfarm.openMobileDevices', () => MobilePanel.show(MOBILE_VIEW.devices, mobileDeps())),
 
         // S-123 — a chain id (or { chainId }) opens the page on that chain's row
         vscode.commands.registerCommand('agentfarm.openChains', (arg?: unknown) => {
@@ -42796,7 +42801,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'web.status',
-            describe: 'U-85 — CAN A PHONE READ THIS FARM RIGHT NOW, and if not, why. The same verdict the Toolbox card draws (core/webCockpit), so the two can never disagree: `state` is one of off · no-token · not-serving · local · lan-no-address · lan, with a `tone`, the sentence a person reads (`detail`) and the one thing to do about it (`next`). ‼️ READ `phoneReachable`, NOT `enabled`: the commonest failure is entirely green — the switch on, a token set, the server really bound — and bound to `local`, so the only link that exists is http://127.0.0.1 and no phone can open it. `serving` is the host\'s own knowledge (it holds the server object), never a port scan. args: qr? (default false — true also returns the page\'s own QR as an SVG string, encoded only when the link would actually work). Answer: { enabled, serving, bind, port, hasToken, lanAddress, host, url, status: {state, tone, detail, next?, phoneReachable}, qr? }.',
+            describe: 'U-85 — CAN A PHONE READ THIS FARM RIGHT NOW, and if not, why. The same verdict the Mobile > Web card draws (core/webCockpit), so the two can never disagree: `state` is one of off · no-token · not-serving · local · lan-no-address · lan, with a `tone`, the sentence a person reads (`detail`) and the one thing to do about it (`next`). ‼️ READ `phoneReachable`, NOT `enabled`: the commonest failure is entirely green — the switch on, a token set, the server really bound — and bound to `local`, so the only link that exists is http://127.0.0.1 and no phone can open it. `serving` is the host\'s own knowledge (it holds the server object), never a port scan. args: qr? (default false — true also returns the page\'s own QR as an SVG string, encoded only when the link would actually work). Answer: { enabled, serving, bind, port, hasToken, lanAddress, host, url, status: {state, tone, detail, next?, phoneReachable}, qr? }.',
             handler: (args) => {
                 const w = webCfg();
                 const lan = lanAddress();
@@ -42816,7 +42821,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'web.stop',
-            describe: 'U-85 — SWITCH THE WEB VIEW OFF: the port closes and every link stops working, including a bookmark saved on a phone. The token is KEPT (agentFarm.web.token), so web.enable puts the same links back; mint a new one with web.token.new if the point is to revoke them. The same act as "turn off" on the Toolbox card. args: none. Answer: { enabled:false, wasServing, port }.',
+            describe: 'U-85 — SWITCH THE WEB VIEW OFF: the port closes and every link stops working, including a bookmark saved on a phone. The token is KEPT (agentFarm.web.token), so web.enable puts the same links back; mint a new one with web.token.new if the point is to revoke them. The same act as "turn off" on the Mobile > Web card. args: none. Answer: { enabled:false, wasServing, port }.',
             handler: async () => {
                 const wasServing = !!webServer;
                 const w = await disableWebView();
@@ -42825,7 +42830,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'web.bind',
-            describe: 'U-85 — MOVE THE BINDING WHILE THE VIEW IS ON, which web.enable will not do (it answers `alreadyOn` and changes nothing). This is the switch that decides whether a phone can reach the farm at all: `local` keeps the port on 127.0.0.1 and there is no link that leaves this machine; `lan` serves the dashboard to EVERYONE on this network who has the link. ‼️ `lan` therefore requires confirm:true, exactly as web.enable does — it stays read only, but read by whoever is on the network. The server rebinds at once. The same select as "Binding" on the Toolbox card. args: bind (local | lan), confirm (true — required for lan). Answer: web.status\'s own answer, after the move.',
+            describe: 'U-85 — MOVE THE BINDING WHILE THE VIEW IS ON, which web.enable will not do (it answers `alreadyOn` and changes nothing). This is the switch that decides whether a phone can reach the farm at all: `local` keeps the port on 127.0.0.1 and there is no link that leaves this machine; `lan` serves the dashboard to EVERYONE on this network who has the link. ‼️ `lan` therefore requires confirm:true, exactly as web.enable does — it stays read only, but read by whoever is on the network. The server rebinds at once. The same select as "Binding" on the Mobile > Web card. args: bind (local | lan), confirm (true — required for lan). Answer: web.status\'s own answer, after the move.',
             handler: async (args) => {
                 const bind = optStr(args, 'bind');
                 need(bind === 'local' || bind === 'lan', 'bind must be local or lan.');
@@ -42837,7 +42842,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'web.token.new',
-            describe: 'U-85 — MINT A FRESH TOKEN AND PUT IT IN FORCE AT ONCE. ‼️ THIS IS THE REVOKE: every link made from the old token dies with it, including a phone bookmark — the page stores the token in a cookie, so a phone that was working simply starts being refused. That is the point of the op, so `confirm:true` is required. The new link is in the answer; the view is left exactly as on or off as it was. The same button as "new token" on the Toolbox card. args: confirm (true — required). Answer: web.status\'s own answer, carrying the new url.',
+            describe: 'U-85 — MINT A FRESH TOKEN AND PUT IT IN FORCE AT ONCE. ‼️ THIS IS THE REVOKE: every link made from the old token dies with it, including a phone bookmark — the page stores the token in a cookie, so a phone that was working simply starts being refused. That is the point of the op, so `confirm:true` is required. The new link is in the answer; the view is left exactly as on or off as it was. The same button as "new token" on the Mobile > Web card. args: confirm (true — required). Answer: web.status\'s own answer, carrying the new url.',
             handler: async (args) => {
                 need(args.confirm === true,
                     'A new token kills every existing link, including a phone bookmark — pass confirm:true if that is meant.');

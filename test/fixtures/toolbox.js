@@ -14,54 +14,6 @@ const { telegramCard } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'telegramCockpit.js'));
 const { hooksStatus } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'hooksCockpit.js'));
-const { webStatus, webUrl } =
-    require(path.join(__dirname, '..', '..', 'out', 'core', 'webCockpit.js'));
-const { qrEncode, qrSvg } =
-    require(path.join(__dirname, '..', '..', 'out', 'core', 'qr.js'));
-const { remoteCardData } =
-    require(path.join(__dirname, '..', '..', 'out', 'core', 'remoteCard.js'));
-const { firewallVerdict } =
-    require(path.join(__dirname, '..', '..', 'out', 'core', 'firewallVerdict.js'));
-
-/** X-444 — the Agent Farm app card, composed by the same function the panel calls. */
-const RNOW = Date.parse('2026-08-30T09:00:00Z');
-const phone = (id, name, scope, daysAgo, revoked) =>
-    ({ id, name, scope, pairedAt: RNOW - daysAgo * 864e5, revoked: !!revoked });
-const remote = (o) => remoteCardData(Object.assign({
-    mode: 'lan', port: 7443, runner: true,
-    status: {
-        listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
-        addresses: ['192.168.1.40:7443'], fingerprint: '3fa4'.repeat(16), sockets: 1
-    },
-    devices: [phone('d1', 'Pixel 8', 'answer', 3)]
-}, o || {}), RNOW);
-
-/**
- * U-85 — one web block, built the way `webCardData()` builds it: the verdict,
- * the link AND the code are asked for rather than typed, because all three are
- * the thing under test. ‼️ A hand-drawn QR in a fixture is a picture of a code
- * that was never encoded — and the one property that matters (does a scanner
- * read it) is exactly what a hand-drawn one cannot have.
- */
-const web = (o) => {
-    const s = Object.assign({
-        enabled: true, port: 8378, bind: 'lan',
-        token: '9f2c1a4e77b0d3568ae1cc02f4b9d716',
-        serving: true, lanAddress: '192.168.1.40'
-    }, o || {});
-    const status = webStatus({
-        enabled: s.enabled, port: s.port, bind: s.bind,
-        hasToken: !!s.token, serving: s.serving, lanAddress: s.lanAddress
-    });
-    const url = s.token
-        ? webUrl({ bind: s.bind, port: s.port, token: s.token, lanAddress: s.lanAddress }) : '';
-    return Object.assign({
-        enabled: s.enabled, port: s.port, bind: s.bind, hasToken: !!s.token,
-        serving: s.serving, lanAddress: s.lanAddress, url, status
-    }, status.phoneReachable && url
-        ? { qr: qrSvg(qrEncode(url), { scale: 4, title: 'Open Agent Farm on your phone' }) }
-        : {});
-};
 
 /**
  * U-86 — one hooks block, built the way `buildHooks()` builds it: the status is
@@ -244,102 +196,6 @@ const variants = () => ([
             })
         })
     },
-    /**
-     * ‼️ U-85 — FOUR PICTURES, SMALLEST FIRST, because the card changes SHAPE
-     * between them and not just colour: the off state has two buttons and no
-     * code block, and the working one grows a 200px square beside a link that
-     * has to wrap. The middle one is the scene this card exists for — every
-     * switch correct, and the phone still cannot open anything.
-     */
-    {
-        id: 'toolbox-web-off',
-        label: 'Toolbox — Services: the web view is off (the smallest the card gets)',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }) })
-    },
-    {
-        id: 'toolbox-web-notoken',
-        label: 'Toolbox — Services: on, but no token, so the server refuses to start',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ token: '', serving: false }) })
-    },
-    {
-        id: 'toolbox-web-local',
-        label: 'Toolbox — Services: ‼️ every switch right, bound to local, and NO phone can open it',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ bind: 'local' }) })
-    },
-    {
-        id: 'toolbox-web-lan',
-        label: 'Toolbox — Services: reachable from the network, with the code that opens it',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web() })
-    },
-    // X-444 — the Agent Farm app card, smallest first: off with no phone, one phone
-    // listening, a fresh pairing code beside many phones, and a mode that could not listen
-    {
-        id: 'toolbox-remote-off',
-        label: 'Toolbox — Services: the Agent Farm app is off and no phone is paired',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
-            remote: remote({ mode: 'off', devices: [],
-                status: { listening: false, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, addresses: [], sockets: 0,
-                    reason: 'agentFarm.remote.listen is off' } }) })
-    },
-    {
-        id: 'toolbox-remote-one',
-        label: 'Toolbox — Services: listening on the Wi-Fi, one phone paired and none connected, so the firewall hint shows',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
-            remote: remote({ status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
-                addresses: ['192.168.1.40:7443'], fingerprint: '3fa4'.repeat(16), sockets: 0 } }) })
-    },
-    {
-        id: 'toolbox-remote-firewall',
-        label: 'Toolbox — Services: listening on a Public Wi-Fi where Windows Firewall stops phones, with the one-click fix',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
-            remote: remote({ status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
-                addresses: ['192.168.1.42:7443'], fingerprint: '3fa4'.repeat(16), sockets: 0 },
-                firewall: firewallVerdict({ active: ['Public'], enabled: ['Domain', 'Private', 'Public'], shields: [], allow: ['Private'],
-                    block: [], ourPorts: [], ourProfiles: [] }, 7443) }) })
-    },
-    {
-        id: 'toolbox-remote-pair',
-        label: 'Toolbox — Services: a fresh pairing code beside four phones, one revoked',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
-            remote: remote({
-                mode: 'tailscale',
-                status: { listening: true, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, port: 7443,
-                    addresses: ['100.101.12.7:7443'], fingerprint: '3fa4'.repeat(16), sockets: 2 },
-                devices: [phone('d1', 'Pixel 8', 'answer', 3), phone('d2', 'Samsung Galaxy Tab S9 Ultra (salon)', 'manage', 40),
-                    phone('d3', 'Eski telefon', 'read', 120, true), phone('d4', 'İş telefonu', 'admin', 1)],
-                pair: { link: 'agentfarm://pair?v=1&farm=farm_7c1d9a&name=MURAT-PC&code=483920&fp=' + '3fa4'.repeat(16)
-                    + '&a=100.101.12.7:7443', addresses: ['100.101.12.7:7443'], until: RNOW + 9 * 60e3 }
-            }) })
-    },
-    {
-        id: 'toolbox-remote-activity',
-        label: 'Toolbox — Services: three phones with their scope to choose and when each was last seen, and the recent activity line',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
-            remote: remote({
-                devices: [
-                    { ...phone('d1', 'Pixel 8', 'manage', 3), lastSeen: RNOW - 5 * 60e3, lastAddress: '192.168.1.20' },
-                    { ...phone('d2', 'Samsung Galaxy Tab S9 Ultra (salon)', 'read', 40), lastSeen: RNOW - 3 * 864e5, lastAddress: '100.101.12.9' },
-                    phone('d3', 'Eski telefon', 'manage', 120, true)
-                ],
-                audit: [
-                    { ts: RNOW - 4 * 60e3, what: 'action', device: 'd1', name: 'Pixel 8', ok: true, page: 'chains', op: 'stop' },
-                    { ts: RNOW - 9 * 60e3, what: 'call', device: 'd1', name: 'Pixel 8', ok: true, op: 'console.send' },
-                    { ts: RNOW - 30 * 60e3, what: 'call', device: 'd2', name: 'Samsung Galaxy Tab S9 Ultra (salon)', ok: false, op: 'console.start',
-                        detail: 'scope: console.start needs manage, this device has read' },
-                    { ts: RNOW - 864e5, what: 'refused', device: 'd3', name: 'Eski telefon', ok: false, detail: 'revoked', address: '192.168.1.33' },
-                    { ts: RNOW - 2 * 864e5, what: 'scope', device: 'd2', name: 'Samsung Galaxy Tab S9 Ultra (salon)', ok: true, detail: 'manage -> read' },
-                    { ts: RNOW - 3 * 864e5, what: 'pair-refused', device: '', name: 'Unknown', ok: false, address: '192.168.1.77' }
-                ]
-            }) })
-    },
-    {
-        id: 'toolbox-remote-failed',
-        label: 'Toolbox — Services: Tailscale chosen, but this machine has no tailnet address',
-        data: base({ telegram: tg({ botUsername: 'muvu_farm_bot' }), web: web({ enabled: false, serving: false }),
-            remote: remote({ mode: 'tailscale',
-                status: { listening: false, farm: { id: 'farm_7c1d9a', name: 'MURAT-PC' }, addresses: [], sockets: 0,
-                    reason: 'no Tailscale address on this machine (100.64.0.0/10) - is Tailscale running?' } }) })
-    },
     // U-155 — the Kapıcı tab: the three rules that ship (as kapici.rules answers them today), then a user
     // file replacing one, a rule of the user's own, and a file that failed to load — its row's panel open
     {
@@ -371,4 +227,4 @@ function kapiciOwn() {
         } });
 }
 
-module.exports = { script: 'toolbox.js', data, variants, tg, base, hooks, web };
+module.exports = { script: 'toolbox.js', data, variants, tg, base, hooks };

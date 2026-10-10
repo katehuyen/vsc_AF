@@ -792,11 +792,6 @@ export class DashboardPanel {
             case 'openAgent':
                 vscode.commands.executeCommand('agentfarm.openAgentDetail', { agentId: msg.agentId });
                 break;
-            case 'headerAction':
-                if (msg.action === 'openWebView') {
-                    void vscode.commands.executeCommand('agentfarm.openWebView');
-                }
-                break;
             case 'openSession':
                 // ts (optional) = the clicked turn's opening prompt — the viewer
                 // reveals an already-open panel and scrolls it right there.

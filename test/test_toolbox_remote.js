@@ -88,10 +88,9 @@ const alive = setInterval(() => undefined, 1000);
     ok('the page and a server\'s full definition are its looks', messageScope(B, 'refresh') === 'admin' && messageScope(B, 'mcp-def') === 'admin');
     ok('the hooks, a tool, the plugins, the services\' switches and the phones are its acts',
         ['hooks-install', 'hooks-remove', 'hooks-restart', 'remove', 'tool-save', 'togglePlugin', 'toggleMcp', 'probe',
-            'svc-verify', 'svc-set', 'web-start', 'web-token', 'remote-pair', 'remote-revoke', 'remote-scope'].every(t => messageScope(B, t) === 'admin'));
-    const PC = ['open', 'reveal', 'openExternal', 'skillScope', 'headerAction', 'svc-connect', 'remote-listen',
-        'remote-firewall-allow', 'remote-copy-link', 'web-copy', 'openGuide', 'afnav'];
-    ok('‼️ a file, a folder, a link, a skill\'s scope, the sync, the token, the reach, the firewall and the PC clipboard never run from a phone',
+            'svc-verify', 'svc-set'].every(t => messageScope(B, t) === 'admin'));
+    const PC = ['open', 'reveal', 'openExternal', 'skillScope', 'headerAction', 'svc-connect', 'openGuide', 'afnav'];
+    ok('‼️ a file, a folder, a link, a skill\'s scope, the sync and the token never run from a phone',
         PC.every(t => messageScope(B, t) === null));
 
     // ---- the page on a phone ----

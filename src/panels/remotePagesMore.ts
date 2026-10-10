@@ -14,6 +14,8 @@ export interface MorePageMakers {
     /** `args.focus` opens one mark, as the desktop's focus does. */
     wiki(host: PanelHost, args?: Record<string, unknown>): void;
     toolbox(host: PanelHost): void;
+    web(host: PanelHost): void;
+    devices(host: PanelHost): void;
     sound(host: PanelHost): void;
     settings(host: PanelHost): void;
     living(host: PanelHost): void;
@@ -101,16 +103,27 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
             pcOnly: ['openSession', 'openPage', 'openWikiFile', 'revealWikiPath', 'openSettings', 'openGuide', 'afnav'],
             make: (host, args) => make.wiki(host, args)
         },
-        // X-456 — the Toolbox carries the farm's configuration (MCP definitions, the Telegram, web and
-        // phone-app services, the hooks), so it asks admin even to look, as those namespaces do. A file
-        // or folder on the PC, a link, a skill's scope and the constitution sync (their dialogs), the
-        // Telegram token (a secret), the phone app's reach (changing it cuts the phone off) and its
-        // firewall prompt, and the PC clipboard stay on the PC.
+        // X-456 — the Toolbox carries the farm's configuration (MCP definitions, the Telegram service, the
+        // hooks), so it asks admin even to look, as those namespaces do. A file or folder on the PC, a link,
+        // a skill's scope and the constitution sync (their dialogs) and the Telegram token (a secret) stay
+        // on the PC.
         toolbox: {
             open: 'admin', act: 'admin', looks: ['refresh', 'mcp-def'], answers: [],
-            pcOnly: ['open', 'reveal', 'openExternal', 'skillScope', 'headerAction', 'svc-connect', 'remote-listen',
-                'remote-firewall-allow', 'remote-copy-link', 'web-copy', 'openGuide', 'afnav'],
+            pcOnly: ['open', 'reveal', 'openExternal', 'skillScope', 'headerAction', 'svc-connect', 'openGuide', 'afnav'],
             make: host => make.toolbox(host)
+        },
+        // U-247 — the two cards that left the Toolbox for 📱 Mobile keep the Toolbox's gates: the web view's
+        // and the phones' configuration ask admin even to look; the PC clipboard, the phone app's reach and
+        // its firewall prompt stay on the PC.
+        web: {
+            open: 'admin', act: 'admin', looks: ['refresh'], answers: [],
+            pcOnly: ['web-copy', 'afnav'],
+            make: host => make.web(host)
+        },
+        devices: {
+            open: 'admin', act: 'admin', looks: ['refresh'], answers: [],
+            pcOnly: ['remote-listen', 'remote-firewall-allow', 'remote-copy-link', 'afnav'],
+            make: host => make.devices(host)
         },
         // X-456 — the alerts. Reading the page, the machine's voices (asked on opening) and a session's
         // sound panel are looks; every switch, tone, voice, rename, removal, ▶ and rehearsal is manage,

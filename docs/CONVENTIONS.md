@@ -532,6 +532,11 @@ gaps found by a hand scan, and a hand scan rots the day it finishes.
 - A right-click item is a second **door**, not a second capability (it is
   either a command drawn again or a relay to the page's own handler), and
   `test_ctxmenu_reach.js` is what proves those relays land.
+- **‼️ A command is registered by its LITERAL id** —
+  `registerCommand('agentfarm.openX', …)`, never a map's keys spread into
+  `registerCommand(MAP[k], …)`. The gate finds handlers by that literal; a
+  computed id is a door it cannot see, so the command ships undecided and its
+  contribution has no handler the gate can read (U-247 measured it).
 
 ### An account slot's contents are the SHAPE of its adapter, too (X-284)
 
@@ -1145,6 +1150,18 @@ Chrome, evaluates one expression against the laid-out DOM and prints what it
 returns. It uses `--dump-dom`, **not** a debug port: opening a CDP connection on
 a user's machine is a thing to ask about first, and a DOM dump needs no
 permission at all.
+
+### A tab strip is a GROUP of pages (U-247)
+
+The strip at the top of a page (`AFHeader.tabs(id)`, `media/pageHeader.js`) is
+one entry of `TAB_GROUPS`: pages that read as ONE destination of the global
+row — `inbox` (🔔 Notices · 📥 Queue · 🤖 A2A Notes · ⚡ A2A Tasks) and
+`mobile` (◉ Now · 🌐 Web · 🔗 Devices, under the row's `📱 Mobile`). A page
+names only itself; the strip it gets is the group its id is in. A new group is
+a new entry there, never a second strip function; every id in it needs an
+`afnav` route (`handleAfNav`), a contributed command and a registered one. A
+group the phone has no use for is hidden there in CSS (`html.af-phone`), as
+the Mobile strip is — the phone opens on Now.
 
 ---
 

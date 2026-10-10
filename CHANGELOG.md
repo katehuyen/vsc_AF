@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.917.0 - The Mobile tab (2026-10-10)
+
+- **Now becomes 📱 Mobile, with three tabs.** The global row's Now button
+  is now 📱 Mobile. Its strip holds Now (what waits for you, what runs,
+  today's spend and quotas - unchanged), Web (the farm in a browser: its
+  binding, its link and the QR code that opens it) and Devices (pairing a
+  phone with the Agent Farm app, the phones paired and their scope, and
+  letting them in through your network). The phone itself opens on Now and
+  draws no strip.
+- **The web view and the phone app have pages of their own.** Their cards
+  left Toolbox > Services, which keeps the Telegram bridge and the live
+  hooks and a line with two buttons that open Web and Devices. The
+  Dashboard's 📱 Web button is gone; Open Web View... in the command palette
+  still turns the view on, and the palette also offers Open Mobile: Web and
+  Open Mobile: Devices.
+- **An admin phone keeps both cards.** In the app, Toolbox > Services points
+  to Web and Devices, which open with the same permissions as before: an
+  admin phone can turn the view on, mint a token, pair a phone, change a
+  phone's scope and revoke one; copying to the PC's clipboard, changing the
+  reach and the firewall prompt stay on the PC.
+
 ## 3.916.0 - The Chains page on a phone (2026-10-10)
 
 - **Each chain is a card on a phone.** The buttons of a chain (pause, start

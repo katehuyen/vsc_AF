@@ -1157,7 +1157,7 @@ Backlog satırlarında yer alan Obsidian Tasks formatındaki özel ikonlar (`�
 - **‼️ "QR Kod Bir Sözdür" ve `local` Uyarısı:**
   - `webCockpit.ts` bağlantıyı 6 farklı durumda denetler. Sunucu `127.0.0.1` (loopback) üzerinde dinliyorsa, telefon kamerasıyla taranacak bir QR kod telefonda hiçbir zaman açılamaz.
   - Sistem, taranamayacak bir QR kodu sahte bir başarıyla ekrana çizmek yerine **kehribar (amber)** renge geçer; QR alanına *"Sadece bu makineye bağlı — telefonun erişmesi için LAN seçilmelidir"* uyarısını yazar. QR kod ancak `phoneReachable` (LAN adresi açık ve geçerli) olduğunda çizilir.
-- **Dashboard Üst Şerit `📱 Web` Butonu:** Dashboard başlığında doğrudan `📱 Web` düğmesi yer alır; tek tıkla LAN/Local bağlama durumunu ve QR kokpitini açar (`webCockpit.ts`).
+- **`📱 Mobil` sekmesi:** genel satırdaki `📱 Mobil` düğmesi üç sekme taşır — `◉ Şimdi` (seni bekleyenler, çalışanlar, bugün; telefon ilk bunu açar), `🌐 Web` (LAN/Local bağlama, bağlantı ve QR kodu — `webCockpit.ts`) ve `🔗 Cihazlar` (Agent Farm uygulamasıyla telefon eşleme, eşli telefonlar ve yetkileri, ağın izni). Telefonun kendisinde şerit çizilmez: Şimdi ile açılır.
 - **Mobil Pil ve Ağ Koruması (`core/webpage.ts`):** 
   - Sayfa arka planda veya kilitli ekranda kaldığında (`document.hidden`), 15 saniyelik `setInterval` döngüsü anında durdurulur (`poll(false)`). Telefonun telsizi ve pili boş yere harcanmaz.
   - Sayfa tekrar öne geldiğinde tek bir anlık `fetch` yapılır ve periyodik yoklama yeniden başlatılır.

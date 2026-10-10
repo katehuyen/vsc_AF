@@ -142,7 +142,7 @@ const alive = setInterval(() => undefined, 1000);
     ok('a manage device can', pcSide.join() === 'command:agentfarm.pinSession,command:agentfarm.interruptSession');
 
     pcSide.length = 0;
-    for (const m of [{ type: 'openAgent', agentId: 'a-dev' }, { type: 'headerAction', action: 'openWebView' },
+    for (const m of [{ type: 'openAgent', agentId: 'a-dev' },
         { type: 'openSession', file: 'C:/x.jsonl' }, { type: 'startSession', agentId: 'a-dev' }, { type: 'newAgent' },
         { type: 'openGuide', anchor: 'dashboard' }, { type: 'openTimeline' }, { type: 'openSearch' }, { type: 'openFarmSettings' },
         { type: 'afnav', to: 'sessions' }, { type: 'focusTerminal', sessionId: 'abc' }, { type: 'manageProjects' },

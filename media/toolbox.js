@@ -7,6 +7,7 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     let DATA = window.__DATA__;
+    const tr = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s);
 
     const TABS = [
         { id: 'overview', label: 'Overview' },
@@ -198,18 +199,6 @@
             render();
             return;
         }
-        // U-85 — what the host did about the web view, said IN THE CARD, for
-        // the reason the line above exists.
-        if (m.type === 'web-said') {
-            webMsg = { ok: m.ok, text: m.text };
-            render();
-            return;
-        }
-        if (m.type === 'remote-said') {
-            remoteMsg = { ok: m.ok, text: m.text };
-            render();
-            return;
-        }
         if (m.type === 'mcp-def' && toolForm && toolForm.name === m.name) {
             Object.assign(toolForm, m.def || {});
             render();
@@ -393,9 +382,6 @@
     // U-86 — what the host last did about the hooks. Page state, not DATA: it
     // is an answer to a button this reader pressed.
     let hooksMsg = null;
-    // U-85 — the same contract for the web view card.
-    let webMsg = null;
-    let remoteMsg = null;
 
     const KIND_LABEL = { skill: 'skill', subagent: 'subagent', command: 'command', mcp: 'MCP server' };
     const KIND_LEDE = {
@@ -846,13 +832,10 @@
         return window.AFTelegram.card(tg(), {
             controls: true, agents: DATA.agents || [], msg: svcMsg
         }) + hooksCard()
-            // U-85 — the farm on a phone. A component (media/afWeb.js) for the
-            // reason the Telegram card is one, with one of its own: this file
-            // is past its size budget, so a card written here is a card that
-            // grows a monolith.
-            + window.AFWeb.card((DATA.services || {}).web, { msg: webMsg })
-            // X-444 — the Agent Farm app: where a phone reaches this farm, and the paired phones.
-            + ((DATA.services || {}).remote && window.AFPhoneApp ? window.AFPhoneApp.card(DATA.services.remote, { msg: remoteMsg }) : '');
+            // U-247 — the web view and the phone app have pages of their own under 📱 Mobile (media/mobile.js)
+            + `<p class="muted small">${esc(tr('The web view and the phone app are under 📱 Mobile:'))}
+                <button class="mini" data-afnav="web">🌐 ${esc(tr('Web'))}</button>
+                <button class="mini" data-afnav="devices">🔗 ${esc(tr('Devices'))}</button></p>`;
     }
 
     function wireServices() {
@@ -869,8 +852,6 @@
             else if (act === 'restart') { post({ type: 'hooks-restart' }); }
             else if (act === 'clear-port') { post({ type: 'hooks-clear-port' }); }
         }));
-        window.AFWeb.wire(post);
-        if (window.AFPhoneApp) { window.AFPhoneApp.wire(post); }
     }
 
     function settingsTab() {
@@ -939,8 +920,6 @@
                 .tb-card { cursor: pointer; }
                 .tb-card:hover { outline: 1px solid var(--vscode-charts-blue, #3794ff); }
                 ${window.AFTelegram.css()}
-                ${window.AFWeb.css()}
-                ${window.AFPhoneApp ? window.AFPhoneApp.css() : ''}
                 /* U-86 — the hook files, one row each. The mark, whose file it
                    is, and the path — in that order, because "is it in?" is the
                    question and the path is the evidence. */

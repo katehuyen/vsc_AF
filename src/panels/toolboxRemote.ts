@@ -1,5 +1,5 @@
 /**
- * The Toolbox "Phone app" card's host side: the data it is handed and the
+ * The Mobile > Devices card's host side: the data it is handed and the
  * acts its controls perform. The acts are named after the host closures the
  * remote.* bridge ops call, so the card and the ops do the same thing.
  */

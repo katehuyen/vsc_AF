@@ -45,9 +45,9 @@
     'The farm on your phone, in three tabs: Now (what waits for you, what is running, today\'s spend and quotas — the phone opens it first), Web (the farm in a browser) and Devices (pairing a phone and letting it in).':
         'Telefonundaki çiftlik, üç sekmede: Şimdi (seni bekleyenler, çalışanlar, bugünün harcaması ve kotalar — telefon ilk bunu açar), Web (tarayıcıdaki çiftlik) ve Cihazlar (telefon eşleme ve ona izin verme).',
     'The farm in a browser or on your phone: read-only and token-protected.': 'Tarayıcıda ya da telefonunda çiftlik: salt okunur ve belirteçle korunur.',
+    'The web view and the phone app are under 📱 Mobile:': 'Web görünümü ve telefon uygulaması 📱 Mobil altında:',
     'Pair a phone with the Agent Farm app, see the phones paired, and let them in through your network.':
         'Agent Farm uygulamasıyla bir telefon eşle, eşli telefonları gör ve ağından içeri girmelerine izin ver.',
-    'The phone app is not available in this build.': 'Telefon uygulaması bu sürümde yok.',
     'Is the system alive? Your own loops — a file that should exist, a folder that should be empty, a queue that should be short — each one a row that passes or fails.':
         'Sistem canlı mı? Kendi döngülerin: var olması gereken bir dosya, boş olması gereken bir klasör, kısa kalması gereken bir kuyruk; her biri geçen ya da kalan bir satır.',
     'What the agents want to tell you: questions waiting on an answer, results and reports. The number beside the name is how many are still unread.':

@@ -132,7 +132,7 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             open: 'read', act: 'manage',
             looks: ['refresh', 'planUsage', 'setTableN', 'sessionTurns', 'compareWindow'],
             answers: [],
-            pcOnly: ['openAgent', 'headerAction', 'openSession', 'startSession', 'newAgent', 'openGuide',
+            pcOnly: ['openAgent', 'openSession', 'startSession', 'newAgent', 'openGuide',
                 'openTimeline', 'openSearch', 'openFarmSettings', 'afnav', 'focusTerminal', 'manageProjects',
                 'setUsageEngine', 'statusAction'],
             make: host => make.dashboard(host)

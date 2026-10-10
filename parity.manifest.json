@@ -2300,15 +2300,6 @@
       }
     },
     {
-      "capability": "dashboard.ts#headerAction",
-      "ui": [
-        "page:dashboard.ts#headerAction"
-      ],
-      "ops": [
-        "web.enable"
-      ]
-    },
-    {
       "capability": "dashboard.ts#interruptSession",
       "ui": [
         "page:dashboard.ts#interruptSession"
@@ -4356,6 +4347,26 @@
       "capability": "openMissions",
       "ui": [
         "cmd:agentfarm.openMissions"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openMobileDevices",
+      "ui": [
+        "cmd:agentfarm.openMobileDevices"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openMobileWeb",
+      "ui": [
+        "cmd:agentfarm.openMobileWeb"
       ],
       "exempt": {
         "kind": "navigation",
