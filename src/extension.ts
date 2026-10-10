@@ -405,6 +405,8 @@ import { readLastAnswer } from './core/readLast';
 import { readSelection } from './core/readSelection';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
+import { editedFilesOf, editedFileTarget, readEditedFile, registerEditedFileOp } from './core/editedFile';
+import { FileViewPanel } from './panels/fileView';
 import { registerChainOps } from './core/chainOps';
 import { pauseHeld, pausedSessions } from './core/chainPause';
 import { ChainPauseDeps, registerChainPauseOps, resumeChain } from './core/chainPauseOps';
@@ -18166,6 +18168,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         openLeg: sid => { void vscode.commands.executeCommand('agentfarm.openConsole', { sessionId: sid }); }
     };
     registerLegsOp(bridge, batonLegsDeps);
+    // X-443 — a file a Console card names, read where the PC is not (the phone's file page reads it the same way)
+    registerEditedFileOp(bridge, { known: () => editedFilesOf(consoleHost.list()) });
     registerChainOps(bridge, { sessions: () => index.allWithExternal(), misplacedOf: sid => openerOf(batonStore.all(), sid)?.misplaced });
     // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
     // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
@@ -31998,6 +32002,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             analytics: host => TaskAnalyticsPanel.openOn(host, analyticsDeps),
             memgraph: (host, args) => MemoryGraphPanel.openOn(host, memGraphDeps, typeof args?.agentId === 'string' ? args.agentId : undefined),
             selection: (host, args) => SelectionPanel.openOn(host, context.extensionUri, selectionWaits, typeof args?.id === 'string' ? args.id : undefined),
+            file: (host, args) => {
+                const to = editedFileTarget(args, editedFilesOf(consoleHost.list()));
+                if (to) { FileViewPanel.openOn(host, to, { extensionUri: context.extensionUri, readEdited: readEditedFile }); }
+                return !!to;
+            },
             session: (host, args) => {
                 const to = sessionPageTarget(args, index.allWithExternal());
                 if (to) { SessionViewerPanel.openOn(host, to.file, viewerDeps, to.focusTs, to.roles); }

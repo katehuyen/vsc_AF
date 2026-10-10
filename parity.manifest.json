@@ -2943,6 +2943,24 @@
       ]
     },
     {
+      "capability": "fileView.ts#mode",
+      "ui": [
+        "page:fileView.ts#mode"
+      ],
+      "ops": [
+        "console.file.read"
+      ]
+    },
+    {
+      "capability": "fileView.ts#refresh",
+      "ui": [
+        "page:fileView.ts#refresh"
+      ],
+      "ops": [
+        "console.file.read"
+      ]
+    },
+    {
       "capability": "findSession",
       "ui": [
         "cmd:agentfarm.findSession"

@@ -64,6 +64,12 @@
         return m && typeof m.type === 'string' && Object.prototype.hasOwnProperty.call(LINKS, m.type)
             ? { type: 'afnav', to: LINKS[m.type] } : null;
     }
+    // X-443 — a Console card's ✎ open / vs HEAD chip opens that file read-only on the phone (the farm's "file"
+    // page, which reads it only when a card names it); the PC's editor is not the phone's
+    function fileOf(m) {
+        return m && m.type === 'openFile' && typeof m.file === 'string' && m.file && location.pathname === '/view/console'
+            ? { type: 'afnav', to: 'file', args: { file: m.file, diff: m.diff === true } } : null;
+    }
     // X-443 — a link to the web opens in the phone's own browser, not on the PC: the page goes to it, and the
     // shell (and_AgentFarm PageClient.shouldOverrideUrlLoading) hands every http(s) address that is not the
     // farm's to the browser and keeps the page where it is. Any other scheme still goes to the farm, which
@@ -97,7 +103,7 @@
                 if (window.AFPhoneRead && typeof window.AFPhoneRead.out === 'function') { m = window.AFPhoneRead.out(m); }
                 var web = webOf(m);
                 if (web) { location.assign(web); return; }
-                var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || linkOf(m) || m;
+                var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || linkOf(m) || fileOf(m) || m;
                 if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }
             },

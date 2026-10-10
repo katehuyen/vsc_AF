@@ -183,7 +183,7 @@ const alive = setInterval(() => undefined, 1000);
     const media = n => fs.readFileSync(path.join(ROOT, 'media', n), 'utf8');
     ok('‼️ on a phone a page\'s ? opens the phone\'s own guide at the heading it names',
         /function guideOf\(m\)/.test(media('afRemote.js')) && /to: 'guide', args: args/.test(media('afRemote.js'))
-        && /readOf\(m\) \|\| chainOf\(m\) \|\| agentOf\(m\) \|\| guideOf\(m\) \|\| linkOf\(m\) \|\| m;/.test(media('afRemote.js')));
+        && /readOf\(m\) \|\| chainOf\(m\) \|\| agentOf\(m\) \|\| guideOf\(m\) \|\| linkOf\(m\) \|\| fileOf\(m\) \|\| m;/.test(media('afRemote.js')));
     ok('a mark\'s transcript opens the phone\'s session page; a dropped document does not',
         /\\bwk-rawsess\\b\/\.test\(e\.currentTarget\.className/.test(media('wiki.js')) && /sessionId: id/.test(media('wiki.js')));
     const wk = media('wiki.js');

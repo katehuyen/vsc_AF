@@ -950,6 +950,16 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   keeping the page where it is. Any other scheme still reaches the farm, where
   `openExternal` stays `pcOnly` and is refused aloud. A page that opens a web
   link sends exactly that shape (`test_remote_external.js` reads every sender).
+- **A file a Console card names is READ on the phone, never opened (X-443).**
+  The card's ✎ open / vs HEAD chips (`{ type: 'openFile', file, diff }`) become
+  `afnav` to the farm's `file` page on the Console's view (`media/afRemote.js`);
+  the page (`src/panels/fileView.ts`, `media/fileView.js`) shows the file and
+  `git diff HEAD -- <file>` read-only. ‼️ The farm reads ONLY a file some hosted
+  card's write tools name (`editedFilesOf` / `editedFileTarget`,
+  `src/core/editedFile.ts`), the view never names another path, and the op is
+  the same body (`console.file.read`, read scope). A new page that lets a phone
+  read a file follows the same rule: the set is what the farm already shows,
+  never a path the phone sends (`test_edited_file.js`).
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes

@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.923.0 - Read a file an agent wrote from your phone (2026-10-11)
+
+- **On the phone, a Console card's file opens read-only.** On the PC, the
+  ✎ open and vs HEAD chips beside a file an agent wrote open it in the
+  editor; on the phone they were refused. They now open the file on the phone
+  as it is on disk, with its line numbers, and its changes since the last
+  commit as git shows them, with a button to switch between the two and one
+  to read it again. A binary, missing or very long file says so instead. Only
+  a file one of the Console's cards names can be opened this way; the phone
+  can never ask for any other file on the PC.
+
 ## 3.922.0 - The scrollbar turns light with the page, and a web link on the phone opens in the phone's browser (2026-10-11)
 
 - **A page's scrollbar track follows a light theme too.** Since 3.921.0 a

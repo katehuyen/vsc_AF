@@ -28,6 +28,8 @@ export interface MorePageMakers {
     memgraph(host: PanelHost, args?: Record<string, unknown>): void;
     /** `args.id` opens that open selection, none the one asked first; false when none is open. */
     selection(host: PanelHost, args?: Record<string, unknown>): boolean;
+    /** X-443 — `args.file` as a Console card names it (`args.diff` opens on its diff); false for a file no card names. */
+    file(host: PanelHost, args?: Record<string, unknown>): boolean;
 }
 
 /**
@@ -236,6 +238,13 @@ export function morePages(make: MorePageMakers): Record<string, RemotePage> {
         selection: {
             open: 'manage', act: 'manage', looks: [], answers: [], pcOnly: [],
             make: (host, args) => make.selection(host, args)
+        },
+        // X-443 — a file an agent wrote, read-only: a Console card's ✎ open and vs HEAD chips reach the phone as
+        // afnav (afRemote.js) with the file the card names, and a file no card names is refused. Switching to
+        // the diff and reading it again only look, at the transcript's own scope; nothing on it acts.
+        file: {
+            open: 'read', act: 'read', looks: ['refresh', 'mode'], answers: [], pcOnly: ['afnav'],
+            make: (host, args) => make.file(host, args)
         }
     };
 }
