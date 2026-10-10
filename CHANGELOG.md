@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.910.0 - A route test names the service's own limit; an OS-window run ends (2026-10-10)
+
+- **Test route says whose limit it was.** When the service behind a route
+  turns the test turn down with a limit of its own (for example a daily
+  free-model limit), the verdict now says so: a held mark instead of a red
+  cross, the service's own sentence, and the time it reopens when the
+  service gave one. It used to read "this sign-in's five-hour limit" on
+  OpenCode, and on Claude Code a bare "The command exited 1" after a
+  minute and a half. A Claude Code route test now answers in a few seconds
+  in that case. A key the service did not accept is named as that.
+- **A one-turn task in an OS terminal window finishes on OpenCode.** The
+  turn ran and answered, but the task stayed "running" for ever and a small
+  launcher file was left in the temp folder. The same held for any engine
+  installed through npm. Engines installed as a program (Claude Code's own
+  installer) were not affected and run exactly as before.
+- **An OpenCode session opened without picking a model shows the model's
+  name too.** The badge still said "opencode" there - and on sessions from
+  before this feature and ones started outside Agent Farm. It now names the
+  model the engine reported (Big Pickle), on the session and on each turn.
+- **A model picked while an OpenCode card is still opening is kept.** It
+  was dropped without a word; the card now opens on it.
+
 ## 3.909.0 - The second badge names what answers (2026-10-10)
 
 - **An OpenCode session's badge names the model or the route, never the
