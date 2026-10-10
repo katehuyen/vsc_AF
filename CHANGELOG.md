@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.913.0 - A route's context window reaches Claude Code and the context meter (2026-10-10)
+
+- **Claude Code is told the window of a route's models.** When a route
+  states Context, a session on it starts with that window: Claude Code no
+  longer assumes 200K for a model it does not know, and no longer warns about
+  it. A route that states none starts exactly as before.
+- **The context meter counts against the route's window.** The Console card,
+  the session lists, the Turns page and a session's own page take their
+  percentage from the Context the session's route states, and the hover says
+  that is where the figure came from. On OpenCode every turn is measured
+  against the route it actually ran on.
+- **The handover thresholds use the same figure.** On a route whose model
+  Agent Farm did not know, the converge and handover notices had no window
+  to measure against and never came; with Context filled in they do.
+- **Still no guessing.** Your own Context window setting comes first, then
+  what the engine states for the session, then the route, then the model's
+  published window. A model nobody states a window for shows its token count
+  and no percentage - also on a route that leaves Context empty.
+
 ## 3.912.0 - Removing a route never leaves a saved setup pointing nowhere (2026-10-10)
 
 - **Removing a route asks first when something still uses it.** Agent
