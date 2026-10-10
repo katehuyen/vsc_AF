@@ -7,8 +7,7 @@ import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
 import { ProviderHealthReport, ProviderTestRecord } from '../core/providerHealth';
 import { OwnershipRow, PublicProviderProfile } from '../core/providerOwnership';
-import { ROUTE_AUTH_KINDS } from '../core/routeAuth';
-import { ROUTE_TIERS } from '../core/routeModels';
+import { routeFormVocab } from '../core/routeFormVocab';
 import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 
@@ -290,6 +289,9 @@ export interface EnginesPanelDeps {
     removeProfile(id: string): Promise<string[]>;
     copyProfile(id: string): Promise<string[]>;
     profileKey(id: string, label: string): void;
+    /** U-243 — the Farm Secrets a route can sign in with, by NAME, and the ids no new route may take. */
+    routeSecretNames?(): string[];
+    retiredRouteIds?(): string[];
 }
 
 function buildData(
@@ -314,8 +316,9 @@ function buildData(
          * "this route has no key yet", which is the only thing a reader needs.
          */
         profiles: deps.profiles(),
-        // X-494 — the route form's vocabulary, from the code that acts on it
-        routeForm: { authKinds: ROUTE_AUTH_KINDS, tiers: ROUTE_TIERS },
+        // X-494 / U-243 — the route form's vocabulary, from the code that acts on it
+        routeForm: routeFormVocab(
+            [...deps.profiles().map(p => p.id), ...(deps.retiredRouteIds?.() ?? [])], deps.routeSecretNames?.() ?? []),
         // ‼️ X-172 — the sign-ins, for the chip on each engine's own card. The
         // empty list is the ordinary answer on a machine that has captured
         // none, and nothing is drawn for it.

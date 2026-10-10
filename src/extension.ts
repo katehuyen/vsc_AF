@@ -194,6 +194,7 @@ import {
 } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
+import { runDeclaredSession } from './core/runDeclaredSession';
 import { resolveAgentArg } from './core/agentArg';
 import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
 import { sendToTerminalWhenReady } from './core/shellReady';
@@ -4908,7 +4909,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the spawn (`--session-id`), which is a declaration too.
                 // ‼️ X-360 — the Console's id is `hostedSessionId`; `consoleSessionId`
                 // is the CARD's (cs…) and no session carries it.
-                sessionId: t.resumeSessionId || t.hostedSessionId || t.spawnSessionId,
+                // X-533 — and an OpenCode `run`'s own published id (src/core/runDeclaredSession.ts).
+                sessionId: runDeclaredSession(t),
                 // …and once the cost matcher has named the transcript, that is a
                 // recorded fact too — it survives the restart in the same row.
                 transcriptFile: t.costSessionFile,
@@ -25061,15 +25063,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const list = providerProfiles();
             const id = String(input.id ?? '').trim().toLowerCase();
             const engines = Object.keys(ENGINES);
+            // U-243 — a Farm Secret named in the form, refused before anything is written (providers.add's secretRef)
+            const ref = String(input.secretRef ?? '').trim();
+            if (ref && !vault.names().includes(ref)) { return [secretMissing(ref)]; }
             // X-494 — a NEW route naming an id that exists is refused, never turned into an overwrite.
             const w = edit
                 ? setProfile(list, id, input, engines)
                 : addProfile(list, input, engines, retiredProviderIds());
             if (w.refusal.length) { return w.refusal; }
             await writeProviderProfiles(w.list);
+            if (ref) { await useFarmSecretForRoute(w.profile!.id, ref); }
             EnginesPanel.refreshIfOpen();
             return [];
         },
+        routeSecretNames: () => vault.names(),
+        retiredRouteIds: () => retiredProviderIds(),
         removeProfile: async (id: string): Promise<string[]> => {
             const w = removeProfile(providerProfiles(), id);
             if (w.refusal.length) { return w.refusal; }

@@ -285,10 +285,20 @@
         const rows = DATA.ownership || [];
         if (!rows.length) { return ''; }
         const T = window.AFTip;
-        const engines = [...new Set(rows.map(r => r.engine))];
+        // U-243 — an engine with its own providers AND lent routes gets a row per group; a row naming
+        // no group (selection) belongs to every group of its engine
+        const groups = [];
+        for (const r of rows) {
+            if (!r.source && rows.some(x => x.engine === r.engine && x.source)) { continue; }
+            if (!groups.some(g => g.engine === r.engine && g.source === (r.source || ''))) {
+                groups.push({ engine: r.engine, source: r.source || '' });
+            }
+        }
+        const split = (e) => groups.filter(g => g.engine === e).length > 1;
         const kinds = [...new Set(rows.map(r => r.kind))];
-        const cell = (engine, kind) => {
-            const r = rows.find(x => x.engine === engine && x.kind === kind);
+        const cell = (g, kind) => {
+            const r = rows.find(x => x.engine === g.engine && (x.source || '') === g.source && x.kind === kind)
+                || rows.find(x => x.engine === g.engine && !x.source && x.kind === kind);
             if (!r) { return '<td class="powhy">—</td>'; }
             const mine = r.owner === 'agent-farm';
             const who = mine ? 'Agent Farm' : r.engine;
@@ -301,8 +311,9 @@
         return '<table class="potab"><thead><tr><th>Engine</th>'
             + kinds.map(k => '<th>' + T.wrap(esc(k), k, kindNote(k)) + '</th>').join('')
             + '</tr></thead><tbody>'
-            + engines.map(e => '<tr><td class="poeng">' + esc(e) + '</td>'
-                + kinds.map(k => cell(e, k)).join('') + '</tr>').join('')
+            + groups.map(g => '<tr><td class="poeng">' + esc(g.engine)
+                + (split(g.engine) ? ' · ' + esc(g.source === 'agent-farm-route' ? t('Agent Farm routes') : t('its own providers')) : '')
+                + '</td>' + kinds.map(k => cell(g, k)).join('') + '</tr>').join('')
             + '</tbody></table>';
     }
 
@@ -313,67 +324,6 @@
             : kind === 'credential' ? 'What unlocks them. Agent Farm stores one only where it is the authority; where the engine owns it, sign in with the engine and Agent Farm reads nothing but whether a credential exists.'
                 : kind === 'config' ? 'The engine\'s own configuration file. Agent Farm never rewrites a hand-kept one.'
                     : 'Which provider a run was actually started with — history, not configuration, and Agent Farm\'s on every engine because no engine keeps it.';
-    }
-
-    function profileHtml(p) {
-        const T = window.AFTip;
-        // ‼️ MIRROR — a control narrow enough to cut its own text puts its
-        // CURRENT value on the first line of its tooltip.
-        const tiers = Object.keys(p.tiers || {});
-        // X-488 — which key: a Farm Secret by name, or the route's own; the masked hint tells two apart.
-        const hint = p.keyHint ? ' · ' + esc(p.keyHint) : '';
-        // X-492 — a key never follows its route to a new endpoint; a person confirms it here.
-        const held = p.keyHeldFor
-            ? T.wrap('<span class="pokey k-no">' + esc(t('key held for another endpoint')) + '</span>',
-                t('Given for {url}', { url: p.keyHeldFor }),
-                t('This route\'s endpoint changed after its key was given, so no session starts on it until you confirm the key for the new endpoint (Change key) or give it another one.'))
-            : '';
-        const key = held || (p.secretRef && p.hasSecret
-            ? T.wrap('<span class="pokey k-yes">' + esc(p.secretRef) + hint + '</span>',
-                t('Signs in with the Farm Secret {name}', { name: p.secretRef }),
-                t('The key is read from Farm Secrets each time a session starts on this route. Editing the secret there changes it here; removing this route leaves the secret in the vault.'))
-            : p.secretRef
-                ? T.wrap('<span class="pokey k-no">' + esc(t('{name} — not in Farm Secrets', { name: p.secretRef })) + '</span>',
-                    t('The Farm Secret this route names is gone'),
-                    t('No session can start on this route until it has a key again. Press Change key to pick another secret or type one.'))
-                : p.hasSecret
-                    ? T.wrap('<span class="pokey k-yes">' + esc(t('own key')) + hint + '</span>', t('A key of its own is stored'),
-                        t('It lives in the OS keychain under this route\'s id — never in settings, never on the bridge, and never read back out to draw anything; only a masked reminder of which key it is is shown.'))
-                    : T.wrap('<span class="pokey k-no">no key</span>', 'No credential yet',
-                        t('This route cannot be used until it has a key. Press Add key to pick one of your Farm Secrets or type one — the value never enters this page.')));
-        return '<div class="pocard">'
-            + '<div class="pohead">'
-            + '<span class="poname">' + esc(p.label) + '</span>'
-            + T.wrap('<span class="poid">' + esc(p.id) + '</span>', 'id: ' + p.id,
-                'Permanent — the credential is filed under it. Copy the profile to get a new id; the copy '
-                + 'deliberately starts with no key.')
-            + key
-            + T.wrap('<span class="porev">r' + esc(p.revision) + '</span>', 'revision ' + p.revision,
-                'Counts up whenever the ROUTE changes — provider, endpoint, auth kind, tier mapping — or '
-                + 'its key is replaced. Never on a rename. A launch records the revision it ran on, so a '
-                + 'route edited afterwards cannot silently rewrite what a past session was served by.')
-            + '<span class="grow"></span>'
-            + (window.AFRouteForm.editingId() === p.id ? '' : '<button class="secondary small" data-poedit="' + esc(p.id) + '" title="'
-                + esc(t('Change this route\'s label, provider, endpoint, key kind, tiers or note. The id and the key stay.')) + '">'
-                + esc(t('Edit')) + '</button>')
-            + '<button class="secondary small" data-pokey="' + esc(p.id) + '" data-polabel="' + esc(p.label) + '" title="'
-            + esc(t('Type a key for this route, or pick one you already keep in Farm Secrets.')) + '">'
-            + esc(p.hasSecret || p.secretRef || p.keyHeldFor ? t('Change key') : t('Add key')) + '</button>'
-            + '<button class="secondary small" data-pocopy="' + esc(p.id) + '" title="'
-            + esc('A copy is a NEW route: its own id, its own history from revision 1, and no credential — '
-                + 'duplicating a key would put one secret behind two names.') + '">Copy</button>'
-            + '<button class="secondary small" data-porm="' + esc(p.id) + '" title="'
-            + esc('Removes the route AND collects its credential from the keychain. A row dropped with the '
-                + 'entry left behind is a working key nobody can see.') + '">Remove</button>'
-            + '</div>'
-            + (p.description ? '<div class="pobody small">' + esc(p.description) + '</div>' : '')
-            + '<div class="pobody muted small">'
-            + esc(p.providerId) + (p.baseUrl ? ' · ' + esc(p.baseUrl) : ' · first-party endpoint')
-            + (p.authKind ? ' · ' + esc(window.AFRouteForm.authLabel(p.authKind, DATA)) : '')
-            + (tiers.length
-                ? ' · ' + tiers.map(t => esc(t) + ' → ' + esc(p.tiers[t])).join(', ')
-                : ' · the route\'s own defaults')
-            + '</div></div>';
     }
 
     /**
@@ -463,9 +413,16 @@
                 '<div class="pohprob">' + esc(p) + '</div>').join('')
                 + (rep.notes || []).map(n =>
                     '<div class="pohnote">' + esc(n) + '</div>').join('');
-            const rows = (rep.rows || []).length
-                ? rep.rows.map(r => healthRowHtml(rep, r)).join('')
-                : '<div class="muted small">Nothing is offered on this engine yet.</div>';
+            // U-243 — the engine's own providers and the routes lent to it are two groups, never one list
+            const all = rep.rows || [];
+            const lent = all.filter(r => r.origin === 'agent-farm-route'), own = all.filter(r => r.origin !== 'agent-farm-route');
+            const group = (title, list) => '<div class="pohgrp muted small">' + esc(title) + '</div>' + list.map(r => healthRowHtml(rep, r)).join('');
+            const rows = !all.length
+                ? '<div class="muted small">Nothing is offered on this engine yet.</div>'
+                : lent.length && own.length
+                    ? group(t('{engine}\'s own providers', { engine: engineLabel(rep.engine) }), own)
+                        + group(t('Agent Farm routes — lent when a session starts'), lent)
+                    : all.map(r => healthRowHtml(rep, r)).join('');
             return '<div class="pohrep">' + head + lines + rows + '</div>';
         }
 
@@ -494,65 +451,17 @@
                 + '<span class="poname">' + esc(r.label) + '</span>'
                 + T.wrap('<span class="poid">' + esc(r.providerId) + '</span>', 'id: ' + r.providerId,
                     'The engine\'s own id for this provider, and the one providers.test takes.')
-                + conf + availTip + testedChip(r)
+                + conf + availTip + window.AFRouteCard.testedChip(r, DATA)
                 + T.wrap('<span class="porev">' + esc(r.models) + ' model'
                     + (r.models === 1 ? '' : 's') + '</span>',
                     r.models + ' model' + (r.models === 1 ? '' : 's') + ' a launch could name',
                     (r.modelRefs || []).join('\n') || 'None published here.')
                 + '<span class="grow"></span>'
-                + '<button class="secondary small" data-potest="' + esc(r.providerId) + '"'
-                + ' data-poteng="' + esc(rep.engine) + '"'
-                + ' data-potmodel="' + esc((r.modelRefs || [])[0] || '') + '"'
-                + (busy ? ' disabled' : '') + ' title="' + esc(
-                    'Runs ONE real turn through this route — a token off its plan or a line on its bill. '
-                    + 'Pressed, never scheduled. Anything already known to be wrong refuses it before '
-                    + 'anything is spawned.') + '">'
-                + (busy ? 'Testing…' : 'Test route') + '</button>'
+                + window.AFRouteCard.testButton(rep.engine, r.providerId, (r.modelRefs || [])[0], busy)
                 + '</div>'
                 + (r.problems || []).map(p => '<div class="pohprob">' + esc(p) + '</div>').join('')
                 + (r.notes || []).map(n => '<div class="pohnote">' + esc(n) + '</div>').join('')
                 + '</div>';
-        }
-
-        /**
-         * ‼️ NEVER TESTED IS NOT A FAILURE, and neither is a refusal. Three
-         * readings the first draft of this chip collapsed into a red cross:
-         * nothing has been pressed yet, nothing was called at all, and a verdict
-         * that answered for a configuration this one replaced.
-         */
-        function testedChip(r) {
-            const t = r.tested;
-            if (!t && r.testedSuperseded) {
-                const s = r.testedSuperseded;
-                return T.wrap('<span class="pohchip h-old">superseded</span>',
-                    (s.ok ? 'Passed ' : 'Failed ') + window.AFTime.full(s.at),
-                    'That verdict is not about this configuration any more: '
-                    + (r.testedSupersededWhy || 'something it named has changed')
-                    + '. Press Test route to get one that is.');
-            }
-            if (!t) {
-                return T.wrap('<span class="pohchip h-none">never tested</span>',
-                    'No turn has been run through this route',
-                    'The ordinary state, and not a fault. A turn costs something, so nothing here buys '
-                    + 'one on its own — not on a timer, not on a refresh, not when this page opens.');
-            }
-            const state = t.ok ? 'h-ok' : t.refused ? 'h-held' : 'h-bad';
-            // X-532 — `reached`: the service was asked and held the turn with a limit of its own (`t` here is the verdict).
-            const word = t.ok ? 'tested' : t.refused ? (t.reached ? tr('service limit') : 'not attempted') : 'failed';
-            return T.wrap('<span class="pohchip ' + state + '">' + esc(word) + ' · '
-                + esc(age(t.at, DATA.now || Date.now())) + '</span>',
-                (t.ok ? 'Answered · ' : t.refused ? (t.reached ? tr('Held by the service') + ' · ' : 'Nothing was called · ') : 'Did not answer · ')
-                + window.AFTime.full(t.at),
-                window.AFTip.lines([
-                    t.detail,
-                    t.resetAt ? tr('Reopens: {when}', { when: window.AFTime.full(t.resetAt) }) : '',
-                    t.error ? (t.reached ? tr('The service said: {words}', { words: t.error }) : 'The engine said: ' + t.error) : '',
-                    'Took: ' + (t.ms / 1000).toFixed(1) + 's',
-                    'Proved: ' + t.key.providerId + ' · ' + (t.key.modelId || 'the route default')
-                        + ' · adapter ' + t.key.adapter
-                        + (t.key.cli ? ' · CLI ' + t.key.cli : '')
-                        + (t.key.revision === undefined ? '' : ' · route r' + t.key.revision)
-                ]));
         }
     }
 
@@ -566,25 +475,21 @@
             + '<h3 class="potitle">Providers</h3>'
             + '<span class="grow"></span>'
             + (R.isNew() ? '' : '<button class="small" data-ponew="1" title="'
-                + esc(t('A new Anthropic-compatible endpoint for Claude Code. Its key is added on its card afterwards.')) + '">'
+                + esc(t('A new route for Claude Code, OpenCode or both: a service\'s address, its key and the models in its tiers.')) + '">'
                 + esc(t('+ Add route')) + '</button>')
             + '</div>'
-            + '<p class="englede">Which engine is the authority for which piece of provider data — and '
-                + 'the routes Agent Farm holds itself. <b>The split is the design, not an omission:</b> a '
-                + 'Claude route is something Agent Farm assembles and nobody else on this machine knows '
-                + 'about, so if Agent Farm does not hold it nobody does; OpenCode already owns '
-                + '<code>/connect</code>, <code>opencode auth login</code> and <code>opencode.json</code>, '
-                + 'and a second copy here would make two vaults where the stale one wins silently. '
-                + '<b>No credential is on this page in either direction</b> — a route says only whether it '
-                + 'has one, and typing a key happens outside the page.</p>'
+            + '<p class="englede">' + esc(t('Which engine is the authority for which piece of provider data — and the routes Agent Farm holds itself.'))
+                + ' <b>' + esc(t('Two groups, never one list:')) + '</b> '
+                + esc(t('OpenCode\'s own providers are its engine\'s — its sign-in, /connect and opencode.json stay OpenCode\'s. A route is Agent Farm\'s: one address, one key and its models, given to Claude Code and lent to OpenCode when a session starts, never written into OpenCode\'s files.'))
+                + ' <b>' + esc(t('No credential is on this page in either direction')) + '</b> — '
+                + esc(t('a route says only whether it has one, and typing a key happens outside the page.')) + '</p>'
             + ownershipHtml()
             + (R.isNew() ? R.html(DATA) : '')
             + '<div class="pomsg" id="po-msg">' + esc(provMsg) + '</div>'
             // X-494 — a route's form opens under that route's card (docs/CONVENTIONS.md, one row)
             + (profiles.length
-                ? profiles.map(p => profileHtml(p) + (R.editingId() === p.id ? R.html(DATA) : '')).join('')
-                : '<div class="muted small">No routes yet. Claude Code runs first-party without one; '
-                + 'a route is how you point it at an Anthropic-compatible endpoint instead.</div>')
+                ? profiles.map(p => window.AFRouteCard.cardHtml(p, DATA) + (R.editingId() === p.id ? R.html(DATA) : '')).join('')
+                : '<div class="muted small">' + esc(t('No routes yet. Claude Code and OpenCode run on their own sign-ins without one; a route points them at another service.')) + '</div>')
             + healthHtml()
             + '</div>';
     }
@@ -667,6 +572,8 @@
                    own engine — so they read as two categories, not a verdict. */
                 .poown.o-af { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; border-color:transparent; }
                 .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:#fff; border-color:transparent; }
+                /* High Contrast draws a chip by its edge (theme.css): white on the chart hue fell below its contrast */
+                body.vscode-high-contrast .poown { background:transparent; color:var(--vscode-foreground); box-shadow:var(--af-hc-ring); }
                 .powhy { opacity:.5; }
                 /* the two that hold a URL and a tier map need to show what was
                    typed, or the box is a place to lose your own text in */
@@ -705,6 +612,11 @@
                 .pohchip.h-old { background:var(--vscode-charts-orange,#d18616); color:#000; border-color:transparent; }
                 .pohprob { margin-top:4px; font-size:11px; color:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); }
                 .pohnote { margin-top:4px; font-size:11px; opacity:.7; }
+                /* U-243 -- a route's engines on its card, each with its own verdict and Test;
+                   and the two groups of a report (the engine's own providers, the lent routes). */
+                .poserves { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin-top:4px; }
+                .poserve { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+                .pohgrp { margin:6px 0 2px 12px; }
                 /* X-305 — the policies view's own rules: one copy, in
                    media/afPolicies.js, so the Accounts page draws the same section. */
                 ${window.AFPolicies.css}
@@ -766,7 +678,7 @@
                 R.open((DATA.profiles || []).find(p => p.id === b.dataset.poedit), DATA);
                 draw();
             }));
-        R.wire(post, () => draw());
+        R.wire(post, () => draw(), DATA);
         window.AFAccounts.wire(accountsCtx());
         document.querySelectorAll('[data-pokey]').forEach(b =>
             b.addEventListener('click', () => post({

@@ -230,8 +230,11 @@ export const ONE_EXECUTOR =
  * PowerShell, cmd or a POSIX shell; it is an ordinary character in an ordinary
  * token, which is exactly why it was safe to have been keeping out by accident.
  */
+/** The same rule as text, for a page that checks a box before it is saved. */
+export const MODEL_ID_PATTERN = '^[\\w./:-]+$';
+
 export function modelIdOk(m: unknown): boolean {
-    return /^[\w./:-]+$/.test(String(m ?? ''));
+    return new RegExp(MODEL_ID_PATTERN).test(String(m ?? ''));
 }
 
 /** ‼️ The refusal names BOTH shapes, because the old one named only Claude's

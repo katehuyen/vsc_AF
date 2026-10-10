@@ -81,7 +81,8 @@ const s = section(scene('engineshealth'));
 
 /* ---------- 3) the button, and the guard that stops a second turn */
 {
-    ok('every row offers one real turn', (s.match(/data-potest="/g) || []).length === 5);
+    // U-243 — six rows now: the scene lends openrouter-r1 to OpenCode
+    ok('every row offers one real turn', (s.match(/data-potest="/g) || []).length === 6);
     ok('…carrying the engine and the model it would aim at',
         /data-poteng="claude"/.test(s) && /data-potmodel="kimi-k2-thinking"/.test(s));
     ok('‼️ a row with a turn in the air cannot be pressed again',

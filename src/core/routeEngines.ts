@@ -65,10 +65,14 @@ export function enginesRefusal(p: RouteShape & { engines: readonly string[] }, k
  */
 export function v1Refusal(baseUrl: string | undefined): string {
     const u = String(baseUrl ?? '').trim();
-    if (!/\/v1\/?$/i.test(u)) { return ''; }
+    const tail = new RegExp(V1_TAIL, 'i');
+    if (!tail.test(u)) { return ''; }
     return `the endpoint "${u}" ends in /v1, but Claude Code adds /v1/messages itself, so every request would go `
-        + `to …/v1/v1/messages — write "${u.replace(/\/v1\/?$/i, '')}".`;
+        + `to …/v1/v1/messages — write "${u.replace(tail, '')}".`;
 }
+
+/** The tail v1Refusal refuses, as text, so the route form can offer the fix before a save. */
+export const V1_TAIL = '\\/v1\\/?$';
 
 /** A model limit is a positive whole number of tokens, or absent. */
 export function limitRefusal(name: 'context' | 'output', v: number | undefined): string {

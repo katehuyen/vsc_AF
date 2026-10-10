@@ -535,6 +535,9 @@ export function htmlShell(
     const policies = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afPolicies.js'));
     // The route form (X-494): one form for a new route and a route's Edit, on AFForm.
     const routeForm = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRouteForm.js'));
+    // U-243 — what the route form says beside a box, and a route's card with a verdict per engine.
+    const routeCheck = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRouteCheck.js'));
+    const routeCard = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRouteCard.js'));
     // The Secrets page's card (X-487): a new secret or a stored one's edit, on AFForm.
     const secretForm = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSecretForm.js'));
     // The Chains page's look (S-128): state colours, the relay symbols, the legs strip.
@@ -694,6 +697,8 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${routeForm}"></script>
+<script nonce="${nonce}" src="${routeCheck}"></script>
+<script nonce="${nonce}" src="${routeCard}"></script>
 <script nonce="${nonce}" src="${secretForm}"></script>
 <script nonce="${nonce}" src="${chainsLook}"></script>
 <script nonce="${nonce}" src="${chainsBar}"></script>

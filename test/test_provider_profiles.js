@@ -348,7 +348,9 @@ const claude = {
      * `p.<field>` the row renderer touches has to be one of the eight the public
      * shape has. Add `p.apiKey` to this page tomorrow and it fails by name.
      */
-    const rowFn = pageJs.slice(pageJs.indexOf('function profileHtml(p) {'));
+    // U-243 — the card moved into its own file, shared by the Engines page's two sections
+    const cardJs = read('media', 'afRouteCard.js');
+    const rowFn = cardJs.slice(cardJs.indexOf('function profileHtml(p) {'));
     const rowBody = rowFn.slice(0, rowFn.indexOf('\n    }\n'));
     const touched = [...new Set([...rowBody.matchAll(/\bp\.(\w+)/g)].map(m => m[1]))].sort();
     // ‼️ Derived from a FULLY POPULATED profile, not from an empty one: the two

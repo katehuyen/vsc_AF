@@ -195,7 +195,7 @@ function runnableProviders(adapter: ProviderAdapter, cat: ProviderCatalogRead): 
 function emptyWhy(adapter: ProviderAdapter, cat: ProviderCatalogRead): string {
     if (adapter.engine === 'claude') {
         return 'no route profiles yet — add one on the Providers page. '
-            + 'The shipped routes (Anthropic, Kimi, MiniMax) are SHAPES, not sign-ins: '
+            + 'The shipped routes (Anthropic, Kimi, MiniMax, OpenRouter) are SHAPES, not sign-ins: '
             + 'a profile is what holds the key, so only profiles can be launched on.';
     }
     if (cat.source === 'not-fetched') {

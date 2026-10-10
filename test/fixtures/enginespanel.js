@@ -78,8 +78,7 @@ const contract = (engine, gaps, repairs, promotions) => {
  */
 const { BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, resolvePolicy } = require('../../out/core/accountPolicy.js');
 // X-494 — the route form's vocabulary, from the code the host sends it from
-const { ROUTE_AUTH_KINDS } = require('../../out/core/routeAuth.js');
-const { ROUTE_TIERS } = require('../../out/core/routeModels.js');
+const { routeFormVocab } = require('../../out/core/routeFormVocab.js');
 const policiesFor = (accounts, rules) => {
     const engines = [...new Set(accounts.map(a => a.engine))];
     const usage = accounts.map(a => ({
@@ -441,18 +440,31 @@ const data = () => {
                 why: 'The environment a Claude process is spawned with is built per launch.'
             },
             {
-                engine: 'opencode', kind: 'catalog', owner: 'engine',
+                engine: 'opencode', source: 'engine-native', kind: 'catalog', owner: 'engine',
                 why: 'OpenCode publishes its own providers and models. A shipped list here would be '
                     + 'a build claiming to know a machine.'
             },
             {
-                engine: 'opencode', kind: 'credential', owner: 'engine',
+                engine: 'opencode', source: 'engine-native', kind: 'credential', owner: 'engine',
                 why: 'The engine owns `/connect`, `opencode auth login` and `auth.json`. A second '
                     + 'copy in Agent Farm makes two vaults, and the stale one wins silently.'
             },
             {
-                engine: 'opencode', kind: 'config', owner: 'engine',
+                engine: 'opencode', source: 'engine-native', kind: 'config', owner: 'engine',
                 why: 'The global and per-project `opencode.json` are the user\'s files.'
+            },
+            // U-243 — the second group on OpenCode: the routes Agent Farm lends it at launch
+            {
+                engine: 'opencode', source: 'agent-farm-route', kind: 'catalog', owner: 'agent-farm',
+                why: 'A route Agent Farm holds is lent to OpenCode at launch, beside the engine\'s own providers.'
+            },
+            {
+                engine: 'opencode', source: 'agent-farm-route', kind: 'credential', owner: 'agent-farm',
+                why: 'The route\'s key stays in SecretStorage; OpenCode is lent it by an {env:NAME} reference.'
+            },
+            {
+                engine: 'opencode', source: 'agent-farm-route', kind: 'config', owner: 'agent-farm',
+                why: 'The lent route lives only in the launch\'s OPENCODE_CONFIG_CONTENT.'
             },
             /**
              * ‼️ THE FOURTH KIND, AND IT IS THE INTERESTING ONE: the same answer
@@ -479,35 +491,37 @@ const data = () => {
         // ‼️ AND BOTH KEY STATES, side by side: a route that can run and one
         // that cannot yet. "no key" is the step you are ON, not a failure, and
         // it has to be possible to see that the two are not drawn as verdicts.
-        routeForm: { authKinds: ROUTE_AUTH_KINDS, tiers: ROUTE_TIERS },
+        // U-243 — the form's vocabulary from the code that acts on a save; the Farm Secrets by name
+        routeForm: routeFormVocab(['kimi', 'minimax', 'openrouter-r1', 'groq', 'kimi-cn', 'or-old'],
+            ['GROQ_KEY', 'OpenRouter-ahmetseymen4444', 'OpenRouter-free']),
         profiles: [
             {
-                id: 'kimi', label: 'Kimi (Moonshot)', engine: 'claude', providerId: 'kimi',
+                id: 'kimi', label: 'Kimi (Moonshot)', engines: ['claude'], providerId: 'kimi',
                 baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key',
                 tiers: { opus: 'kimi-k2-thinking', sonnet: 'kimi-k2' },
                 revision: 3, hasSecret: true, keyHint: 'sk-kim…9f2a'
             },
             {
-                id: 'minimax', label: 'MiniMax', engine: 'claude', providerId: 'minimax',
+                id: 'minimax', label: 'MiniMax', engines: ['claude'], providerId: 'minimax',
                 baseUrl: 'https://api.minimax.io/anthropic', authKind: 'api-key',
                 tiers: {}, revision: 1, hasSecret: false
             },
             // X-488 — signing in with a Farm Secret by name, with the owner's note; and one whose secret is gone.
             {
-                id: 'openrouter-r1', label: 'OpenRouter R1', engine: 'claude', providerId: 'openrouter',
+                id: 'openrouter-r1', label: 'OpenRouter R1', engines: ['claude', 'opencode'], providerId: 'openrouter',
                 baseUrl: 'https://openrouter.ai/api', authKind: 'oauth',
                 tiers: { opus: 'deepseek/deepseek-r1', reasoner: 'deepseek/deepseek-r1-0528' }, revision: 4, hasSecret: true,
                 description: 'Ahmet\'s OpenRouter account — night experiments',
                 secretRef: 'OpenRouter-ahmetseymen4444', keyHint: 'sk-or-…4444'
             },
             {
-                id: 'groq', label: 'Groq', engine: 'claude', providerId: 'groq',
+                id: 'groq', label: 'Groq', engines: ['claude'], providerId: 'groq',
                 baseUrl: 'https://api.groq.com/anthropic', authKind: 'api-key',
                 tiers: {}, revision: 2, hasSecret: false, secretRef: 'GROQ_KEY'
             },
             // X-492 — its endpoint was changed after the key was given: no key until a person confirms it.
             {
-                id: 'kimi-cn', label: 'Kimi (China)', engine: 'claude', providerId: 'kimi',
+                id: 'kimi-cn', label: 'Kimi (China)', engines: ['claude'], providerId: 'kimi',
                 baseUrl: 'https://api.moonshot.cn/anthropic', authKind: 'api-key',
                 tiers: {}, revision: 5, hasSecret: false, keyHeldFor: 'https://api.moonshot.ai/anthropic'
             }
@@ -885,6 +899,18 @@ function healthData() {
                     // a fault that does not exist.
                     available: 'unknown', problems: [], notes: [],
                     models: 0, modelRefs: []
+                },
+                // U-243 — a route Agent Farm lends to OpenCode: its own group under the engine's providers
+                {
+                    engine: 'opencode', providerId: 'af-openrouter-r1', label: 'OpenRouter R1', origin: 'agent-farm-route',
+                    configured: true, configuredBy: 'a route Agent Farm holds',
+                    available: 'yes', problems: [], notes: [],
+                    models: 1, modelRefs: ['af-openrouter-r1/deepseek/deepseek-r1'],
+                    tested: {
+                        key: { engine: 'opencode', providerId: 'af-openrouter-r1', modelId: 'af-openrouter-r1/deepseek/deepseek-r1',
+                            adapter: 'opencode@1', cli: '1.18.19', revision: 4 },
+                        ok: true, at: NOW - 9 * 60 * 1000, ms: 4100, detail: 'Answered in 4.1s.'
+                    }
                 }
             ]
         }

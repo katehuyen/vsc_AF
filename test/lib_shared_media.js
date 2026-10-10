@@ -98,6 +98,9 @@ const SHARED = [
     'afPolicies.js',
     // afRouteForm.js — the route form (X-494): a new route and a route's Edit, one form on AFForm.
     'afRouteForm.js',
+    // afRouteCheck.js / afRouteCard.js — what the route form says beside a box (U-243), and a route's card with a verdict per engine.
+    'afRouteCheck.js',
+    'afRouteCard.js',
     // afSecretForm.js — the Secrets page's card (X-487): a new secret or a stored one's edit.
     'afSecretForm.js',
     // afChainsLook.js — the Chains page's look (S-128): state colours, the relay symbols, the legs strip.

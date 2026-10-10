@@ -70,6 +70,8 @@ export interface ClaudeRouteTemplate {
     providerId: string;
     providerLabel: string;
     route: RedactedRoute;
+    /** U-243 — where OpenCode reaches the service in the OpenAI style, when the endpoint above does not serve it. */
+    opencodeUrl?: string;
     /** tier (`opus`, `sonnet`, `haiku`) → the model id this route serves for it. */
     tiers: Record<string, string>;
     /** Where a person reads about this route, when it is not first-party. */
@@ -349,6 +351,15 @@ export const CLAUDE_ROUTE_TEMPLATES: ClaudeRouteTemplate[] = [
         route: { baseUrl: 'https://api.minimax.io/anthropic', authKind: 'api-key' },
         tiers: {},
         docs: 'https://platform.minimax.io/docs/token-plan/claude-code',
+        engineCostIsAuthoritative: false
+    },
+    {
+        providerId: 'openrouter',
+        providerLabel: 'OpenRouter',
+        // U-243 — measured on the live or-nemotron route (X-517): this one address and an
+        // x-api-key serve Claude Code AND OpenCode, so no opencodeUrl is needed.
+        route: { baseUrl: 'https://openrouter.ai/api', authKind: 'api-key' },
+        tiers: {},
         engineCostIsAuthoritative: false
     }
 ];
