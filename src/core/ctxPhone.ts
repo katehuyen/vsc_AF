@@ -61,17 +61,17 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.consoleEndSession': RUN,
     'agentfarm.consoleEndAndRemove': RUN,
     'agentfarm.consoleForgetSession': RUN,
+    'agentfarm.tagSession': RUN,
+    'agentfarm.endSession': RUN,
+    'agentfarm.forceKillSession': RUN,
+    'agentfarm.interruptSession': RUN,
+    'agentfarm.dismissSession': RUN,
+    'agentfarm.assignSessionProject': RUN,
+    'agentfarm.assignProject': RUN,
+    'agentfarm.addSessionFolderToProject': RUN,
+    'agentfarm.sessionToWiki': RUN,
     // ---- wanted on a phone, waiting for a handler that asks through `ask`
-    'agentfarm.tagSession': gap(ASKS_PC),
-    'agentfarm.endSession': gap(ASKS_PC),
-    'agentfarm.forceKillSession': gap(ASKS_PC),
-    'agentfarm.interruptSession': gap(ASKS_PC),
-    'agentfarm.dismissSession': gap(ASKS_PC),
-    'agentfarm.assignSessionProject': gap(ASKS_PC),
-    'agentfarm.assignProject': gap(ASKS_PC),
-    'agentfarm.addSessionFolderToProject': gap(ASKS_PC),
-    'agentfarm.sessionToWiki': gap(ASKS_PC),
-    'agentfarm.sessionToQueue': gap(ASKS_PC),
+    'agentfarm.sessionToQueue': gap('it opens the PC\'s Queue panel with the draft'),
     'agentfarm.planUsageRefresh': gap(ASKS_PC),
     'agentfarm.insightHistory': gap(ASKS_PC),
     'agentfarm.restoreInsights': gap(ASKS_PC),
@@ -106,7 +106,7 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
 };
 
 /** How many commands a phone should get and does not yet. It only shrinks: a new gap is a new debt. */
-export const CTX_PHONE_GAPS = 17;
+export const CTX_PHONE_GAPS = 8;
 
 export function ctxPhoneVerdict(command: string): CtxPhoneVerdict | undefined {
     return Object.prototype.hasOwnProperty.call(CTX_PHONE, command) ? CTX_PHONE[command] : undefined;

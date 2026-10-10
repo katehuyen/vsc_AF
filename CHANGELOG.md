@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.926.0 - End, interrupt, label and file sessions from your phone (2026-10-11)
+
+- **A session row's menu on the phone can now stop, label and file it.** A
+  long press on a session offers Interrupt, End Session, Force Kill, Clear
+  From Live Timeline, Edit Labels, Mark for the Wiki, Assign to Project and
+  Add Folder to Project; an agent row offers its default project. Each one
+  asks on the phone — "End this session?" is answered there, and saying no
+  ends nothing — and what it reports is shown there; nothing opens on the
+  PC. Choices that open a form on the PC ("New project…") are left out on
+  the phone, and wiki topics are typed, comma separated, with the topics in
+  use shown. On the PC every one of these works exactly as before.
+
+- **A choice list on the phone no longer shows VS Code's icon codes.** Lists
+  that came from the PC showed text like `$(check)` and an empty divider row.
+  Icons are dropped, a tick is shown as ✓, and divider rows are left out.
+
+- **A phone sheet with a long list stays within three quarters of the
+  screen.** Its padding was added on top of that height. Fixed.
+
 ## 3.925.0 - A row's menu on your phone runs commands (2026-10-11)
 
 - **On the phone, a long press on a row now offers the commands too.** The

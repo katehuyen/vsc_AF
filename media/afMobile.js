@@ -58,7 +58,7 @@
         + '.af-tabbar button.on{opacity:1;font-weight:600;box-shadow:inset 0 3px 0 var(--vscode-focusBorder)}'
         + '.af-tabbar .af-tabi{font-size:18px;line-height:1}'
         + '.af-sheet-veil{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70}'
-        + '.af-sheet{position:fixed;left:0;right:0;bottom:0;max-height:75vh;overflow:auto;z-index:71;padding:10px 12px 16px;'
+        + '.af-sheet{position:fixed;left:0;right:0;bottom:0;box-sizing:border-box;max-height:75vh;overflow:auto;z-index:71;padding:10px 12px 16px;'
         + 'background:var(--vscode-editorWidget-background,var(--af-ground,var(--vscode-editor-background)));border-top:1px solid var(--vscode-panel-border);'
         + 'border-radius:12px 12px 0 0}'
         + '.af-sheet-h{display:flex;align-items:center;justify-content:space-between;font-weight:600;margin-bottom:6px}'

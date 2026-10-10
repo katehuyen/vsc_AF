@@ -952,8 +952,13 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   without a verdict fails `test_ctx_phone.js` by name. **`run` is earned, not
   declared:** the handler's own body may not ask or say with `vscode.window`
   (the test reads it out of `src/extension.ts`); it takes
-  `arg?.ask ?? desktopAsk()`, and a helper it shares does the same
-  (`consoleRowId`). A `pc` verdict marked `gap` is a command a phone should
+  `arg?.ask ?? desktopAsk()`, and a helper it calls takes that ask as its
+  last parameter and is handed it on every call (`consoleRowId`,
+  `pickLiveSessionId`, `endLiveSession`, `resolveAgent`; the test reads the
+  helper's body and each call). A choice that opens a PC panel or form is not
+  offered when `arg.ask` came with the row; a desktop-only picker (a
+  multi-select `createQuickPick`) gets a phone twin through `ask.input`, never
+  a changed PC path. A `pc` verdict marked `gap` is a command a phone should
   get once its handler asks that way; `CTX_PHONE_GAPS` counts them and only
   shrinks. The pick arrives as `afctxcmd` and is settled by `RemoteViews`
   like `afAskAnswer`, never by the page: the command must be a `run`, drawn

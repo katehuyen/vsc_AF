@@ -17707,6 +17707,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             qp.show();
         });
 
+    /** A phone has no multi-select picker: the same choice typed, comma separated, with the topics in use named. */
+    const askWikiTopics = async (store: WikiStore, count: number, ask: PanelAsk): Promise<string[] | undefined> => {
+        const known = store.topics().map(t => t.topic);
+        const typed = await ask.input({
+            title: count === 1 ? 'What is this conversation about?' : `What are these ${count} conversations about?`,
+            prompt: 'Topics, comma separated',
+            placeHolder: known.length ? `in use: ${known.join(', ')}` : 'e.g. Agent Farm, Task Lifecycle'
+        });
+        return typed === undefined ? undefined : normTopics(typed);
+    };
+
     // Notices ops (§19.C): the agent→user notice board — every agent posts
     // "you should know / remember this" here; the user reads them on the
     // Notices page. This is the channel the manager agent's daily AI digest
@@ -37217,7 +37228,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // killed — the session stays, its turn does not.
     const RUNNING_STATUSES = ['working', 'tool', 'waiting-permission', 'stalled'];
     const interruptSession = async (
-        arg?: { sessionId?: string; agentName?: string } | SessionInfo
+        arg?: { sessionId?: string; agentName?: string } | SessionInfo,
+        ask: PanelAsk = desktopAsk()
     ): Promise<void> => {
         let sessionId = arg?.sessionId;
         let agentName = arg?.agentName;
@@ -37225,11 +37237,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const running = live.sessions().filter(s => RUNNING_STATUSES.includes(s.status));
             const list = running.length ? running : live.sessions();
             if (!list.length) {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     'Agent Farm: no live session is being tracked right now.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(list.map(s => ({
+            const pick = await ask.pick(list.map(s => ({
                 label: `$(debug-pause) ${s.agentName ?? s.sessionId.slice(0, 8)}`,
                 description: s.status + (s.currentTool ? ` · ${s.currentTool}` : ''),
                 detail: s.lastPrompt ?? '',
@@ -37263,10 +37275,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (hosted) {
             const who = agentName ?? hosted.agentName ?? sessionId?.slice(0, 8) ?? 'the session';
             if (consoleHost.interrupt(hosted.id, 'command')) {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: ${who}'s running turn was stopped in the Console — the conversation stays open.`);
             } else {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: ${who} has nothing running to interrupt.`);
             }
             return;
@@ -37286,19 +37298,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const term = openTerms[target.terminalIndex];
             term.show();
             term.sendText(INTERRUPT_KEY, false); // Esc, no newline — a keypress, not a line
-            void vscode.window.showInformationMessage(
+            void ask.info(
                 `Agent Farm: Esc sent to ${who} (${target.how}) — the running turn stops, the session stays open.`);
             return;
         }
         if (target.kind === 'external') {
             focusExternalTerminal(target.titles, found => {
-                void vscode.window.showWarningMessage(found
+                void ask.warn(found
                     ? `Agent Farm: ${who} runs in an external terminal — its window is now in front, press Esc there. (Agent Farm can only type into integrated terminals.)`
                     : `Agent Farm: could not find a terminal window for ${who} — if it is running elsewhere, press Esc in that window.`);
             });
             return;
         }
-        void vscode.window.showWarningMessage(
+        void ask.warn(
             `Agent Farm: no terminal found for ${who} — ${target.how}.`);
     };
 
@@ -37360,16 +37372,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /** Shared picker for the session-level commands: a given id wins, otherwise ask. */
     const pickLiveSessionId = async (
-        given: string | undefined, placeHolder: string
+        given: string | undefined, placeHolder: string, ask: PanelAsk = desktopAsk()
     ): Promise<string | undefined> => {
         if (given) { return given; }
         const list = live.sessions();
         if (!list.length) {
-            void vscode.window.showInformationMessage(
+            void ask.info(
                 'Agent Farm: no live session is being tracked right now.');
             return undefined;
         }
-        const pick = await vscode.window.showQuickPick(list.map(s => ({
+        const pick = await ask.pick(list.map(s => ({
             label: `$(radio-tower) ${live.labelOf(s)} (#${s.sessionId.slice(0, 8)})`,
             description: s.status + (s.currentTool ? ` · ${s.currentTool}` : ''),
             detail: s.lastPrompt ?? s.cwd ?? '',
@@ -37391,12 +37403,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * already gone and whose card would otherwise sit there until its tracking
      * expires.
      */
-    const endLiveSession = async (sessionId: string, agentName?: string): Promise<void> => {
+    const endLiveSession = async (sessionId: string, agentName?: string, ask: PanelAsk = desktopAsk()): Promise<void> => {
         const s = live.sessions().find(x => x.sessionId === sessionId);
         const who = agentName ?? (s ? live.labelOf(s) : sessionId.slice(0, 8));
         const hosted = consoleHost.list().find(h => h.sessionId === sessionId);
         if (hosted) {
-            const yes = await vscode.window.showWarningMessage(
+            const yes = await ask.warn(
                 `End "${who}"? It is a Console session in this window — its process stops and its transcript stays on disk.`,
                 { modal: true }, 'End session');
             if (yes !== 'End session') { return; }
@@ -37406,14 +37418,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const owner = ownerOf(liveCliSessions(), sessionId);
         if (!owner) {
-            const yes = await vscode.window.showWarningMessage(
+            const yes = await ask.warn(
                 `No live process owns "${who}" any more — there is nothing left to end. Clear it from the live timeline?`,
                 { modal: true }, 'Clear it');
             if (yes !== 'Clear it') { return; }
             live.dismiss(sessionId, 'cleared (no live process)', true);
             return;
         }
-        const yes = await vscode.window.showWarningMessage(
+        const yes = await ask.warn(
             `End "${who}"?`,
             {
                 modal: true,
@@ -37432,11 +37444,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 process.kill(owner.pid, 'SIGTERM');
             }
         } catch {
-            void vscode.window.showWarningMessage(
+            void ask.warn(
                 `Agent Farm: could not stop pid ${owner.pid} — it may already be gone.`);
         }
         live.dismiss(sessionId, 'ended from Agent Farm');
-        void vscode.window.showInformationMessage(`Agent Farm: ${who} ended (pid ${owner.pid}).`);
+        void ask.info(`Agent Farm: ${who} ended (pid ${owner.pid}).`);
     };
 
     /**
@@ -37455,21 +37467,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * different questions and the difference is worth a press: End stops this
      * conversation, Force Kill stops the machinery that keeps making it.
      */
-    const forceKillLiveSession = async (sessionId: string, agentName?: string): Promise<void> => {
+    const forceKillLiveSession = async (sessionId: string, agentName?: string, ask: PanelAsk = desktopAsk()): Promise<void> => {
         const s = live.sessions().find(x => x.sessionId === sessionId);
         const who = agentName ?? (s ? live.labelOf(s) : sessionId.slice(0, 8));
         // A Console session is OUR child. Its tree runs under this window, so
         // climbing it would walk straight into the editor — and closing it
         // properly (stdin, then its own tree) is what consoleHost already does.
         if (consoleHost.list().some(h => h.sessionId === sessionId)) {
-            void vscode.window.showWarningMessage(
+            void ask.warn(
                 `Agent Farm: "${who}" is a Console session in this window — use End session, which closes it and its own process tree. `
                 + 'Force Kill is for a claude the daemon owns.');
             return;
         }
         const owner = ownerOf(liveCliSessions(), sessionId);
         if (!owner) {
-            const yes = await vscode.window.showWarningMessage(
+            const yes = await ask.warn(
                 `No live process owns "${who}" any more — there is nothing left to kill. Clear it from the live timeline?`,
                 { modal: true }, 'Clear it');
             if (yes !== 'Clear it') { return; }
@@ -37478,7 +37490,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const table = readProcessTable();
         const target = findKillTarget(owner.pid, table, ancestorsOf(process.pid, table));
-        const yes = await vscode.window.showWarningMessage(
+        const yes = await ask.warn(
             `Force kill "${who}" and its whole process tree?`,
             {
                 modal: true,
@@ -37497,13 +37509,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 process.kill(target.root, 'SIGKILL');
             }
         } catch {
-            void vscode.window.showWarningMessage(
+            void ask.warn(
                 `Agent Farm: could not stop pid ${target.root} — it may already be gone.`);
         }
         // Purged, not merely ended: the point of this action is that the card
         // goes and stays gone.
         live.dismiss(sessionId, 'force killed from Agent Farm', true);
-        void vscode.window.showInformationMessage(
+        void ask.info(
             `Agent Farm: ${who} force killed — process tree stopped at pid ${target.root}`
             + (target.chain.length > 1 ? ` (${target.chain.length} processes deep).` : '.'));
     };
@@ -38390,7 +38402,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         vscode.commands.registerCommand('agentfarm.tagSession',
-            async (arg?: SessionRef | SessionInfo) => {
+            async (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const list = sessionsFromArg(arg).filter(s => !!s.sessionId);
                 if (!list.length) { return; }
                 const marks = sessionMarks();
@@ -38400,7 +38413,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // sessions' labels and writing it back would put every label on
                 // every one of them.
                 const clicked = sessionFromArg(arg)?.sessionId ?? (list[0].sessionId as string);
-                const value = await vscode.window.showInputBox({
+                const value = await ask.input({
                     prompt: list.length === 1
                         ? 'Labels for this session, comma separated (empty = none)'
                         : `Labels for all ${list.length} selected sessions, comma separated (empty = none) — this REPLACES what each of them carries`,
@@ -38413,6 +38426,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 let next = marks;
                 for (const s of list) { next = setTags(next, s.sessionId as string, tags); }
                 await saveMarks(next);
+                // a phone's sheet has closed: it is told there, not on the PC's status bar
+                if (arg?.ask) {
+                    void arg.ask.info(list.length === 1 ? 'Labels saved' : `${list.length} sessions labelled`);
+                    return;
+                }
                 if (list.length > 1) {
                     void vscode.window.setStatusBarMessage(
                         `Agent Farm: ${list.length} sessions labelled`, 4000);
@@ -38772,13 +38790,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * changed is that the alternative to typing is visible.
          */
         vscode.commands.registerCommand('agentfarm.sessionToWiki',
-            async (arg?: SessionRef | SessionInfo) => {
+            async (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const list = sessionsFromArg(arg).filter(s => !!s.sessionId);
                 if (!list.length) { return; }
-                const topics = await pickWikiTopics(wikiStore, list.length);
+                const topics = arg?.ask
+                    ? await askWikiTopics(wikiStore, list.length, arg.ask)
+                    : await pickWikiTopics(wikiStore, list.length);
                 if (!topics) { return; }
                 if (!topics.length) {
-                    void vscode.window.showInformationMessage(
+                    void ask.info(
                         'Agent Farm: a candidate needs at least one topic — it is what the compile files the concept under.');
                     return;
                 }
@@ -38800,10 +38821,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 WikiPanel.refreshIfOpen();
                 const pending = wikiStore.candidates.filter(c => c.state === 'pending').length;
-                void vscode.window.setStatusBarMessage(
-                    `Agent Farm: ${list.length === 1 ? 'conversation' : list.length + ' conversations'} marked for the wiki`
+                const said = `Agent Farm: ${list.length === 1 ? 'conversation' : list.length + ' conversations'} marked for the wiki`
                     + (merged ? ` (${merged} merged into a mark already there)` : '')
-                    + ` — ${pending} waiting to be compiled`, 5000);
+                    + ` — ${pending} waiting to be compiled`;
+                if (arg?.ask) { void arg.ask.info(said); return; }
+                void vscode.window.setStatusBarMessage(said, 5000);
             }),
 
         /**
@@ -38949,23 +38971,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---------- A3 ----------
         vscode.commands.registerCommand('agentfarm.interruptSession',
-            (arg?: SessionRef | SessionInfo) => {
+            (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const list = sessionsFromArg(arg);
-                if (list.length <= 1) { void interruptSession(list[0]); return; }
+                if (list.length <= 1) { void interruptSession(list[0], ask); return; }
                 // Esc into each one's own terminal, one after another — the same
                 // single-session path, not a second implementation of it.
-                void (async () => { for (const s of list) { await interruptSession(s); } })();
+                void (async () => { for (const s of list) { await interruptSession(s, ask); } })();
             }),
 
         vscode.commands.registerCommand('agentfarm.endSession',
-            async (arg?: SessionRef | SessionInfo) => {
+            async (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const list = sessionsFromArg(arg);
                 if (list.length > 1) {
                     // ‼️ Stopping twelve claude processes is not something to
                     // discover afterwards. The single-session path asks its own
                     // way (pickLiveSessionId); a bulk end asks once, plainly,
                     // and names the number.
-                    const yes = await vscode.window.showWarningMessage(
+                    const yes = await ask.warn(
                         `End ${list.length} sessions?`,
                         {
                             modal: true,
@@ -38976,34 +39000,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     let ended = 0;
                     for (const s of list) {
                         if (!s.sessionId) { continue; }
-                        await endLiveSession(s.sessionId, s.agentName);
+                        await endLiveSession(s.sessionId, s.agentName, ask);
                         ended++;
                     }
-                    void vscode.window.showInformationMessage(
+                    void ask.info(
                         `Agent Farm: ended ${ended} session${ended === 1 ? '' : 's'}.`);
                     return;
                 }
                 const s = list[0];
                 const sessionId = await pickLiveSessionId(s?.sessionId,
-                    'End which session? (its claude process is stopped)');
+                    'End which session? (its claude process is stopped)', ask);
                 if (!sessionId) { return; }
-                await endLiveSession(sessionId, s?.agentName);
+                await endLiveSession(sessionId, s?.agentName, ask);
             }),
 
         // ‼️ S-43 — one session at a time, on purpose. A bulk "kill every tree"
         // is a different and much larger promise than a bulk End, and nobody
         // asked for it; the single path already names exactly what will go.
         vscode.commands.registerCommand('agentfarm.forceKillSession',
-            async (arg?: SessionRef | SessionInfo) => {
+            async (arg?: (SessionRef | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 const s = sessionsFromArg(arg)[0];
                 const sessionId = await pickLiveSessionId(s?.sessionId,
-                    'Force kill which session? (its whole claude process tree is stopped)');
+                    'Force kill which session? (its whole claude process tree is stopped)', ask);
                 if (!sessionId) { return; }
-                await forceKillLiveSession(sessionId, s?.agentName);
+                await forceKillLiveSession(sessionId, s?.agentName, ask);
             }),
 
         vscode.commands.registerCommand('agentfarm.dismissSession',
-            async (arg?: (SessionRef & { gone?: boolean }) | SessionInfo) => {
+            async (arg?: ((SessionRef & { gone?: boolean }) | SessionInfo) & { ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
                 if ((arg as { gone?: boolean } | undefined)?.gone) {
                     // Sweep: every tracked session the OS no longer runs.
                     const owned = new Set(liveCliSessions().map(o => o.sessionId));
@@ -39013,13 +39039,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             Date.now() - s.startedAt > 60_000)
                         : [];
                     if (!dead.length) {
-                        void vscode.window.showInformationMessage(registry
+                        void ask.info(registry
                             ? 'Agent Farm: every tracked session still has a live process.'
                             : 'Agent Farm: the CLI session registry is not readable here, so a session cannot be proven finished — clear them one by one.');
                         return;
                     }
                     for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)', true); }
-                    void vscode.window.showInformationMessage(
+                    void ask.info(
                         `Agent Farm: cleared ${dead.length} finished session(s) from the live timeline.`);
                     return;
                 }
@@ -39032,25 +39058,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     for (const s of list) {
                         if (s.sessionId && live.dismiss(s.sessionId, 'cleared in Agent Farm', true)) { cleared++; }
                     }
-                    void vscode.window.showInformationMessage(cleared
+                    void ask.info(cleared
                         ? `Agent Farm: cleared ${cleared} of ${list.length} from the live timeline — the sessions themselves were not touched.`
                         : 'Agent Farm: none of those are on the live timeline.');
                     return;
                 }
                 const ref = list[0];
                 const sessionId = await pickLiveSessionId(ref?.sessionId,
-                    'Clear which session from the live timeline?');
+                    'Clear which session from the live timeline?', ask);
                 if (!sessionId) { return; }
                 const who = ref?.agentName
                     ?? live.sessions().find(s => s.sessionId === sessionId)?.agentName
                     ?? sessionId.slice(0, 8);
                 // purge: card AND lane row leave together — see LiveMonitor.dismiss.
                 if (!live.dismiss(sessionId, 'cleared in Agent Farm', true)) {
-                    void vscode.window.showInformationMessage(
+                    void ask.info(
                         `Agent Farm: ${who} is not on the live timeline.`);
                     return;
                 }
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: ${who} cleared from the live timeline — the session itself was not touched.`);
             }),
 
@@ -39429,17 +39455,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- a session's project, from wherever a session is shown ----------
         // One command behind one menu item, and the shared session contract
         // (media/afSessionCtx.js) puts that item on every surface at once.
-        vscode.commands.registerCommand('agentfarm.assignSessionProject', async (arg?: SessionCtxArg) => {
+        vscode.commands.registerCommand('agentfarm.assignSessionProject', async (arg?: SessionCtxArg & { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
             const ids = sessionIdsFromArg(arg);
             if (!ids.length) {
-                void vscode.window.showWarningMessage('Agent Farm: no session to file.');
+                void ask.warn('Agent Farm: no session to file.');
                 return;
             }
             const links = projectStore.links();
             const decided = ids.length === 1 ? links.sessions[ids[0]] : undefined;
             const many = ids.length > 1 ? ` (${ids.length} sessions)` : '';
             interface Row extends vscode.QuickPickItem { id?: string; act?: string }
-            const pick = await vscode.window.showQuickPick<Row>([
+            const pick = await ask.pick<Row>([
                 ...projectStore.all().map(p => ({
                     label: `${decided === p.id ? '$(check) ' : '$(blank) '}${p.icon ? p.icon + ' ' : ''}${p.name}`,
                     description: p.status, id: p.id
@@ -39455,7 +39482,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     description: 'let the folder / agent rules decide again',
                     act: 'forget'
                 },
-                { label: '$(add) New project from this session…', act: 'fromSession' }
+                // the form it opens is a PC panel: a phone (it hands its own ask) is not offered it
+                ...(arg?.ask ? [] : [{ label: '$(add) New project from this session…', act: 'fromSession' }])
             ], { placeHolder: `Project for this session${many}`, ignoreFocusOut: true });
             if (!pick) { return; }
             if (pick.act === 'fromSession') {
@@ -39468,7 +39496,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const where = pick.act === 'forget' ? 'left to the rules'
                 : pick.act === 'none' ? 'taken off every project'
                     : `filed under "${projectStore.get(pick.id ?? '')?.name}"`;
-            void vscode.window.showInformationMessage(
+            void ask.info(
                 `Agent Farm: ${changed} session${changed === 1 ? '' : 's'} ${where}.`);
         }),
 
@@ -39490,14 +39518,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // Turn a one-off assignment into a standing rule: everything that ever
         // ran in this folder belongs to the project, not just this session.
-        vscode.commands.registerCommand('agentfarm.addSessionFolderToProject', async (arg?: SessionCtxArg) => {
+        vscode.commands.registerCommand('agentfarm.addSessionFolderToProject', async (arg?: SessionCtxArg & { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
             const ids = sessionIdsFromArg(arg);
             const s = ids.length ? sessionFromArg(ids[0]) : undefined;
             if (!s?.cwd) {
-                void vscode.window.showWarningMessage('Agent Farm: this session does not say where it ran.');
+                void ask.warn('Agent Farm: this session does not say where it ran.');
                 return;
             }
-            const pick = await vscode.window.showQuickPick(
+            const pick = await ask.pick(
                 projectStore.all().map(p => ({ label: p.name, description: (p.repos ?? []).join(' · '), id: p.id })),
                 { placeHolder: `Add ${s.cwd} as a code root of…`, ignoreFocusOut: true });
             if (!pick) { return; }
@@ -39507,7 +39536,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!repos.some(r => normPath(r) === normPath(s.cwd ?? ''))) { repos.push(s.cwd); }
             projectStore.update(p.id, { repos });
             projectsChanged();
-            void vscode.window.showInformationMessage(
+            void ask.info(
                 `Agent Farm: sessions under ${s.cwd} now fall to "${p.name}".`);
         }),
 
@@ -39530,14 +39559,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Which project should this agent's sessions fall to when nothing else
         // claims them? A RULE, not membership — the agent may feed several
         // projects, and an explicit session assignment always outranks this.
-        vscode.commands.registerCommand('agentfarm.assignProject', async (arg: AgentArg) => {
-            const agent = await resolveAgent(arg);
+        vscode.commands.registerCommand('agentfarm.assignProject', async (arg: AgentArg & { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
+            const agent = await resolveAgent(arg, ask);
             if (!agent) { return; }
             const projects = projectStore.all();
             const has = (p: Project) =>
                 (p.match?.agents ?? []).some(a => a.toLowerCase() === agent.name.toLowerCase());
             interface Row extends vscode.QuickPickItem { id?: string; act?: string }
-            const pick = await vscode.window.showQuickPick<Row>([
+            const pick = await ask.pick<Row>([
                 ...projects.map(p => ({
                     label: `${has(p) ? '$(check) ' : '$(blank) '}${p.name}`,
                     description: (p.match?.agents ?? []).join(', ') || 'no agent rules',
@@ -39546,7 +39576,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(projects.some(has)
                     ? [{ label: '$(circle-slash) No rule', description: 'take this agent out of every project rule', act: 'none' }]
                     : []),
-                { label: '$(add) New project…', description: 'opens the form on the Projects page', act: 'new' }
+                // the form is the PC's Projects page: a phone (it hands its own ask) is not offered it
+                ...(arg?.ask ? [] : [{ label: '$(add) New project…', description: 'opens the form on the Projects page', act: 'new' }])
             ], {
                 placeHolder: `Default project for ${agent.name}'s sessions (an explicit assignment still wins)`,
                 ignoreFocusOut: true

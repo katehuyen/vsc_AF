@@ -105,6 +105,16 @@ Module._load = origLoad;
         ok('a typed answer that is not text is no answer', await p6 === undefined);
         ok('choosing PC files from a phone is refused aloud, as a cancelled dialog', await r.open({}) === undefined
             && out[7].kind === 'note' && /not available on the phone/.test(out[7].message));
+        const rows = [{ label: '$(check) $(blank) Ajan Çiftliği', description: 'active' }, { label: '', kind: -1 },
+            { label: '$(circle-slash) No project', description: '$(sync~spin) busy', detail: 'x' }, '$(add) New'];
+        const p8 = r.pick(rows);
+        await new Promise(res => setImmediate(res));
+        const sq = out[8];
+        ok('‼️ a phone is never sent a VS Code icon or a separator row', sq.kind === 'pick' && sq.items.length === 3
+            && !JSON.stringify(sq.items).includes('$(') && sq.items[1].label === 'No project' && sq.items[1].description === 'busy' && sq.items[2].label === 'New');
+        ok('…and a tick still says which one is chosen', sq.items[0].label === '✓ Ajan Çiftliği');
+        r.answer({ id: sq.id, value: 1 });
+        ok('‼️ …and the answer is the item at THAT place, not the separator\'s neighbour', await p8 === rows[2]);
         const p7 = r.warn('pending', { modal: true }, 'A');
         r.end();
         ok('a view that closes answers what it left open with nothing', await p7 === undefined);

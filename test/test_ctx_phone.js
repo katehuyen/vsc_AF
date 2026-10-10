@@ -42,7 +42,7 @@ const titleOf = c => titles.get(c) || '';
 const items = P.ctxPhoneItems(titleOf);
 {
     ok('a command that stays on the PC is not sent to a phone', items.every(i => P.ctxPhoneVerdict(i.command).on !== 'pc')
-        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.endSession'));
+        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.sessionToQueue'));
     ok('every item carries the manifest\'s own title, its when clause and its group', items.length > 10
         && items.every(i => i.title === titleOf(i.command) && i.title && i.when && /^\d_[a-z]+@\d+$/.test(i.group)));
     const pin = items.find(i => i.command === 'agentfarm.pinSession');
@@ -53,7 +53,7 @@ const items = P.ctxPhoneItems(titleOf);
     const note = P.ctxPhoneNote;
     ok('ui.ctxmenu says where a pick is answered for a phone', note('agentfarm.pinSession').phone === 'run' && note('agentfarm.copySessionId').phone === 'copy'
         && note('agentfarm.revealAgent').phone === 'pc' && /file manager/.test(note('agentfarm.revealAgent').phoneWhy)
-        && note('agentfarm.endSession').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
+        && note('agentfarm.sessionToQueue').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
     ok('…and the op adds it to every item', /items: items\.map\(i => \(\{ \.\.\.i, \.\.\.ctxPhoneNote\(i\.command\) \}\)\)/.test(read('src/extension.ts')));
 }
 
@@ -93,9 +93,37 @@ const items = P.ctxPhoneItems(titleOf);
         ok(`‼️ ${c}: its handler asks and says nothing with vscode.window`, body.length > 0 && !PC_ASK.test(body));
     }
     const SAYS = ['agentfarm.renameSession', 'agentfarm.resumeInConsole', 'agentfarm.consoleResumeSession',
-        'agentfarm.consoleInterruptTurn', 'agentfarm.consoleForgetSession', 'agentfarm.pinSession'];
+        'agentfarm.consoleInterruptTurn', 'agentfarm.consoleForgetSession', 'agentfarm.pinSession',
+        'agentfarm.tagSession', 'agentfarm.endSession', 'agentfarm.forceKillSession', 'agentfarm.interruptSession',
+        'agentfarm.dismissSession', 'agentfarm.assignSessionProject', 'agentfarm.assignProject',
+        'agentfarm.addSessionFolderToProject', 'agentfarm.sessionToWiki'];
     for (const c of SAYS) { ok(`${c}: what it says goes to the ask in its argument`, /arg\??\.ask/.test(bodyOf(c))); }
-    ok('(the test can tell: a handler that still asks on the PC is caught)', PC_ASK.test(bodyOf('agentfarm.tagSession')) && PC_ASK.test(bodyOf('agentfarm.endSession')));
+    ok('(the test can tell: a handler that still asks on the PC is caught)', PC_ASK.test(bodyOf('agentfarm.syncAntigravity')) && PC_ASK.test(bodyOf('agentfarm.insightHistory')));
+
+    // the helpers a run handler leans on ask through the same ask, and every call hands it on
+    const helperOf = name => {
+        const at = lines.findIndex(l => l.startsWith('    const ' + name + ' = '));
+        if (at < 0) { return ''; }
+        const end = lines.findIndex((l, i) => i > at && /^    (const |\/\*\*|\/\/ )/.test(l));
+        return lines.slice(at, end < 0 ? lines.length : end).join('\n');
+    };
+    const HELPERS = ['interruptSession', 'pickLiveSessionId', 'endLiveSession', 'forceKillLiveSession', 'askWikiTopics', 'resolveAgent'];
+    for (const h of HELPERS) {
+        const body = helperOf(h);
+        ok(`‼️ helper ${h}: it takes the ask and asks nothing with vscode.window`, body.length > 0 && /ask: PanelAsk/.test(body) && !PC_ASK.test(body));
+    }
+    const calls = [];
+    for (const c of runs) {
+        for (const h of HELPERS) {
+            for (const m of bodyOf(c).matchAll(new RegExp('[^.\\w]' + h + '\\(((?:[^()]|\\([^()]*\\))*)\\)', 'g'))) { calls.push([c, h, m[1]]); }
+        }
+    }
+    ok('(the run handlers do call the helpers: ' + calls.length + ' calls)', calls.length >= 9);
+    const dropped = calls.filter(([, , a]) => !/(^|[\s,])(arg\.)?ask$/.test(a.trim()));
+    ok('‼️ …and every call hands the handler\'s ask on' + (dropped.length ? ' — not: ' + dropped.map(d => d[0] + '→' + d[1]).join(', ') : ''), dropped.length === 0);
+    ok('the desktop keeps its own topic picker; a phone types the topics', /arg\?\.ask\s*\?\s*await askWikiTopics\(wikiStore, list\.length, arg\.ask\)\s*:\s*await pickWikiTopics\(/.test(bodyOf('agentfarm.sessionToWiki')));
+    ok('‼️ a row that opens a PC form is not offered to a phone', ['agentfarm.assignSessionProject', 'agentfarm.assignProject']
+        .every(c => /\.\.\.\(arg\?\.ask \? \[\] : \[\{ label: '\$\(add\) New project/.test(bodyOf(c))));
     const all = lines.join('\n');
     const rowId = all.slice(all.indexOf('const consoleRowId = '), all.indexOf('const consoleRowId = ') + 700);
     ok('the Console row lookup they share says a stale row to the same ask', /arg\?\.ask \?\? desktopAsk\(\)\)\.info\(/.test(rowId) && !/vscode\.window\./.test(rowId.split('return id;')[0]));
@@ -119,11 +147,13 @@ const items = P.ctxPhoneItems(titleOf);
     const onSession = cmds(session);
     ok('a session row offers the commands a phone can answer', ['openSession', 'resumeInConsole', 'renameSession', 'pinSession', 'copySessionId'].every(c => onSession.includes(c)));
     ok('…not one whose row value is empty (no path, no folder)', !onSession.includes('copySessionPath') && !onSession.includes('copySessionCwd'));
-    ok('…and none that stays on the PC', !onSession.includes('endSession') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
+    ok('…its stop, label, wiki and project commands among them', ['interruptSession', 'endSession', 'forceKillSession', 'dismissSession', 'tagSession',
+        'sessionToWiki', 'assignSessionProject', 'addSessionFolderToProject'].every(c => onSession.includes(c)));
+    ok('…and none that stays on the PC', !onSession.includes('sessionToQueue') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
     const full = cmds({ ...session, file: 'C:/t.jsonl', cwd: 'D:/w' });
     ok('a row that knows its path and folder offers those copies', full.includes('copySessionPath') && full.includes('copySessionCwd'));
     const onAgent = cmds({ webviewSection: 'afAgentRow', agentId: 'a1', agentName: 'dev', agentDir: 'D:/a' });
-    ok('an agent row offers its page and its copies', onAgent.join() === ['openAgentDetail', 'copyAgentName', 'copyAgentFolder'].join());
+    ok('an agent row offers its page, its project rule and its copies', onAgent.join() === ['openAgentDetail', 'assignProject', 'copyAgentName', 'copyAgentFolder'].join());
     ok('…an agent row with no id offers no page', !cmds({ webviewSection: 'afAgentRow', agentId: '', agentName: 'dev' }).includes('openAgentDetail'));
     const onCard = cmds({ webviewSection: 'afConsoleSession', hostId: 'cs1', sessionId: 's1' });
     ok('a Console card offers its own five', ['consoleResumeSession', 'consoleInterruptTurn', 'consoleEndSession', 'consoleEndAndRemove', 'consoleForgetSession'].every(c => onCard.includes(c)));
@@ -269,7 +299,8 @@ function phonePage() {
         ok('the sheet lists the session commands a phone can answer, by the manifest\'s titles', want.every(t => got.items.includes(t)));
         ok('‼️ every item is a finger\'s height on a phone, and so is the sheet\'s ✕ (measured ' + got.minH + ' and ' + got.xH + ')', got.minH >= 44 && got.xH >= 44);
         ok('(the sheet was measured at a phone\'s width, with a list to scroll)', got.w <= 500 && got.items.length >= 7);
-        ok('the sheet stays within three quarters of the screen and scrolls to the rest', got.sheetH <= got.h * 0.75 + 1 && got.reach === true);
+        ok('the sheet stays within three quarters of the screen and scrolls to the rest (measured ' + got.sheetH + ' of ' + got.h + ', scrolls ' + got.reach + ')',
+            got.sheetH <= got.h * 0.75 + 1 && got.reach === true);
         ok('nothing runs off the side', got.scrollW <= got.clientW + 1 && got.wide === 0);
         ok('‼️ a tap on Pin sends the farm the command and closes the sheet', got.closed === true && got.sent.length === 1
             && got.sent[0].type === 'afctxcmd' && got.sent[0].command === 'agentfarm.pinSession' && got.sent[0].ctx.sessionId === ctx.sessionId);

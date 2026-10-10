@@ -10,6 +10,13 @@ import * as vscode from 'vscode';
 
 type MessageRest = (vscode.MessageOptions | vscode.MessageItem | string)[];
 
+/** vscode.QuickPickItemKind.Separator — read as its value, so the class needs no live enum. */
+const SEPARATOR = -1;
+
+export function phoneText(s: string): string {
+    return s.replace(/\$\(check\)\s*/g, '✓ ').replace(/\$\([\w.-]+(?:~spin)?\)\s*/g, '').trim();
+}
+
 /** vscode.window's own signatures, overloads and all: a caller cannot tell the two apart. */
 export interface PanelAsk {
     readonly info: typeof vscode.window.showInformationMessage;
@@ -53,11 +60,17 @@ export class RemoteAsk implements PanelAsk {
     warn(message: string, ...rest: MessageRest): Thenable<any> { return this.shown('warn', message, rest); }
     error(message: string, ...rest: MessageRest): Thenable<any> { return this.shown('error', message, rest); }
 
+    /** A separator row and a `$(icon)` are VS Code's own: the phone gets neither, and a `$(check)` still says ✓. */
     async pick(items: unknown, options?: vscode.QuickPickOptions): Promise<any> {
         const list = (await (items as Thenable<readonly unknown[]>)) as readonly (string | vscode.QuickPickItem)[];
-        const rows = list.map(i => typeof i === 'string' ? { label: i } : { label: i.label, description: i.description, detail: i.detail });
+        const offered = list.filter(i => typeof i === 'string' || i.kind !== SEPARATOR);
+        const rows = offered.map(i => typeof i === 'string' ? { label: phoneText(i) } : {
+            label: phoneText(i.label),
+            ...(i.description ? { description: phoneText(i.description) } : {}),
+            ...(i.detail ? { detail: phoneText(i.detail) } : {})
+        });
         const at = await this.ask({ kind: 'pick', title: options?.title, placeHolder: options?.placeHolder, items: rows });
-        return typeof at === 'number' && at >= 0 && at < list.length ? list[at] : undefined;
+        return typeof at === 'number' && at >= 0 && at < offered.length ? offered[at] : undefined;
     }
 
     async input(options?: vscode.InputBoxOptions): Promise<string | undefined> {
