@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.919.0 - An Anomaly floor of 0 turns the cost check off everywhere (2026-10-10)
+
+- **0 means off in the cost report too.** The Anomaly floor setting says 0
+  turns the cost anomaly check off, and Health already did; the Cost Anomaly
+  Report read 0 as "no floor" and judged every day. With the floor at 0 the
+  report now flags nothing, says the check is off and which setting turned
+  it off, and each row reads "off". The setting's row in Settings says what
+  0 does.
+
 ## 3.918.0 - Farm branches no longer pile up; an agent reads the context window the card shows (2026-10-10)
 
 - **A parallel run's branch no longer outlives its worktree unseen.** Worktree

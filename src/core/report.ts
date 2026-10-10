@@ -292,6 +292,11 @@ export function buildCostReport(input: CostReportInput): string {
     lines.push('# Agent Farm — Cost Anomaly Report');
     lines.push('');
     lines.push(`Generated: ${new Date(now).toLocaleString()} · baseline: trailing 14 days (median + MAD)`);
+    const off = minUsd <= 0;
+    if (off) {
+        lines.push('');
+        lines.push('> **The anomaly check is off** — the Anomaly floor setting (agentFarm.costAnomalyMinUsd) is 0. The spend below is listed, no day is judged.');
+    }
     if (input.scopeNote) {
         lines.push('');
         lines.push(`> **Scope.** ${input.scopeNote}`);
@@ -306,7 +311,7 @@ export function buildCostReport(input: CostReportInput): string {
         const anomaly = detectCostAnomaly(hist, today, { minUsd });
         lines.push(`| ${label} | ${fmtUSD(today)} | ${fmtUSD(med)} | `
             + `${anomaly ? fmtUSD(anomaly.sigma) : '—'} | `
-            + `${anomaly ? anomaly.factor.toFixed(1) + 'x' : '—'} | ${anomaly ? '⚠ YES' : 'no'} |`);
+            + `${anomaly ? anomaly.factor.toFixed(1) + 'x' : '—'} | ${off ? 'off' : anomaly ? '⚠ YES' : 'no'} |`);
     };
     rowFor('**fleet**', input.fleet);
     for (const a of input.perAgent) { rowFor(a.name, a.sessions); }

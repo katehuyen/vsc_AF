@@ -77,7 +77,8 @@ export function detectCostAnomaly(
     const minUsd = opts.minUsd ?? 1;
     const k = opts.k ?? 3.5;
     const minFactor = opts.minFactor ?? 2;
-    if (today < minUsd) { return undefined; }
+    // B-33 — a floor of 0 turns the check OFF (agentFarm.costAnomalyMinUsd says so); every caller reads it here
+    if (minUsd <= 0 || today < minUsd) { return undefined; }
     const activeDays = history.filter(x => x > 0);
     if (activeDays.length < 4) { return undefined; } // not enough baseline to judge
     const med = median(history);

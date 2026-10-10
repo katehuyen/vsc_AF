@@ -49,6 +49,24 @@ const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10);
         now: NOW, minUsd: 1, scopeNote: '', fleet: quiet, perAgent: []
     });
     ok('…an ordinary day is not an anomaly', !/⚠ YES/.test(quietOnly));
+
+    // ‼️ B-33 — a floor of 0 turns the check OFF, as the setting says and Health already did; the
+    // report used to read it as "no floor" and judge every day
+    const off = buildCostReport({
+        now: NOW, minUsd: 0, scopeNote: '', fleet: [...quiet, today],
+        perAgent: [{ name: 'yazar', sessions: [...quiet, today] }]
+    });
+    ok('‼️ with the floor at 0 the twenty-times day is NOT flagged', !/⚠ YES/.test(off));
+    ok('…the report says the check is off and which setting turned it off',
+        /The anomaly check is off\*\* — the Anomaly floor setting \(agentFarm\.costAnomalyMinUsd\) is 0/.test(off));
+    ok('…every row says off rather than no', /\| \*\*fleet\*\* \|[^\n]*\| off \|/.test(off) && /\| yazar \|[^\n]*\| off \|/.test(off) && !/\| no \|/.test(off));
+    ok('…and a floor above 0 says nothing of the kind', !/check is off/.test(md));
+    const { detectCostAnomaly } = require(path.join(__dirname, '..', 'out', 'core', 'anomaly.js'));
+    const hist = Array.from({ length: 14 }, () => 1);
+    ok('‼️ the detector itself: 0 is off for every caller, 1 judges the same day',
+        detectCostAnomaly(hist, 40, { minUsd: 0 }) === undefined && !!detectCostAnomaly(hist, 40, { minUsd: 1 }));
+    const cat = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'settingsCatalog', 'cost.ts'), 'utf8');
+    ok('the setting\'s row says what 0 does', /summary: 'Days spending less than this are left out of the cost anomaly check; 0 turns the check off\.'/.test(cat));
     ok('…and with nothing to say about scope, nothing is said', !/Scope/.test(quietOnly));
 
     const trig = buildTriggerReport([

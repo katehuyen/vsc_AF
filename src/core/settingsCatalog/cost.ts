@@ -167,7 +167,7 @@ export const cost: CatalogSection = {
         costAnomalyMinUsd: {
             group: 'forecast', unit: '$',
             label: 'Anomaly floor',
-            summary: 'Days spending less than this are left out of the cost anomaly check.'
+            summary: 'Days spending less than this are left out of the cost anomaly check; 0 turns the check off.'
         },
         forecastDays: {
             group: 'forecast', unit: 'days',
