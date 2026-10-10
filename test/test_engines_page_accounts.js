@@ -527,6 +527,14 @@ const sec = () => {
         && !row.includes('The stored credential no longer refreshes'));
     ok('‼️ …and the 🔑 is drawn on BOTH bad states, not on the expired one alone',
         row.includes('data-acreauth="broken"'));
+
+    // U-246 — THE KEY WEARS ITS OWN CARD'S VERDICT. It sat among the grey buttons whatever the badge
+    // said; now its tone is the badge's class, read off each card rather than listed here.
+    const keyed = h.split('<div class="accard').slice(1).filter(c => c.includes('data-acreauth='))
+        .map(c => [(/class="acbad (ok|warn|bad)"/.exec(c) || [])[1], (/class="secondary small acreauth (\w*)"/.exec(c) || [])[1]]);
+    ok('‼️ U-246: every key carries the class of the verdict badge on its own card',
+        keyed.length >= 2 && keyed.every(([badge, key]) => badge && badge === key));
+    ok('…and the two dead states are two tones, as their badges are', new Set(keyed.map(k => k[1])).size >= 2);
 }
 
 // ---------- X-284: is this slot whole, and can a hand put it right ----------

@@ -3655,7 +3655,7 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 
 | Ayar | Varsayılan | Ne işe yarar |
 | --- | --- | --- |
-| `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | Ajan klasörlerinin tarandığı kökler (bkz. Agent folders bölümü) |
+| `agentFarm.agentRoots` | `[]` | Ajan klasörlerinin tarandığı kökler; boş başlar, kullanıcı kendi klasörünü ekler (bkz. Agent folders bölümü) |
 | `agentFarm.excludeAgentDirs` | [] | Ajan gibi görünse de asla ajan sayılmayacak klasörler |
 | `agentFarm.newAgentModel` | `sonnet` | New Agent ile açılan ajanın `settings.local.json`'ına yazılacak varsayılan model (boş = yazma) |
 | `agentFarm.modelAliases` | `[haiku, sonnet, opus, fable]` | Model adı bilgi tabanın: bir kere ekle, her model seçicide kalıcı görünsün (2.78.0) |

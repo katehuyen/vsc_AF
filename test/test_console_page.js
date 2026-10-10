@@ -2661,7 +2661,9 @@ const intentOf = (o) => Object.assign({
     ok('an attached file shows up as a chip', /shot\.png/.test(els['c-chips']._html));
     ok('…saying how it will travel, and how big it is',
         /embedded/.test(els['c-chips']._html) && /2 KB/.test(els['c-chips']._html));
-    ok('…and the button carries the count', els['c-attach'].textContent === '📎 1');
+    // U-245 — the chip names the TEXT glyph (U+FE0E): the colour one came out with its left stroke
+    // half drawn wherever the row put it on a fractional pixel
+    ok('…and the button carries the count, on the text glyph', els['c-attach'].textContent === '\u{1F4CE}\u{FE0E} 1');
     ok('…with a way to take it off again', /data-drop="D:\/a\/shot\.png"/.test(els['c-chips']._html));
 
     // ---- ‼️ AND THE MOMENT IT IS SENT, IT IS GONE FROM THE COMPOSER ----
@@ -2681,7 +2683,7 @@ const intentOf = (o) => Object.assign({
     ok('the files really do go with the message',
         sent && sent.attach && sent.attach.length === 1 && sent.attach[0].path === 'D:/a/shot.png');
     ok('‼️ …and the chips are gone the moment it is sent', els['c-chips']._html === '');
-    ok('…the count goes with them', els['c-attach'].textContent === '📎');
+    ok('…the count goes with them', els['c-attach'].textContent === '\u{1F4CE}\u{FE0E}');
     ok('…and a second send carries nothing it was not given', (() => {
         posted = [];
         els['c-text'].value = 'and again';

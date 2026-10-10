@@ -1986,6 +1986,46 @@ the markup is right in both worlds.
 
 ---
 
+## An icon at text size is a TEXT glyph, never a colour emoji (U-245)
+
+A colour emoji is a picture with detail a pixel wide. A flex row puts a chip on
+whatever fraction of a pixel its neighbours' widths add up to, and at 15px the
+picture is redrawn for that fraction: the Console's 📎 came out with its left
+stroke at a third of its strength on some window widths and whole on others,
+which reads as the glyph being cut off.
+
+Measured, not reasoned: nothing clipped it (every ancestor `overflow: visible`),
+the chip's opacity layer changed nothing, and padding only moved the fraction.
+The same character with U+FE0E after it is the font's outline glyph: it takes
+the chip's `color`, and it is whole at every fraction.
+
+- An icon the size of text is written with the text selector (`'\u{1F4CE}\u{FE0E}'`,
+  as an escape — the selector is invisible in a source file) or drawn as a vector.
+- A glyph that changed has a different advance: measure the chip
+  (`test/measure_page.js`) and take the difference out of its padding.
+- "It looks cut" is shot at several device scales (`shoot_page.js --scale`) and
+  enlarged (`test/crop_png.js`) before a rule is written for it.
+
+## A button has no border — a line on one is an inset shadow (U-246)
+
+`media/common.css` gives every button `border: var(--af-button-edge, none)`, so
+`border-color` on a button paints nothing outside the high-contrast themes: the
+Accounts page's Delete and 🔑 each carried one for months and were grey.
+
+- A button that must be told apart gets an ink, a fill, or
+  `box-shadow: inset 0 0 0 1px <colour>` — never a border, which would also
+  make it two pixels taller than the buttons beside it.
+- A rule that beats `button.secondary:hover` names `button.secondary.<class>`;
+  a fill that must survive the hover states its own `:hover`.
+- A control that answers a badge takes the badge's own class (the 🔑 reads
+  `verdict[0]`), so the two cannot drift.
+
+Gate: `test/test_account_life.js` (no `border-color` on either, and each verdict
+class has a drawing) · `test/test_engines_page_accounts.js` (the key's class is
+its card's badge class).
+
+---
+
 ## Origin (🧑 / 🤖)
 
 Who started a session is decided in `core/sessions.ts` `sessionOrigin`, in this
@@ -2092,3 +2132,17 @@ rather than fields:
 `missions.ts` and fails, by name, on anything nothing translates. If you add a
 wait somewhere with no such union to derive from, add the gate with it — a rule
 that only lives in this paragraph is a rule that lasts until the next person.
+
+## An op answers with a brief, never with the live record
+
+An answer is read into the context of the agent that asked, and paid for on
+every turn after. `farm.restartExtensionHost resume=true` answered with its
+revive plan, whose rows are a spread of each live Console card — message list
+included: 734 KB for one seat (measured 2026-10-10).
+
+- An answer built from a live record goes through a projection that is a COPY
+  (`core/reviveBrief.ts`): every scalar, a list by its length, nothing nested.
+  The record the stamp or the store is written from is never trimmed in place.
+- A caller that needs the contents asks the op that owns them (`sessions.read`).
+
+Gate: `test/test_revive_brief.js`.

@@ -245,6 +245,18 @@ async function actions() {
     ok('…as does the all-engines refresh line and the ids its press posts',
         /const readable = list\.filter\(a => a\.usageState !== 'no-source' && !a\.disabled\);/.test(page)
         && /&& a\.usageState !== 'no-source' && !a\.disabled\)\s*\.map\(a => a\.id\)/.test(page));
+    // U-246 — Delete and the key are DRAWN. The shared button has no border, so the border-color both
+    // carried painted nothing: a rule for either is a fill, an ink or an inset line.
+    const rules = (life.CSS + page).split('}').map(r => r.trim()).filter(r => /\.(acdel|acreauth)\b[^{]*\{/.test(r));
+    const rule = (sel) => (rules.find(r => r.slice(0, r.indexOf('{')).trim() === sel) || '').replace(/^[^{]*\{/, '');
+    ok('‼️ U-246: no rule for Delete or the key colours a border the button does not have',
+        rules.length >= 5 && rules.every(r => !/border-color/.test(r)));
+    ok('‼️ …Delete is red at rest (ink and line) and filled under the hand',
+        /(^|;)\s*color:[^;]*charts-red/.test(rule('button.secondary.acdel')) && /box-shadow:inset[^;]*charts-red/.test(rule('button.secondary.acdel'))
+        && /background:[^;]*charts-red/.test(rule('button.secondary.acdel:hover')));
+    ok('…and the key has a drawing for each verdict class a keyed card can carry',
+        ['ok', 'warn', 'bad'].every(t => /box-shadow:inset/.test(rule('button.secondary.acreauth.' + t)))
+        && ['warn', 'bad'].every(t => /background:/.test(rule('button.secondary.acreauth.' + t))));
     const base = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'base.ts'), 'utf8');
     ok('the module ships on every page, before the view that asks it',
         base.indexOf('src="${accountLife}"') > 0 && base.indexOf('src="${accountLife}"') < base.indexOf('src="${accounts}"'));

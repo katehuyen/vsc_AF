@@ -171,6 +171,7 @@ import {
     isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, reviveIntent, RevivePlan,
     ReviveRow, ReviveSkip, reviveSpeech
 } from './core/consoleRevive';
+import { reviveBrief } from './core/reviveBrief';
 import { cursorAt, freshRows, MirrorCursor } from './core/mirrorCursor';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
@@ -19420,7 +19421,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     reason: plan.reason, waitingFor: plan.waitingFor
                 }, Date.now())
                 : undefined,
-            revive,
+            revive: revive && reviveBrief(revive),
             /**
              * ‼️ X-349 — AND WHAT THAT MEANS FOR THE CALLER'S OWN SEAT.
              *

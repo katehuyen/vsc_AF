@@ -3603,7 +3603,7 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `agentFarm.guideLanguage` | en | Language for the in-app help (Guide, Quick Start, Examples): en / tr |
-| `agentFarm.agentRoots` | `["D:/zone/agent/ajanlar"]` | The roots scanned for agent folders (see the Agent folders section) |
+| `agentFarm.agentRoots` | `[]` | The roots scanned for agent folders; starts empty, the user adds their own (see the Agent folders section) |
 | `agentFarm.excludeAgentDirs` | [] | Folders never treated as agents, even when they look like one |
 | `agentFarm.newAgentModel` | `sonnet` | Default model written into a New Agent's `settings.local.json` (empty = write none) |
 | `agentFarm.modelAliases` | `[haiku, sonnet, opus, fable]` | Your model-name knowledge base: add a name once, every model picker offers it permanently (2.78.0) |

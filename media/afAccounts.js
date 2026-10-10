@@ -727,9 +727,9 @@
         // grant was already dead would have been the card pointing at a button
         // that is not there.
         const expiringSoon = (a.signin || {}).state === 'expiring';
-        const reauth = a.health === 'ready' && !expiringSoon
+        const reauth = (tone) => a.health === 'ready' && !expiringSoon
             ? ''
-            : T.wrap('<button class="secondary small acreauth" data-acreauth="' + esc(a.id) + '">🔑</button>',
+            : T.wrap('<button class="secondary small acreauth ' + tone + '" data-acreauth="' + esc(a.id) + '">🔑</button>',
                 expiringSoon ? 'Renew this sign-in before it runs out' : 'Sign in again as ' + (a.label || a.id),
                 (expiringSoon
                     ? 'This one still works, so nothing is broken and nothing is interrupted — which is the '
@@ -911,7 +911,7 @@
             + '<span class="grow"></span>'
             + fixSettings
             + fixContract
-            + reauth
+            + reauth(verdict[0])
             + (a.disabled ? '' : refresh)
             + (a.disabled ? '' : stand)
             + life.actions(a)
@@ -1286,9 +1286,6 @@
         .acdup { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
             background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:var(--af-on-fill, #000); cursor:help; }
         .acuuid { font-family:var(--vscode-editor-font-family,monospace); }
-        /* X-219 — the one control that answers that badge wears the badge's
-           colour: a dead sign-in and its remedy are one fact, said twice. */
-        .acreauth { border-color:var(--vscode-charts-yellow,#d7ba7d); }
         /* ‼️ X-205 — the standing account is a SWITCH. Two states of one
            control, drawn rather than spelled: a button whose label has
            to be read is a button the eye has to stop at, and this one

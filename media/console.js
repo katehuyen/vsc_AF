@@ -370,7 +370,7 @@
             background:var(--vscode-inputValidation-warningBackground,#cca70026);
             box-shadow:inset 0 0 0 1px var(--vscode-editorWarning-foreground,#cca700); }
         #c-status .stchip.lastleg:disabled { cursor:default; opacity:.7; }
-        #c-status #c-continue { font-size:12px; }
+        #c-status #c-continue { font-size:12px; } #c-status #c-attach { padding:0 1px; }
         #c-status .batonsig { font-size:13px; line-height:1; }
         /* S-82: the attach strip under a card's status row, and the composer's relay chip. */
         #c-relay:empty { display:none; }
@@ -6123,6 +6123,7 @@
                 : `${(n / (1024 * 1024)).toFixed(1)} MB`;
     }
 
+    function attachLabel(n) { return '\u{1F4CE}\u{FE0E}' + (n ? ' ' + n : ''); } // U-245: U+FE0E asks for the TEXT glyph - the colour one is two hairlines that smear at a fractional x; its advance carries 3px of bearing each side, hence #c-attach's 1px padding
     function attachBtnHtml() {
         const n = (st.attach || []).length;
         // ‼️ The button opens a FILE picker, and the tooltip says so, because it
@@ -6131,7 +6132,7 @@
         // why this button used to open a window with no files in it at all. A
         // folder is attached by dropping it, and that is worth one clause here
         // rather than a dead end at the dialog.
-        return cardTip(`<button class="stchip" id="c-attach" aria-label="Attach files">📎${n ? ' ' + n : ''}</button>`,
+        return cardTip(`<button class="stchip" id="c-attach" aria-label="Attach files">${attachLabel(n)}</button>`,
             attachHead(n), attachBody(), 'tip-attach', 'Attach files');
     }
     /**
@@ -6361,8 +6362,7 @@
         }
         const btn = document.getElementById('c-attach');
         if (btn) {
-            const n = (st.attach || []).length;
-            const label = `📎${n ? ' ' + n : ''}`;
+            const n = (st.attach || []).length, label = attachLabel(n);
             if (btn.textContent !== label) {
                 btn.textContent = label;
                 const w = btn.parentElement;

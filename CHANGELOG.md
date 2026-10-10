@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.920.0 - The paperclip drawn whole, Delete in red, and the key that stands out when a sign-in needs you (2026-10-10)
+
+- **The Console's paperclip is drawn whole.** On some window widths the 📎
+  on the status line came out with its left edge faded, as if it had been
+  cut. Nothing was cutting it: it was the colour picture of the sign being
+  redrawn on a fraction of a pixel. The button now uses the outline form of
+  the same sign, which is sharp wherever the row puts it and takes the
+  colour of the buttons beside it. The row is at most one pixel wider.
+
+- **Delete on an account card looks like what it does.** It was a grey
+  button among grey buttons. It is now red at rest and fills red under the
+  pointer; nothing about what it does or asks has changed.
+
+- **The key stands out when a sign-in needs you.** On a card whose sign-in
+  has expired the 🔑 wears the badge's amber, on one that could not be read
+  its red, and on one that still works but is running out an amber line -
+  so the one button that puts the card right is the one you see first.
+
+- **A new install starts with no agent folders.** The default of Agent
+  folders no longer names a folder on the developer's own machine; a new
+  user adds theirs in Farm Settings. (The default itself changed in 3.916.0
+  without a note; this release adds the check that keeps any setting from
+  shipping a machine's own path.) A list you have set is untouched.
+
+- **Restarting from an agent no longer hands it every message.** The
+  restart command answered an agent with the whole conversation of each
+  Console card it was about to bring back. It now names the cards and says
+  how much each one holds.
+
 ## 3.919.0 - An Anomaly floor of 0 turns the cost check off everywhere (2026-10-10)
 
 - **0 means off in the cost report too.** The Anomaly floor setting says 0

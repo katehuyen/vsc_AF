@@ -48,11 +48,24 @@
         return rows.filter(a => !a.disabled).concat(rows.filter(a => a.disabled));
     }
 
+    // U-246 — Delete is the one press on a card that cannot be taken back: red at rest, filled under the
+    // hand. And the key that answers a verdict wears that verdict (the badge's own class): tinted and
+    // lined in the badge's colour while the sign-in is dead, a line alone while it works and runs out.
+    // A line is an inset shadow, never a border — the row's buttons stay one height (the shared button
+    // has no border to colour, which is why the old border-color rules drew nothing).
     const CSS = `
         .accard.asleep { border-style:dashed; }
         .acbad.asleep { background:transparent; color:var(--vscode-descriptionForeground,#9d9d9d);
             border:1px dashed var(--vscode-descriptionForeground,#9d9d9d); }
-        .acdel { border-color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
+        button.secondary.acdel { color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c));
+            box-shadow:inset 0 0 0 1px var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); }
+        button.secondary.acdel:hover { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:var(--af-on-fill, #000); }
+        button.secondary.acreauth.ok { box-shadow:inset 0 0 0 1px var(--vscode-charts-yellow,#d7ba7d); }
+        button.secondary.acreauth.warn { box-shadow:inset 0 0 0 1px var(--vscode-charts-yellow,#d7ba7d);
+            background:color-mix(in srgb, var(--vscode-charts-yellow,#d7ba7d) 45%, var(--vscode-button-secondaryBackground,#3a3d41)); }
+        button.secondary.acreauth.bad { box-shadow:inset 0 0 0 1px var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c));
+            background:color-mix(in srgb, var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)) 45%, var(--vscode-button-secondaryBackground,#3a3d41)); }
+        button.secondary.acreauth:hover { filter:brightness(1.2); }
     `;
 
     const api = { badge, actions, wire, order, TYPES, CSS };

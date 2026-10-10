@@ -375,8 +375,8 @@ const makeContext = (pass) => {
 
     /** Activate once under `config`, from a clean slate, and hand back what happened. */
     const activateUnder = async (pass, config) => {
-        // X-511 — a key the stand-in leaves unanswered reads as the manifest's default, and agentRoots' default
-        // names a real folder on the developer's machine: the sandbox scans no agent root
+        // X-511 — a key the stand-in leaves unanswered reads as the manifest's default; the sandbox pins
+        // agentRoots to none itself, so it scans no agent root whatever the manifest comes to say
         CONFIG = { 'agentFarm.agentRoots': [], ...config };
         registered.commands = [];
         registered.views = [];
