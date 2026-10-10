@@ -24351,9 +24351,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fixRouteRefsNow(undefined, undefined, 'Agent Farm, after the route list changed');
         const left = brokenRouteRefs(collectRouteRecords(routeSnapshot()), routeGoingIo.routes());
         if (!left.length) { return; }
+        const n = left.reduce((sum, x) => sum + x.records.length, 0);
         const ask = {
             agentName: 'agent-farm',
-            title: `${left.reduce((n, x) => n + x.records.length, 0)} saved records name a route that is gone — what happens to them?`,
+            title: `${n === 1 ? 'One saved record names' : `${n} saved records name`} a route that is gone — what happens to ${n === 1 ? 'it' : 'them'}?`,
             body: [...left.map(x => `- ${x.why}: ${x.records.map(describeDependent).join(', ')}`), '',
                 'Leave them (nothing to do): they cannot start — a launch naming a route that is gone is refused.',
                 'Clear them, or delete the launch profiles and clear the rest: the 🧹 status-bar item → review, or '

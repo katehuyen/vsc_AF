@@ -27,6 +27,16 @@ export function routeModelEnv(tiers: Record<string, string> | undefined): Record
 }
 
 /**
+ * X-522 — the route's context window, told to Claude Code. Measured in the 2.1.295 binary: for a model it does not
+ * know as a Claude model, CLAUDE_CODE_MAX_CONTEXT_TOKENS IS the window, and it silences the 200K notice. Re-measure
+ * the name in the binary when the CLI changes. Nothing when the route states none: an inherited value is left alone.
+ */
+export function routeContextEnv(context: number | undefined): Record<string, string> {
+    const n = Math.floor(Number(context) || 0);
+    return n > 0 ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(n) } : {};
+}
+
+/**
  * ‼️ X-495 — ON A THIRD-PARTY ROUTE, AN ANTHROPIC MODEL IS ASKED FOR BY ITS ALIAS.
  *
  * `--model claude-opus-5-5` reaches the route as that literal id, which no third

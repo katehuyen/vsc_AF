@@ -46,7 +46,8 @@ export function scrubSecrets(text: string, values: readonly string[]): string {
  */
 export function secretValuesOf(spawnEnv: Record<string, string> | undefined): string[] {
     return Object.entries(spawnEnv ?? {})
-        .filter(([name]) => !/_URL$|MODEL/.test(name))
+        // X-522 — a route's context window is a figure, not a secret: masked, every 1000000 in run output would go
+        .filter(([name]) => !/_URL$|MODEL|^CLAUDE_CODE_MAX_CONTEXT_TOKENS$/.test(name))
         .map(([, v]) => v);
 }
 

@@ -37,7 +37,7 @@
 
 import { RedactedRoute } from './providerIdentity';
 import { StoredProviderProfile } from './providerProfiles';
-import { routeDefaultEnv, routeModelEnv } from './routeModels';
+import { routeContextEnv, routeDefaultEnv, routeModelEnv } from './routeModels';
 import { routeValue } from './opencodeRoutes';
 
 /**
@@ -186,7 +186,7 @@ export function claudeRouteRuntime(
         else { spawnEnv.ANTHROPIC_API_KEY = secret; }
     }
 
-    Object.assign(spawnEnv, routeModelEnv(profile.tiers));
+    Object.assign(spawnEnv, routeModelEnv(profile.tiers), routeContextEnv(profile.context));
 
     const t = String(tier ?? '').trim();
     if (t) {
