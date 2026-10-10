@@ -28,6 +28,7 @@ import {
 import { LaunchIntent } from '../core/launchDimensions';
 import { catalog as launchCatalog, narrow as narrowIntent } from '../core/aflaunch';
 import { contextWindowOf, totalTokens, Usage } from '../core/pricing';
+import { liveContextWindow } from '../core/routeWindow';
 import { RunIdentity } from '../core/turnRuntime';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
@@ -62,7 +63,7 @@ function liveWindow(
     s: { contextWindowTokens?: number; applied?: { model: string }; model?: string },
     forced: number, route: number
 ): { contextWindowTokens: number; contextWindowSource: string } {
-    const w = contextWindowOf(s.contextWindowTokens ?? 0, s.applied?.model || s.model || '', forced, route);
+    const w = liveContextWindow(s, forced, route);
     return { contextWindowTokens: w.tokens, contextWindowSource: w.source };
 }
 

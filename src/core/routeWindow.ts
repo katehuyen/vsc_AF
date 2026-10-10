@@ -18,6 +18,7 @@
 import { LaunchManifest, manifestOf } from './launchManifest';
 import { routeIdOfWire } from './opencodeRoutes';
 import { RouteNames } from './routeName';
+import { contextWindowOf, CtxWindow } from './pricing';
 
 const named = (v: readonly string[] | undefined): string[] => (v ?? []).map(s => String(s ?? '').trim()).filter(Boolean);
 
@@ -54,4 +55,15 @@ export function sessionRouteWindow(
     }
     const declared = manifests ? manifestOf(manifests, s)?.identity?.providerProfileId : undefined;
     return routeWindowOf(engine, declared, last, names);
+}
+
+/**
+ * X-534 — a LIVE Console session's window: the one rule (pricing.ts contextWindowOf), asked with the
+ * APPLIED model (a card that switched mid-session is not on the model it launched with). The Console card
+ * and `console.sessions` both answer from here, so the page and an agent asking over the bridge read one window.
+ */
+export function liveContextWindow(
+    s: { contextWindowTokens?: number; applied?: { model: string }; model?: string }, forced: number, route: number
+): CtxWindow {
+    return contextWindowOf(s.contextWindowTokens ?? 0, s.applied?.model || s.model || '', forced, route);
 }

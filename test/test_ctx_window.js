@@ -130,8 +130,9 @@ const consolePanel = read('src/panels/consolePanel.ts');
 ok('the card resolves its ceiling through the one rule, not off the engine alone',
     /liveWindow\(s, afConfig\(\)\.get<number>\('contextWindowTokens', 0\),/.test(consolePanel)
     && !/contextWindowTokens: s\.contextWindowTokens \?\? 0/.test(consolePanel));
-ok('…and asks the APPLIED model, which is the one really running',
-    /s\.applied\?\.model \|\| s\.model \|\| ''/.test(consolePanel));
+ok('…and asks the APPLIED model, which is the one really running (X-534: one function the bridge asks too)',
+    /const w = liveContextWindow\(s, forced, route\);/.test(consolePanel)
+    && /s\.applied\?\.model \|\| s\.model \|\| ''/.test(read('src/core/routeWindow.ts')));
 ok('…and sends where the ceiling came from beside it',
     /contextWindowSource: w\.source/.test(consolePanel));
 const consolePage = read('media/console.js');

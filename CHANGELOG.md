@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.918.0 - An agent reads the context window the card shows (2026-10-10)
+
+- **The Console's context window is one answer, on the card and over the
+  bridge.** An agent asking for the Console sessions (console.sessions) got
+  only the window the engine itself reported, so on a Claude card - where
+  the engine reports none - you saw a percentage and the agent read nothing.
+  It now gets the same window and percentage the card draws (your Context
+  window setting, else the engine's figure, else the route's, else the
+  model's published one) and is told which of the four it is.
+
 ## 3.917.0 - The Mobile tab (2026-10-10)
 
 - **Now becomes 📱 Mobile, with three tabs.** The global row's Now button
