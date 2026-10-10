@@ -186,6 +186,8 @@ const SHARED = [
     'afMobile.js',
     // afAsk.js — a host's questions as phone sheets and toasts (X-447).
     'afAsk.js',
+    // afRowCmd.js — a host command picked on the phone's row menu: a page, a copy, or the farm's command (X-443).
+    'afRowCmd.js',
     // afVoice.js — dictation into a focused text box, in the Android shell only (S-1).
     'afVoice.js',
     // afRunCategory.js — the four run categories as a bar (U-191). It reads

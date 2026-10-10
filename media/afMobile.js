@@ -49,7 +49,8 @@
         + 'html.af-phone{--af-bottom:56px}'
         + 'html.af-phone .af-head-nav{display:none}'
         + 'html.af-phone body{padding-bottom:calc(var(--af-bottom) + 8px)}'
-        + 'html.af-phone button,html.af-phone select{min-height:36px}'
+        // …a sheet's rows and its ✕ keep their own 44px: the rule above outweighs a single class (measured 36)
+        + 'html.af-phone button,html.af-phone select{min-height:36px}html.af-phone .af-sheet-go,html.af-phone .af-sheet-x{min-height:44px}'
         + '.af-tabbar{position:fixed;left:0;right:0;bottom:0;height:var(--af-bottom,56px);display:flex;z-index:60;'
         + 'background:var(--vscode-sideBar-background,var(--af-ground,var(--vscode-editor-background)));border-top:1px solid var(--vscode-panel-border)}'
         + '.af-tabbar button{flex:1;min-width:0;min-height:48px;background:none;border:0;border-radius:0;color:inherit;'
@@ -171,8 +172,7 @@
         return true;
     }
 
-    // ---- a row's menu: the catalogue's page actions (src/core/ctxmenu.ts), judged on the phone
-
+    // ---- a row's menu: the catalogue's page actions and phone-answered commands, judged on the phone
     function val(ctx, key) { return Object.prototype.hasOwnProperty.call(ctx, key) ? ctx[key] : undefined; }
     function unquote(s) { var m = /^'(.*)'$|^"(.*)"$/.exec(s.trim()); return m ? (m[1] !== undefined ? m[1] : m[2]) : s.trim(); }
 
@@ -210,8 +210,8 @@
         var all = (window.__AFUI__ || {}).ctxMenu || [];
         var seen = {};
         return all.filter(function (a) {
-            var k = a.act + '|' + a.title;
-            if (seen[k] || !whenTrue(a.when, ctx)) { return false; }
+            var k = (a.act || a.command) + '|' + a.title;
+            if (seen[k] || !whenTrue(a.when, ctx) || (a.command && !window.AFRowCmd.offers(a, ctx))) { return false; }
             seen[k] = true;
             return true;
         });
@@ -235,7 +235,8 @@
             if (b.hasAttribute('data-afrowtip')) { openTip(tipEl); return; }
             var a = acts[Number(b.dataset.afrowact)];
             closeSheet();
-            // the same relay the desktop menu's command sends: the page runs its own function
+            // a host command has the farm's phone answer (afRowCmd.js); a page action is relayed as on the desktop
+            if (a.command) { window.AFRowCmd.pick(a, ctx); return; }
             window.dispatchEvent(new MessageEvent('message', { data: { type: 'afctx', act: a.act, ctx: ctx } }));
         });
         return true;

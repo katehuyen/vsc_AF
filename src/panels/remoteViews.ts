@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { ctxPhoneRun } from '../core/ctxPhone';
 import type { HostWebview, PanelHost } from './panelHost';
 import { RemoteAsk, type PanelAsk } from './panelAsk';
 import { FILE_URL, MAX_FILE_BYTES, ViewFiles, type ServedFile } from './remoteFiles';
@@ -166,11 +167,28 @@ export class RemoteViews {
             if (ran) { host.asker.answer(message); }
             return { page: host.page, type, act: true, ran };
         }
+        // A host command picked on the row menu (X-443): judged here, never the page's message.
+        if (type === 'afctxcmd') { return { page: host.page, type, act: true, ran: this.command(caller, host, message) }; }
         const need = messageScope(host.spec, type);
         const ran = need !== null && this.d.atLeast(caller.scope, need);
         if (ran) { host.webview.receive(message); } else if (pressed) { void host.asker.info(refusedNote(need, caller.scope)); }
         const look = host.spec.looks.includes(type) || SHELL_LOOKS.includes(type);
         return { page: host.page, type, act: !look, ran };
+    }
+
+    /**
+     * The same command the PC's menu runs, for the row the phone named and with this view's `ask`:
+     * what the handler asks or says is asked and said on the phone (src/core/ctxPhone.ts decides
+     * which commands may, and at what scope). A refusal is said there too.
+     */
+    private command(caller: ViewCaller, host: RemoteView, message: unknown): boolean {
+        const m = message as { command?: unknown; ctx?: unknown } | null;
+        const judged = ctxPhoneRun(m?.command, m?.ctx);
+        if (!judged.ok) { void host.asker.info(judged.why); return false; }
+        if (!this.d.atLeast(caller.scope, judged.scope)) { void host.asker.info(refusedNote(judged.scope, caller.scope)); return false; }
+        Promise.resolve(vscode.commands.executeCommand(judged.command, { ...judged.arg, ask: host.ask }))
+            .then(undefined, (e: unknown) => { void host.asker.error('Agent Farm: ' + (e instanceof Error ? e.message : String(e))); });
+        return true;
     }
 
     close(caller: ViewCaller, view: string): void {

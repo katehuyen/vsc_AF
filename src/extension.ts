@@ -765,6 +765,7 @@ import {
 import { pushPageReading, setPageReader } from './panels/pageReading';
 import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
+import { ctxPhoneNote } from './core/ctxPhone';
 import { SearchPanel, SearchDeps, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { findSessions } from './core/sessionFind';
 import { chainIndexNow, isBatonRun, setChainSource } from './core/chainMembership';
@@ -31597,10 +31598,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * process this window no longer has (ended and removed, or a stale menu on
      * a reloaded panel) says so instead of failing silently.
      */
-    const consoleRowId = (arg?: { hostId?: string }): string | undefined => {
+    const consoleRowId = (arg?: { hostId?: string; ask?: PanelAsk }): string | undefined => {
         const id = typeof arg?.hostId === 'string' ? arg.hostId : '';
         if (!id || !consoleHost.get(id)) {
-            void vscode.window.showInformationMessage(
+            // said to whoever picked it: a phone's row menu hands its own ask (X-443)
+            void (arg?.ask ?? desktopAsk()).info(
                 'Agent Farm: that session is not in this window\'s Console list any more.');
             return undefined;
         }
@@ -38222,7 +38224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // carries its own `pinned` flag, and reading that as an instruction
         // would turn every click on a pinned tree row into "pin it again".
         vscode.commands.registerCommand('agentfarm.pinSession',
-            async (arg?: (SessionRef & { wantPinned?: boolean }) | SessionInfo) => {
+            async (arg?: ((SessionRef & { wantPinned?: boolean }) | SessionInfo) & { ask?: PanelAsk }) => {
                 // ‼️ On a selection the whole set moves the SAME way, decided by
                 // the row that was clicked. Toggling each one individually would
                 // invert the ones already pinned — "pin these twelve" would come
@@ -38242,6 +38244,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const title = list.length === 1
                     ? `"${list[0].title || (list[0].sessionId as string).slice(0, 8)}"`
                     : `${list.length} sessions`;
+                // a phone's row menu hands its own ask (X-443): it is told there, not on the PC's status bar
+                if (arg?.ask) {
+                    void arg.ask.info(want ? `${title} is on your shelf` : `${title} is off the shelf`);
+                    return;
+                }
                 void vscode.window.setStatusBarMessage(
                     want
                         ? `$(pinned) Agent Farm: ${title} on your shelf`
@@ -39586,12 +39593,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * command from being executed by other means, so each handler still
          * says what it will not do and why.
          */
-        vscode.commands.registerCommand('agentfarm.consoleInterruptTurn', (arg?: { hostId?: string }) => {
+        vscode.commands.registerCommand('agentfarm.consoleInterruptTurn', (arg?: { hostId?: string; ask?: PanelAsk }) => {
             const id = consoleRowId(arg);
             if (!id) { return; }
             const s = consoleHost.get(id);
             if (s?.status !== 'working') {
-                void vscode.window.showInformationMessage(
+                void (arg?.ask ?? desktopAsk()).info(
                     `Agent Farm: ${s?.agentName ?? 'that session'} is not in the middle of a turn.`);
                 return;
             }
@@ -39713,7 +39720,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (sid) { forgetLastWindow(sid); }
         }),
 
-        vscode.commands.registerCommand('agentfarm.consoleForgetSession', (arg?: { hostId?: string }) => {
+        vscode.commands.registerCommand('agentfarm.consoleForgetSession', (arg?: { hostId?: string; ask?: PanelAsk }) => {
             const id = consoleRowId(arg);
             if (!id) { return; }
             const s = consoleHost.get(id);
@@ -39721,7 +39728,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // The menu greys this out, so reaching here means the command
                 // was run another way. Removing a live row would kill a running
                 // conversation as a side effect of "tidy up" — say the order.
-                void vscode.window.showInformationMessage(
+                void (arg?.ask ?? desktopAsk()).info(
                     `Agent Farm: ${s.agentName}'s session is still running — end it first, then remove it from the list.`);
                 return;
             }
@@ -42949,7 +42956,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const items = ctxForSection(section, cmd => titles.get(cmd) ?? '');
                 need(items.length > 0,
                     `No menu is drawn on "${section}" — ui.ctxmenu with no section lists the kinds there are.`);
-                return { section, items };
+                // X-443 — and where a pick is answered for a phone's long press (src/core/ctxPhone.ts)
+                return { section, items: items.map(i => ({ ...i, ...ctxPhoneNote(i.command) })) };
             }
         },
         {

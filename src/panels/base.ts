@@ -7,7 +7,7 @@ import { currentUiLanguage } from './uiLanguage';
 import { catalogFiles } from '../core/i18n';
 import { quotaStyleCss } from '../core/quotaStyle';
 import type { SoundHeader } from '../core/soundHeader';
-import { ctxPageActions } from '../core/ctxmenu';
+import { phoneCtxMenu } from './remoteCtx';
 import {
     parseChatId, telegramCard, TelegramCard, TelegramSnapshot
 } from '../core/telegramCockpit';
@@ -620,6 +620,8 @@ export function htmlShell(
     const mobile = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afMobile.js'));
     // X-447 — a host's questions asked on the phone that is looking (sheets over afMobile.js).
     const ask = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAsk.js'));
+    // X-443 — a host command picked on the phone's row menu: a page, the phone's clipboard, or the farm's command.
+    const rowCmd = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRowCmd.js'));
     // S-1 — dictation into a focused text box, drawn only when the Android shell can dictate.
     const voice = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afVoice.js'));
     const script =webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
@@ -649,8 +651,9 @@ export function htmlShell(
         locale: ui.locale,
         // Drawn on a phone through the remote host (media/afMobile.js reads it).
         remote: webview.remote === true,
-        // …and there a long press offers the row's page actions (a desktop tab has VS Code's menu).
-        ...(webview.remote === true ? { ctxMenu: ctxPageActions() } : {})
+        // …and there a long press offers the row's page actions and the host commands that have a
+        // phone answer (src/core/ctxPhone.ts); a desktop tab has VS Code's menu.
+        ...(webview.remote === true ? { ctxMenu: phoneCtxMenu() } : {})
     };
     // This page is now live: it must receive count changes for as long as it exists.
     livePages.add(webview);
@@ -744,6 +747,7 @@ ${catalog}<script nonce="${nonce}" src="${charts}"></script>
 <script nonce="${nonce}" src="${svStrip}"></script>
 <script nonce="${nonce}" src="${mobile}"></script>
 <script nonce="${nonce}" src="${ask}"></script>
+<script nonce="${nonce}" src="${rowCmd}"></script>
 <script nonce="${nonce}" src="${voice}"></script>
 <script nonce="${nonce}" src="${colFit}"></script>
 <script nonce="${nonce}" src="${blPlace}"></script>

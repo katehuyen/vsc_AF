@@ -917,8 +917,8 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   aside for a bottom tab bar (Now · Console · Sessions · Tasks · Menu) and a
   long press on an AFTip opens it whole in a bottom sheet; a long press on a row
   with a right-click menu opens its PAGE actions (`ctxPageActions`, when clauses
-  judged against the row, a pick relayed as `afctx` — host commands stay on the
-  PC). A page adapts under `html.af-phone …` rules in its own stylesheet (a
+  judged against the row, a pick relayed as `afctx`) and the host commands that
+  have a phone answer (the next rule but one). A page adapts under `html.af-phone …` rules in its own stylesheet (a
   row's buttons under its text, a fixed box above `var(--af-bottom)`); a dense
   table becomes cards by MARKUP, not by its own CSS — `data-afcards` on the
   table, `data-afcardhead` on the header row, `data-afcard` on a row,
@@ -942,6 +942,23 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   view answers `undefined`, and a PC file dialog is refused aloud. Without it a
   phone's tap opened a modal on the PC that waited for nobody.
   `test_panel_ask.js` holds the hosted panels to it.
+- **‼️ A HOST COMMAND OF THE ROW MENU HAS ONE PHONE VERDICT (X-443).** Every
+  catalogue item with a `command` is in `CTX_PHONE` (`src/core/ctxPhone.ts`),
+  and the sheet, the farm's relay and `ui.ctxmenu` all read that one table:
+  `page` (the phone opens its OWN page, named from the row's context), `copy`
+  (what the row knows goes on the PHONE's clipboard), `run` (the SAME command
+  runs on the farm with `{ ...row context, ask: the view's ask }`), or `pc`
+  with its reason — never sent to a phone at all. A new catalogue command
+  without a verdict fails `test_ctx_phone.js` by name. **`run` is earned, not
+  declared:** the handler's own body may not ask or say with `vscode.window`
+  (the test reads it out of `src/extension.ts`); it takes
+  `arg?.ask ?? desktopAsk()`, and a helper it shares does the same
+  (`consoleRowId`). A `pc` verdict marked `gap` is a command a phone should
+  get once its handler asks that way; `CTX_PHONE_GAPS` counts them and only
+  shrinks. The pick arrives as `afctxcmd` and is settled by `RemoteViews`
+  like `afAskAnswer`, never by the page: the command must be a `run`, drawn
+  on that row's section, within the device's scope, and the context is cut
+  down to plain values — a phone cannot hand a handler an `ask` of its own.
 - **A web link a page opens is the PHONE's on the phone (X-443).** A page asks
   for one as `{ type: 'openExternal', url }`; inside VS Code the host opens it,
   on the phone `media/afRemote.js` answers an http(s) one itself: the page goes

@@ -1793,8 +1793,8 @@ export function ctxForSection(
  * U-176 — what a phone's long press offers: the PAGE actions only, each with
  * its when clause for the page to judge against the row. They run the page's
  * own function (relayed as afctx on the phone itself), so whatever they then
- * send is judged by the page's phone rule; a host command would run on the PC
- * and stays there.
+ * send is judged by the page's phone rule. A host command is not a page's to
+ * run: what a phone does with one is its verdict in core/ctxPhone.ts (X-443).
  */
 export function ctxPageActions(): { title: string; act: string; when: string; group: string; menu?: string }[] {
     const subLabel = new Map(CTX_SUBMENUS.map(s => [s.id, s.label]));

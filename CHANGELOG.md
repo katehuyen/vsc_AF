@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.925.0 - A row's menu on your phone runs commands (2026-10-11)
+
+- **On the phone, a long press on a row now offers the commands too.** The
+  sheet that opens used to list only what the page itself can do. It now also
+  lists the commands of the PC's right-click menu that make sense on a phone.
+  On a session: Open Transcript, Resume in Console, Rename Session, Pin /
+  Unpin, and Copy for its ID, transcript path and working folder. On an
+  agent: open its page, copy its name and folder. On a Console card: Resume,
+  Interrupt, End, End and Remove, Remove From List.
+
+  A command that asks something (a new name, a confirmation) asks it on the
+  phone, and what it reports is shown there; nothing opens on the PC. Copy
+  goes to the phone's own clipboard. A phone paired as read-only is told what
+  the command would need. Commands that belong to the PC (reveal in the file
+  manager, focus a terminal, read aloud, save a pack) are not listed; ending,
+  tagging and filing a session from the phone come next.
+
+- **Rows of a phone sheet are a full finger tall.** Every sheet on the phone
+  (the Menu, a row's menu, a question) drew its rows and its close button
+  36px high instead of the intended 44px. Fixed.
+
 ## 3.924.0 - Read reports, outputs and memory files from your phone (2026-10-11)
 
 - **On the phone, the files a page shows open read-only.** Since 3.923.0 a

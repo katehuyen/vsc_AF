@@ -21,7 +21,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const sb = { window: { __AFUI__: { ctxMenu: acts } }, document: {}, JSON, RegExp, String, Object, Number, setTimeout, clearTimeout };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'media', 'afMobile.js'), 'utf8'), sb);
     const M = sb.window.AFMobile;
-    ok('only page actions go to a phone (a host command runs on the PC)', acts.length > 0 && acts.every(a => a.act && a.title));
+    ok('the page actions are page actions only (a host command has its own phone verdict: test_ctx_phone.js)', acts.length > 0 && acts.every(a => a.act && a.title));
     const names = ctx => M.actionsFor(ctx).map(a => a.act);
     const clearable = names({ webviewSection: 'afNeedRow', afClearable: true, afAgentId: 'a-dev' });
     ok('a clearable Needs row offers Clear and Copy', clearable.includes('ndClear') && clearable.includes('ndCopy'));
