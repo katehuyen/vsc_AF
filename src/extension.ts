@@ -75,7 +75,7 @@ import { antigravityFacts } from './core/ruleWalk';
 import { collectEngineConfigFiles } from './core/engineConfigDiagnosis';
 import { SavedRoute } from './core/savedRoutes';
 import { collectRouteRecords, RouteSnapshot } from './core/routeRecords';
-import { describeDependent, RouteGoingIo, settleRouteRecords } from './core/routeGoing';
+import { describeDependent, RouteGoingAsk, RouteGoingIo, settleRouteRecords } from './core/routeGoing';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -24252,26 +24252,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     };
     /**
-     * X-525 (3) — the records naming a route that is leaving `leaving` engines (all of them when absent) are
-     * settled before it goes. The bridge says how with then/to; on the Engines page a person picks one answer.
-     * Returns why nothing may change, or nothing.
+     * X-525 (3) — the records naming a route are settled before it goes, before it is unmarked for an engine
+     * (`leaving`), and before a tier changes or loses its model (`retiring`). The bridge says how with then/to;
+     * on the Engines page a person picks one answer. Returns why nothing may change, or nothing.
      */
     const settleLeavingRoute = async (
-        id: string, leaving: string[] | undefined, how: { then?: string; to?: string }, askPerson: boolean
+        id: string, scope: Pick<RouteGoingAsk, 'leaving' | 'retiring'>, how: { then?: string; to?: string }, askPerson: boolean
     ): Promise<string | undefined> => {
-        let v = await settleRouteRecords({ id, leaving, ...how }, routeGoingIo);
+        let v = await settleRouteRecords({ id, ...scope, ...how }, routeGoingIo);
         if (v.needsChoice && askPerson) {
+            const keep = v.keepable ? [`Keep them on ${id}`] : [];
             const moves = v.standIns.map(s => `Move them to ${s}`);
             const del = v.dependents.some(r => r.kind === 'launch profile') ? ['Delete the saved setups'] : [];
+            const what = scope.leaving ? ` on ${scope.leaving.join(' and ')}`
+                : scope.retiring ? ` in the tier${Object.keys(scope.retiring.tiers).length === 1 ? '' : 's'} `
+                    + `${Object.keys(scope.retiring.tiers).join(', ')} this edit changes` : '';
             const pick = await vscode.window.showWarningMessage(
                 `Agent Farm: ${v.dependents.length === 1 ? 'one saved record names' : `${v.dependents.length} saved records name`} `
-                + `route "${id}"${leaving ? ` on ${leaving.join(' and ')}` : ''}. What happens to them?`,
+                + `route "${id}"${what}. What happens to them?`,
                 { modal: true, detail: v.dependents.map(describeDependent).join('\n') },
-                ...moves, 'Clear the route', ...del);
+                ...keep, ...moves, 'Clear the route', ...del);
             if (!pick) { return 'Nothing was changed.'; }
-            const choice = moves.includes(pick) ? { then: 'repoint', to: v.standIns[moves.indexOf(pick)] }
-                : { then: pick === 'Clear the route' ? 'clear' : 'delete' };
-            v = await settleRouteRecords({ id, leaving, ...choice }, routeGoingIo);
+            const choice = keep.includes(pick) ? { then: 'keep' }
+                : moves.includes(pick) ? { then: 'repoint', to: v.standIns[moves.indexOf(pick)] }
+                    : { then: pick === 'Clear the route' ? 'clear' : 'delete' };
+            v = await settleRouteRecords({ id, ...scope, ...choice }, routeGoingIo);
         }
         return v.refusal;
     };
@@ -24281,7 +24286,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ): Promise<{ refusal: string[]; credentialCollected?: boolean }> => {
         const w = removeProfile(providerProfiles(), id);
         if (w.refusal.length) { return { refusal: w.refusal }; }
-        const unsettled = await settleLeavingRoute(w.profile!.id, undefined, how, askPerson);
+        const unsettled = await settleLeavingRoute(w.profile!.id, {}, how, askPerson);
         if (unsettled) { return { refusal: [unsettled] }; }
         // ‼️ Read BEFORE the delete: afterwards the honest answer is always "no", and the caller's
         // question is whether a key was actually collected — which is the half that cannot be undone.
@@ -24295,10 +24300,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         EnginesPanel.refreshIfOpen();
         return { refusal: [], credentialCollected };
     };
-    /** X-525 (3) — the engines an edit unmarks a route for; their records are settled before it is written. */
-    const enginesLeaving = (id: string, next: { engines: readonly string[] } | undefined): string[] => {
+    /**
+     * X-525 (3) — an edit's records settled before it is written: those running the route on an engine it
+     * unticks, then those naming a tier whose model it changes or empties.
+     */
+    const settleEdit = async (
+        id: string, next: { engines: readonly string[]; tiers?: Record<string, string> } | undefined,
+        how: { then?: string; to?: string }, askPerson: boolean
+    ): Promise<string | undefined> => {
         const before = providerProfiles().find(p => p.id === id);
-        return before && next ? before.engines.filter(e => !next.engines.includes(e)) : [];
+        if (!before || !next) { return undefined; }
+        const leaving = before.engines.filter(e => !next.engines.includes(e));
+        const gone = leaving.length ? await settleLeavingRoute(id, { leaving }, how, askPerson) : undefined;
+        if (gone) { return gone; }
+        const after = { ...(next.tiers ?? {}) };
+        const tiers = Object.fromEntries(Object.entries(before.tiers ?? {})
+            .filter(([t, m]) => String(m ?? '').trim() && after[t] !== m));
+        return Object.keys(tiers).length ? settleLeavingRoute(id, { retiring: { tiers, after } }, how, askPerson) : undefined;
     };
     const providerHealthInput = async (engine: string): Promise<ProviderHealthInput> => {
         // ‼️ The engine is asked before the adapter is: on OpenCode the whole
@@ -25159,9 +25177,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? setProfile(list, id, input, engines)
                 : addProfile(list, input, engines, retiredProviderIds());
             if (w.refusal.length) { return w.refusal; }
-            // X-525 — unticking an engine settles the records running the route there first, by a person's pick.
-            const leaving = edit ? enginesLeaving(id, w.profile) : [];
-            const unsettled = leaving.length ? await settleLeavingRoute(id, leaving, {}, true) : undefined;
+            // X-525 — unticking an engine or changing a tier settles the records it touches first, by a person's pick.
+            const unsettled = edit ? await settleEdit(id, w.profile, {}, true) : undefined;
             if (unsettled) { return [unsettled]; }
             await writeProviderProfiles(w.list);
             if (ref) { await useFarmSecretForRoute(w.profile!.id, ref); }
@@ -44570,8 +44587,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the limit is kept while it is not changed), providerId?, baseUrl?, opencodeUrl?, authKind?, '
                 + 'engines?, context?, output?, tiers?, description?, secretRef? (an emptied value clears it; '
                 + 'engine is refused — use engines), then?, to? (X-525 — an engines list that drops an engine while '
-                + 'saved records run the route there is refused, the records listed, until then = repoint (with to) | '
-                + 'clear | delete settles them, exactly as providers.remove)',
+                + 'saved records run the route there, or tiers that change or empty a model saved records name, is '
+                + 'refused, the records listed, until then = repoint (with to) | clear | delete settles them, exactly as '
+                + 'providers.remove; for a tier that only changes its model then = keep leaves them on its new model)',
             handler: async (args, from) => {
                 const argBad = routeArgsRefusal(args as Record<string, unknown>);
                 need(!argBad, argBad);
@@ -44582,11 +44600,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const w = setProfile(providerProfiles(), id, args as Record<string, unknown>,
                     Object.keys(ENGINES));
                 need(!w.refusal.length, w.refusal.join(' · '));
-                // X-525 — engines narrowed: the records running the route on a dropped engine are settled first.
-                const leaving = enginesLeaving(id, w.profile);
-                const unsettled = leaving.length
-                    ? await settleLeavingRoute(id, leaving, { then: optStr(args, 'then'), to: optStr(args, 'to') }, false)
-                    : undefined;
+                // X-525 — an engine dropped or a tier changed: the records it touches are settled first.
+                const unsettled = await settleEdit(id, w.profile, { then: optStr(args, 'then'), to: optStr(args, 'to') }, false);
                 need(!unsettled, unsettled ?? '');
                 await writeProviderProfiles(w.list);
                 const bound = ref ? await bindRouteSecret(secretBindDeps, id, ref, from) : undefined;

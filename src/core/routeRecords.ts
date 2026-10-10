@@ -122,9 +122,9 @@ export type RouteThen = { kind: 'repoint'; to: string } | { kind: 'clear' } | { 
  * `delete` removes launch profiles and clears the rest — they are not setups to delete.
  */
 export function applyRouteChange(
-    s: RouteSnapshot, id: string, then: RouteThen, onEngines?: readonly string[]
+    s: RouteSnapshot, id: string, then: RouteThen, only?: (r: RouteRecord) => boolean
 ): { changed: RouteRecord[]; stores: RouteStore[] } {
-    const changed = routeDependents(id, collectRouteRecords(s)).filter(r => !onEngines || onEngines.includes(r.engine));
+    const changed = routeDependents(id, collectRouteRecords(s)).filter(r => !only || only(r));
     const to = then.kind === 'repoint' ? then.to.trim() : '';
     const dropped = new Set<object>();
     for (const r of changed) {

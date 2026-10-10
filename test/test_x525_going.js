@@ -1,7 +1,7 @@
 'use strict';
 // X-525 (3) — a route leaves (removed, or unmarked for an engine) only once the records naming it are
 // settled: refused with the list until then = repoint (to a route serving the same models) | clear | delete.
-const { routeGoingVerdict, settleRouteRecords } = require('../out/core/routeGoing.js');
+const { routeGoingVerdict, settleRouteRecords, describeDependent: describe } = require('../out/core/routeGoing.js');
 const { collectRouteRecords, routeDependents } = (() => {
     const r = require('../out/core/routeRecords.js');
     return { collectRouteRecords: r.collectRouteRecords, routeDependents: require('../out/core/savedRoutes.js').routeDependents };
@@ -26,7 +26,7 @@ const snap = () => ({
     launchProfiles: [
         { name: 'Genel Qwen3.8', providerId: 'or-qwen38', tier: 'sonnet' },
         { name: 'Qwen hızlı', providerId: 'or-qwen38', tier: 'haiku' },
-        { name: 'OC Qwen', engine: 'opencode', model: 'af-or-qwen38/qwen/qwen3.8' },
+        { name: 'OC Qwen', engine: 'opencode', model: 'af-or-qwen38/qwen/qwen3.8', tier: 'opus' },
         { name: 'Başka', providerId: 'or-nemotron' }
     ],
     lastLaunch: {}, tasks: [{ title: 'ran last night', status: 'done', providerId: 'or-qwen38', tier: 'opus' }],
@@ -78,22 +78,56 @@ const recs = s => collectRouteRecords(s);
         && /missionStore\.save\(\)/.test(io) && /batonStore\.put\(/.test(io)
         && !/\b(manifests?|transcripts?|retire\w*|turns?|costs?|routeNames?)\b/i.test(io.replace(/RouteGoingIo|routeGoingIo/g, '')));
     const settle = between('const settleLeavingRoute = async (', 'const removeRoute = async (');
-    ok('the page asks one modal question: a move per stand-in first, then clear, then delete when a profile is among them',
+    ok('the page asks one modal question: keep (a tier still filled) first, a move per stand-in, clear, delete when a profile is among them',
         /\{ modal: true, detail: v\.dependents\.map\(describeDependent\)\.join\('\\n'\) \}/.test(settle)
-        && /\.\.\.moves, 'Clear the route', \.\.\.del\)/.test(settle)
+        && /\.\.\.keep, \.\.\.moves, 'Clear the route', \.\.\.del\)/.test(settle)
+        && /const keep = v\.keepable \? \[`Keep them on \$\{id\}`\] : \[\];/.test(settle)
         && /v\.dependents\.some\(r => r\.kind === 'launch profile'\) \? \['Delete the saved setups'\] : \[\]/.test(settle)
         && /if \(!pick\) \{ return 'Nothing was changed\.'; \}/.test(settle));
-    const rm = between('const removeRoute = async (', 'const enginesLeaving = (');
+    const rm = between('const removeRoute = async (', 'const settleEdit = async (');
     ok('‼️ the records are settled before the route, its key or its verdicts are touched',
         rm.indexOf('settleLeavingRoute(') > 0 && rm.indexOf('settleLeavingRoute(') < rm.indexOf('writeProviderProfiles(')
         && rm.indexOf('if (unsettled) { return { refusal: [unsettled] }; }') < rm.indexOf('clearProviderSecret('));
+    const edit = between('const settleEdit = async (', 'const providerHealthInput = async');
+    ok('an edit settles the engines it unticks, then the tiers whose model it changes or empties',
+        /const leaving = before\.engines\.filter\(e => !next\.engines\.includes\(e\)\);/.test(edit)
+        && /\.filter\(\(\[t, m\]\) => String\(m \?\? ''\)\.trim\(\) && after\[t\] !== m\)/.test(edit)
+        && edit.indexOf('{ leaving }') < edit.indexOf('{ retiring: { tiers, after } }'));
     const set = between("op: 'providers.set'", "op: 'providers.copy'");
-    ok('providers.set settles a dropped engine\'s records before writing, with then/to',
-        set.indexOf('enginesLeaving(id, w.profile)') > 0 && set.indexOf('need(!unsettled') < set.indexOf('writeProviderProfiles(w.list)')
-        && /settleLeavingRoute\(id, leaving, \{ then: optStr\(args, 'then'\), to: optStr\(args, 'to'\) \}, false\)/.test(set));
+    ok('providers.set settles the edit\'s records before writing, with then/to',
+        /const unsettled = await settleEdit\(id, w\.profile, \{ then: optStr\(args, 'then'\), to: optStr\(args, 'to'\) \}, false\);/.test(set)
+        && set.indexOf('need(!unsettled') < set.indexOf('writeProviderProfiles(w.list)'));
     const page = between('saveProfile: async (input: Record<string, unknown>, edit: boolean)', 'routeSecretNames:');
-    ok('…and so does the page\'s edit, by a person\'s pick', page.indexOf("settleLeavingRoute(id, leaving, {}, true)") > 0
+    ok('…and so does the page\'s edit, by a person\'s pick', page.indexOf('await settleEdit(id, w.profile, {}, true)') > 0
         && page.indexOf('if (unsettled) { return [unsettled]; }') < page.indexOf('writeProviderProfiles(w.list)'));
+}
+
+/* ---------- a tier changes or loses its model */
+{
+    const after = (o) => ({ ...TIERS, ...o });
+    const changed = routeGoingVerdict({ id: 'or-qwen38', retiring: { tiers: { opus: TIERS.opus }, after: after({ opus: 'qwen/qwen3.9' }) } },
+        recs(snap()), routes());
+    ok('a tier changing its model asks about the records naming THAT tier only',
+        changed.dependents.map(describe).join('|') === 'developer (agent default)');
+    ok('‼️ …and the OpenCode record whose model another tier still serves is not one of them',
+        !changed.dependents.some(r => r.engine === 'opencode'));
+    ok('…keep is an answer while the tier is still filled, and named in the refusal', changed.keepable === true
+        && /then=keep \(they run on the tier's new model\)/.test(changed.refusal));
+    ok('…a stand-in only needs the old model in the changing tier', changed.standIns.includes('qwen-claude-only')
+        && !changed.standIns.includes('same-vendor'));
+    const keep = routeGoingVerdict({ id: 'or-qwen38', then: 'keep', retiring: { tiers: { opus: TIERS.opus }, after: after({ opus: 'qwen/qwen3.9' }) } },
+        recs(snap()), routes());
+    ok('then=keep is accepted there', !keep.refusal && keep.then.kind === 'keep');
+    const emptied = { tiers: { haiku: TIERS.haiku }, after: { opus: TIERS.opus, sonnet: TIERS.sonnet } };
+    const em = routeGoingVerdict({ id: 'or-qwen38', retiring: emptied }, recs(snap()), routes());
+    ok('an emptied tier cannot be kept', em.dependents.map(describe).join('|') === 'Qwen hızlı (launch profile)' && !em.keepable
+        && !/then=keep/.test(em.refusal)
+        && /not "keep"/.test(routeGoingVerdict({ id: 'or-qwen38', then: 'keep', retiring: emptied }, recs(snap()), routes()).refusal));
+    ok('‼️ …and a route holding the same model in that tier may stand in, whatever else it serves', em.standIns.includes('same-vendor'));
+    const both = { tiers: { opus: TIERS.opus, sonnet: TIERS.sonnet }, after: after({ opus: 'x', sonnet: 'y' }) };
+    const oc = routeGoingVerdict({ id: 'or-qwen38', retiring: both }, recs(snap()), routes());
+    ok('an OpenCode record naming a model the route no longer serves at all is a dependent, and cannot be kept',
+        oc.dependents.some(r => r.label === 'OC Qwen') && !oc.keepable);
 }
 
 /* ---------- settling writes the stores it touched, and only after an answer */
@@ -136,6 +170,18 @@ const io = (s) => {
         await settleRouteRecords({ id: 'or-qwen38', then: 'clear', leaving: ['opencode'] }, x);
         ok('unmarking one engine settles only that engine\'s records', !('model' in s.launchProfiles[2])
             && s.launchProfiles[0].providerId === 'or-qwen38' && s.agentDefaults['d:/a/dev'].claude.providerId === 'or-qwen38');
+    }
+    {
+        const s = snap();
+        const { writes, io: x } = io(s);
+        const before = JSON.stringify(s);
+        const opus = { tiers: { opus: TIERS.opus }, after: { ...TIERS, opus: 'qwen/qwen3.9' } };
+        await settleRouteRecords({ id: 'or-qwen38', then: 'keep', retiring: opus }, x);
+        ok('then=keep writes nothing — the tier keeps its name, the route its records', writes.length === 0 && JSON.stringify(s) === before);
+        await settleRouteRecords({ id: 'or-qwen38', then: 'repoint', to: 'qwen-claude-only', retiring: opus }, x);
+        ok('a tier\'s repoint moves only the records naming that tier', s.agentDefaults['d:/a/dev'].claude.providerId === 'qwen-claude-only'
+            && s.launchProfiles[0].providerId === 'or-qwen38' && s.launchProfiles[1].providerId === 'or-qwen38'
+            && writes.join(',') === 'agentDefaults');
     }
     console.log(`test_x525_going: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
