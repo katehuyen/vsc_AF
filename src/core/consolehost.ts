@@ -2688,6 +2688,18 @@ export class ConsoleHost {
                 }));
                 return true;
             }
+            // X-519 — measured: a pick made while the card's OpenCode session is still opening reached no
+            // connection and was dropped; it becomes the card's model, which the opening applies (openShared).
+            if (!h.opencode?.options.length) {
+                this.mutate(id, s => ({
+                    ...s, model: want, lastTs: Date.now(),
+                    messages: [...s.messages, {
+                        id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                        text: `model will be "${want}" once this card's OpenCode session has opened`
+                    }]
+                }));
+                return true;
+            }
             void this.applyOpencodeConfig(id, { model: want }, false);
             return true;
         }

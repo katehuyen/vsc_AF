@@ -318,6 +318,20 @@ const rows = (s, role) => s.messages.filter(m => m.role === role);
         host.dispose();
     }
 
+    // ---------- X-519: a pick made while the session is still opening is not lost ----------
+    {
+        const io = fakeRuntimeIo();
+        const host = new ConsoleHost(() => 'claude', undefined, undefined, undefined, undefined, io);
+        const id = host.start(init({}));
+        host.setModel(id, 'opencode/nemotron-3.5-lightning-free');
+        ok('the card says the pick waits for its session', rows(host.get(id), 'system').some(m => /once this card's OpenCode session has opened/.test(m.text || '')));
+        await settle();
+        const cfg = io.children[0].sent('session/set_config_option').filter(f => f.params.configId === 'model').pop();
+        ok('‼️ measured live: a pick made before session/new answered was dropped — now the opening applies it',
+            !!cfg && cfg.params.value === 'opencode/nemotron-3.5-lightning-free' && host.get(id).model === 'opencode/nemotron-3.5-lightning-free');
+        host.dispose();
+    }
+
     // ---------- the pickers: live, but only at a turn boundary ----------
     {
         const io = fakeRuntimeIo();
