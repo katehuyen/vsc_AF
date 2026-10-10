@@ -1279,12 +1279,12 @@
             border-color:var(--vscode-widget-border,#4446); }
         .acbad.warn { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000);
             border-color:transparent; }
-        .acbad.bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff;
+        .acbad.bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:var(--af-on-fill, #000);
             border-color:transparent; }
         /* X-282 — one account filed twice: its own badge, not a verdict, so the
            verdict count stays one per card */
         .acdup { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
-            background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff; cursor:help; }
+            background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:var(--af-on-fill, #000); cursor:help; }
         .acuuid { font-family:var(--vscode-editor-font-family,monospace); }
         /* X-219 — the one control that answers that badge wears the badge's
            colour: a dead sign-in and its remedy are one fact, said twice. */
@@ -1307,7 +1307,7 @@
             color:var(--vscode-button-secondaryForeground,#ccc);
             transition:background .12s ease, border-color .12s ease; }
         .acsel:hover { border-color:var(--vscode-focusBorder,#3794ff); }
-        .acsel.on { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
+        .acsel.on { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:var(--af-on-fill, #000);
             border-color:transparent; }
         /* ‼️ X-206 — the refresh button IS the queue indicator. A second
            badge beside it would say the same thing twice and take the
@@ -1325,7 +1325,7 @@
            already made, this is not done yet" state on the page */
         .acref.queued { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000);
             border-color:transparent; font-weight:600; }
-        .acref.reading { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
+        .acref.reading { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:var(--af-on-fill, #000);
             border-color:transparent; animation:acspin 1.1s linear infinite; }
         @keyframes acspin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
         .acgrp { display:flex; align-items:center; gap:8px; margin:12px 0 5px;

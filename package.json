@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.913.0",
+  "version": "3.914.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9284,7 +9284,7 @@
         "agentFarm.contextWindowTokens": {
           "type": "number",
           "default": 0,
-          "description": "The context window every \"Context now\" figure is measured against: the session viewer's gauge and the Ctx column's hover. 0 = the window the engine itself states (Codex reports one per turn), else the Context of the route the session runs on, else the model's known one; with none of them, the raw token count shows without a percent."
+          "description": "The context window every \"Context now\" figure and the handover thresholds are measured against. 0 = the engine's own window (Codex reports one per turn), else the Context of the session's route, else the model's known one; with none, the raw token count shows with no percent."
         },
         "agentFarm.contextConvergePct": {
           "type": "number",

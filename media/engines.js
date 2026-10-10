@@ -509,7 +509,7 @@
                 .engname { font-weight:600; font-size:14px; }
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
                     cursor:help; border:1px solid var(--vscode-widget-border,#4446); }
-                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
+                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:var(--af-on-fill, #000); border-color:transparent; }
                 .engbadge.b-warn { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 /* ‼️ X-172 — the sign-in chip. Quieter than the state badge beside
                    it on purpose: the badge answers "can this run at all", which is
@@ -570,8 +570,8 @@
                 /* ‼️ THE TWO SIDES ARE NOT GOOD AND BAD. Neither owner is the
                    error state — the whole point is that each is right for its
                    own engine — so they read as two categories, not a verdict. */
-                .poown.o-af { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; border-color:transparent; }
-                .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:#fff; border-color:transparent; }
+                .poown.o-af { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:var(--af-on-fill, #000); border-color:transparent; }
+                .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:var(--af-on-fill, #000); border-color:transparent; }
                 /* High Contrast draws a chip by its edge (theme.css): white on the chart hue fell below its contrast */
                 body.vscode-high-contrast .poown { background:transparent; color:var(--vscode-foreground); box-shadow:var(--af-hc-ring, none); }
                 .powhy { opacity:.5; }
@@ -583,7 +583,7 @@
                     padding:8px 11px; margin-bottom:8px; }
                 .pokey { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help; white-space:nowrap;
                     border:1px solid var(--vscode-widget-border,#4446); }
-                .pokey.k-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
+                .pokey.k-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:var(--af-on-fill, #000); border-color:transparent; }
                 /* "no key" is the step you are ON, not a failure — the same
                    reading the ⊘ verdict row above gets. */
                 .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
@@ -598,14 +598,14 @@
                 .pohchip { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help;
                     white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
                 .pohchip.h-cfg { opacity:calc(1 - .25 * var(--af-dimk, 1)); }
-                .pohchip.h-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
-                .pohchip.h-no { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:#fff; border-color:transparent; }
+                .pohchip.h-yes { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:var(--af-on-fill, #000); border-color:transparent; }
+                .pohchip.h-no { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:var(--af-on-fill, #000); border-color:transparent; }
                 /* unknown is an ANSWER, so it is drawn rather than left blank --
                    and it is not amber: nothing is wrong, nothing was read. */
                 .pohchip.h-un { opacity:calc(1 - .4 * var(--af-dimk, 1)); font-style:italic; }
                 .pohchip.h-none { opacity:calc(1 - .45 * var(--af-dimk, 1)); }
-                .pohchip.h-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; border-color:transparent; }
-                .pohchip.h-bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:#fff; border-color:transparent; }
+                .pohchip.h-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:var(--af-on-fill, #000); border-color:transparent; }
+                .pohchip.h-bad { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f85149)); color:var(--af-on-fill, #000); border-color:transparent; }
                 /* nothing was called: the user's move, not a failure -- the same
                    yellow "no key" wears above. */
                 .pohchip.h-held { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }

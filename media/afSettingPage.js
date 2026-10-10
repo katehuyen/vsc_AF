@@ -183,8 +183,7 @@
                 .setitem.eng-off { border-left-color:var(--vscode-descriptionForeground, #888); }
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap; cursor:help;
                     border:1px solid var(--vscode-widget-border, #4446); }
-                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); color:var(--vscode-editor-background, #1e1e1e); border-color:transparent; }
-                body.vscode-light .engbadge.b-ok, body.vscode-high-contrast-light .engbadge.b-ok { color:#fff; }
+                .engbadge.b-ok { background:var(--af-ink-charts-green, var(--vscode-charts-green, #3fb950)); color:var(--af-on-fill, #000); border-color:transparent; }
                 .engbadge.b-warn { background:var(--vscode-charts-yellow, #d7ba7d); color:var(--af-on-charts-yellow, #000); border-color:transparent; }
                 .engnext { font-size:12px; margin-top:4px; max-width:760px; }
                 .engdetail { margin-top:2px; }

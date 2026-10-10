@@ -4,41 +4,53 @@
    4,
    9
   ],
-  "accounts": [
-   67,
-   27
-  ],
   "a2atasks": [
    47,
    24
   ],
-  "airtable": [
-   10,
-   15
+  "accounts": [
+   49,
+   27
   ],
   "agentdetail": [
    12,
    1
   ],
-  "analysis": [
-   18,
-   37
+  "airtable": [
+   10,
+   15
   ],
   "alertsettings": [
    9,
    0
   ],
+  "allsettings": [
+   15,
+   0
+  ],
+  "analysis": [
+   18,
+   37
+  ],
+  "backlog": [
+   66,
+   122
+  ],
   "capabilities": [
    44,
    0
   ],
-  "backlog": [
-   109,
-   122
+  "cardsettings": [
+   0,
+   0
   ],
   "chains": [
    102,
    1
+  ],
+  "console": [
+   446,
+   535
   ],
   "dashboard": [
    13,
@@ -47,10 +59,6 @@
   "dashboard_phone": [
    13,
    8
-  ],
-  "console": [
-   446,
-   535
   ],
   "disciplinesettings": [
    9,
@@ -61,124 +69,136 @@
    0
   ],
   "enginespanel": [
-   417,
+   219,
    170
   ],
   "evals": [
    13,
    0
   ],
-  "jsonsettings": [
-   16,
-   0
-  ],
   "flowsettings": [
    6,
    0
   ],
-  "living": [
-   9,
+  "jsonsettings": [
+   16,
    0
   ],
   "kapicisettings": [
    24,
    0
   ],
+  "living": [
+   9,
+   0
+  ],
   "memgraph": [
    11,
    0
-  ],
-  "needs": [
-   14,
-   0
-  ],
-  "missions_phone": [
-   80,
-   137
   ],
   "missions": [
    80,
    137
   ],
-  "notices_phone": [
-   6,
+  "missions_phone": [
+   80,
+   137
+  ],
+  "needs": [
+   14,
    0
   ],
   "notices": [
    6,
    2
   ],
-  "parts": [
-   11,
-   48
+  "notices_phone": [
+   6,
+   0
   ],
   "now": [
    6,
    0
   ],
-  "portfolio": [
-   4,
-   3
+  "parts": [
+   11,
+   48
+  ],
+  "picksettings": [
+   0,
+   0
   ],
   "planusage": [
    75,
    16
   ],
-  "queue": [
-   0,
-   11
+  "portfolio": [
+   4,
+   3
   ],
   "projects": [
    7,
    26
   ],
-  "search": [
-   23,
-   86
+  "queue": [
+   0,
+   11
   ],
   "queue_phone": [
    0,
    18
   ],
-  "selection": [
-   1,
-   6
+  "search": [
+   23,
+   86
   ],
   "secrets": [
    5,
    7
   ],
+  "selection": [
+   1,
+   6
+  ],
   "sentrysettings": [
    36,
+   0
+  ],
+  "sessions": [
+   47,
    0
   ],
   "sessionviewer": [
    78,
    62
   ],
-  "sessions": [
-   47,
+  "sessionviewer_phone": [
+   68,
+   54
+  ],
+  "settingsfold": [
+   0,
    0
   ],
   "sound": [
    85,
    33
   ],
-  "sessionviewer_phone": [
-   68,
-   54
+  "spsettings": [
+   11,
+   1
   ],
   "studio": [
    0,
    14
   ],
-  "spsettings": [
-   11,
-   1
-  ],
   "taskanalytics": [
    11,
    1
+  ],
+  "tasks": [
+   169,
+   247
   ],
   "templates": [
    6,
@@ -197,7 +217,7 @@
    49
   ],
   "track": [
-   50,
+   27,
    124
   ],
   "turns": [
@@ -215,14 +235,6 @@
   "work": [
    8,
    26
-  ],
-  "tasks": [
-   169,
-   247
-  ],
-  "allsettings": [
-   15,
-   0
   ]
  },
  "hc-light": {
@@ -230,41 +242,53 @@
    12,
    7
   ],
-  "accounts": [
-   32,
-   6
-  ],
   "a2atasks": [
    34,
    12
   ],
-  "airtable": [
-   10,
-   15
+  "accounts": [
+   32,
+   6
   ],
   "agentdetail": [
    12,
    14
   ],
-  "analysis": [
-   1,
-   41
+  "airtable": [
+   10,
+   15
   ],
   "alertsettings": [
    9,
    0
   ],
+  "allsettings": [
+   23,
+   0
+  ],
+  "analysis": [
+   1,
+   41
+  ],
+  "backlog": [
+   77,
+   122
+  ],
   "capabilities": [
    48,
    2
   ],
-  "backlog": [
-   81,
-   122
+  "cardsettings": [
+   0,
+   0
   ],
   "chains": [
    0,
    0
+  ],
+  "console": [
+   852,
+   623
   ],
   "dashboard": [
    3,
@@ -273,10 +297,6 @@
   "dashboard_phone": [
    3,
    7
-  ],
-  "console": [
-   852,
-   623
   ],
   "disciplinesettings": [
    9,
@@ -294,117 +314,129 @@
    13,
    0
   ],
-  "jsonsettings": [
-   34,
-   0
-  ],
   "flowsettings": [
    6,
    0
   ],
-  "living": [
-   18,
+  "jsonsettings": [
+   34,
    0
   ],
   "kapicisettings": [
    24,
    0
   ],
+  "living": [
+   18,
+   0
+  ],
   "memgraph": [
    0,
    0
-  ],
-  "needs": [
-   14,
-   0
-  ],
-  "missions_phone": [
-   132,
-   63
   ],
   "missions": [
    132,
    63
   ],
-  "notices_phone": [
-   13,
+  "missions_phone": [
+   132,
+   63
+  ],
+  "needs": [
+   14,
    0
   ],
   "notices": [
    15,
    0
   ],
-  "parts": [
-   16,
-   52
+  "notices_phone": [
+   13,
+   0
   ],
   "now": [
    6,
    0
   ],
-  "portfolio": [
-   13,
-   19
+  "parts": [
+   16,
+   52
+  ],
+  "picksettings": [
+   0,
+   0
   ],
   "planusage": [
    8,
    24
   ],
-  "queue": [
-   2,
-   1
+  "portfolio": [
+   13,
+   19
   ],
   "projects": [
    10,
    26
   ],
-  "search": [
-   23,
-   120
+  "queue": [
+   2,
+   1
   ],
   "queue_phone": [
    3,
    1
   ],
-  "selection": [
-   1,
-   0
+  "search": [
+   23,
+   120
   ],
   "secrets": [
    40,
    7
   ],
+  "selection": [
+   1,
+   0
+  ],
   "sentrysettings": [
    50,
    0
-  ],
-  "sessionviewer": [
-   30,
-   32
   ],
   "sessions": [
    0,
    108
   ],
-  "sound": [
-   13,
-   28
+  "sessionviewer": [
+   30,
+   32
   ],
   "sessionviewer_phone": [
    28,
    28
   ],
-  "studio": [
+  "settingsfold": [
    0,
-   9
+   0
+  ],
+  "sound": [
+   13,
+   28
   ],
   "spsettings": [
    11,
    1
   ],
+  "studio": [
+   0,
+   9
+  ],
   "taskanalytics": [
    10,
    3
+  ],
+  "tasks": [
+   247,
+   248
   ],
   "templates": [
    3,
@@ -423,7 +455,7 @@
    55
   ],
   "track": [
-   65,
+   60,
    142
   ],
   "turns": [
@@ -441,14 +473,6 @@
   "work": [
    0,
    26
-  ],
-  "tasks": [
-   247,
-   248
-  ],
-  "allsettings": [
-   23,
-   0
   ]
  }
 }

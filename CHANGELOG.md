@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.914.0 - Chips and badges read in every theme (2026-10-10)
+
+- **A coloured chip's text is no longer white on a light colour.** In a dark
+  theme the green, cyan, blue, purple, orange and red fills are light colours,
+  and the white text on them could hardly be read. The text on such a fill is
+  now dark there, and white only where the fill itself is dark (the light
+  themes). It covers the state, key, owner and route-health chips on the
+  Engines page, the standing account, the duplicate and sign-in badges and
+  the refresh button on Accounts, the work-type chips in the Backlog and on
+  Track, and Track's "doing" mark.
+- **The same holds in High Contrast and on the phone.** High Contrast Dark
+  draws the chips with dark text too, on an orange it can be read on; the
+  phone in the dark, which gets no VS Code colours, draws the same dark text
+  on its own colours.
+- **The light theme's security chip is readable.** Its cyan fill was too
+  light for white text; it is now the darker ink of the same hue, in the
+  Backlog and on Track, and Track's work-type chips take the inks the
+  Backlog's already had.
+- **The Context window setting says what it governs.** Its description now
+  names the handover thresholds as well as every "Context now" figure.
+- **Held by a test.** Every text-on-fill pair is computed against its fill in
+  each theme kind and must reach 4.5:1; a literal white text colour no longer
+  passes.
+
 ## 3.913.0 - A route's context window reaches Claude Code and the context meter (2026-10-10)
 
 - **Claude Code is told the window of a route's models.** When a route

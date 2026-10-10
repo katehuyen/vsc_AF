@@ -1875,7 +1875,7 @@
                 .pj-trk-ev.e-cancelled { opacity:.9; color:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c));
                     border-color:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 50%, transparent);
                     background:color-mix(in srgb, var(--vscode-charts-red,#f14c4c) 9%, transparent); }
-                .pj-trk-ev.e-doing { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff;
+                .pj-trk-ev.e-doing { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:var(--af-on-fill, #000);
                     border-color:transparent; opacity:1; }
                 .pj-trk-ev.e-reopen { background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000);
                     border-color:transparent; opacity:1; }
@@ -1893,13 +1893,13 @@
                    it once should not have to learn it twice. Everything else
                    here is the track's own axis (see above). */
                 .pj-trk-kind { font-size:10px; padding:0 5px; border-radius:8px; white-space:nowrap;
-                    opacity:.9; color:#fff; }
-                .pj-trk-kind.t-bug { background:var(--vscode-charts-red,#f14c4c); }
-                .pj-trk-kind.t-feat { background:var(--vscode-charts-blue,#3794ff); }
-                .pj-trk-kind.t-ux { background:var(--vscode-charts-green,#3fb950); }
-                .pj-trk-kind.t-research { background:var(--vscode-charts-purple,#b180d7); }
-                .pj-trk-kind.t-perf { background:var(--vscode-charts-orange,#d18616); }
-                .pj-trk-kind.t-secu { background:var(--vscode-terminal-ansiCyan,#11a8cd); }
+                    opacity:.9; }
+                .pj-trk-kind.t-bug { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:var(--af-on-fill, #000); }
+                .pj-trk-kind.t-feat { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:var(--af-on-fill, #000); }
+                .pj-trk-kind.t-ux { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:var(--af-on-fill, #000); }
+                .pj-trk-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:var(--af-on-fill, #000); }
+                .pj-trk-kind.t-perf { background:var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616)); color:var(--af-on-fill, #000); }
+                .pj-trk-kind.t-secu { background:var(--af-ink-terminal-ansiCyan, var(--vscode-terminal-ansiCyan,#11a8cd)); color:var(--af-on-fill, #000); }
                 .pj-trk-kind.t-chore, .pj-trk-kind.t-debt, .pj-trk-kind.t-doc, .pj-trk-kind.t-idea {
                     background:none; color:inherit; opacity:.7;
                     border:1px solid var(--vscode-widget-border,#4443); }
@@ -2628,12 +2628,12 @@
                 /* The work type is an axis, not decoration: it gets a colour so a
                    list of two hundred rows can be read by shape, and the same
                    colour on the filter chip so the two are obviously one thing. */
-                .pj-bl-kind.t-bug { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:#fff; }
-                .pj-bl-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:#fff; }
-                .pj-bl-kind.t-feat { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; }
-                .pj-bl-kind.t-ux { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:#fff; }
-                .pj-bl-kind.t-perf { background:var(--af-fill-charts-orange, var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616))); color:#fff; }
-                .pj-bl-kind.t-secu { background:var(--vscode-terminal-ansiCyan,#11a8cd); color:#fff; }
+                .pj-bl-kind.t-bug { background:var(--af-ink-charts-red, var(--vscode-charts-red,#f14c4c)); color:var(--af-on-fill, #000); }
+                .pj-bl-kind.t-research { background:var(--vscode-charts-purple,#b180d7); color:var(--af-on-fill, #000); }
+                .pj-bl-kind.t-feat { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:var(--af-on-fill, #000); }
+                .pj-bl-kind.t-ux { background:var(--af-ink-charts-green, var(--vscode-charts-green,#3fb950)); color:var(--af-on-fill, #000); }
+                .pj-bl-kind.t-perf { background:var(--af-ink-charts-orange, var(--vscode-charts-orange,#d18616)); color:var(--af-on-fill, #000); }
+                .pj-bl-kind.t-secu { background:var(--af-ink-terminal-ansiCyan, var(--vscode-terminal-ansiCyan,#11a8cd)); color:var(--af-on-fill, #000); }
                 .pj-bl-kind.t-chore, .pj-bl-kind.t-debt, .pj-bl-kind.t-doc, .pj-bl-kind.t-idea {
                     background:var(--vscode-charts-yellow,#d7ba7d); color:var(--af-on-charts-yellow, #000); }
                 .pj-bl-kind.settable { cursor:pointer; border:none; font-family:inherit; }

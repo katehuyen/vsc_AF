@@ -27,9 +27,16 @@ body.vscode-light, body.vscode-high-contrast-light {
     --af-ink-testing-iconPassed: color-mix(in srgb, var(--vscode-testing-iconPassed) 35%, var(--vscode-editor-foreground));
     --af-ink-testing-iconQueued: color-mix(in srgb, var(--vscode-testing-iconQueued) 40%, var(--vscode-editor-foreground));
     --af-ink-inputValidation-warningBorder: color-mix(in srgb, var(--vscode-inputValidation-warningBorder) 50%, var(--vscode-editor-foreground));
+    --af-ink-terminal-ansiCyan: color-mix(in srgb, var(--vscode-terminal-ansiCyan) 60%, var(--vscode-editor-foreground));
     /* a hue the user picked by hand has no VS Code variable: its ink mixes the literal itself */
     --af-ink-opencode: color-mix(in srgb, rgb(60, 135, 255) 50%, var(--vscode-editor-foreground));
 }
+
+/* Text on a hue fill (a chip, a badge, a selected pill) is written color: var(--af-on-fill, #000). A dark
+   theme's chart hue is a light colour, so the text on it is black, the same black the yellow chips wear:
+   white there reads 1.8:1 on the green. A light theme fills with the hue's ink, a dark colour, and the
+   text on it is white (test_on_fill.js holds every such pair to 4.5:1 in every theme kind). */
+body.vscode-light, body.vscode-high-contrast-light { --af-on-fill: #fff; }
 
 /* High contrast (hc-light carries the class too) sets no button fill and no selection fill: a control
    is drawn by its edge, focus by VS Code's own solid line, and a selected item by the active-border ring
@@ -45,11 +52,10 @@ body.vscode-high-contrast {
 }
 
 /* High Contrast's dark kind keeps one chart hue too dark to read on its black ground: its ink is the light
-   rule mirrored, the hue mixed toward the editor's text colour (white there). A fill under white text keeps
-   the hue itself (--af-fill-X), since lightening it would cost the white text instead. */
+   rule mirrored, the hue mixed toward the editor's text colour (white there). A fill takes that ink too:
+   the text on a fill is black there, and black on the hue itself reads 4.2:1. */
 body.vscode-high-contrast:not(.vscode-high-contrast-light) {
     --af-ink-charts-orange: color-mix(in srgb, var(--vscode-charts-orange) 75%, var(--vscode-editor-foreground));
-    --af-fill-charts-orange: var(--vscode-charts-orange);
 }
 
 /* High Contrast's light kind turns two grounds VS Code fills elsewhere: its yellow is dark, so the black text

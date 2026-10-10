@@ -951,7 +951,7 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   `auto` margin is involved — and the one to add first is the SMALLEST, because
   the rich scene is the one somebody already built to demo the feature.
 - **Check the light theme too** (`--light`). `color-mix` over a dark fallback
-  and `color:#fff` on a chip are the two that fail there and only there.
+  is the one that fails there and only there.
 - **‼️ A value that must differ by theme goes through the theme layer
   (`media/theme.css`, U-237) — never a `body.vscode-light .x { … }` override.**
   The layer only sets `--af-*` variables under a body theme class; the page
@@ -968,7 +968,17 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   mixed toward `--vscode-editor-foreground` (always dark in a light theme;
   `--vscode-foreground` is a light grey in Light+). Borders and fills keep the
   hue; a tone variable that is also a text colour (`--af-engc`, `--ch-tone`)
-  is wrapped where it is defined, so the tone stays one hue. A colour the user
+  is wrapped where it is defined, so the tone stays one hue. **Text on a hue
+  FILL (a chip, a badge, a selected pill) is `color: var(--af-on-fill, #000)`,
+  in the same rule as its fill — never a literal white (A-29):** a dark theme's
+  chart hue is a LIGHT colour (white on the green read 1.8:1, on the cyan
+  2.4:1), so the text is black there, the black the yellow chips wear; light
+  turns it white and fills with the hue's ink
+  (`background: var(--af-ink-X, var(--vscode-X, …))`). `test_on_fill.js`
+  refuses a literal white text colour and computes every such pair to 4.5:1 in
+  the four theme kinds and with no variable at all (the phone in the dark),
+  the rule's own opacity included — no browser, so the dark theme is held too.
+  A colour the user
   picked by hand is re-inked only with their yes; OpenCode's badge has it, and
   having no VS Code variable its ink mixes the literal itself
   (`var(--af-ink-opencode, rgb(…))`, the same literal in the layer).
@@ -994,8 +1004,8 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   other rule gives that element a box-shadow, or the `none` fallback erases it
   in dark. High Contrast Light is a light ground: every light rule names
   `body.vscode-high-contrast-light` beside `body.vscode-light`. The dark kind
-  mirrors an ink toward white where its own chart hue is too dark to read; a
-  fill under white text then keeps the hue (`--af-fill-X`).
+  mirrors an ink toward white where its own chart hue is too dark to read, and
+  a fill takes that ink too — the text on a fill is black there.
   `test_theme_audit_hc.js` holds both kinds to `themeaudit.hc.manifest.json`,
   `[low texts, lost edges]` per page — a LOST EDGE is a box the dark theme draws
   (a fill or a line) whose edge there is below 3:1 (WCAG 1.4.11; a disabled
