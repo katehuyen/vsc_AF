@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.911.0 - One route form for Claude Code and OpenCode (2026-10-10)
+
+- **A route is added once for both engines.** The route form on the Engines
+  page has a box for each engine - Claude Code and OpenCode - and a new
+  route serves both. An engine that cannot run the route yet says why
+  beside its box (OpenCode needs an address and at least one model).
+- **Start from a known service.** Pick Kimi, MiniMax, OpenRouter or an
+  Anthropic API key and the form fills the address, the key kind and an id;
+  you add the model and pick the Farm Secret it signs in with, all in the
+  same form. OpenRouter is new among them.
+- **The form says what is wrong before you save.** An address ending in
+  /v1 is pointed out with the corrected one a press away; a model name that
+  could not go on a command line is named by its tier.
+- **New boxes:** Context and Output (the models' context window and longest
+  answer - OpenCode uses them when both are filled) and, under Advanced, a
+  separate OpenCode address for a service that gives OpenCode another one.
+- **A route's card shows each engine it serves,** with what a test turn
+  proved there and its own Test button - a pass on Claude Code says nothing
+  about OpenCode, so each has its own.
+- **OpenCode's own providers and the routes Agent Farm lends it are shown
+  apart** in Route health and in the ownership table.
+- **A background OpenCode task's session is filed as the task's.** It could
+  be listed as a conversation you had started yourself when other OpenCode
+  runs shared its folder and minute.
+
 ## 3.910.0 - A route test names the service's own limit; an OS-window run ends (2026-10-10)
 
 - **Test route says whose limit it was.** When the service behind a route

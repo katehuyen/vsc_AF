@@ -162,8 +162,12 @@ try {
 // ---- the host publishes it -----------------------------------------------------
 {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    // X-533 — the chain is one rule now, src/core/runDeclaredSession.ts
+    const { runDeclaredSession } = require(path.join(ROOT, 'out', 'core', 'runDeclaredSession.js'));
     ok('‼️ the launch binding the host publishes carries the declared spawn id',
-        /sessionId:\s*t\.resumeSessionId\s*\|\|\s*t\.hostedSessionId\s*\|\|\s*t\.spawnSessionId/.test(src));
+        /sessionId:\s*runDeclaredSession\(t\),/.test(src)
+        && runDeclaredSession({ engine: 'claude', spawnSessionId: 'S' }) === 'S'
+        && runDeclaredSession({ engine: 'claude', hostedSessionId: 'H', spawnSessionId: 'S' }) === 'H');
 }
 
 console.log(`test_task_session_id: ${pass} passed, ${fail} failed`);

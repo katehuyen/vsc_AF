@@ -573,7 +573,7 @@
                 .poown.o-af { background:var(--af-ink-charts-blue, var(--vscode-charts-blue,#3794ff)); color:#fff; border-color:transparent; }
                 .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:#fff; border-color:transparent; }
                 /* High Contrast draws a chip by its edge (theme.css): white on the chart hue fell below its contrast */
-                body.vscode-high-contrast .poown { background:transparent; color:var(--vscode-foreground); box-shadow:var(--af-hc-ring); }
+                body.vscode-high-contrast .poown { background:transparent; color:var(--vscode-foreground); box-shadow:var(--af-hc-ring, none); }
                 .powhy { opacity:.5; }
                 /* the two that hold a URL and a tier map need to show what was
                    typed, or the box is a place to lose your own text in */

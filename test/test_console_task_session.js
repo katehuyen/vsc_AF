@@ -18,9 +18,12 @@ const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), '
 const body = (from, len) => { const i = ext.indexOf(from); return i < 0 ? '' : ext.slice(i, i + len); };
 
 const bind = body('const publishLaunchBindings = (): void => {', 12000);
+// X-533 — the chain is one rule now, src/core/runDeclaredSession.ts
+const declared = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'runDeclaredSession.ts'), 'utf8');
 ok('the launch binding declares the engine\'s id — never the card\'s',
-    /sessionId: t\.resumeSessionId \|\| t\.hostedSessionId \|\| t\.spawnSessionId,/.test(bind)
-    && !/sessionId: [^\n]*consoleSessionId/.test(bind));
+    /sessionId: runDeclaredSession\(t\),/.test(bind)
+    && /return t\.resumeSessionId \|\| t\.hostedSessionId \|\| t\.spawnSessionId \|\| published \|\| undefined;/.test(declared)
+    && !/consoleSessionId/.test(declared) && !/sessionId: [^\n]*consoleSessionId/.test(bind));
 
 const sound = body('const applyFinishSounds = (): void => {', 1500);
 ok('the finish sound and the mute are written onto the engine\'s id',
