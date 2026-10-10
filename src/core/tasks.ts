@@ -1954,7 +1954,7 @@ export interface TaskManagerOptions {
          * this signature.
          */
         route?: { providerId?: string; tier?: string; pinned?: boolean; model?: string }
-    ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string } } | undefined;
+    ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string }; refusal?: string } | undefined;
     /**
      * ‼️ X-109 — WHICH ROUTE A TASK THAT CONTINUES A CONVERSATION RUNS ON,
      * as an ANSWER from the side that holds the launch manifests and the
@@ -4076,8 +4076,10 @@ export class TaskManager implements vscode.Disposable {
         // X-517 — the model too: on OpenCode a model alone can name a lent route.
         const gone = (named || task.model) && this.opts.routeRefusal?.(
             engineOf(task.engine).id, named?.providerId ?? '', named?.tier ?? '', task.model ?? '');
-        if (gone) {
-            const why = `the route it names cannot be run on now: ${gone} Point the task at a route `
+        // X-525 — and the agent's own route when the task names none: a gone one would leave the run on the shell's.
+        const standing = !gone && this.opts.engineRuntime?.(agent.id, engineOf(task.engine).id, this.spawnRouteOf(task))?.refusal;
+        if (gone || standing) {
+            const why = standing || `the route it names cannot be run on now: ${gone} Point the task at a route `
                 + 'that exists, or clear its route to run on the agent\'s own.';
             void vscode.window.showWarningMessage(`Agent Farm: "${task.title}" did not start — ${why}`);
             task.status = 'failed';

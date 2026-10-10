@@ -59,6 +59,7 @@ const { ConsoleHost } = require(path.join(ROOT, 'out', 'core', 'consolehost.js')
 const asked = [];
 const engineRuntime = (agentId, engine, route) => {
     asked.push({ agentId, engine, route });
+    if (route && route.providerId === 'gone') { return { refusal: 'the route this launch names cannot be run on: "gone" is not a route claude can be pointed at' }; }
     if (route && route.providerId === 'kimi') {
         return {
             spawnEnv: { ANTHROPIC_BASE_URL: 'https://api.moonshot.ai/anthropic', ANTHROPIC_API_KEY: 'sk-af-K' },
@@ -123,6 +124,17 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
     ok('the runtime was still asked, with an empty route',
         asked.length === 1 && asked[0].route
         && !asked[0].route.providerId && !asked[0].route.tier);
+}
+
+// ------------------- X-525 — a card whose route cannot be run on is refused
+{
+    spawns.length = 0; asked.length = 0;
+    const h = host();
+    const id = h.start({ agentId: 'a-dev', agentName: 'developer', cwd: 'D:\\repo', engine: 'claude', providerId: 'gone' });
+    const st = h.get(id);
+    ok('‼️ X-525 — nothing is spawned on a route that cannot be run on', spawns.length === 0);
+    ok('…the card stands in error saying why', !!st && st.status === 'error'
+        && st.messages.some(m => m.role === 'error' && /"gone" is not a route/.test(m.text)));
 }
 
 // ------------------------------------- 3. a build with no runtime at all

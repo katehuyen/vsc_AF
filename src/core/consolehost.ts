@@ -586,7 +586,7 @@ export class ConsoleHost {
              *  agent's stored record, which is what every caller written before
              *  a picker existed meant. */
             route?: { providerId?: string; tier?: string; pinned?: boolean; model?: string }
-        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string } } | undefined,
+        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: { refs: string[]; defaultRef: string }; refusal?: string } | undefined,
         /**
          * ‼️ X-169 — THE ACCOUNT'S ENVIRONMENT, resolved by the side that owns
          * the slot list and the "use this next" map, for the same reason
@@ -1036,6 +1036,8 @@ export class ConsoleHost {
         const routeRt = this.engineRuntime?.(init.agentId, engine.id, {
             providerId: init.providerId, tier: init.tier, pinned: init.routePinned, model: init.model
         });
+        // X-525 — a route that cannot be run on is refused, never left to the shell's environment.
+        if (routeRt?.refusal) { return this.refuseStart(id, init, projectId, prior, routeRt.refusal, 'the route it lands on cannot be run on'); }
         // X-495 — the model asked of a third-party route by its alias (routedModel)
         const args = hostArgs({ ...init, model: routedModel(init.model, routeRt), permission, projectContextFile: ctxFile });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed

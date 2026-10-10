@@ -519,6 +519,31 @@ console.log('\n== X-116 — a named route removed while the task waited is refus
         && refusedFor[0].engine === 'opencode' && refusedFor[0].providerId === '' && refusedFor[0].model === 'af-kimi/k2');
     ok('…and a refusal stops it before the manifest', started === false && threw === '' && lent.status === 'failed');
     tm.dispose();
+
+    // X-525 — a task naming NO route runs on its agent's own; when that one is gone the spawn refuses too.
+    const asked = [];
+    let standingGone = true;
+    const tm2 = new T.TaskManager(path.join(dir, 'tasks2.json'), () => [agent], () => false, () => '', {
+        routeRefusal: () => undefined,
+        engineRuntime: (agentId, engine, route) => {
+            asked.push({ agentId, engine, route });
+            return standingGone ? { refusal: 'developer\'s own route for claude cannot be run on: "or-x" is gone.' } : {};
+        },
+        recordLaunch: () => { throw new Error('reached the manifest'); }
+    });
+    const own = tm2.addTask(agent, 'own', 'p', 'headless', { autoStart: false });
+    threw = '';
+    try { started = tm2.startTask(own); } catch (e) { threw = String(e.message); }
+    ok('‼️ the agent\'s own gone route stops the run BEFORE the manifest and the spawn', started === false && threw === ''
+        && own.status === 'failed' && /developer's own route for claude cannot be run on/.test(own.deferredReason || ''));
+    ok('…asked for this agent and engine, with nothing named', asked.length >= 1 && asked[0].agentId === 'a1'
+        && asked[0].engine === 'claude' && asked[0].route === undefined);
+    standingGone = false;
+    const fine = tm2.addTask(agent, 'fine', 'p', 'headless', { autoStart: false });
+    threw = '';
+    try { tm2.startTask(fine); } catch (e) { threw = String(e.message); }
+    ok('…and a route that can be run on goes on to the manifest', threw === 'reached the manifest');
+    tm2.dispose();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 
     const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
@@ -526,7 +551,10 @@ console.log('\n== X-116 — a named route removed while the task waited is refus
     ok('the refusal sits before the manifest is written', tasksTs.indexOf('this.opts.routeRefusal?.(')
         < tasksTs.indexOf('task.launchId = this.opts.recordLaunch?.('));
     // X-517 — "where Agent Farm holds the catalog" is asked for the side the pick names (a lent route on OpenCode).
-    const gate = ext.slice(ext.indexOf('routeRefusal: (engine, providerId, tier, model'), ext.indexOf('resumeRoute: (agentId, engine, sessionId, route)'));
+    // X-525 — the rule is one named function, which the task hook and resolveLaunchRoute both ask.
+    ok('the task hook asks the one rule', /routeRefusal: \(engine, providerId, tier, model = ''\) => routeRefusalOf\(engine, providerId, tier, model\),/.test(ext));
+    const g0 = ext.indexOf('const routeRefusalOf = (engine: string, providerId: string, tier: string, model: string)');
+    const gate = g0 < 0 ? '' : ext.slice(g0, ext.indexOf('\n    };', g0));
     ok('‼️ the host asks the SAME rule the enqueue applies, only where Agent Farm holds the catalog',
         /const source = routeSourceOf\(id, providerId, model\);/.test(gate)
         && /if \(dataOwnerOf\(id, 'catalog', source\) !== 'agent-farm'\) \{ return undefined; \}/.test(gate)

@@ -4439,14 +4439,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // and there the engine is the authority that refuses.
             // X-517 — asked by the side the pick names: a route lent to OpenCode is Agent Farm's, and a
             // model alone can name one there (launchSelection), so the adapter refuses it the same way.
-            routeRefusal: (engine, providerId, tier, model = '') => {
-                const id = engineOf(engine).id;
-                const source = routeSourceOf(id, providerId, model);
-                if (dataOwnerOf(id, 'catalog', source) !== 'agent-farm') { return undefined; }
-                return providerId || source !== 'agent-farm-route'
-                    ? launchRouteRefusal(engine, providerId, tier)
-                    : adapterFor(id, registryDeps()).preflight({ engine: id, providerId: '', modelId: model })[0];
-            },
+            routeRefusal: (engine, providerId, tier, model = '') => routeRefusalOf(engine, providerId, tier, model),
             // ‼️ X-109 — the same gate every Console and terminal resume goes
             // through, so a task continuing a conversation cannot come to a
             // different answer about its route than a person would. A headless
@@ -6679,6 +6672,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const plannerRt = engineRuntimeFor(spec.leadAgentId, 'claude', routeOf({
                     providerId: spec.plannerProviderId, tier: spec.plannerTier
                 }));
+                if (plannerRt?.refusal) { resolve({ ok: false, error: plannerRt.refusal }); return; }
                 const command = plannerCommand({
                     // X-495 — the mission's model asked of a third-party route by its alias
                     launch: { ...launch, model: { ...launch.model, value: routedModel(launch.model.value, plannerRt) } },
@@ -24377,8 +24371,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * which is what every caller written before this said.
          */
         route?: LaunchRouteAsk
-    ): { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: ModelRule } | undefined => {
+    ): { spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: ModelRule; refusal?: string } | undefined => {
         const r = resolveLaunchRoute(agentId, engine, route);
+        if (r?.refusal) { return { refusal: r.refusal }; }
         /**
          * ‼️ X-102 — NO ROUTE STILL MEANS NO OVERLAY, exactly as before this
          * item. It does NOT mean "no identity": a launch with nothing chosen
@@ -24426,10 +24421,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ): {
         identity: ProviderIdentity; routed: boolean;
         spawnEnv?: Record<string, string>; clearEnv?: string[]; modelRule?: ModelRule;
+        /** X-525 — the route this launch lands on cannot be run on: every spawning door stops with this */
+        refusal?: string;
     } | undefined => {
         const agent = agents.find(a => a.id === agentId);
         if (!agent) { return undefined; }
-        const { rt, routed } = launchSelectionFor(agent.dir, engine, route, registryDeps());
+        const { sel, rt, routed } = launchSelectionFor(agent.dir, engine, route, registryDeps());
+        // ‼️ X-525 — a gone route resolves to nothing injected and nothing cleared, so the run would take
+        // whatever the shell carries; refused instead, by the rule a task naming the route is refused by.
+        const why = sel.providerId ? routeRefusalOf(engine, sel.providerId, sel.tier ?? '', sel.modelId ?? '') : undefined;
+        const refusal = why && (route?.pinned || (route?.providerId ?? '').trim()
+            ? `the route this launch names cannot be run on: ${why}`
+            : `${agent.name}'s own route for ${engine} cannot be run on: ${why} Point it at a route that exists, or clear it.`);
         // ‼️ THE ENVIRONMENT IS WITHHELD WHEN NOTHING WAS CHOSEN. An adapter is
         // free to answer a routeless selection with a clearing list, and applying
         // it here would silently change what an unrouted terminal inherits — a
@@ -24439,7 +24442,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             routed,
             ...(routed && rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
             ...(routed && rt.clearEnv ? { clearEnv: rt.clearEnv } : {}),
-            ...(routed && rt.modelRule ? { modelRule: rt.modelRule } : {})
+            ...(routed && rt.modelRule ? { modelRule: rt.modelRule } : {}),
+            ...(refusal ? { refusal } : {})
         };
     };
     /** The door's one resolution (core/launchSelection.ts): the agent's standing route and the registry, handed in. */
@@ -24494,6 +24498,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-491 — the adapter's own refusals (a third-party route with no key would run unauthenticated)
         const engineId = engineOf(engine).id;
         return adapterFor(engineId, registryDeps()).preflight({ engine: engineId, providerId, ...(tier ? { tier } : {}) })[0];
+    };
+    /**
+     * X-116 / X-525 — why a run cannot start on the route it lands on: refused only where Agent Farm holds
+     * the route catalog itself (an engine-owned catalog may not have been read yet, and there the engine
+     * refuses). X-517 — a route lent to OpenCode is Agent Farm's, and a model alone can name one there.
+     */
+    const routeRefusalOf = (engine: string, providerId: string, tier: string, model: string): string | undefined => {
+        const id = engineOf(engine).id;
+        const source = routeSourceOf(id, providerId, model);
+        if (dataOwnerOf(id, 'catalog', source) !== 'agent-farm') { return undefined; }
+        return providerId || source !== 'agent-farm-route'
+            ? launchRouteRefusal(engine, providerId, tier)
+            : adapterFor(id, registryDeps()).preflight({ engine: id, providerId: '', modelId: model })[0];
     };
 
     const routeSealOf = (
@@ -26777,6 +26794,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         const route = { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned, model: merged.model };
         const resolved = resolveLaunchRoute(agent.id, spec.id, route);
+        if (resolved?.refusal) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${resolved.refusal}`);
+            return undefined;
+        }
         const launchId = resolved && recordLaunch({
             engine: spec.id,
             identity: resolved.identity,

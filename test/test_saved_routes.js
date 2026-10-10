@@ -27,8 +27,8 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
     ok('one sentence per gone route, sorted', p.length === 2 && /^route "gone2"/.test(p[0]) && /^route "minimax"/.test(p[1]));
     ok('it names every record still pointing there, with its kind',
         /2 saved choices still name it: developer \(agent default\), nightly \(schedule\)/.test(p[1]));
-    ok('‼️ an agent default says what it really does — nothing injected, nothing cleared',
-        /nothing injected and nothing cleared/.test(p[1]));
+    ok('‼️ an agent default says what it really does — X-525: every run of that agent naming no route is refused',
+        /refuses every run of that agent that does not name a route itself/.test(p[1]));
     ok('a schedule says it is refused when it fires', /refused each time it fires/.test(p[1]));
     ok('a queued task says it is refused when it starts', /one saved choice still names it: one-off \(queued task\)/.test(p[0])
         && /refused when it starts/.test(p[0]));

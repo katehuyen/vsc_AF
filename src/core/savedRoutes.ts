@@ -1,21 +1,16 @@
 /**
  * X-116 — A SAVED CHOICE THAT OUTLIVED ITS ROUTE, MADE VISIBLE BEFORE IT FIRES.
  *
- * Removing a route (`providers.remove`) takes the profile and its key; it does
- * not, and should not, edit the things that still name it — an agent's standing
- * route, a launch profile, a schedule, a task waiting in the queue. Those are
- * the user's records. But each of them now names nothing, and what happens next
- * differs by kind:
+ * A gone route resolves to nothing injected and nothing cleared (measured), so a
+ * run on it would start on whatever the shell carries. Every spawning door
+ * therefore refuses a launch landing on it (X-525, `resolveLaunchRoute`), the
+ * agent's own route included — visible, but only when the run starts, which for
+ * a schedule is 03:00.
  *
- * - a task or schedule naming it is refused when it starts (`routeRefusal` in
- *   the task runner) — visible, but only at 03:00;
- * - an agent default naming it resolves to NO route: measured, nothing is
- *   injected and nothing is cleared, so that agent's runs start on whatever the
- *   shell carries and are recorded as unknown.
- *
- * So the health report names them now, grouped by route, with the kinds — the
- * recovery is the person re-pointing or clearing the choice, and this is where
- * they are told there is one to make.
+ * So the health report names every saved record still naming one, grouped by
+ * route, with the kinds (core/routeRecords.ts collects them) — the recovery is
+ * the person re-pointing or clearing the choice, and this is where they are told
+ * there is one to make.
  */
 
 import { routeIdOfWire } from './opencodeRoutes';
@@ -74,17 +69,16 @@ export function servesSameModels(gone: RouteModels, cand: RouteModels, engine: s
 }
 
 const CONSEQUENCE: Record<SavedRouteKind, string> = {
-    'agent default': 'an agent default naming it starts that agent\'s runs with nothing injected and nothing '
-        + 'cleared, on whatever route the shell carries',
-    'launch profile': 'a launch profile naming it asks for a route that is not there',
+    'agent default': 'an agent default naming it refuses every run of that agent that does not name a route itself',
+    'launch profile': 'a launch profile naming it is refused each time it is used',
     'schedule': 'a schedule naming it is refused each time it fires',
     'queued task': 'a queued task naming it is refused when it starts',
-    'last used setup': 'an agent\'s last used setup naming it seeds that agent\'s next start with it',
+    'last used setup': 'an agent\'s last used setup naming it seeds that agent\'s next start with it, which is then refused',
     'task template': 'a task template naming it hands it to every task made from it',
     'workflow step': 'a workflow step naming it is refused when the workflow reaches it',
     'trigger': 'a trigger naming it is refused each time it fires',
     'mission': 'a mission naming it has those delegations refused when they start',
-    'waiting baton leg': 'a waiting baton leg naming it opens its successor asking for a route that is not there'
+    'waiting baton leg': 'a waiting baton leg naming it has its successor refused when it opens'
 };
 
 /**
