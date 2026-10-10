@@ -3617,7 +3617,7 @@ The page is **schema-driven**: it renders whatever the extension manifest declar
 | `agentFarm.includeUnmatchedProjects` | false | Also include sessions that don't match the agent roots |
 | `agentFarm.pricing` | the table above | Model pricing rules |
 | `agentFarm.liveMonitor` | true | Run the live event listener |
-| `agentFarm.livePort` | 8377 | Listener port (reinstall hooks when you change it) |
+| `agentFarm.livePort` | 8377 | Listener port (installed hooks — user file, agents, account slots — follow a change without a reload) |
 | `agentFarm.stuckThresholdSeconds` | 240 | Stall threshold; 0 = never mark a session stalled (U-158, 3.724.0 — Farm Settings "Stuck warning" group) |
 | `agentFarm.notifyPermission` | true | Permission-wait notification |
 | `agentFarm.notifyStuck` | true | Stall notification |

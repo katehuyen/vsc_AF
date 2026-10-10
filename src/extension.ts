@@ -107,9 +107,10 @@ import {
     buildAgentTaskStats, buildTaskFamilies, mergeTaskRecords, readTaskHistory, taskAlerts
 } from './core/taskstats';
 import {
-    hasOurHooks, hookCommand, hooksAreCurrent, installHooksInto, removeHooksFrom,
+    hasOurHooks, hookCommand, installHooksInto, refreshStaleHooks, removeHooksFrom,
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
+import { rootWatchers } from './core/rootWatch';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
 import type { HostedWait } from './core/liveWait';
 import { turnWaitingOn } from './core/turnWait';
@@ -2011,9 +2012,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * decision) and nothing when the file is already current, so the ordinary
      * start-up cost is a handful of reads.
      */
+    // X-512 — the same repair runs again when agentFarm.livePort changes (the configuration listener below)
+    const refreshOwnHooks = (): string[] => refreshStaleHooks([
+        userSettingsPath(claudeDir()),
+        ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
+    ], cfg().get<number>('livePort', 8377));
     try {
-        const userFile = userSettingsPath(claudeDir());
-        const livePort = cfg().get<number>('livePort', 8377);
         /**
          * ‼️ AND A HOOK THAT IS PRESENT BUT OUT OF DATE IS REPAIRED IN PLACE.
          *
@@ -2025,11 +2029,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * copy already exists beside each file, so this cannot take a foreign
          * hook or a hand-written setting with it.
          */
-        const stale = [
-            userFile,
-            ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
-        ].filter(f => hasOurHooks(f) && !hooksAreCurrent(f, livePort));
-        for (const f of stale) { installHooksInto(f, livePort); }
+        const stale = refreshOwnHooks();
         // ‼️ X-284 — AND THE SLOTS ARE NOT REPAIRED HERE ANY MORE. This block
         // owns the files that are the USER'S OWN — their settings.json and each
         // agent's settings.local.json — because those are not a slot's contents
@@ -6070,16 +6070,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     });
 
-    // Watch agent roots for structural changes (new agents, memory edits)
-    for (const root of cfg().get<string[]>('agentRoots', [])) {
-        if (!root || !fs.existsSync(root)) { continue; }
-        try {
-            const watcher = fs.watch(root, { recursive: true }, () => {
-                debouncedRootRefresh();
-            });
-            context.subscriptions.push({ dispose: () => watcher.close() });
-        } catch { /* recursive watch unavailable */ }
-    }
+    // Watch agent roots for structural changes (new agents, memory edits); X-512 — re-synced when agentRoots changes
+    const agentRootWatch = rootWatchers({
+        exists: dir => fs.existsSync(dir),
+        watch: (dir, onChange) => fs.watch(dir, { recursive: true }, () => onChange()),
+        onChange: () => debouncedRootRefresh()
+    });
+    agentRootWatch.sync(cfg().get<string[]>('agentRoots', []));
+    context.subscriptions.push(agentRootWatch);
     let rootTimer: NodeJS.Timeout | undefined;
     const debouncedRootRefresh = () => {
         if (rootTimer) { clearTimeout(rootTimer); }
@@ -45104,10 +45102,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 e.affectsConfiguration('agentFarm.excludeAgentDirs')) {
                 refreshAll();
                 index.reassignAgents();
+                agentRootWatch.sync(cfg().get<string[]>('agentRoots', []));
             }
             if (e.affectsConfiguration('agentFarm.liveMonitor') ||
                 e.affectsConfiguration('agentFarm.livePort')) {
                 live.start();
+            }
+            // X-512 — the hooks follow the port without a reload: the user's own files here; every slot and the
+            // fleet's wires (Codex's hooks.json among them) through the contract gate, off the listener
+            if (e.affectsConfiguration('agentFarm.livePort')) {
+                try { refreshOwnHooks(); } catch { /* a hook repair never fails a settings change */ }
+                setTimeout(() => runContractGate('port'), 0);
             }
             if (e.affectsConfiguration('agentFarm.ingestFolders')) {
                 ingest.restart();

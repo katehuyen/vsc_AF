@@ -3669,7 +3669,7 @@ Sayfa **şema-güdümlüdür**: eklenti manifestinin bildirdiği her şeyi çize
 | `agentFarm.includeUnmatchedProjects` | false | Ajan köklerine eşleşmeyen oturumları da dahil et |
 | `agentFarm.pricing` | yukarıdaki tablo | Model fiyat kuralları |
 | `agentFarm.liveMonitor` | true | Canlı olay dinleyicisini çalıştır |
-| `agentFarm.livePort` | 8377 | Dinleyici portu (değiştirince hook'ları yeniden kur) |
+| `agentFarm.livePort` | 8377 | Dinleyici portu (kurulu hook'lar — kullanıcı dosyası, ajanlar, hesap yuvaları — değişikliği yeniden yüklemesiz izler) |
 | `agentFarm.stuckThresholdSeconds` | 240 | Takılma eşiği; 0 = hiçbir oturum takıldı sayılmaz, uyarı verilmez (U-158, 3.724.0 — Farm Settings "Stuck warning" grubu) |
 | `agentFarm.notifyPermission` | true | İzin bekleme bildirimi |
 | `agentFarm.notifyStuck` | true | Takılma bildirimi |

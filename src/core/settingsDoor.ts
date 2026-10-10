@@ -53,7 +53,7 @@ function fileText(file: string): string {
 }
 
 let chain: SettingsScope[] = [];
-let schemaProps: Record<string, { type?: string | string[]; enum?: unknown[] }> = {};
+let schemaProps: Record<string, { type?: string | string[]; enum?: unknown[]; default?: unknown }> = {};
 let userFolder: string | undefined;
 
 /**
@@ -105,20 +105,28 @@ export function settingsScopeChain(): SettingsScope[] {
 const refusals = new Map<string, string>();
 export function cfgRefusal(key: string): string | undefined { return refusals.get(key); }
 
+/** A copy, so a reader that edits what it was handed cannot change it for the next one. */
+function manifestDefault(key: string): unknown {
+    const d = schemaProps[key]?.default;
+    return d !== null && typeof d === 'object' ? JSON.parse(JSON.stringify(d)) : d;
+}
+
 /**
  * ONE DOOR for reading an Agent Farm setting: the configuration registry first,
  * then the settings files the running window writes, for a key this build
  * declares and the registry dropped.
+ * X-511 — a key no file sets, and a file value refused, read as the manifest's own default — what the
+ * registry would have answered — never as the reader's private fallback.
  */
 export function cfgValueRaw(key: string): unknown {
     const v = vscode.workspace.getConfiguration().get(key);
     if (v !== undefined) { refusals.delete(key); return v; }
     const hit = readSettingScoped(settingsScopeChain(), fileText, key);
-    if (!hit.found) { refusals.delete(key); return undefined; }
+    if (!hit.found) { refusals.delete(key); return manifestDefault(key); }
     const checked = schemaCheck(schemaProps[key], hit.value);
     if (!checked.ok) {
         refusals.set(key, `${path.basename(hit.file || '')}: ${checked.reason} — using the default`);
-        return undefined;
+        return manifestDefault(key);
     }
     refusals.delete(key);
     return checked.value;

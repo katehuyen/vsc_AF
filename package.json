@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.914.0",
+  "version": "3.915.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9461,7 +9461,7 @@
         "agentFarm.livePort": {
           "type": "number",
           "default": 8377,
-          "description": "Port for the local live-event listener. Re-run 'Install Live Hooks' after changing it."
+          "description": "Port for the local live-event listener. Installed hooks follow a change by themselves."
         },
         "agentFarm.stuckThresholdSeconds": {
           "type": "number",

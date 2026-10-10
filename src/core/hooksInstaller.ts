@@ -227,6 +227,17 @@ export function hooksAreCurrent(file: string, port: number): boolean {
 }
 
 /**
+ * X-512 — the files that already carry our hooks, brought to `port`. Activation runs it and a change of
+ * `agentFarm.livePort` runs it again, so no hook keeps posting to a port the listener has left. A file
+ * with no hooks of ours is never given any (removing them was a decision). Returns the files rewritten.
+ */
+export function refreshStaleHooks(files: string[], port: number): string[] {
+    const stale = files.filter(f => hasOurHooks(f) && !hooksAreCurrent(f, port));
+    for (const f of stale) { installHooksInto(f, port); }
+    return stale;
+}
+
+/**
  * ‼️ X-265 — EVERY CAPTURED ACCOUNT KEEPS THE USER'S HOOK STATE, because the
  * isolation is what took it away.
  *

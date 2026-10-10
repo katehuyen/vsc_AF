@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.915.0 - The live port and the agent folders take effect without a reload (2026-10-10)
+
+- **Changing the live port moves the hooks with it.** The hooks Agent Farm
+  installed - in your user settings, in each agent's settings.local.json and
+  in every account slot - are rewritten to the new port as soon as the
+  setting changes. Until now they kept posting to the old port until the
+  window was reloaded, so the live timeline went quiet. A file you never
+  installed hooks into is still left alone.
+- **A folder added to Agent folders is watched at once.** A new agent made
+  there later shows up by itself; before, only folders listed when the
+  window opened were watched. A folder written with %USERPROFILE% or ~ is
+  watched as well as found.
+- **A setting that cannot be read falls back to its real default.** When
+  VS Code loses a setting, or a value in settings.json has the wrong shape,
+  Agent Farm now uses the default the setting declares - the one its row
+  says it uses - instead of an internal one that could differ (Agent
+  folders could come back empty).
+
 ## 3.914.0 - Chips and badges read in every theme (2026-10-10)
 
 - **A coloured chip's text is no longer white on a light colour.** In a dark
