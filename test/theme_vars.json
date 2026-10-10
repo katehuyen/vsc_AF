@@ -1,7 +1,7 @@
 {
  "vscode": "1.103.2",
  "generated": "2026-10-10",
- "vars": 67,
+ "vars": 68,
  "themes": {
   "dark": {
    "badge-background": "#616161",
@@ -56,6 +56,7 @@
    "menu-separatorBackground": "#454545",
    "panel-border": "#2b2b2b",
    "progressBar-background": "#0078d4",
+   "scrollbarSlider-background": "#79797966",
    "sideBar-background": "#181818",
    "terminal-ansiCyan": "#11a8cd",
    "testing-iconPassed": "#73c991",
@@ -122,6 +123,7 @@
    "menu-separatorBackground": "#d4d4d4",
    "panel-border": "#e5e5e5",
    "progressBar-background": "#005fb8",
+   "scrollbarSlider-background": "#64646466",
    "sideBar-background": "#f8f8f8",
    "terminal-ansiCyan": "#0598bc",
    "testing-iconPassed": "#73c991",
@@ -178,6 +180,7 @@
    "menu-separatorBackground": "#6fc3df",
    "panel-border": "#6fc3df",
    "progressBar-background": "#6fc3df",
+   "scrollbarSlider-background": "#6fc3df99",
    "sideBar-background": "#000000",
    "terminal-ansiCyan": "#00cdcd",
    "testing-iconPassed": "#73c991",
@@ -238,6 +241,7 @@
    "menu-separatorBackground": "#0f4a85",
    "panel-border": "#0f4a85",
    "progressBar-background": "#0f4a85",
+   "scrollbarSlider-background": "#0f4a8566",
    "sideBar-background": "#ffffff",
    "terminal-ansiCyan": "#0598bc",
    "testing-iconPassed": "#007100",

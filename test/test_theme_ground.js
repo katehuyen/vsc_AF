@@ -39,7 +39,8 @@ const pages = fs.readdirSync(path.join(ROOT, 'media')).filter(f => /\.(js|css)$/
     }
 })('src');
 // the body class a rule must name for a theme kind to get it
-const KEYED = { light: /^body\.vscode-light$/, 'hc-light': /^body\.vscode-high-contrast(-light)?$/, 'hc-dark': /^body\.vscode-high-contrast$/ };
+// (the ground is keyed on the root above the body class: html:has(> body.vscode-light) — U-248)
+const KEYED = { light: /^(html:has\(> )?body\.vscode-light\)?$/, 'hc-light': /^(html:has\(> )?body\.vscode-high-contrast(-light)?\)?$/, 'hc-dark': /^body\.vscode-high-contrast$/ };
 for (const v of changed) {
     const use = new RegExp('var\\(\\s*--vscode-' + v + '(?![\\w-])', 'g');
     const deriving = rules.filter(r => r.decls.some(d => new RegExp(use.source).test(d)));

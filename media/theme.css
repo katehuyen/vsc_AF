@@ -1,16 +1,21 @@
 /* The theme layer (U-237): the values that differ by VS Code theme kind, and nothing else.
-   Every rule is keyed on the class VS Code puts on a webview's body and only sets --af-*
-   variables; every use carries the dark value as its var() fallback, so the dark theme is
-   the fallback by construction and is never restyled from here (test_theme_sheet.js). */
+   Every rule is keyed on the class VS Code puts on a webview's body (the ground: on the root
+   above it) and only sets --af-* variables, the scrollbar track aside; every use carries the
+   dark value as its var() fallback, so the dark theme is the fallback by construction and is
+   never restyled from here (test_theme_sheet.js). */
 
 /* The ground (U-220). A colour set by hand (workbench.colorCustomizations, unscoped) holds under every
    theme: a dark editor.background kept from a dark theme is the ground a light theme hands the page,
    beside its own dark text. So a page never paints with the editor's background itself; it paints with
    var(--af-ground, that background). A light kind keeps the ground it is handed while its text reads on
    it (a weighted channel sum of 170 of 255 is 4.8:1 under Light Modern's text) and takes white below
-   that, or when it is handed none: the factor is 0 or 1, never a blend. */
-body.vscode-light, body.vscode-high-contrast-light {
+   that, or when it is handed none: the factor is 0 or 1, never a blend.
+   It is set on the root, html:has(> body.<kind>), because VS Code's own webview sheet paints the scrollbar
+   track there with the editor's background, html { scrollbar-color: <slider> var(--vscode-editor-background) }
+   (U-248): the root's track takes the ground, every inner scroller inherits it, the body inherits the variable. */
+html:has(> body.vscode-light), html:has(> body.vscode-high-contrast-light) {
     --af-ground: rgb(from var(--vscode-editor-background, #fff) calc(r + (255 - r) * clamp(0, (170 - (r * .2126 + g * .7152 + b * .0722)) * 1000, 1)) calc(g + (255 - g) * clamp(0, (170 - (r * .2126 + g * .7152 + b * .0722)) * 1000, 1)) calc(b + (255 - b) * clamp(0, (170 - (r * .2126 + g * .7152 + b * .0722)) * 1000, 1)));
+    scrollbar-color: var(--vscode-scrollbarSlider-background) var(--af-ground);
 }
 
 /* Dimmed text is written opacity: calc(1 - D * var(--af-dimk, 1)), D being the dark dimming.

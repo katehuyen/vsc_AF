@@ -1,6 +1,6 @@
 // U-237 — THE THEME LAYER CANNOT TOUCH THE DARK THEME. media/theme.css holds the values that
 // differ by VS Code theme kind: every rule in it is keyed on a body theme class other than dark
-// and sets only --af-* variables; every use of such a variable names the dark value as its
+// and sets only --af-* variables (the scrollbar track aside, test_theme_track.js); every use of such a variable names the dark value as its
 // var() fallback. So dark is the fallback by construction. And every page shell that links
 // common.css links the layer after it, and the renderer draws with it — or the light theme
 // the audit measures (test_theme_audit.js) is not the one a user gets.
@@ -18,13 +18,19 @@ const sheet = read('media/theme.css').replace(/\/\*[\s\S]*?\*\//g, '');
 const rules = [...sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(m => ({ sel: m[1].trim(), body: m[2].trim() }));
 const rest = sheet.replace(/([^{}]+)\{([^{}]*)\}/g, '').trim();
 ok('the theme layer is plain rules and nothing else' + (rest ? ' — stray: ' + rest.slice(0, 60) : ''), rules.length > 0 && !rest);
-const scoped = s => s.split(',').every(part => /^body\.vscode-(light|high-contrast|high-contrast-light)\b/.test(part.trim()) && !/vscode-dark/.test(part));
+const scoped = s => s.split(',').every(part => /^(html:has\(> )?body\.vscode-(light|high-contrast|high-contrast-light)\b/.test(part.trim()) && !/vscode-dark/.test(part));
 const bad = rules.filter(r => !scoped(r.sel));
 ok('‼️ every rule is keyed on a body theme class, never the dark one' + (bad.length ? ' — not: ' + bad.map(r => r.sel).join(' | ') : ''), bad.length === 0);
 const decls = rules.flatMap(r => r.body.split(';').map(d => d.trim()).filter(Boolean));
-const notVar = decls.filter(d => !/^--af-[\w-]+\s*:/.test(d));
-ok('‼️ …and sets only --af-* variables — it restyles no element itself' + (notVar.length ? ' — not: ' + notVar.join(' | ') : ''), notVar.length === 0);
-const names = [...new Set(decls.map(d => d.split(':')[0].trim()))];
+// U-248 — the one exception: VS Code's own sheet paints the scrollbar track on the root with the editor's
+// background, where no variable of ours reaches, so a light kind restyles that one property itself.
+const TRACK = /^scrollbar-color\s*:/;
+const notVar = decls.filter(d => !/^--af-[\w-]+\s*:/.test(d) && !TRACK.test(d));
+ok('‼️ …and sets only --af-* variables — it restyles no element itself, save the scrollbar track' + (notVar.length ? ' — not: ' + notVar.join(' | ') : ''), notVar.length === 0);
+const lightOnly = s => s.split(',').every(part => /vscode-(light|high-contrast-light)\)?$/.test(part.trim()));
+const trackRules = rules.filter(r => r.body.split(';').some(d => TRACK.test(d.trim())));
+ok('‼️ …and the track is restyled only under a light kind, never under High Contrast\'s dark one' + (trackRules.some(r => !lightOnly(r.sel)) ? ' — not: ' + trackRules.filter(r => !lightOnly(r.sel)).map(r => r.sel).join(' | ') : ''), trackRules.length > 0 && trackRules.every(r => lightOnly(r.sel)));
+const names = [...new Set(decls.filter(d => !TRACK.test(d)).map(d => d.split(':')[0].trim()))];
 
 // Every use in the pages, with its fallback.
 const media = fs.readdirSync(path.join(ROOT, 'media')).filter(f => /\.(js|css)$/.test(f) && f !== 'theme.css').map(f => 'media/' + f);

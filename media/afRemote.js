@@ -64,6 +64,13 @@
         return m && typeof m.type === 'string' && Object.prototype.hasOwnProperty.call(LINKS, m.type)
             ? { type: 'afnav', to: LINKS[m.type] } : null;
     }
+    // X-443 — a link to the web opens in the phone's own browser, not on the PC: the page goes to it, and the
+    // shell (and_AgentFarm PageClient.shouldOverrideUrlLoading) hands every http(s) address that is not the
+    // farm's to the browser and keeps the page where it is. Any other scheme still goes to the farm, which
+    // says on the phone that it is the PC's.
+    function webOf(m) {
+        return m && m.type === 'openExternal' && typeof m.url === 'string' && /^https?:\/\/[^\s]+$/i.test(m.url) ? m.url : null;
+    }
     // A message posted while the user's own press is being handled carries afPress, so the farm
     // can say on the phone why it did nothing; one the page sends by itself never does. The farm
     // takes the mark off before the page's handler sees it.
@@ -88,6 +95,8 @@
             postMessage: function (m) {
                 // U-209 — a reading's messages become the phone's own voice's (media/afPhoneRead.js)
                 if (window.AFPhoneRead && typeof window.AFPhoneRead.out === 'function') { m = window.AFPhoneRead.out(m); }
+                var web = webOf(m);
+                if (web) { location.assign(web); return; }
                 var out = readOf(m) || chainOf(m) || agentOf(m) || guideOf(m) || linkOf(m) || m;
                 if (pressing && out && typeof out === 'object' && SHELL[out.type] !== true) { out = Object.assign({}, out, { afPress: true }); }
                 if (window.afShell && typeof window.afShell.post === 'function') { window.afShell.post(JSON.stringify(out)); }

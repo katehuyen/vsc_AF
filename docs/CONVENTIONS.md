@@ -942,6 +942,14 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   view answers `undefined`, and a PC file dialog is refused aloud. Without it a
   phone's tap opened a modal on the PC that waited for nobody.
   `test_panel_ask.js` holds the hosted panels to it.
+- **A web link a page opens is the PHONE's on the phone (X-443).** A page asks
+  for one as `{ type: 'openExternal', url }`; inside VS Code the host opens it,
+  on the phone `media/afRemote.js` answers an http(s) one itself: the page goes
+  to the address, and the Android shell (`PageClient.shouldOverrideUrlLoading`)
+  hands every http(s) address that is not the farm's to the phone's browser,
+  keeping the page where it is. Any other scheme still reaches the farm, where
+  `openExternal` stays `pcOnly` and is refused aloud. A page that opens a web
+  link sends exactly that shape (`test_remote_external.js` reads every sender).
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes
@@ -1029,9 +1037,18 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   guard by that variable's name. The phone's sheet writes its ground plainly
   (`--af-ground: #ffffff`, linked after the layer): nobody customises a colour
   there, and a phone's browser may be older than relative colours.
-  NOT covered: the scrollbar TRACK. VS Code's own default sheet paints it
-  (`html { scrollbar-color: … var(--vscode-editor-background) }`), on the element
-  above the body class the layer is keyed on.
+  **The scrollbar track (U-248)** is painted by VS Code's own default sheet,
+  `html { scrollbar-color: … var(--vscode-editor-background) }`, on the root —
+  above the body class the layer is keyed on — and every inner scroller
+  inherits it. So the ground is set on the root, `html:has(> body.<light
+  kind>)`, beside the layer's one declaration that is not a variable — the
+  root's `scrollbar-color` track is `var(--af-ground)`; the body inherits the
+  variable, every scroller the track, and dark keeps VS Code's own. Never a
+  transparent track: a webview is an iframe, and what shows through it is the
+  document behind the frame, not the page's ground (measured). Headless Chrome
+  draws a real scrollbar once `--hide-scrollbars` is left out:
+  `test_theme_track.js` photographs one, inside an iframe, under VS Code's
+  sheet and reads the track's pixels.
 - **‼️ High Contrast (U-239) draws a control by its EDGE, not its fill.** VS
   Code's High Contrast kinds set no button fill and no selection fill
   (`button-background`, `list-activeSelectionBackground` … are unset there), so

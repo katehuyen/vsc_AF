@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.922.0 - The scrollbar turns light with the page, and a web link on the phone opens in the phone's browser (2026-10-11)
+
+- **A page's scrollbar track follows a light theme too.** Since 3.921.0 a
+  light theme paints Agent Farm's pages light even when `editor.background`
+  is set by hand to a dark colour, but the track of every scrollbar on them,
+  the page's own and every scrolling list inside it, kept that dark colour:
+  VS Code draws the track itself, with the editor's background. In a light
+  theme the track now takes the page's own ground, so the bar no longer stands
+  out as a dark strip beside a white page, and the handle is drawn exactly as
+  in the theme as shipped.
+
+  Dark themes, and light themes without such a customisation, look exactly as
+  before.
+
+- **On the phone, a link to a web page opens in the phone's own browser.**
+  Links in Notices, the Queue, the agents' notes and tasks, and a tool's home
+  page were refused on the phone with a note saying they belong to the PC.
+  They now open in the phone's browser, and the Agent Farm page stays where it
+  was. Anything that is not a web address is still left to the PC.
+
 ## 3.921.0 - A light theme stays light when a background colour was set by hand (2026-10-11)
 
 - **Agent Farm's pages can be read in a light theme even when
