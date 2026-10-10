@@ -2948,7 +2948,8 @@
         "page:fileView.ts#mode"
       ],
       "ops": [
-        "console.file.read"
+        "console.file.read",
+        "files.read"
       ]
     },
     {
@@ -2957,7 +2958,8 @@
         "page:fileView.ts#refresh"
       ],
       "ops": [
-        "console.file.read"
+        "console.file.read",
+        "files.read"
       ]
     },
     {

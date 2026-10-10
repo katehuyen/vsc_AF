@@ -405,7 +405,8 @@ import { readLastAnswer } from './core/readLast';
 import { readSelection } from './core/readSelection';
 import { say, saidWhy, sayText } from './core/uiSentence';
 import { applyChainLegs, registerLegsOp } from './core/batonLegsOp';
-import { editedFilesOf, editedFileTarget, readEditedFile, registerEditedFileOp } from './core/editedFile';
+import { editedFilesOf, readEditedFile, registerEditedFileOp } from './core/editedFile';
+import { registerShownFileOp, shownFileTarget, type ShownFileData } from './core/shownFile';
 import { FileViewPanel } from './panels/fileView';
 import { registerChainOps } from './core/chainOps';
 import { pauseHeld, pausedSessions } from './core/chainPause';
@@ -18170,6 +18171,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerLegsOp(bridge, batonLegsDeps);
     // X-443 — a file a Console card names, read where the PC is not (the phone's file page reads it the same way)
     registerEditedFileOp(bridge, { known: () => editedFilesOf(consoleHost.list()) });
+    // X-443 — …and every other file a page shows: the phone's file page and files.read find it in the same sources
+    const shownFiles: ShownFileData = {
+        cards: () => editedFilesOf(consoleHost.list()),
+        transcript: sid => index.allWithExternal().find(s => s.sessionId === sid && !!s.file)?.file,
+        queueItem: id => workQueueStore.get(id),
+        notice: id => noticesStore.list({ limit: 0 }).find(n => n.id === id),
+        note: id => a2aNotes.get(id),
+        missionRuns: () => missionStore.runs,
+        tasks: () => taskManager.tasks,
+        agents: () => agents
+    };
+    registerShownFileOp(bridge, { data: shownFiles });
     registerChainOps(bridge, { sessions: () => index.allWithExternal(), misplacedOf: sid => openerOf(batonStore.all(), sid)?.misplaced });
     // ‼️ S-86 — the leg that passed is ended HERE once its turn is at rest
     // (batonEnd.ts): a Console card and a terminal TUI never end on their own.
@@ -32003,7 +32016,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             memgraph: (host, args) => MemoryGraphPanel.openOn(host, memGraphDeps, typeof args?.agentId === 'string' ? args.agentId : undefined),
             selection: (host, args) => SelectionPanel.openOn(host, context.extensionUri, selectionWaits, typeof args?.id === 'string' ? args.id : undefined),
             file: (host, args) => {
-                const to = editedFileTarget(args, editedFilesOf(consoleHost.list()));
+                const to = shownFileTarget(args, shownFiles);
                 if (to) { FileViewPanel.openOn(host, to, { extensionUri: context.extensionUri, readEdited: readEditedFile }); }
                 return !!to;
             },

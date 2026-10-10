@@ -1,7 +1,9 @@
-// Agent Farm — a file an agent wrote, read-only (X-443): the phone's answer to a Console card's
-// ✎ open and vs HEAD chips, which open the editor on the PC. The host checked the file against the
-// files the cards name; this page only switches between the file and its diff against the last
-// commit, and reads it again. It never names another path.
+// Agent Farm — a file the farm shows, read-only (X-443): the phone's answer to every "open this
+// file" that opens the editor on the PC (a Console card's ✎ open and vs HEAD chips, a report, a
+// step's or a task's output, a note's file, a memory file). The host found the file in what the page
+// it came from shows; this page only reads it again and, for a file an agent's write tools named
+// (DATA.edits), switches between the file and its diff against the last commit. It never names
+// another path. Prose (DATA.prose) is read wrapped; code is numbered and scrolled sideways.
 (function () {
     'use strict';
     const vscode = acquireVsCodeApi();
@@ -9,7 +11,8 @@
     const DATA = window.__DATA__ || {};
     /** U-189 — the interface language (media/afI18n.js). */
     function tr(s, v) { return window.AFI18n ? window.AFI18n.t(s, v) : s; }
-    let diff = DATA.diff === true;
+    const EDITS = DATA.edits !== false, PROSE = DATA.prose === true;
+    let diff = EDITS && DATA.diff === true;
     let view = null;
 
     const STYLE = `<style>
@@ -23,6 +26,9 @@
         .fv-row { display: flex; white-space: pre; line-height: 1.45; min-height: 1.45em; }
         .fv-n { flex: 0 0 auto; min-width: 3.2em; padding: 0 8px; text-align: right; user-select: none; opacity: calc(1 - .5 * var(--af-dimk, 1)); }
         .fv-t { padding: 0 10px 0 4px; }
+        .fv-prose { font-family: var(--vscode-font-family, sans-serif); font-size: 13px; padding: 8px 0; }
+        .fv-prose .fv-row { white-space: pre-wrap; overflow-wrap: anywhere; }
+        .fv-prose .fv-t { padding: 0 12px; }
         .fv-add { background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 18%, transparent); box-shadow: var(--af-hc-ring, none); }
         .fv-del { background: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 18%, transparent); box-shadow: var(--af-hc-ring, none); }
         .fv-hunk { color: var(--af-ink-charts-blue, var(--vscode-charts-blue, #3794ff)); }
@@ -55,7 +61,7 @@
         }
         if (typeof view.text !== 'string') { return note(view.note ? tr(view.note) : ''); }
         const lines = view.text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
-        return `<div class="fv-code">${lines.map((l, i) => row(l, '', i + 1)).join('')}</div>`
+        return `<div class="fv-code${PROSE ? ' fv-prose' : ''}">${lines.map((l, i) => row(l, '', PROSE ? 0 : i + 1)).join('')}</div>`
             + (view.truncated ? note(tr('Only the first 256 KB is shown.')) : '');
     }
 
@@ -68,8 +74,8 @@
             + `<div class="fv-path">${C.esc(DATA.file || '')}</div>`
             + `<div class="fv-facts">${C.esc(facts)}</div>`
             + `<div class="fv-bar">`
-            + `<button class="secondary" data-mode="file" aria-pressed="${!diff}">${C.esc(tr('File'))}</button>`
-            + `<button class="secondary" data-mode="diff" aria-pressed="${diff}">${C.esc(tr('Changes since the last commit'))}</button>`
+            + (EDITS ? `<button class="secondary" data-mode="file" aria-pressed="${!diff}">${C.esc(tr('File'))}</button>`
+                + `<button class="secondary" data-mode="diff" aria-pressed="${diff}">${C.esc(tr('Changes since the last commit'))}</button>` : '')
             + `<button class="secondary" data-act="refresh">${C.esc(tr('Read again'))}</button></div>`
             + body();
     }

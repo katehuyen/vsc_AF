@@ -8,6 +8,11 @@ import { morePages, SOUND_PC, type MorePageMakers } from './remotePagesMore';
  * here is answered "unavailable" on the phone. `pcOnly` lists what would open
  * a dialog, an editor or another tab on the PC; its phone form comes later
  * (X-443 navigation, X-447 pickers).
+ *
+ * X-443 — a page's own "open this file" stays `pcOnly` here: on the phone
+ * media/afRemote.js turns the press into the `file` page before it is sent
+ * (src/core/shownFile.ts finds the file in what that page shows), so the raw
+ * message only ever arrives from a client that is not ours, and is refused.
  */
 
 export interface RemotePageMakers extends MorePageMakers {

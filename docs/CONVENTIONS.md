@@ -950,16 +950,26 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   keeping the page where it is. Any other scheme still reaches the farm, where
   `openExternal` stays `pcOnly` and is refused aloud. A page that opens a web
   link sends exactly that shape (`test_remote_external.js` reads every sender).
-- **A file a Console card names is READ on the phone, never opened (X-443).**
-  The card's ✎ open / vs HEAD chips (`{ type: 'openFile', file, diff }`) become
-  `afnav` to the farm's `file` page on the Console's view (`media/afRemote.js`);
-  the page (`src/panels/fileView.ts`, `media/fileView.js`) shows the file and
-  `git diff HEAD -- <file>` read-only. ‼️ The farm reads ONLY a file some hosted
-  card's write tools name (`editedFilesOf` / `editedFileTarget`,
-  `src/core/editedFile.ts`), the view never names another path, and the op is
-  the same body (`console.file.read`, read scope). A new page that lets a phone
-  read a file follows the same rule: the set is what the farm already shows,
-  never a path the phone sends (`test_edited_file.js`).
+- **A file a page shows is READ on the phone, never opened (X-443).** A page's
+  own "open this file" — a Console card's ✎ open / vs HEAD chips, the
+  transcript's changed files, a notice's or a work item's report and answer, a
+  step's or a task's output, a note's file, an agent's memory — becomes `afnav`
+  to the farm's `file` page (`media/afRemote.js`, `FILE_ASKS`: the page, its
+  message, and what of it names the file); the page (`src/panels/fileView.ts`,
+  `media/fileView.js`) shows it read-only, prose wrapped and code numbered, with
+  `git diff HEAD -- <file>` for a file an agent's write tools named. ‼️ THE
+  PAGE SAYS WHERE IT IS, THE FARM FINDS THE FILE: each such page is a source in
+  `src/core/shownFile.ts` (`SHOWN_FILE_SOURCES`), and what the phone sent — an
+  item's id, or a path — is looked up in what THAT page shows
+  (`shownFileTarget`); a path it shows nowhere opens nothing, and the op is the
+  same body (`files.read`; `console.file.read` is its Console source). A new
+  page that lets a phone read a file is a new source and a new `FILE_ASKS` line
+  in the same commit, and three things hold it (`test_shown_file.js` reads both
+  tables): its message stays `pcOnly`, so the raw press never reaches the PC's
+  editor; the page opens at the file page's own scope (`read`) — a source on a
+  page that asks more would widen what a read phone sees, and needs its own
+  page id; and a file that can hold a key (an agent's settings, an MCP
+  definition, a skill) is in no source.
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes

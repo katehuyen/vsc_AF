@@ -159,8 +159,9 @@ const settle = () => new Promise(r => setTimeout(r, 20));
             posted[0].type === 'afnav' && posted[0].to === 'file' && posted[0].args.file === A && posted[0].args.diff === true);
         at('/view/console').postMessage({ type: 'openFile', file: A });
         ok('✎ open is the file itself', posted[1].args.diff === false);
-        at('/view/missions').postMessage({ type: 'openFile', file: A });
-        ok('another page\'s openFile is not the Console\'s chip: it goes to the farm as before', posted[2].type === 'openFile');
+        ok('…and says which page it came from, so the farm looks among the files the cards name (test_shown_file.js)', posted[0].args.from === 'console' && posted[1].args.from === 'console');
+        at('/view/studio').postMessage({ type: 'openFile', path: A });
+        ok('a page the farm has no file source for keeps its own openFile: it goes to the farm as before', posted[2].type === 'openFile');
         at('/view/console').postMessage({ type: 'openFile', kind: 'noticeReport', id: 'n1' });
         ok('…and so does one that names no file', posted[3].type === 'openFile');
     } finally {

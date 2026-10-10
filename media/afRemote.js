@@ -64,11 +64,30 @@
         return m && typeof m.type === 'string' && Object.prototype.hasOwnProperty.call(LINKS, m.type)
             ? { type: 'afnav', to: LINKS[m.type] } : null;
     }
-    // X-443 — a Console card's ✎ open / vs HEAD chip opens that file read-only on the phone (the farm's "file"
-    // page, which reads it only when a card names it); the PC's editor is not the phone's
+    // X-443 — a page's own "open this file" opens the farm's "file" page on the phone, read-only: the PC's
+    // editor is not the phone's. Each page that shows a file names the message that asks for one and what of
+    // it says which (an item's id, or a path); the farm finds the file itself in what that page shows
+    // (src/core/shownFile.ts, a source per page), so a path it shows nowhere opens nothing.
+    var FILE_ASKS = {
+        console: ['openFile', function (m) { return { file: m.file, diff: m.diff === true }; }],
+        session: ['openEditedFile', function (m) { return { file: m.file, diff: m.diff === true, session: (window.__DATA__ || {}).sessionId }; }],
+        queue: ['openFile', function (m) { return { id: m.id, kind: m.kind }; }],
+        notices: ['openReport', function (m) { return { id: m.id }; }],
+        a2anotes: ['openFile', function (m) { return { id: m.id, file: m.file }; }],
+        missions: ['openFile', function (m) { return { file: m.file }; }],
+        tasks: ['open-output', function (m) { return { file: m.file }; }],
+        board: ['open-output', function (m) { return { file: m.file }; }],
+        agent: ['openFile', function (m) { return { file: m.path }; }],
+        search: ['openFile', function (m) { return { file: m.file }; }]
+    };
     function fileOf(m) {
-        return m && m.type === 'openFile' && typeof m.file === 'string' && m.file && location.pathname === '/view/console'
-            ? { type: 'afnav', to: 'file', args: { file: m.file, diff: m.diff === true } } : null;
+        var at = /^\/view\/([A-Za-z0-9._-]+)$/.exec(location.pathname);
+        var ask = at && Object.prototype.hasOwnProperty.call(FILE_ASKS, at[1]) ? FILE_ASKS[at[1]] : null;
+        if (!ask || !m || m.type !== ask[0]) { return null; }
+        var args = ask[1](m);
+        if (!(typeof args.file === 'string' && args.file) && !(typeof args.id === 'string' && args.id)) { return null; }
+        args.from = at[1];
+        return { type: 'afnav', to: 'file', args: args };
     }
     // X-443 — a link to the web opens in the phone's own browser, not on the PC: the page goes to it, and the
     // shell (and_AgentFarm PageClient.shouldOverrideUrlLoading) hands every http(s) address that is not the

@@ -3,6 +3,7 @@ import { handleAfNav, htmlShell } from './base';
 import { desktopHost, type PanelHost } from './panelHost';
 import type { WorkItem } from '../core/workqueue';
 import { clearHandled, removeMany } from '../core/queueHygiene';
+import { queueDocOf } from '../core/shownFile';
 import type { QueueDeps } from './queueDeps';
 
 /**
@@ -271,8 +272,7 @@ export class QueuePanel {
      *  when omitted). The path comes from the item itself, never the webview —
      *  no arbitrary file open. */
     private openFile(id: string, kind: 'answer' | 'report' | 'noticeReport', mode?: string): void {
-        const n = this.deps.store.get(id);
-        const p = kind === 'report' ? n?.reportPath : kind === 'noticeReport' ? n?.sourceNoticeReportPath : n?.answerPath;
+        const p = queueDocOf(this.deps.store.get(id), kind);
         if (!p) { return; }
         try { this.deps.openDoc?.(p, mode); } catch { /* best-effort */ }
     }

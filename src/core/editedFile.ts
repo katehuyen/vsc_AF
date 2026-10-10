@@ -91,7 +91,7 @@ async function diffOf(file: string, git: GitRun): Promise<Pick<EditedFileView, '
 export async function readEditedFile(file: string, diff: boolean, git: GitRun = gitRun): Promise<EditedFileView> {
     const view: EditedFileView = { file, name: path.basename(file), exists: false };
     if (!path.isAbsolute(file)) {
-        view.note = 'The card names this file without its folder, so it cannot be found.';
+        view.note = 'This file is named without its folder, so it cannot be found.';
         return view;
     }
     let st: fs.Stats | undefined;

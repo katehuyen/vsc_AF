@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.924.0 - Read reports, outputs and memory files from your phone (2026-10-11)
+
+- **On the phone, the files a page shows open read-only.** Since 3.923.0 a
+  file on a Console card opens on the phone; every other "open this file" was
+  still refused there with a note saying it belongs to the PC. These now open
+  on the phone too, as the file is on disk: a notice's full report; a work
+  item's report, answer and source report on the Queue; a mission step's and a
+  task's output; the files a session changed, from its transcript, with their
+  changes since the last commit; the files an agent-to-agent note points at;
+  and an agent's CLAUDE.md, DUTIES.md and memory files, from the agent's page
+  and from a memory hit on the Search page.
+
+  A document (Markdown or plain text) is wrapped to the phone's width so it
+  reads without scrolling sideways; code keeps its line numbers. Only a file
+  the page itself shows can be opened this way, so the phone can never ask
+  for another file on the PC, and an agent's settings, MCP definitions and
+  skills still open on the PC only.
+
 ## 3.923.0 - Read a file an agent wrote from your phone (2026-10-11)
 
 - **On the phone, a Console card's file opens read-only.** On the PC, the
