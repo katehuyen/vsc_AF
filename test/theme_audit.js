@@ -12,6 +12,8 @@
  *   node test/theme_audit.js --snapshot <file>     write every page's DARK fingerprint
  *   node test/theme_audit.js --compare <file>      ‼️ the dark theme against that snapshot —
  *                                                  take one before a light-theme change, compare after
+ *   node test/theme_audit.js --under <id>          the kind as a user really runs it: under a colour customised
+ *                                                  by hand (a scenario of test/theme_vars.json, lib_theme_under.js)
  *   node test/theme_audit.js --pages a,b           only those fixtures
  *   node test/theme_audit.js --write-budget        write test/themeaudit.manifest.json from today
  */
@@ -37,24 +39,24 @@ function pages() {
     return want ? all.filter(p => want.split(',').includes(p)) : all;
 }
 
-function render(page, theme, out) {
-    return new Promise(resolve => execFile(process.execPath, [path.join(__dirname, 'render_page.js'), page].concat(FLAG[theme]),
+function render(page, theme, out, under) {
+    return new Promise(resolve => execFile(process.execPath, [path.join(__dirname, 'render_page.js'), page].concat(FLAG[theme], under ? ['--under', under] : []),
         { cwd: ROOT, env: Object.assign({}, process.env, { AF_RENDER_OUT: out }), timeout: 180000 },
-        err => resolve(err ? null : path.join(out, page + SUFFIX[theme] + '.html'))));
+        err => resolve(err ? null : path.join(out, page + SUFFIX[theme] + (under ? '.' + under : '') + '.html'))));
 }
 
-/** Every page in `theme`, a few at a time: { page: { texts, low, fingerprint } | { error } }. */
-async function run(theme, list, bin, width) {
+/** Every page in `theme` (under a scenario, when one is named), a few at a time: { page: { texts, low, fingerprint, ground } | { error } }. */
+async function run(theme, list, bin, width, under) {
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'af-theme-render-'));
     const result = {};
     const queue = list.slice();
     const worker = async () => {
         while (queue.length) {
             const page = queue.shift();
-            const file = await render(page, theme, out);
+            const file = await render(page, theme, out, under);
             if (!file || !fs.existsSync(file)) { result[page] = { error: 'no render' }; continue; }
             const r = await new Promise(res => setImmediate(() => res(audit(file, bin))));
-            result[page] = r.error ? { error: r.error } : { texts: r.texts, low: r.low.length, fingerprint: r.fingerprint, worst: r.low.slice(0, 3), unread: r.unread, boxes: r.boxes, edges: r.edges };
+            result[page] = r.error ? { error: r.error } : { texts: r.texts, low: r.low.length, fingerprint: r.fingerprint, ground: r.ground, worst: r.low.slice(0, 3), unread: r.unread, boxes: r.boxes, edges: r.edges };
         }
     };
     await Promise.all(Array.from({ length: width }, worker));
@@ -75,7 +77,7 @@ async function main() {
     const list = pages();
     const snap = arg('--snapshot'), cmp = arg('--compare');
     const theme = snap || cmp ? 'dark' : (arg('--theme') || 'light');
-    const r = await run(theme, list, bin, 3);
+    const r = await run(theme, list, bin, 3, arg('--under') || '');
     const base = HC.includes(theme) ? await run('dark', list, bin, 3) : null;
     if (snap) {
         fs.writeFileSync(snap, JSON.stringify(Object.fromEntries(Object.entries(r).map(([p, v]) => [p, v.fingerprint || v.error])), null, 1) + '\n', 'utf8');

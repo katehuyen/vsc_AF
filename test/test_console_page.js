@@ -2575,7 +2575,7 @@ const intentOf = (o) => Object.assign({
     // against the editor's own background instead of against nothing.
     const askBoxCss = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
     ok('‼ U-133: the card that holds the turn is OPAQUE — nothing prints through it',
-        /\.askbox \{[^}]*background:color-mix\(in srgb, var\(--vscode-focusBorder,#3794ff\) \d+%, var\(--vscode-editor-background/.test(askBoxCss));
+        /\.askbox \{[^}]*background:color-mix\(in srgb, var\(--vscode-focusBorder,#3794ff\) \d+%, var\(--af-ground,var\(--vscode-editor-background/.test(askBoxCss));
 
     // A permission ask has no questions: no count, but the same fixed strip —
     // a tool call with a huge input is exactly as unanswerable when it overflows.

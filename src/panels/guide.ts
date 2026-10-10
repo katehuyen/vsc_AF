@@ -309,7 +309,7 @@ export class GuidePanel {
     background: var(--vscode-input-background); color: var(--vscode-input-foreground); }
 #gsearch button { cursor: pointer; font: inherit; font-size: 11px; padding: 3px 9px; border-radius: 4px;
     border: 1px solid var(--vscode-widget-border, #4443);
-    background: var(--vscode-editor-background); color: var(--vscode-foreground); opacity: .8; }
+    background: var(--af-ground,var(--vscode-editor-background)); color: var(--vscode-foreground); opacity: .8; }
 #gsearch button:hover { opacity: 1; }
 #gcount { font-size: 11px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
 mark.af-hit { background: var(--vscode-editor-findMatchHighlightBackground, #ea5c0055);
@@ -323,7 +323,7 @@ body.guide.searching #content h3 { scroll-margin-top: 46px; }
 #langbar button {
     cursor: pointer; font: inherit; font-size: 11px; padding: 2px 10px; border-radius: 4px;
     border: 1px solid var(--vscode-widget-border, #4443);
-    background: var(--vscode-editor-background); color: var(--vscode-foreground); opacity: .75;
+    background: var(--af-ground,var(--vscode-editor-background)); color: var(--vscode-foreground); opacity: .75;
 }
 #langbar button:hover { opacity: 1; }
 #langbar button.active {

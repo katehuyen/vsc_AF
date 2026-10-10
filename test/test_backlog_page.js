@@ -1919,7 +1919,7 @@ function pickParent(r, code) {
         && /\.pj-bl-nextn \{[\s\S]{0,220}?background:var\(--vscode-charts-green/.test(r.html()));
     ok('…and the strip\'s number is legible on any theme, because its text takes the '
         + 'editor background rather than a fixed colour',
-        /\.pj-bl-nextn \{[\s\S]{0,400}?color:var\(--vscode-editor-background/.test(r.html()));
+        /\.pj-bl-nextn \{[\s\S]{0,400}?color:var\(--af-ground,var\(--vscode-editor-background/.test(r.html()));
     ok('past the default the number drops the fill and keeps the hue, half lit',
         /\.pj-bl-nextb\.past \.pj-bl-nextn \{[\s\S]{0,140}?color:var\(--af-ink-charts-green, var\(--vscode-charts-green/.test(r.html()));
 }

@@ -999,6 +999,39 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   `tools/theme_phone.js` from `test/theme_vars.json`, linked only when
   `webview.remote` — gives the variables VS Code's Light Modern values. Dark
   defines nothing, so the phone's dark is every rule's own fallback, as before.
+- **‼️ The ground is `--af-ground`, never the editor's background itself
+  (U-220).** A colour customised by hand (`workbench.colorCustomizations`,
+  unscoped) holds under EVERY theme: a dark `editor.background` kept from a
+  dark theme is the ground a light theme hands a webview, beside the light
+  theme's own dark text — the page cannot be read (measured on the Console:
+  3821 of 5270 texts below their contrast, against 625 in Light Modern as
+  shipped). So every use is
+  `var(--af-ground, var(--vscode-editor-background …))`, the old expression kept
+  whole as the fallback — a background, text set on a hue fill, an SVG
+  `fill=` / `stroke=`, a `color-mix()` operand alike. The layer derives it for
+  the light kinds with a relative colour whose factor is 0 or 1, never a blend:
+  a ground the light text reads on (weighted channel sum of 170 of 255 or more,
+  4.8:1 under Light Modern's text) is kept exactly as handed, anything darker —
+  or no ground at all — is white, the ground the light inks were measured on.
+  A dark kind never gets the variable, so it paints with exactly what it is
+  handed; the mirror case (a light ground forced under a dark theme) is left as
+  VS Code gives it. `test_theme_ground.js` finds every variable a scenario
+  changes by scanning, refuses a use that does not go through the layer,
+  measures the rule as shipped in Chrome, and holds a page drawn under the
+  scenario to the very colours of the plain kind.
+  **The themes as shipped are not the themes a user runs.**
+  `test/theme_vars.json` carries each such scenario under `under`
+  (`tools/theme_vars.js` → `UNDER`: resolved by VS Code's own rules, written as
+  the variables it changes), and `render_page.js`, `shoot_page.js` and
+  `theme_audit.js` draw it with `--under <id>` (`test/lib_theme_under.js`; the
+  file is `now.light.darkground.html`). A light-theme change is looked at under
+  the scenario too, and a new scenario that changes a second variable fails the
+  guard by that variable's name. The phone's sheet writes its ground plainly
+  (`--af-ground: #ffffff`, linked after the layer): nobody customises a colour
+  there, and a phone's browser may be older than relative colours.
+  NOT covered: the scrollbar TRACK. VS Code's own default sheet paints it
+  (`html { scrollbar-color: … var(--vscode-editor-background) }`), on the element
+  above the body class the layer is keyed on.
 - **‼️ High Contrast (U-239) draws a control by its EDGE, not its fill.** VS
   Code's High Contrast kinds set no button fill and no selection fill
   (`button-background`, `list-activeSelectionBackground` … are unset there), so
@@ -1027,6 +1060,12 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   lower it with `node test/theme_audit.js --write-budget` when a page improves.
   Before a light change take `--snapshot <file>` (dark fingerprints of every
   colour of every element) and after it `--compare <file>` must say unchanged.
+  Compare in the hour the snapshot was taken, alone on the machine: a fixture
+  that counts against the clock (`tasks`) draws other classes after midnight,
+  and a render that timed out under a second heavy run reads as a page that
+  moved. A page that "moved" is settled by fingerprinting HEAD (a scratch copy
+  of `git archive HEAD` plus the compiled `out/`) and the tree in the same
+  minute — never by argument.
   Animations and transitions are frozen while measuring: a pulse caught
   mid-frame made the same page fingerprint differently run to run. And a
   colour the audit cannot read fails it rather than being skipped:

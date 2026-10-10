@@ -401,7 +401,7 @@
             const p = pos.get(n.name);
             const r = Math.max(5, Math.min(14, 4 + Math.sqrt(n.tokens / 60)));
             const fill = n.recalls > 0 ? 'var(--vscode-charts-green, #4caf50)' : 'var(--vscode-descriptionForeground, #888)';
-            const ring = !n.inIndex ? ` stroke="var(--vscode-charts-yellow, #cca700)" stroke-width="2.5" stroke-dasharray="3 2"` : ' stroke="var(--vscode-editor-background, #000)" stroke-width="1"';
+            const ring = !n.inIndex ? ` stroke="var(--vscode-charts-yellow, #cca700)" stroke-width="2.5" stroke-dasharray="3 2"` : ' stroke="var(--af-ground,var(--vscode-editor-background, #000))" stroke-width="1"';
             const tip = `${n.name}${n.type ? ' [' + n.type + ']' : ''}\n` +
                 (n.description ? n.description + '\n' : '') +
                 `~${n.tokens} tok · changed ${relTime(n.mtime)}\n` +

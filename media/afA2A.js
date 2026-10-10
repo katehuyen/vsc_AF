@@ -277,9 +277,9 @@
         .a2a-empty { margin-top:24px; }
         .a2a-lane { margin:16px 0 4px; font-size:12px; font-weight:600; opacity:.8; }
         .a2a-dflag { font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:1px 7px; border-radius:9px; white-space:nowrap; flex-shrink:0;
-            background:var(--vscode-editorWarning-foreground, #d4a72c); color:var(--vscode-editor-background, #1e1e1e); }
-        .a2a-df-veto { background:var(--vscode-errorForeground, #f14c4c); color:var(--vscode-editor-background, #1e1e1e); }
-        .a2a-df-constraint { background:var(--vscode-textLink-foreground, #3794ff); color:var(--vscode-editor-background, #1e1e1e); }
+            background:var(--vscode-editorWarning-foreground, #d4a72c); color:var(--af-ground,var(--vscode-editor-background, #1e1e1e)); }
+        .a2a-df-veto { background:var(--vscode-errorForeground, #f14c4c); color:var(--af-ground,var(--vscode-editor-background, #1e1e1e)); }
+        .a2a-df-constraint { background:var(--vscode-textLink-foreground, #3794ff); color:var(--af-ground,var(--vscode-editor-background, #1e1e1e)); }
         .a2a-plus { flex-shrink:0; width:20px; height:20px; padding:0; line-height:1; font-size:13px; border-radius:50%;
             opacity:0; transition:opacity .12s; background:transparent; color:var(--vscode-foreground); border:1px solid var(--vscode-panel-border); }
         .a2a-card:hover .a2a-plus, .a2a-plus:focus, .a2a-plus.on { opacity:1; }

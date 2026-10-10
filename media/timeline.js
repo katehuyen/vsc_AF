@@ -1328,7 +1328,7 @@
                     { file: '', ts: 0, cursor: 'pointer', trigCls: 'af-readstop', trigAttrs: 'data-aftipact="1"', role: 'button', label: t('Stop reading aloud') }));
                 out += `<g class="af-readstop" style="pointer-events:none">`
                     + `<rect x="84" y="${y + 2}" width="14" height="14" rx="3" fill="var(--vscode-charts-blue, #3794ff)" opacity="0.95"/>`
-                    + `<rect x="88" y="${y + 6}" width="6" height="6" fill="var(--vscode-editor-background, #fff)"/></g>`;
+                    + `<rect x="88" y="${y + 6}" width="6" height="6" fill="var(--af-ground,var(--vscode-editor-background, #fff))"/></g>`;
             }
             // ‼️ THE CONTROLS BELONG TO THIS ROW'S SESSION AND TO NOTHING ELSE
             // (U-66). They used to carry `data-agent`, so an agent with three
@@ -1406,7 +1406,7 @@
                     + `${armable ? '' : ' data-disabled="1"'}`
                     + ` style="cursor:${armable ? 'pointer' : 'not-allowed'};opacity:${armable ? '1' : '0.32'}">` +
                     `<rect x="${gx}" y="${ty}" width="15" height="15" rx="3" fill="${lit ? 'var(--vscode-charts-blue, #3794ff)' : 'transparent'}" stroke="${lit ? 'var(--vscode-charts-blue, #3794ff)' : 'currentColor'}" stroke-opacity="${lit ? '1' : '0.45'}" opacity="${lit ? '0.95' : '1'}"/>` +
-                    `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${lit ? 'var(--vscode-editor-background, #fff)' : 'currentColor'}" opacity="${lit ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
+                    `<text x="${gx + 7.5}" y="${ty + 11.5}" font-size="10.5" text-anchor="middle" fill="${lit ? 'var(--af-ground,var(--vscode-editor-background, #fff))' : 'currentColor'}" opacity="${lit ? '1' : '0.55'}" style="pointer-events:none">${a.glyph}</text>` +
                     // ‼️ SELECTED IS NOT ONLY A FILL. A hover leaves a fill
                     // behind on some themes and the row then lies about what is
                     // armed, so a checked control also wears a tick of its own.
@@ -1607,7 +1607,7 @@
                 const color = RUN_COLORS[s.status] || RUN_COLORS.queued;
                 out += `<rect x="${x1.toFixed(1)}" y="${y + rowH / 2 - 8}" width="${(x2 - x1).toFixed(1)}" height="16" rx="3" fill="${color}" opacity="${s.status === 'running' ? 0.95 : 0.65}">` +
                     `<title>${C.esc(s.title)} — ${C.esc(s.agentName)} (${s.status})\n${fmtClock(s.startedAt)} → ${s.endedAt ? fmtClock(s.endedAt) : 'running'}</title></rect>`;
-                out += `<text x="${(x1 + 3).toFixed(1)}" y="${y + rowH / 2 + 4}" font-size="9" fill="var(--vscode-editor-background, #000)" opacity="0.9">${si + 1}</text>`;
+                out += `<text x="${(x1 + 3).toFixed(1)}" y="${y + rowH / 2 + 4}" font-size="9" fill="var(--af-ground,var(--vscode-editor-background, #000))" opacity="0.9">${si + 1}</text>`;
             });
         });
         out += `<line x1="${x(now)}" y1="${padT}" x2="${x(now)}" y2="${H - 4}" stroke="var(--vscode-charts-red, #f14c4c)" stroke-width="1.5" opacity="0.8"/>`;

@@ -1705,7 +1705,7 @@
                 .pj-tab:hover::before { background:var(--tabc); }
                 .pj-tab.on { opacity:1; font-weight:600; padding:10px 15px 8px;
                     color:var(--vscode-foreground);
-                    background:var(--vscode-editor-background);
+                    background:var(--af-ground,var(--vscode-editor-background));
                     border-color:color-mix(in srgb, var(--tabc) 75%, transparent); }
                 .pj-tab.on::before { background:var(--tabc); height:5px; }
                 /* Ten hues, fixed to the tab rather than to its position, so a
@@ -2595,7 +2595,7 @@
                     font-size:10px; font-weight:600; text-align:center;
                     font-variant-numeric:tabular-nums;
                     background:var(--vscode-charts-green,#3fb950);
-                    color:var(--vscode-editor-background,#1f1f1f); }
+                    color:var(--af-ground,var(--vscode-editor-background,#1f1f1f)); }
                 .pj-bl-nexte { opacity:.7; font-size:10px; }
                 /* "there is a whole this belongs to" — four pixels of fact. The
                    parent's code is in the hover; putting it on the chip would

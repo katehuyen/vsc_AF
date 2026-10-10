@@ -24,6 +24,8 @@ ok('it is one rule, keyed on the light body class — dark defines nothing', rul
 const light = table.themes.light;
 ok('every colour the pages use has its Light Modern value there',
     Object.keys(light).length > 40 && Object.keys(light).every(k => sheet.includes(`--vscode-${k}: ${light[k]};`)));
+ok('‼️ the phone\'s ground is the table\'s own, written plainly — it waits on no syntax an older phone browser lacks (U-220)',
+    sheet.includes('    --af-ground: ' + light['editor-background'] + ';') && !/\(from /.test(sheet));
 ok('tools/theme_vars.js rewrites it with the table', /require\('\.\/theme_phone'\)\.phoneSheet\(out\)/.test(read('tools/theme_vars.js')));
 
 // ---- who links it: the phone's pages, never the desktop ----

@@ -173,7 +173,7 @@
                 .nw-qf.hot { background:var(--vscode-charts-red, #d33); }
                 .nw-qp { width:58px; text-align:right; }
                 .nw-empty { margin:4px 0; }
-                .nw-box { position:fixed; left:0; right:0; bottom:var(--af-bottom, 0px); padding:8px 12px; background:var(--vscode-editor-background);
+                .nw-box { position:fixed; left:0; right:0; bottom:var(--af-bottom, 0px); padding:8px 12px; background:var(--af-ground,var(--vscode-editor-background));
                     border-top:1px solid var(--vscode-panel-border); }
                 .nw-boxrow { display:flex; gap:6px; align-items:flex-end; }
                 .nw-boxrow select { max-width:34%; min-height:32px; }

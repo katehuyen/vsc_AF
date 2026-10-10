@@ -17,7 +17,7 @@
  *   node test/render_page.js track              → dist/render/track.html
  *   node test/render_page.js --list             → the fixtures there are
  *   node test/render_page.js track --light      → the light theme instead
- *   node test/render_page.js track --hc         → High Contrast (--hc-light: High Contrast Light)
+ *   node test/render_page.js track --hc         → High Contrast (--hc-light: High Contrast Light; --under <id>: lib_theme_under.js)
  *
  * ‼️ IT IS A LOOKING GLASS, NOT A TEST. It asserts nothing and it is not wired
  * into `npm test`; a rendered page that looks right proves the CSS, never the
@@ -51,8 +51,8 @@ const KIND = { dark: 'vscode-dark', light: 'vscode-light', 'hc-dark': 'vscode-hi
 /** The file-name suffix of each kind's render: name.html, name.light.html, name.hc.html, name.hclight.html. */
 const SUFFIX = { dark: '', light: '.light', 'hc-dark': '.hc', 'hc-light': '.hclight' };
 
-function themeCss(name) {
-    const t = THEMES[name] || THEMES.dark;
+function themeCss(name, over) {
+    const t = Object.assign({}, THEMES[name] || THEMES.dark, over);
     return ':root {\n' + Object.keys(t).map(k => `    --vscode-${k}: ${t[k]};`).join('\n') + '\n}';
 }
 
@@ -163,11 +163,11 @@ function main() {
     const args = process.argv.slice(2);
     if (!args.length || args.indexOf('--list') >= 0) {
         console.log('fixtures: ' + (listFixtures().join(' ') || '(none)'));
-        console.log('usage: node test/render_page.js <fixture> [--light | --hc | --hc-light] [--lang <id>]');
+        console.log('usage: node test/render_page.js <fixture> [--light | --hc | --hc-light] [--under <scenario>] [--lang <id>]');
         return;
     }
     const name = args[0];
-    const theme = args.indexOf('--light') >= 0 ? 'light' : args.indexOf('--hc-light') >= 0 ? 'hc-light' : args.indexOf('--hc') >= 0 ? 'hc-dark' : 'dark';
+    const theme = args.indexOf('--light') >= 0 ? 'light' : args.indexOf('--hc-light') >= 0 ? 'hc-light' : args.indexOf('--hc') >= 0 ? 'hc-dark' : 'dark', under = require('./lib_theme_under').underOf(args, theme);
     const fixturePath = path.join(FIXTURES, name + '.js');
     if (!fs.existsSync(fixturePath)) {
         console.error(`no fixture "${name}" — have: ${listFixtures().join(' ')}`);
@@ -298,13 +298,13 @@ function main() {
     const html = `<!doctype html>
 <html${lang ? ` lang="${lang}"` : ''}><head><meta charset="utf-8"><title>${name} — ${theme}</title>
 <style>
-${themeCss(theme)}
+${themeCss(theme, under.vars)}
 ${css}
 ${quotaCss}
 ${themeLayer}
 /* the renderer's own frame — nothing here belongs to the extension */
 body { margin: 0; padding: 0 0 60px;
-    background: var(--vscode-editor-background); color: var(--vscode-foreground);
+    background: var(--af-ground, var(--vscode-editor-background)); color: var(--vscode-foreground);
     font-family: var(--vscode-font-family); font-size: 13px; }
 .rndr-h { margin: 0; padding: 6px 16px;
     font-size: 11px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase;
@@ -327,7 +327,7 @@ ${withMenus}
 </body></html>`;
 
     fs.mkdirSync(OUT, { recursive: true });
-    const out = path.join(OUT, `${name}${SUFFIX[theme]}.html`);
+    const out = path.join(OUT, `${name}${SUFFIX[theme]}${under.suffix}.html`);
     fs.writeFileSync(out, html, 'utf8');
     console.log(out);
 }

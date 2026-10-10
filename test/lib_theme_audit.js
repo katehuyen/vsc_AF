@@ -17,7 +17,7 @@ const { headlessFlags } = require('./headless_chrome');
 
 const MARK = 'AF-THEME-AUDIT';
 
-/** Runs inside the page; returns { texts, low, fp, elements }. */
+/** Runs inside the page; returns { texts, low, fingerprint, elements, ground: the body's own background }. */
 const PROBE = `(function(){
   function parse(c){var m=/rgba?\\(([^)]+)\\)/.exec(c||''),k=1;if(!m){m=/^color\\(srgb ([^)]+)\\)$/.exec(c||'');k=255;}if(!m){return null;}var p=m[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);return {r:p[0]*k,g:p[1]*k,b:p[2]*k,a:p.length>3?p[3]:1};}
   function over(t,u){var a=t.a+u.a*(1-t.a);if(!a){return {r:0,g:0,b:0,a:0};}return {r:(t.r*t.a+u.r*u.a*(1-t.a))/a,g:(t.g*t.a+u.g*u.a*(1-t.a))/a,b:(t.b*t.a+u.b*u.a*(1-t.a))/a,a:a};}
@@ -59,7 +59,7 @@ const PROBE = `(function(){
     if(k<need){out.low.push({i:i,text:txt.trim().slice(0,40),ratio:Math.round(k*100)/100,need:need,color:cs.color,bg:'rgb('+Math.round(bg.r)+','+Math.round(bg.g)+','+Math.round(bg.b)+')',where:el.tagName.toLowerCase()+(el.className&&typeof el.className==='string'?'.'+el.className.trim().split(/\\s+/).join('.'):'')});}
   }
   var s=fp.join('\\n'),h=2166136261;for(var j=0;j<s.length;j++){h^=s.charCodeAt(j);h=Math.imul(h,16777619)>>>0;}
-  out.elements=fp.length;out.fingerprint=h.toString(16);return out;})()`;
+  out.elements=fp.length;out.fingerprint=h.toString(16);out.ground=getComputedStyle(document.body).backgroundColor;return out;})()`;
 
 /** Measure one render file. `bin`: the Chrome to use (test/shoot_page.js browser()). */
 function audit(htmlFile, bin) {

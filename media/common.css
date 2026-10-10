@@ -3,7 +3,7 @@
 body {
     font-family: var(--vscode-font-family);
     color: var(--vscode-foreground);
-    background: var(--vscode-editor-background);
+    background: var(--af-ground, var(--vscode-editor-background));
     font-size: 13px;
     margin: 0;
     padding: 16px 20px 40px;
@@ -251,7 +251,7 @@ html:not(.af-phone) .afms-fit .afms-btn { flex: 1 1 auto; width: auto !important
        has to grow inwards or it would run off the panel */
     min-width: 180px; max-width: 320px; max-height: 280px; overflow: auto;
     padding: 6px 12px 8px; text-align: left;
-    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    background: var(--vscode-editorWidget-background, var(--af-ground, var(--vscode-editor-background)));
     border: 1px solid var(--vscode-widget-border, #4444); border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
 }
@@ -336,7 +336,7 @@ body.guide li { line-height: 1.5; margin: 3px 0; }
 /* The guide on a phone (src/panels/guide.ts): one column, the search box stays on top, the contents a short box. */
 html.af-phone body.guide { display: block; height: auto; overflow: visible; }
 html.af-phone body.guide #gsearch { position: sticky; top: 0; left: auto; right: auto; max-width: none; padding: 6px 8px;
-    background: var(--vscode-editor-background); }
+    background: var(--af-ground, var(--vscode-editor-background)); }
 html.af-phone body.guide #langbar { position: static; justify-content: flex-end; padding: 4px 8px 0; }
 html.af-phone body.guide #toc { width: auto; max-height: 40vh; border-right: none; padding: 8px 12px;
     border-bottom: 1px solid var(--vscode-widget-border, #4443); }
@@ -368,8 +368,8 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     white-space: pre-wrap; word-break: break-word; text-decoration: none;
     cursor: auto;
     border: 1px solid var(--vscode-widget-border, #454545);
-    background-color: var(--vscode-editor-background, #1e1e1e) !important;
-    background: var(--vscode-editor-background, #1e1e1e) !important;
+    background-color: var(--af-ground, var(--vscode-editor-background, #1e1e1e)) !important;
+    background: var(--af-ground, var(--vscode-editor-background, #1e1e1e)) !important;
     color: var(--vscode-foreground, #cccccc);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85);
 }
@@ -823,7 +823,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     width: min(680px, 88vw); max-height: 66vh; display: flex; flex-direction: column;
     border-radius: 8px; overflow: hidden; box-shadow: 0 8px 30px #0007;
     border: 1px solid var(--vscode-widget-border, #4444);
-    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    background: var(--vscode-editorWidget-background, var(--af-ground, var(--vscode-editor-background)));
 }
 .af-sniphead {
     display: flex; gap: 8px; align-items: center; padding: 8px 10px;
@@ -883,7 +883,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     max-height: 260px; display: flex; flex-direction: column; overflow: hidden;
     border-radius: 6px; box-shadow: 0 6px 22px #0007;
     border: 1px solid var(--vscode-widget-border, #4444);
-    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    background: var(--vscode-editorWidget-background, var(--af-ground, var(--vscode-editor-background)));
 }
 .af-sllist { overflow: auto; padding: 3px 0; }
 /* One line per command: what you type · what it takes · what it does · where it
@@ -979,7 +979,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     position: fixed; width: 340px; display: flex; flex-direction: column; gap: 6px;
     padding: 9px 10px 10px; border-radius: 7px; box-shadow: 0 8px 26px #0008;
     border: 1px solid var(--vscode-widget-border, #4444);
-    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    background: var(--vscode-editorWidget-background, var(--af-ground, var(--vscode-editor-background)));
 }
 .afw-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .afw-grow { flex: 1 1 auto; }
@@ -1090,7 +1090,7 @@ html.af-phone .affra { flex: 1 1 100%; text-align: right; white-space: normal; }
     position: absolute; left: 0; right: 0; top: 100%; z-index: 3; margin-top: 2px;
     max-height: 150px; overflow: auto; padding: 2px; border-radius: 5px;
     border: 1px solid var(--vscode-widget-border, #4444);
-    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    background: var(--vscode-editorWidget-background, var(--af-ground, var(--vscode-editor-background)));
     box-shadow: 0 6px 18px #0006;
 }
 .afc-opt {

@@ -226,13 +226,13 @@
                 .matrix .rowname { font-weight: 600; }
                 .matrix .rowname:hover { text-decoration: underline; }
                 .matrix .pill.used {
-                    background: var(--vscode-charts-green, #4caf50); color: var(--vscode-editor-background, #000);
+                    background: var(--vscode-charts-green, #4caf50); color: var(--af-ground,var(--vscode-editor-background, #000));
                     border-radius: 10px; min-width: 30px; font-weight: 700; font-size: 11px;
                 }
                 .matrix .pill.idle { opacity: 0.45; }
                 .matrix .pill.off { color: var(--af-ink-charts-orange, var(--vscode-charts-orange, #d18616)); }
                 .matrix .pill.fail {
-                    background: var(--vscode-charts-red, #f14c4c); color: var(--vscode-editor-background, #000);
+                    background: var(--vscode-charts-red, #f14c4c); color: var(--af-ground,var(--vscode-editor-background, #000));
                     border-radius: 10px; min-width: 30px; font-weight: 700; font-size: 11px;
                 }
                 .matrix .pill.mixed {

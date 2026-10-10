@@ -1029,7 +1029,7 @@
                 .replaybar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:10px 0;
                     padding:8px 10px; border:1px solid var(--vscode-panel-border); border-radius:6px;
                     position:sticky; top:6px; z-index:20;
-                    background:var(--vscode-editor-background, var(--vscode-sideBar-background)); }
+                    background:var(--af-ground,var(--vscode-editor-background, var(--vscode-sideBar-background))); }
                 .replaybar .muted { margin-left:auto; }
                 /* Turn band: full-width, tinted and sticky — turn boundaries must stay
                    obvious while scrolling fast through a long transcript. */
@@ -1037,7 +1037,7 @@
                     cursor:pointer;
                     padding:7px 12px; border-radius:4px; font-size:13px;
                     background:var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
-                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--vscode-editor-background));
+                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--af-ground,var(--vscode-editor-background)));
                     border-left:4px solid var(--vscode-textLink-foreground);
                     position:sticky; top:0; z-index:10; }
                 .turnhdr .turnnum { font-weight:700; white-space:nowrap;
@@ -1137,7 +1137,7 @@
                 .ctxglyph.on { opacity:1; color:var(--vscode-textLink-foreground); }
                 .ctxpop { position:absolute; top:100%; right:0; margin-top:6px; z-index:50;
                     width:300px; max-width:80vw; padding:10px 12px; text-align:left;
-                    background:var(--vscode-editorWidget-background, var(--vscode-editor-background));
+                    background:var(--vscode-editorWidget-background, var(--af-ground,var(--vscode-editor-background)));
                     border:1px solid var(--vscode-widget-border, #4444); border-radius:8px;
                     box-shadow:0 6px 22px rgba(0,0,0,.35); }
                 .ctxpop[hidden] { display:none; }

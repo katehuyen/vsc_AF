@@ -3,6 +3,16 @@
    variables; every use carries the dark value as its var() fallback, so the dark theme is
    the fallback by construction and is never restyled from here (test_theme_sheet.js). */
 
+/* The ground (U-220). A colour set by hand (workbench.colorCustomizations, unscoped) holds under every
+   theme: a dark editor.background kept from a dark theme is the ground a light theme hands the page,
+   beside its own dark text. So a page never paints with the editor's background itself; it paints with
+   var(--af-ground, that background). A light kind keeps the ground it is handed while its text reads on
+   it (a weighted channel sum of 170 of 255 is 4.8:1 under Light Modern's text) and takes white below
+   that, or when it is handed none: the factor is 0 or 1, never a blend. */
+body.vscode-light, body.vscode-high-contrast-light {
+    --af-ground: rgb(from var(--vscode-editor-background, #fff) calc(r + (255 - r) * clamp(0, (170 - (r * .2126 + g * .7152 + b * .0722)) * 1000, 1)) calc(g + (255 - g) * clamp(0, (170 - (r * .2126 + g * .7152 + b * .0722)) * 1000, 1)) calc(b + (255 - b) * clamp(0, (170 - (r * .2126 + g * .7152 + b * .0722)) * 1000, 1)));
+}
+
 /* Dimmed text is written opacity: calc(1 - D * var(--af-dimk, 1)), D being the dark dimming.
    The same opacity costs far more contrast on white than on a dark ground (.65 reads 5.1:1
    in Dark Modern, 3.97:1 in Light Modern), so light keeps the hierarchy at a fraction of it.
@@ -62,7 +72,7 @@ body.vscode-high-contrast:not(.vscode-high-contrast-light) {
    set on it turns to the page ground; its validation backgrounds are white, so a chip's white text set on
    one takes the page's text colour. */
 body.vscode-high-contrast-light {
-    --af-on-charts-yellow: var(--vscode-editor-background);
+    --af-on-charts-yellow: var(--af-ground);
     --af-validation-fg: var(--vscode-foreground);
 }
 

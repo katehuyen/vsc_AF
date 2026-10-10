@@ -146,11 +146,11 @@
 
     function foldCss() {
         return `.setbar { position:sticky; top:0; z-index:10; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-                margin:10px 0 6px; padding:6px 0; background:var(--vscode-editor-background, var(--vscode-sideBar-background)); }
+                margin:10px 0 6px; padding:6px 0; background:var(--af-ground,var(--vscode-editor-background, var(--vscode-sideBar-background))); }
             .sechead { display:flex; align-items:center; gap:4px; border-bottom:1px solid var(--vscode-widget-border, #3333);
                 scroll-margin-top:calc(var(--setbar-h, 46px) + 4px); }
             .sechead.open { position:sticky; top:var(--setbar-h, 46px); z-index:9;
-                background:var(--vscode-editor-background, var(--vscode-sideBar-background)); }
+                background:var(--af-ground,var(--vscode-editor-background, var(--vscode-sideBar-background))); }
             .sectog { flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:8px; padding:8px 4px;
                 background:transparent; border:none; border-radius:0; color:var(--vscode-foreground);
                 font-size:13px; font-weight:600; text-align:left; }

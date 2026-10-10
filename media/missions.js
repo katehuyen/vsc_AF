@@ -5263,7 +5263,7 @@
                 .turnhdr { display:flex; align-items:center; gap:10px; margin:12px 0 6px; cursor:pointer;
                     padding:6px 10px; border-radius:4px; font-size:12px;
                     background:var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
-                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--vscode-editor-background));
+                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 14%, var(--af-ground,var(--vscode-editor-background)));
                     border-left:4px solid var(--vscode-textLink-foreground); }
                 .turnhdr .tcaret { flex:none; width:12px; text-align:center; font-size:10px; opacity:.75; }
                 .turnhdr .turnnum { font-weight:700; white-space:nowrap; color:var(--vscode-textLink-foreground); }
@@ -5457,7 +5457,7 @@
                 .cvmore, .cvnew { font-size:11px; padding:3px 0; cursor:pointer; opacity:.8;
                     color:var(--vscode-textLink-foreground); }
                 .cvnew { position:sticky; top:0; z-index:2; opacity:1; font-weight:600;
-                    background:var(--vscode-editor-background); padding:3px 6px; border-radius:4px; }
+                    background:var(--af-ground,var(--vscode-editor-background)); padding:3px 6px; border-radius:4px; }
                 .cvnew:hover { text-decoration:underline; }
                 .cvmore:hover { text-decoration:underline; }
                 .cvmsg { padding:4px 0 5px; border-bottom:1px dotted var(--vscode-widget-border, #242424); }

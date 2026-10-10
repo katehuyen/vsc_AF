@@ -98,6 +98,19 @@ function colour(expr, T) {
         const sum = a.p + b.p;
         return { r: (a.c.r * a.p + b.c.r * b.p) / sum, g: (a.c.g * a.p + b.c.g * b.p) / sum, b: (a.c.b * a.p + b.c.b * b.p) / sum, a: 1 };
     }
+    // rgb(from <colour> <r> <g> <b>): each channel is arithmetic over the origin's own r, g, b — the layer's ground (U-220)
+    if (/^rgb\(from\s/.test(s) && s.endsWith(')')) {
+        const p = []; let depth = 0, cur = '';
+        for (const ch of s.slice(9, -1).trim() + ' ') {
+            if (ch === '(') { depth++; } else if (ch === ')') { depth--; }
+            if (/\s/.test(ch) && depth === 0) { if (cur) { p.push(cur); } cur = ''; } else { cur += ch; }
+        }
+        const o = p.length === 4 ? colour(p[0], T) : null;
+        if (!o || p.slice(1).some(e => !/^(?:calc|clamp|[rgb]|[\d.\s+\-*/(),])+$/.test(e))) { return null; }
+        const clamp = (lo, x, hi) => Math.min(Math.max(x, lo), hi);
+        const [r, g, b] = p.slice(1).map(e => clamp(0, new Function('r', 'g', 'b', 'clamp', 'return ' + e.replace(/calc\(/g, '('))(o.r, o.g, o.b, clamp), 255));
+        return { r, g, b, a: o.a };
+    }
     let m = /^#([0-9a-f]{3,8})$/i.exec(s);
     if (m && [3, 4, 6, 8].includes(m[1].length)) {
         const h = m[1].length < 6 ? m[1].replace(/./g, c => c + c) : m[1];

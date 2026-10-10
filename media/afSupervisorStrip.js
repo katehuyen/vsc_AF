@@ -47,7 +47,7 @@
     };
     // inline, so a page that never loaded the strip's stylesheet still draws the badge right
     const badge = r => '<span class="svb" style="display:inline-block;min-width:18px;text-align:center;border-radius:3px;font-weight:700;'
-        + 'color:var(--vscode-editor-background,#1e1e1e);background:' + TINT[r.decision && !r.mechanical ? r.decision : 'mech'] + '">' + esc(r.badge) + '</span>';
+        + 'color:var(--af-ground,var(--vscode-editor-background,#1e1e1e));background:' + TINT[r.decision && !r.mechanical ? r.decision : 'mech'] + '">' + esc(r.badge) + '</span>';
 
     /** The decision alone, for a run row that is a checkpoint visit. */
     function chip(r) {

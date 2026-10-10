@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.921.0 - A light theme stays light when a background colour was set by hand (2026-10-11)
+
+- **Agent Farm's pages can be read in a light theme even when
+  `editor.background` is customised.** A colour set under
+  `workbench.colorCustomizations` without naming a theme holds under every
+  theme. With a dark one kept from a dark theme, switching to a light theme
+  handed every Agent Farm page that dark ground beside the light theme's dark
+  text, and the Console, the Dashboard and the rest could not be read. In a
+  light theme a page now checks the ground it is given: one the light theme's
+  text can be read on is kept exactly as it is (a tinted light theme keeps its
+  tint), anything darker becomes white. High Contrast Light does the same.
+
+  Dark themes are not touched in any way: a dark theme paints with exactly the
+  colour it is handed, customised or not.
+
+  Still as VS Code draws them: the track of a page's scrollbar keeps the colour
+  set by hand, and so do the code editors themselves. A light background forced
+  under a dark theme is left alone too.
+
 ## 3.920.0 - The paperclip drawn whole, Delete in red, and the key that stands out when a sign-in needs you (2026-10-10)
 
 - **The Console's paperclip is drawn whole.** On some window widths the 📎

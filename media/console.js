@@ -233,7 +233,7 @@
         .sstrip { display:flex; align-items:center; gap:7px; min-width:0; cursor:pointer;
             margin:0 0 8px; padding:4px 9px; font-size:11.5px; border-radius:7px;
             border:1px solid var(--vscode-widget-border,#4443);
-            background:var(--vscode-editor-background); }
+            background:var(--af-ground,var(--vscode-editor-background)); }
         .sstrip:hover { background:var(--vscode-list-hoverBackground); }
         /* A campaign that has ENDED is still drawn — that is the morning read —
            but it is not competing with a live one for the eye. */
@@ -272,7 +272,7 @@
         .clist > div:empty { display:none; }
         .cmain { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; }
         .srow { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px; padding:7px 9px;
-            cursor:pointer; background:var(--vscode-editor-background); }
+            cursor:pointer; background:var(--af-ground,var(--vscode-editor-background)); }
         .srow:hover { background:var(--vscode-list-hoverBackground); }
         /* Selection is a RING, never a colour: a link-blue tint on the selected
            card competed with the blue that means "the agent is working", and two
@@ -441,7 +441,7 @@
         .cpal { position:absolute; right:0; bottom:16px; z-index:6; width:132px;
             padding:6px; border-radius:6px; line-height:normal;
             border:1px solid var(--vscode-widget-border,#4444);
-            background:var(--vscode-editorWidget-background,var(--vscode-editor-background));
+            background:var(--vscode-editorWidget-background,var(--af-ground,var(--vscode-editor-background)));
             box-shadow:0 6px 18px #0007; }
         .cpalr { display:flex; flex-wrap:wrap; gap:4px; }
         .csw { width:20px; height:20px; padding:0; border-radius:50%; cursor:pointer;
@@ -547,7 +547,7 @@
            only double that one. (U-133 round 3) */
         .hiddenote { flex:none; font-size:10px; opacity:calc(1 - .4 * var(--af-dimk, 1)); padding:3px 6px;
             border-bottom:1px solid var(--vscode-widget-border,#4443);
-            background:var(--vscode-editor-background); }
+            background:var(--af-ground,var(--vscode-editor-background)); }
         .hiddenote:empty { display:none; }
         /* "still working" — between the conversation and the composer, so it
            never moves either of them (flex:none: it takes its own height) */
@@ -736,7 +736,7 @@
         .msg .macts { position:absolute; top:-7px; right:6px; display:flex; gap:3px; opacity:0;
             pointer-events:none; transition:opacity .12s; z-index:2; }
         .msg:hover .macts, .msg .macts:has(.readb.on) { opacity:1; pointer-events:auto; }
-        .msg .macts button { background:var(--vscode-editorWidget-background, var(--vscode-editor-background));
+        .msg .macts button { background:var(--vscode-editorWidget-background, var(--af-ground,var(--vscode-editor-background)));
             border:1px solid var(--vscode-widget-border,#4446); border-radius:4px; color:inherit;
             font-size:11px; line-height:1; padding:2px 5px; cursor:pointer; }
         .msg .macts button:hover { background:var(--vscode-toolbar-hoverBackground,#8883); }
@@ -797,7 +797,7 @@
                user's screenshot shows the "load older" bar sitting inside the
                "waiting on you" badge. Same tint, opaque. The thing holding a
                running turn still has to be the thing you can read. */
-            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 10%, var(--vscode-editor-background)); }
+            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 10%, var(--af-ground,var(--vscode-editor-background))); }
         .askbox:empty { display:none; }
         .askbox .askbody { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
             padding-right:3px; }
@@ -849,9 +849,9 @@
             min-width:24px; min-height:24px; padding:0; border-radius:6px; cursor:pointer;
             display:inline-flex; align-items:center; justify-content:center;
             border:1px solid color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 55%,
-                var(--vscode-editor-background));
+                var(--af-ground,var(--vscode-editor-background)));
             background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 18%,
-                var(--vscode-editor-background)); color:var(--vscode-foreground); }
+                var(--af-ground,var(--vscode-editor-background))); color:var(--vscode-foreground); }
         .askbox .askmin:hover { background:var(--vscode-focusBorder,#3794ff);
             color:var(--vscode-button-foreground,#ffffff); }
         .askbox .askmin::after { content:'▁'; }
@@ -866,7 +866,7 @@
         .askbox .opts { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
         .askbox .opt { text-align:left; font:inherit; font-size:11px; padding:4px 9px; border-radius:6px;
             cursor:pointer; border:1px solid var(--vscode-widget-border,#4444);
-            background:var(--vscode-editor-background); color:var(--vscode-foreground); }
+            background:var(--af-ground,var(--vscode-editor-background)); color:var(--vscode-foreground); }
         .askbox .opt:hover { background:var(--vscode-list-hoverBackground); }
         .askbox .opt.on { border-color:var(--vscode-focusBorder,#3794ff); font-weight:600;
             background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 18%, transparent); }

@@ -191,14 +191,14 @@ function main() {
     const args = process.argv.slice(2);
     const name = args[0];
     if (!name || name.startsWith('--')) {
-        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light | --hc | --hc-light] [--scene N] [--scenes] [--scale N] [--phone [land]]');
+        console.log('usage: node test/shoot_page.js <fixture> [--width N] [--light | --hc | --hc-light] [--under <scenario>] [--scene N] [--scenes] [--scale N] [--phone [land]]');
         return;
     }
     const wIdx = args.indexOf('--width');
     const width = wIdx >= 0 ? Number(args[wIdx + 1]) : 1400;
     // the theme the render was drawn in: its file suffix and the flag that draws it (render_page.js)
-    const kind = args.indexOf('--light') >= 0 ? ['.light', ' --light'] : args.indexOf('--hc-light') >= 0 ? ['.hclight', ' --hc-light']
-        : args.indexOf('--hc') >= 0 ? ['.hc', ' --hc'] : ['', ''];
+    const under = require('./lib_theme_under').underOf(args), kind = (args.indexOf('--light') >= 0 ? ['.light', ' --light'] : args.indexOf('--hc-light') >= 0 ? ['.hclight', ' --hc-light']
+        : args.indexOf('--hc') >= 0 ? ['.hc', ' --hc'] : ['', '']).map((s, i) => s + (i ? under.flag : under.suffix));
     const listOnly = args.indexOf('--scenes') >= 0;
     const sIdx = args.indexOf('--scene');
     const scene = sIdx >= 0 ? Number(args[sIdx + 1]) : 0;
