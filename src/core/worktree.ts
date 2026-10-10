@@ -31,6 +31,7 @@ export async function isGitRepo(dir: string): Promise<boolean> {
 }
 
 export interface WorktreeInfo {
+    /** '' when the branch outlived its worktree (X-535): reviewed by its commits alone */
     path: string;
     branch: string;
     /** short human name (branch without the af/ prefix) */
@@ -87,8 +88,9 @@ export interface WorktreeStatus {
 }
 
 export async function worktreeStatus(repoDir: string, wt: WorktreeInfo): Promise<WorktreeStatus> {
-    const dirtyR = await git(wt.path, 'status --porcelain');
-    const statR = await git(wt.path, 'diff HEAD --stat');
+    const none = { ok: false, out: '' };
+    const dirtyR = wt.path ? await git(wt.path, 'status --porcelain') : none;
+    const statR = wt.path ? await git(wt.path, 'diff HEAD --stat') : none;
     const commitsR = await git(repoDir, `rev-list --count HEAD..${wt.branch}`);
     const committedStat = await git(repoDir, `diff --stat HEAD...${wt.branch}`);
     const parts: string[] = [];
@@ -114,6 +116,10 @@ export async function mergeWorktree(repoDir: string, wt: WorktreeInfo): Promise<
 export async function removeWorktree(
     repoDir: string, wt: WorktreeInfo, force = false
 ): Promise<{ ok: boolean; detail: string }> {
+    if (!wt.path) {
+        const only = await git(repoDir, `branch ${force ? '-D' : '-d'} "${wt.branch}"`);
+        return { ok: only.ok, detail: only.ok ? 'branch removed' : only.out.trim().slice(0, 300) };
+    }
     let r = await git(repoDir, `worktree remove ${force ? '--force ' : ''}"${wt.path}"`);
     if (!r.ok && /unknown subcommand|not a git command|usage: git worktree/i.test(r.out)) {
         // git < 2.17: delete the folder by hand, then prune the registration.
@@ -124,4 +130,70 @@ export async function removeWorktree(
     if (!r.ok) { return { ok: false, detail: r.out.trim().slice(0, 300) }; }
     const b = await git(repoDir, `branch ${force ? '-D' : '-d'} ${wt.branch}`);
     return { ok: true, detail: b.ok ? 'worktree and branch removed' : 'worktree removed (branch kept — unmerged?)' };
+}
+
+/** X-535 — one farm branch: the worktree holding it ('' when that is gone) and whether HEAD already holds its tip. */
+export interface AfBranch extends WorktreeInfo { merged: boolean }
+
+const branchLines = (out: string): string[] => out.split('\n').map(l => l.replace(/^[*+]?\s+/, '').trim()).filter(Boolean);
+
+/** Every af/ branch of the repo, with a worktree or without — `listAfWorktrees` sees only the first kind. */
+export async function listAfBranches(repoDir: string): Promise<AfBranch[]> {
+    const all = await git(repoDir, 'branch --list');
+    const names = all.ok ? branchLines(all.out).filter(b => b.startsWith(BRANCH_PREFIX)) : [];
+    if (!names.length) { return []; }
+    const held = new Map((await listAfWorktrees(repoDir)).map(w => [w.branch, w.path]));
+    const merged = await git(repoDir, 'branch --merged HEAD');
+    const done = new Set(merged.ok ? branchLines(merged.out) : []);
+    return names.map(b => ({ branch: b, name: b.slice(BRANCH_PREFIX.length), path: held.get(b) ?? '', merged: done.has(b) }));
+}
+
+export interface AfSweep {
+    repo: string;
+    /** af/ branches still in a worktree of their own */
+    worktrees: number;
+    /** worktrees whose folder was gone, pruned from git's list before the branches were judged */
+    pruned: number;
+    /** branches removed: no worktree, and HEAD already held them */
+    removed: string[];
+    /** branches with no worktree that are still there — work of their own, for the review */
+    left: AfBranch[];
+}
+
+/**
+ * X-535 — A FARM BRANCH OUTLIVES ITS WORKTREE, and nothing listed it: the review reads worktrees only.
+ * Swept here: a worktree whose folder was deleted is pruned from git's list (git's own housekeeping), a
+ * branch with no worktree that HEAD already holds is removed with `branch -d` (git refuses it for anything
+ * not merged), and every other one is left — carrying work of its own — for Worktree Runs… to review.
+ */
+export async function sweepAfBranches(repoDir: string): Promise<AfSweep> {
+    const gone = (await listAfWorktrees(repoDir)).filter(w => !fs.existsSync(w.path));
+    if (gone.length) { await git(repoDir, 'worktree prune'); }
+    const all = await listAfBranches(repoDir);
+    const removed: string[] = [];
+    for (const b of all.filter(x => !x.path && x.merged)) {
+        if ((await git(repoDir, `branch -d "${b.branch}"`)).ok) { removed.push(b.branch); }
+    }
+    return {
+        repo: repoDir, worktrees: all.filter(x => x.path).length, pruned: gone.length, removed,
+        left: all.filter(x => !x.path && !removed.includes(x.branch))
+    };
+}
+
+/** The repo a folder is in (its top level), or '' when it is in none. */
+export async function repoOf(dir: string): Promise<string> {
+    const r = await git(dir, 'rev-parse --show-toplevel');
+    return r.ok && r.out.trim() ? path.resolve(r.out.trim()) : '';
+}
+
+/** The repos the folders are in, each once. */
+export async function reposOf(dirs: readonly string[]): Promise<string[]> {
+    return [...new Set((await Promise.all(dirs.map(repoOf))).filter(Boolean))];
+}
+
+/** X-535 — the af/ branches in the repos of these folders, each said with what holds it. */
+export async function afBranchesIn(dirs: readonly string[]): Promise<string[]> {
+    const lists = await Promise.all((await reposOf(dirs)).map(async r => ({ r, bs: await listAfBranches(r) })));
+    return lists.flatMap(({ r, bs }) => bs.map(b => `${b.branch} in ${r} (${b.path ? 'worktree ' + b.path
+        : b.merged ? 'no worktree, already merged' : 'no worktree, work of its own'})`));
 }

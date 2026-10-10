@@ -3475,6 +3475,7 @@ The scale key for code agents (Phase J): several jobs in the same repo, zero con
 - **Run Parallel Worktrees…** → agent (must be a git repo) → separate prompts with `;` → each prompt runs headless in its own `git worktree` (an `af/` branch, in a `.af-worktrees-*` folder next to the repo); a "commit when done" instruction is automatically added to the agent. The cards show with a `⑂` prefix in the board.
 - **Worktree Runs…** → a list of runs: how many commits, diffstat, any uncommitted changes → when you select, three actions: **Merge** (`--no-ff` onto the current branch, then worktree cleanup), **Open** (open in a new window, review by hand), **Discard** (worktree + branch deleted, approved).
 - On old git versions (no `worktree remove`) cleanup is done with a manual delete + `worktree prune` — the version check is automatic.
+- **A branch never outlives its worktree unseen:** a minute after VS Code opens, and every time Worktree Runs… opens, the agents' repos are swept — a worktree whose folder was deleted leaves git's list, an `af/` branch with no worktree that is already merged is removed, and one with work of its own is listed in Worktree Runs… (marked *its worktree is gone*) to merge or discard. `farm.health` → `parallelRuns` says the same per repo, and `baton.pass` names the farm branches a leg leaves.
 
 ### Live Relay (Remote Machine)
 

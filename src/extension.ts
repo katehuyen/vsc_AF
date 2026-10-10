@@ -45,7 +45,7 @@ import {
 import { opencodeExport, opencodeSessionIsEmpty } from './core/opencodehistory';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
-    listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
+    afBranchesIn, AfSweep, listAfWorktrees, mergeWorktree, removeWorktree, reposOf, sweepAfBranches, worktreeStatus
 } from './core/worktree';
 import { PARALLEL_MAX, launchParallel, parallelPrompts, planParallel } from './core/parallelRuns';
 import { applyDistilled, distillFile, scanContradictions } from './core/distill';
@@ -438,7 +438,7 @@ import { SetupChoice, withLiveChoice } from './core/liveChoice';
 import { ReopenSetup } from './core/closingSetup';
 import { ReopenDeps, ReopenQuery, batonOnClosing, reopenSetupFor, sessionOwnOf } from './launch/reopen';
 import { legFactsFrom } from './core/batonLegFacts';
-import { legGitReaders } from './core/legRoots';
+import { legGitReaders, legRoots } from './core/legRoots';
 import { BatonStore } from './core/batonStore';
 import { batonBarView, batonCardView } from './core/batonView';
 import { quotaBrake } from './core/quotaBrake';
@@ -1107,6 +1107,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         normalizeActive(cfg().get<Record<string, string>>('activeAccounts', {}));
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
+    // X-535 — each repo's farm branches at its last sweep (core/worktree.ts sweepAfBranches), for farm.health
+    const afSweeps = new Map<string, AfSweep & { at: number }>();
+    const noteAfSweep = (s: AfSweep): void => { afSweeps.set(s.repo, { ...s, at: Date.now() }); };
+    const sweepAgentRepos = async (): Promise<void> => {
+        for (const repo of await reposOf(agents.map(a => a.dir))) { noteAfSweep(await sweepAfBranches(repo)); }
+    };
+    const afSweepTimer = setTimeout(() => { void sweepAgentRepos().catch(() => undefined); }, 60_000);
+    afSweepTimer.unref?.();
+    context.subscriptions.push({ dispose: () => clearTimeout(afSweepTimer) });
     // Pricing history: a timestamped log of rule sets so past costs stay frozen
     // when rates change. The `agentFarm.pricing` setting holds the *current*
     // rules (editable from the agent page or by hand); each change appends a
@@ -17881,6 +17890,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-462 — a leg out of room is waiting for quota, not spinning (the barren brake skips it)
         causeOf: (b, agentPct) => passCauseOf({ sessionId: b.from.sessionId, slot: legSlotOf(b), fault: b.fault, recorded: b.cause, agentPct }),
         freshen: b => freshenSlot(legSlotOf(b)),
+        // X-535 — the farm branches the leg leaves in its folder's and its project's repos, named in the pass
+        afLeftOf: place => afBranchesIn(legRoots(place, id => projectStore.get(id)?.repos)),
         fmtTime: t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         // S-74 — the runner is made just below; the op only runs long after activation
         startNow: (b, by) => batonRunner.startNow(b, by),
@@ -19456,6 +19467,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'running task; `ours` says what started each one (console | task) and only those are '
                 + 'ended by a resume door — one with no `ours` is somebody else\'s SDK and is only reported. '
                 + 'Empty is the only healthy answer), '
+                + '‼️ `parallelRuns` — X-535 — the farm\'s af/ branches per repo at its last sweep (a minute after '
+                + 'activation, and on every Worktree Runs…): `worktrees` still in one, `pruned` worktrees whose '
+                + 'folder was gone, `removed` merged branches whose worktree was gone, and `left` — branches with no '
+                + 'worktree and work of their own, waiting for a merge or a discard there; a repo with none is not listed), '
                 + 'open terminals, the armed restart if there is one, and the last '
                 + 'self-restart this window performed. ‼️ `build` is the reading that matters after an '
                 + 'install: `installed` is the version in the extensions folder, `running` is the one this '
@@ -19550,6 +19565,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     pid: process.pid,
                     // S-101 — what has waited 24h+ (farm.cleanup lists and cleans it)
                     stale: stale.summary(),
+                    // X-535 — the farm's af/ branches per repo at its last sweep; `left` waits for Worktree Runs…
+                    parallelRuns: [...afSweeps.values()].filter(s => s.worktrees || s.pruned || s.removed.length || s.left.length)
+                        .map(s => ({ repo: s.repo, at: s.at, worktrees: s.worktrees, pruned: s.pruned, removed: s.removed, left: s.left.map(b => b.branch) })),
                     sessions: {
                         live: live.length, list: live,
                         // ‼️ X-266 — the twin state read off the CLI's own registry,
@@ -42245,24 +42263,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.worktreeRuns', async (arg?: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            const wts = await listAfWorktrees(agent.dir);
+            // X-535 — a branch whose worktree is gone: removed when merged, listed here when it carries work
+            const swept = await sweepAfBranches((await reposOf([agent.dir]))[0] || agent.dir);
+            noteAfSweep(swept);
+            const gone = swept.removed.length
+                ? ` Removed ${swept.removed.length} merged farm branch(es) whose worktree was gone: ${swept.removed.join(', ')}.` : '';
+            const wts = [...await listAfWorktrees(agent.dir), ...swept.left];
             if (!wts.length) {
                 void vscode.window.showInformationMessage(
-                    `Agent Farm: ${agent.name} has no farm worktrees (af/ branches).`);
+                    `Agent Farm: ${agent.name} has no farm worktrees (af/ branches).${gone}`);
                 return;
             }
+            if (gone) { void vscode.window.showInformationMessage(`Agent Farm:${gone}`); }
             const stats = await Promise.all(wts.map(wt => worktreeStatus(agent.dir, wt)));
             const pick = await vscode.window.showQuickPick(stats.map(s => ({
                 label: `⑂ ${s.wt.name}`,
-                description: `${s.commits} commit(s)${s.dirty ? ' • uncommitted changes' : ''}`,
+                description: `${s.commits} commit(s)${s.dirty ? ' • uncommitted changes' : ''}${s.wt.path ? '' : ' • its worktree is gone'}`,
                 detail: s.diffStat,
                 stat: s
             })), { ignoreFocusOut: true, placeHolder: `${agent.name} — ${wts.length} worktree run(s)` });
             if (!pick) { return; }
             const action = await vscode.window.showQuickPick([
                 { label: '$(git-merge) Merge into current branch', id: 'merge' },
-                { label: '$(folder-opened) Open worktree folder', id: 'open' },
-                { label: '$(trash) Discard (remove worktree + branch)', id: 'discard' }
+                ...(pick.stat.wt.path ? [{ label: '$(folder-opened) Open worktree folder', id: 'open' }] : []),
+                { label: pick.stat.wt.path ? '$(trash) Discard (remove worktree + branch)' : '$(trash) Discard (remove the branch)', id: 'discard' }
             ], { ignoreFocusOut: true, placeHolder: `⑂ ${pick.stat.wt.name} — ${pick.stat.diffStat}` });
             if (!action) { return; }
             if (action.id === 'merge') {

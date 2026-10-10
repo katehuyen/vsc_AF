@@ -52,7 +52,14 @@ export interface BatonBridgeDeps {
     causeOf?: (b: Baton, agentPct?: number) => PassCause | undefined;
     /** X-472 — re-read the passing slot before the verdict; a failed read leaves its floor (usageFloor.ts) */
     freshen?: (b: Baton) => Promise<void>;
+    /** X-535 — the farm's af/ branches in the leg's folder and its project's repos, each said with what holds it */
+    afLeftOf?: (place: Baton['from']) => Promise<string[]>;
 }
+
+/** X-535 — the line a pass ends with when the leg's repos still hold farm branches. */
+const afLeftLine = (left: readonly string[]): string => left.length
+    ? ` ‼️ Farm branches are left in this leg's repositories: ${left.join('; ')}. Review them with Worktree Runs… (agentfarm.worktreeRuns): a merged one with no worktree goes by itself, one with work of its own waits for a merge or a discard.`
+    : '';
 
 /** S-74 — the live batons an op's `baton` / `chain` / `session` argument names. */
 export function pickLive(store: BatonStore, args: Record<string, unknown>, allowChain: boolean): { list: Baton[]; by: string } {
@@ -163,6 +170,8 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                 // X-462 — a leg out of room is waiting for quota, not spinning: the barren brake skips it
                 const starved = starvedOf(cause);
                 const accepted: Baton = { ...marked, ...(cause ? { cause } : {}), ...(starved ? { starved } : {}) };
+                const afLeft = deps.afLeftOf ? await deps.afLeftOf(accepted.from).catch(() => [] as string[]) : [];
+                const afBranches = afLeft.length ? { afBranches: afLeft } : {};
                 const brake = batonBrake(accepted, deps.store.all(),
                     chainMaxLegs(deps.store.all(), accepted.chainId, deps.maxLegs ? deps.maxLegs() : BATON_DEFAULT_MAX_LEGS));
                 if (brake) {
@@ -180,8 +189,9 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                         baton: batonView(stopped),
                         owner: { sessionId: who.sessionId, source: who.source },
                         braked: brake.kind,
-                        sentence: `The chain stops here: ${brake.why} Nothing opens after this session — write a handover note instead (_REF/handover.md, section 4) so a person can pick the work up, then end the run.`,
-                        superseded: res.superseded.map(b => b.id)
+                        sentence: `The chain stops here: ${brake.why} Nothing opens after this session — write a handover note instead (_REF/handover.md, section 4) so a person can pick the work up, then end the run.${afLeftLine(afLeft)}`,
+                        superseded: res.superseded.map(b => b.id),
+                        ...afBranches
                     };
                 }
                 // S-84 — the words go where people and agents already look: an
@@ -193,8 +203,9 @@ export function registerBatonOps(bridge: BridgeRegistry, deps: BatonBridgeDeps):
                 return {
                     baton: batonView(hung),
                     owner: { sessionId: who.sessionId, source: who.source },
-                    sentence: batonPlanSentence(accepted, deps.room?.(accepted), deps.fmtTime),
+                    sentence: batonPlanSentence(accepted, deps.room?.(accepted), deps.fmtTime) + afLeftLine(afLeft),
                     superseded: res.superseded.map(b => b.id),
+                    ...afBranches,
                     ...(res.poolKept ? { poolKept: res.poolKept } : {}),
                     ...(res.setupFromChain
                         ? { setupFromChain: `${res.setupFromChain} The successor opens on the chain's own setup instead (chain ${accepted.chainId}).` }

@@ -2,7 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.918.0 - An agent reads the context window the card shows (2026-10-10)
+## 3.918.0 - Farm branches no longer pile up; an agent reads the context window the card shows (2026-10-10)
+
+- **A parallel run's branch no longer outlives its worktree unseen.** Worktree
+  Runs... listed worktrees only, so an af/ branch whose worktree was gone sat
+  on no page and under no button and had to be deleted by hand. A minute after
+  VS Code opens, and every time Worktree Runs... is opened, the agents' repos
+  are swept: a worktree whose folder was deleted is dropped from git's list,
+  a branch with no worktree that is already merged is removed, and one that
+  still carries work of its own is listed in Worktree Runs... beside the
+  worktrees, to merge or discard. An agent sees the same per repo in
+  farm.health, and an agent passing the baton is told the farm branches it
+  leaves behind, by name.
 
 - **The Console's context window is one answer, on the card and over the
   bridge.** An agent asking for the Console sessions (console.sessions) got

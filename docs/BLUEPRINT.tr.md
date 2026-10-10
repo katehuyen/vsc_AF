@@ -3528,6 +3528,7 @@ Kod ajanları için ölçek anahtarı (Faz J): aynı repo'da birden çok iş, s�
 - **Run Parallel Worktrees…** → ajan (git repo olmalı) → istemleri `;` ile ayır → her istem kendi `git worktree`'sinde (`af/` dallı, repo'nun yanındaki `.af-worktrees-*` klasöründe) headless koşar; ajana "bitince commit et" talimatı otomatik eklenir. Kartlar panoda `⑂` önekiyle görünür.
 - **Worktree Runs…** → koşu listesi: kaç commit, diffstat, kaydedilmemiş değişiklik var mı → seçince üç aksiyon: **Merge** (mevcut dala `--no-ff`, sonra worktree temizliği), **Open** (yeni pencerede aç, elle incele), **Discard** (worktree + dal silinir, onaylı).
 - Eski git sürümlerinde (`worktree remove` yoksa) temizlik elle silme + `worktree prune` ile yapılır — sürüm kontrolü otomatik.
+- **Hiçbir dal worktree'sinden sonra görünmeden kalmaz:** VS Code açıldıktan bir dakika sonra ve Worktree Runs… her açıldığında ajan depoları süpürülür — klasörü silinmiş worktree git'in listesinden çıkar, worktree'si kalmamış ve zaten birleşmiş `af/` dalı silinir, kendine ait işi olan ise Worktree Runs…'ta (*worktree'si gitmiş* işaretiyle) birleştirme ya da atma için listelenir. `farm.health` → `parallelRuns` aynısını depo başına söyler, `baton.pass` da bir ayağın bıraktığı çiftlik dallarını adıyla söyler.
 
 ### Canlı Relay (Uzak Makine)
 
