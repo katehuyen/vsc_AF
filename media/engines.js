@@ -16,6 +16,7 @@
     const vscode = acquireVsCodeApi();
     const C = window.AFCharts;
     const t = (s, v) => (window.AFI18n ? window.AFI18n.t(s, v) : s.replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? String(v[k]) : m)));
+    const tr = t;
     let DATA = window.__DATA__;
     /** engines with a call in flight — the button says so rather than going quiet */
     const testing = new Set();
@@ -135,11 +136,13 @@
         // sentence is a choice being handed back to the user.
         const state = v.ok ? 'good' : v.refused ? 'held' : 'bad';
         const mark = v.ok ? '✓ ' : v.refused ? '⊘ ' : '✗ ';
+        // X-532 — `reached`: the service was asked and held the turn with a limit of its own; nobody says "nothing was called".
         const head = window.AFTip.lines([
-            (v.ok ? 'Answered' : v.refused ? 'Not attempted' : 'Failed') + ' · ' + window.AFTime.full(v.at),
-            v.refused ? 'Called: nothing — the engine was never asked' : '',
+            (v.ok ? 'Answered' : v.refused ? (v.reached ? t('Held by the service') : 'Not attempted') : 'Failed') + ' · ' + window.AFTime.full(v.at),
+            v.refused ? (v.reached ? t('Called: the service — it answered with a limit of its own') : 'Called: nothing — the engine was never asked') : '',
+            v.resetAt ? t('Reopens: {when}', { when: window.AFTime.full(v.resetAt) }) : '',
             'Took: ' + (v.ms / 1000).toFixed(1) + 's',
-            v.error ? 'The engine said: ' + v.error : ''
+            v.error ? (v.reached ? t('The service said: {words}', { words: v.error }) : 'The engine said: ' + v.error) : ''
         ]);
         return '<div class="engv ' + state + '" title="' + esc(head) + '">'
             + mark + esc(v.detail)
@@ -534,14 +537,16 @@
                     + 'one on its own — not on a timer, not on a refresh, not when this page opens.');
             }
             const state = t.ok ? 'h-ok' : t.refused ? 'h-held' : 'h-bad';
-            const word = t.ok ? 'tested' : t.refused ? 'not attempted' : 'failed';
+            // X-532 — `reached`: the service was asked and held the turn with a limit of its own (`t` here is the verdict).
+            const word = t.ok ? 'tested' : t.refused ? (t.reached ? tr('service limit') : 'not attempted') : 'failed';
             return T.wrap('<span class="pohchip ' + state + '">' + esc(word) + ' · '
                 + esc(age(t.at, DATA.now || Date.now())) + '</span>',
-                (t.ok ? 'Answered · ' : t.refused ? 'Nothing was called · ' : 'Did not answer · ')
+                (t.ok ? 'Answered · ' : t.refused ? (t.reached ? tr('Held by the service') + ' · ' : 'Nothing was called · ') : 'Did not answer · ')
                 + window.AFTime.full(t.at),
                 window.AFTip.lines([
                     t.detail,
-                    t.error ? 'The engine said: ' + t.error : '',
+                    t.resetAt ? tr('Reopens: {when}', { when: window.AFTime.full(t.resetAt) }) : '',
+                    t.error ? (t.reached ? tr('The service said: {words}', { words: t.error }) : 'The engine said: ' + t.error) : '',
                     'Took: ' + (t.ms / 1000).toFixed(1) + 's',
                     'Proved: ' + t.key.providerId + ' · ' + (t.key.modelId || 'the route default')
                         + ' · adapter ' + t.key.adapter

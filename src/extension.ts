@@ -24343,7 +24343,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ms: r.ms,
             detail: scrubSecrets(r.detail, injectedValues),
             ...(r.error ? { error: scrubSecrets(r.error, injectedValues) } : {}),
-            ...(r.refused ? { refused: scrubSecrets(r.detail, injectedValues) } : {})
+            ...(r.refused ? { refused: scrubSecrets(r.detail, injectedValues) } : {}),
+            ...(r.reached ? { reached: true } : {}),
+            ...(r.resetAt ? { resetAt: r.resetAt } : {})
         };
         await rememberProviderTest(record);
         return {
@@ -44655,7 +44657,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'preventing. ‼️ THREE ANSWERS, NOT TWO: ok true, ok false (the route WAS asked and '
                 + 'did not answer — with the engine\'s OWN words in `error`, never an invented '
                 + 'reason), and ok false with `refused` (nothing ran, nothing was spent, nothing was '
-                + 'proved — read it as "not tested", never as "failed"). The verdict is filed under '
+                + 'proved — read it as "not tested", never as "failed"). ‼️ `reached: true` is the '
+                + 'exception inside each: the SERVICE behind the route was asked and turned the turn down '
+                + 'itself — with `refused`, a limit of its own (HTTP 429: its sentence in `error`, '
+                + '`resetAt` epoch ms when it named one; the address and the key were accepted), and '
+                + 'without it, a key it did not accept (401/403). The verdict is filed under '
                 + 'what it proved and returned by providers.status until one of those things changes. '
                 + 'No credential is read or returned. On OpenCode a route Agent Farm lends is named '
                 + 'af-<id> (engine=opencode providerId=af-<id>); only that route and its key are given '

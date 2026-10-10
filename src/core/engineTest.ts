@@ -30,6 +30,7 @@ import {
 // four engines' words). A second regex here would be a second opinion about the
 // same sentence, and the two would drift the first time an engine reworded it.
 import { limitWindow } from './retry';
+import { serviceRefusal, serviceVerdict } from './serviceRefusal';
 
 /**
  * What a test run needs from the outside world.
@@ -115,7 +116,19 @@ export interface EngineTestResult {
      * way. A refusal carries no `error` — there is no engine complaint to quote.
      */
     refused?: boolean;
+    /** X-532 — the service behind the model WAS asked and answered with a refusal of its own (serviceRefusal.ts). */
+    reached?: boolean;
+    /** X-532 — when that service's limit reopens (epoch ms), where it said so. */
+    resetAt?: number;
 }
+
+/**
+ * X-532 — A ROUTE TEST GIVES UP AFTER TWO RETRIES. Measured on Claude Code 2.1.295: a service
+ * answering 429 is retried ten times in silence, which outlasts this check's own clock and
+ * leaves "The command exited 1" with no word from the service; with two the CLI prints the
+ * service's sentence in under three seconds. A route that names the variable itself keeps its value.
+ */
+export const ROUTE_TEST_RETRIES = { CLAUDE_CODE_MAX_RETRIES: '2' };
 
 /**
  * ‼️ THE CHEAPEST CALL THAT STILL PROVES THE WHOLE PATH. A version flag proves
@@ -334,9 +347,12 @@ export async function testEngine(
             if (plan.stdin !== undefined) { stdin = plan.stdin; }
         }
         if (!aim?.modelRef && aim?.args?.length) { args = [...args, ...aim.args]; }
+        // A check that NAMES a provider is a route's; the engine's own check carries an account's environment and names none.
+        const claudeRoute = id === 'claude' && !!aim?.providerId;
+        const set = claudeRoute ? { ...ROUTE_TEST_RETRIES, ...aim?.spawnEnv } : aim?.spawnEnv;
         const r = await run(spec.command, args, spec.timeoutMs, spec.shell ?? true, stdin,
-            aim && (aim.spawnEnv || aim.clearEnv)
-                ? { ...(aim.spawnEnv ? { set: aim.spawnEnv } : {}), ...(aim.clearEnv ? { clear: aim.clearEnv } : {}) }
+            aim && (set || aim.clearEnv)
+                ? { ...(set ? { set } : {}), ...(aim.clearEnv ? { clear: aim.clearEnv } : {}) }
                 : undefined);
         const ms = now() - started;
         const answered = r.code === 0 && spec.expect(r.stdout);
@@ -365,6 +381,9 @@ export async function testEngine(
          * reset time — rides along in `error` as it always did.
          */
         const hay = `${r.stderr}\n${r.stdout}`;
+        // X-532 — a third party's own HTTP refusal is named as that, before it can be read as a plan window.
+        const service = claudeRoute || id === 'opencode' ? serviceRefusal(hay) : undefined;
+        if (service) { return { id, ok: false, ms, at, ...serviceVerdict(service) }; }
         const wall = limitWindow(hay);
         if (wall) {
             /**

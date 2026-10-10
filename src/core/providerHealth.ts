@@ -88,6 +88,10 @@ export interface ProviderTestRecord {
      * silent bill, and it must not draw as a red cross.
      */
     refused?: string;
+    /** X-532 — the service WAS asked and refused the turn itself (its limit, or the key): serviceRefusal.ts. */
+    reached?: boolean;
+    /** X-532 — when the service's own limit reopens (epoch ms), where it said so. */
+    resetAt?: number;
 }
 
 /** A stable string for the key, so records can be stored in a plain map. */
