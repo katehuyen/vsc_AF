@@ -12,7 +12,8 @@
  */
 export const STALE_AFTER_MS = 24 * 3600 * 1000;
 
-export type StaleKind = 'queued' | 'running' | 'baton' | 'card' | 'chain';
+/** X-525 — `route-ref`: a saved record naming a route that is gone or not marked for its engine (routeRefs.ts). It does not age. */
+export type StaleKind = 'queued' | 'running' | 'baton' | 'card' | 'chain' | 'route-ref';
 
 export interface StaleItem {
     kind: StaleKind;
@@ -42,6 +43,8 @@ export interface StaleInput {
     cards: readonly StaleCard[];
     batons: readonly StaleBaton[];
     chains?: readonly StaleChain[];
+    /** X-525 — broken route bindings, counted the moment they exist */
+    routeRefs?: readonly { id: string; title: string; why: string }[];
     afterMs?: number;
 }
 
@@ -94,6 +97,7 @@ export function scanStale(i: StaleInput): StaleItem[] {
         const h = c.signals.find(s => s.kind === 'hanging');
         if (h?.since !== undefined) { push('chain', c.chainId, `chain ${c.chainId} leg ${c.leg}${c.agentName ? ` (${c.agentName})` : ''}`, h.since, h.why); }
     }
+    for (const r of i.routeRefs ?? []) { out.push({ kind: 'route-ref', id: r.id, title: r.title, since: i.now, ageMs: 0, why: r.why }); }
     return out.sort((a, b) => a.since - b.since);
 }
 
@@ -102,15 +106,17 @@ const LABEL: Record<StaleKind, string> = {
     running: 'task rows still "running" with nothing working',
     baton: 'relay batons still waiting',
     card: 'idle Console cards',
-    chain: 'relay chains hanging with no pass and no closing record'
+    chain: 'relay chains hanging with no pass and no closing record',
+    'route-ref': 'routes saved records still name that are gone or not marked for their engine'
 };
 
-/** One line per kind: how many, the oldest. */
+/** One line per kind: how many, the oldest (a broken route binding does not age). */
 export function staleLines(items: readonly StaleItem[]): string[] {
     return (Object.keys(LABEL) as StaleKind[])
         .map(k => items.filter(x => x.kind === k))
         .filter(xs => xs.length)
-        .map(xs => `${xs.length} ${LABEL[xs[0].kind]} — oldest ${fmtAge(Math.max(...xs.map(x => x.ageMs)))}`);
+        .map(xs => `${xs.length} ${LABEL[xs[0].kind]}`
+            + (xs[0].kind === 'route-ref' ? '' : ` — oldest ${fmtAge(Math.max(...xs.map(x => x.ageMs)))}`));
 }
 
 /** The notice: the counts, then every item with its age — at most once a day, however many things are open. */
@@ -144,22 +150,32 @@ export interface StaleDeps {
     stopBaton: (id: string, why: string) => void;
     /** writes the chain's closing record (chains.end without closing a session); throws when it refuses */
     endChain?: (chainId: string, by: string, why: string) => void;
+    /** X-525 — broken route bindings, and their fix: a unique model match moves; then clears or deletes the rest; throws with what is left */
+    routeRefs?: () => readonly { id: string; title: string; why: string }[];
+    fixRouteRef?: (id: string, by: string, then?: string) => void;
     now?: () => number;
 }
 
 export interface CleanResult { cleaned: StaleItem[]; failed: { item: StaleItem; why: string }[] }
 
 export function staleNow(d: StaleDeps): StaleItem[] {
-    return scanStale({ now: (d.now ?? Date.now)(), tasks: d.tasks(), cards: d.cards(), batons: d.batons(), chains: d.chains?.() ?? [] });
+    return scanStale({
+        now: (d.now ?? Date.now)(), tasks: d.tasks(), cards: d.cards(), batons: d.batons(), chains: d.chains?.() ?? [],
+        routeRefs: d.routeRefs?.() ?? []
+    });
 }
 
 /** Clean every stuck item, or only the ids named — one body for the chip, the notification and farm.cleanup. */
-export function cleanStale(d: StaleDeps, ids?: readonly string[], by = 'the user'): CleanResult {
+export function cleanStale(d: StaleDeps, ids?: readonly string[], by = 'the user', then?: string): CleanResult {
     const pick = new Set(ids ?? []);
     const out: CleanResult = { cleaned: [], failed: [] };
     for (const x of staleNow(d).filter(s => !ids || pick.has(s.id))) {
         try {
             if (x.kind === 'card') { d.closeCard(x.id); }
+            else if (x.kind === 'route-ref') {
+                if (!d.fixRouteRef) { throw new Error('this host cannot fix a route binding'); }
+                d.fixRouteRef(x.id, by, then);
+            }
             else if (x.kind === 'chain') {
                 if (!d.endChain) { throw new Error('this host cannot end a chain'); }
                 d.endChain(x.id, `the stuck-items cleanup (${by})`, `hanging ${fmtAge(x.ageMs)}`);

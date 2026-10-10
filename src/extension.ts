@@ -76,6 +76,7 @@ import { collectEngineConfigFiles } from './core/engineConfigDiagnosis';
 import { SavedRoute } from './core/savedRoutes';
 import { collectRouteRecords, RouteSnapshot } from './core/routeRecords';
 import { describeDependent, RouteGoingAsk, RouteGoingIo, settleRouteRecords } from './core/routeGoing';
+import { brokenRouteRefs, fixRouteRefs } from './core/routeRefs';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -18100,7 +18101,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         cancelTask: id => { const t = taskManager.tasks.find(x => x.id === id); if (t) { taskManager.cancelTask(t); } },
         closeCard: id => { consoleHost.forget(id); ConsolePanel.refreshIfOpen(); },
         stopBaton: (id, why) => { stopBatons(batonStore, batonStore.all().filter(b => b.id === id), why, Date.now(), batonBoard, cancelSuccessorRow); },
-        endChain: (chain, by, why) => { const r = endRecords(chainBoardDeps, { chain, by, why }); if (!r.ok) { throw new Error(r.why); } }
+        endChain: (chain, by, why) => { const r = endRecords(chainBoardDeps, { chain, by, why }); if (!r.ok) { throw new Error(r.why); } },
+        // X-525 (5) — saved records naming a route that is gone or not marked for their engine
+        routeRefs: () => brokenRouteRefs(collectRouteRecords(routeSnapshot()), routeGoingIo.routes()),
+        fixRouteRef: (id, by, then) => {
+            const left = fixRouteRefsNow([id], then === 'clear' || then === 'delete' ? then : undefined, by);
+            if (left) { throw new Error(left); }
+        }
     }, (title, body) => {
         noticesStore.add({ agentName: 'agent-farm', type: 'warning', level: 2, title, body, sourceKey: `stale:${Date.now()}` });
         NoticesPanel.refreshIfOpen();
@@ -24318,6 +24325,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .filter(([t, m]) => String(m ?? '').trim() && after[t] !== m));
         return Object.keys(tiers).length ? settleLeavingRoute(id, { retiring: { tiers, after } }, how, askPerson) : undefined;
     };
+    /**
+     * X-525 (5) — broken route bindings (core/routeRefs.ts): a unique model match moves and is announced; `then`
+     * clears or deletes the rest. Returns what is still left, in words, or nothing.
+     */
+    const fixRouteRefsNow = (ids: string[] | undefined, then: 'clear' | 'delete' | undefined, by: string): string | undefined => {
+        const snap = routeSnapshot();
+        const r = fixRouteRefs(snap, routeGoingIo.routes(), ids, then);
+        for (const s of r.stores) { void routeGoingIo.write(s, snap); }
+        if (r.moved.length) {
+            noticesStore.add({
+                agentName: 'agent-farm', type: 'update', level: 1,
+                title: `Moved ${r.moved.length} saved record${r.moved.length === 1 ? '' : 's'} off a route that is gone`,
+                body: `${by}: each named a model that exactly one live route serves.\n\n`
+                    + r.moved.map(m => `- ${m.record}: ${m.from} → ${m.to} (${m.model})`).join('\n')
+            });
+            NoticesPanel.refreshIfOpen();
+            updateNoticesBadge();
+        }
+        return r.left.length ? `${r.left.map(x => x.title).join(' · ')} — no single route serves what they name: clear them `
+            + '(then=clear), delete the launch profiles (then=delete), or leave them — a launch on them is refused.' : undefined;
+    };
+    /** X-525 (5) — at start and whenever the route list changes: moves what it can, then asks once about the rest. */
+    const routeRefPass = (): void => {
+        fixRouteRefsNow(undefined, undefined, 'Agent Farm, after the route list changed');
+        const left = brokenRouteRefs(collectRouteRecords(routeSnapshot()), routeGoingIo.routes());
+        if (!left.length) { return; }
+        const ask = {
+            agentName: 'agent-farm',
+            title: `${left.reduce((n, x) => n + x.records.length, 0)} saved records name a route that is gone — what happens to them?`,
+            body: [...left.map(x => `- ${x.why}: ${x.records.map(describeDependent).join(', ')}`), '',
+                'Leave them (nothing to do): they cannot start — a launch naming a route that is gone is refused.',
+                'Clear them, or delete the launch profiles and clear the rest: the 🧹 status-bar item → review, or '
+                + 'farm.cleanup apply=true ids=<route-ref id> then=clear | then=delete.'].join('\n')
+        };
+        if (noticesStore.recentDuplicate(ask, 7 * 24 * 3600 * 1000)) { return; }
+        noticesStore.add({ ...ask, type: 'question', level: 2 });
+        NoticesPanel.refreshIfOpen();
+        updateNoticesBadge();
+    };
+    let routeRefTimer: NodeJS.Timeout | undefined = setTimeout(() => { routeRefTimer = undefined; routeRefPass(); }, 60_000);
+    routeRefTimer.unref?.();
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (!e.affectsConfiguration('agentFarm.providerProfiles')) { return; }
+            if (routeRefTimer) { clearTimeout(routeRefTimer); }
+            routeRefTimer = setTimeout(() => { routeRefTimer = undefined; routeRefPass(); }, 2000);
+        }),
+        { dispose: () => { if (routeRefTimer) { clearTimeout(routeRefTimer); } } }
+    );
     const providerHealthInput = async (engine: string): Promise<ProviderHealthInput> => {
         // ‼️ The engine is asked before the adapter is: on OpenCode the whole
         // answer lives in a catalog nothing may have read yet.

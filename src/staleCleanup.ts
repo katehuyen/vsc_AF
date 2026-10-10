@@ -9,7 +9,7 @@ import { CleanResult, StaleDeps, StaleKind, cleanStale, fmtAge, shouldNotify, st
 import { BridgeRegistry } from './core/bridge';
 import { registerStaleOp } from './core/staleOp';
 
-const ICON: Record<StaleKind, string> = { queued: '$(watch)', running: '$(debug-pause)', baton: '$(git-merge)', card: '$(comment-discussion)', chain: '$(debug-disconnect)' };
+const ICON: Record<StaleKind, string> = { queued: '$(watch)', running: '$(debug-pause)', baton: '$(git-merge)', card: '$(comment-discussion)', chain: '$(debug-disconnect)', 'route-ref': '$(plug)' };
 
 const said = (r: CleanResult): string => `Cleaned ${r.cleaned.length}${r.failed.length ? `, ${r.failed.length} failed (${r.failed[0].why})` : ''}.`;
 
@@ -22,6 +22,19 @@ export async function reviewStale(d: StaleDeps): Promise<CleanResult | undefined
     })), { canPickMany: true, title: `Agent Farm — ${items.length} stuck (waiting 24h+): untick what should stay, Enter cleans the rest`, ignoreFocusOut: true });
     if (!picks || !picks.length) { return undefined; }
     const r = cleanStale(d, picks.map(p => p.item.id));
+    // X-525 — what no single route serves needs a person's word; leaving it is harmless (a launch on it is refused)
+    const refs = r.failed.filter(f => f.item.kind === 'route-ref');
+    if (refs.length) {
+        const pick = await vscode.window.showWarningMessage(
+            `Agent Farm: ${refs.map(f => f.item.title).join(' · ')}. No single live route serves what they name.`,
+            { modal: true, detail: 'Leaving them is harmless: a launch naming a route that is gone is refused.' },
+            'Clear the route', 'Delete the launch profiles, clear the rest');
+        if (pick) {
+            const again = cleanStale(d, refs.map(f => f.item.id), 'the user', pick === 'Clear the route' ? 'clear' : 'delete');
+            r.failed = r.failed.filter(f => f.item.kind !== 'route-ref').concat(again.failed);
+            r.cleaned.push(...again.cleaned);
+        }
+    }
     void vscode.window.showInformationMessage(`Agent Farm: ${said(r)}`);
     return r;
 }
@@ -48,7 +61,8 @@ export function wireStale(context: vscode.ExtensionContext, bridge: BridgeRegist
     };
     const review = async () => { const r = await reviewStale(d); refresh(); return r; };
     const check = () => {
-        const items = staleNow(d);
+        // X-525 — a broken route binding has its own question on Notices; the daily "waiting 24h+" notice counts what ages
+        const items = staleNow(d).filter(x => x.kind !== 'route-ref');
         refresh();
         const now = (d.now ?? Date.now)();
         if (!shouldNotify(items.length, context.globalState.get<number>(LAST), now)) { return; }
@@ -56,7 +70,7 @@ export function wireStale(context: vscode.ExtensionContext, bridge: BridgeRegist
         const n = staleNotice(items);
         post(n.title, n.body);
         void vscode.window.showWarningMessage(`Agent Farm: ${n.title}. ${staleLines(items).join(' · ')}`, 'Clean now', 'Review…').then(choice => {
-            if (choice === 'Clean now') { const r = cleanStale(d, undefined, 'the user (notification)'); refresh(); void vscode.window.showInformationMessage(`Agent Farm: ${said(r)}`); }
+            if (choice === 'Clean now') { const r = cleanStale(d, items.map(x => x.id), 'the user (notification)'); refresh(); void vscode.window.showInformationMessage(`Agent Farm: ${said(r)}`); }
             else if (choice === 'Review…') { void review(); }
         });
     };
