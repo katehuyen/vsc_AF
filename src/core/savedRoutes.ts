@@ -20,7 +20,9 @@
 
 import { routeIdOfWire } from './opencodeRoutes';
 
-export type SavedRouteKind = 'agent default' | 'launch profile' | 'schedule' | 'queued task';
+/** Every kind `collectRouteRecords` (routeRecords.ts) reads; where each is stored is listed there. */
+export type SavedRouteKind = 'agent default' | 'launch profile' | 'last used setup' | 'schedule' | 'queued task'
+    | 'task template' | 'workflow step' | 'trigger' | 'mission' | 'waiting baton leg';
 
 export interface SavedRoute {
     kind: SavedRouteKind;
@@ -76,7 +78,13 @@ const CONSEQUENCE: Record<SavedRouteKind, string> = {
         + 'cleared, on whatever route the shell carries',
     'launch profile': 'a launch profile naming it asks for a route that is not there',
     'schedule': 'a schedule naming it is refused each time it fires',
-    'queued task': 'a queued task naming it is refused when it starts'
+    'queued task': 'a queued task naming it is refused when it starts',
+    'last used setup': 'an agent\'s last used setup naming it seeds that agent\'s next start with it',
+    'task template': 'a task template naming it hands it to every task made from it',
+    'workflow step': 'a workflow step naming it is refused when the workflow reaches it',
+    'trigger': 'a trigger naming it is refused each time it fires',
+    'mission': 'a mission naming it has those delegations refused when they start',
+    'waiting baton leg': 'a waiting baton leg naming it opens its successor asking for a route that is not there'
 };
 
 /**

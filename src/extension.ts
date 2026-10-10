@@ -74,6 +74,7 @@ import { opencodeStatus, opencodeWorktree, syncToOpencode } from './core/opencod
 import { antigravityFacts } from './core/ruleWalk';
 import { collectEngineConfigFiles } from './core/engineConfigDiagnosis';
 import { SavedRoute } from './core/savedRoutes';
+import { collectRouteRecords, RouteSnapshot } from './core/routeRecords';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -24213,28 +24214,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         } catch { return { file, present: true, entries: 0 }; }
     };
-    /** X-116 — every saved choice on this engine that names a route, read only. */
-    const savedRoutesFor = (engine: string): SavedRoute[] => {
-        const out: SavedRoute[] = [];
-        const on = (e: string | undefined) => (e || 'claude') === engine;
-        const defaults = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
-        for (const a of agents) {
-            const r = storedRoute(defaults, a.dir, engine as EngineId);
-            if (r.providerId) { out.push({ kind: 'agent default', label: a.name, providerId: r.providerId }); }
-        }
-        for (const p of launchProfiles()) {
-            if (on(p.engine) && p.providerId) { out.push({ kind: 'launch profile', label: p.name, providerId: p.providerId }); }
-        }
-        for (const s of taskManager.schedules) {
-            if (on(s.engine) && s.providerId) { out.push({ kind: 'schedule', label: s.title, providerId: s.providerId }); }
-        }
-        for (const t of taskManager.tasks) {
-            if (t.status === 'queued' && on(t.engine) && t.providerId) {
-                out.push({ kind: 'queued task', label: t.title, providerId: t.providerId });
-            }
-        }
-        return out;
+    /**
+     * X-525 — every saved record that names a route (core/routeRecords.ts lists them). Settings and the
+     * last used setup are copies; the task, mission and baton rows are the stores' own, so an edit made
+     * through `applyRouteChange` is written back by saving those stores.
+     */
+    const routeSnapshot = (): RouteSnapshot => {
+        const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v ?? null)) as T;
+        return {
+            agentNames: Object.fromEntries(agents.flatMap(a => [[agentKey(a.dir), a.name], [a.id, a.name]])),
+            agentDefaults: copy(cfg().get<RouteSnapshot['agentDefaults']>('agentEngineDefaults', {}) ?? {}),
+            launchProfiles: copy(cfg().get<RouteSnapshot['launchProfiles']>('launchProfiles', []) ?? []),
+            lastLaunch: copy(lastLaunch() as RouteSnapshot['lastLaunch']),
+            tasks: taskManager.tasks, schedules: taskManager.schedules, templates: taskManager.templates,
+            workflows: taskManager.workflows,
+            triggers: taskManager.triggers as unknown as RouteSnapshot['triggers'],
+            missions: missionStore.specs as unknown as RouteSnapshot['missions'],
+            batons: batonStore.all()
+        };
     };
+    /** X-116 — every saved choice on this engine that names a route, read only. */
+    const savedRoutesFor = (engine: string): SavedRoute[] =>
+        collectRouteRecords(routeSnapshot()).filter(r => r.engine === engine);
     const providerHealthInput = async (engine: string): Promise<ProviderHealthInput> => {
         // ‼️ The engine is asked before the adapter is: on OpenCode the whole
         // answer lives in a catalog nothing may have read yet.

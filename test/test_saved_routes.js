@@ -66,12 +66,18 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
 // ---- the host gathers every kind, and only where it owns the catalog ----
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    const a = ext.indexOf('const savedRoutesFor = (engine: string)');
-    const body = a < 0 ? '' : ext.slice(a, ext.indexOf('return out;', a));
+    // X-525 — the snapshot hands every store to core/routeRecords.ts, whose kinds test_x525_records.js covers.
+    const a = ext.indexOf('const routeSnapshot = (): RouteSnapshot');
+    const z = ext.indexOf('const savedRoutesFor = (engine: string)', a);
+    const body = a < 0 || z < 0 ? '' : ext.slice(a, ext.indexOf(';', ext.indexOf('collectRouteRecords', z)) + 1);
     ok('the gatherer exists', body.length > 100);
-    ok('it reads the agent defaults through storedRoute', /storedRoute\(defaults, a\.dir, engine as EngineId\)/.test(body));
-    ok('…launch profiles, schedules and queued tasks', /launchProfiles\(\)/.test(body)
-        && /taskManager\.schedules/.test(body) && /t\.status === 'queued'/.test(body));
+    ok('it reads the agent defaults, launch profiles and last used setups as copies',
+        /copy\(cfg\(\)\.get<[^>]+>\('agentEngineDefaults'/.test(body) && /copy\(cfg\(\)\.get<[^>]+>\('launchProfiles'/.test(body)
+        && /copy\(lastLaunch\(\)/.test(body));
+    ok('…and the task, mission and baton stores\' own rows', /taskManager\.schedules/.test(body) && /taskManager\.tasks/.test(body)
+        && /taskManager\.templates/.test(body) && /taskManager\.workflows/.test(body) && /taskManager\.triggers/.test(body)
+        && /missionStore\.specs/.test(body) && /batonStore\.all\(\)/.test(body));
+    ok('the engine filter is the record\'s own engine', /collectRouteRecords\(routeSnapshot\(\)\)\.filter\(r => r\.engine === engine\)/.test(body));
     ok('‼️ it writes nothing', !/\.update\(|writeFile|save\(\)|\.set\(/.test(body));
     ok('‼️ only for an engine whose route catalog Agent Farm owns',
         /\.\.\.\(dataOwnerOf\(engine, 'catalog', 'agent-farm-route'\) === 'agent-farm' \? \{\s*savedRoutes: savedRoutesFor\(engine\),/.test(ext));
