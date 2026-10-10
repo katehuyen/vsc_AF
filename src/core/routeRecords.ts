@@ -121,8 +121,10 @@ export type RouteThen = { kind: 'repoint'; to: string } | { kind: 'clear' } | { 
  * OpenCode model under the route (`af-<id>/<model>`) moves or goes with it.
  * `delete` removes launch profiles and clears the rest — they are not setups to delete.
  */
-export function applyRouteChange(s: RouteSnapshot, id: string, then: RouteThen): { changed: RouteRecord[]; stores: RouteStore[] } {
-    const changed = routeDependents(id, collectRouteRecords(s));
+export function applyRouteChange(
+    s: RouteSnapshot, id: string, then: RouteThen, onEngines?: readonly string[]
+): { changed: RouteRecord[]; stores: RouteStore[] } {
+    const changed = routeDependents(id, collectRouteRecords(s)).filter(r => !onEngines || onEngines.includes(r.engine));
     const to = then.kind === 'repoint' ? then.to.trim() : '';
     const dropped = new Set<object>();
     for (const r of changed) {

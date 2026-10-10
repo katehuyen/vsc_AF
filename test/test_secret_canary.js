@@ -275,11 +275,12 @@ const rt = adapter.resolveRuntime(sel);
         kept.some(r => r.key.engine === 'opencode'));
 
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('‼️ removing a route through the bridge empties its verdicts',
-        /for \(const e of w\.profile!\.engines\) \{ await forgetProviderTests\(e, id\); \}/.test(
-            ext.slice(ext.indexOf("op: 'providers.remove'"), ext.indexOf("op: 'providers.remove'") + 2400)));
-    ok('‼️ …and so does removing it from the page, through the same function',
-        (ext.match(/await forgetProviderTests\(/g) || []).length >= 2);
+    // X-525 — one removal (removeRoute), which the bridge op and the page both call.
+    const rr = ext.slice(ext.indexOf('const removeRoute = async ('), ext.indexOf('const enginesLeaving = ('));
+    ok('‼️ removing a route empties its verdicts', /for \(const e of w\.profile!\.engines\) \{ await forgetProviderTests\(e, w\.profile!\.id\); \}/.test(rr));
+    ok('‼️ …and the bridge and the page remove through that same function',
+        /await removeRoute\(id, \{ then:/.test(ext.slice(ext.indexOf("op: 'providers.remove'"), ext.indexOf("op: 'providers.remove'") + 2400))
+        && /removeProfile: async \(id: string\): Promise<string\[\]> => \(await removeRoute\(id, \{\}, true\)\)\.refusal/.test(ext));
 }
 
 /* =========================================================================

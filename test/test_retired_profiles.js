@@ -63,8 +63,11 @@ const manifest = (pid) => ({ launchId: 'l-' + pid, at: 1, engine: 'claude', iden
         && /addProfile\(providerProfiles\(\), args as Record<string, unknown>,\s*Object\.keys\(ENGINES\), retiredProviderIds\(\)\)/.test(src)
         && count(/addProfile\(/g) === 2);
     ok('…both copies do', count(/duplicateProfile\([^;]*retiredProviderIds\(\)\)/g) === 2 && count(/duplicateProfile\(/g) === 2);
-    ok('‼️ …and both removals retire the id they removed',
-        count(/removeProfile\(providerProfiles\(\), id\)/g) === 2 && count(/await retireProviderId\(/g) === 2);
+    // X-525 — one removal (removeRoute), which the page and the bridge both call.
+    ok('‼️ …and the one removal both doors call retires the id it removed',
+        count(/removeProfile\(providerProfiles\(\), id\)/g) === 1 && count(/await retireProviderId\(w\.profile!\.id\)/g) === 1
+        && /removeProfile: async \(id: string\): Promise<string\[\]> => \(await removeRoute\(id, \{\}, true\)\)\.refusal/.test(src)
+        && /await removeRoute\(id, \{ then: optStr\(args, 'then'\), to: optStr\(args, 'to'\) \}, false\)/.test(src));
     ok('the retired ids are read from the store and from the launch records',
         /retiredProfileIds\(providerProfiles\(\), launchManifests\(\),\s*context\.globalState\.get<unknown\[\]>\(RETIRED_PROFILES_KEY, \[\]\)\)/.test(src));
     ok('providers.list says which ids are retired', /count: all\.length, retired: retiredProviderIds\(\)/.test(src));

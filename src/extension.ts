@@ -75,6 +75,7 @@ import { antigravityFacts } from './core/ruleWalk';
 import { collectEngineConfigFiles } from './core/engineConfigDiagnosis';
 import { SavedRoute } from './core/savedRoutes';
 import { collectRouteRecords, RouteSnapshot } from './core/routeRecords';
+import { describeDependent, RouteGoingIo, settleRouteRecords } from './core/routeGoing';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -24230,6 +24231,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** X-116 — every saved choice on this engine that names a route, read only. */
     const savedRoutesFor = (engine: string): SavedRoute[] =>
         collectRouteRecords(routeSnapshot()).filter(r => r.engine === engine);
+    /** X-525 — the stores a settled route change is written back to. */
+    const routeGoingIo: RouteGoingIo = {
+        snapshot: routeSnapshot,
+        routes: () => providerProfiles().map(p => ({ id: p.id, engines: p.engines, tiers: p.tiers, hasKey: !!routeKeyOf(p).value })),
+        write: async (store, snap) => {
+            if (store === 'agentDefaults') {
+                await cfg().update('agentEngineDefaults', snap.agentDefaults, vscode.ConfigurationTarget.Global);
+            } else if (store === 'launchProfiles') {
+                await cfg().update('launchProfiles', snap.launchProfiles, vscode.ConfigurationTarget.Global);
+            } else if (store === 'lastLaunch') {
+                await context.globalState.update(LAST_LAUNCH_KEY, snap.lastLaunch);
+            } else if (store === 'tasks') {
+                taskManager.persist();
+            } else if (store === 'missions') {
+                missionStore.save();
+            } else {
+                batonStore.put(...batonStore.all());
+            }
+        }
+    };
+    /**
+     * X-525 (3) — the records naming a route that is leaving `leaving` engines (all of them when absent) are
+     * settled before it goes. The bridge says how with then/to; on the Engines page a person picks one answer.
+     * Returns why nothing may change, or nothing.
+     */
+    const settleLeavingRoute = async (
+        id: string, leaving: string[] | undefined, how: { then?: string; to?: string }, askPerson: boolean
+    ): Promise<string | undefined> => {
+        let v = await settleRouteRecords({ id, leaving, ...how }, routeGoingIo);
+        if (v.needsChoice && askPerson) {
+            const moves = v.standIns.map(s => `Move them to ${s}`);
+            const del = v.dependents.some(r => r.kind === 'launch profile') ? ['Delete the saved setups'] : [];
+            const pick = await vscode.window.showWarningMessage(
+                `Agent Farm: ${v.dependents.length === 1 ? 'one saved record names' : `${v.dependents.length} saved records name`} `
+                + `route "${id}"${leaving ? ` on ${leaving.join(' and ')}` : ''}. What happens to them?`,
+                { modal: true, detail: v.dependents.map(describeDependent).join('\n') },
+                ...moves, 'Clear the route', ...del);
+            if (!pick) { return 'Nothing was changed.'; }
+            const choice = moves.includes(pick) ? { then: 'repoint', to: v.standIns[moves.indexOf(pick)] }
+                : { then: pick === 'Clear the route' ? 'clear' : 'delete' };
+            v = await settleRouteRecords({ id, leaving, ...choice }, routeGoingIo);
+        }
+        return v.refusal;
+    };
+    /** X-100 + X-525 — the one removal both the bridge and the Engines page call. */
+    const removeRoute = async (
+        id: string, how: { then?: string; to?: string }, askPerson: boolean
+    ): Promise<{ refusal: string[]; credentialCollected?: boolean }> => {
+        const w = removeProfile(providerProfiles(), id);
+        if (w.refusal.length) { return { refusal: w.refusal }; }
+        const unsettled = await settleLeavingRoute(w.profile!.id, undefined, how, askPerson);
+        if (unsettled) { return { refusal: [unsettled] }; }
+        // ‼️ Read BEFORE the delete: afterwards the honest answer is always "no", and the caller's
+        // question is whether a key was actually collected — which is the half that cannot be undone.
+        const credentialCollected = providerSecretIds().includes(w.profile!.id);
+        await writeProviderProfiles(w.list);
+        await retireProviderId(w.profile!.id);
+        // …and the credential goes with it, or it stays in the keychain with nothing left to collect it.
+        await clearProviderSecret(w.profile!.id);
+        // X-115 — and the verdicts filed under it on every engine it served, the last trace left.
+        for (const e of w.profile!.engines) { await forgetProviderTests(e, w.profile!.id); }
+        EnginesPanel.refreshIfOpen();
+        return { refusal: [], credentialCollected };
+    };
+    /** X-525 (3) — the engines an edit unmarks a route for; their records are settled before it is written. */
+    const enginesLeaving = (id: string, next: { engines: readonly string[] } | undefined): string[] => {
+        const before = providerProfiles().find(p => p.id === id);
+        return before && next ? before.engines.filter(e => !next.engines.includes(e)) : [];
+    };
     const providerHealthInput = async (engine: string): Promise<ProviderHealthInput> => {
         // ‼️ The engine is asked before the adapter is: on OpenCode the whole
         // answer lives in a catalog nothing may have read yet.
@@ -25089,6 +25159,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? setProfile(list, id, input, engines)
                 : addProfile(list, input, engines, retiredProviderIds());
             if (w.refusal.length) { return w.refusal; }
+            // X-525 — unticking an engine settles the records running the route there first, by a person's pick.
+            const leaving = edit ? enginesLeaving(id, w.profile) : [];
+            const unsettled = leaving.length ? await settleLeavingRoute(id, leaving, {}, true) : undefined;
+            if (unsettled) { return [unsettled]; }
             await writeProviderProfiles(w.list);
             if (ref) { await useFarmSecretForRoute(w.profile!.id, ref); }
             EnginesPanel.refreshIfOpen();
@@ -25096,19 +25170,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         routeSecretNames: () => vault.names(),
         retiredRouteIds: () => retiredProviderIds(),
-        removeProfile: async (id: string): Promise<string[]> => {
-            const w = removeProfile(providerProfiles(), id);
-            if (w.refusal.length) { return w.refusal; }
-            await writeProviderProfiles(w.list);
-            await retireProviderId(w.profile!.id);
-            // …and the credential goes with it, or it stays in the keychain
-            // with nothing left to collect it.
-            await clearProviderSecret(id);
-            // X-115 — the SAME function the bridge op calls, for every engine the route served.
-            for (const e of w.profile!.engines) { await forgetProviderTests(e, id); }
-            EnginesPanel.refreshIfOpen();
-            return [];
-        },
+        // X-525 — the SAME removal the bridge op calls; records naming the route are settled by a person's pick.
+        removeProfile: async (id: string): Promise<string[]> => (await removeRoute(id, {}, true)).refusal,
         copyProfile: async (id: string): Promise<string[]> => {
             const w = duplicateProfile(providerProfiles(), id, undefined, retiredProviderIds());
             if (w.refusal.length) { return w.refusal; }
@@ -44506,7 +44569,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'args: id, label? (at most ' + PROFILE_LABEL_MAX + ' characters; a label stored longer before '
                 + 'the limit is kept while it is not changed), providerId?, baseUrl?, opencodeUrl?, authKind?, '
                 + 'engines?, context?, output?, tiers?, description?, secretRef? (an emptied value clears it; '
-                + 'engine is refused — use engines)',
+                + 'engine is refused — use engines), then?, to? (X-525 — an engines list that drops an engine while '
+                + 'saved records run the route there is refused, the records listed, until then = repoint (with to) | '
+                + 'clear | delete settles them, exactly as providers.remove)',
             handler: async (args, from) => {
                 const argBad = routeArgsRefusal(args as Record<string, unknown>);
                 need(!argBad, argBad);
@@ -44517,6 +44582,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const w = setProfile(providerProfiles(), id, args as Record<string, unknown>,
                     Object.keys(ENGINES));
                 need(!w.refusal.length, w.refusal.join(' · '));
+                // X-525 — engines narrowed: the records running the route on a dropped engine are settled first.
+                const leaving = enginesLeaving(id, w.profile);
+                const unsettled = leaving.length
+                    ? await settleLeavingRoute(id, leaving, { then: optStr(args, 'then'), to: optStr(args, 'to') }, false)
+                    : undefined;
+                need(!unsettled, unsettled ?? '');
                 await writeProviderProfiles(w.list);
                 const bound = ref ? await bindRouteSecret(secretBindDeps, id, ref, from) : undefined;
                 const fresh = providerProfiles().find(p => p.id === id) ?? w.profile!;
@@ -44547,22 +44618,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'X-100 — remove a route AND collect its credential from the OS keychain. ‼️ THE '
                 + 'SECOND HALF IS THE POINT: a row dropped with the keychain entry left behind is a '
                 + 'working key nobody can see and nobody can revoke. Irreversible — the key is gone '
-                + 'and Agent Farm never had a copy of it to give back. args: id',
+                + 'and Agent Farm never had a copy of it to give back. ‼️ X-525 — WHILE SAVED RECORDS NAME IT '
+                + '(agent defaults, launch profiles, last used setups, queued tasks, schedules, templates, workflow '
+                + 'steps, triggers, missions, waiting baton legs) IT IS REFUSED, the records listed, until then says '
+                + 'what happens to them: repoint (with to = a route marked for the same engines, with a key, holding '
+                + 'the same model in every tier this one fills — the refusal names those), clear, or delete (launch '
+                + 'profiles deleted, the rest cleared). History (manifests, transcripts, turns, costs) is never touched. '
+                + 'args: id, then?, to?',
             handler: async (args) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
-                const w = removeProfile(providerProfiles(), id);
-                need(!w.refusal.length, w.refusal.join(' · '));
-                // ‼️ Read BEFORE the delete: afterwards the honest answer is
-                // always "no", and the caller's question is whether a key was
-                // actually collected — which is the half that cannot be undone.
-                const hadSecret = providerSecretIds().includes(id);
-                await writeProviderProfiles(w.list);
-                await retireProviderId(id);
-                await clearProviderSecret(id);
-                // X-115 — and the verdicts filed under it on every engine it served, the last trace left.
-                for (const e of w.profile!.engines) { await forgetProviderTests(e, id); }
-                EnginesPanel.refreshIfOpen();
-                return { removed: id, credentialCollected: hadSecret };
+                // X-525 — the SAME removal the Engines page calls; then/to settle the records naming the route.
+                const r = await removeRoute(id, { then: optStr(args, 'then'), to: optStr(args, 'to') }, false);
+                need(!r.refusal.length, r.refusal.join(' · '));
+                return { removed: id, credentialCollected: !!r.credentialCollected };
             }
         },
         {
