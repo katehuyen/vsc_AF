@@ -180,7 +180,7 @@ const duties = () => (fs.existsSync(dutiesFile) ? fs.readFileSync(dutiesFile, 'u
     // ---- the host's wiring, read off the source ----
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
     ok('the host makes the phone\'s agent page from the page\'s own deps',
-        /agent: \(host, args\) => AgentDetailPanel\.openOn\(host, typeof args\?\.agentId === 'string' \? args\.agentId : '', detailDeps\)/.test(ext));
+        /agent: \(host, args\) => AgentDetailPanel\.openOn\(host, typeof args\?\.agentId === 'string' && args\.agentId \? args\.agentId\s*: agents\.find\(a => typeof args\?\.agentName === 'string' && !!args\.agentName && a\.name === args\.agentName\)\?\.id \?\? '', detailDeps\)/.test(ext));
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'agentDetail.ts'), 'utf8');
     ok('the desktop tab is made through desktopHost(), and the page\'s questions ask its host',
         /desktopHost\(\{ viewType: 'agentfarm\.agentDetail'/.test(panel) && /ensureDutiesReference\(agent, this\.host\.ask\)/.test(panel)
