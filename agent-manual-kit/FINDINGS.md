@@ -50,7 +50,7 @@ user's judge, dispatcher, weekly summary and command bar therefore reason in Tur
 | example workflow prompts | `src/core/examples.ts:63` |
 | content recipes | `src/core/contentRecipes.ts:51`, `:96` |
 
-A rough measure: 842 string-literal lines with Turkish letters across `src/` (372 in `extension.ts`); some are
+A rough measure: 230 string-literal lines with Turkish letters across `src/` (46 in `contentRecipes.ts`, 16 in `extension.ts`); some are
 legitimate (the language picker's "Türkçe", Turkish case folding in `search.transcripts`), most are prompts,
 defaults or messages. Fix: prompts in English, each ending with "Answer in <user language>" from
 `agentFarm.language` / `vscode.env.language` (the same value `farm.brief` reports); markers the product writes
