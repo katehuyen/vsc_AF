@@ -107,7 +107,8 @@ export const sessions: CatalogSection = {
         'agentManual.startCard': {
             group: 'guards', tier: 'basic',
             label: 'Agent start card',
-            summary: 'What every agent session is told about driving Agent Farm when it starts.'
+            summary: 'What every agent session is told about driving Agent Farm when it starts.',
+            options: { card: 'Start card', line: 'One line', off: 'Nothing' }
         }
     }
 };

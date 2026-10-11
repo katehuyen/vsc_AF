@@ -6,7 +6,7 @@
  * MCP and in-process callers with the identical text). `farm.brief` composes
  * the caller's live situation. `manual.*` stages, installs and audits it.
  *
- * `farm.ops` REPLACES the registry's built-in one on purpose: its old answer —
+ * `farm.ops` gets a NEW ANSWER on purpose (`answerOpsWith`): its old one —
  * every op with its whole contract — measured 458 KB, about a hundred and
  * twenty thousand tokens, and every agent was told to call it first. That
  * dump is still one argument away (`full=true`) for tools that want it.
@@ -81,16 +81,14 @@ export function registerManualOps(bridge: BridgeRegistry, deps: ManualOpsDeps): 
             handler: (args, from) => answer('farm.find', args, from?.sessionId)
         },
     ]);
-    // The registry's built-in farm.ops is replaced deliberately, and only it.
-    bridge.register({
-            op: 'farm.ops',
-            describe: 'The bridge catalog. No args: every op name grouped by area (compact). op=<name>: one '
-                + 'op\'s full contract with its effect, area, nearby ops and the playbooks that use it. '
-                + 'area=<id>: that area\'s ops with one-line summaries. q=<words>: ops matching the words. '
-                + 'full=true: every op with its whole contract as [{op, describe}] (large: write it to a file '
-                + 'with --out, never into your context). args: op?, area?, q?, full?, format? (markdown | json)',
-            handler: (args, from) => answer('farm.ops', args, from?.sessionId)
-    }, { replace: true });
+    // The registry's built-in farm.ops now answers through the manual (one declaration, a new answer).
+    bridge.answerOpsWith(
+        'The bridge catalog. No args: every op name grouped by area (compact). op=<name>: one '
+            + 'op\'s full contract with its effect, area, nearby ops and the playbooks that use it. '
+            + 'area=<id>: that area\'s ops with one-line summaries. q=<words>: ops matching the words. '
+            + 'full=true: every op with its whole contract as [{op, describe}] (large: write it to a file '
+            + 'with --out, never into your context). args: op?, area?, q?, full?, format? (markdown | json)',
+        (args, from) => answer('farm.ops', args, from?.sessionId));
     bridge.register([
         {
             op: 'farm.brief',

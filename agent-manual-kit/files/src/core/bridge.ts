@@ -147,6 +147,19 @@ export class BridgeRegistry {
         return this.ops.has(op);
     }
 
+    /**
+     * X-536 — `farm.ops` IS THE REGISTRY'S OWN OP, SO ITS ANSWER IS SWAPPED, NOT REGISTERED TWICE.
+     *
+     * Once the Agent Manual is loaded it answers `farm.ops` (a compact index, one
+     * contract, an area); a bare registry keeps answering the full catalog. Swapping
+     * the answer here keeps one declaration of the op in the source, which is what
+     * the parity gate counts — a second `op: 'farm.ops'` is the X-35 accident shape.
+     */
+    answerOpsWith(describe: string, handler: BridgeOpSpec['handler']): void {
+        const own = this.ops.get('farm.ops');
+        if (own) { this.ops.set('farm.ops', { ...own, describe, handler }); }
+    }
+
     catalog(): { op: string; describe: string }[] {
         return [...this.ops.values()]
             .map(s => ({ op: s.op, describe: s.describe }))

@@ -5072,7 +5072,7 @@ index 4b27999..3133e96 100644
            "type": "boolean",
            "default": true,
 diff --git a/src/core/bridge.ts b/src/core/bridge.ts
-index 56ba1c8..12c4121 100644
+index 56ba1c8..1b0fab5 100644
 --- a/src/core/bridge.ts
 +++ b/src/core/bridge.ts
 @@ -28,6 +28,7 @@ import { EngineId, ENGINES, engineOf, engineTakesEffort } from './consoleEngine'
@@ -5095,7 +5095,7 @@ index 56ba1c8..12c4121 100644
  
      constructor() {
          this.register({
-@@ -132,6 +138,15 @@ export class BridgeRegistry {
+@@ -132,6 +138,28 @@ export class BridgeRegistry {
          }
      }
  
@@ -5108,10 +5108,23 @@ index 56ba1c8..12c4121 100644
 +        return this.ops.has(op);
 +    }
 +
++    /**
++     * X-536 — `farm.ops` IS THE REGISTRY'S OWN OP, SO ITS ANSWER IS SWAPPED, NOT REGISTERED TWICE.
++     *
++     * Once the Agent Manual is loaded it answers `farm.ops` (a compact index, one
++     * contract, an area); a bare registry keeps answering the full catalog. Swapping
++     * the answer here keeps one declaration of the op in the source, which is what
++     * the parity gate counts — a second `op: 'farm.ops'` is the X-35 accident shape.
++     */
++    answerOpsWith(describe: string, handler: BridgeOpSpec['handler']): void {
++        const own = this.ops.get('farm.ops');
++        if (own) { this.ops.set('farm.ops', { ...own, describe, handler }); }
++    }
++
      catalog(): { op: string; describe: string }[] {
          return [...this.ops.values()]
              .map(s => ({ op: s.op, describe: s.describe }))
-@@ -141,9 +156,15 @@ export class BridgeRegistry {
+@@ -141,9 +169,15 @@ export class BridgeRegistry {
      async dispatch(op: string, args: Record<string, unknown>, from?: BridgeCaller): Promise<BridgeOutcome> {
          const spec = this.ops.get(op);
          if (!spec) {
@@ -5128,7 +5141,7 @@ index 56ba1c8..12c4121 100644
              };
          }
          try {
-@@ -933,24 +954,27 @@ export function stagedBridgeCliPath(storageDir: string): string {
+@@ -933,24 +967,27 @@ export function stagedBridgeCliPath(storageDir: string): string {
   * so agents have a reliable, version-independent, escape-free CLI to execute bridge operations.
   */
  export function stageBridgeCli(extensionPath: string, storageDir: string, version: string): { staged: boolean; path: string } {
@@ -5160,7 +5173,7 @@ index 56ba1c8..12c4121 100644
          fs.writeFileSync(versionFile, version, 'utf8');
          return { staged: true, path: dst };
      } catch {
-@@ -958,3 +982,6 @@ export function stageBridgeCli(extensionPath: string, storageDir: string, versio
+@@ -958,3 +995,6 @@ export function stageBridgeCli(extensionPath: string, storageDir: string, versio
      }
  }
  
@@ -5780,10 +5793,10 @@ index 0000000..b483b8a
 +}
 diff --git a/src/core/manualOps.ts b/src/core/manualOps.ts
 new file mode 100644
-index 0000000..2c521dc
+index 0000000..1c335dd
 --- /dev/null
 +++ b/src/core/manualOps.ts
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,164 @@
 +/**
 + * X-536 — THE AGENT MANUAL ON THE BRIDGE.
 + *
@@ -5792,7 +5805,7 @@ index 0000000..2c521dc
 + * MCP and in-process callers with the identical text). `farm.brief` composes
 + * the caller's live situation. `manual.*` stages, installs and audits it.
 + *
-+ * `farm.ops` REPLACES the registry's built-in one on purpose: its old answer —
++ * `farm.ops` gets a NEW ANSWER on purpose (`answerOpsWith`): its old one —
 + * every op with its whole contract — measured 458 KB, about a hundred and
 + * twenty thousand tokens, and every agent was told to call it first. That
 + * dump is still one argument away (`full=true`) for tools that want it.
@@ -5867,16 +5880,14 @@ index 0000000..2c521dc
 +            handler: (args, from) => answer('farm.find', args, from?.sessionId)
 +        },
 +    ]);
-+    // The registry's built-in farm.ops is replaced deliberately, and only it.
-+    bridge.register({
-+            op: 'farm.ops',
-+            describe: 'The bridge catalog. No args: every op name grouped by area (compact). op=<name>: one '
-+                + 'op\'s full contract with its effect, area, nearby ops and the playbooks that use it. '
-+                + 'area=<id>: that area\'s ops with one-line summaries. q=<words>: ops matching the words. '
-+                + 'full=true: every op with its whole contract as [{op, describe}] (large: write it to a file '
-+                + 'with --out, never into your context). args: op?, area?, q?, full?, format? (markdown | json)',
-+            handler: (args, from) => answer('farm.ops', args, from?.sessionId)
-+    }, { replace: true });
++    // The registry's built-in farm.ops now answers through the manual (one declaration, a new answer).
++    bridge.answerOpsWith(
++        'The bridge catalog. No args: every op name grouped by area (compact). op=<name>: one '
++            + 'op\'s full contract with its effect, area, nearby ops and the playbooks that use it. '
++            + 'area=<id>: that area\'s ops with one-line summaries. q=<words>: ops matching the words. '
++            + 'full=true: every op with its whole contract as [{op, describe}] (large: write it to a file '
++            + 'with --out, never into your context). args: op?, area?, q?, full?, format? (markdown | json)',
++        (args, from) => answer('farm.ops', args, from?.sessionId));
 +    bridge.register([
 +        {
 +            op: 'farm.brief',
@@ -6264,10 +6275,10 @@ index 0000000..ae61d93
 +    }
 +}
 diff --git a/src/core/settingsCatalog/sessions.ts b/src/core/settingsCatalog/sessions.ts
-index 1c410c9..e8164de 100644
+index 1c410c9..7b3947a 100644
 --- a/src/core/settingsCatalog/sessions.ts
 +++ b/src/core/settingsCatalog/sessions.ts
-@@ -101,6 +101,13 @@ export const sessions: CatalogSection = {
+@@ -101,6 +101,14 @@ export const sessions: CatalogSection = {
              group: 'guards', tier: 'basic',
              label: 'Shell guard',
              summary: 'Stops shell commands carrying text the shell would damage.'
@@ -6277,7 +6288,8 @@ index 1c410c9..e8164de 100644
 +        'agentManual.startCard': {
 +            group: 'guards', tier: 'basic',
 +            label: 'Agent start card',
-+            summary: 'What every agent session is told about driving Agent Farm when it starts.'
++            summary: 'What every agent session is told about driving Agent Farm when it starts.',
++            options: { card: 'Start card', line: 'One line', off: 'Nothing' }
          }
      }
  };
