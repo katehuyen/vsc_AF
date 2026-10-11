@@ -29,8 +29,6 @@ const titleOf = c => titles.get(c) || '';
     const kinds = {};
     for (const c of commands) { const v = P.ctxPhoneVerdict(c); kinds[v.on] = (kinds[v.on] || 0) + 1; }
     ok('the four verdicts are all in use', kinds.page > 0 && kinds.copy > 0 && kinds.run > 0 && kinds.pc > 0);
-    const gaps = commands.filter(c => { const v = P.ctxPhoneVerdict(c); return v.on === 'pc' && v.gap; }).length;
-    ok('‼️ the commands still waiting for a phone answer are counted, and the count is the budget', gaps === P.CTX_PHONE_GAPS);
     ok('a command that stays on the PC says why', commands.every(c => { const v = P.ctxPhoneVerdict(c); return v.on !== 'pc' || v.why.length > 10; }));
     ok('a command the catalogue does not have has no verdict', P.ctxPhoneVerdict('agentfarm.openFarmSettings') === undefined && P.ctxPhoneVerdict('toString') === undefined);
     const pageSrc = read('src/panels/remotePages.ts') + read('src/panels/remotePagesMore.ts');
@@ -42,7 +40,7 @@ const titleOf = c => titles.get(c) || '';
 const items = P.ctxPhoneItems(titleOf);
 {
     ok('a command that stays on the PC is not sent to a phone', items.every(i => P.ctxPhoneVerdict(i.command).on !== 'pc')
-        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.consoleForAgent'));
+        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.launchSession'));
     ok('every item carries the manifest\'s own title, its when clause and its group', items.length > 10
         && items.every(i => i.title === titleOf(i.command) && i.title && i.when && /^\d_[a-z]+@\d+$/.test(i.group)));
     const pin = items.find(i => i.command === 'agentfarm.pinSession');
@@ -53,7 +51,7 @@ const items = P.ctxPhoneItems(titleOf);
     const note = P.ctxPhoneNote;
     ok('ui.ctxmenu says where a pick is answered for a phone', note('agentfarm.pinSession').phone === 'run' && note('agentfarm.copySessionId').phone === 'copy'
         && note('agentfarm.revealAgent').phone === 'pc' && /file manager/.test(note('agentfarm.revealAgent').phoneWhy)
-        && note('agentfarm.consoleForAgent').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
+        && note('agentfarm.consoleForAgent').phone === 'page' && note('agentfarm.ctx.ndClear').phone === 'page action');
     ok('…and the op adds it to every item', /items: items\.map\(i => \(\{ \.\.\.i, \.\.\.ctxPhoneNote\(i\.command\) \}\)\)/.test(read('src/extension.ts')));
 }
 
@@ -168,13 +166,15 @@ const items = P.ctxPhoneItems(titleOf);
     ok('…not one whose row value is empty (no path, no folder)', !onSession.includes('copySessionPath') && !onSession.includes('copySessionCwd'));
     ok('…its stop, label, wiki and project commands among them', ['interruptSession', 'endSession', 'forceKillSession', 'dismissSession', 'tagSession',
         'sessionToWiki', 'assignSessionProject', 'addSessionFolderToProject'].every(c => onSession.includes(c)));
-    ok('…and none that stays on the PC', !onSession.includes('consoleForAgent') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
+    ok('…and none that stays on the PC', !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
+    ok('…nor an agent row\'s own', !onSession.includes('consoleForAgent') && !onSession.includes('openAgentDetail'));
     const full = cmds({ ...session, file: 'C:/t.jsonl', cwd: 'D:/w' });
     ok('a row that knows its path and folder offers those copies', full.includes('copySessionPath') && full.includes('copySessionCwd'));
     const onAgent = cmds({ webviewSection: 'afAgentRow', agentId: 'a1', agentName: 'dev', agentDir: 'D:/a' });
-    ok('an agent row offers its page, its project rule, its engine sync and its copies',
-        onAgent.join() === ['openAgentDetail', 'assignProject', 'syncAntigravity', 'copyAgentName', 'copyAgentFolder'].join());
-    ok('…an agent row with no id offers no page', !cmds({ webviewSection: 'afAgentRow', agentId: '', agentName: 'dev' }).includes('openAgentDetail'));
+    ok('an agent row offers its page, its Console, its project rule, its engine sync and its copies',
+        onAgent.join() === ['openAgentDetail', 'consoleForAgent', 'assignProject', 'syncAntigravity', 'copyAgentName', 'copyAgentFolder'].join());
+    const noId = cmds({ webviewSection: 'afAgentRow', agentId: '', agentName: 'dev' });
+    ok('…an agent row with no id offers no page and no Console', !noId.includes('openAgentDetail') && !noId.includes('consoleForAgent'));
     const onCard = cmds({ webviewSection: 'afConsoleSession', hostId: 'cs1', sessionId: 's1' });
     ok('a Console card offers its own five', ['consoleResumeSession', 'consoleInterruptTurn', 'consoleEndSession', 'consoleEndAndRemove', 'consoleForgetSession'].every(c => onCard.includes(c)));
     ok('the page actions are still offered beside them', M.actionsFor({ webviewSection: 'afNeedRow', afClearable: true }).some(a => a.act === 'ndClear'));
@@ -204,6 +204,17 @@ const items = P.ctxPhoneItems(titleOf);
         && items.filter(i => i.phone.on === 'run').every(i => CTX_ITEMS.some(c => c.command === i.command && c.when === i.when)));
     R.pick(by('openSessionAgent'), session);
     ok('Open Agent opens the phone\'s agent page by the row\'s agent name', sent.length === 5 && sent[4].to === 'agent' && JSON.stringify(sent[4].args) === '{"agentName":"dev"}');
+    R.pick(by('consoleForAgent'), { webviewSection: 'afAgentRow', agentId: 'a1', agentName: 'dev', agentDir: 'D:/a' });
+    ok('‼️ X-552: an agent row\'s Console pick opens the phone\'s own Console page on that agent',
+        sent.length === 6 && sent[5].type === 'afnav' && sent[5].to === 'console' && JSON.stringify(sent[5].args) === '{"agentId":"a1"}');
+    const ext = read('src/extension.ts');
+    const maker = ext.slice(ext.indexOf('            console: (host, args) => {'), ext.indexOf('            now: host => NowPanel.openOn('));
+    ok('‼️ …which the farm opens as the PC\'s command does: one function builds what the Console is told, for an agent it knows',
+        /const agentId = consolePageAgent\(args, agents\);\s+if \(agentId === undefined\) \{ return false; \}/.test(maker)
+        && /ConsolePanel\.openOn\(host, consoleDeps, agentId\s+\? consoleOptsForAgent\(agentId, \{ seed: seedLastLaunch, accountFor: launchAccountFor \}\) : undefined\);/.test(maker)
+        && /ConsolePanel\.show\(consoleDeps, consoleOptsForAgent\(agent\.id, \{ seed: seedLastLaunch, accountFor: launchAccountFor \}\)\);/.test(
+            ext.slice(ext.indexOf("registerCommand('agentfarm.consoleForAgent'"), ext.indexOf("registerCommand('agentfarm.openWebView'")))
+        && !/treeMenuDoor/.test(ext));
     ok('the phone layer hands a command pick to afRowCmd and a page action to the page', /if \(a\.command\) \{ window\.AFRowCmd\.pick\(a, ctx\); return; \}/.test(read('media/afMobile.js')));
     const base = read('src/panels/base.ts');
     ok('every page is sent the script, after the phone layer', base.indexOf('src="${rowCmd}"') > base.indexOf('src="${mobile}"') && /'media', 'afRowCmd\.js'/.test(base));

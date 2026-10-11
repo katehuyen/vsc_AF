@@ -16,8 +16,7 @@
  *         view's `ask`, so its questions and its messages are the phone's.
  *         Only a handler that speaks through `arg.ask` may have it
  *         (test/test_ctx_phone.js reads the handler's own source)
- *   pc    it stays on the PC, and `why` says so; `gap` marks one a phone should
- *         get once its handler asks through `ask` — CTX_PHONE_GAPS only shrinks
+ *   pc    it stays on the PC, and `why` says so
  *
  * PURE — no vscode import; the test requires the compiled file directly.
  */
@@ -28,12 +27,10 @@ export type CtxPhoneVerdict =
     | { on: 'page'; to: string; args: Readonly<Record<string, string>> }
     | { on: 'copy'; key: string }
     | { on: 'run'; scope: 'answer' | 'manage' | 'admin' }
-    | { on: 'pc'; why: string; gap?: true };
+    | { on: 'pc'; why: string };
 
 const RUN: CtxPhoneVerdict = { on: 'run', scope: 'manage' };
 const pc = (why: string): CtxPhoneVerdict => ({ on: 'pc', why });
-/** Wanted on a phone; its handler still asks or answers with vscode.window. */
-const gap = (why: string): CtxPhoneVerdict => ({ on: 'pc', why, gap: true });
 
 const PC_PANEL = 'it opens a panel the phone has no page for';
 const PC_FILES = 'it opens the PC\'s own file manager or window';
@@ -47,6 +44,7 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.sessionToQueue': { on: 'page', to: 'queue', args: { session: 'sessionId' } },
     'agentfarm.showChain': { on: 'page', to: 'chains', args: { chain: 'afChain' } },
     'agentfarm.openSessionAgent': { on: 'page', to: 'agent', args: { agentName: 'agentName' } },
+    'agentfarm.consoleForAgent': { on: 'page', to: 'console', args: { agentId: 'agentId' } },
     // ---- the phone's own clipboard
     'agentfarm.copySessionId': { on: 'copy', key: 'sessionId' },
     'agentfarm.copySessionPath': { on: 'copy', key: 'file' },
@@ -77,8 +75,6 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.restoreInsights': RUN,
     'agentfarm.syncAntigravity': RUN,
     'agentfarm.copyCorpus': RUN,
-    // ---- wanted on a phone, waiting for a handler that asks through `ask`
-    'agentfarm.consoleForAgent': gap('it opens the PC\'s Console with the agent chosen'),
     // ---- the PC's own
     'agentfarm.openAgentInNewWindow': pc(PC_FILES),
     'agentfarm.revealAgent': pc(PC_FILES),
@@ -102,9 +98,6 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.openTaskHistory': pc(PC_PANEL),
     'agentfarm.projectFromSession': pc(PC_PANEL)
 };
-
-/** How many commands a phone should get and does not yet. It only shrinks: a new gap is a new debt. */
-export const CTX_PHONE_GAPS = 1;
 
 /**
  * A term that reads a list only the PC holds (`sessionId in agentfarm.chainSessions`): a phone cannot
@@ -185,7 +178,7 @@ function plainCtx(ctx: unknown): Record<string, unknown> {
 export function ctxPhoneNote(command: string): { phone: string; phoneWhy?: string } {
     const v = ctxPhoneVerdict(command);
     if (!v) { return { phone: 'page action' }; }
-    return v.on === 'pc' ? { phone: v.gap ? 'pc (gap)' : 'pc', phoneWhy: v.why } : { phone: v.on };
+    return v.on === 'pc' ? { phone: 'pc', phoneWhy: v.why } : { phone: v.on };
 }
 
 /** What is wrong with the table — read by the test, so a command with no verdict fails the build. */
@@ -195,19 +188,11 @@ export function ctxPhoneProblems(): string[] {
     for (const c of catalogue) {
         if (!ctxPhoneVerdict(c)) { problems.push(`${c}: no phone verdict — say page, copy, run or pc in src/core/ctxPhone.ts`); }
     }
-    let gaps = 0;
     for (const [c, v] of Object.entries(CTX_PHONE)) {
         if (!catalogue.has(c)) { problems.push(`${c}: a phone verdict for a command the catalogue does not have`); }
-        if (v.on === 'pc') {
-            if (!v.why.trim()) { problems.push(`${c}: a command that stays on the PC says why`); }
-            if (v.gap) { gaps++; }
-        }
+        if (v.on === 'pc' && !v.why.trim()) { problems.push(`${c}: a command that stays on the PC says why`); }
         if (v.on === 'copy' && !v.key) { problems.push(`${c}: a copy names the row key it copies`); }
         if (v.on === 'page' && (!v.to || !Object.keys(v.args).length)) { problems.push(`${c}: a page names itself and what of the row fills it`); }
-    }
-    if (gaps !== CTX_PHONE_GAPS) {
-        problems.push(`${gaps} commands wait for a phone answer and CTX_PHONE_GAPS says ${CTX_PHONE_GAPS} — `
-            + (gaps > CTX_PHONE_GAPS ? 'a new gap is not allowed: give the command a phone answer' : 'lower CTX_PHONE_GAPS to match'));
     }
     return problems;
 }

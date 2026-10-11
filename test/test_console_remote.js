@@ -69,7 +69,8 @@ Module._load = function (request) {
 };
 const { ConsolePanel } = require(path.join(ROOT, 'out', 'panels', 'consolePanel.js'));
 const { RemoteViews } = require(path.join(ROOT, 'out', 'panels', 'remoteViews.js'));
-const { remotePages } = require(path.join(ROOT, 'out', 'panels', 'remotePages.js'));
+const { remotePages, consolePageAgent } = require(path.join(ROOT, 'out', 'panels', 'remotePages.js'));
+const { consoleOptsForAgent } = require(path.join(ROOT, 'out', 'panels', 'consoleForAgent.js'));
 Module._load = origLoad;
 const { scopeAtLeast } = require(path.join(ROOT, 'out', 'remote', 'index.js'));
 
@@ -113,10 +114,25 @@ const deps = {
 const settle = () => new Promise(r => setImmediate(r));
 const alive = setInterval(() => undefined, 1000);
 
+// the tree menu door's layers, as the farm hands them over: this agent's remembered setup and its sign-in
+const door = {
+    seed: () => ({ engine: 'claude', model: 'opus', effort: 'low', permissionMode: 'plan', prompt: 'never the door\'s', name: 'nor this' }),
+    accountFor: (engine, _stated, agentId) => 'slot-' + engine + '-' + agentId
+};
+
 (async () => {
     const views = new RemoteViews({
         media: uri('/ext/media'), atLeast: scopeAtLeast, waitMs: 60,
-        pages: remotePages({ needs: () => undefined, console: host => ConsolePanel.openOn(host, deps) })
+        pages: remotePages({
+            needs: () => undefined,
+            // the farm's own maker, line for line (src/extension.ts; test_ctx_phone.js reads it there)
+            console: (host, args) => {
+                const agentId = consolePageAgent(args, deps.getAgents());
+                if (agentId === undefined) { return false; }
+                ConsolePanel.openOn(host, deps, agentId ? consoleOptsForAgent(agentId, door) : undefined);
+                return true;
+            }
+        })
     });
     const reader = { device: 'dev_r', scope: 'read' }, manager = { device: 'dev_m', scope: 'manage' };
     const toReader = [], toManager = [];
@@ -152,6 +168,39 @@ const alive = setInterval(() => undefined, 1000);
     }
     await settle(); await settle();
     ok('nothing a phone sends opens a dialog, an editor or a tab on the PC', pcSide.length === 0);
+
+    // ---- X-552: an agent row's "talk to this agent" opens the view with the composer on that agent
+    const known = deps.getAgents();
+    ok('the agent a phone names: none is the plain Console, a known one is itself, an unknown one is nobody',
+        consolePageAgent(undefined, known) === '' && consolePageAgent({ agentId: 7 }, known) === ''
+        && consolePageAgent({ agentId: 'a-dev' }, known) === 'a-dev' && consolePageAgent({ agentId: 'ghost' }, known) === undefined);
+    const told = consoleOptsForAgent('a-dev', door);
+    ok('what "talk to this agent" tells the Console: the agent, pinned, the door\'s engine beside its setup',
+        told.agentId === 'a-dev' && told.pinAgent === true && told.engine === 'claude'
+        && told.launch.model === 'opus' && told.launch.effort === 'low' && told.launch.permissionMode === 'plan');
+    ok('…the setup is the tree menu door\'s whole answer: its sign-in for this agent, no prompt, no name, the engine said once',
+        told.launch.account === 'slot-claude-a-dev' && !('prompt' in told.launch) && !('name' in told.launch) && !('engine' in told.launch));
+    ok('a door that settled no engine names none', !('engine' in consoleOptsForAgent('a-dev', { seed: () => ({}) })));
+
+    const firstData = body => JSON.parse(/window\.__DATA__ = (\{.*?\}); window\.__AFUI__ = /s.exec(body)[1]);
+    const plain = firstData(page);
+    ok('(the plain Console pins nobody)', plain.pinnedAgent === '' && !plain.composerAgent);
+    const toAgentView = [];
+    ok('the Console opens on a phone for the agent its row named',
+        views.open(manager, 'c3', 'console', { agentId: 'a-dev' }, m => toAgentView.push(m)) === true);
+    const onAgent = firstData((await views.page('/view/console?view=c3', manager)).body);
+    ok('‼️ the page\'s FIRST payload has the composer on that agent, pinned (applied before the page loads)',
+        onAgent.pinnedAgent === 'a-dev' && onAgent.composerAgent === 'a-dev' && onAgent.selected === '');
+    ok('…on the setup the door handed over, not the fleet\'s', onAgent.composerIntent.engine === 'claude'
+        && onAgent.composerIntent.model === 'opus' && onAgent.composerIntent.permissionMode === 'plan' && plain.composerIntent.model !== 'opus');
+    views.message(manager, 'c3', { type: 'start', text: 'to the pinned agent' });
+    await settle(); await settle();
+    ok('…and Send starts a session for that agent with it', started.length === 2 && started[1].agentId === 'a-dev'
+        && started[1].model === 'opus' && JSON.stringify(started[1]).includes('to the pinned agent'));
+    ok('‼️ an agent the farm does not know opens nothing: the phone is told "unavailable"',
+        views.open(manager, 'c4', 'console', { agentId: 'ghost' }, () => undefined) === false);
+    ok('…and still no desktop tab was made', tabs.length === 0);
+    views.close(manager, 'c3');
 
     ConsolePanel.show(deps);
     ConsolePanel.show(deps);

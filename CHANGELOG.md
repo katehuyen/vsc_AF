@@ -2,6 +2,15 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.930.0 - Talk to an agent from its row on your phone (2026-10-11)
+
+- **"Talk in Console…" on an agent row works on the phone.** A long press on
+  an agent offers it, and it opens the phone's own Console page
+  with the new-session form already on that agent, on the setup it last ran
+  as — the same form the PC's command opens. With this the phone's row menu
+  answers every command it was meant to; what is left on the PC is what only
+  a PC can do (its file manager, its terminals, its editor, its own voice).
+
 ## 3.929.0 - Chains, a timeline point's words and a session's agent from your phone (2026-10-11)
 
 - **A chained session's menu on the phone shows its relay chain.** A long

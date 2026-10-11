@@ -109,37 +109,54 @@ async function main() {
         const bad = [];
         let calls = 0;
         const blank = (s) => s.replace(/[^\n]/g, ' ');
+        // where a setup is handed over: a call that opens the Console (the desktop's tab, or a phone's
+        // view), and a function that builds what such a call is told (X-552 — one answer for both)
+        const opens = [], builders = [];
+        const closeOf = (src, from, open, close) => {
+            let depth = 0, end = from;
+            for (; end < src.length; end++) {
+                if (src[end] === open) { depth++; } else if (src[end] === close) { depth--; if (depth === 0) { break; } }
+            }
+            return end;
+        };
         for (const f of files) {
             // comments blanked, lines kept: a sentence about `launch:` is not a door
             const src = fs.readFileSync(f, 'utf8')
                 .replace(/\/\*[\s\S]*?\*\//g, blank)
                 .replace(/(^|[^:'"`])(\/\/[^\n]*)/gm, (_m, a, c) => a + blank(c));
-            let at = src.indexOf('ConsolePanel.show(');
-            while (at >= 0) {
-                let depth = 0, end = at + 'ConsolePanel.show'.length;
-                for (; end < src.length; end++) {
-                    if (src[end] === '(') { depth++; } else if (src[end] === ')') { depth--; if (depth === 0) { break; } }
+            const where = at => path.relative(ROOT, f) + ':' + src.slice(0, at).split('\n').length;
+            for (const head of ['ConsolePanel.show(', 'ConsolePanel.openOn(']) {
+                let at = src.indexOf(head);
+                while (at >= 0) {
+                    const end = closeOf(src, at + head.length - 1, '(', ')');
+                    opens.push({ where: where(at), text: src.slice(at, end), before: src.slice(Math.max(0, at - 600), at) });
+                    at = src.indexOf(head, end);
                 }
-                const call = src.slice(at, end);
-                const m = /\blaunch\b\s*([:,}\n])/.exec(call);
-                if (m) {
-                    calls++;
-                    const line = src.slice(0, at).split('\n').length;
-                    const where = path.relative(ROOT, f) + ':' + line;
-                    if (m[1] === ':') {
-                        const rest = call.slice(m.index + m[0].length).trimStart();
-                        if (!/^(composerSetup\(|\{\s*\.\.\.composerSetup\()/.test(rest)) { bad.push(where + ' builds launch by hand'); }
-                    } else {
-                        const before = src.slice(Math.max(0, at - 600), at);
-                        if (!/\.\.\.launch\s*\}\s*=\s*\w+Door\.collect\(/.test(before)) { bad.push(where + ' passes a launch no door collected'); }
-                    }
-                }
-                at = src.indexOf('ConsolePanel.show(', end);
+            }
+            for (const m of src.matchAll(/function (\w+)\([^)]*\): ConsoleOpenOpts \{/g)) {
+                const body = src.slice(m.index, closeOf(src, m.index + m[0].length - 1, '{', '}'));
+                const ret = body.lastIndexOf('return ');
+                builders.push({ name: m[1], where: where(m.index) + ' ' + m[1] + '()', text: body.slice(ret), before: body.slice(0, ret) });
+            }
+        }
+        for (const site of [...opens, ...builders]) {
+            const m = /\blaunch\b\s*([:,}\n])/.exec(site.text);
+            if (!m) { continue; }
+            calls++;
+            if (m[1] === ':') {
+                const rest = site.text.slice(m.index + m[0].length).trimStart();
+                if (!/^(composerSetup\(|\{\s*\.\.\.composerSetup\()/.test(rest)) { bad.push(site.where + ' builds launch by hand'); }
+            } else if (!/\.\.\.launch\s*\}\s*=\s*\w+Door\.collect\(/.test(site.before)) {
+                bad.push(site.where + ' passes a launch no door collected');
             }
         }
         for (const b of bad) { console.log('    ' + b); }
         ok('‼️ every door that hands the Console a setup hands composerSetup() or a door\'s whole answer', bad.length === 0);
         ok('…and the scan really found the doors (' + calls + ')', calls >= 6);
+        const told = b => opens.filter(o => new RegExp('\\b' + b.name + '\\(').test(o.text)).map(o => o.text.slice(0, o.text.indexOf('(')));
+        ok('‼️ X-552: a setup built by a function is the one the desktop\'s tab AND a phone\'s view are told ('
+            + builders.map(b => b.name + ' → ' + told(b).join(' + ')).join('; ') + ')',
+            builders.length >= 1 && builders.every(b => told(b).includes('ConsolePanel.show') && told(b).includes('ConsolePanel.openOn')));
     }
 
     /* ---------------- 1c. a door that opens the composer carries the route ---------------- */

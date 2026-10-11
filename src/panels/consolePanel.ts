@@ -1109,9 +1109,14 @@ export class ConsolePanel {
         ConsolePanel.watchChanged.fire();
     }
 
-    /** X-441 — the Console on a phone: one instance per view, never the desktop's one tab. */
-    static openOn(surface: PanelHost, deps: ConsoleDeps): void {
-        new ConsolePanel(surface, deps).mount();
+    /**
+     * X-441 — the Console on a phone: one instance per view, never the desktop's one tab.
+     * `opts` is what the view's door came to say (X-552), applied BEFORE the page loads as `show` does (S-50).
+     */
+    static openOn(surface: PanelHost, deps: ConsoleDeps, opts?: ConsoleOpenOpts): void {
+        const fresh = new ConsolePanel(surface, deps);
+        ConsolePanel.applier(opts)(fresh);
+        fresh.mount();
     }
 
     private constructor(private surface: PanelHost, private deps: ConsoleDeps) {

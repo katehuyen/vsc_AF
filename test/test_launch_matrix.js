@@ -206,9 +206,21 @@ ok('…and answers with an object rather than throwing on a fixture',
      * and the remainder is exactly the work X-151 has left. */
     ok(`‼️ the wired-door count may only rise (wired ${wired.length}, floor ${M.wiredFloor})`,
         wired.length >= M.wiredFloor);
-    ok('…and a wired door is really imported by the extension, not just marked',
-        wired.every(d => new RegExp("from './launch/doors/" + d.id + "'")
-            .test(fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8'))));
+    // …itself, or through a module the extension imports (X-552: the tree menu's answer becomes what the
+    // Console is told in src/panels/consoleForAgent.ts, for the PC's command and a phone's view alike)
+    const SRC = path.join(ROOT, 'src');
+    const extSrc = fs.readFileSync(path.join(SRC, 'extension.ts'), 'utf8');
+    const modules = (function walk(d) {
+        return fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory()
+            ? (path.join(d, e.name) === path.join(SRC, 'launch', 'doors') ? [] : walk(path.join(d, e.name)))
+            : (e.name.endsWith('.ts') && e.name !== 'extension.ts' ? [path.join(d, e.name)] : []));
+    })(SRC);
+    const through = id => modules
+        .filter(f => new RegExp("from '(?:\\.\\./)+launch/doors/" + id + "'").test(fs.readFileSync(f, 'utf8')))
+        .some(f => extSrc.includes("from './" + path.relative(SRC, f).replace(/\\/g, '/').replace(/\.ts$/, '') + "'"));
+    ok('…and a wired door is really imported by the extension — itself, or by a module it imports — not just marked',
+        wired.every(d => new RegExp("from './launch/doors/" + d.id + "'").test(extSrc) || through(d.id)));
+    ok('(the test can tell: a door nobody imports is caught)', !through('noSuchDoor'));
     ok('…and the registry is populated where the window starts, once',
         /registerLaunchDoors\(\);/.test(fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8')));
 }

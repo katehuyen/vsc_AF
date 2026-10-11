@@ -223,7 +223,6 @@ import { registerLaunchDoors } from './launch/doors/all';
 import { launcherDoor } from './launch/doors/launcher';
 import { projectsDoor } from './launch/doors/projects';
 import { paletteDoor } from './launch/doors/palette';
-import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
 import { composerSetup } from './launch/doors/composer';
 import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, publicProfile, secretKeyFor } from './core/providerOwnership';
@@ -546,7 +545,8 @@ import { allOpen, createRemoteControl, farmIdentity, scopeAtLeast, type FeatureA
 import { FCM_SECRET, fcmSenderFrom } from './core/fcm';
 import { PhoneWaker } from './core/phoneWake';
 import { RemoteViews } from './panels/remoteViews';
-import { remotePages, sessionPageTarget } from './panels/remotePages';
+import { remotePages, sessionPageTarget, consolePageAgent } from './panels/remotePages';
+import { consoleOptsForAgent } from './panels/consoleForAgent';
 import {
     addWaiver, chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
     PendingSends, queueInbound, turnEnded, Waived, waiverList
@@ -31998,7 +31998,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         atLeast: scopeAtLeast,
         pages: remotePages({
             needs: host => NeedsPanel.openOn(host, needsDeps),
-            console: host => ConsolePanel.openOn(host, consoleDeps),
+            // X-552 — an agent row's "talk to this agent": the composer on that agent, as the PC's command opens it
+            console: (host, args) => {
+                const agentId = consolePageAgent(args, agents);
+                if (agentId === undefined) { return false; }
+                ConsolePanel.openOn(host, consoleDeps, agentId
+                    ? consoleOptsForAgent(agentId, { seed: seedLastLaunch, accountFor: launchAccountFor }) : undefined);
+                return true;
+            },
             now: host => NowPanel.openOn(host, nowDeps),
             sessions: (host, args) => SessionsPanel.openOn(host, sessionsPageDeps(), sessionsScopeOf(args)),
             tasks: host => TasksPanel.openOn(host, tasksDeps),
@@ -39945,16 +39952,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // "Talk to X" is the door with the fewest questions in it, which is
             // exactly why it must not be the door that quietly answers them all
             // with the fleet defaults.
-            // ‼️ X-151 — the door's answer, taken whole (src/launch/doors/treeMenu.ts).
-            const { engine: seededEngine, ...launch } =
-                treeMenuDoor.collect({
-                    agentId: agent.id, seed: seedLastLaunch, accountFor: launchAccountFor
-                });
-            ConsolePanel.show(consoleDeps, {
-                agentId: agent.id, pinAgent: true,
-                ...(seededEngine ? { engine: seededEngine as EngineId } : {}),
-                launch
-            });
+            // ‼️ X-151 — the door's answer, taken whole (src/launch/doors/treeMenu.ts),
+            // by the one function a phone's Console view opens on too (X-552).
+            ConsolePanel.show(consoleDeps, consoleOptsForAgent(agent.id, { seed: seedLastLaunch, accountFor: launchAccountFor }));
         }),
 
         // ---------- C1: the web view, and how to reach it ----------

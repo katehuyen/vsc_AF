@@ -966,10 +966,12 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   goes through `ask.copy` (the phone's clipboard, written by the page). A
   when term that reads a PC-held list (`x in agentfarm.y`) is dropped for a
   page or copy verdict only, whose own row key stands for the fact (`afChain`
-  on every session row). A `pc`
-  verdict marked `gap` is a command a phone should
-  get once its handler asks that way; `CTX_PHONE_GAPS` counts them and only
-  shrinks. The pick arrives as `afctxcmd` and is settled by `RemoteViews`
+  on every session row). A page that opens ON something is told it the way
+  the PC's door tells it: `consoleForAgent` → `console` with `{ agentId }`,
+  and the farm hands `ConsolePanel.openOn` the options `consoleOptsForAgent`
+  (`src/panels/consoleForAgent.ts`) builds for the PC's command too, applied
+  before the page loads; an id the farm does not know opens nothing
+  (`consolePageAgent`). The pick arrives as `afctxcmd` and is settled by `RemoteViews`
   like `afAskAnswer`, never by the page: the command must be a `run`, drawn
   on that row's section, within the device's scope, and the context is cut
   down to plain values — a phone cannot hand a handler an `ask` of its own.

@@ -17,7 +17,8 @@ import { morePages, SOUND_PC, type MorePageMakers } from './remotePagesMore';
 
 export interface RemotePageMakers extends MorePageMakers {
     needs(host: PanelHost): void;
-    console(host: PanelHost): void;
+    /** X-552 — `args.agentId` opens the composer on that agent. False when it names no agent the farm knows. */
+    console(host: PanelHost, args?: Record<string, unknown>): boolean;
     now(host: PanelHost): void;
     /** `args` narrows the page the way the openSessions command's argument does. */
     sessions(host: PanelHost, args?: Record<string, unknown>): void;
@@ -62,6 +63,15 @@ export function sessionPageTarget(
     return { file: row.file, ...(ts ? { focusTs: ts } : {}), ...(roles.length ? { roles } : {}) };
 }
 
+/**
+ * X-552 — the agent a phone's `afnav` opens the Console on (an agent row's "talk to this agent"):
+ * '' when it names none (the plain Console), undefined when it names one the farm does not know.
+ */
+export function consolePageAgent(args: Record<string, unknown> | undefined, known: readonly { id: string }[]): string | undefined {
+    const id = typeof args?.agentId === 'string' ? args.agentId : '';
+    return !id || known.some(a => a.id === id) ? id : undefined;
+}
+
 export function remotePages(make: RemotePageMakers): Record<string, RemotePage> {
     const pages: Record<string, RemotePage> = {
         now: {
@@ -84,7 +94,7 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             answers: ['askAnswer', 'askHold', 'askPicks'],
             pcOnly: ['attachPick', 'attachUris', 'attachDrop', 'attachTooMany', 'attachNothing',
                 'openFile', 'openTranscript', 'openProject', 'openGuide', 'afnav', ...SOUND_PC],
-            make: host => make.console(host)
+            make: (host, args) => make.console(host, args)
         },
         // X-456 — opening a transcript, a terminal or the guide happens on the PC, so a phone never
         // asks for them; pinning and stopping a session are the page's manage actions.
