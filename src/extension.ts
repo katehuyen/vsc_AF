@@ -37895,17 +37895,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 fix.agentScoped && target.agentId ? { agentId: target.agentId } : undefined);
         }),
 
-        vscode.commands.registerCommand('agentfarm.delegateInsight', async (ins?: Insight) => {
+        // `phone`: the ask of the phone that started it (insightHistory hands it on)
+        vscode.commands.registerCommand('agentfarm.delegateInsight', async (ins?: Insight, phone?: PanelAsk) => {
+            const ask = phone ?? desktopAsk();
             let selected: Insight[];
             if (ins) {
                 selected = [ins];
             } else {
                 if (!insights.length) {
-                    void vscode.window.showInformationMessage('Agent Farm: no insights to delegate.');
+                    void ask.info('Agent Farm: no insights to delegate.');
                     return;
                 }
                 const sevIcon = (s: string) => s === 'error' ? '$(error)' : s === 'warning' ? '$(warning)' : '$(info)';
-                const picks = await vscode.window.showQuickPick(insights.map(i => ({
+                const picks = await ask.pick(insights.map(i => ({
                     label: `${sevIcon(i.severity)} ${i.message.slice(0, 80)}`,
                     description: `${i.agentName} · ${i.category}`,
                     picked: i.severity !== 'info',
@@ -37927,13 +37929,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 } else { fleet.push(i); }
             }
             if (fleet.length) {
-                const fa = await resolveAgent(undefined);
+                const fa = await resolveAgent(undefined, ask);
                 if (!fa) { return; }
                 (byAgent.get(fa.id) ?? byAgent.set(fa.id, []).get(fa.id)!).push(...fleet);
             }
             const summary = [...byAgent.entries()]
                 .map(([id, list]) => `${agents.find(a => a.id === id)!.name}: ${list.length}`).join(' · ');
-            const go = await vscode.window.showInformationMessage(
+            const go = await ask.info(
                 `Delegate ${selected.length} insight(s) as headless task(s)? → ${summary}`,
                 { modal: true }, 'Delegate');
             if (go !== 'Delegate') { return; }
@@ -37945,23 +37947,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // Same ledger as Fix: a delegation is an action whose result the
             // next refresh will judge (E1).
             for (const i of selected) { noteInsightAction(i, 'delegate'); }
-            void vscode.window.showInformationMessage(
-                `Agent Farm: ${byAgent.size} task(s) queued — the agents will investigate and report.`, 'Show Tasks'
+            void ask.info(
+                `Agent Farm: ${byAgent.size} task(s) queued — the agents will investigate and report.`, ...(phone ? [] : ['Show Tasks'])
             ).then(c => { if (c === 'Show Tasks') { void vscode.commands.executeCommand('agentfarm.tasks.focus'); } });
         }),
 
         // E1: the ledger, readable. "Which findings keep coming back, and did
         // what I did about them hold?" — the question a snapshot cannot answer.
-        vscode.commands.registerCommand('agentfarm.insightHistory', async () => {
+        vscode.commands.registerCommand('agentfarm.insightHistory', async (arg?: { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
             const store = insightHistory();
             const sum = summarizeInsightHistory(store, 200);
             if (!sum.tracked) {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     'Agent Farm: no insight history yet — it starts recording from the next refresh.');
                 return;
             }
             const now = Date.now();
-            const pick = await vscode.window.showQuickPick(sum.top.map(r => ({
+            const pick = await ask.pick(sum.top.map(r => ({
                 label: (r.regressedAt ? '$(warning) ' : r.occurrences > 1 ? '$(history) ' : '$(check) ')
                     + r.label.slice(0, 80),
                 description: `${r.agentName} · ${r.category}${r.open ? '' : ' · resolved'}`,
@@ -37973,18 +37976,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             if (pick?.rec.open) {
                 const live = insights.find(i => insightKey(i) === pick.rec.key);
-                if (live) { await vscode.commands.executeCommand('agentfarm.delegateInsight', live); }
+                if (live) { await vscode.commands.executeCommand('agentfarm.delegateInsight', live, arg?.ask); }
             }
         }),
 
-        vscode.commands.registerCommand('agentfarm.restoreInsights', async () => {
+        vscode.commands.registerCommand('agentfarm.restoreInsights', async (arg?: { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
             const dismissed = context.globalState.get<Record<string, DismissEntry>>(DISMISS_KEY, {});
             const entries = Object.entries(dismissed);
             if (!entries.length) {
-                void vscode.window.showInformationMessage('Agent Farm: no dismissed insights.');
+                void ask.info('Agent Farm: no dismissed insights.');
                 return;
             }
-            const picks = await vscode.window.showQuickPick(entries.map(([key, e]) => ({
+            const picks = await ask.pick(entries.map(([key, e]) => ({
                 label: e.label,
                 description: e.until === 0 ? 'hidden forever' : `hidden until ${new Date(e.until).toLocaleString()}`,
                 picked: true,
@@ -37994,6 +37998,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             for (const p of picks) { delete dismissed[p.key]; }
             await context.globalState.update(DISMISS_KEY, dismissed);
             refreshInsights();
+            // a phone's sheet has closed: say what it did there
+            if (arg?.ask) { void arg.ask.info(`${picks.length} insight${picks.length === 1 ? '' : 's'} restored`); }
         }),
 
         // Every surface hands over what it knows; sessionFromArg fills the rest
@@ -40121,7 +40127,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // a request; every other engine's source is on this disk, so a re-read
         // there is a repaint (`engineUsageMatrix` walks the files each call)
         // and it must NOT spend Claude's request budget to do it.
-        vscode.commands.registerCommand('agentfarm.planUsageRefresh', async () => {
+        vscode.commands.registerCommand('agentfarm.planUsageRefresh', async (arg?: { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
             // X-306 — Antigravity's source is a local command, so Check now
             // runs it at once rather than waiting for the beat; still no token.
             if (usageEngine() === 'agy') {
@@ -40129,7 +40136,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 planUsageBar.paint();
                 DashboardPanel.refreshIfOpen();
                 if (agyUsage.error) {
-                    void vscode.window.showInformationMessage(`Agent Farm: Antigravity's /usage could not be read: ${agyUsage.error}`);
+                    void ask.info(`Agent Farm: Antigravity's /usage could not be read: ${agyUsage.error}`);
                 }
                 return;
             }
@@ -40142,7 +40149,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             planUsageBar.paint();
             DashboardPanel.refreshIfOpen();
             if (snap.state !== 'ok') {
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: ${snap.note ?? 'the usage endpoint could not be read.'}`);
             }
         }),
@@ -42508,11 +42515,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // (the shared instruction file Codex also reads); withCodex() layers the
         // Codex-only extras (MCP TOML snippet) on top without touching that core.
 
-        vscode.commands.registerCommand('agentfarm.syncAntigravity', async (arg?: AgentArg) => {
-            const agent = await resolveAgent(arg);
+        vscode.commands.registerCommand('agentfarm.syncAntigravity', async (arg?: AgentArg & { ask?: PanelAsk }) => {
+            const ask = arg?.ask ?? desktopAsk();
+            // the editor and the diff are the PC's: a phone (it hands its own ask) is not offered them
+            const onPc = (...buttons: string[]): string[] => (arg?.ask ? [] : buttons);
+            const agent = await resolveAgent(arg, ask);
             if (!agent) { return; }
             if (!agent.claudeMdPath) {
-                void vscode.window.showWarningMessage('Agent Farm: this agent has no CLAUDE.md to sync from.');
+                void ask.warn('Agent Farm: this agent has no CLAUDE.md to sync from.');
                 return;
             }
             const agentsPath = path.join(agent.dir, AGENTS_MD_NAME);
@@ -42531,12 +42541,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
             const showResult = (title: string, r: SyncResult) => {
                 refreshAll();
-                void vscode.window.showInformationMessage(
+                void ask.info(
                     `Agent Farm: ${title} — ${r.written.length} file(s) written` +
                     (r.skipped.length ? `, ${r.skipped.length} left untouched` : '') +
                     (r.backups.length ? `, ${r.backups.length} backup(s)` : '') +
                     (r.notes.length ? `. ${r.notes.join(' ')}` : '.'),
-                    'Open AGENTS.md')
+                    ...onPc('Open AGENTS.md'))
                     .then(c => {
                         if (c === 'Open AGENTS.md') {
                             void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(agentsPath));
@@ -42551,7 +42561,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const status = antigravityStatus(agent.dir, agent.constitutionPath);
             switch (status.state) {
                 case 'none': {
-                    const ok = await vscode.window.showInformationMessage(
+                    const ok = await ask.info(
                         `Make "${agent.name}" readable by the other engines?\n\n` +
                         `Creates AGENTS.md from CLAUDE.md (the cross-tool file Codex, OpenCode and Antigravity read — each walks up to the shared constitution on its own; ` +
                         `only a folder Antigravity's walk cannot reach it from gets it embedded in .agents/AGENTS.md), ` +
@@ -42564,7 +42574,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return;
                 }
                 case 'foreign': {
-                    const ok = await vscode.window.showWarningMessage(
+                    const ok = await ask.warn(
                         `${agent.name} already has an AGENTS.md that Agent Farm did not generate. ` +
                         `Overwrite it with CLAUDE.md content? (a timestamped .afbak backup is kept)`,
                         { modal: true }, 'Overwrite');
@@ -42582,10 +42592,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return;
                 }
                 case 'antigravity-ahead': {
-                    const choice = await vscode.window.showInformationMessage(
+                    const choice = await ask.info(
                         `AGENTS.md was edited on the Antigravity side. Carry the changes back into CLAUDE.md? ` +
                         `(CLAUDE.md gets a timestamped .afbak backup)`,
-                        { modal: true }, 'Apply to CLAUDE.md', 'Show Diff', 'Overwrite with CLAUDE.md');
+                        { modal: true }, 'Apply to CLAUDE.md', ...onPc('Show Diff'), 'Overwrite with CLAUDE.md');
                     if (choice === 'Apply to CLAUDE.md') {
                         showResult('AGENTS.md → CLAUDE.md synced', withCodex(syncToClaude(agent.dir, agent.constitutionPath)));
                     } else if (choice === 'Show Diff') {
@@ -42598,10 +42608,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return;
                 }
                 case 'conflict': {
-                    const choice = await vscode.window.showWarningMessage(
+                    const choice = await ask.warn(
                         `Both CLAUDE.md and AGENTS.md changed since the last sync — pick a direction ` +
                         `(the losing side gets a timestamped .afbak backup) or inspect the diff first.`,
-                        { modal: true }, 'Show Diff', 'Claude wins', 'Antigravity wins');
+                        { modal: true }, ...onPc('Show Diff'), 'Claude wins', 'Antigravity wins');
                     if (choice === 'Show Diff') {
                         await vscode.commands.executeCommand('vscode.diff',
                             vscode.Uri.file(agent.claudeMdPath), vscode.Uri.file(agentsPath),

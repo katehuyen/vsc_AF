@@ -35,7 +35,6 @@ const pc = (why: string): CtxPhoneVerdict => ({ on: 'pc', why });
 /** Wanted on a phone; its handler still asks or answers with vscode.window. */
 const gap = (why: string): CtxPhoneVerdict => ({ on: 'pc', why, gap: true });
 
-const ASKS_PC = 'its handler still asks on the PC';
 const PC_PANEL = 'it opens a panel the phone has no page for';
 const PC_FILES = 'it opens the PC\'s own file manager or window';
 const PC_SOUND = 'it is the PC\'s own voice and sound; the phone reads with its own';
@@ -70,12 +69,12 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.assignProject': RUN,
     'agentfarm.addSessionFolderToProject': RUN,
     'agentfarm.sessionToWiki': RUN,
+    'agentfarm.planUsageRefresh': RUN,
+    'agentfarm.insightHistory': RUN,
+    'agentfarm.restoreInsights': RUN,
+    'agentfarm.syncAntigravity': RUN,
     // ---- wanted on a phone, waiting for a handler that asks through `ask`
     'agentfarm.sessionToQueue': gap('it opens the PC\'s Queue panel with the draft'),
-    'agentfarm.planUsageRefresh': gap(ASKS_PC),
-    'agentfarm.insightHistory': gap(ASKS_PC),
-    'agentfarm.restoreInsights': gap(ASKS_PC),
-    'agentfarm.syncAntigravity': gap(ASKS_PC),
     'agentfarm.copyCorpus': gap('its text is built on the farm and written to the PC\'s clipboard'),
     'agentfarm.openSessionAgent': gap('the row names the agent, not its id; the handler opens the PC\'s agent page'),
     'agentfarm.consoleForAgent': gap('it opens the PC\'s Console with the agent chosen'),
@@ -106,7 +105,7 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
 };
 
 /** How many commands a phone should get and does not yet. It only shrinks: a new gap is a new debt. */
-export const CTX_PHONE_GAPS = 8;
+export const CTX_PHONE_GAPS = 4;
 
 export function ctxPhoneVerdict(command: string): CtxPhoneVerdict | undefined {
     return Object.prototype.hasOwnProperty.call(CTX_PHONE, command) ? CTX_PHONE[command] : undefined;

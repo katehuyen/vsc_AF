@@ -96,9 +96,21 @@ const items = P.ctxPhoneItems(titleOf);
         'agentfarm.consoleInterruptTurn', 'agentfarm.consoleForgetSession', 'agentfarm.pinSession',
         'agentfarm.tagSession', 'agentfarm.endSession', 'agentfarm.forceKillSession', 'agentfarm.interruptSession',
         'agentfarm.dismissSession', 'agentfarm.assignSessionProject', 'agentfarm.assignProject',
-        'agentfarm.addSessionFolderToProject', 'agentfarm.sessionToWiki'];
+        'agentfarm.addSessionFolderToProject', 'agentfarm.sessionToWiki', 'agentfarm.planUsageRefresh',
+        'agentfarm.insightHistory', 'agentfarm.restoreInsights', 'agentfarm.syncAntigravity'];
     for (const c of SAYS) { ok(`${c}: what it says goes to the ask in its argument`, /arg\??\.ask/.test(bodyOf(c))); }
-    ok('(the test can tell: a handler that still asks on the PC is caught)', PC_ASK.test(bodyOf('agentfarm.syncAntigravity')) && PC_ASK.test(bodyOf('agentfarm.insightHistory')));
+    ok('(the test can tell: a handler that still asks on the PC is caught)', PC_ASK.test(bodyOf('agentfarm.compileWiki')) && PC_ASK.test(bodyOf('agentfarm.backlogAdd')));
+    // a command a run handler hands on is held to the same rule
+    const delegate = bodyOf('agentfarm.delegateInsight');
+    ok('‼️ insightHistory hands its ask to delegateInsight, which asks and says nothing with vscode.window',
+        /executeCommand\('agentfarm\.delegateInsight', live, arg\?\.ask\)/.test(bodyOf('agentfarm.insightHistory'))
+        && /async \(ins\?: Insight, phone\?: PanelAsk\)/.test(delegate) && /const ask = phone \?\? desktopAsk\(\);/.test(delegate) && !PC_ASK.test(delegate)
+        && /resolveAgent\(undefined, ask\)/.test(delegate));
+    ok('a button that opens the PC\'s editor, diff or Tasks view is not offered to a phone',
+        /\.\.\.\(phone \? \[\] : \['Show Tasks'\]\)/.test(delegate)
+        && /const onPc = \(\.\.\.buttons: string\[\]\): string\[\] => \(arg\?\.ask \? \[\] : buttons\);/.test(bodyOf('agentfarm.syncAntigravity'))
+        && (bodyOf('agentfarm.syncAntigravity').match(/\.\.\.onPc\('(Open AGENTS\.md|Show Diff)'\)/g) || []).length === 3
+        && !/[^.]'Show Diff',|, 'Open AGENTS\.md'\)/.test(bodyOf('agentfarm.syncAntigravity')));
 
     // the helpers a run handler leans on ask through the same ask, and every call hands it on
     const helperOf = name => {
@@ -153,7 +165,8 @@ const items = P.ctxPhoneItems(titleOf);
     const full = cmds({ ...session, file: 'C:/t.jsonl', cwd: 'D:/w' });
     ok('a row that knows its path and folder offers those copies', full.includes('copySessionPath') && full.includes('copySessionCwd'));
     const onAgent = cmds({ webviewSection: 'afAgentRow', agentId: 'a1', agentName: 'dev', agentDir: 'D:/a' });
-    ok('an agent row offers its page, its project rule and its copies', onAgent.join() === ['openAgentDetail', 'assignProject', 'copyAgentName', 'copyAgentFolder'].join());
+    ok('an agent row offers its page, its project rule, its engine sync and its copies',
+        onAgent.join() === ['openAgentDetail', 'assignProject', 'syncAntigravity', 'copyAgentName', 'copyAgentFolder'].join());
     ok('…an agent row with no id offers no page', !cmds({ webviewSection: 'afAgentRow', agentId: '', agentName: 'dev' }).includes('openAgentDetail'));
     const onCard = cmds({ webviewSection: 'afConsoleSession', hostId: 'cs1', sessionId: 's1' });
     ok('a Console card offers its own five', ['consoleResumeSession', 'consoleInterruptTurn', 'consoleEndSession', 'consoleEndAndRemove', 'consoleForgetSession'].every(c => onCard.includes(c)));

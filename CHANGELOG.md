@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.927.0 - Usage, insights and engine sync from your phone (2026-10-11)
+
+- **More of the right-click menu works on the phone.** Check Now on the usage
+  card, Insight History (and delegating an open finding from it), Restore
+  Dismissed Insights, and an agent's Sync With Other Engines now run from a
+  long press on the phone, asking and answering there. Buttons that would
+  open something on the PC — the AGENTS.md editor, a diff, the Tasks view —
+  are not offered on the phone. On the PC nothing changes.
+
+- **A list where you can choose several works on the phone.** Rows are ticked
+  on and off (☑ / ☐) and OK sends the ticked ones; Cancel sends nothing.
+  Before, such a list on the phone could only pick one row and the command
+  then did nothing.
+
 ## 3.926.0 - End, interrupt, label and file sessions from your phone (2026-10-11)
 
 - **A session row's menu on the phone can now stop, label and file it.** A

@@ -955,10 +955,12 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   `arg?.ask ?? desktopAsk()`, and a helper it calls takes that ask as its
   last parameter and is handed it on every call (`consoleRowId`,
   `pickLiveSessionId`, `endLiveSession`, `resolveAgent`; the test reads the
-  helper's body and each call). A choice that opens a PC panel or form is not
-  offered when `arg.ask` came with the row; a desktop-only picker (a
-  multi-select `createQuickPick`) gets a phone twin through `ask.input`, never
-  a changed PC path. A `pc` verdict marked `gap` is a command a phone should
+  helper's body and each call; a command it hands on gets the ask as an extra
+  argument, `delegateInsight`). A choice or button that opens a PC panel,
+  form, editor, diff or view is not offered when `arg.ask` came with the row.
+  `ask.pick` with `canPickMany` ticks rows on the phone; a `createQuickPick`
+  gets a phone twin through `ask.input`, never a changed PC path. A `pc`
+  verdict marked `gap` is a command a phone should
   get once its handler asks that way; `CTX_PHONE_GAPS` counts them and only
   shrinks. The pick arrives as `afctxcmd` and is settled by `RemoteViews`
   like `afAskAnswer`, never by the page: the command must be a `run`, drawn

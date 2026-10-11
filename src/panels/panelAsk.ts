@@ -64,13 +64,17 @@ export class RemoteAsk implements PanelAsk {
     async pick(items: unknown, options?: vscode.QuickPickOptions): Promise<any> {
         const list = (await (items as Thenable<readonly unknown[]>)) as readonly (string | vscode.QuickPickItem)[];
         const offered = list.filter(i => typeof i === 'string' || i.kind !== SEPARATOR);
+        const many = options?.canPickMany === true;
         const rows = offered.map(i => typeof i === 'string' ? { label: phoneText(i) } : {
             label: phoneText(i.label),
             ...(i.description ? { description: phoneText(i.description) } : {}),
-            ...(i.detail ? { detail: phoneText(i.detail) } : {})
+            ...(i.detail ? { detail: phoneText(i.detail) } : {}),
+            ...(many && i.picked ? { picked: true } : {})
         });
-        const at = await this.ask({ kind: 'pick', title: options?.title, placeHolder: options?.placeHolder, items: rows });
-        return typeof at === 'number' && at >= 0 && at < offered.length ? offered[at] : undefined;
+        const at = await this.ask({ kind: 'pick', title: options?.title, placeHolder: options?.placeHolder, items: rows, ...(many ? { many } : {}) });
+        const valid = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < offered.length;
+        if (many) { return Array.isArray(at) ? [...new Set(at.filter(valid))].sort((a, b) => a - b).map(n => offered[n]) : undefined; }
+        return valid(at) ? offered[at] : undefined;
     }
 
     async input(options?: vscode.InputBoxOptions): Promise<string | undefined> {

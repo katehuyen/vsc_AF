@@ -105,7 +105,7 @@ Module._load = origLoad;
         ok('a typed answer that is not text is no answer', await p6 === undefined);
         ok('choosing PC files from a phone is refused aloud, as a cancelled dialog', await r.open({}) === undefined
             && out[7].kind === 'note' && /not available on the phone/.test(out[7].message));
-        const rows = [{ label: '$(check) $(blank) Ajan Çiftliği', description: 'active' }, { label: '', kind: -1 },
+        const rows = [{ label: '$(check) $(blank) Ajan Çiftliği', description: 'active', picked: true }, { label: '', kind: -1 },
             { label: '$(circle-slash) No project', description: '$(sync~spin) busy', detail: 'x' }, '$(add) New'];
         const p8 = r.pick(rows);
         await new Promise(res => setImmediate(res));
@@ -115,6 +115,21 @@ Module._load = origLoad;
         ok('…and a tick still says which one is chosen', sq.items[0].label === '✓ Ajan Çiftliği');
         r.answer({ id: sq.id, value: 1 });
         ok('‼️ …and the answer is the item at THAT place, not the separator\'s neighbour', await p8 === rows[2]);
+        const manyRows = [{ label: 'a', picked: true }, { label: '', kind: -1 }, { label: 'b' }, { label: 'c', picked: true }];
+        const p9 = r.pick(manyRows, { canPickMany: true, placeHolder: 'which ones' });
+        await new Promise(res => setImmediate(res));
+        const mq = out[9];
+        ok('a many-pick tells the phone so, with the rows already ticked', mq.many === true && mq.items.length === 3
+            && mq.items[0].picked === true && !mq.items[1].picked && mq.items[2].picked === true);
+        r.answer({ id: mq.id, value: [2, 1, 2, 9, -1, 'x', 1.5] });
+        const got9 = await p9;
+        ok('‼️ …and answers with the ticked items in their order, nothing out of range, nothing twice',
+            Array.isArray(got9) && got9.length === 2 && got9[0] === manyRows[2] && got9[1] === manyRows[3]);
+        const p10 = r.pick(['x', 'y'], { canPickMany: true });
+        await new Promise(res => setImmediate(res));
+        r.answer({ id: out[10].id, value: 1 });
+        ok('a many-pick answered with one place is no answer (VS Code answers it with a list)', await p10 === undefined);
+        ok('a single pick sends no ticks', !('many' in out[8]) && !out[8].items.some(i => 'picked' in i));
         const p7 = r.warn('pending', { modal: true }, 'A');
         r.end();
         ok('a view that closes answers what it left open with nothing', await p7 === undefined);
@@ -188,6 +203,19 @@ Module._load = origLoad;
             r.shown=[].slice.call(box.querySelectorAll('[data-afaskat]')).filter(function(b){return b.style.display!=='none';}).length;
             box.querySelector('[data-afaskat="3"]').click();
             r.pickAnswer=sent.slice(); sent.length=0;
+            A.onAsk({type:'afAsk',id:'q7',kind:'pick',many:true,items:[{label:'one',picked:true},{label:'two'},{label:'three',picked:true}]});
+            box=document.getElementById('af-sheet');
+            var mrows=[].slice.call(box.querySelectorAll('[data-afaskat]'));
+            r.manyTicks=mrows.map(function(b){return b.getAttribute('aria-pressed')+':'+b.querySelector('[data-afasktick]').textContent;}).join(',');
+            r.manyMinH=Math.min.apply(null,mrows.concat([box.querySelector('[data-afaskok]')]).map(function(b){return b.getBoundingClientRect().height;}));
+            mrows[1].click(); mrows[2].click();
+            r.manyOpen=!!document.getElementById('af-sheet')&&sent.length===0;
+            r.manyAfter=mrows.map(function(b){return b.querySelector('[data-afasktick]').textContent;}).join('');
+            box.querySelector('[data-afaskok]').click();
+            r.manyAnswer=sent.slice(); sent.length=0;
+            A.onAsk({type:'afAsk',id:'q8',kind:'pick',many:true,items:[{label:'one',picked:true}]});
+            document.getElementById('af-sheet').querySelector('[data-afaskno]').click();
+            r.manyCancel=sent.slice(); sent.length=0;
             A.onAsk({type:'afAsk',id:'q3',kind:'input',prompt:'name',value:'eski',password:false});
             box=document.getElementById('af-sheet');
             var inp=box.querySelector('[data-afaskin]'); r.inputValue=inp.value; inp.value='yeni ad';
@@ -228,6 +256,11 @@ Module._load = origLoad;
             JSON.stringify(r.msgAnswer) === JSON.stringify([{ type: 'afAskAnswer', id: 'q1', value: 0 }]) && r.msgClosed === true);
         ok('a long pick gets a filter that narrows it', r.hasFilter === true && r.shown === 1);
         ok('…and a picked row answers with its place', JSON.stringify(r.pickAnswer) === JSON.stringify([{ type: 'afAskAnswer', id: 'q2', value: 3 }]));
+        ok('a many-pick opens with the host\'s ticks shown', r.manyTicks === 'true:☑,false:☐,true:☑');
+        ok('…a tap ticks a row on or off and answers nothing yet', r.manyOpen === true && r.manyAfter === '☑☑☐');
+        ok('‼️ …OK answers with every ticked place', JSON.stringify(r.manyAnswer) === JSON.stringify([{ type: 'afAskAnswer', id: 'q7', value: [0, 1] }]));
+        ok('…Cancel answers nothing', JSON.stringify(r.manyCancel) === JSON.stringify([{ type: 'afAskAnswer', id: 'q8' }]));
+        ok('every row and OK of a many-pick is a finger\'s height (measured ' + r.manyMinH + ')', r.manyMinH >= 44);
         ok('a typed answer starts from the host\'s value and answers with the words',
             r.inputValue === 'eski' && JSON.stringify(r.inputAnswer) === JSON.stringify([{ type: 'afAskAnswer', id: 'q3', value: 'yeni ad' }]));
         ok('closing the sheet answers nothing (a dismissed dialog)',

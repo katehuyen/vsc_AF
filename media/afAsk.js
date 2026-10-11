@@ -68,20 +68,34 @@
         });
     }
 
+    // A many-pick ticks rows on and off and answers with every ticked place on OK.
+    function tick(on) { return '<span data-afasktick>' + (on ? '☑' : '☐') + '</span> '; }
+
     function pick(q) {
         var items = q.items || [];
         var rows = items.map(function (it, i) {
-            return '<button class="af-sheet-go" data-afaskat="' + i + '" data-afasktext="' + esc((it.label + ' ' + (it.description || '') + ' ' + (it.detail || '')).toLowerCase()) + '">'
+            return '<button class="af-sheet-go" data-afaskat="' + i + '" data-afasktext="' + esc((it.label + ' ' + (it.description || '') + ' ' + (it.detail || '')).toLowerCase()) + '"'
+                + (q.many ? ' aria-pressed="' + (it.picked ? 'true' : 'false') + '">' + tick(it.picked) : '>')
                 + esc(it.label) + (it.description ? ' <span class="af-sheet-sub">' + esc(it.description) + '</span>' : '')
                 + (it.detail ? '<small>' + esc(it.detail) + '</small>' : '') + '</button>';
         }).join('');
         var filter = items.length > FILTER_FROM
             ? '<input class="af-ask-filter" data-afaskfilter type="search" placeholder="Filter…" style="width:100%;min-height:40px;margin-bottom:6px">' : '';
-        var body = (q.placeHolder ? '<div class="af-sheet-sub">' + esc(q.placeHolder) + '</div>' : '') + filter + rows;
+        var done = q.many ? '<button class="af-sheet-go af-ask-btn" data-afaskok>OK</button><button class="af-sheet-go af-ask-cancel" data-afaskno>Cancel</button>' : '';
+        var body = (q.placeHolder ? '<div class="af-sheet-sub">' + esc(q.placeHolder) + '</div>' : '') + filter + rows + done;
         sheet(q, q.title || 'Choose', body, function (box, answer) {
             box.addEventListener('click', function (ev) {
-                var b = ev.target && ev.target.closest ? ev.target.closest('[data-afaskat]') : null;
-                if (b) { answer(Number(b.dataset.afaskat)); }
+                var b = ev.target && ev.target.closest ? ev.target.closest('[data-afaskat],[data-afaskok],[data-afaskno]') : null;
+                if (!b) { return; }
+                if (!q.many) { if (b.hasAttribute('data-afaskat')) { answer(Number(b.dataset.afaskat)); } return; }
+                if (b.hasAttribute('data-afaskno')) { answer(undefined); return; }
+                if (b.hasAttribute('data-afaskok')) {
+                    answer([].slice.call(box.querySelectorAll('[data-afaskat][aria-pressed="true"]')).map(function (x) { return Number(x.dataset.afaskat); }));
+                    return;
+                }
+                var on = b.getAttribute('aria-pressed') !== 'true';
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+                b.querySelector('[data-afasktick]').textContent = on ? '☑' : '☐';
             });
             var f = box.querySelector('[data-afaskfilter]');
             if (f) {
