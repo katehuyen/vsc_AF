@@ -1454,7 +1454,7 @@ const mkRow = (i, extra) => Object.assign({
     const endCmd = ext.slice(ext.indexOf("registerCommand('agentfarm.endSession'"),
         ext.indexOf("registerCommand('agentfarm.endSession'") + 1600);
     ok('‼️ ending a whole selection asks first, and names the number',
-        /showWarningMessage\(\s*`End \$\{list\.length\} sessions\?`/.test(endCmd)
+        /ask\.warn\(\s*`End \$\{list\.length\} sessions\?`/.test(endCmd)
         && /modal: true/.test(endCmd));
     const dismissCmd = ext.slice(ext.indexOf("registerCommand('agentfarm.dismissSession'"),
         ext.indexOf("registerCommand('agentfarm.dismissSession'") + 2600);
