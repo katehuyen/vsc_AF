@@ -107,7 +107,7 @@ the agent has the steps and the pitfalls, not only the arguments.
 - `ops.meta.json` — per op: `area`, `effect`, `summary` (≤ 160 chars, plain English), optional `asks` (the op
   itself opens a confirmation dialog) and `plan` (the flag that turns a preview into an act: `confirm=true`,
   `dryRun=false`, `apply=true`).
-- `intents.eval.json` — 77 requests phrased the way agents phrase them, each with the guide or op that must
+- `intents.eval.json` — 83 requests phrased the way agents phrase them, each with the guide or op that must
   come up.
 
 **Effects** are the safety vocabulary every op page shows: `[read]` changes nothing · `[write]` changes Agent
@@ -191,7 +191,7 @@ constant, so successful reads in `QUIET_MANUAL_OPS` skip the toast; writes and f
 
 - **BM25** (k1 1.2, b 0.5) over title, intents, keywords, op names, summary and body, with field weights.
 - **Light stemming** (schedule/schedules/scheduled/scheduling meet; running/run; stopped/stop).
-- **Domain synonyms** (~110): *daily, every, weekly, cron, morning* → schedule; *team, lead, until, goal* →
+- **Domain synonyms** (~110) and a small stop-word list: *daily, every, weekly, cron, morning* → schedule; *team, lead, until, goal* →
   mission; *relay, chain, overnight, marathon* → baton; *watch, webhook, folder, arrives* → trigger …
 - **Kind boost**: playbook 1.35, area 1.1, op 1.0 — an intent should land on the guide first, the op second.
 - **Name coverage**: hits whose name covers most query words are lifted (×1.6 / ×1.15); an exact op name
@@ -199,7 +199,7 @@ constant, so successful reads in `QUIET_MANUAL_OPS` skip the toast; writes and f
 - **Weak detection**: if the best hit covers under half the query and is not an exact name, the answer says
   "weak matches" and the query is written to the gap log.
 
-Result on the 77-request eval: **top-3 77/77, top-1 68/77**. The gate is top-3 ≥ 95 % and top-1 ≥ 80 %.
+Result on the 83-request eval (including the six requests the product owner gave as examples): **top-3 83/83, top-1 73/83**. The gate is top-3 ≥ 95 % and top-1 ≥ 80 %.
 Off-topic queries ("banana smoothie recipe", "quantum entanglement") are called weak.
 
 Why not embeddings: zero dependencies, offline, deterministic, explainable in a failing test, cheap to
@@ -275,5 +275,5 @@ the text changed. Nothing is written into another tool's home without the user's
 | op page | median ~430 · p90 ~690 · max ~4,000 (`tasks.add`) |
 | typical journey | ~3,050 tokens (vs ~114,600) |
 | ops with metadata | 585 / 585 |
-| eval | top-3 77/77 · top-1 68/77 |
+| eval | top-3 83/83 · top-1 73/83 |
 | new tests | 14 + 27 + 30 + 25 assertions; `test_bridge_start_text` rewritten (9) |

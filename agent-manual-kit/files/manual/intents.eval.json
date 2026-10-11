@@ -77,6 +77,12 @@
     { "q": "mark this turn for the wiki", "expect": "wiki.candidates.add" },
     { "q": "what does the fleet remember about the api keys", "expect": "memory.ask" },
     { "q": "export the approved scenes to premiere", "expect": "studio.export" },
-    { "q": "get oriented what can agent farm do", "expect": "orient" }
+    { "q": "get oriented what can agent farm do", "expect": "orient" },
+    { "q": "open a new task for the writer to draft the post", "expect": "run-task" },
+    { "q": "start a baton chain for this work", "expect": "baton-relay" },
+    { "q": "create a task that repeats every day at 9", "expect": "recurring-task" },
+    { "q": "watch these conditions and act when they are met", "expect": "react-to-events" },
+    { "q": "do this job with the researcher agent", "expect": "run-task" },
+    { "q": "build a team led by the architect with the coder and the tester until the goal is met", "expect": "team-mission" }
   ]
 }

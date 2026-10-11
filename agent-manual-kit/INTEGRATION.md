@@ -20,7 +20,7 @@ Base: commit `6c634b0` (Agent Farm **3.930.0**, "v12.105"). The patch was built 
 | new | `manual/areas/*.md` (24) | one guide per area: frontmatter (`id`, `title`, `order`, `summary`, `ui`, `keywords`, `related`) + body |
 | new | `manual/playbooks/*.md` (31) | one per user intent: frontmatter (`id`, `title`, `area`, `summary`, `intents`, `keywords`, `ops`, `effect`) + steps |
 | new | `manual/ops.meta.json` | area · effect · summary (· `asks` · `plan`) for all 585 ops |
-| new | `manual/intents.eval.json` | 77 real requests → the guide or op that must rank top 3 |
+| new | `manual/intents.eval.json` | 83 real requests → the guide or op that must rank top 3 |
 | new | `src/service/manualQuery.ts` | zero-import reader: renderers, search (BM25 + synonyms + coverage), did-you-mean, `answerManualOp` |
 | new | `src/core/manualSource.ts` | parses `manual/` (frontmatter subset, ops.meta.json) |
 | new | `src/core/manualBuild.ts` | compiles source + live registry catalog → `CompiledManual` (derives metadata for undescribed ops, lists problems) |

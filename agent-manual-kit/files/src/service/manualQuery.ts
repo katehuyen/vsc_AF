@@ -245,7 +245,7 @@ export function renderOpContract(m: CompiledManual, o: ManualOp): string {
 
 const STOP = new Set(('a an and are as at be by can do does for from has have how i if in into is it its '
     + 'me my of on or our please should so that the their them then there these this to us want was we what '
-    + 'when where which who whom why will with would you your agent farm af op ops').split(' '));
+    + 'when where which who whom why will with would you your they those agent farm af op ops').split(' '));
 
 /** A deliberately small stemmer: the point is that schedule, schedules, scheduled and scheduling meet. */
 export function stem(word: string): string {
@@ -290,6 +290,7 @@ const SYNONYMS: Record<string, string> = {
     notify: 'notice', tell: 'notice', report: 'notice report', inform: 'notice', message: 'notice console',
     question: 'notice question', warn: 'notice warning', done: 'notice result',
     watch: 'trigger', webhook: 'trigger', folder: 'trigger watch', lands: 'trigger watch',
+    condition: 'trigger precondition fireif watch', happen: 'trigger event',
     arrives: 'trigger watch', event: 'trigger hook', n8n: 'webhook trigger', zapier: 'webhook trigger',
     finishes: 'trigger hook stop', pipeline: 'workflow', steps: 'workflow', then: 'workflow',
     draft: 'workflow', job: 'task', background: 'task headless', unattended: 'task headless',

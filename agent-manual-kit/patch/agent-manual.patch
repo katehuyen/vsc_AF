@@ -871,10 +871,10 @@ index 0000000..466fe4f
 +5. Report back by reading the answer of the call you made; never post the same notice twice.
 diff --git a/manual/intents.eval.json b/manual/intents.eval.json
 new file mode 100644
-index 0000000..7dd75ae
+index 0000000..d6c4fb2
 --- /dev/null
 +++ b/manual/intents.eval.json
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,88 @@
 +{
 +  "about": "Natural requests an agent turns into a farm.find query, and the guide or op that must rank in the top 3. Checked offline by test/test_manual_query.js; add a row whenever an agent picked the wrong mechanism in real use.",
 +  "cases": [
@@ -954,7 +954,13 @@ index 0000000..7dd75ae
 +    { "q": "mark this turn for the wiki", "expect": "wiki.candidates.add" },
 +    { "q": "what does the fleet remember about the api keys", "expect": "memory.ask" },
 +    { "q": "export the approved scenes to premiere", "expect": "studio.export" },
-+    { "q": "get oriented what can agent farm do", "expect": "orient" }
++    { "q": "get oriented what can agent farm do", "expect": "orient" },
++    { "q": "open a new task for the writer to draft the post", "expect": "run-task" },
++    { "q": "start a baton chain for this work", "expect": "baton-relay" },
++    { "q": "create a task that repeats every day at 9", "expect": "recurring-task" },
++    { "q": "watch these conditions and act when they are met", "expect": "react-to-events" },
++    { "q": "do this job with the researcher agent", "expect": "run-task" },
++    { "q": "build a team led by the architect with the coder and the tester until the goal is met", "expect": "team-mission" }
 +  ]
 +}
 diff --git a/manual/map.md b/manual/map.md
@@ -4552,10 +4558,10 @@ index 0000000..b608295
 +5. Read back: `projects.get project=<name>`; `projects.health` reports charter gaps to fill with the user.
 diff --git a/manual/playbooks/react-to-events.md b/manual/playbooks/react-to-events.md
 new file mode 100644
-index 0000000..4c23812
+index 0000000..65fdd71
 --- /dev/null
 +++ b/manual/playbooks/react-to-events.md
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,33 @@
 +---
 +id: react-to-events
 +title: React to a file, folder, agent event or webhook (trigger)
@@ -4567,7 +4573,8 @@ index 0000000..4c23812
 +  - when the designer finishes, start the reviewer
 +  - give me a webhook url to start this workflow from n8n
 +  - run the workflow whenever this file changes
-+keywords: [trigger, watch, folder, file, when, webhook, hook, event, n8n, zapier, on change]
++  - when these conditions are met start the agent
++keywords: [trigger, watch, folder, file, when, webhook, hook, event, n8n, zapier, on change, condition, fireIf]
 +ops: [agents.list, workflows.list, triggers.add, triggers.list, triggers.fire, triggers.edit, reports.triggers]
 +effect: write
 +---
@@ -4700,10 +4707,10 @@ index 0000000..8f5863e
 +- A supervised retry row waiting on a decision: `tasks.supervision id=<id> act=run|deterministic|edit`.
 diff --git a/manual/playbooks/run-task.md b/manual/playbooks/run-task.md
 new file mode 100644
-index 0000000..539497b
+index 0000000..a06d3d3
 --- /dev/null
 +++ b/manual/playbooks/run-task.md
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,37 @@
 +---
 +id: run-task
 +title: Have an agent do a job now (task)
@@ -4715,7 +4722,8 @@ index 0000000..539497b
 +  - ask agent Z to do this in the background
 +  - start a task for the writer
 +  - do this with codex
-+keywords: [task, job, run, background, headless, delegate, now]
++  - open a task for the coder to fix the login bug
++keywords: [task, job, run, background, headless, delegate, now, open a task, new task]
 +ops: [agents.list, engines.status, engines.models, tasks.add, tasks.get, tasks.list, tasks.cancel]
 +effect: run
 +---
@@ -6722,10 +6730,10 @@ index 53acc1c..bc2dc32 100644
          console.error(JSON.stringify(errObj, null, opts.rawOutput ? 0 : 2));
 diff --git a/src/service/manualQuery.ts b/src/service/manualQuery.ts
 new file mode 100644
-index 0000000..9adeba0
+index 0000000..42a3fd1
 --- /dev/null
 +++ b/src/service/manualQuery.ts
-@@ -0,0 +1,579 @@
+@@ -0,0 +1,580 @@
 +/**
 + * X-536 — THE AGENT MANUAL'S READER. One implementation, two hosts.
 + *
@@ -6973,7 +6981,7 @@ index 0000000..9adeba0
 +
 +const STOP = new Set(('a an and are as at be by can do does for from has have how i if in into is it its '
 +    + 'me my of on or our please should so that the their them then there these this to us want was we what '
-+    + 'when where which who whom why will with would you your agent farm af op ops').split(' '));
++    + 'when where which who whom why will with would you your they those agent farm af op ops').split(' '));
 +
 +/** A deliberately small stemmer: the point is that schedule, schedules, scheduled and scheduling meet. */
 +export function stem(word: string): string {
@@ -7018,6 +7026,7 @@ index 0000000..9adeba0
 +    notify: 'notice', tell: 'notice', report: 'notice report', inform: 'notice', message: 'notice console',
 +    question: 'notice question', warn: 'notice warning', done: 'notice result',
 +    watch: 'trigger', webhook: 'trigger', folder: 'trigger watch', lands: 'trigger watch',
++    condition: 'trigger precondition fireif watch', happen: 'trigger event',
 +    arrives: 'trigger watch', event: 'trigger hook', n8n: 'webhook trigger', zapier: 'webhook trigger',
 +    finishes: 'trigger hook stop', pipeline: 'workflow', steps: 'workflow', then: 'workflow',
 +    draft: 'workflow', job: 'task', background: 'task headless', unattended: 'task headless',

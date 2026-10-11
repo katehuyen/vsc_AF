@@ -9,7 +9,8 @@ intents:
   - ask agent Z to do this in the background
   - start a task for the writer
   - do this with codex
-keywords: [task, job, run, background, headless, delegate, now]
+  - open a task for the coder to fix the login bug
+keywords: [task, job, run, background, headless, delegate, now, open a task, new task]
 ops: [agents.list, engines.status, engines.models, tasks.add, tasks.get, tasks.list, tasks.cancel]
 effect: run
 ---

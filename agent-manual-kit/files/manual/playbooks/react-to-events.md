@@ -9,7 +9,8 @@ intents:
   - when the designer finishes, start the reviewer
   - give me a webhook url to start this workflow from n8n
   - run the workflow whenever this file changes
-keywords: [trigger, watch, folder, file, when, webhook, hook, event, n8n, zapier, on change]
+  - when these conditions are met start the agent
+keywords: [trigger, watch, folder, file, when, webhook, hook, event, n8n, zapier, on change, condition, fireIf]
 ops: [agents.list, workflows.list, triggers.add, triggers.list, triggers.fire, triggers.edit, reports.triggers]
 effect: write
 ---
