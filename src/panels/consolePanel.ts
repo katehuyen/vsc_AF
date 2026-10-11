@@ -625,6 +625,17 @@ export interface ConsoleDeps {
     sentry?(): Record<string, unknown> | null;
 }
 
+/** What a door that opens the Console came to say. */
+export interface ConsoleOpenOpts {
+    sessionId?: string; agentId?: string; pinAgent?: boolean; projectId?: string;
+    /** the engine a start picker already settled — the composer opens on it
+     *  instead of asking the same question a second time */
+    engine?: string;
+    /** ‼️ K-34 — the whole setup a launcher already settled, so the composer
+     *  opens on it instead of a session being spawned with it. */
+    launch?: ComposerSetup;
+}
+
 export class ConsolePanel {
     private static current?: ConsolePanel;
     private disposables: vscode.Disposable[] = [];
@@ -846,16 +857,26 @@ export class ConsolePanel {
         return found;
     }
 
-    static show(deps: ConsoleDeps, opts?: {
-        sessionId?: string; agentId?: string; pinAgent?: boolean; projectId?: string;
-        /** the engine a start picker already settled — the composer opens on it
-         *  instead of asking the same question a second time */
-        engine?: string;
-        /** ‼️ K-34 — the whole setup a launcher already settled, so the composer
-         *  opens on it instead of a session being spawned with it. */
-        launch?: ComposerSetup;
-    }): void {
-        const apply = (c: ConsolePanel): void => {
+    static show(deps: ConsoleDeps, opts?: ConsoleOpenOpts): void {
+        const apply = ConsolePanel.applier(opts);
+        if (ConsolePanel.current) {
+            ConsolePanel.current.surface.reveal();
+            apply(ConsolePanel.current);
+            ConsolePanel.current.refresh();
+            return;
+        }
+        const fresh = new ConsolePanel(desktopHost({ viewType: 'agentfarm.console', title: 'Console', column: vscode.ViewColumn.Active }), deps);
+        ConsolePanel.current = fresh;
+        // ‼️ S-50 — APPLY, THEN LOAD. The order is the whole fix: what the door
+        // came to say has to be in the page's first payload, because a push
+        // aimed at a page that has not run yet lands nowhere (see `mount`).
+        apply(fresh);
+        fresh.mount();
+    }
+
+    /** What a door came to say, applied to a Console — the desktop's tab, or a phone's view (X-552). */
+    private static applier(opts?: ConsoleOpenOpts): (c: ConsolePanel) => void {
+        return (c: ConsolePanel): void => {
             if (opts?.sessionId) { c.selected = opts.sessionId; }
             if (opts?.engine) { c.composerEngine = opts.engine; }
             if (opts?.agentId) {
@@ -969,19 +990,6 @@ export class ConsolePanel {
             // undefined = "I have no opinion"; '' = "explicitly no project"
             if (opts?.projectId !== undefined) { c.composerProject = opts.projectId; }
         };
-        if (ConsolePanel.current) {
-            ConsolePanel.current.surface.reveal();
-            apply(ConsolePanel.current);
-            ConsolePanel.current.refresh();
-            return;
-        }
-        const fresh = new ConsolePanel(desktopHost({ viewType: 'agentfarm.console', title: 'Console', column: vscode.ViewColumn.Active }), deps);
-        ConsolePanel.current = fresh;
-        // ‼️ S-50 — APPLY, THEN LOAD. The order is the whole fix: what the door
-        // came to say has to be in the page's first payload, because a push
-        // aimed at a page that has not run yet lands nowhere (see `mount`).
-        apply(fresh);
-        fresh.mount();
     }
 
     /** Live update while the panel is open (the host fires on every event). */
