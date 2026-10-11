@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.929.0 - Chains, a timeline point's words and a session's agent from your phone (2026-10-11)
+
+- **A chained session's menu on the phone shows its relay chain.** A long
+  press on a session that ran a leg of a baton relay offers Show Chain, which
+  opens the phone's own Chains page on that chain, and Copy Chain ID, which
+  copies it to the phone. Before, the phone could not tell which sessions
+  were chained and offered neither.
+- **Copy on a Timeline point copies to the phone.** The words of that moment
+  are read from the transcript on the PC and land on the phone's clipboard.
+- **Open Agent on a session row opens the agent's page on the phone.**
+
 ## 3.928.0 - Add a session to the Work Queue from your phone (2026-10-11)
 
 - **"Add to Queue" on a session row works on the phone.** It opens the

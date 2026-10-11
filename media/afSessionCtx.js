@@ -36,15 +36,17 @@
 
     /**
      * The attribute for one session row.
-     *   s     — whatever the row knows: { sessionId?, file?, title?, agentName?, cwd? }
+     *   s     — whatever the row knows: { sessionId?, file?, title?, agentName?, cwd?, chain? }
      *   extra — extra context keys (a page's own state, or a different
      *           webviewSection when the page has surface-specific items too)
+     * `afChain` is the row's own relay chain: a phone cannot read the PC's
+     * `agentfarm.chainSessions`, so its Show Chain / Copy Chain ID read this (X-552).
      */
     function row(s, extra) {
         return window.AFCtx.row(ROW_SECTION, {
             sessionId: (s && s.sessionId) || '', file: (s && s.file) || '',
             title: (s && s.title) || '', agentName: (s && s.agentName) || '',
-            cwd: (s && s.cwd) || ''
+            cwd: (s && s.cwd) || '', afChain: (s && s.chain && s.chain.chainId) || ''
         }, extra);
     }
 

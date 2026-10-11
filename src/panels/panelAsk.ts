@@ -25,6 +25,8 @@ export interface PanelAsk {
     readonly pick: typeof vscode.window.showQuickPick;
     readonly input: typeof vscode.window.showInputBox;
     readonly open: typeof vscode.window.showOpenDialog;
+    /** The clipboard of whoever is looking: the PC's on the desktop, the phone's on a phone. */
+    readonly copy: (text: string) => Thenable<void>;
 }
 
 /** The desktop: vscode.window itself, argument for argument. */
@@ -36,7 +38,8 @@ export function desktopAsk(): PanelAsk {
         error: (...a: unknown[]) => w.showErrorMessage(...a),
         pick: (...a: unknown[]) => w.showQuickPick(...a),
         input: (...a: unknown[]) => w.showInputBox(...a),
-        open: (...a: unknown[]) => w.showOpenDialog(...a)
+        open: (...a: unknown[]) => w.showOpenDialog(...a),
+        copy: (text: string) => vscode.env.clipboard.writeText(text)
     } as unknown as PanelAsk;
 }
 
@@ -89,6 +92,12 @@ export class RemoteAsk implements PanelAsk {
     open(): Thenable<undefined> {
         this.note('info', 'Choosing files on the PC is not available on the phone — attach from the phone instead.');
         return Promise.resolve(undefined);
+    }
+
+    /** The phone's own clipboard: the page writes it (media/afAsk.js → AFCtx.copy) and says so there. */
+    copy(text: string): Thenable<void> {
+        if (this.live) { this.post({ type: 'afAsk', kind: 'copy', text: String(text ?? '') }); }
+        return Promise.resolve();
     }
 
     /** The page's answer to a question it was asked. False when it names nothing open. */

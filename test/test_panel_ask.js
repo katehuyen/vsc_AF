@@ -37,7 +37,8 @@ const vscodeStub = {
     window: {
         showInformationMessage: shown('info'), showWarningMessage: shown('warn'), showErrorMessage: shown('error'),
         showQuickPick: shown('pick'), showInputBox: shown('input'), showOpenDialog: shown('open')
-    }
+    },
+    env: { clipboard: { writeText: t => { calls.push({ name: 'clipboard', args: [t] }); return Promise.resolve(); } } }
 };
 const origLoad = Module._load;
 Module._load = function (request) {
@@ -130,6 +131,12 @@ Module._load = origLoad;
         r.answer({ id: out[10].id, value: 1 });
         ok('a many-pick answered with one place is no answer (VS Code answers it with a list)', await p10 === undefined);
         ok('a single pick sends no ticks', !('many' in out[8]) && !out[8].items.some(i => 'picked' in i));
+        const outBefore = out.length;
+        await r.copy('chn_x1\ncorpus');
+        ok('‼️ X-552: a text the farm made goes to the PHONE\'s clipboard, written by the page', out.length === outBefore + 1
+            && out[outBefore].type === 'afAsk' && out[outBefore].kind === 'copy' && out[outBefore].text === 'chn_x1\ncorpus' && !('id' in out[outBefore]));
+        await desktopAsk().copy('on the PC');
+        ok('…and on the desktop it is the PC\'s clipboard, as before', calls.some(c => c.name === 'clipboard' && c.args[0] === 'on the PC'));
         const p7 = r.warn('pending', { modal: true }, 'A');
         r.end();
         ok('a view that closes answers what it left open with nothing', await p7 === undefined);
@@ -228,6 +235,9 @@ Module._load = origLoad;
             A.onAsk({type:'afAsk',id:'q6',kind:'message',level:'info',message:'Second?',buttons:['B']});
             r.replaced=sent.slice(); sent.length=0;
             window.AFMobile.closeSheet(); sent.length=0;
+            var copied=[]; window.AFCtx=window.AFCtx||{}; window.AFCtx.copy=function(v){copied.push(v);};
+            A.onAsk({type:'afAsk',kind:'copy',text:'chn_x1'});
+            r.copied=copied.slice(); r.copySent=sent.length; r.copySheet=!!document.getElementById('af-sheet');
             A.onAsk({type:'afAsk',kind:'note',level:'warn',message:'Agent Farm: refused',detail:'because'});
             var t=document.getElementById('af-ask-toast');
             r.toast=t?t.textContent:''; r.noteSent=sent.length;
@@ -266,6 +276,8 @@ Module._load = origLoad;
         ok('closing the sheet answers nothing (a dismissed dialog)',
             Array.isArray(r.closeAnswer) && r.closeAnswer.length === 1 && r.closeAnswer[0].id === 'q4' && r.closeAnswer[0].value === undefined);
         ok('a second question closes the first as unanswered', Array.isArray(r.replaced) && r.replaced.length === 1 && r.replaced[0].id === 'q5' && r.replaced[0].value === undefined);
+        ok('‼️ a copy the farm sends is written through the page\'s own clipboard door, with no sheet and no answer',
+            JSON.stringify(r.copied) === '["chn_x1"]' && r.copySent === 0 && r.copySheet === false);
         ok('a note is a toast without the "Agent Farm:" prefix and posts nothing back',
             /refused/.test(r.toast || '') && /because/.test(r.toast || '') && !/Agent Farm:/.test(r.toast || '') && r.noteSent === 0);
     }

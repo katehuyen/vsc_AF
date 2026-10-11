@@ -42,7 +42,7 @@ const titleOf = c => titles.get(c) || '';
 const items = P.ctxPhoneItems(titleOf);
 {
     ok('a command that stays on the PC is not sent to a phone', items.every(i => P.ctxPhoneVerdict(i.command).on !== 'pc')
-        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.copyCorpus'));
+        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.consoleForAgent'));
     ok('every item carries the manifest\'s own title, its when clause and its group', items.length > 10
         && items.every(i => i.title === titleOf(i.command) && i.title && i.when && /^\d_[a-z]+@\d+$/.test(i.group)));
     const pin = items.find(i => i.command === 'agentfarm.pinSession');
@@ -53,7 +53,7 @@ const items = P.ctxPhoneItems(titleOf);
     const note = P.ctxPhoneNote;
     ok('ui.ctxmenu says where a pick is answered for a phone', note('agentfarm.pinSession').phone === 'run' && note('agentfarm.copySessionId').phone === 'copy'
         && note('agentfarm.revealAgent').phone === 'pc' && /file manager/.test(note('agentfarm.revealAgent').phoneWhy)
-        && note('agentfarm.copyCorpus').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
+        && note('agentfarm.consoleForAgent').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
     ok('…and the op adds it to every item', /items: items\.map\(i => \(\{ \.\.\.i, \.\.\.ctxPhoneNote\(i\.command\) \}\)\)/.test(read('src/extension.ts')));
 }
 
@@ -87,7 +87,7 @@ const items = P.ctxPhoneItems(titleOf);
         return lines.slice(at, starts.find(s => s > at) || lines.length).join('\n');
     };
     const runs = Object.keys(P.CTX_PHONE).filter(c => P.CTX_PHONE[c].on === 'run');
-    const PC_ASK = /vscode\.window\.(show\w*|create\w*|withProgress)/;
+    const PC_ASK = /vscode\.window\.(show\w*|create\w*|withProgress)|vscode\.env\.clipboard/;
     for (const c of runs) {
         const body = bodyOf(c);
         ok(`‼️ ${c}: its handler asks and says nothing with vscode.window`, body.length > 0 && !PC_ASK.test(body));
@@ -97,7 +97,7 @@ const items = P.ctxPhoneItems(titleOf);
         'agentfarm.tagSession', 'agentfarm.endSession', 'agentfarm.forceKillSession', 'agentfarm.interruptSession',
         'agentfarm.dismissSession', 'agentfarm.assignSessionProject', 'agentfarm.assignProject',
         'agentfarm.addSessionFolderToProject', 'agentfarm.sessionToWiki', 'agentfarm.planUsageRefresh',
-        'agentfarm.insightHistory', 'agentfarm.restoreInsights', 'agentfarm.syncAntigravity'];
+        'agentfarm.insightHistory', 'agentfarm.restoreInsights', 'agentfarm.syncAntigravity', 'agentfarm.copyCorpus'];
     for (const c of SAYS) { ok(`${c}: what it says goes to the ask in its argument`, /arg\??\.ask/.test(bodyOf(c))); }
     ok('(the test can tell: a handler that still asks on the PC is caught)', PC_ASK.test(bodyOf('agentfarm.compileWiki')) && PC_ASK.test(bodyOf('agentfarm.backlogAdd')));
     // a command a run handler hands on is held to the same rule
@@ -133,6 +133,13 @@ const items = P.ctxPhoneItems(titleOf);
     ok('(the run handlers do call the helpers: ' + calls.length + ' calls)', calls.length >= 9);
     const dropped = calls.filter(([, , a]) => !/(^|[\s,])(arg\.)?ask$/.test(a.trim()));
     ok('‼️ …and every call hands the handler\'s ask on' + (dropped.length ? ' — not: ' + dropped.map(d => d[0] + '→' + d[1]).join(', ') : ''), dropped.length === 0);
+    const corpus = bodyOf('agentfarm.copyCorpus');
+    ok('‼️ X-552: a farm-made text goes to the ask\'s clipboard, and a phone names only a transcript the index knows',
+        /await ask\.copy\(got\.text\);/.test(corpus) && /const file = arg\?\.ask \? sessionFromArg\(arg\.afCorpusFile \|\| undefined\)\?\.file : arg\?\.afCorpusFile;/.test(corpus)
+        && /corpusFor\(file,/.test(corpus));
+    ok('a session row carries its relay chain for the phone (afChain)', /afChain: \(s && s\.chain && s\.chain\.chainId\) \|\| ''/.test(read('media/afSessionCtx.js')));
+    ok('the phone\'s agent page finds an agent by name when the row has no id',
+        /agents\.find\(a => typeof args\?\.agentName === 'string' && !!args\.agentName && a\.name === args\.agentName\)\?\.id \?\? ''/.test(read('src/extension.ts')));
     ok('the desktop keeps its own topic picker; a phone types the topics', /arg\?\.ask\s*\?\s*await askWikiTopics\(wikiStore, list\.length, arg\.ask\)\s*:\s*await pickWikiTopics\(/.test(bodyOf('agentfarm.sessionToWiki')));
     ok('‼️ a row that opens a PC form is not offered to a phone', ['agentfarm.assignSessionProject', 'agentfarm.assignProject']
         .every(c => /\.\.\.\(arg\?\.ask \? \[\] : \[\{ label: '\$\(add\) New project/.test(bodyOf(c))));
@@ -161,7 +168,7 @@ const items = P.ctxPhoneItems(titleOf);
     ok('…not one whose row value is empty (no path, no folder)', !onSession.includes('copySessionPath') && !onSession.includes('copySessionCwd'));
     ok('…its stop, label, wiki and project commands among them', ['interruptSession', 'endSession', 'forceKillSession', 'dismissSession', 'tagSession',
         'sessionToWiki', 'assignSessionProject', 'addSessionFolderToProject'].every(c => onSession.includes(c)));
-    ok('…and none that stays on the PC', !onSession.includes('copyCorpus') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
+    ok('…and none that stays on the PC', !onSession.includes('consoleForAgent') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
     const full = cmds({ ...session, file: 'C:/t.jsonl', cwd: 'D:/w' });
     ok('a row that knows its path and folder offers those copies', full.includes('copySessionPath') && full.includes('copySessionCwd'));
     const onAgent = cmds({ webviewSection: 'afAgentRow', agentId: 'a1', agentName: 'dev', agentDir: 'D:/a' });
@@ -183,6 +190,20 @@ const items = P.ctxPhoneItems(titleOf);
     R.pick(by('sessionToQueue'), session);
     ok('‼️ Add to Queue opens the phone\'s own Work Queue page, naming the session (the farm builds the draft)',
         sent.length === 3 && sent[2].type === 'afnav' && sent[2].to === 'queue' && JSON.stringify(sent[2].args) === '{"session":"s1"}');
+    // X-552 — the relay chain: the row carries it (afChain), so the PC's chain list is not needed
+    const chained = { ...session, afChain: 'chn_x1' };
+    ok('‼️ a chained session row offers Show Chain and Copy Chain ID, an unchained one neither',
+        cmds(chained).includes('showChain') && cmds(chained).includes('copyChainId') && !onSession.includes('showChain') && !onSession.includes('copyChainId'));
+    ok('…on a Console card too, by the same key', cmds({ webviewSection: 'afConsoleSession', hostId: 'cs1', sessionId: 's1', afChain: 'chn_x1' }).includes('showChain'));
+    R.pick(by('showChain'), chained);
+    ok('‼️ Show Chain opens the phone\'s own chain page on that chain', sent.length === 4 && sent[3].to === 'chains' && JSON.stringify(sent[3].args) === '{"chain":"chn_x1"}');
+    R.pick(by('copyChainId'), chained);
+    ok('Copy Chain ID is the phone\'s own clipboard', sent.length === 4 && copied.join() === 's1,chn_x1');
+    ok('the phone\'s when drops only the PC-list term, and only for a page or a copy', by('showChain').when.indexOf(' in ') < 0
+        && CTX_ITEMS.some(i => i.command === 'agentfarm.showChain' && / in agentfarm\.chainSessions/.test(i.when))
+        && items.filter(i => i.phone.on === 'run').every(i => CTX_ITEMS.some(c => c.command === i.command && c.when === i.when)));
+    R.pick(by('openSessionAgent'), session);
+    ok('Open Agent opens the phone\'s agent page by the row\'s agent name', sent.length === 5 && sent[4].to === 'agent' && JSON.stringify(sent[4].args) === '{"agentName":"dev"}');
     ok('the phone layer hands a command pick to afRowCmd and a page action to the page', /if \(a\.command\) \{ window\.AFRowCmd\.pick\(a, ctx\); return; \}/.test(read('media/afMobile.js')));
     const base = read('src/panels/base.ts');
     ok('every page is sent the script, after the phone layer', base.indexOf('src="${rowCmd}"') > base.indexOf('src="${mobile}"') && /'media', 'afRowCmd\.js'/.test(base));

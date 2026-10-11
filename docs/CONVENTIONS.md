@@ -962,7 +962,11 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   gets a phone twin through `ask.input`, never a changed PC path. A `page`
   verdict sends only a row key the farm resolves itself (`sessionToQueue` →
   `queue` with `{ session }`: the farm finds the session in its index and
-  builds the PC's own draft, one function for both). A `pc`
+  builds the PC's own draft, one function for both). A text the farm makes
+  goes through `ask.copy` (the phone's clipboard, written by the page). A
+  when term that reads a PC-held list (`x in agentfarm.y`) is dropped for a
+  page or copy verdict only, whose own row key stands for the fact (`afChain`
+  on every session row). A `pc`
   verdict marked `gap` is a command a phone should
   get once its handler asks that way; `CTX_PHONE_GAPS` counts them and only
   shrinks. The pick arrives as `afctxcmd` and is settled by `RemoteViews`

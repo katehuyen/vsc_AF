@@ -39,19 +39,21 @@ const PC_PANEL = 'it opens a panel the phone has no page for';
 const PC_FILES = 'it opens the PC\'s own file manager or window';
 const PC_SOUND = 'it is the PC\'s own voice and sound; the phone reads with its own';
 const PC_START = 'it opens a launcher or a terminal on the PC; the phone starts a session from the agent\'s page or the Console';
-const CHAIN = 'its row is judged against the chain list the PC holds; the row\'s own chain mark opens the chain on the phone';
 
 export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     // ---- the phone's own pages
     'agentfarm.openAgentDetail': { on: 'page', to: 'agent', args: { agentId: 'agentId' } },
     'agentfarm.openSession': { on: 'page', to: 'session', args: { sessionId: 'sessionId', file: 'file' } },
     'agentfarm.sessionToQueue': { on: 'page', to: 'queue', args: { session: 'sessionId' } },
+    'agentfarm.showChain': { on: 'page', to: 'chains', args: { chain: 'afChain' } },
+    'agentfarm.openSessionAgent': { on: 'page', to: 'agent', args: { agentName: 'agentName' } },
     // ---- the phone's own clipboard
     'agentfarm.copySessionId': { on: 'copy', key: 'sessionId' },
     'agentfarm.copySessionPath': { on: 'copy', key: 'file' },
     'agentfarm.copySessionCwd': { on: 'copy', key: 'cwd' },
     'agentfarm.copyAgentName': { on: 'copy', key: 'agentName' },
     'agentfarm.copyAgentFolder': { on: 'copy', key: 'agentDir' },
+    'agentfarm.copyChainId': { on: 'copy', key: 'afChain' },
     // ---- the same command, asked on the phone
     'agentfarm.renameSession': RUN,
     'agentfarm.pinSession': RUN,
@@ -74,13 +76,10 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.insightHistory': RUN,
     'agentfarm.restoreInsights': RUN,
     'agentfarm.syncAntigravity': RUN,
+    'agentfarm.copyCorpus': RUN,
     // ---- wanted on a phone, waiting for a handler that asks through `ask`
-    'agentfarm.copyCorpus': gap('its text is built on the farm and written to the PC\'s clipboard'),
-    'agentfarm.openSessionAgent': gap('the row names the agent, not its id; the handler opens the PC\'s agent page'),
     'agentfarm.consoleForAgent': gap('it opens the PC\'s Console with the agent chosen'),
     // ---- the PC's own
-    'agentfarm.copyChainId': pc(CHAIN),
-    'agentfarm.showChain': pc(CHAIN),
     'agentfarm.openAgentInNewWindow': pc(PC_FILES),
     'agentfarm.revealAgent': pc(PC_FILES),
     'agentfarm.revealSessionFolder': pc(PC_FILES),
@@ -105,7 +104,14 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
 };
 
 /** How many commands a phone should get and does not yet. It only shrinks: a new gap is a new debt. */
-export const CTX_PHONE_GAPS = 3;
+export const CTX_PHONE_GAPS = 1;
+
+/**
+ * A term that reads a list only the PC holds (`sessionId in agentfarm.chainSessions`): a phone cannot
+ * judge it. A page or copy verdict names the row key that carries the same fact (`afChain`), and the
+ * phone offers the item only when the row has that key (media/afRowCmd.js) — so the term is dropped.
+ */
+const PC_LIST_TERM = /\s*&&\s*!?[\w.]+\s+in\s+[\w.]+/g;
 
 export function ctxPhoneVerdict(command: string): CtxPhoneVerdict | undefined {
     return Object.prototype.hasOwnProperty.call(CTX_PHONE, command) ? CTX_PHONE[command] : undefined;
@@ -129,7 +135,7 @@ export function ctxPhoneItems(titleOf: (command: string) => string): CtxPhoneIte
         if (!item.command || !v || v.on === 'pc') { continue; }
         out.push({
             title: titleOf(item.command) || item.command.replace(/^agentfarm\./, ''),
-            command: item.command, when: item.when, group: item.group,
+            command: item.command, when: v.on === 'run' ? item.when : item.when.replace(PC_LIST_TERM, ''), group: item.group,
             ...(item.menu ? { menu: item.menu } : {}),
             phone: v.on === 'run' ? { on: 'run' } : v
         });

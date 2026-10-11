@@ -130,6 +130,8 @@
     function onAsk(q) {
         if (!q || q.type !== 'afAsk') { return; }
         if (q.kind === 'note') { toast(q); return; }
+        // a text the farm made (a corpus, an id) goes on the PHONE's clipboard; AFCtx says "Copied" here
+        if (q.kind === 'copy') { if (window.AFCtx && window.AFCtx.copy) { window.AFCtx.copy(q.text); } return; }
         if (!window.AFMobile || !window.AFMobile.openSheet) { return; }
         if (q.kind === 'message') { message(q); } else if (q.kind === 'pick') { pick(q); } else if (q.kind === 'input') { input(q); }
     }

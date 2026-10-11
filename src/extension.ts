@@ -32014,7 +32014,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
             turns: host => TurnsPanel.openOn(host, turnsPageDeps()),
             projects: host => ProjectsPanel.openOn(host, projectsPanelDeps()),
-            agent: (host, args) => AgentDetailPanel.openOn(host, typeof args?.agentId === 'string' ? args.agentId : '', detailDeps),
+            // X-552 — a session row knows its agent by name only: found the way openSessionAgent finds it
+            agent: (host, args) => AgentDetailPanel.openOn(host, typeof args?.agentId === 'string' && args.agentId ? args.agentId
+                : agents.find(a => typeof args?.agentName === 'string' && !!args.agentName && a.name === args.agentName)?.id ?? '', detailDeps),
             search: host => SearchPanel.openOn(host, searchPageDeps()),
             timeline: host => TimelinePanel.openOn(host, timelinePageDeps()),
             engines: host => EnginesPanel.openOn(host, enginesPanelDeps),
@@ -38335,13 +38337,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // a copy that handed over a clipped one-line prompt while looking whole
         // would be the worst of the two.
         vscode.commands.registerCommand('agentfarm.copyCorpus',
-            async (arg?: { afCorpusFile?: string; afCorpusTs?: number }) => {
-                const got = corpusFor(arg?.afCorpusFile, Number(arg?.afCorpusTs) || 0);
+            async (arg?: { afCorpusFile?: string; afCorpusTs?: number; ask?: PanelAsk }) => {
+                const ask = arg?.ask ?? desktopAsk();
+                // a phone never points the farm at a file of its own choosing: only a transcript the index knows
+                const file = arg?.ask ? sessionFromArg(arg.afCorpusFile || undefined)?.file : arg?.afCorpusFile;
+                const got = corpusFor(file, Number(arg?.afCorpusTs) || 0);
                 if (!got.text) {
-                    void vscode.window.showInformationMessage('Agent Farm: ' + got.why);
+                    void ask.info('Agent Farm: ' + got.why);
                     return;
                 }
-                await vscode.env.clipboard.writeText(got.text);
+                await ask.copy(got.text);
+                // a phone's page says "Copied" itself (AFCtx), not the PC's status bar
+                if (arg?.ask) { return; }
                 // The receipt says WHAT was copied and how big, because two
                 // points a second apart look identical on a chart.
                 void vscode.window.setStatusBarMessage(
