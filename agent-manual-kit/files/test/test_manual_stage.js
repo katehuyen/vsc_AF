@@ -89,6 +89,24 @@ ok('farm.brief with nobody listening says Agent Farm is not running, and that th
 const live = run('tasks.list', '--timeout', '300');
 ok('any other op with nobody listening is withdrawn and says so', live.code === 1 && /unclaimed/.test(live.out));
 
+// A lone af.js — an older stage, or a tool that loads only the helper (the Gatekeeper MCP server
+// does) — has no manual reader beside it. It must still drive the bridge, not die on a require.
+const lone = path.join(tmp, 'lone');
+fs.mkdirSync(lone, { recursive: true });
+fs.copyFileSync(path.join(ROOT, 'out', 'service', 'af.js'), path.join(lone, 'af.js'));
+const loneRun = (...args) => {
+    const r = spawnSync(process.execPath, [path.join(lone, 'af.js'), ...args, '--bridge-dir', path.join(tmp, 'lone-bridge'), '--timeout', '300'],
+        { encoding: 'utf8', timeout: 20000, env: { ...process.env, AGENT_FARM_MANUAL: '' } });
+    return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
+};
+const l1 = loneRun('tasks.list');
+ok('a lone af.js still sends a live op over the bridge', l1.code === 1 && /unclaimed/.test(l1.out) && !/Cannot find module/.test(l1.out));
+const l2 = loneRun('farm.guide');
+ok('…and asks the bridge for the manual\'s reads instead of answering them', l2.code === 1 && /unclaimed/.test(l2.out)
+    && !/Cannot find module/.test(l2.out));
+const loneRequire = (() => { try { require(path.join(lone, 'af.js')); return true; } catch { return false; } })();
+ok('…and loads as a module, as the Gatekeeper MCP server loads it', loneRequire);
+
 // ---------------------------------------------------------------- the start card
 const card = SC.startCardText('card', src.card, 'node "/h/.agentfarm/af.js"', '9.9.9');
 ok('the card names the command, the version and the first call', card.includes('node "/h/.agentfarm/af.js" <op>')

@@ -81,5 +81,6 @@ A	test/test_manual_content.js
 A	test/test_manual_ops.js
 A	test/test_manual_query.js
 A	test/test_manual_stage.js
+M	test/test_opencode_task.js
 A	tools/manual_meta.js
 M	tools/verify_vsix.js

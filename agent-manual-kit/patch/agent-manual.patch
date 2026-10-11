@@ -6535,20 +6535,35 @@ index 52ee065..796a8d9 100644
          vscode.workspace.onDidChangeConfiguration(e => {
              if (!e.affectsConfiguration('agentFarm')) { return; }
 diff --git a/src/service/af.ts b/src/service/af.ts
-index 53acc1c..6ed36dc 100644
+index 53acc1c..dd5193c 100644
 --- a/src/service/af.ts
 +++ b/src/service/af.ts
-@@ -39,6 +39,9 @@ import * as fs from 'fs';
+@@ -39,6 +39,24 @@ import * as fs from 'fs';
  import * as os from 'os';
  import * as path from 'path';
  import { TextDecoder } from 'util';
-+import {
-+    answerManualOp, CompiledManual, findInManual, isMarkdownAnswer, LOCAL_MANUAL_OPS, looksLikeManual, renderCard
-+} from './manualQuery';
++import type { CompiledManual } from './manualQuery';
++
++/**
++ * X-536 — THE MANUAL'S READER IS LOADED WHEN A MANUAL READ NEEDS IT, NOT AT START.
++ *
++ * `manualQuery.js` is staged beside this file, but a lone copy of af.js — an
++ * older stage, or a tool that loads only the helper (the Gatekeeper MCP server
++ * does) — must still drive every bridge op. Without the reader it simply asks
++ * the bridge for the manual's reads too, and prints answers as JSON.
++ */
++type ManualQuery = typeof import('./manualQuery');
++let manualQueryModule: ManualQuery | null | undefined;
++function manualReader(): ManualQuery | null {
++    if (manualQueryModule === undefined) {
++        try { manualQueryModule = require('./manualQuery') as ManualQuery; } catch { manualQueryModule = null; }
++    }
++    return manualQueryModule;
++}
  
  export interface CliOptions {
      op?: string;
-@@ -260,6 +263,13 @@ Options:
+@@ -260,6 +278,13 @@ Options:
                          Node can read them. Alias: --stdin-b64.
    -h, --help            Show this help message
  
@@ -6562,7 +6577,7 @@ index 53acc1c..6ed36dc 100644
  Examples:
    node af.js farm.ops
    node af.js tasks.list
-@@ -423,16 +433,83 @@ export function writeResponseFile(
+@@ -423,16 +448,87 @@ export function writeResponseFile(
      return { path: absPath, bytes: Buffer.byteLength(text, 'utf8') };
  }
  
@@ -6573,12 +6588,14 @@ index 53acc1c..6ed36dc 100644
 + * AGENT_FARM_MANUAL). Missing or unreadable means "ask the bridge instead".
 + */
 +export function loadManual(bridgeDir: string): CompiledManual | undefined {
++    const Q = manualReader();
++    if (!Q) { return undefined; }
 +    const candidates = [process.env.AGENT_FARM_MANUAL, path.join(bridgeDir, 'manual.json'), path.join(__dirname, 'manual.json')];
 +    for (const file of candidates) {
 +        if (!file) { continue; }
 +        try {
 +            const m = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as unknown;
-+            if (looksLikeManual(m)) { return m; }
++            if (Q.looksLikeManual(m)) { return m; }
 +        } catch { /* next */ }
 +    }
 +    return undefined;
@@ -6604,7 +6621,7 @@ index 53acc1c..6ed36dc 100644
      }
 +    return opts;
 +}
-+
+ 
 +/** Append one line to the manual's gap log — the extension reads the same file (manual.gaps). */
 +function recordGap(bridgeDir: string, kind: string, what: string, near?: string[]): void {
 +    try {
@@ -6615,10 +6632,11 @@ index 53acc1c..6ed36dc 100644
 +        }) + '\n', 'utf8');
 +    } catch { /* never fails the answer */ }
 +}
- 
++
 +/** Print an answer: a manual text as text, anything else as the JSON envelope it always was. */
 +function emit(op: string, response: BridgeReply, opts: CliOptions): void {
-+    const text = !opts.rawOutput && response.ok && isMarkdownAnswer(response.result) ? response.result.text : undefined;
++    const md = !opts.rawOutput && response.ok ? manualReader() : null;
++    const text = md && md.isMarkdownAnswer(response.result) ? response.result.text : undefined;
 +    const body = text ?? (opts.rawOutput ? JSON.stringify(response) : JSON.stringify(response, null, 2));
 +    if (opts.outFile) {
 +        const written = writeResponseFile(opts.outFile, body);
@@ -6640,9 +6658,10 @@ index 53acc1c..6ed36dc 100644
 +    if (!opts.op) {
 +        // X-536 — a bare call is "what is this?": answer with the start card.
 +        const m = loadManual(bridgeDirectory);
-+        if (!m) { printHelp(); process.exit(1); }
++        const Q = manualReader();
++        if (!m || !Q) { printHelp(); process.exit(1); }
 +        const self = `node "${(process.argv[1] || 'af.js').replace(/\\/g, '/')}"`;
-+        console.log(renderCard(m.card, { af: self, version: m.version }));
++        console.log(Q.renderCard(m.card, { af: self, version: m.version }));
 +        return;
 +    }
 +    opts = applyShorthand(opts);
@@ -6651,7 +6670,7 @@ index 53acc1c..6ed36dc 100644
      let payload: Record<string, unknown>;
      try {
          payload = resolvePayload(opts);
-@@ -442,19 +519,37 @@ export async function main(): Promise<void> {
+@@ -442,19 +538,38 @@ export async function main(): Promise<void> {
          process.exit(1);
      }
  
@@ -6665,14 +6684,15 @@ index 53acc1c..6ed36dc 100644
 -                console.error(response.error);
 +    // X-536 — the manual's reads are answered here, from the staged manual:
 +    // no round trip, no notification, and they work while VS Code is closed.
-+    if (LOCAL_MANUAL_OPS.includes(op)) {
++    const Q = manualReader();
++    if (Q && Q.LOCAL_MANUAL_OPS.includes(op)) {
 +        const m = loadManual(bridgeDirectory);
-+        const local = m ? answerManualOp(m, op, payload) : undefined;
++        const local = m ? Q.answerManualOp(m, op, payload) : undefined;
 +        if (m && local) {
 +            const q = typeof payload.q === 'string' ? payload.q : '';
 +            if (!local.ok) { recordGap(bridgeDirectory, op === 'farm.guide' ? 'no-guide' : 'unknown-op', String(payload.id ?? payload.op ?? payload.area ?? '')); }
 +            else if (q) {
-+                const f = findInManual(m, q, { limit: 3 });
++                const f = Q.findInManual(m, q, { limit: 3 });
 +                if (f.weak) { recordGap(bridgeDirectory, 'weak-find', q, f.hits.map(h => h.id)); }
              }
 -        } else {
@@ -7740,10 +7760,10 @@ index 0000000..85ee8fd
 +process.exit(fail ? 1 : 0);
 diff --git a/test/test_manual_stage.js b/test/test_manual_stage.js
 new file mode 100644
-index 0000000..2fa3cd0
+index 0000000..0fd67f5
 --- /dev/null
 +++ b/test/test_manual_stage.js
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,127 @@
 +// X-536 — THE MANUAL REACHES AN AGENT WITH NOTHING BUT A SHELL.
 +//
 +// Stages a real manual into a scratch "globalStorage" and a scratch home, then
@@ -7835,6 +7855,24 @@ index 0000000..2fa3cd0
 +const live = run('tasks.list', '--timeout', '300');
 +ok('any other op with nobody listening is withdrawn and says so', live.code === 1 && /unclaimed/.test(live.out));
 +
++// A lone af.js — an older stage, or a tool that loads only the helper (the Gatekeeper MCP server
++// does) — has no manual reader beside it. It must still drive the bridge, not die on a require.
++const lone = path.join(tmp, 'lone');
++fs.mkdirSync(lone, { recursive: true });
++fs.copyFileSync(path.join(ROOT, 'out', 'service', 'af.js'), path.join(lone, 'af.js'));
++const loneRun = (...args) => {
++    const r = spawnSync(process.execPath, [path.join(lone, 'af.js'), ...args, '--bridge-dir', path.join(tmp, 'lone-bridge'), '--timeout', '300'],
++        { encoding: 'utf8', timeout: 20000, env: { ...process.env, AGENT_FARM_MANUAL: '' } });
++    return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
++};
++const l1 = loneRun('tasks.list');
++ok('a lone af.js still sends a live op over the bridge', l1.code === 1 && /unclaimed/.test(l1.out) && !/Cannot find module/.test(l1.out));
++const l2 = loneRun('farm.guide');
++ok('…and asks the bridge for the manual\'s reads instead of answering them', l2.code === 1 && /unclaimed/.test(l2.out)
++    && !/Cannot find module/.test(l2.out));
++const loneRequire = (() => { try { require(path.join(lone, 'af.js')); return true; } catch { return false; } })();
++ok('…and loads as a module, as the Gatekeeper MCP server loads it', loneRequire);
++
 +// ---------------------------------------------------------------- the start card
 +const card = SC.startCardText('card', src.card, 'node "/h/.agentfarm/af.js"', '9.9.9');
 +ok('the card names the command, the version and the first call', card.includes('node "/h/.agentfarm/af.js" <op>')
@@ -7853,6 +7891,23 @@ index 0000000..2fa3cd0
 +try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
 +console.log(`\n${pass} passed, ${fail} failed`);
 +process.exit(fail ? 1 : 0);
+diff --git a/test/test_opencode_task.js b/test/test_opencode_task.js
+index 9d44ae4..59503b7 100644
+--- a/test/test_opencode_task.js
++++ b/test/test_opencode_task.js
+@@ -91,8 +91,10 @@ const panelTs = read('src', 'panels', 'tasksPanel.ts');
+ // again pays for the same tokens twice and re-introduces a project the model has
+ // been working in since turn one.
+ {
+-    ok('‼️ a continuation does not repeat the project brief',
+-        /\? \(safeResume \? '' : engineContextPrefix\(this\.readContext\(ctxFile\)\)\) \+ task\.prompt/
++    // X-536 — the Agent Manual's start card rides with the brief, inside the same
++    // `safeResume ? '' : …`, so a continuation repeats neither.
++    ok('‼️ a continuation does not repeat the project brief, nor the start card',
++        /\? \(safeResume \? '' : engineContextPrefix\(this\.readContext\(ctxFile\)\)\s*\+ startCardPrefix\(this\.opts\.startCardFor\?\.\(engine\.id\) \?\? ''\)\) \+ task\.prompt/
+             .test(tasksTs));
+     ok('…and a FIRST turn still carries it, exactly as before',
+         /const perTurnPrompt = perTurn/.test(tasksTs)
 diff --git a/tools/manual_meta.js b/tools/manual_meta.js
 new file mode 100644
 index 0000000..e74f53d

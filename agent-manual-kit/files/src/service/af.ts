@@ -39,9 +39,24 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { TextDecoder } from 'util';
-import {
-    answerManualOp, CompiledManual, findInManual, isMarkdownAnswer, LOCAL_MANUAL_OPS, looksLikeManual, renderCard
-} from './manualQuery';
+import type { CompiledManual } from './manualQuery';
+
+/**
+ * X-536 — THE MANUAL'S READER IS LOADED WHEN A MANUAL READ NEEDS IT, NOT AT START.
+ *
+ * `manualQuery.js` is staged beside this file, but a lone copy of af.js — an
+ * older stage, or a tool that loads only the helper (the Gatekeeper MCP server
+ * does) — must still drive every bridge op. Without the reader it simply asks
+ * the bridge for the manual's reads too, and prints answers as JSON.
+ */
+type ManualQuery = typeof import('./manualQuery');
+let manualQueryModule: ManualQuery | null | undefined;
+function manualReader(): ManualQuery | null {
+    if (manualQueryModule === undefined) {
+        try { manualQueryModule = require('./manualQuery') as ManualQuery; } catch { manualQueryModule = null; }
+    }
+    return manualQueryModule;
+}
 
 export interface CliOptions {
     op?: string;
@@ -438,12 +453,14 @@ export function writeResponseFile(
  * AGENT_FARM_MANUAL). Missing or unreadable means "ask the bridge instead".
  */
 export function loadManual(bridgeDir: string): CompiledManual | undefined {
+    const Q = manualReader();
+    if (!Q) { return undefined; }
     const candidates = [process.env.AGENT_FARM_MANUAL, path.join(bridgeDir, 'manual.json'), path.join(__dirname, 'manual.json')];
     for (const file of candidates) {
         if (!file) { continue; }
         try {
             const m = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')) as unknown;
-            if (looksLikeManual(m)) { return m; }
+            if (Q.looksLikeManual(m)) { return m; }
         } catch { /* next */ }
     }
     return undefined;
@@ -480,7 +497,8 @@ function recordGap(bridgeDir: string, kind: string, what: string, near?: string[
 
 /** Print an answer: a manual text as text, anything else as the JSON envelope it always was. */
 function emit(op: string, response: BridgeReply, opts: CliOptions): void {
-    const text = !opts.rawOutput && response.ok && isMarkdownAnswer(response.result) ? response.result.text : undefined;
+    const md = !opts.rawOutput && response.ok ? manualReader() : null;
+    const text = md && md.isMarkdownAnswer(response.result) ? response.result.text : undefined;
     const body = text ?? (opts.rawOutput ? JSON.stringify(response) : JSON.stringify(response, null, 2));
     if (opts.outFile) {
         const written = writeResponseFile(opts.outFile, body);
@@ -502,9 +520,10 @@ export async function main(): Promise<void> {
     if (!opts.op) {
         // X-536 — a bare call is "what is this?": answer with the start card.
         const m = loadManual(bridgeDirectory);
-        if (!m) { printHelp(); process.exit(1); }
+        const Q = manualReader();
+        if (!m || !Q) { printHelp(); process.exit(1); }
         const self = `node "${(process.argv[1] || 'af.js').replace(/\\/g, '/')}"`;
-        console.log(renderCard(m.card, { af: self, version: m.version }));
+        console.log(Q.renderCard(m.card, { af: self, version: m.version }));
         return;
     }
     opts = applyShorthand(opts);
@@ -521,14 +540,15 @@ export async function main(): Promise<void> {
 
     // X-536 — the manual's reads are answered here, from the staged manual:
     // no round trip, no notification, and they work while VS Code is closed.
-    if (LOCAL_MANUAL_OPS.includes(op)) {
+    const Q = manualReader();
+    if (Q && Q.LOCAL_MANUAL_OPS.includes(op)) {
         const m = loadManual(bridgeDirectory);
-        const local = m ? answerManualOp(m, op, payload) : undefined;
+        const local = m ? Q.answerManualOp(m, op, payload) : undefined;
         if (m && local) {
             const q = typeof payload.q === 'string' ? payload.q : '';
             if (!local.ok) { recordGap(bridgeDirectory, op === 'farm.guide' ? 'no-guide' : 'unknown-op', String(payload.id ?? payload.op ?? payload.area ?? '')); }
             else if (q) {
-                const f = findInManual(m, q, { limit: 3 });
+                const f = Q.findInManual(m, q, { limit: 3 });
                 if (f.weak) { recordGap(bridgeDirectory, 'weak-find', q, f.hits.map(h => h.id)); }
             }
             emit(op, local.ok ? { ok: true, result: local.result } : { ok: false, error: local.error }, opts);

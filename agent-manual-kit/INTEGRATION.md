@@ -31,7 +31,7 @@ Base: commit `6c634b0` (Agent Farm **3.930.0**, "v12.105"). The patch was built 
 | new | `src/core/manualInstall.ts` | the `agent-farm` skill: targets, plan, install, refresh, remove |
 | new | `src/core/manualOps.ts` | registers `farm.guide`, `farm.find`, `farm.brief`, `manual.status/install/remove/gaps` and gives the built-in `farm.ops` its new answer (`answerOpsWith`); `QUIET_MANUAL_OPS` |
 | changed | `src/core/bridge.ts` | unknown op → did-you-mean + listener (`onUnknownOp`), `has()`, `answerOpsWith()` (new answer for the built-in `farm.ops`, one declaration); `stageBridgeCli` stages `af.js` **and** `manualQuery.js` (`STAGED_CLI_FILES`) |
-| changed | `src/service/af.ts` | answers the three manual reads locally; prints markdown answers as text; bare call = start card; `find …` / `help …` / `guide …` shorthands; offline `farm.brief` message; gap log; `exitCode` instead of `exit()` after printing |
+| changed | `src/service/af.ts` | loads the manual reader lazily (a lone `af.js` still drives the bridge); answers the three manual reads locally; prints markdown answers as text; bare call = start card; `find …` / `help …` / `guide …` shorthands; offline `farm.brief` message; gap log; `exitCode` instead of `exit()` after printing |
 | changed | `src/core/tasks.ts` | `startCardFor?(engine)` option; per-turn engines get `<agent-farm>` card before the first prompt |
 | changed | `src/core/consolehost.ts` | `setStartCard()`; `card` on a hosted per-turn/shared-ACP session; prefixed once like the brief |
 | changed | `src/extension.ts` | imports; early block (manual source, command, `startCardNow`); SessionStart hook sends the card; quiet toast for manual reads; TaskManager option; late block (compile, stage, register ops, unknown-op gaps, hook detection) |
@@ -41,7 +41,8 @@ Base: commit `6c634b0` (Agent Farm **3.930.0**, "v12.105"). The patch was built 
 | changed | `test/test_bridge_start_text.js` | now checks the start card wiring |
 | new | `test/test_manual_content.js` | the drift gate (metadata, references, arguments, budgets, language) |
 | new | `test/test_manual_query.js` | reader units + the intents eval (top-3 ≥ 95 %, top-1 ≥ 80 %) |
-| new | `test/test_manual_stage.js` | stages into a scratch home and runs the launcher like an agent, VS Code absent |
+| new | `test/test_manual_stage.js` | stages into a scratch home and runs the launcher like an agent, VS Code absent; a lone `af.js` still works |
+| changed | `test/test_opencode_task.js` | the "continuation does not repeat the brief" check now also covers the start card |
 | new | `test/test_manual_ops.js` | the ops on a real registry: replaced farm.ops, did-you-mean, brief, skills, gaps |
 | new | `tools/manual_meta.js` | drafts `ops.meta.json` entries for new ops (`--write`, `--stale`) |
 | changed | `tools/verify_vsix.js` | the VSIX must contain `out/service/af.js`, `out/service/manualQuery.js` and every `manual/` file |
@@ -53,9 +54,12 @@ Base: commit `6c634b0` (Agent Farm **3.930.0**, "v12.105"). The patch was built 
 
 ## 2. Apply
 
+**Unpack the kit outside the repository** (e.g. `~/agent-manual-kit`). Inside it, the repo's `tsconfig.json`
+(default include `**/*`, `rootDir: src`) picks up `files/src/**/*.ts` and the build fails with TS6059 — measured.
+
 ```bash
 git switch -c feature/x-536-agent-manual
-git apply --3way agent-manual-kit/patch/agent-manual.patch
+git apply --3way ~/agent-manual-kit/patch/agent-manual.patch
 ```
 
 - If the dev repo is still at `6c634b0` the patch applies cleanly (verified).
@@ -71,17 +75,21 @@ npx tsc -p ./
 node test/test_manual_content.js && node test/test_manual_query.js && node test/test_manual_stage.js \
   && node test/test_manual_ops.js && node test/test_bridge_start_text.js && node test/test_bridge.js \
   && node test/test_activation.js && node test/test_settings_catalog.js && node test/test_encoding.js \
-  && node test/test_parity.js
+  && node test/test_parity.js && node test/test_opencode_task.js && node test/test_kapici_mcp.js
 AF_NO_COMPILE=1 node test/run-all.js
 npm run package && npm run verify
 ```
 
-Measured in the build environment (Linux): the four new suites 14 + 27 + 27 + 25 assertions green,
-`test_bridge` 984, `test_parity` 29, `test_settings_catalog` 24, `test_settings_copy` 6, `test_i18n_ratchet` 6,
-`test_encoding` 1916, `test_activation` 17, and every other suite that ran green except four that fail identically on
-the untouched base commit there (environment: Linux, time zone, no Chrome) — `test_a2a_pages`,
-`test_accounts_page`, `test_airtable_ext`, `test_browser_recipes`. On the development machine run the full gate
-yourself; a failure that is not also red on the base commit is ours to fix.
+Measured in the build environment (Linux, no VS Code, no Chrome, behind a proxy): **all 764 test files run**.
+The new suites: 14 + 27 + 30 + 25 assertions; `test_bridge` 984, `test_parity` 29, `test_settings_catalog` 24,
+`test_encoding` 1916, `test_opencode_task` 49, `test_kapici_mcp` 26 — green. **19 files are red there, and every
+one of them is red identically (same pass/fail counts) on the untouched base commit** — environment, not this
+change: `test_a2a_pages`, `test_accounts_page`, `test_airtable_ext`, `test_browser_recipes`, `test_console_seat`,
+`test_cpu_profile`, `test_e2e_claude_routes`, `test_e2e_console_route`, `test_e2e_task_route`,
+`test_e2e_terminal_route`, `test_media_recipes`, `test_media_upload`, `test_opencodeharvest`,
+`test_project_archive`, `test_run_library`, `test_run_session_id`, `test_settings_fold`, `test_sound_header`,
+`test_system_config_ops`. On the development machine run the full gate yourself; a failure that is not also red on
+the base commit is ours to fix.
 
 ### Live checks after install (`code --install-extension dist/vsix/agent-farm-<v>.vsix --force`, then window reload)
 
@@ -118,12 +126,17 @@ PowerShell 5.1 note: `node "$HOME/.agentfarm/af.js" ...` expands `$HOME` there t
 `emit`, and the new `main` (help → bare call prints the card → shorthands → payload → local manual answer → bridge →
 offline `farm.brief` sentence). Keep the old exports (`parseCliArgs`, `resolvePayload`, `executeBridgeRequest`,
 `writeResponseFile`, …): `test_bridge.js` imports them.
+- **The reader is loaded lazily**: `import type { CompiledManual }` only, and `manualReader()` `require`s
+  `./manualQuery` on first need (null when absent). A top-level import breaks every copy of `af.js` that sits
+  alone — the Gatekeeper MCP server loads the staged helper, and `test_kapici_mcp.js` copies only `af.js`.
 
 **`src/core/tasks.ts`**
 - Options interface, beside `projectContextFile`: `startCardFor?: (engine: string) => string;`
 - Where the per-turn prompt is built (`engineContextPrefix(this.readContext(ctxFile))`): append
   `+ startCardPrefix(this.opts.startCardFor?.(engine.id) ?? '')` inside the same `safeResume ? '' : (…)` so a resume
   never repeats it. Import `startCardPrefix` from `./startCard`.
+- `test/test_opencode_task.js` checks that expression by its source text; the patch updates its regex (and its
+  name) to the new shape, so the check now also proves a continuation repeats neither the brief nor the card.
 
 **`src/core/consolehost.ts`**
 - `Hosted`: `card?: string` beside `context`.
