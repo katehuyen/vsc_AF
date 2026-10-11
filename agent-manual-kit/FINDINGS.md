@@ -86,6 +86,14 @@ are not classified). The manual's content test works around it with a second reg
 Fix: in the back-up loop, ignore characters inside line and block comments (`scanCode` already knows how), or
 only treat `{` as `${` when the previous character is `$`. Add a test with a comment line before an op.
 
+## 4b. A source-text gate that cannot see a multi-line import  — low (fixed by the patch)
+
+`test/test_whoami.js` guards the rule "af.ts imports nothing but node built-ins (it is copied out alone)" with
+`/^import .* from '…';/gm` — one line only. The first version of this change imported the manual reader in a
+multi-line `import { … } from './manualQuery'` and the gate stayed green while the rule was broken (a lone af.js
+could no longer load: `test_kapici_mcp.js` caught it). The patch loads the reader lazily and widens the regex to
+`/^import\b[^;]*? from '…';/gm`. Other source-text gates with `.*` on one line may share the blind spot.
+
 ## 5. Contract hygiene  — medium (cost for every agent, every call)
 
 | | count |

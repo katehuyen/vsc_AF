@@ -39,7 +39,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { TextDecoder } from 'util';
-import type { CompiledManual } from './manualQuery';
 
 /**
  * X-536 — THE MANUAL'S READER IS LOADED WHEN A MANUAL READ NEEDS IT, NOT AT START.
@@ -49,7 +48,9 @@ import type { CompiledManual } from './manualQuery';
  * does) — must still drive every bridge op. Without the reader it simply asks
  * the bridge for the manual's reads too, and prints answers as JSON.
  */
+// Type-only references: erased from af.js, which keeps no import beyond node's built-ins.
 type ManualQuery = typeof import('./manualQuery');
+type CompiledManual = import('./manualQuery').CompiledManual;
 let manualQueryModule: ManualQuery | null | undefined;
 function manualReader(): ManualQuery | null {
     if (manualQueryModule === undefined) {

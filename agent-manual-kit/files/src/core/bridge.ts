@@ -995,6 +995,5 @@ export function stageBridgeCli(extensionPath: string, storageDir: string, versio
     }
 }
 
-/** The standalone files staged into the bridge folder: the CLI and the manual reader it requires. */
+/** The standalone files staged into the bridge folder: the CLI and the manual reader it loads on demand. */
 export const STAGED_CLI_FILES: readonly string[] = ['af.js', 'manualQuery.js'];
-

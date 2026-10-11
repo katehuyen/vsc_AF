@@ -5072,7 +5072,7 @@ index 4b27999..3133e96 100644
            "type": "boolean",
            "default": true,
 diff --git a/src/core/bridge.ts b/src/core/bridge.ts
-index 56ba1c8..1b0fab5 100644
+index 56ba1c8..738826e 100644
 --- a/src/core/bridge.ts
 +++ b/src/core/bridge.ts
 @@ -28,6 +28,7 @@ import { EngineId, ENGINES, engineOf, engineTakesEffort } from './consoleEngine'
@@ -5173,13 +5173,12 @@ index 56ba1c8..1b0fab5 100644
          fs.writeFileSync(versionFile, version, 'utf8');
          return { staged: true, path: dst };
      } catch {
-@@ -958,3 +995,6 @@ export function stageBridgeCli(extensionPath: string, storageDir: string, versio
+@@ -958,3 +995,5 @@ export function stageBridgeCli(extensionPath: string, storageDir: string, versio
      }
  }
  
-+/** The standalone files staged into the bridge folder: the CLI and the manual reader it requires. */
++/** The standalone files staged into the bridge folder: the CLI and the manual reader it loads on demand. */
 +export const STAGED_CLI_FILES: readonly string[] = ['af.js', 'manualQuery.js'];
-+
 diff --git a/src/core/bridgeStartText.ts b/src/core/bridgeStartText.ts
 deleted file mode 100644
 index d7833d5..0000000
@@ -6535,15 +6534,13 @@ index 52ee065..796a8d9 100644
          vscode.workspace.onDidChangeConfiguration(e => {
              if (!e.affectsConfiguration('agentFarm')) { return; }
 diff --git a/src/service/af.ts b/src/service/af.ts
-index 53acc1c..dd5193c 100644
+index 53acc1c..bc2dc32 100644
 --- a/src/service/af.ts
 +++ b/src/service/af.ts
-@@ -39,6 +39,24 @@ import * as fs from 'fs';
- import * as os from 'os';
+@@ -40,6 +40,25 @@ import * as os from 'os';
  import * as path from 'path';
  import { TextDecoder } from 'util';
-+import type { CompiledManual } from './manualQuery';
-+
+ 
 +/**
 + * X-536 — THE MANUAL'S READER IS LOADED WHEN A MANUAL READ NEEDS IT, NOT AT START.
 + *
@@ -6552,7 +6549,9 @@ index 53acc1c..dd5193c 100644
 + * does) — must still drive every bridge op. Without the reader it simply asks
 + * the bridge for the manual's reads too, and prints answers as JSON.
 + */
++// Type-only references: erased from af.js, which keeps no import beyond node's built-ins.
 +type ManualQuery = typeof import('./manualQuery');
++type CompiledManual = import('./manualQuery').CompiledManual;
 +let manualQueryModule: ManualQuery | null | undefined;
 +function manualReader(): ManualQuery | null {
 +    if (manualQueryModule === undefined) {
@@ -6560,10 +6559,11 @@ index 53acc1c..dd5193c 100644
 +    }
 +    return manualQueryModule;
 +}
- 
++
  export interface CliOptions {
      op?: string;
-@@ -260,6 +278,13 @@ Options:
+     rawArgs?: string;
+@@ -260,6 +279,13 @@ Options:
                          Node can read them. Alias: --stdin-b64.
    -h, --help            Show this help message
  
@@ -6577,7 +6577,7 @@ index 53acc1c..dd5193c 100644
  Examples:
    node af.js farm.ops
    node af.js tasks.list
-@@ -423,16 +448,87 @@ export function writeResponseFile(
+@@ -423,16 +449,87 @@ export function writeResponseFile(
      return { path: absPath, bytes: Buffer.byteLength(text, 'utf8') };
  }
  
@@ -6670,7 +6670,7 @@ index 53acc1c..dd5193c 100644
      let payload: Record<string, unknown>;
      try {
          payload = resolvePayload(opts);
-@@ -442,19 +538,38 @@ export async function main(): Promise<void> {
+@@ -442,19 +539,38 @@ export async function main(): Promise<void> {
          process.exit(1);
      }
  
@@ -7908,6 +7908,19 @@ index 9d44ae4..59503b7 100644
              .test(tasksTs));
      ok('…and a FIRST turn still carries it, exactly as before',
          /const perTurnPrompt = perTurn/.test(tasksTs)
+diff --git a/test/test_whoami.js b/test/test_whoami.js
+index 91550f0..16c75f0 100644
+--- a/test/test_whoami.js
++++ b/test/test_whoami.js
+@@ -63,7 +63,7 @@ const records = [
+     const ident = af.slice(af.indexOf('function callerIdentity'), af.indexOf('function callerIdentity') + 700);
+     ok('af.js puts its own parent pid on every request', /process\.ppid/.test(ident) && /\{ ppid \}/.test(ident));
+     ok('…and af.ts still imports nothing but node built-ins (it is copied out alone)',
+-        (af.match(/^import .* from '([^']+)';/gm) || []).every(l => /from '(crypto|fs|os|path|util)'/.test(l)));
++        (af.match(/^import\b[^;]*? from '([^']+)';/gm) || []).every(l => /from '(crypto|fs|os|path|util)'/.test(l)));
+ 
+     // ---- the tree, read for real without blocking --------------------------------
+     const t0 = Date.now();
 diff --git a/tools/manual_meta.js b/tools/manual_meta.js
 new file mode 100644
 index 0000000..e74f53d

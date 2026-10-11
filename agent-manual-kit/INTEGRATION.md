@@ -43,6 +43,7 @@ Base: commit `6c634b0` (Agent Farm **3.930.0**, "v12.105"). The patch was built 
 | new | `test/test_manual_query.js` | reader units + the intents eval (top-3 ≥ 95 %, top-1 ≥ 80 %) |
 | new | `test/test_manual_stage.js` | stages into a scratch home and runs the launcher like an agent, VS Code absent; a lone `af.js` still works |
 | changed | `test/test_opencode_task.js` | the "continuation does not repeat the brief" check now also covers the start card |
+| changed | `test/test_whoami.js` | "af.ts imports nothing but node built-ins" now also sees multi-line imports (it missed them) |
 | new | `test/test_manual_ops.js` | the ops on a real registry: replaced farm.ops, did-you-mean, brief, skills, gaps |
 | new | `tools/manual_meta.js` | drafts `ops.meta.json` entries for new ops (`--write`, `--stale`) |
 | changed | `tools/verify_vsix.js` | the VSIX must contain `out/service/af.js`, `out/service/manualQuery.js` and every `manual/` file |
@@ -75,14 +76,16 @@ npx tsc -p ./
 node test/test_manual_content.js && node test/test_manual_query.js && node test/test_manual_stage.js \
   && node test/test_manual_ops.js && node test/test_bridge_start_text.js && node test/test_bridge.js \
   && node test/test_activation.js && node test/test_settings_catalog.js && node test/test_encoding.js \
-  && node test/test_parity.js && node test/test_opencode_task.js && node test/test_kapici_mcp.js
+  && node test/test_parity.js && node test/test_opencode_task.js && node test/test_kapici_mcp.js \
+  && node test/test_whoami.js
 AF_NO_COMPILE=1 node test/run-all.js
 npm run package && npm run verify
 ```
 
 Measured in the build environment (Linux, no VS Code, no Chrome, behind a proxy): **all 764 test files run**.
 The new suites: 14 + 27 + 30 + 25 assertions; `test_bridge` 984, `test_parity` 29, `test_settings_catalog` 24,
-`test_encoding` 1916, `test_opencode_task` 49, `test_kapici_mcp` 26 — green. **19 files are red there, and every
+`test_encoding` 1916, `test_opencode_task` 49, `test_kapici_mcp` 26, `test_whoami` 26, `test_activation` 17 —
+green, also on a fresh checkout of `6c634b0` with only this patch applied. **19 files are red there, and every
 one of them is red identically (same pass/fail counts) on the untouched base commit** — environment, not this
 change: `test_a2a_pages`, `test_accounts_page`, `test_airtable_ext`, `test_browser_recipes`, `test_console_seat`,
 `test_cpu_profile`, `test_e2e_claude_routes`, `test_e2e_console_route`, `test_e2e_task_route`,
@@ -126,9 +129,11 @@ PowerShell 5.1 note: `node "$HOME/.agentfarm/af.js" ...` expands `$HOME` there t
 `emit`, and the new `main` (help → bare call prints the card → shorthands → payload → local manual answer → bridge →
 offline `farm.brief` sentence). Keep the old exports (`parseCliArgs`, `resolvePayload`, `executeBridgeRequest`,
 `writeResponseFile`, …): `test_bridge.js` imports them.
-- **The reader is loaded lazily**: `import type { CompiledManual }` only, and `manualReader()` `require`s
-  `./manualQuery` on first need (null when absent). A top-level import breaks every copy of `af.js` that sits
-  alone — the Gatekeeper MCP server loads the staged helper, and `test_kapici_mcp.js` copies only `af.js`.
+- **The reader is loaded lazily**: no `import … from './manualQuery'` at all — the types come from
+  `type ManualQuery = typeof import('./manualQuery')` / `import('./manualQuery').CompiledManual` (erased), and
+  `manualReader()` `require`s `./manualQuery` on first need (null when absent). The repo's rule is that af.ts
+  imports only node built-ins because it is copied out alone (`test_whoami.js`); the Gatekeeper MCP server loads
+  the staged helper and `test_kapici_mcp.js` copies only `af.js`. A top-level import breaks both.
 
 **`src/core/tasks.ts`**
 - Options interface, beside `projectContextFile`: `startCardFor?: (engine: string) => string;`

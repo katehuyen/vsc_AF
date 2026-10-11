@@ -276,4 +276,4 @@ the text changed. Nothing is written into another tool's home without the user's
 | typical journey | ~3,050 tokens (vs ~114,600) |
 | ops with metadata | 585 / 585 |
 | eval | top-3 77/77 · top-1 68/77 |
-| new tests | 14 + 27 + 27 + 25 assertions; `test_bridge_start_text` rewritten (9) |
+| new tests | 14 + 27 + 30 + 25 assertions; `test_bridge_start_text` rewritten (9) |
