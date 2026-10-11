@@ -2,6 +2,14 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.928.0 - Add a session to the Work Queue from your phone (2026-10-11)
+
+- **"Add to Queue" on a session row works on the phone.** It opens the
+  phone's own Work Queue page with the capture box already up and filled
+  with the same draft the PC uses (the agent and the session's title), so
+  you only add what is to be done and press Add. On the PC it opens the
+  Queue tab as before.
+
 ## 3.927.0 - Usage, insights and engine sync from your phone (2026-10-11)
 
 - **More of the right-click menu works on the phone.** Check Now on the usage

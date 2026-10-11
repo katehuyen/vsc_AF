@@ -959,7 +959,10 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   argument, `delegateInsight`). A choice or button that opens a PC panel,
   form, editor, diff or view is not offered when `arg.ask` came with the row.
   `ask.pick` with `canPickMany` ticks rows on the phone; a `createQuickPick`
-  gets a phone twin through `ask.input`, never a changed PC path. A `pc`
+  gets a phone twin through `ask.input`, never a changed PC path. A `page`
+  verdict sends only a row key the farm resolves itself (`sessionToQueue` →
+  `queue` with `{ session }`: the farm finds the session in its index and
+  builds the PC's own draft, one function for both). A `pc`
   verdict marked `gap` is a command a phone should
   get once its handler asks that way; `CTX_PHONE_GAPS` counts them and only
   shrinks. The pick arrives as `afctxcmd` and is settled by `RemoteViews`

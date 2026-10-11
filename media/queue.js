@@ -1230,6 +1230,8 @@
         }
     });
     if (focusItem) { expanded.add(focusItem); }
+    // X-551 — opened from a phone's row menu: the capture box is up with the session's draft (one shot, like focusItem)
+    if (typeof DATA.compose === 'string') { addOpen = true; addDraft = Object.assign(freshDraft(), { text: DATA.compose }); }
 
     // Close the "open with" split menu on ANY click outside it. Capture phase so
     // it fires even for elements that stopPropagation in the bubble phase; the

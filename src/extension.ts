@@ -27200,6 +27200,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** "3 sessions" / "this session" — the phrase a confirmation needs. */
     const sessionCountLabel = (n: number, one: string): string =>
         (n === 1 ? one : `${n} sessions`);
+    /** What the Work Queue's capture box opens with for a session — the PC's command and the phone's page alike. */
+    const sessionQueueDraft = (s: { agentName?: string; title?: string }): string => {
+        const what = [s.agentName, s.title].filter(Boolean).join(' — ');
+        return what ? what + ': ' : '';
+    };
     const sessionFromArg = (arg?: SessionRef | SessionInfo | string): SessionInfo | undefined => {
         if (!arg) { return undefined; }
         const sessions = [...index.all(), ...index.external()];
@@ -32001,7 +32006,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             notices: host => NoticesPanel.openOn(host, noticesPageDeps()),
             dashboard: host => DashboardPanel.openOn(host, dashboardDeps),
             missions: host => MissionsPanel.openOn(host, missionsPanelDeps),
-            queue: host => QueuePanel.openOn(host, queuePageDeps()),
+            queue: (host, args) => {
+                // only a session the index knows: a phone never writes its own words into the box
+                const s = typeof args?.session === 'string' && args.session ? sessionFromArg(args.session) : undefined;
+                QueuePanel.openOn(host, queuePageDeps(), s ? sessionQueueDraft(s) : undefined);
+            },
             chains: (host, args) => ChainsPanel.openOn(host, chainsDeps, typeof args?.chain === 'string' ? args.chain : undefined),
             turns: host => TurnsPanel.openOn(host, turnsPageDeps()),
             projects: host => ProjectsPanel.openOn(host, projectsPanelDeps()),
@@ -38391,8 +38400,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (arg?: SessionRef | SessionInfo) => {
                 const s = sessionsFromArg(arg)[0];
                 if (!s) { return; }
-                const what = [s.agentName, s.title].filter(Boolean).join(' — ');
-                void vscode.commands.executeCommand('agentfarm.queueAdd', what ? what + ': ' : '');
+                void vscode.commands.executeCommand('agentfarm.queueAdd', sessionQueueDraft(s));
             }),
 
         vscode.commands.registerCommand('agentfarm.openSessionAgent',

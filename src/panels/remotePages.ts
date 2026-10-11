@@ -29,7 +29,8 @@ export interface RemotePageMakers extends MorePageMakers {
     notices(host: PanelHost): void;
     dashboard(host: PanelHost): void;
     missions(host: PanelHost): void;
-    queue(host: PanelHost): void;
+    /** X-551 — `args.session` names a session whose draft the capture box opens with. */
+    queue(host: PanelHost, args?: Record<string, unknown>): void;
     /** S-125 — `args.chain` names the chain a ⑂ link opened it on. */
     chains(host: PanelHost, args?: Record<string, unknown>): void;
     turns(host: PanelHost): void;
@@ -165,7 +166,7 @@ export function remotePages(make: RemotePageMakers): Record<string, RemotePage> 
             looks: ['refresh'],
             answers: ['answer'],
             pcOnly: ['openNotice', 'openFile', 'configureDocOpen', 'openProject', 'openExternal', 'handoff', 'afnav'],
-            make: host => make.queue(host)
+            make: (host, args) => make.queue(host, args)
         },
         // S-125 — the relay chains. The board and a chain's legs are looks; stop, start now, the last-leg
         // brake, the leg ceiling, continue and end are manage, and the ceiling's menu and end's question

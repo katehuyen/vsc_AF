@@ -23,6 +23,14 @@ const scene = (fx, id) => {
 };
 const both = (id) => [scene(pcFx, id), scene(phFx, id)];
 
+// ---------- X-551: opened from a session row, the capture box holds the session's draft ----------
+{
+    const html = scene(phFx, 'phone-compose').html();
+    ok('‼️ a page opened with a draft has its capture box up, holding the draft',
+        /<textarea id="q-add-text"[^>]*>developer — Uzun bir oturum başlığı, kuyruğa alınacak: <\/textarea>/.test(html));
+    ok('…a page opened without one has it closed', !/id="q-add-text"/.test(scene(phFx, 'lanes').html()));
+}
+
 // ---------- the same items, opened, on the PC and on a phone ----------
 {
     const [pcN, phN] = both('fromnotice');

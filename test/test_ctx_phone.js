@@ -33,16 +33,16 @@ const titleOf = c => titles.get(c) || '';
     ok('‼️ the commands still waiting for a phone answer are counted, and the count is the budget', gaps === P.CTX_PHONE_GAPS);
     ok('a command that stays on the PC says why', commands.every(c => { const v = P.ctxPhoneVerdict(c); return v.on !== 'pc' || v.why.length > 10; }));
     ok('a command the catalogue does not have has no verdict', P.ctxPhoneVerdict('agentfarm.openFarmSettings') === undefined && P.ctxPhoneVerdict('toString') === undefined);
-    const afRemote = read('media/afRemote.js');
-    ok('a page verdict names a page the phone already opens',
-        commands.every(c => { const v = P.ctxPhoneVerdict(c); return v.on !== 'page' || afRemote.includes("to: '" + v.to + "'"); }));
+    const pageSrc = read('src/panels/remotePages.ts') + read('src/panels/remotePagesMore.ts');
+    ok('a page verdict names a page a phone can open (a key of the farm\'s phone pages)',
+        commands.every(c => { const v = P.ctxPhoneVerdict(c); return v.on !== 'page' || new RegExp('\\n        ' + v.to + ': \\{').test(pageSrc); }));
 }
 
 // ---- what the phone is sent
 const items = P.ctxPhoneItems(titleOf);
 {
     ok('a command that stays on the PC is not sent to a phone', items.every(i => P.ctxPhoneVerdict(i.command).on !== 'pc')
-        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.sessionToQueue'));
+        && !items.some(i => i.command === 'agentfarm.revealAgent' || i.command === 'agentfarm.copyCorpus'));
     ok('every item carries the manifest\'s own title, its when clause and its group', items.length > 10
         && items.every(i => i.title === titleOf(i.command) && i.title && i.when && /^\d_[a-z]+@\d+$/.test(i.group)));
     const pin = items.find(i => i.command === 'agentfarm.pinSession');
@@ -53,7 +53,7 @@ const items = P.ctxPhoneItems(titleOf);
     const note = P.ctxPhoneNote;
     ok('ui.ctxmenu says where a pick is answered for a phone', note('agentfarm.pinSession').phone === 'run' && note('agentfarm.copySessionId').phone === 'copy'
         && note('agentfarm.revealAgent').phone === 'pc' && /file manager/.test(note('agentfarm.revealAgent').phoneWhy)
-        && note('agentfarm.sessionToQueue').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
+        && note('agentfarm.copyCorpus').phone === 'pc (gap)' && note('agentfarm.ctx.ndClear').phone === 'page action');
     ok('…and the op adds it to every item', /items: items\.map\(i => \(\{ \.\.\.i, \.\.\.ctxPhoneNote\(i\.command\) \}\)\)/.test(read('src/extension.ts')));
 }
 
@@ -161,7 +161,7 @@ const items = P.ctxPhoneItems(titleOf);
     ok('…not one whose row value is empty (no path, no folder)', !onSession.includes('copySessionPath') && !onSession.includes('copySessionCwd'));
     ok('…its stop, label, wiki and project commands among them', ['interruptSession', 'endSession', 'forceKillSession', 'dismissSession', 'tagSession',
         'sessionToWiki', 'assignSessionProject', 'addSessionFolderToProject'].every(c => onSession.includes(c)));
-    ok('…and none that stays on the PC', !onSession.includes('sessionToQueue') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
+    ok('…and none that stays on the PC', !onSession.includes('copyCorpus') && !onSession.includes('revealSessionFolder') && !onSession.includes('resumeSession'));
     const full = cmds({ ...session, file: 'C:/t.jsonl', cwd: 'D:/w' });
     ok('a row that knows its path and folder offers those copies', full.includes('copySessionPath') && full.includes('copySessionCwd'));
     const onAgent = cmds({ webviewSection: 'afAgentRow', agentId: 'a1', agentName: 'dev', agentDir: 'D:/a' });
@@ -180,6 +180,9 @@ const items = P.ctxPhoneItems(titleOf);
         sent.length === 2 && sent[1].type === 'afnav' && sent[1].to === 'session' && JSON.stringify(sent[1].args) === '{"sessionId":"s1"}');
     R.pick(by('copySessionId'), session);
     ok('a copy pick is the phone\'s own clipboard: nothing goes to the farm', sent.length === 2 && copied.join() === 's1');
+    R.pick(by('sessionToQueue'), session);
+    ok('‼️ Add to Queue opens the phone\'s own Work Queue page, naming the session (the farm builds the draft)',
+        sent.length === 3 && sent[2].type === 'afnav' && sent[2].to === 'queue' && JSON.stringify(sent[2].args) === '{"session":"s1"}');
     ok('the phone layer hands a command pick to afRowCmd and a page action to the page', /if \(a\.command\) \{ window\.AFRowCmd\.pick\(a, ctx\); return; \}/.test(read('media/afMobile.js')));
     const base = read('src/panels/base.ts');
     ok('every page is sent the script, after the phone layer', base.indexOf('src="${rowCmd}"') > base.indexOf('src="${mobile}"') && /'media', 'afRowCmd\.js'/.test(base));

@@ -45,6 +45,7 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     // ---- the phone's own pages
     'agentfarm.openAgentDetail': { on: 'page', to: 'agent', args: { agentId: 'agentId' } },
     'agentfarm.openSession': { on: 'page', to: 'session', args: { sessionId: 'sessionId', file: 'file' } },
+    'agentfarm.sessionToQueue': { on: 'page', to: 'queue', args: { session: 'sessionId' } },
     // ---- the phone's own clipboard
     'agentfarm.copySessionId': { on: 'copy', key: 'sessionId' },
     'agentfarm.copySessionPath': { on: 'copy', key: 'file' },
@@ -74,7 +75,6 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
     'agentfarm.restoreInsights': RUN,
     'agentfarm.syncAntigravity': RUN,
     // ---- wanted on a phone, waiting for a handler that asks through `ask`
-    'agentfarm.sessionToQueue': gap('it opens the PC\'s Queue panel with the draft'),
     'agentfarm.copyCorpus': gap('its text is built on the farm and written to the PC\'s clipboard'),
     'agentfarm.openSessionAgent': gap('the row names the agent, not its id; the handler opens the PC\'s agent page'),
     'agentfarm.consoleForAgent': gap('it opens the PC\'s Console with the agent chosen'),
@@ -105,7 +105,7 @@ export const CTX_PHONE: Readonly<Record<string, CtxPhoneVerdict>> = {
 };
 
 /** How many commands a phone should get and does not yet. It only shrinks: a new gap is a new debt. */
-export const CTX_PHONE_GAPS = 4;
+export const CTX_PHONE_GAPS = 3;
 
 export function ctxPhoneVerdict(command: string): CtxPhoneVerdict | undefined {
     return Object.prototype.hasOwnProperty.call(CTX_PHONE, command) ? CTX_PHONE[command] : undefined;

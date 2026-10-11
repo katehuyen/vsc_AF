@@ -125,7 +125,7 @@ const alive = setInterval(() => undefined, 1000);
     ok('the fixture has a blocked item', item(blocked.id).status === 'blocked');
     const views = new RemoteViews({
         media: uri('/ext/media'), atLeast: scopeAtLeast, waitMs: 60,
-        pages: remotePages(Object.assign({}, makers, { session: () => false, queue: host => QueuePanel.openOn(host, deps) }))
+        pages: remotePages(Object.assign({}, makers, { session: () => false, queue: (host, args) => QueuePanel.openOn(host, deps, args && args.draftForTest) }))
     });
     const reader = { device: 'dev_r', scope: 'read' }, answerer = { device: 'dev_a', scope: 'answer' }, manager = { device: 'dev_m', scope: 'manage' };
     const toR = [], toA = [], toM = [];
@@ -135,6 +135,15 @@ const alive = setInterval(() => undefined, 1000);
     const page = (await views.page('/view/queue?view=v1', reader)).body;
     ok('its page loads from /res/, its own script too', page.includes('src="/res/queue.js"') && !/vscode-webview:|file:\/\//.test(page));
     ok('no desktop tab was made for a phone', tabs.length === 0);
+    const toD = [];
+    views.open(manager, 'v5', 'queue', { draftForTest: 'developer — Uzun oturum: ' }, m => toD.push(m));
+    const seeded = (await views.page('/view/queue?view=v5', manager)).body;
+    ok('‼️ X-551: a view opened with a draft carries it in its first data, for the capture box', seeded.includes('"compose":"developer — Uzun oturum: "'));
+    ok('…and a view opened without one carries none', !page.includes('"compose"'));
+    views.message(manager, 'v5', { type: 'refresh' });
+    await settle();
+    ok('…once: a refresh does not open the box again', toD.some(m => m.type === 'data') && toD.every(m => m.type !== 'data' || !('compose' in m.data)));
+    views.close(manager, 'v5');
 
     views.message(reader, 'v1', { type: 'refresh' });
     await settle();
@@ -218,9 +227,15 @@ const alive = setInterval(() => undefined, 1000);
 
     // ---------- the host ----------
     const ext = src('src/extension.ts');
+    const maker = ext.slice(ext.indexOf('            queue: (host, args) => {'), ext.indexOf('            queue: (host, args) => {') + 400);
     ok('the extension makes the page for a phone from the desktop\'s own deps',
-        /queue: host => QueuePanel\.openOn\(host, queuePageDeps\(\)\),/.test(ext)
+        /QueuePanel\.openOn\(host, queuePageDeps\(\), s \? sessionQueueDraft\(s\) : undefined\);/.test(maker)
         && /const showQueuePanel = \(focusItem\?: string\): void => QueuePanel\.show\(queuePageDeps\(\), focusItem\);/.test(ext));
+    ok('‼️ X-551: the draft comes from a session the index knows, never from the phone\'s own words',
+        /typeof args\?\.session === 'string' && args\.session \? sessionFromArg\(args\.session\) : undefined/.test(maker)
+        && !/args\.(text|compose|draft)/.test(maker));
+    ok('…and it is the PC\'s own draft for the same session', /executeCommand\('agentfarm\.queueAdd', sessionQueueDraft\(s\)\)/.test(ext)
+        && (ext.match(/sessionQueueDraft\(/g) || []).length === 2);
 
     clearInterval(alive);
     fs.rmSync(dir, { recursive: true, force: true });

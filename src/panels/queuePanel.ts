@@ -32,7 +32,7 @@ function buildLiveMap(deps: QueueDeps, items: WorkItem[]): Record<string, { kind
     return live;
 }
 
-function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown> {
+function buildData(deps: QueueDeps, focusItem?: string, compose?: string): Record<string, unknown> {
     const items = deps.store.list({ limit: 0 });
     return {
         generatedAt: Date.now(),
@@ -57,7 +57,8 @@ function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown>
         activeProjectId: deps.activeProjectId(),
         live: buildLiveMap(deps, items),
         docOpen: deps.docOpenConfig ? deps.docOpenConfig() : { mode: 'vscode', hasCustom: false },
-        focusItem: focusItem ?? null
+        focusItem: focusItem ?? null,
+        ...(typeof compose === 'string' ? { compose } : {})
     };
 }
 
@@ -81,8 +82,9 @@ export class QueuePanel {
     /** X-466 — the views phones have open: one instance each, never the desktop's one tab. */
     private static phones = new Set<QueuePanel>();
 
-    static openOn(host: PanelHost, deps: QueueDeps): void {
-        QueuePanel.phones.add(new QueuePanel(host, deps));
+    /** `compose`: the capture box opens with this draft — a phone has no panel to post `q-compose` to before it loads. */
+    static openOn(host: PanelHost, deps: QueueDeps, compose?: string): void {
+        QueuePanel.phones.add(new QueuePanel(host, deps, undefined, compose));
     }
 
     static refreshIfOpen(): void {
@@ -102,19 +104,19 @@ export class QueuePanel {
         void QueuePanel.current?.host.webview.postMessage({ type: 'q-compose', text: text ?? '' });
     }
 
-    private constructor(readonly host: PanelHost, private deps: QueueDeps, focusItem?: string) {
+    private constructor(readonly host: PanelHost, private deps: QueueDeps, focusItem?: string, compose?: string) {
         this.focusItem = focusItem;
-        this.render();
+        this.render(compose);
         host.onDidDispose(() => this.dispose(), null, this.disposables);
         host.webview.onDidReceiveMessage(msg => this.onMessage(msg), null, this.disposables);
     }
 
-    private render(): void {
+    private render(compose?: string): void {
         this.host.webview.html = htmlShell(
             this.host.webview,
             this.deps.extensionUri,
             'Agent Farm Work Queue',
-            buildData(this.deps, this.focusItem),
+            buildData(this.deps, this.focusItem, compose),
             'queue.js'
         );
         this.focusItem = undefined;   // one-shot: consumed by the first render
