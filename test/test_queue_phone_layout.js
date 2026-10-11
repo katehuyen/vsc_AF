@@ -24,8 +24,10 @@ const scene = (fx, id) => {
 const both = (id) => [scene(pcFx, id), scene(phFx, id)];
 
 // ---------- X-551: opened from a session row, the capture box holds the session's draft ----------
+// (built here, not as a fixture scene: a scene re-draws the lanes and the theme audit would count their debt twice)
 {
-    const html = scene(phFx, 'phone-compose').html();
+    const lanes = phFx.variants().find(x => x.id === 'lanes').data;
+    const html = runPage(phFx.script, Object.assign({}, lanes, { compose: 'developer — Uzun bir oturum başlığı, kuyruğa alınacak: ' }), phFx.window).html();
     ok('‼️ a page opened with a draft has its capture box up, holding the draft',
         /<textarea id="q-add-text"[^>]*>developer — Uzun bir oturum başlığı, kuyruğa alınacak: <\/textarea>/.test(html));
     ok('…a page opened without one has it closed', !/id="q-add-text"/.test(scene(phFx, 'lanes').html()));

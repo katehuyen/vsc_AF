@@ -28,15 +28,7 @@ function openAll() {
     };
 }
 
-// X-551 — opened from a session row's "Add to Queue": the capture box is up with the session's draft.
-function composed() {
-    return {
-        id: 'phone-compose', label: 'Work Queue on a phone — opened from a session row, the capture box holds its draft',
-        data: Object.assign(base.data(), { compose: 'developer — Uzun bir oturum başlığı, kuyruğa alınacak: ' })
-    };
-}
-
 module.exports = Object.assign({}, base, {
     window: Object.assign({}, base.window, { __AFUI__: { remote: true } }),
-    variants: () => base.variants().concat([openAll(), composed()])
+    variants: () => base.variants().concat([openAll()])
 });
